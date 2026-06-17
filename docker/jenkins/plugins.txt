@@ -1,0 +1,15 @@
+# Jenkins 预装插件
+git:latest
+gitlab-plugin:latest
+gitea:latest
+workflow-aggregator:latest
+blue-ocean:latest
+credentials:latest
+matrix-auth:latest
+ldap:latest
+timestamper:latest
+ws-cleanup:latest
+build-timeout:latest
+parameterized-trigger:latest
+pipeline-stage-view:latest
+dashboard-view:latest
