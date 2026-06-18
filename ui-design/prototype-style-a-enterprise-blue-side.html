@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TraceShip - 软件版本发布管理（企业蓝 · 左右布局）</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@logicflow/core@1.2.27/dist/style/index.css">
+  <script src="https://cdn.jsdelivr.net/npm/@logicflow/core@1.2.27/dist/logic-flow.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { DEFAULT: '#2563EB', 50: '#EFF6FF', 100: '#DBEAFE', 500: '#3B82F6', 600: '#2563EB', 700: '#1D4ED8' },
+            success: { DEFAULT: '#10B981', 50: '#ECFDF5', 100: '#D1FAE5', 500: '#10B981', 600: '#059669' },
+            warning: { DEFAULT: '#F59E0B', 50: '#FFFBEB', 100: '#FEF3C7', 500: '#F59E0B', 600: '#D97706' },
+            danger: { DEFAULT: '#EF4444', 50: '#FEF2F2', 100: '#FEE2E2', 500: '#EF4444', 600: '#DC2626' },
+            info: { DEFAULT: '#3B82F6', 50: '#EFF6FF', 100: '#DBEAFE' },
+            ai: '#8B5CF6',
+            slate: { 50: '#F8FAFC', 100: '#F1F5F9', 200: '#E2E8F0', 300: '#CBD5E1', 400: '#94A3B8', 500: '#64748B', 600: '#475569', 700: '#334155', 800: '#1E293B', 900: '#0F172A' }
+          },
+          fontFamily: {
+            sans: ['"PingFang SC"', '"Microsoft YaHei"', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+          },
+          boxShadow: {
+            'soft': '0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03)',
+            'card': '0 4px 6px -1px rgba(0,0,0,0.04), 0 2px 4px -2px rgba(0,0,0,0.02)',
+            'elevated': '0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -4px rgba(0,0,0,0.02)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background-color: #F8FAFC; color: #1E293B; font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif; }
+
+    /* Sidebar Navigation */
+    .nav-item { display: flex; align-items: center; padding: 0.625rem 0.875rem; margin: 0.25rem 0.625rem; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 500; color: #64748B; transition: all 0.2s ease; text-decoration: none; }
+    .nav-item:hover { background-color: #F1F5F9; color: #334155; transform: translateX(2px); }
+    .nav-item.active { background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%); color: #2563EB; box-shadow: 0 1px 2px rgba(37,99,235,0.08); }
+    .nav-item svg { flex-shrink: 0; width: 1.25rem; height: 1.25rem; margin-right: 0.75rem; }
+
+    /* Page Sections */
+    .page-section { display: none; animation: fadeIn 0.25s ease-out; }
+    .page-section.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Tabs */
+    .tab-btn { padding: 0.75rem 1rem; font-size: 0.875rem; font-weight: 500; color: #64748B; border-bottom: 2px solid transparent; transition: all 0.2s ease; background: none; cursor: pointer; }
+    .tab-btn:hover { color: #334155; }
+    .tab-btn.active { color: #2563EB; border-bottom-color: #2563EB; }
+
+    /* Status Tags */
+    .status-tag { display: inline-flex; align-items: center; padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; line-height: 1.25; }
+    .status-tag::before { content: ''; width: 0.375rem; height: 0.375rem; border-radius: 9999px; margin-right: 0.375rem; }
+    .tag-primary { background-color: #EFF6FF; color: #2563EB; }
+    .tag-primary::before { background-color: #2563EB; }
+    .tag-success { background-color: #ECFDF5; color: #059669; }
+    .tag-success::before { background-color: #10B981; }
+    .tag-warning { background-color: #FFFBEB; color: #D97706; }
+    .tag-warning::before { background-color: #F59E0B; }
+    .tag-danger { background-color: #FEF2F2; color: #DC2626; }
+    .tag-danger::before { background-color: #EF4444; }
+    .tag-info { background-color: #EFF6FF; color: #2563EB; }
+    .tag-info::before { background-color: #3B82F6; }
+    .tag-neutral { background-color: #F1F5F9; color: #64748B; }
+    .tag-neutral::before { background-color: #94A3B8; }
+
+    /* Step Indicator */
+    .step-item { display: flex; align-items: center; flex: 1; }
+    .step-circle { width: 2.25rem; height: 2.25rem; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 0.875rem; font-weight: 700; background-color: #F1F5F9; color: #64748B; border: 2px solid #E2E8F0; transition: all 0.3s ease; }
+    .step-circle.active { background-color: #2563EB; color: #FFFFFF; border-color: #2563EB; box-shadow: 0 0 0 4px rgba(37,99,235,0.12); }
+    .step-circle.completed { background-color: #10B981; color: #FFFFFF; border-color: #10B981; }
+    .step-line { flex: 1; height: 2px; background-color: #E2E8F0; margin: 0 0.75rem; transition: all 0.3s ease; }
+    .step-line.active { background-color: #2563EB; }
+
+    /* Cards */
+    .ts-card { background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: all 0.2s ease; }
+    .ts-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+
+    /* Tables */
+    .ts-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .ts-table th { padding: 0.875rem 1.25rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.025em; color: #64748B; background-color: #F8FAFC; border-bottom: 1px solid #E2E8F0; text-align: left; }
+    .ts-table td { padding: 1rem 1.25rem; font-size: 0.875rem; color: #334155; border-bottom: 1px solid #F1F5F9; }
+    .ts-table tbody tr { transition: background-color 0.15s ease; }
+    .ts-table tbody tr:hover { background-color: #F8FAFC; }
+    .ts-table tbody tr:last-child td { border-bottom: none; }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; border-radius: 0.75rem; transition: all 0.2s ease; cursor: pointer; border: none; }
+    .btn-primary { background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%); color: #FFFFFF; box-shadow: 0 1px 3px rgba(37,99,235,0.2); }
+    .btn-primary:hover { background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.25); }
+    .btn-secondary { background-color: #FFFFFF; color: #334155; border: 1px solid #E2E8F0; }
+    .btn-secondary:hover { background-color: #F8FAFC; border-color: #CBD5E1; }
+    .btn-success { background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; }
+    .btn-success:hover { background: linear-gradient(135deg, #059669 0%, #047857 100%); }
+    .btn-danger { background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); color: #FFFFFF; }
+    .btn-danger:hover { background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); }
+
+    /* Form Controls */
+    .ts-input { width: 100%; height: 2.5rem; padding: 0 0.875rem; font-size: 0.875rem; color: #1E293B; background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 0.75rem; transition: all 0.2s ease; }
+    .ts-input:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .ts-input::placeholder { color: #94A3B8; }
+    .ts-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748B' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E"); background-position: right 0.625rem center; background-repeat: no-repeat; background-size: 1.25rem; padding-right: 2.25rem; }
+    .ts-textarea { min-height: 5rem; padding: 0.625rem 0.875rem; resize: vertical; }
+
+    /* Workflow Tab Panels */
+    .wf-tab-panel { display: none; animation: fadeIn 0.25s ease-out; }
+    .wf-tab-panel.active { display: block; }
+    .palette-node { cursor: grab; user-select: none; }
+    .palette-node:active { cursor: grabbing; }
+    #logicflow-container .lf-canvas { background: #ffffff; }
+    #logicflow-container .lf-graph { background: #ffffff; }
+    @keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .animate-pulse-soft { animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+    /* Avatar */
+    .avatar { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+    .avatar-sm { width: 1.5rem; height: 1.5rem; font-size: 0.625rem; }
+
+    /* Login */
+    .login-bg { background: linear-gradient(135deg, #F0F9FF 0%, #EFF6FF 50%, #F5F3FF 100%); }
+    .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+
+    /* System Sub-panels */
+    .system-panel { display: none; animation: fadeIn 0.25s ease-out; }
+    .system-panel.active { display: block; }
+    .config-panel { display: none; animation: fadeIn 0.25s ease-out; }
+    .config-panel.active { display: block; }
+
+    /* Project Detail Tabs */
+    .project-tab-panel { display: none; animation: fadeIn 0.25s ease-out; }
+    .project-tab-panel.active { display: block; }
+
+    /* Tag Generator Steps */
+    .tag-step-panel { display: none; animation: fadeIn 0.25s ease-out; }
+    .tag-step-panel.active { display: block; }
+
+    /* Modal */
+    .modal-backdrop { position: fixed; inset: 0; background-color: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 50; display: none; align-items: center; justify-content: center; padding: 1rem; }
+    .modal-backdrop.active { display: flex; }
+    .modal-panel { background-color: #FFFFFF; border-radius: 1rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); width: 100%; max-width: 560px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
+    .modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center; }
+    .modal-body { padding: 1.5rem; overflow-y: auto; }
+    .modal-footer { padding: 1rem 1.5rem; border-top: 1px solid #E2E8F0; display: flex; justify-content: flex-end; gap: 0.75rem; }
+
+    /* Drawer */
+    .drawer-overlay { position: fixed; inset: 0; background-color: rgba(15, 23, 42, 0.45); z-index: 50; display: none; }
+    .drawer-overlay.active { display: block; }
+    .drawer { position: fixed; top: 0; right: 0; width: 480px; height: 100%; background-color: #FFFFFF; box-shadow: -10px 0 15px -3px rgba(0,0,0,0.1); z-index: 51; transform: translateX(100%); transition: transform 0.3s ease; display: flex; flex-direction: column; }
+    .drawer.active { transform: translateX(0); }
+    .drawer-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center; }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 1.5rem; }
+    .drawer-footer { padding: 1rem 1.5rem; border-top: 1px solid #E2E8F0; display: flex; justify-content: flex-end; gap: 0.75rem; }
+  </style>
+</head>
+<body class="antialiased">
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="min-h-screen flex items-center justify-center login-bg">
+    <div class="glass-card w-full max-w-md p-8 rounded-2xl shadow-elevated border border-white/50">
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-500/25">
+          <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        </div>
+        <h1 class="text-2xl font-bold text-slate-900">TraceShip</h1>
+        <p class="text-sm text-slate-500 mt-1">软件版本发布管理与提交规范审查系统</p>
+        <div class="inline-flex items-center mt-3 px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-medium">
+          <span class="w-1.5 h-1.5 bg-blue-500 rounded-full mr-2"></span>v2.4.0
+        </div>
+      </div>
+      <div class="flex border-b border-slate-200 mb-6">
+        <button id="login-tab-ldap" class="flex-1 pb-3 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 transition-colors" onclick="switchLoginTab('ldap')">域账号登录</button>
+        <button id="login-tab-local" class="flex-1 pb-3 text-sm font-medium text-slate-500 border-b-2 border-transparent hover:text-slate-700 transition-colors" onclick="switchLoginTab('local')">本地账号</button>
+      </div>
+      <div class="space-y-5">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">用户名</label>
+          <input type="text" value="zhangsan" class="ts-input" placeholder="请输入域账号/用户名">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">密码</label>
+          <input type="password" value="password" class="ts-input" placeholder="请输入密码">
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <label class="flex items-center text-slate-600"><input type="checkbox" class="mr-2 rounded border-slate-300 text-blue-600 focus:ring-blue-500">记住我</label>
+          <a href="#" class="text-blue-600 hover:text-blue-700">忘记密码？</a>
+        </div>
+        <button onclick="doLogin()" class="w-full h-11 btn btn-primary text-base font-semibold">登 录</button>
+      </div>
+      <p class="text-xs text-slate-400 text-center mt-6">首次登录将自动同步 LDAP 用户信息</p>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app-screen" class="hidden min-h-screen flex">
+    <!-- Sidebar -->
+    <aside class="w-60 bg-white border-r border-slate-200 flex-shrink-0 flex flex-col">
+      <div class="h-16 flex items-center px-5">
+        <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center mr-3 shadow-md shadow-blue-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        </div>
+        <div>
+          <span class="font-bold text-lg text-slate-900">TraceShip</span>
+          <span class="block text-[10px] text-slate-400 font-medium">RELEASE MGMT</span>
+        </div>
+      </div>
+      <nav class="flex-1 py-3 space-y-1">
+        <a href="#" onclick="switchPage('dashboard')" id="nav-dashboard" class="nav-item active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>工作台</a>
+        <a href="#" onclick="switchPage('projects')" id="nav-projects" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>项目管理</a>
+        <a href="#" onclick="switchPage('repositories')" id="nav-repositories" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>仓库管理</a>
+        <a href="#" onclick="switchPage('credentials')" id="nav-credentials" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>凭证管理</a>
+        <a href="#" onclick="switchPage('commits')" id="nav-commits" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>提交规范审查</a>
+        <a href="#" onclick="switchPage('tag-generator')" id="nav-tag-generator" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>Tag 生成与发布</a>
+        <a href="#" onclick="switchPage('jenkins')" id="nav-jenkins" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>Jenkins 构建</a>
+        <a href="#" onclick="switchPage('workflow')" id="nav-workflow" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>工作流审批</a>
+        <a href="#" onclick="switchPage('system')" id="nav-system" class="nav-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>系统管理</a>
+      </nav>
+      <div class="p-4">
+        <div class="flex items-center p-3 rounded-2xl bg-slate-50 border border-slate-100">
+          <div class="avatar avatar-sm bg-blue-100 text-blue-600 mr-3">张</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-slate-900 truncate">张三</p>
+            <p class="text-xs text-slate-500 truncate">发布工程师</p>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col min-w-0">
+      <!-- Header -->
+      <header class="h-16 bg-white/80 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-20">
+        <div class="flex items-center">
+          <h2 id="page-title" class="text-lg font-bold text-slate-900">仪表盘</h2>
+        </div>
+        <div class="flex items-center space-x-4">
+          <select class="ts-input ts-select w-44">
+            <option>选择项目</option>
+            <option selected>核心交易平台</option>
+            <option>数据中台</option>
+          </select>
+          <button class="relative p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+            <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+          </button>
+          <button onclick="switchPage('tag-generator')" class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新建发布</button>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <main class="flex-1 overflow-y-auto p-6">
+
+        <!-- Dashboard -->
+        <section id="dashboard" class="page-section active space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div class="ts-card p-5">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-sm font-medium text-slate-500">近 7 天发布数</p>
+                  <p class="text-3xl font-bold text-slate-900 mt-2">12</p>
+                </div>
+                <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                </div>
+              </div>
+              <div class="mt-4 flex items-center text-sm">
+                <span class="tag-success status-tag">+20%</span>
+                <span class="text-slate-400 ml-2">较上周</span>
+              </div>
+            </div>
+            <div class="ts-card p-5">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-sm font-medium text-slate-500">待审批数</p>
+                  <p class="text-3xl font-bold text-slate-900 mt-2">3</p>
+                </div>
+                <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center text-amber-600">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+              </div>
+              <div class="mt-4 text-sm text-slate-500">2 个待审批 · 1 个即将超时</div>
+            </div>
+            <div class="ts-card p-5">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-sm font-medium text-slate-500">构建成功/失败</p>
+                  <p class="text-3xl font-bold text-slate-900 mt-2">10 / 2</p>
+                </div>
+                <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center text-red-600">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+              </div>
+              <div class="mt-4 flex items-center text-sm">
+                <span class="tag-danger status-tag">2 失败</span>
+                <span class="text-slate-400 ml-2">需关注</span>
+              </div>
+            </div>
+            <div class="ts-card p-5">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-sm font-medium text-slate-500">Commit 合规率</p>
+                  <p class="text-3xl font-bold text-slate-900 mt-2">92.5%</p>
+                </div>
+                <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-indigo-100 flex items-center justify-center text-indigo-600">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+              </div>
+              <div class="mt-4">
+                <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div class="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full" style="width: 92.5%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 ts-card overflow-hidden">
+              <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                <div>
+                  <h3 class="font-bold text-slate-900">最近发布</h3>
+                  <p class="text-xs text-slate-500 mt-0.5">最近 10 条发布记录</p>
+                </div>
+                <button onclick="switchPage('release-board')" class="btn btn-secondary h-8 text-xs">查看全部</button>
+              </div>
+              <table class="ts-table">
+                <thead>
+                  <tr><th>版本号</th><th>项目</th><th>类型</th><th>状态</th><th>时间</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="font-mono font-medium text-slate-900">v2.4.1</td><td>核心交易平台</td><td><span class="tag-primary status-tag">正式</span></td><td><span class="tag-success status-tag">已发布</span></td><td class="text-slate-500">2026-06-15</td></tr>
+                  <tr><td class="font-mono font-medium text-slate-900">v2.4.1-test.3</td><td>核心交易平台</td><td><span class="tag-warning status-tag">测试</span></td><td><span class="tag-warning status-tag">构建中</span></td><td class="text-slate-500">2026-06-14</td></tr>
+                  <tr><td class="font-mono font-medium text-slate-900">v2.3.9</td><td>数据中台</td><td><span class="tag-primary status-tag">正式</span></td><td><span class="tag-success status-tag">已发布</span></td><td class="text-slate-500">2026-06-10</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="space-y-6">
+              <div class="ts-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-100"><h3 class="font-bold text-slate-900">我的待办</h3></div>
+                <div class="p-5 space-y-4">
+                  <div class="flex items-start p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 mr-3"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-semibold text-slate-900 truncate">审批发布 v2.5.0</p>
+                      <p class="text-xs text-slate-500 mt-0.5">申请人：李四 · 10 分钟前</p>
+                    </div>
+                    <button onclick="switchPage('workflow')" class="text-xs font-medium text-blue-600 hover:text-blue-700 ml-2">去审批</button>
+                  </div>
+                  <div class="flex items-start p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0 mr-3"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-semibold text-slate-900 truncate">审批发布 v2.4.2-test.1</p>
+                      <p class="text-xs text-slate-500 mt-0.5">申请人：王五 · 1 小时前</p>
+                    </div>
+                    <button onclick="switchPage('workflow')" class="text-xs font-medium text-blue-600 hover:text-blue-700 ml-2">去审批</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ts-card overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-100"><h3 class="font-bold text-slate-900">非法提交预警</h3></div>
+                <div class="p-5">
+                  <div class="flex items-center">
+                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center text-amber-600 mr-4">
+                      <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    </div>
+                    <div class="flex-1">
+                      <p class="text-3xl font-bold text-slate-900">7</p>
+                      <p class="text-sm text-slate-500">待处理的不合规 commit</p>
+                    </div>
+                    <button onclick="switchPage('commits')" class="btn btn-secondary h-8 text-xs">查看</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Projects -->
+        <section id="projects" class="page-section space-y-5">
+          <!-- 项目列表视图 -->
+          <div id="project-list-view">
+            <div class="flex flex-wrap justify-between items-center gap-3">
+            <div class="flex flex-wrap gap-3">
+              <input type="text" placeholder="搜索项目编码/名称" class="ts-input w-64">
+              <select class="ts-input ts-select w-36"><option>全部状态</option><option>启用</option><option>停用</option></select>
+            </div>
+            <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增项目</button>
+          </div>
+
+          <div class="ts-card overflow-hidden">
+            <table class="ts-table">
+              <thead>
+                <tr><th>项目编码</th><th>项目名称</th><th>负责人</th><th>仓库数</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="font-mono text-xs text-slate-600">CORE-TRADE</td><td class="font-semibold text-slate-900">核心交易平台</td><td><div class="flex items-center"><div class="avatar avatar-sm bg-blue-100 text-blue-600 mr-2">李</div>李四</div></td><td>3</td><td><span class="tag-success status-tag">启用</span></td><td class="text-slate-500">2025-03-12</td><td><button onclick="showProjectEdit('CORE-TRADE')" class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                <tr><td class="font-mono text-xs text-slate-600">DATA-HUB</td><td class="font-semibold text-slate-900">数据中台</td><td><div class="flex items-center"><div class="avatar avatar-sm bg-amber-100 text-amber-600 mr-2">王</div>王五</div></td><td>2</td><td><span class="tag-success status-tag">启用</span></td><td class="text-slate-500">2025-06-20</td><td><button onclick="showProjectEdit('DATA-HUB')" class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                <tr><td class="font-mono text-xs text-slate-600">OPS-PORTAL</td><td class="font-semibold text-slate-900">运维门户</td><td><div class="flex items-center"><div class="avatar avatar-sm bg-violet-100 text-violet-600 mr-2">赵</div>赵六</div></td><td>1</td><td><span class="tag-neutral status-tag">停用</span></td><td class="text-slate-500">2024-11-08</td><td><button onclick="showProjectEdit('OPS-PORTAL')" class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          </div>
+
+          <!-- 项目编辑视图 -->
+          <div id="project-edit-view" class="hidden">
+            <div class="flex items-center justify-between mb-5">
+              <nav class="flex items-center text-sm text-slate-500">
+                <button onclick="showProjectList()" class="hover:text-blue-600 transition-colors">项目管理</button>
+                <svg class="w-4 h-4 mx-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                <span class="font-medium text-slate-900">核心交易平台</span>
+              </nav>
+            </div>
+            <div class="ts-card overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+              <div>
+                <h3 class="font-bold text-lg text-slate-900">核心交易平台</h3>
+                <p class="text-xs text-slate-500 mt-0.5">CORE-TRADE · 负责人：李四</p>
+              </div>
+              <span class="tag-success status-tag">启用</span>
+            </div>
+            <div class="border-b border-slate-100 bg-slate-50/50">
+              <div class="flex px-4">
+                <button class="tab-btn active" onclick="switchProjectTab('basic', this)">基本信息</button>
+                <button class="tab-btn" onclick="switchProjectTab('repositories', this)">仓库</button>
+                <button class="tab-btn" onclick="switchProjectTab('members', this)">成员</button>
+                <button class="tab-btn" onclick="switchProjectTab('workflow', this)">审批流</button>
+                <button class="tab-btn" onclick="switchProjectTab('rules', this)">规则配置</button>
+                <button class="tab-btn" onclick="switchProjectTab('bindings', this)">外站绑定</button>
+              </div>
+            </div>
+            <div class="p-6">
+              <!-- 基本信息 -->
+              <div id="project-tab-basic" class="project-tab-panel active">
+                <div class="grid grid-cols-2 gap-x-8 gap-y-5">
+                  <div><label class="text-xs font-medium text-slate-500 uppercase tracking-wider">项目编码</label><p class="text-sm font-semibold text-slate-900 mt-1 font-mono">CORE-TRADE</p></div>
+                  <div><label class="text-xs font-medium text-slate-500 uppercase tracking-wider">项目负责人</label><p class="text-sm font-semibold text-slate-900 mt-1">李四</p></div>
+                  <div><label class="text-xs font-medium text-slate-500 uppercase tracking-wider">版本号规则</label><p class="text-sm font-semibold text-slate-900 mt-1">主版本.次版本.修订号</p></div>
+                  <div><label class="text-xs font-medium text-slate-500 uppercase tracking-wider">发布周期</label><p class="text-sm font-semibold text-slate-900 mt-1">正式版本 3 天一发</p></div>
+                  <div class="col-span-2"><label class="text-xs font-medium text-slate-500 uppercase tracking-wider">描述</label><p class="text-sm text-slate-700 mt-1">核心交易业务系统，包含订单、支付、清结算等模块。</p></div>
+                </div>
+              </div>
+
+              <!-- 仓库 -->
+              <div id="project-tab-repositories" class="project-tab-panel hidden">
+                <div class="flex justify-end mb-4">
+                  <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>添加仓库</button>
+                </div>
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>仓库名称</th><th>类型</th><th>默认分支</th><th>凭证归属</th><th>健康状态</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="font-semibold text-slate-900">core-trade-backend</td><td><span class="tag-primary status-tag">GitLab</span></td><td class="font-mono text-xs">develop</td><td>项目固定凭证</td><td><span class="tag-success status-tag">正常</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">测试</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">同步提交</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">core-trade-frontend</td><td><span class="tag-primary status-tag">GitLab</span></td><td class="font-mono text-xs">develop</td><td>当前登录用户</td><td><span class="tag-success status-tag">正常</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">测试</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">同步提交</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">trade-configs</td><td><span class="tag-neutral status-tag">SVN</span></td><td class="font-mono text-xs">-</td><td>系统全局凭证</td><td><span class="tag-danger status-tag">异常</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">测试</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">同步提交</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 成员 -->
+              <div id="project-tab-members" class="project-tab-panel hidden">
+                <div class="flex justify-end mb-4">
+                  <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>添加成员</button>
+                </div>
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>成员</th><th>部门</th><th>角色</th><th>加入时间</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><div class="flex items-center"><div class="avatar avatar-sm bg-blue-100 text-blue-600 mr-2">李</div>李四</div></td><td>研发部</td><td><span class="tag-primary status-tag">项目负责人</span></td><td class="text-slate-500">2025-03-12</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">修改角色</button><button class="text-sm font-medium text-red-600 hover:text-red-700">移除</button></td></tr>
+                    <tr><td><div class="flex items-center"><div class="avatar avatar-sm bg-amber-100 text-amber-600 mr-2">王</div>王五</div></td><td>测试部</td><td><span class="tag-success status-tag">测试人员</span></td><td class="text-slate-500">2025-04-20</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">修改角色</button><button class="text-sm font-medium text-red-600 hover:text-red-700">移除</button></td></tr>
+                    <tr><td><div class="flex items-center"><div class="avatar avatar-sm bg-violet-100 text-violet-600 mr-2">张</div>张三</div></td><td>研发部</td><td><span class="tag-info status-tag">发布工程师</span></td><td class="text-slate-500">2025-05-08</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">修改角色</button><button class="text-sm font-medium text-red-600 hover:text-red-700">移除</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 审批流 -->
+              <div id="project-tab-workflow" class="project-tab-panel hidden">
+                <div class="flex justify-end mb-4">
+                  <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增流程</button>
+                </div>
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>流程名称</th><th>业务类型</th><th>版本</th><th>是否启用</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="font-semibold text-slate-900">正式版本发布审批</td><td class="font-mono text-xs text-slate-600">release</td><td>v1.2</td><td><span class="tag-success status-tag">启用</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">编辑</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">停用</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">测试版本发布审批</td><td class="font-mono text-xs text-slate-600">release</td><td>v1.0</td><td><span class="tag-success status-tag">启用</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">编辑</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">停用</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 规则配置 -->
+              <div id="project-tab-rules" class="project-tab-panel hidden">
+                <div class="grid grid-cols-2 gap-5">
+                  <div><label class="block text-sm font-medium text-slate-700 mb-1.5">版本号规则</label><select class="ts-input ts-select"><option selected>主版本.次版本.修订号</option><option>年月日.修订号</option></select></div>
+                  <div><label class="block text-sm font-medium text-slate-700 mb-1.5">发布周期</label><select class="ts-input ts-select"><option selected>正式版本 3 天一发</option><option>正式版本 7 天一发</option></select></div>
+                  <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">正式发布分支限制</label><div class="flex flex-wrap gap-2 mt-2"><span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm">master</span><span class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm">main</span><button class="text-sm text-slate-400 hover:text-blue-600">+ 添加</button></div></div>
+                  <div><label class="block text-sm font-medium text-slate-700 mb-1.5">测试版本命名前缀</label><input type="text" class="ts-input" value="-test"></div>
+                  <div><label class="block text-sm font-medium text-slate-700 mb-1.5">Commit 合规率阈值</label><div class="flex items-center"><input type="number" class="ts-input w-24 mr-2" value="100"><span class="text-sm text-slate-500">%</span></div></div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                  <button class="btn btn-primary h-9">保存规则</button>
+                </div>
+              </div>
+
+              <!-- 外站绑定 -->
+              <div id="project-tab-bindings" class="project-tab-panel hidden">
+                <div class="flex justify-end mb-4">
+                  <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增绑定</button>
+                </div>
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>外站类型</th><th>资源</th><th>凭证</th><th>凭证归属</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><span class="tag-primary status-tag">Git 仓库</span></td><td class="font-semibold text-slate-900">core-trade-backend</td><td>GitLab-核心交易</td><td>项目固定凭证</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">编辑</button><button class="text-sm font-medium text-red-600 hover:text-red-700">解绑</button></td></tr>
+                    <tr><td><span class="tag-warning status-tag">Jenkins 任务</span></td><td class="font-semibold text-slate-900">core-trade-build</td><td>Jenkins-构建中心</td><td>系统全局凭证</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">编辑</button><button class="text-sm font-medium text-red-600 hover:text-red-700">解绑</button></td></tr>
+                    <tr><td><span class="tag-neutral status-tag">SVN 仓库</span></td><td class="font-semibold text-slate-900">trade-configs</td><td>SVN-配置库</td><td>系统全局凭证</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">编辑</button><button class="text-sm font-medium text-red-600 hover:text-red-700">解绑</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+          </div>
+        </section>
+
+        <!-- Repositories -->
+        <section id="repositories" class="page-section space-y-5">
+          <div class="flex flex-wrap justify-between items-center gap-3">
+            <div class="flex flex-wrap gap-3">
+              <select class="ts-input ts-select w-44"><option>全部项目</option><option>核心交易平台</option></select>
+              <select class="ts-input ts-select w-36"><option>全部类型</option><option>GitLab</option><option>Gitea</option><option>SVN</option></select>
+            </div>
+            <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增仓库</button>
+          </div>
+          <div class="ts-card overflow-hidden">
+            <table class="ts-table">
+              <thead>
+                <tr><th>仓库名称</th><th>类型</th><th>关联项目</th><th>默认分支</th><th>凭证归属</th><th>健康状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="font-semibold text-slate-900">core-trade-backend</td><td><span class="tag-primary status-tag">GitLab</span></td><td>核心交易平台</td><td class="font-mono text-xs">develop</td><td>项目固定凭证</td><td><span class="tag-success status-tag">正常</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">测试</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                <tr><td class="font-semibold text-slate-900">core-trade-frontend</td><td><span class="tag-primary status-tag">GitLab</span></td><td>核心交易平台</td><td class="font-mono text-xs">develop</td><td>当前登录用户</td><td><span class="tag-success status-tag">正常</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">测试</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                <tr><td class="font-semibold text-slate-900">trade-configs</td><td><span class="tag-neutral status-tag">SVN</span></td><td>核心交易平台</td><td class="font-mono text-xs">-</td><td>系统全局凭证</td><td><span class="tag-danger status-tag">异常</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">测试</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Credentials -->
+        <section id="credentials" class="page-section space-y-5">
+          <div class="flex flex-wrap justify-between items-center gap-3">
+            <div class="flex flex-wrap gap-3">
+              <input type="text" placeholder="搜索凭证名称" class="ts-input w-64">
+              <select class="ts-input ts-select w-40"><option>全部类型</option><option>GitLab Token</option><option>Jenkins</option></select>
+              <select class="ts-input ts-select w-36"><option>全部范围</option><option>个人</option><option>项目级</option><option>系统全局</option></select>
+            </div>
+            <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增凭证</button>
+          </div>
+          <div class="ts-card overflow-hidden">
+            <table class="ts-table">
+              <thead>
+                <tr><th>凭证名称</th><th>类型</th><th>认证模式</th><th>作用范围</th><th>过期时间</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="font-semibold text-slate-900">GitLab-核心交易</td><td>GitLab Token</td><td>Token</td><td>项目级 · 核心交易平台</td><td class="text-slate-500">2026-12-31</td><td><span class="tag-success status-tag">正常</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openCredentialModal()">编辑</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">使用记录</button></td></tr>
+                <tr><td class="font-semibold text-slate-900">Jenkins-构建中心</td><td>Jenkins</td><td>Token</td><td>系统全局</td><td class="text-slate-500">2026-09-15</td><td><span class="tag-warning status-tag">即将过期</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openCredentialModal()">编辑</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">使用记录</button></td></tr>
+                <tr><td class="font-semibold text-slate-900">SVN-配置库</td><td>SVN</td><td>账号密码</td><td>系统全局</td><td class="text-slate-500">2026-01-01</td><td><span class="tag-danger status-tag">已过期</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openCredentialModal()">编辑</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">使用记录</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Commits -->
+        <section id="commits" class="page-section space-y-5">
+          <div class="flex flex-wrap gap-3">
+            <select class="ts-input ts-select w-44"><option>核心交易平台</option></select>
+            <select class="ts-input ts-select w-36"><option>develop</option></select>
+            <input type="text" placeholder="提交人" class="ts-input w-32">
+            <select class="ts-input ts-select w-36"><option>全部状态</option><option>合规</option><option>警告</option><option>不合规</option></select>
+            <button class="btn btn-primary h-10"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>同步提交</button>
+          </div>
+
+          <div class="ts-card overflow-hidden">
+            <table class="ts-table">
+              <thead>
+                <tr><th>Commit</th><th>作者</th><th>时间</th><th>消息摘要</th><th>变更类型</th><th>合规状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="font-mono text-xs text-slate-600">a1b2c3d4</td><td>张三</td><td class="text-slate-500">2 小时前</td><td class="font-medium text-slate-900">[A] 优化订单查询性能</td><td><span class="tag-info status-tag">A 类</span></td><td><span class="tag-success status-tag">合规</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                <tr><td class="font-mono text-xs text-slate-600">e5f6g7h8</td><td>李四</td><td class="text-slate-500">5 小时前</td><td class="font-medium text-slate-900">fix bug</td><td><span class="tag-neutral status-tag">-</span></td><td><span class="tag-danger status-tag">不合规</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                <tr><td class="font-mono text-xs text-slate-600">i9j0k1l2</td><td>王五</td><td class="text-slate-500">昨天</td><td class="font-medium text-slate-900">[F] 更新支付网关配置</td><td><span class="tag-warning status-tag">F 类</span></td><td><span class="tag-warning status-tag">警告</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="ts-card p-5 border-l-4 border-l-amber-400 flex justify-between items-center">
+            <div class="flex items-center">
+              <div class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mr-4">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              </div>
+              <div>
+                <p class="font-semibold text-slate-900">非法提交预警</p>
+                <p class="text-sm text-slate-500">发现 7 条不合规提交，其中 2 条包含配置项改动</p>
+              </div>
+            </div>
+            <button class="btn btn-secondary h-9">查看预警</button>
+          </div>
+        </section>
+
+        <!-- Tag Generator -->
+        <section id="tag-generator" class="page-section space-y-5">
+          <div class="ts-card p-6">
+            <div class="flex items-center mb-8 px-4">
+              <div class="step-item">
+                <div class="step-circle active" id="step-circle-1">1</div>
+                <div class="step-line" id="step-line-1"></div>
+              </div>
+              <div class="step-item">
+                <div class="step-circle" id="step-circle-2">2</div>
+                <div class="step-line" id="step-line-2"></div>
+              </div>
+              <div class="step-item">
+                <div class="step-circle" id="step-circle-3">3</div>
+              </div>
+            </div>
+
+            <!-- Step 1: 选择项目与分支 -->
+            <div id="tag-step-1" class="tag-step-panel active">
+              <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-900">步骤 1：选择项目与分支</h3>
+                <p class="text-sm text-slate-500">请确认发布来源</p>
+              </div>
+              <div class="grid grid-cols-2 gap-5 max-w-2xl">
+                <div><label class="block text-sm font-medium text-slate-700 mb-1.5">项目</label><select class="ts-input ts-select"><option selected>核心交易平台</option><option>数据中台</option><option>运维门户</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-700 mb-1.5">仓库</label><select class="ts-input ts-select"><option selected>core-trade-backend</option><option>core-trade-frontend</option><option>trade-configs</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-700 mb-1.5">来源分支</label><select class="ts-input ts-select"><option selected>develop</option><option>feature/pay</option><option>master</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-700 mb-1.5">起始 Tag</label><select class="ts-input ts-select"><option selected>v2.4.0</option><option>v2.3.9</option><option>v2.3.8</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-700 mb-1.5">发布类型</label><div class="flex space-x-6 mt-3">
+                  <label class="flex items-center cursor-pointer"><input type="radio" name="release-type" class="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500" checked><span class="ml-2 text-sm text-slate-700">正式版本</span></label>
+                  <label class="flex items-center cursor-pointer"><input type="radio" name="release-type" class="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"><span class="ml-2 text-sm text-slate-700">测试版本</span></label>
+                </div></div>
+              </div>
+              <div class="mt-8 flex justify-end">
+                <button onclick="switchTagStep(2)" class="btn btn-primary h-10 px-8">下一步：提取差异</button>
+              </div>
+            </div>
+
+            <!-- Step 2: 提取并编辑 commit 差异 -->
+            <div id="tag-step-2" class="tag-step-panel hidden">
+              <div class="flex justify-between items-center mb-6">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">步骤 2：提取并编辑 commit 差异</h3>
+                  <p class="text-sm text-slate-500">选择需要纳入本次发布的 commit，支持合并与排除</p>
+                </div>
+                <button class="btn btn-primary h-9 px-4"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>AI 辅助生成摘要</button>
+              </div>
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Commit List -->
+                <div class="lg:col-span-2">
+                  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div class="flex items-center gap-3">
+                      <label class="flex items-center text-sm text-slate-700 cursor-pointer"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">全选</label>
+                      <span class="text-sm text-slate-500">已选 8 / 12 条</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button class="btn btn-secondary h-8 text-xs px-3">合并选中</button>
+                      <button class="btn btn-secondary h-8 text-xs px-3">排除选中</button>
+                    </div>
+                  </div>
+                  <div class="ts-card overflow-hidden">
+                    <table class="ts-table">
+                      <thead>
+                        <tr><th class="w-10"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"></th><th>Commit</th><th>作者</th><th>消息摘要</th><th>变更类型</th><th>合规状态</th><th>操作</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr><td><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"></td><td class="font-mono text-xs text-slate-600">a1b2c3d4</td><td>张三</td><td class="font-medium text-slate-900">[A] 优化订单查询性能</td><td><span class="tag-info status-tag">A 类</span></td><td><span class="tag-success status-tag">合规</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                        <tr><td><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"></td><td class="font-mono text-xs text-slate-600">e5f6g7h8</td><td>李四</td><td class="font-medium text-slate-900">fix bug</td><td><span class="tag-neutral status-tag">-</span></td><td><span class="tag-danger status-tag">不合规</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                        <tr><td><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"></td><td class="font-mono text-xs text-slate-600">i9j0k1l2</td><td>王五</td><td class="font-medium text-slate-900">[F] 更新支付网关配置</td><td><span class="tag-warning status-tag">F 类</span></td><td><span class="tag-warning status-tag">警告</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                        <tr><td><input type="checkbox" class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"></td><td class="font-mono text-xs text-slate-600">b2c3d4e5</td><td>赵六</td><td class="font-medium text-slate-900">[A] 修复清算接口并发问题</td><td><span class="tag-info status-tag">A 类</span></td><td><span class="tag-success status-tag">合规</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                        <tr><td><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"></td><td class="font-mono text-xs text-slate-600">c3d4e5f6</td><td>张三</td><td class="font-medium text-slate-900">[F] 调整订单超时配置</td><td><span class="tag-warning status-tag">F 类</span></td><td><span class="tag-warning status-tag">警告</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                        <tr><td><input type="checkbox" class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"></td><td class="font-mono text-xs text-slate-600">d4e5f6g7</td><td>李四</td><td class="font-medium text-slate-900">docs: 更新接口文档</td><td><span class="tag-neutral status-tag">-</span></td><td><span class="tag-success status-tag">合规</span></td><td><button class="text-sm font-medium text-violet-600 hover:text-violet-700 mr-3">AI 审查</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">详情</button></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <!-- Statistics Panel -->
+                <div class="space-y-5">
+                  <div class="ts-card p-5">
+                    <h4 class="font-bold text-slate-900 mb-4">差异统计</h4>
+                    <div class="space-y-4">
+                      <div class="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <span class="text-sm text-slate-600">总 commit 数</span>
+                        <span class="text-lg font-bold text-slate-900">12</span>
+                      </div>
+                      <div class="flex justify-between items-center p-3 rounded-xl bg-blue-50 border border-blue-100">
+                        <span class="text-sm text-blue-700">A 类更新</span>
+                        <span class="text-lg font-bold text-blue-700">5</span>
+                      </div>
+                      <div class="flex justify-between items-center p-3 rounded-xl bg-amber-50 border border-amber-100">
+                        <span class="text-sm text-amber-700">F 类更新</span>
+                        <span class="text-lg font-bold text-amber-700">2</span>
+                      </div>
+                      <div class="flex justify-between items-center p-3 rounded-xl bg-violet-50 border border-violet-100">
+                        <span class="text-sm text-violet-700">配置项改动</span>
+                        <span class="text-lg font-bold text-violet-700">3</span>
+                      </div>
+                      <div class="flex justify-between items-center p-3 rounded-xl bg-red-50 border border-red-100">
+                        <span class="text-sm text-red-700">不合规提交</span>
+                        <span class="text-lg font-bold text-red-700">2</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ts-card p-5 border-l-4 border-l-amber-400">
+                    <div class="flex items-start">
+                      <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0 mr-3">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                      </div>
+                      <div>
+                        <p class="font-semibold text-slate-900">AI 风险提示</p>
+                        <p class="text-sm text-slate-500 mt-1">本次发布包含配置项改动与不合规提交，建议人工复核后再提交审批。</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-8 flex justify-between">
+                <button onclick="switchTagStep(1)" class="btn btn-secondary h-10 px-8">上一步</button>
+                <button onclick="switchTagStep(3)" class="btn btn-primary h-10 px-8">下一步：生成发布说明</button>
+              </div>
+            </div>
+
+            <!-- Step 3: 生成发布说明并提交 -->
+            <div id="tag-step-3" class="tag-step-panel hidden">
+              <div class="flex justify-between items-center mb-6">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">步骤 3：生成发布说明并提交</h3>
+                  <p class="text-sm text-slate-500">生成可编辑、可导出的软件发布规范文档</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="btn btn-secondary h-9 px-4">保存草稿</button>
+                  <button class="btn btn-secondary h-9 px-4">导出 Word</button>
+                  <button class="btn btn-secondary h-9 px-4">导出 PDF</button>
+                </div>
+              </div>
+
+              <div class="ts-card p-8 max-w-4xl mx-auto bg-white">
+                <h2 class="text-xl font-bold text-slate-900 text-center mb-8 border-b border-slate-200 pb-4">软件发布规范</h2>
+
+                <div class="space-y-6">
+                  <div class="grid grid-cols-2 gap-6">
+                    <div><label class="block text-sm font-medium text-slate-700 mb-1.5">当前版本号</label><input type="text" class="ts-input" value="VA.4.1.154"></div>
+                    <div><label class="block text-sm font-medium text-slate-700 mb-1.5">Git 提交哈希</label><input type="text" class="ts-input" value="271b688781e11ce76090b0ff1d281ec8d1dcd991"></div>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">变更类型</label>
+                    <div class="flex items-center gap-6">
+                      <label class="flex items-center cursor-pointer text-sm text-slate-700"><input type="checkbox" class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">无配置项改动</label>
+                      <label class="flex items-center cursor-pointer text-sm text-slate-700"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">有配置项改动</label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">更新内容：[A为功能增加 F为BUG修复]</label>
+                    <div class="space-y-2 pl-2">
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-500 w-6">1.</span><input type="text" class="ts-input" value="A 移除干扰用户绑定数据采集(DA) 的逻辑"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-500 w-6">2.</span><input type="text" class="ts-input" value="F 信号定时开关新增清除指令并优化控制逻辑"></div>
+                      <button class="text-sm text-blue-600 hover:text-blue-700 mt-1">+ 新增一条</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5">配置项改动[详见相关软件配置文件管理]</label>
+                    <textarea class="ts-input ts-textarea font-mono">[System]
+DeviceType=0</textarea>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">关联性改动[选填]</label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">PXX板卡硬件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">信号子模块硬件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">控制子模块硬件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">后台服务程序版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">场景管理程序版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">数学仿真软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">轨迹仿真软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">采集回放仪信号处理软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">采集回放仪数据管理软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">采集回放仪通信控制软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">采集回放仪板载显控软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">采集回放仪人机显控软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">导航增强上位机软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">信号单元后台软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">基准单元后台软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">信号单元数学仿真软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">信号单元硬件程序版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">基准单元硬件程序版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">阵列天线采集卡软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">阵列天线时钟加权软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">阵列天线系统加权软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">阵列天线信号转发软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                      <div class="flex items-center gap-2"><span class="text-sm text-slate-600 w-44 truncate">阵列天线上位机软件版本</span><input type="text" class="ts-input" placeholder="版本号"></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">是否影响其他功能</label>
+                    <div class="flex items-center gap-6">
+                      <label class="flex items-center cursor-pointer text-sm text-slate-700"><input type="radio" name="impact-other" class="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500" checked><span class="ml-2">否</span></label>
+                      <div class="flex items-center gap-2 flex-1">
+                        <label class="flex items-center cursor-pointer text-sm text-slate-700"><input type="radio" name="impact-other" class="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"><span class="ml-2">是</span></label>
+                        <input type="text" class="ts-input" placeholder="例：影响功率控制">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">测试验证：测试状态</label>
+                    <div class="flex items-center gap-6">
+                      <label class="flex items-center cursor-pointer text-sm text-slate-700"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">自测试通过</label>
+                      <label class="flex items-center cursor-pointer text-sm text-slate-700"><input type="checkbox" class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">研发测试复验通过</label>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-6">
+                    <div><label class="block text-sm font-medium text-slate-700 mb-1.5">发布人</label><input type="text" class="ts-input" value="蒋鑫"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-8 flex justify-between">
+                <button onclick="switchTagStep(2)" class="btn btn-secondary h-10 px-8">上一步</button>
+                <button class="btn btn-primary h-10 px-8">提交审批</button>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- Jenkins -->
+        <section id="jenkins" class="page-section space-y-5">
+          <div class="flex justify-between items-center">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900">Jenkins 构建状态</h3>
+              <p class="text-sm text-slate-500">实时监控构建任务与日志</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <button class="btn btn-primary h-10 px-5">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                立即构建
+              </button>
+              <button class="btn btn-secondary h-9">配置任务</button>
+            </div>
+          </div>
+          <div class="ts-card overflow-hidden">
+            <table class="ts-table">
+              <thead>
+                <tr><th>任务名</th><th>构建编号</th><th>版本号</th><th>状态</th><th>开始时间</th><th>耗时</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="font-semibold text-slate-900">core-trade-build</td><td class="font-mono text-xs">#128</td><td class="font-mono text-xs">v2.4.1-test.3</td><td><span class="tag-warning status-tag">构建中</span></td><td class="text-slate-500">10:23</td><td>04:32</td><td><button class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 mr-3"><svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>构建</button><button class="text-sm font-medium text-slate-500 hover:text-slate-700">查看日志</button></td></tr>
+                <tr><td class="font-semibold text-slate-900">core-trade-build</td><td class="font-mono text-xs">#127</td><td class="font-mono text-xs">v2.4.1</td><td><span class="tag-success status-tag">成功</span></td><td class="text-slate-500">昨天</td><td>12:45</td><td><button class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 mr-3"><svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>构建</button><button class="text-sm font-medium text-slate-500 hover:text-slate-700">查看日志</button></td></tr>
+                <tr><td class="font-semibold text-slate-900">data-hub-build</td><td class="font-mono text-xs">#56</td><td class="font-mono text-xs">v2.3.9</td><td><span class="tag-danger status-tag">失败</span></td><td class="text-slate-500">3 天前</td><td>05:12</td><td><button class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 mr-3"><svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>构建</button><button class="text-sm font-medium text-slate-500 hover:text-slate-700">查看日志</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="ts-card p-5">
+            <div class="flex justify-between items-center mb-4">
+              <div class="flex items-center">
+                <span class="w-2 h-2 bg-amber-400 rounded-full animate-pulse-soft mr-2"></span>
+                <h4 class="font-bold text-slate-900">构建日志 #128</h4>
+              </div>
+              <span class="text-xs text-slate-500 font-mono">实时刷新</span>
+            </div>
+            <pre class="bg-slate-900 text-emerald-400 text-xs p-4 rounded-xl overflow-auto h-96 font-mono leading-relaxed">[10:23:01] Started by user admin
+[10:23:05] Running on Jenkins in /var/jenkins/workspace/core-trade-build
+[10:23:12] git checkout v2.4.1-test.3
+[10:23:45] mvn clean package -DskipTests
+[10:24:30] BUILD IN PROGRESS...
+[10:25:12] Packaging artifacts
+[10:26:33] Uploading to artifact repository</pre>
+          </div>
+        </section>
+
+        <!-- Workflow -->
+        <section id="workflow" class="page-section space-y-5">
+          <div class="ts-card overflow-hidden">
+            <div class="border-b border-slate-100 bg-slate-50/50">
+              <div class="flex px-4">
+                <button class="tab-btn active" data-wf-tab="todo">我的待办</button>
+                <button class="tab-btn" data-wf-tab="done">我的已办</button>
+                <button class="tab-btn" data-wf-tab="definition">流程定义</button>
+              </div>
+            </div>
+            <div class="p-5">
+              <!-- 我的待办 -->
+              <div id="wf-todo" class="wf-tab-panel active">
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>审批标题</th><th>申请人</th><th>项目</th><th>当前节点</th><th>提交时间</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="font-semibold text-slate-900">发布 v2.5.0</td><td>李四</td><td>核心交易平台</td><td>项目经理审批</td><td class="text-slate-500">10 分钟前</td><td><button class="btn btn-primary h-8 text-xs px-4">审批</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">发布 v2.4.2-test.1</td><td>王五</td><td>核心交易平台</td><td>测试负责人审批</td><td class="text-slate-500">1 小时前</td><td><button class="btn btn-primary h-8 text-xs px-4">审批</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <!-- 我的已办 -->
+              <div id="wf-done" class="wf-tab-panel hidden">
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>审批标题</th><th>申请人</th><th>项目</th><th>审批动作</th><th>审批时间</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="font-semibold text-slate-900">发布 v2.3.9</td><td>赵六</td><td>数据中台</td><td><span class="tag-success status-tag">通过</span></td><td class="text-slate-500">2026-06-10</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <!-- 流程定义 -->
+              <div id="wf-definition" class="wf-tab-panel hidden">
+                <div class="flex flex-col lg:flex-row gap-5 h-[560px]">
+                  <!-- Node Palette -->
+                  <div class="w-full lg:w-52 flex-shrink-0">
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 h-full">
+                      <h4 class="text-sm font-bold text-slate-900 mb-3">节点工具箱</h4>
+                      <div class="space-y-2">
+                        <div class="palette-node flex items-center p-2.5 rounded-lg bg-white border border-slate-200 shadow-sm cursor-move hover:border-blue-400 transition-colors" data-type="start">
+                          <div class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mr-2.5 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg></div>
+                          <span class="text-sm font-medium text-slate-700">开始</span>
+                        </div>
+                        <div class="palette-node flex items-center p-2.5 rounded-lg bg-white border border-slate-200 shadow-sm cursor-move hover:border-blue-400 transition-colors" data-type="approval">
+                          <div class="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center mr-2.5 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                          <span class="text-sm font-medium text-slate-700">审批节点</span>
+                        </div>
+                        <div class="palette-node flex items-center p-2.5 rounded-lg bg-white border border-slate-200 shadow-sm cursor-move hover:border-blue-400 transition-colors" data-type="cc">
+                          <div class="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center mr-2.5 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg></div>
+                          <span class="text-sm font-medium text-slate-700">抄送节点</span>
+                        </div>
+                        <div class="palette-node flex items-center p-2.5 rounded-lg bg-white border border-slate-200 shadow-sm cursor-move hover:border-blue-400 transition-colors" data-type="condition">
+                          <div class="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center mr-2.5 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></div>
+                          <span class="text-sm font-medium text-slate-700">条件分支</span>
+                        </div>
+                        <div class="palette-node flex items-center p-2.5 rounded-lg bg-white border border-slate-200 shadow-sm cursor-move hover:border-blue-400 transition-colors" data-type="end">
+                          <div class="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center mr-2.5 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg></div>
+                          <span class="text-sm font-medium text-slate-700">结束</span>
+                        </div>
+                      </div>
+                      <div class="mt-5 pt-4 border-t border-slate-200">
+                        <h5 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">图例</h5>
+                        <div class="space-y-1.5 text-xs text-slate-600">
+                          <div class="flex items-center"><span class="w-3 h-3 rounded-full bg-emerald-500 mr-2"></span>开始/结束</div>
+                          <div class="flex items-center"><span class="w-3 h-3 rounded bg-blue-500 mr-2"></span>审批</div>
+                          <div class="flex items-center"><span class="w-3 h-3 rounded bg-violet-500 mr-2"></span>抄送</div>
+                          <div class="flex items-center"><span class="w-3 h-3 rounded bg-amber-500 mr-2"></span>条件</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- LogicFlow Canvas -->
+                  <div class="flex-1 ts-card overflow-hidden flex flex-col">
+                    <div class="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
+                      <h4 class="font-bold text-slate-900">发布审批流程设计</h4>
+                      <div class="flex items-center gap-2">
+                        <button class="btn btn-secondary h-8 text-xs px-3" onclick="resetWorkflow()">重置</button>
+                        <button class="btn btn-primary h-8 text-xs px-3" onclick="saveWorkflow()">保存流程</button>
+                      </div>
+                    </div>
+                    <div id="logicflow-container" class="flex-1 bg-white"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="ts-card p-6">
+            <div class="flex items-center mb-5">
+              <div class="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mr-4"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg></div>
+              <div>
+                <h4 class="font-bold text-slate-900">审批详情：发布 v2.5.0</h4>
+                <p class="text-sm text-slate-500">请核对发布信息并填写审批意见</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-5 mb-5">
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-100"><label class="text-xs font-medium text-slate-500 uppercase">版本号</label><p class="text-sm font-semibold text-slate-900 mt-1 font-mono">v2.5.0</p></div>
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-100"><label class="text-xs font-medium text-slate-500 uppercase">发布类型</label><p class="text-sm font-semibold text-slate-900 mt-1">正式</p></div>
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-100"><label class="text-xs font-medium text-slate-500 uppercase">来源分支</label><p class="text-sm font-semibold text-slate-900 mt-1 font-mono">master</p></div>
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-100"><label class="text-xs font-medium text-slate-500 uppercase">申请人</label><p class="text-sm font-semibold text-slate-900 mt-1">李四</p></div>
+            </div>
+            <div class="mb-5"><label class="block text-sm font-medium text-slate-700 mb-1.5">审批意见</label><textarea class="ts-input ts-textarea" placeholder="请输入审批意见"></textarea></div>
+            <div class="flex space-x-3">
+              <button class="btn btn-success h-10 px-6"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>通过</button>
+              <button class="btn btn-danger h-10 px-6"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>驳回</button>
+              <button class="btn btn-secondary h-10 px-6">转交</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Release Board -->
+        <section id="release-board" class="page-section space-y-5">
+          <div class="flex flex-wrap gap-3">
+            <select class="ts-input ts-select w-44"><option>全部项目</option><option>核心交易平台</option></select>
+            <input type="text" placeholder="版本号" class="ts-input w-44">
+            <input type="date" class="ts-input w-40">
+            <select class="ts-input ts-select w-32"><option>全部类型</option><option>正式</option><option>测试</option></select>
+            <select class="ts-input ts-select w-32"><option>全部状态</option></select>
+          </div>
+          <div class="ts-card overflow-hidden">
+            <table class="ts-table">
+              <thead>
+                <tr><th>版本号</th><th>项目</th><th>类型</th><th>分支</th><th>发布人</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="font-mono font-medium text-slate-900">v2.4.1</td><td>核心交易平台</td><td><span class="tag-primary status-tag">正式</span></td><td class="font-mono text-xs">master</td><td>张三</td><td><span class="tag-success status-tag">已发布</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">详情</button><button class="text-sm font-medium text-slate-500 hover:text-slate-700">导出</button></td></tr>
+                <tr><td class="font-mono font-medium text-slate-900">v2.4.1-test.3</td><td>核心交易平台</td><td><span class="tag-warning status-tag">测试</span></td><td class="font-mono text-xs">feature/pay</td><td>李四</td><td><span class="tag-warning status-tag">构建中</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">详情</button><button class="text-sm font-medium text-slate-500 hover:text-slate-700">导出</button></td></tr>
+                <tr><td class="font-mono font-medium text-slate-900">v2.5.0</td><td>核心交易平台</td><td><span class="tag-primary status-tag">正式</span></td><td class="font-mono text-xs">master</td><td>李四</td><td><span class="tag-info status-tag">审批中</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3">详情</button><button class="text-sm font-medium text-slate-500 hover:text-slate-700">导出</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- System -->
+        <section id="system" class="page-section space-y-5">
+          <div class="ts-card flex overflow-hidden">
+            <div class="w-52 border-r border-slate-100 bg-slate-50/50 flex-shrink-0">
+              <nav class="p-3 space-y-1" id="system-nav">
+                <a href="#" onclick="switchSystemTab('users')" id="system-nav-users" class="system-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-blue-700 bg-blue-50 rounded-xl transition-colors"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>用户管理</a>
+                <a href="#" onclick="switchSystemTab('roles')" id="system-nav-roles" class="system-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>角色权限</a>
+                <a href="#" onclick="switchSystemTab('config')" id="system-nav-config" class="system-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>系统配置</a>
+                <a href="#" onclick="switchSystemTab('logs')" id="system-nav-logs" class="system-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"><svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>操作日志</a>
+              </nav>
+            </div>
+            <div class="flex-1 p-6 min-w-0">
+
+              <!-- 用户管理 -->
+              <div id="system-panel-users" class="system-panel active">
+                <div class="flex justify-between items-center mb-5">
+                  <div>
+                    <h3 class="font-bold text-slate-900">用户管理</h3>
+                    <p class="text-sm text-slate-500">管理系统用户与 LDAP 同步</p>
+                  </div>
+                  <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>同步 LDAP</button>
+                </div>
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>用户名</th><th>显示名</th><th>部门</th><th>来源</th><th>角色</th><th>状态</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="font-mono text-xs text-slate-600">zhangsan</td><td class="font-semibold text-slate-900">张三</td><td>研发部</td><td><span class="tag-primary status-tag">LDAP</span></td><td>发布工程师</td><td><span class="tag-success status-tag">启用</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑角色</button></td></tr>
+                    <tr><td class="font-mono text-xs text-slate-600">admin</td><td class="font-semibold text-slate-900">系统管理员</td><td>运维部</td><td><span class="tag-neutral status-tag">本地</span></td><td>超级管理员</td><td><span class="tag-success status-tag">启用</span></td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑角色</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 角色权限 -->
+              <div id="system-panel-roles" class="system-panel hidden">
+                <div class="flex justify-between items-center mb-5">
+                  <div>
+                    <h3 class="font-bold text-slate-900">角色权限</h3>
+                    <p class="text-sm text-slate-500">定义角色及菜单/按钮/接口权限</p>
+                  </div>
+                  <button class="btn btn-primary h-9"><svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>新增角色</button>
+                </div>
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>角色名称</th><th>角色编码</th><th>描述</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="font-semibold text-slate-900">超级管理员</td><td class="font-mono text-xs text-slate-600">admin</td><td class="text-slate-600">系统全部权限</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openRolePermissionDrawer('admin')">编辑权限</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">发布工程师</td><td class="font-mono text-xs text-slate-600">release_engineer</td><td class="text-slate-600">负责版本发布与 Tag 管理</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openRolePermissionDrawer('release_engineer')">编辑权限</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">项目管理员</td><td class="font-mono text-xs text-slate-600">project_manager</td><td class="text-slate-600">管理项目、成员与审批流</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openRolePermissionDrawer('project_manager')">编辑权限</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">开发人员</td><td class="font-mono text-xs text-slate-600">developer</td><td class="text-slate-600">查看提交记录与发布看板</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openRolePermissionDrawer('developer')">编辑权限</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                    <tr><td class="font-semibold text-slate-900">测试人员</td><td class="font-mono text-xs text-slate-600">tester</td><td class="text-slate-600">参与审批与查看构建状态</td><td><button class="text-sm font-medium text-blue-600 hover:text-blue-700 mr-3" onclick="openRolePermissionDrawer('tester')">编辑权限</button><button class="text-sm font-medium text-blue-600 hover:text-blue-700">编辑</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 系统配置 -->
+              <div id="system-panel-config" class="system-panel hidden">
+                <div class="flex h-[560px]">
+                  <div class="w-44 border-r border-slate-100 pr-4 flex-shrink-0">
+                    <nav class="space-y-1" id="config-category-nav">
+                      <a href="#" onclick="switchConfigCategory('ldap')" id="config-nav-ldap" class="config-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-blue-700 bg-blue-50 rounded-xl transition-colors">LDAP/AD</a>
+                      <a href="#" onclick="switchConfigCategory('jenkins')" id="config-nav-jenkins" class="config-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Jenkins</a>
+                      <a href="#" onclick="switchConfigCategory('ai')" id="config-nav-ai" class="config-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">AI 服务</a>
+                      <a href="#" onclick="switchConfigCategory('storage')" id="config-nav-storage" class="config-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">存储</a>
+                      <a href="#" onclick="switchConfigCategory('notify')" id="config-nav-notify" class="config-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">通知</a>
+                      <a href="#" onclick="switchConfigCategory('security')" id="config-nav-security" class="config-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">安全策略</a>
+                      <a href="#" onclick="switchConfigCategory('announcement')" id="config-nav-announcement" class="config-nav-item flex items-center px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">公告/模板</a>
+                    </nav>
+                  </div>
+                  <div class="flex-1 pl-6 min-w-0">
+                    <div class="flex justify-between items-center mb-5">
+                      <div>
+                        <h3 class="font-bold text-slate-900" id="config-title">LDAP/AD 配置</h3>
+                        <p class="text-sm text-slate-500" id="config-desc">配置域账号接入参数</p>
+                      </div>
+                      <button class="btn btn-primary h-9">保存配置</button>
+                    </div>
+                    <div id="config-panel-ldap" class="config-panel active space-y-5">
+                      <div class="grid grid-cols-2 gap-5">
+                        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">服务器地址</label><input type="text" class="ts-input" value="ldap://corp.example.com:389"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">Bind DN</label><input type="text" class="ts-input" value="CN=svc-ldap,OU=Service,DC=corp,DC=example,DC=com"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">Bind 密码</label><input type="password" class="ts-input" value="********"></div>
+                        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">用户搜索 OU</label><input type="text" class="ts-input" value="OU=Users,DC=corp,DC=example,DC=com"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">用户名字段</label><input type="text" class="ts-input" value="sAMAccountName"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">邮箱字段</label><input type="text" class="ts-input" value="mail"></div>
+                      </div>
+                    </div>
+                    <div id="config-panel-jenkins" class="config-panel hidden space-y-5">
+                      <div class="grid grid-cols-2 gap-5">
+                        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">默认 Jenkins 地址</label><input type="text" class="ts-input" value="https://jenkins.corp.example.com"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">默认超时时间（秒）</label><input type="number" class="ts-input" value="300"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">并发构建数</label><input type="number" class="ts-input" value="5"></div>
+                      </div>
+                    </div>
+                    <div id="config-panel-ai" class="config-panel hidden space-y-5">
+                      <div class="grid grid-cols-2 gap-5">
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">Provider</label><select class="ts-input ts-select"><option selected>Anthropic</option><option>OpenAI</option></select></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">默认模型</label><input type="text" class="ts-input" value="claude-sonnet-4-6"></div>
+                        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">Base URL</label><input type="text" class="ts-input" value="https://api.anthropic.com/v1"></div>
+                        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">API Key</label><input type="password" class="ts-input" value="sk-********"></div>
+                      </div>
+                    </div>
+                    <div id="config-panel-storage" class="config-panel hidden space-y-5">
+                      <div class="grid grid-cols-2 gap-5">
+                        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">文件存储路径</label><input type="text" class="ts-input" value="/data/traceship/files"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">正式发布目录</label><input type="text" class="ts-input" value="releases/"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">测试版本目录</label><input type="text" class="ts-input" value="test-releases/"></div>
+                      </div>
+                    </div>
+                    <div id="config-panel-notify" class="config-panel hidden space-y-5">
+                      <div class="grid grid-cols-2 gap-5">
+                        <div class="col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1.5">邮件 SMTP 服务器</label><input type="text" class="ts-input" value="smtp.corp.example.com"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">发件人</label><input type="text" class="ts-input" value="traceship@corp.example.com"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">企业微信 Webhook</label><input type="text" class="ts-input" value="https://qyapi.weixin.qq.com/cgi-bin/webhook/..."></div>
+                      </div>
+                    </div>
+                    <div id="config-panel-security" class="config-panel hidden space-y-5">
+                      <div class="grid grid-cols-2 gap-5">
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">Token 过期时间（小时）</label><input type="number" class="ts-input" value="8"></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">密码最小长度</label><input type="number" class="ts-input" value="8"></div>
+                        <div class="col-span-2"><label class="flex items-center cursor-pointer"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"><span class="ml-2 text-sm text-slate-700">强制密码包含大小写字母与数字</span></label></div>
+                      </div>
+                    </div>
+                    <div id="config-panel-announcement" class="config-panel hidden space-y-5">
+                      <div><label class="block text-sm font-medium text-slate-700 mb-1.5">系统公告</label><textarea class="ts-input ts-textarea" placeholder="请输入系统公告，登录后将展示给用户">系统将于本周末进行例行维护，请提前安排发布计划。</textarea></div>
+                      <div><label class="block text-sm font-medium text-slate-700 mb-1.5">发布通知模板</label><textarea class="ts-input ts-textarea" placeholder="支持 Markdown 模板变量">{{version}} 已发布，请各业务方注意验证。</textarea></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 操作日志 -->
+              <div id="system-panel-logs" class="system-panel hidden">
+                <div class="flex justify-between items-center mb-5">
+                  <div>
+                    <h3 class="font-bold text-slate-900">操作日志</h3>
+                    <p class="text-sm text-slate-500">查看系统关键操作日志，支持筛选与导出</p>
+                  </div>
+                  <button class="btn btn-secondary h-9">导出日志</button>
+                </div>
+                <div class="flex flex-wrap gap-3 mb-5">
+                  <input type="date" class="ts-input w-40" value="2026-06-01">
+                  <span class="self-center text-slate-400">至</span>
+                  <input type="date" class="ts-input w-40" value="2026-06-18">
+                  <input type="text" placeholder="用户" class="ts-input w-32">
+                  <select class="ts-input ts-select w-36"><option>全部类型</option><option>新增</option><option>修改</option><option>删除</option><option>查询</option><option>审批</option><option>发布</option></select>
+                  <select class="ts-input ts-select w-36"><option>全部资源</option><option>项目</option><option>仓库</option><option>发布</option><option>用户</option><option>凭证</option></select>
+                </div>
+                <table class="ts-table">
+                  <thead>
+                    <tr><th>操作时间</th><th>用户</th><th>操作模块</th><th>操作类型</th><th>资源类型</th><th>资源 ID</th><th>IP 地址</th><th>操作结果</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="text-slate-500">2026-06-18 10:23:15</td><td class="font-semibold text-slate-900">张三</td><td>发布管理</td><td><span class="tag-primary status-tag">发布</span></td><td>发布</td><td class="font-mono text-xs text-slate-600">128</td><td class="font-mono text-xs text-slate-600">10.0.4.12</td><td><span class="tag-success status-tag">成功</span></td></tr>
+                    <tr><td class="text-slate-500">2026-06-18 09:56:02</td><td class="font-semibold text-slate-900">李四</td><td>工作流审批</td><td><span class="tag-success status-tag">审批</span></td><td>发布</td><td class="font-mono text-xs text-slate-600">128</td><td class="font-mono text-xs text-slate-600">10.0.4.18</td><td><span class="tag-success status-tag">通过</span></td></tr>
+                    <tr><td class="text-slate-500">2026-06-17 18:12:44</td><td class="font-semibold text-slate-900">admin</td><td>系统管理</td><td><span class="tag-warning status-tag">修改</span></td><td>用户</td><td class="font-mono text-xs text-slate-600">5</td><td class="font-mono text-xs text-slate-600">10.0.4.2</td><td><span class="tag-success status-tag">成功</span></td></tr>
+                    <tr><td class="text-slate-500">2026-06-17 16:45:30</td><td class="font-semibold text-slate-900">王五</td><td>凭证管理</td><td><span class="tag-danger status-tag">删除</span></td><td>凭证</td><td class="font-mono text-xs text-slate-600">12</td><td class="font-mono text-xs text-slate-600">10.0.4.25</td><td><span class="tag-danger status-tag">失败</span></td></tr>
+                    <tr><td class="text-slate-500">2026-06-17 14:22:09</td><td class="font-semibold text-slate-900">张三</td><td>项目管理</td><td><span class="tag-primary status-tag">新增</span></td><td>项目</td><td class="font-mono text-xs text-slate-600">CORE-TRADE</td><td class="font-mono text-xs text-slate-600">10.0.4.12</td><td><span class="tag-success status-tag">成功</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Credential Edit Modal -->
+  <div id="credential-modal" class="modal-backdrop" onclick="if(event.target === this) closeCredentialModal()">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold text-slate-900">编辑凭证</h3>
+        <button onclick="closeCredentialModal()" class="text-slate-400 hover:text-slate-600" aria-label="关闭"
+          ><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+      </div>
+      <div class="modal-body space-y-5">
+        <div><label class="block text-sm font-medium text-slate-700 mb-1.5"><span class="text-red-500 mr-1">*</span>凭证名称</label><input type="text" class="ts-input" value="GitLab-核心交易"></div>
+        <div class="grid grid-cols-2 gap-5">
+          <div><label class="block text-sm font-medium text-slate-700 mb-1.5"><span class="text-red-500 mr-1">*</span>凭证类型</label><select class="ts-input ts-select"><option selected>GitLab Token</option><option>Gitea Token</option><option>SVN</option><option>Jenkins</option><option>LDAP</option><option>AI Key</option><option>通用 Token</option><option>通用账号密码</option></select></div>
+          <div><label class="block text-sm font-medium text-slate-700 mb-1.5"><span class="text-red-500 mr-1">*</span>认证模式</label><select class="ts-input ts-select"><option selected>Token</option><option>账号密码</option></select></div>
+        </div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1.5"><span class="text-red-500 mr-1">*</span>凭证内容</label><input type="password" class="ts-input" placeholder="不修改请留空"><p class="text-xs text-slate-500 mt-1.5">编辑时留空表示不修改原凭证内容</p></div>
+        <div class="grid grid-cols-2 gap-5">
+          <div><label class="block text-sm font-medium text-slate-700 mb-1.5"><span class="text-red-500 mr-1">*</span>作用范围</label><select class="ts-input ts-select"><option>个人</option><option selected>项目级</option><option>系统全局</option></select></div>
+          <div><label class="block text-sm font-medium text-slate-700 mb-1.5"><span class="text-red-500 mr-1">*</span>关联项目</label><select class="ts-input ts-select"><option selected>核心交易平台</option><option>数据中台</option><option>运维门户</option></select></div>
+        </div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">过期时间</label><input type="date" class="ts-input w-40" value="2026-12-31"></div>
+        <div><label class="block text-sm font-medium text-slate-700 mb-1.5">备注</label><textarea class="ts-input ts-textarea" placeholder="请输入备注"></textarea></div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeCredentialModal()" class="btn btn-secondary h-9">取消</button>
+        <button onclick="closeCredentialModal()" class="btn btn-primary h-9">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role Permission Drawer -->
+  <div id="role-permission-overlay" class="drawer-overlay" onclick="closeRolePermissionDrawer()"></div>
+  <div id="role-permission-drawer" class="drawer">
+    <div class="drawer-header">
+      <h3 class="text-lg font-bold text-slate-900" id="role-permission-title">配置权限</h3>
+      <button onclick="closeRolePermissionDrawer()" class="text-slate-400 hover:text-slate-600" aria-label="关闭"
+        ><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+    </div>
+    <div class="drawer-body space-y-6">
+      <div>
+        <h4 class="text-sm font-bold text-slate-900 mb-3">菜单权限</h4>
+        <div class="space-y-2 text-sm text-slate-700">
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">工作台</label>
+          <label class="flex items-center pl-5"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">仪表盘</label>
+          <label class="flex items-center pl-5"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">发布看板</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">项目管理</label>
+          <label class="flex items-center pl-5"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">项目列表</label>
+          <label class="flex items-center pl-5"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">项目详情</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">凭证管理</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">系统管理</label>
+        </div>
+      </div>
+      <div>
+        <h4 class="text-sm font-bold text-slate-900 mb-3">按钮权限</h4>
+        <div class="space-y-2 text-sm text-slate-700">
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">新增项目</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">删除项目</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">推送 Tag</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">审批驳回</label>
+        </div>
+      </div>
+      <div>
+        <h4 class="text-sm font-bold text-slate-900 mb-3">接口权限</h4>
+        <div class="space-y-2 text-sm text-slate-700">
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">/api/projects/ GET</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">/api/projects/ POST</label>
+          <label class="flex items-center"><input type="checkbox" checked class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 mr-2">/api/releases/ POST</label>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-footer">
+      <button onclick="closeRolePermissionDrawer()" class="btn btn-secondary h-9">取消</button>
+      <button onclick="closeRolePermissionDrawer()" class="btn btn-primary h-9">保存权限</button>
+    </div>
+  </div>
+
+  <script>
+
+    // 项目列表 / 编辑视图切换
+    function showProjectEdit(projectCode) {
+      document.getElementById('project-list-view').classList.add('hidden');
+      document.getElementById('project-edit-view').classList.remove('hidden');
+      document.getElementById('page-title').textContent = '项目详情';
+    }
+    function showProjectList() {
+      document.getElementById('project-list-view').classList.remove('hidden');
+      document.getElementById('project-edit-view').classList.add('hidden');
+      document.getElementById('page-title').textContent = '项目管理';
+    }
+
+    function switchLoginTab(tab) {
+      document.getElementById('login-tab-ldap').className = tab === 'ldap'
+        ? 'flex-1 pb-3 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 transition-colors'
+        : 'flex-1 pb-3 text-sm font-medium text-slate-500 border-b-2 border-transparent hover:text-slate-700 transition-colors';
+      document.getElementById('login-tab-local').className = tab === 'local'
+        ? 'flex-1 pb-3 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 transition-colors'
+        : 'flex-1 pb-3 text-sm font-medium text-slate-500 border-b-2 border-transparent hover:text-slate-700 transition-colors';
+    }
+    function doLogin() {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app-screen').classList.remove('hidden');
+    }
+    const pageTitles = {
+      dashboard: '仪表盘',
+      projects: '项目管理',
+      repositories: '仓库管理',
+      credentials: '凭证管理',
+      commits: '提交规范审查',
+      'tag-generator': 'Tag 生成与发布',
+      jenkins: 'Jenkins 构建',
+      workflow: '工作流审批',
+      'release-board': '发布看板',
+      system: '系统管理'
+    };
+    function switchPage(page) {
+      document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+      document.getElementById(page).classList.add('active');
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.getElementById('nav-' + page).classList.add('active');
+      document.getElementById('page-title').textContent = pageTitles[page] || '';
+      if (page === 'projects') { showProjectList(); }
+    }
+
+    // Tab handling (general + workflow-specific)
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const tabName = this.dataset.wfTab;
+        const parent = this.closest('div');
+        parent.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+
+        if (tabName) {
+          // Workflow-specific tab panel switching
+          document.querySelectorAll('.wf-tab-panel').forEach(p => p.classList.remove('active'));
+          document.getElementById('wf-' + tabName).classList.add('active');
+          if (tabName === 'definition' && !window.lfInitialized) {
+            setTimeout(initLogicFlow, 50);
+            window.lfInitialized = true;
+          }
+          if (tabName === 'definition' && window.lf) {
+            setTimeout(() => window.lf.resize(), 60);
+          }
+        }
+      });
+    });
+
+    // LogicFlow Workflow Designer
+    function initLogicFlow() {
+      const container = document.getElementById('logicflow-container');
+      if (!container) return;
+      const lf = new LogicFlow({
+        container: container,
+        grid: { type: 'dot', size: 20 },
+        background: { color: '#ffffff' },
+        width: container.clientWidth,
+        height: container.clientHeight,
+        edgeTextDraggable: true,
+        nodeTextDraggable: true
+      });
+
+      const nodes = [
+        { id: 'start', type: 'circle', x: 100, y: 280, text: '开始', style: { fill: '#10B981', stroke: '#059669', color: '#ffffff' }, r: 32 },
+        { id: 'pm', type: 'rect', x: 280, y: 280, text: '项目经理审批', style: { fill: '#2563EB', stroke: '#1D4ED8', color: '#ffffff', borderRadius: 8 } },
+        { id: 'tester', type: 'rect', x: 480, y: 200, text: '测试负责人审批', style: { fill: '#2563EB', stroke: '#1D4ED8', color: '#ffffff', borderRadius: 8 } },
+        { id: 'condition', type: 'polygon', x: 480, y: 360, text: '配置项改动？', style: { fill: '#F59E0B', stroke: '#D97706', color: '#ffffff' }, points: [[0, -30], [70, 0], [0, 30], [-70, 0]] },
+        { id: 'cc', type: 'rect', x: 680, y: 280, text: '抄送运维', style: { fill: '#8B5CF6', stroke: '#7C3AED', color: '#ffffff', borderRadius: 8 } },
+        { id: 'end', type: 'circle', x: 860, y: 280, text: '结束', style: { fill: '#64748B', stroke: '#475569', color: '#ffffff' }, r: 32 }
+      ];
+
+      const edges = [
+        { id: 'e1', type: 'polyline', sourceNodeId: 'start', targetNodeId: 'pm' },
+        { id: 'e2', type: 'polyline', sourceNodeId: 'pm', targetNodeId: 'tester', text: '通过' },
+        { id: 'e3', type: 'polyline', sourceNodeId: 'tester', targetNodeId: 'condition', text: '通过' },
+        { id: 'e4', type: 'polyline', sourceNodeId: 'condition', targetNodeId: 'cc', text: '是' },
+        { id: 'e5', type: 'polyline', sourceNodeId: 'condition', targetNodeId: 'end', text: '否' },
+        { id: 'e6', type: 'polyline', sourceNodeId: 'cc', targetNodeId: 'end' }
+      ];
+
+      lf.render({ nodes, edges });
+      window.lf = lf;
+
+      window.addEventListener('resize', () => {
+        if (window.lf && container) {
+          window.lf.resize(container.clientWidth, container.clientHeight);
+        }
+      });
+    }
+
+    function resetWorkflow() {
+      if (window.lf) {
+        window.lf.clearData();
+      }
+    }
+
+    function saveWorkflow() {
+      if (window.lf) {
+        const data = window.lf.getGraphData();
+        alert('流程定义已保存（演示）');
+        console.log('Workflow graph data:', data);
+      }
+    }
+
+    // Tag generator step switching
+    function switchTagStep(step) {
+      document.querySelectorAll('.tag-step-panel').forEach(p => p.classList.remove('active'));
+      const panel = document.getElementById('tag-step-' + step);
+      if (panel) panel.classList.add('active');
+      for (let i = 1; i <= 3; i++) {
+        const circle = document.getElementById('step-circle-' + i);
+        const line = document.getElementById('step-line-' + i);
+        if (!circle) continue;
+        if (i < step) {
+          circle.classList.remove('active');
+          circle.classList.add('completed');
+        } else if (i === step) {
+          circle.classList.add('active');
+          circle.classList.remove('completed');
+        } else {
+          circle.classList.remove('active', 'completed');
+        }
+        if (line) {
+          if (i < step) {
+            line.classList.add('active');
+          } else {
+            line.classList.remove('active');
+          }
+        }
+      }
+    }
+
+    // Project detail tabs
+    function switchProjectTab(tab, btn) {
+      document.querySelectorAll('.project-tab-panel').forEach(p => p.classList.remove('active'));
+      const panel = document.getElementById('project-tab-' + tab);
+      if (panel) panel.classList.add('active');
+      const parent = btn.closest('div');
+      if (parent) {
+        parent.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      }
+      btn.classList.add('active');
+    }
+
+    // System management sub-tabs
+    function switchSystemTab(tab) {
+      document.querySelectorAll('.system-panel').forEach(p => p.classList.remove('active'));
+      const panel = document.getElementById('system-panel-' + tab);
+      if (panel) panel.classList.add('active');
+      document.querySelectorAll('.system-nav-item').forEach(n => {
+        n.classList.remove('text-blue-700', 'bg-blue-50');
+        n.classList.add('text-slate-600', 'hover:bg-slate-100');
+      });
+      const activeNav = document.getElementById('system-nav-' + tab);
+      if (activeNav) {
+        activeNav.classList.remove('text-slate-600', 'hover:bg-slate-100');
+        activeNav.classList.add('text-blue-700', 'bg-blue-50');
+      }
+    }
+
+    // System config category tabs
+    const configTitles = {
+      ldap: { title: 'LDAP/AD 配置', desc: '配置域账号接入参数' },
+      jenkins: { title: 'Jenkins 配置', desc: '配置默认 Jenkins 地址与超时' },
+      ai: { title: 'AI 服务配置', desc: '配置 AI Provider、模型与 API Key' },
+      storage: { title: '存储配置', desc: '配置文件存储路径与发布目录' },
+      notify: { title: '通知配置', desc: '配置邮件与企业微信通知' },
+      security: { title: '安全策略', desc: '配置 Token 过期时间与密码策略' },
+      announcement: { title: '公告/模板', desc: '配置系统公告与消息模板' }
+    };
+    function switchConfigCategory(category) {
+      document.querySelectorAll('.config-panel').forEach(p => p.classList.remove('active'));
+      const panel = document.getElementById('config-panel-' + category);
+      if (panel) panel.classList.add('active');
+      document.querySelectorAll('.config-nav-item').forEach(n => {
+        n.classList.remove('text-blue-700', 'bg-blue-50');
+        n.classList.add('text-slate-600', 'hover:bg-slate-100');
+      });
+      const activeNav = document.getElementById('config-nav-' + category);
+      if (activeNav) {
+        activeNav.classList.remove('text-slate-600', 'hover:bg-slate-100');
+        activeNav.classList.add('text-blue-700', 'bg-blue-50');
+      }
+      const titleEl = document.getElementById('config-title');
+      const descEl = document.getElementById('config-desc');
+      if (configTitles[category]) {
+        if (titleEl) titleEl.textContent = configTitles[category].title;
+        if (descEl) descEl.textContent = configTitles[category].desc;
+      }
+    }
+
+    // Credential modal
+    function openCredentialModal() {
+      document.getElementById('credential-modal').classList.add('active');
+    }
+    function closeCredentialModal() {
+      document.getElementById('credential-modal').classList.remove('active');
+    }
+
+    // Role permission drawer
+    const roleNames = {
+      admin: '超级管理员',
+      release_engineer: '发布工程师',
+      project_manager: '项目管理员',
+      developer: '开发人员',
+      tester: '测试人员'
+    };
+    function openRolePermissionDrawer(role) {
+      document.getElementById('role-permission-drawer').classList.add('active');
+      document.getElementById('role-permission-overlay').classList.add('active');
+      const titleEl = document.getElementById('role-permission-title');
+      if (titleEl) titleEl.textContent = '配置权限：' + (roleNames[role] || role);
+    }
+    function closeRolePermissionDrawer() {
+      document.getElementById('role-permission-drawer').classList.remove('active');
+      document.getElementById('role-permission-overlay').classList.remove('active');
+    }
+  </script>
+</body>
+</html>
