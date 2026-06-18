@@ -1,0 +1,91 @@
+version: 1
+
+# 根域
+dn: dc=example,dc=com
+objectClass: dcObject
+objectClass: organization
+dc: example
+o: ReleaseManager
+
+# 组织单元
+dn: ou=users,dc=example,dc=com
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=example,dc=com
+objectClass: organizationalUnit
+ou: groups
+
+# 测试用户：蒋鑫（开发）
+dn: uid=jiangxin,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: jiangxin
+cn: 蒋鑫
+sn: 蒋
+mail: jiangxin@example.com
+userPassword: password123
+uidNumber: 10001
+gidNumber: 10001
+homeDirectory: /home/jiangxin
+
+# 测试用户：张三（项目管理员）
+dn: uid=zhangsan,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: zhangsan
+cn: 张三
+sn: 张
+mail: zhangsan@example.com
+userPassword: password123
+uidNumber: 10002
+gidNumber: 10002
+homeDirectory: /home/zhangsan
+
+# 测试用户：李四（测试）
+dn: uid=lisi,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: lisi
+cn: 李四
+sn: 李
+mail: lisi@example.com
+userPassword: password123
+uidNumber: 10003
+gidNumber: 10003
+homeDirectory: /home/lisi
+
+# 测试用户：王五（审核人）
+dn: uid=wangwu,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: wangwu
+cn: 王五
+sn: 王
+mail: wangwu@example.com
+userPassword: password123
+uidNumber: 10004
+gidNumber: 10004
+homeDirectory: /home/wangwu
+
+# 组：研发人员
+dn: cn=developers,ou=groups,dc=example,dc=com
+objectClass: posixGroup
+cn: developers
+gidNumber: 10001
+memberUid: jiangxin
+memberUid: zhangsan
+
+# 组：测试人员
+dn: cn=testers,ou=groups,dc=example,dc=com
+objectClass: posixGroup
+cn: testers
+gidNumber: 10002
+memberUid: lisi
+
+# 组：审核人员
+dn: cn=auditors,ou=groups,dc=example,dc=com
+objectClass: posixGroup
+cn: auditors
+gidNumber: 10003
+memberUid: wangwu
