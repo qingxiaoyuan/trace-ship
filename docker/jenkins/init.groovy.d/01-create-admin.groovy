@@ -6,20 +6,25 @@ def instance = Jenkins.getInstance()
 def env = System.getenv()
 
 def adminUser = env.getOrDefault("JENKINS_ADMIN_USER", "admin")
-def adminPassword = env.getOrDefault("JENKINS_ADMIN_PASSWORD", "Jenkins@2024")
+def adminPassword = env.getOrDefault("JENKINS_ADMIN_PASSWORD", "admin")
 
-// 禁用安装向导
-if (instance.getInstallState().isSetupComplete()) {
-    return
-}
+// 确保安装状态已完成
 instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
 
-// 创建安全域
-def hudsonRealm = new HudsonPrivateSecurityRealm(false)
-instance.setSecurityRealm(hudsonRealm)
+// 创建或获取安全域
+def hudsonRealm = instance.getSecurityRealm()
+if (!(hudsonRealm instanceof HudsonPrivateSecurityRealm)) {
+    hudsonRealm = new HudsonPrivateSecurityRealm(false)
+    instance.setSecurityRealm(hudsonRealm)
+}
 
-// 创建管理员用户
-def user = hudsonRealm.createAccount(adminUser, adminPassword)
+// 创建或更新管理员用户
+def user = hudsonRealm.getUser(adminUser)
+if (user == null) {
+    user = hudsonRealm.createAccount(adminUser, adminPassword)
+} else {
+    user.addProperty(new hudson.security.HudsonPrivateSecurityRealm.Details(adminPassword))
+}
 user.save()
 
 // 配置权限策略
@@ -29,4 +34,4 @@ instance.setAuthorizationStrategy(strategy)
 
 instance.save()
 
-println "✅ Jenkins 管理员用户已创建: ${adminUser}"
+println "✅ Jenkins 管理员用户已就绪: ${adminUser}"
