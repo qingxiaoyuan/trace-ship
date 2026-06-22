@@ -3,8 +3,27 @@ from apps.project.models import Project, ProjectMember, ProjectIntegration
 from apps.account.serializers import UserSerializer
 
 
+class ProjectStatusField(serializers.IntegerField):
+    """同时支持 'active'/'inactive' 字符串和 1/0 数字的项目状态字段"""
+
+    ACTIVE = 1
+    INACTIVE = 0
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            if data == "active":
+                data = self.ACTIVE
+            elif data == "inactive":
+                data = self.INACTIVE
+        return super().to_internal_value(data)
+
+    def to_representation(self, value):
+        return value
+
+
 class ProjectSerializer(serializers.ModelSerializer):
     leader_name = serializers.CharField(source="leader.nickname", read_only=True)
+    status = ProjectStatusField()
 
     class Meta:
         model = Project
@@ -17,6 +36,7 @@ class ProjectSerializer(serializers.ModelSerializer):
 
 class ProjectListSerializer(serializers.ModelSerializer):
     leader_name = serializers.CharField(source="leader.nickname", read_only=True)
+    status = ProjectStatusField()
 
     class Meta:
         model = Project

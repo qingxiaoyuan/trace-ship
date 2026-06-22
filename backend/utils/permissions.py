@@ -36,22 +36,6 @@ class IsProjectMember(permissions.BasePermission):
         return ProjectMember.objects.filter(project=project, user=request.user).exists()
 
 
-class IsProjectManager(permissions.BasePermission):
-    """检查用户是否为项目管理员"""
-
-    def has_object_permission(self, request, view, obj):
-        if request.user.is_superuser:
-            return True
-        from apps.project.models import ProjectMember
-
-        project = obj if hasattr(obj, "members") else getattr(obj, "project", None)
-        if not project:
-            return False
-        return ProjectMember.objects.filter(
-            project=project, user=request.user, role="manager"
-        ).exists()
-
-
 class ProjectRolePermission(permissions.BasePermission):
     """项目角色权限检查"""
 
