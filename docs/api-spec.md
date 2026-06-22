@@ -526,7 +526,8 @@
   },
   "username": "gitlab-admin",
   "expires_at": "2027-06-01T10:00:00+08:00",
-  "project_id": "uuid",
+  "scope": "personal",
+  "project": "uuid",
   "is_global": false
 }
 ```

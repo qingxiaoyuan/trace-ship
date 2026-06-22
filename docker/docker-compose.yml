@@ -145,6 +145,109 @@ services:
     networks:
       - release_manager_net
 
+  # Trace Ship 后端服务
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-release-manager-dev}-backend
+    restart: unless-stopped
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DEBUG: "False"
+      # 数据库
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-release_manager}
+      DB_USER: ${POSTGRES_USER:-release_manager}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-ReleaseManager@2024}
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-ReleaseManager@2024}
+      # LDAP
+      LDAP_SERVER_URI: ldap://openldap:389
+      LDAP_BIND_DN: cn=admin,dc=example,dc=com
+      LDAP_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD:-LDAPAdmin@2024}
+      LDAP_USER_SEARCH_BASE: ou=users,dc=example,dc=com
+      # Django
+      SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
+      ALLOWED_HOSTS: "*"
+      # 凭证加密
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-change-me-in-production-32bytes!}
+      # CORS
+      CORS_ALLOW_ALL_ORIGINS: "True"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ../backend:/app
+    networks:
+      - release_manager_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-release-manager-dev}-celery-worker
+    restart: unless-stopped
+    command: celery -A config worker -l info
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-release_manager}
+      DB_USER: ${POSTGRES_USER:-release_manager}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-ReleaseManager@2024}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-ReleaseManager@2024}
+      SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-change-me-in-production-32bytes!}
+    volumes:
+      - ../backend:/app
+    networks:
+      - release_manager_net
+    depends_on:
+      - backend
+      - redis
+
+  # Celery Beat
+  celery-beat:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-release-manager-dev}-celery-beat
+    restart: unless-stopped
+    command: celery -A config beat -l info
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-release_manager}
+      DB_USER: ${POSTGRES_USER:-release_manager}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-ReleaseManager@2024}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-ReleaseManager@2024}
+      SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-change-me-in-production-32bytes!}
+    volumes:
+      - ../backend:/app
+    networks:
+      - release_manager_net
+    depends_on:
+      - backend
+      - redis
+
 volumes:
   postgres_data:
   redis_data:

@@ -1,0 +1,250 @@
+{
+  "info": {
+    "_postman_id": "trace-ship-v1",
+    "name": "Trace Ship API V1",
+    "description": "软件版本发布管理系统 API V1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "认证",
+      "item": [
+        {
+          "name": "登录",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/api/auth/login/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"admin\",\"password\":\"admin@123\"}"
+            }
+          }
+        },
+        {
+          "name": "刷新 Token",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{base_url}}/api/auth/token/refresh/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"refresh\":\"{{refresh_token}}\"}"
+            }
+          }
+        },
+        {
+          "name": "登出",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/auth/logout/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"refresh\":\"{{refresh_token}}\"}"
+            }
+          }
+        },
+        {
+          "name": "当前用户信息",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/auth/user-info/"
+          }
+        },
+        {
+          "name": "当前用户菜单",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/auth/menus/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "用户与角色",
+      "item": [
+        {
+          "name": "用户列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/account/users/"
+          }
+        },
+        {
+          "name": "创建用户",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/account/users/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":\"newuser\",\"password\":\"newpass123\",\"nickname\":\"新用户\",\"source\":\"local\",\"is_active\":true}"
+            }
+          }
+        },
+        {
+          "name": "角色列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/account/roles/"
+          }
+        },
+        {
+          "name": "权限列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/account/permissions/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "项目管理",
+      "item": [
+        {
+          "name": "项目列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/projects/"
+          }
+        },
+        {
+          "name": "创建项目",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/projects/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\":\"DEMO\",\"name\":\"演示项目\",\"description\":\"这是一个演示项目\",\"version_rule\":{\"format\":\"VA.{major}.{minor}.{patch}\",\"initial\":\"VA.1.0.0\"},\"release_rule\":{\"formal_branch\":\"main\",\"test_prefix\":\"test\",\"release_cycle_days\":3},\"status\":1}"
+            }
+          }
+        },
+        {
+          "name": "项目成员列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/projects/{{project_id}}/members/"
+          }
+        },
+        {
+          "name": "添加项目成员",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/projects/{{project_id}}/members/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user_id\":\"{{user_id}}\",\"role\":\"developer\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "凭证管理",
+      "item": [
+        {
+          "name": "凭证列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/credentials/"
+          }
+        },
+        {
+          "name": "创建凭证",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/credentials/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"GitLab 演示凭证\",\"cred_type\":\"gitlab_token\",\"auth_mode\":\"token\",\"data\":{\"token\":\"glpat-demo-token-12345\"},\"username\":\"gitlab-admin\",\"scope\":\"personal\"}"
+            }
+          }
+        },
+        {
+          "name": "凭证类型",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/credentials/types/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "系统管理",
+      "item": [
+        {
+          "name": "系统参数列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/system/configs/"
+          }
+        },
+        {
+          "name": "操作日志",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/system/logs/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "健康检查",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health/"
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    }
+  ],
+  "variable": [
+    {"key": "base_url", "value": "http://localhost:8000", "type": "string"},
+    {"key": "access_token", "value": "", "type": "string"},
+    {"key": "refresh_token", "value": "", "type": "string"},
+    {"key": "project_id", "value": "", "type": "string"},
+    {"key": "user_id", "value": "", "type": "string"}
+  ]
+}
