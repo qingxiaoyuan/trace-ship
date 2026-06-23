@@ -300,12 +300,12 @@ Build completed successfully.
 Finished: SUCCESS`;
 
 export const mockWorkflowTasks: WorkflowTask[] = [
-  { id: '1', title: '审批发布 v2.5.0', applicant: '李四', project_name: '核心交易平台', current_node: '项目负责人审批', submit_time: '2026-06-22T09:50:00+08:00', remaining_time: '2小时', status: 'pending' },
-  { id: '2', title: '审批发布 v2.4.2-test.1', applicant: '王五', project_name: '核心交易平台', current_node: '测试负责人审批', submit_time: '2026-06-22T09:00:00+08:00', remaining_time: '5小时', status: 'pending' },
+  { id: '1', title: '审批发布 v2.5.0', applicant: '李四', project_name: '核心交易平台', current_node: '项目负责人审批', submit_time: '2026-06-22T09:50:00+08:00', remaining_time: '2小时', status: 'pending', version: 'v2.5.0', release_type: 'formal', source_branch: 'master' },
+  { id: '2', title: '审批发布 v2.4.2-test.1', applicant: '王五', project_name: '核心交易平台', current_node: '测试负责人审批', submit_time: '2026-06-22T09:00:00+08:00', remaining_time: '5小时', status: 'pending', version: 'v2.4.2-test.1', release_type: 'test', source_branch: 'develop' },
 ];
 
 export const mockDoneTasks: WorkflowTask[] = [
-  { id: '3', title: '审批发布 v2.4.1', applicant: '李四', project_name: '核心交易平台', current_node: '-', submit_time: '2026-06-15T10:00:00+08:00', status: 'approved' },
+  { id: '3', title: '审批发布 v2.4.1', applicant: '李四', project_name: '核心交易平台', current_node: '-', submit_time: '2026-06-15T10:00:00+08:00', status: 'approved', version: 'v2.4.1', release_type: 'formal', source_branch: 'master' },
 ];
 
 export const mockTodoList = [

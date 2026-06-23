@@ -12,6 +12,7 @@ export const CommitAIReview = lazy(() => import('@/pages/Commit/AIReview'));
 export const CommitAlertDetail = lazy(() => import('@/pages/Commit/AlertDetail'));
 export const TagGenerator = lazy(() => import('@/pages/TagGenerator'));
 export const Jenkins = lazy(() => import('@/pages/Jenkins'));
+export const JenkinsLogDetail = lazy(() => import('@/pages/Jenkins/LogDetail'));
 export const Workflow = lazy(() => import('@/pages/Workflow'));
 export const ReleaseBoard = lazy(() => import('@/pages/Release/Board'));
 export const SystemUserList = lazy(() => import('@/pages/System/UserList'));

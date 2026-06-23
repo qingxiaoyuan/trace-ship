@@ -1,6 +1,6 @@
 import { Tag } from 'antd';
 
-type StatusType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+export type StatusType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
 interface StatusTagProps {
   status: StatusType;
@@ -9,12 +9,12 @@ interface StatusTagProps {
 }
 
 const colorMap: Record<StatusType, { bg: string; text: string }> = {
-  primary: { bg: '#EFF6FF', text: '#2563EB' },
-  success: { bg: '#ECFDF5', text: '#059669' },
-  warning: { bg: '#FFFBEB', text: '#B45309' },
-  danger: { bg: '#FEF2F2', text: '#DC2626' },
-  info: { bg: '#EFF6FF', text: '#1D4ED8' },
-  neutral: { bg: '#F1F5F9', text: '#64748B' },
+  primary: { bg: '#F1F5F9', text: '#111111' },
+  success: { bg: '#EDF3EC', text: '#346538' },
+  warning: { bg: '#FBF3DB', text: '#956400' },
+  danger: { bg: '#FDEBEC', text: '#9F2F2D' },
+  info: { bg: '#E1F3FE', text: '#1F6C9F' },
+  neutral: { bg: '#F1F5F9', text: '#787774' },
 };
 
 export function StatusTag({ status, children, className }: StatusTagProps) {
@@ -30,8 +30,11 @@ export function StatusTag({ status, children, className }: StatusTagProps) {
         padding: '4px 10px',
         fontWeight: 600,
         fontSize: 12,
+        letterSpacing: '0.05em',
+        textTransform: 'uppercase',
         display: 'inline-flex',
         alignItems: 'center',
+        lineHeight: 1.25,
       }}
     >
       <span

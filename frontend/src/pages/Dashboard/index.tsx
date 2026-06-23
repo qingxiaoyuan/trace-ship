@@ -115,7 +115,7 @@ export default function Dashboard() {
                   <div className="flex items-center gap-3 w-full bg-slate-50 rounded-xl p-3">
                     <Avatar
                       size="large"
-                      style={{ background: tokens.colors.primary }}
+                      style={{ background: tokens.colors.userAvatar }}
                     >
                       {item.applicant.charAt(0)}
                     </Avatar>

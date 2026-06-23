@@ -18,7 +18,7 @@ export default function Profile() {
           border: `1px solid ${tokens.colors.border}`,
         }}
       >
-        <Avatar size={80} style={{ background: tokens.colors.primary }}>张</Avatar>
+        <Avatar size={80} style={{ background: tokens.colors.userAvatar }}>张</Avatar>
         <div className="mt-4 text-xl font-semibold">张三</div>
         <div className="text-slate-500">发布工程师 · 研发部</div>
         <div className="text-slate-400 text-sm mt-1">zhangsan@example.com</div>

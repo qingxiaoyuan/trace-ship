@@ -17,6 +17,7 @@ import {
   Divider,
   Tooltip,
   message,
+  ConfigProvider,
 } from 'antd';
 import type { FormInstance } from 'antd';
 import {
@@ -92,16 +93,16 @@ const defaultRelatedChanges: RelatedChangeItem[] = [
   { id: '23', softwareName: '阵列天线上位机软件版本', version: '' },
 ];
 
-const warmColors = {
+const blueColors = {
   canvas: '#FFFFFF',
-  bone: '#F7F6F3',
-  border: '#EAEAEA',
-  charcoal: '#111111',
-  muted: '#787774',
-  paleRed: { bg: '#FDEBEC', text: '#9F2F2D' },
-  paleBlue: { bg: '#E1F3FE', text: '#1F6C9F' },
-  paleGreen: { bg: '#EDF3EC', text: '#346538' },
-  paleYellow: { bg: '#FBF3DB', text: '#956400' },
+  bone: '#F0F9FF',
+  border: '#DBEAFE',
+  charcoal: '#1D4ED8',
+  muted: '#64748B',
+  paleRed: { bg: '#FEF2F2', text: '#DC2626' },
+  paleBlue: { bg: '#DBEAFE', text: '#2563EB' },
+  paleGreen: { bg: '#ECFDF5', text: '#059669' },
+  paleYellow: { bg: '#FFFBEB', text: '#D97706' },
 };
 
 export default function TagGenerator() {
@@ -184,10 +185,18 @@ export default function TagGenerator() {
   ];
 
   return (
-    <div className="space-y-6" style={{ fontFamily: '"PingFang SC", "Helvetica Neue", Arial, sans-serif' }}>
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: blueColors.charcoal,
+          colorInfo: blueColors.charcoal,
+        },
+      }}
+    >
+      <div className="space-y-6" style={{ fontFamily: '"PingFang SC", "Helvetica Neue", Arial, sans-serif' }}>
       <TsCard
         bodyStyle={{ padding: 28 }}
-        style={{ borderColor: warmColors.border, borderRadius: 12 }}
+        style={{ borderColor: blueColors.border, borderRadius: 12 }}
       >
         <Steps
           current={currentStep}
@@ -209,26 +218,26 @@ export default function TagGenerator() {
 
       <div
         className="flex justify-between items-center pt-4"
-        style={{ borderTop: `1px solid ${warmColors.border}` }}
+        style={{ borderTop: `1px solid ${blueColors.border}` }}
       >
         <Button
           disabled={currentStep === 0}
           onClick={() => setCurrentStep((s) => s - 1)}
           icon={<ArrowLeftOutlined />}
-          style={{ borderRadius: 6, borderColor: warmColors.border }}
+          style={{ borderRadius: 6, borderColor: blueColors.border }}
         >
           上一步
         </Button>
         <Space>
           {currentStep === 2 && (
             <>
-              <Button icon={<SaveOutlined />} style={{ borderRadius: 6, borderColor: warmColors.border }}>
+              <Button icon={<SaveOutlined />} style={{ borderRadius: 6, borderColor: blueColors.border }}>
                 保存草稿
               </Button>
-              <Button icon={<FileWordOutlined />} style={{ borderRadius: 6, borderColor: warmColors.border }}>
+              <Button icon={<FileWordOutlined />} style={{ borderRadius: 6, borderColor: blueColors.border }}>
                 导出 Word
               </Button>
-              <Button icon={<FilePdfOutlined />} style={{ borderRadius: 6, borderColor: warmColors.border }}>
+              <Button icon={<FilePdfOutlined />} style={{ borderRadius: 6, borderColor: blueColors.border }}>
                 导出 PDF
               </Button>
             </>
@@ -245,8 +254,8 @@ export default function TagGenerator() {
             }}
             style={{
               borderRadius: 6,
-              background: warmColors.charcoal,
-              borderColor: warmColors.charcoal,
+              background: blueColors.charcoal,
+              borderColor: blueColors.charcoal,
               boxShadow: 'none',
             }}
           >
@@ -255,6 +264,7 @@ export default function TagGenerator() {
         </Space>
       </div>
     </div>
+  </ConfigProvider>
   );
 }
 
@@ -263,15 +273,15 @@ function Step1Branch({ form }: { form: FormInstance }) {
     <TsCard
       title={
         <div className="flex items-center justify-between">
-          <span style={{ fontWeight: 600, fontSize: 16, color: warmColors.charcoal }}>
+          <span style={{ fontWeight: 600, fontSize: 16, color: blueColors.charcoal }}>
             步骤 1：选择项目与分支
           </span>
-          <Text type="secondary" style={{ fontSize: 13, color: warmColors.muted }}>
+          <Text type="secondary" style={{ fontSize: 13, color: blueColors.muted }}>
             请确认发布来源
           </Text>
         </div>
       }
-      style={{ borderColor: warmColors.border, borderRadius: 12 }}
+      style={{ borderColor: blueColors.border, borderRadius: 12 }}
     >
       <Form form={form} layout="vertical" className="max-w-3xl">
         <Row gutter={[24, 0]}>
@@ -329,11 +339,11 @@ function Step2Diff({
     ).length;
     const illegalCount = mockCommits.filter((c) => c.review_status === 'illegal').length;
     return [
-      { label: '总 commit 数', value: mockCommits.length, accent: warmColors.paleBlue },
-      { label: 'A 类更新', value: aCount, accent: warmColors.paleGreen },
-      { label: 'F 类更新', value: fCount, accent: warmColors.paleYellow },
-      { label: '配置项改动', value: configCount, accent: warmColors.paleBlue },
-      { label: '不合规提交', value: illegalCount, accent: warmColors.paleRed },
+      { label: '总 commit 数', value: mockCommits.length, accent: blueColors.paleBlue },
+      { label: 'A 类更新', value: aCount, accent: blueColors.paleGreen },
+      { label: 'F 类更新', value: fCount, accent: blueColors.paleYellow },
+      { label: '配置项改动', value: configCount, accent: blueColors.paleBlue },
+      { label: '不合规提交', value: illegalCount, accent: blueColors.paleRed },
     ];
   }, []);
 
@@ -363,7 +373,7 @@ function Step2Diff({
           style={{
             fontFamily: '"SF Mono", "JetBrains Mono", monospace',
             fontSize: 12,
-            color: warmColors.charcoal,
+            color: blueColors.charcoal,
           }}
         >
           {hash.slice(0, 12)}
@@ -383,12 +393,12 @@ function Step2Diff({
       width: 100,
       render: (type: string) => {
         if (type === 'A类') {
-          return <Tag style={{ background: warmColors.paleBlue.bg, color: warmColors.paleBlue.text, border: 'none', borderRadius: 9999, fontWeight: 600 }}>A类</Tag>;
+          return <Tag style={{ background: blueColors.paleBlue.bg, color: blueColors.paleBlue.text, border: 'none', borderRadius: 9999, fontWeight: 600 }}>A类</Tag>;
         }
         if (type === 'F类') {
-          return <Tag style={{ background: warmColors.paleYellow.bg, color: warmColors.paleYellow.text, border: 'none', borderRadius: 9999, fontWeight: 600 }}>F类</Tag>;
+          return <Tag style={{ background: blueColors.paleYellow.bg, color: blueColors.paleYellow.text, border: 'none', borderRadius: 9999, fontWeight: 600 }}>F类</Tag>;
         }
-        return <Tag style={{ background: warmColors.bone, color: warmColors.muted, border: 'none', borderRadius: 9999 }}>-</Tag>;
+        return <Tag style={{ background: blueColors.bone, color: blueColors.muted, border: 'none', borderRadius: 9999 }}>-</Tag>;
       },
     },
     {
@@ -407,10 +417,10 @@ function Step2Diff({
       render: () => (
         <Space size="small">
           <Tooltip title="AI 审查">
-            <Button type="text" size="small" icon={<RobotOutlined />} style={{ color: warmColors.muted }} />
+            <Button type="text" size="small" icon={<RobotOutlined />} style={{ color: blueColors.muted }} />
           </Tooltip>
           <Tooltip title="详情">
-            <Button type="text" size="small" icon={<EyeOutlined />} style={{ color: warmColors.muted }} />
+            <Button type="text" size="small" icon={<EyeOutlined />} style={{ color: blueColors.muted }} />
           </Tooltip>
         </Space>
       ),
@@ -423,10 +433,10 @@ function Step2Diff({
         <TsCard
           title={
             <div className="flex items-center justify-between">
-              <span style={{ fontWeight: 600, fontSize: 16, color: warmColors.charcoal }}>
+              <span style={{ fontWeight: 600, fontSize: 16, color: blueColors.charcoal }}>
                 步骤 2：提取并编辑 commit 差异
               </span>
-              <Text type="secondary" style={{ fontSize: 13, color: warmColors.muted }}>
+              <Text type="secondary" style={{ fontSize: 13, color: blueColors.muted }}>
                 已选 {selectedCommits.length} / {mockCommits.length} 条
               </Text>
             </div>
@@ -436,19 +446,19 @@ function Step2Diff({
               <Button
                 icon={<ThunderboltOutlined />}
                 type="primary"
-                style={{ borderRadius: 6, background: warmColors.charcoal, borderColor: warmColors.charcoal }}
+                style={{ borderRadius: 6, background: blueColors.charcoal, borderColor: blueColors.charcoal }}
               >
                 AI 辅助生成摘要
               </Button>
-              <Button icon={<MergeCellsOutlined />} disabled={selectedCommits.length === 0} style={{ borderRadius: 6, borderColor: warmColors.border }}>
+              <Button icon={<MergeCellsOutlined />} disabled={selectedCommits.length === 0} style={{ borderRadius: 6, borderColor: blueColors.border }}>
                 合并选中
               </Button>
-              <Button icon={<DeleteOutlined />} disabled={selectedCommits.length === 0} style={{ borderRadius: 6, borderColor: warmColors.border }}>
+              <Button icon={<DeleteOutlined />} disabled={selectedCommits.length === 0} style={{ borderRadius: 6, borderColor: blueColors.border }}>
                 排除选中
               </Button>
             </Space>
           }
-          style={{ borderColor: warmColors.border, borderRadius: 12 }}
+          style={{ borderColor: blueColors.border, borderRadius: 12 }}
         >
           <Table
             rowKey="id"
@@ -462,8 +472,8 @@ function Step2Diff({
       </Col>
       <Col xs={24} lg={8} className="space-y-5">
         <TsCard
-          title={<span style={{ fontWeight: 600, fontSize: 15, color: warmColors.charcoal }}>差异统计</span>}
-          style={{ borderColor: warmColors.border, borderRadius: 12 }}
+          title={<span style={{ fontWeight: 600, fontSize: 15, color: blueColors.charcoal }}>差异统计</span>}
+          style={{ borderColor: blueColors.border, borderRadius: 12 }}
         >
           <List
             dataSource={stats}
@@ -471,11 +481,11 @@ function Step2Diff({
               <List.Item
                 className="px-0! flex justify-between items-center"
                 style={{
-                  borderBottom: index < stats.length - 1 ? `1px solid ${warmColors.border}` : 'none',
+                  borderBottom: index < stats.length - 1 ? `1px solid ${blueColors.border}` : 'none',
                   padding: '12px 0',
                 }}
               >
-                <span style={{ color: warmColors.muted, fontSize: 14 }}>{item.label}</span>
+                <span style={{ color: blueColors.muted, fontSize: 14 }}>{item.label}</span>
                 <span
                   style={{
                     fontWeight: 700,
@@ -497,18 +507,18 @@ function Step2Diff({
 
         <TsCard
           style={{
-            background: warmColors.paleYellow.bg,
+            background: blueColors.paleYellow.bg,
             borderColor: '#F5E6C8',
             borderRadius: 12,
           }}
         >
           <div className="flex items-start gap-3">
-            <WarningOutlined style={{ color: warmColors.paleYellow.text, fontSize: 20, marginTop: 2 }} />
+            <WarningOutlined style={{ color: blueColors.paleYellow.text, fontSize: 20, marginTop: 2 }} />
             <div>
-              <div style={{ fontWeight: 700, fontSize: 15, color: warmColors.paleYellow.text }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: blueColors.paleYellow.text }}>
                 AI 风险提示
               </div>
-              <div style={{ color: warmColors.paleYellow.text, fontSize: 14, marginTop: 6, lineHeight: 1.6, opacity: 0.9 }}>
+              <div style={{ color: blueColors.paleYellow.text, fontSize: 14, marginTop: 6, lineHeight: 1.6, opacity: 0.9 }}>
                 本次发布包含配置项改动与不合规提交，建议人工复核后再提交审批。
               </div>
             </div>
@@ -544,20 +554,20 @@ function Step3Doc({
         <TsCard
           title={
             <div className="flex items-center justify-between">
-              <span style={{ fontWeight: 600, fontSize: 16, color: warmColors.charcoal }}>
+              <span style={{ fontWeight: 600, fontSize: 16, color: blueColors.charcoal }}>
                 步骤 3：生成发布说明并提交
               </span>
-              <Text type="secondary" style={{ fontSize: 13, color: warmColors.muted }}>
+              <Text type="secondary" style={{ fontSize: 13, color: blueColors.muted }}>
                 编辑后提交审批
               </Text>
             </div>
           }
-          style={{ borderColor: warmColors.border, borderRadius: 12 }}
+          style={{ borderColor: blueColors.border, borderRadius: 12 }}
         >
           <div
             style={{
-              background: warmColors.canvas,
-              border: `1px solid ${warmColors.border}`,
+              background: blueColors.canvas,
+              border: `1px solid ${blueColors.border}`,
               borderRadius: 12,
               padding: '32px 40px',
             }}
@@ -565,15 +575,15 @@ function Step3Doc({
             <div
               style={{
                 textAlign: 'center',
-                borderBottom: `2px solid ${warmColors.charcoal}`,
+                borderBottom: `2px solid ${blueColors.charcoal}`,
                 paddingBottom: 20,
                 marginBottom: 32,
               }}
             >
-              <Title level={4} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.02em', color: warmColors.charcoal }}>
+              <Title level={4} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.02em', color: blueColors.charcoal }}>
                 软件发布规范
               </Title>
-              <Text style={{ color: warmColors.muted, fontSize: 13 }}>Release Specification</Text>
+              <Text style={{ color: blueColors.muted, fontSize: 13 }}>Release Specification</Text>
             </div>
 
             <Form form={form} layout="vertical">
@@ -594,7 +604,7 @@ function Step3Doc({
                       placeholder="271b6887..."
                       disabled
                       size="large"
-                      style={{ fontFamily: '"SF Mono", "JetBrains Mono", monospace', background: warmColors.bone, color: warmColors.muted }}
+                      style={{ fontFamily: '"SF Mono", "JetBrains Mono", monospace', background: blueColors.bone, color: blueColors.muted }}
                     />
                   </Form.Item>
                 </Col>
@@ -608,17 +618,17 @@ function Step3Doc({
                 </Col>
               </Row>
 
-              <Divider style={{ borderColor: warmColors.border, margin: '28px 0' }} />
+              <Divider style={{ borderColor: blueColors.border, margin: '28px 0' }} />
 
               <div style={{ marginBottom: 24 }}>
                 <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-                  <Text style={{ fontWeight: 600, color: warmColors.charcoal }}>更新内容</Text>
+                  <Text style={{ fontWeight: 600, color: blueColors.charcoal }}>更新内容</Text>
                   <Button
                     type="dashed"
                     size="small"
                     icon={<PlusOutlined />}
                     onClick={onAddUpdate}
-                    style={{ borderColor: warmColors.border, color: warmColors.muted }}
+                    style={{ borderColor: blueColors.border, color: blueColors.muted }}
                   >
                     新增一条
                   </Button>
@@ -630,14 +640,14 @@ function Step3Doc({
                       className="flex items-center gap-3"
                       style={{
                         padding: '10px 12px',
-                        background: warmColors.bone,
+                        background: blueColors.bone,
                         borderRadius: 8,
-                        border: `1px solid ${warmColors.border}`,
+                        border: `1px solid ${blueColors.border}`,
                       }}
                     >
                       <span
                         style={{
-                          color: warmColors.muted,
+                          color: blueColors.muted,
                           fontSize: 13,
                           fontFamily: '"SF Mono", monospace',
                           minWidth: 36,
@@ -677,16 +687,16 @@ function Step3Doc({
                 <TextArea
                   rows={4}
                   placeholder="[System]\nDeviceType=0"
-                  style={{ fontFamily: '"SF Mono", "JetBrains Mono", monospace', background: warmColors.bone }}
+                  style={{ fontFamily: '"SF Mono", "JetBrains Mono", monospace', background: blueColors.bone }}
                 />
               </Form.Item>
 
-              <Divider style={{ borderColor: warmColors.border, margin: '28px 0' }} />
+              <Divider style={{ borderColor: blueColors.border, margin: '28px 0' }} />
 
               <div style={{ marginBottom: 24 }}>
                 <div style={{ marginBottom: 16 }}>
-                  <Text style={{ fontWeight: 600, color: warmColors.charcoal }}>关联性改动</Text>
-                  <Text style={{ color: warmColors.muted, fontSize: 13, marginLeft: 8 }}>[选填] 可修改软件名称与版本号</Text>
+                  <Text style={{ fontWeight: 600, color: blueColors.charcoal }}>关联性改动</Text>
+                  <Text style={{ color: blueColors.muted, fontSize: 13, marginLeft: 8 }}>[选填] 可修改软件名称与版本号</Text>
                 </div>
                 <div
                   style={{
@@ -701,9 +711,9 @@ function Step3Doc({
                       className="flex items-center gap-3"
                       style={{
                         padding: '10px 12px',
-                        background: warmColors.bone,
+                        background: blueColors.bone,
                         borderRadius: 8,
-                        border: `1px solid ${warmColors.border}`,
+                        border: `1px solid ${blueColors.border}`,
                         animationDelay: `${index * 40}ms`,
                       }}
                     >
@@ -714,11 +724,11 @@ function Step3Doc({
                         style={{
                           width: 180,
                           fontWeight: 500,
-                          color: warmColors.charcoal,
-                          background: warmColors.canvas,
+                          color: blueColors.charcoal,
+                          background: blueColors.canvas,
                         }}
                       />
-                      <span style={{ color: warmColors.muted, fontSize: 12, whiteSpace: 'nowrap' }}>版本</span>
+                      <span style={{ color: blueColors.muted, fontSize: 12, whiteSpace: 'nowrap' }}>版本</span>
                       <Input
                         value={item.version}
                         onChange={(e) => onRelatedChange(item.id, 'version', e.target.value)}
@@ -761,8 +771,8 @@ function Step3Doc({
 
       <Col xs={24} lg={8}>
         <TsCard
-          title={<span style={{ fontWeight: 600, fontSize: 15, color: warmColors.charcoal }}>实时预览</span>}
-          style={{ borderColor: warmColors.border, borderRadius: 12 }}
+          title={<span style={{ fontWeight: 600, fontSize: 15, color: blueColors.charcoal }}>实时预览</span>}
+          style={{ borderColor: blueColors.border, borderRadius: 12 }}
         >
           <PreviewPanel updates={updates} relatedChanges={relatedChanges} />
         </TsCard>
@@ -781,17 +791,17 @@ function PreviewPanel({
   const visibleRelated = relatedChanges.filter((r) => r.version.trim());
 
   return (
-    <div style={{ color: warmColors.charcoal, lineHeight: 1.7 }}>
+    <div style={{ color: blueColors.charcoal, lineHeight: 1.7 }}>
       <div style={{ marginBottom: 16 }}>
-        <Text style={{ color: warmColors.muted, fontSize: 12 }}>版本</Text>
+        <Text style={{ color: blueColors.muted, fontSize: 12 }}>版本</Text>
         <div style={{ fontWeight: 700, fontSize: 18, fontFamily: 'monospace' }}>VA.4.1.155</div>
       </div>
       <div style={{ marginBottom: 20 }}>
-        <Text style={{ color: warmColors.muted, fontSize: 12 }}>Git 哈希</Text>
+        <Text style={{ color: blueColors.muted, fontSize: 12 }}>Git 哈希</Text>
         <div style={{ fontFamily: 'monospace', fontSize: 13 }}>271b6887...d1dcd991</div>
       </div>
 
-      <Divider style={{ borderColor: warmColors.border }} />
+      <Divider style={{ borderColor: blueColors.border }} />
 
       <div style={{ marginBottom: 20 }}>
         <Text style={{ fontWeight: 600, display: 'block', marginBottom: 8 }}>更新内容</Text>
@@ -800,8 +810,8 @@ function PreviewPanel({
             <div key={u.id} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
               <Tag
                 style={{
-                  background: u.type === 'A' ? warmColors.paleBlue.bg : warmColors.paleYellow.bg,
-                  color: u.type === 'A' ? warmColors.paleBlue.text : warmColors.paleYellow.text,
+                  background: u.type === 'A' ? blueColors.paleBlue.bg : blueColors.paleYellow.bg,
+                  color: u.type === 'A' ? blueColors.paleBlue.text : blueColors.paleYellow.text,
                   border: 'none',
                   borderRadius: 9999,
                   fontWeight: 600,
@@ -817,12 +827,12 @@ function PreviewPanel({
 
       {visibleRelated.length > 0 && (
         <>
-          <Divider style={{ borderColor: warmColors.border }} />
+          <Divider style={{ borderColor: blueColors.border }} />
           <div>
             <Text style={{ fontWeight: 600, display: 'block', marginBottom: 8 }}>关联性改动</Text>
             {visibleRelated.map((r) => (
               <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
-                <Text style={{ color: warmColors.muted }}>{r.softwareName}</Text>
+                <Text style={{ color: blueColors.muted }}>{r.softwareName}</Text>
                 <Text style={{ fontFamily: 'monospace' }}>{r.version}</Text>
               </div>
             ))}

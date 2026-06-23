@@ -217,6 +217,9 @@ export interface WorkflowTask {
   submit_time: string;
   remaining_time?: string;
   status: WorkflowTaskStatus;
+  version?: string;
+  release_type?: 'formal' | 'test';
+  source_branch?: string;
 }
 
 export interface DashboardOverview {
