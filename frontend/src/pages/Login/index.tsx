@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Form, Input, Button, Checkbox, Typography, message } from 'antd';
 import {
   ThunderboltOutlined,
@@ -15,18 +15,30 @@ type LoginTab = 'domain' | 'local';
 export default function Login() {
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<LoginTab>('domain');
   const [form] = Form.useForm();
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
   const handleLogin = async (values: { username: string; password: string; remember?: boolean }) => {
     setLoading(true);
     try {
       await login(values.username, values.password);
       message.success('登录成功');
       navigate('/');
-    } catch (err: any) {
-      message.error(err?.message || '登录失败');
+    } catch (err: unknown) {
+      console.error('登录失败:', err);
+      const errorMessage =
+        (err instanceof Error ? err.message : '') ||
+        (typeof err === 'string' ? err : '') ||
+        (err && typeof err === 'object' && 'message' in err ? String(err.message) : '') ||
+        '登录失败';
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }

@@ -1326,11 +1326,11 @@ const routes: MockRoute[] = [
 
 export function mockRequest(config: AxiosRequestConfig): Promise<AxiosResponse> | undefined {
   const method = (config.method || 'get').toLowerCase();
-  const url = config.url || '';
+  const fullUrl = (config.baseURL || '') + (config.url || '');
 
   for (const route of routes) {
     if (route.method !== method) continue;
-    if (!matchPath(route.path, url)) continue;
+    if (!matchPath(route.path, fullUrl)) continue;
 
     const result = route.handler(config);
     if (!result) continue;

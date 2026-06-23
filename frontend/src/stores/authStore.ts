@@ -33,7 +33,11 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: data.refresh_token,
           isAuthenticated: true,
         });
-        await get().fetchUserInfo();
+        try {
+          await get().fetchUserInfo();
+        } catch (e) {
+          console.warn('获取用户信息失败，已保持登录状态', e);
+        }
       },
 
       logout: async () => {

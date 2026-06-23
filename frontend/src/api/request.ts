@@ -15,7 +15,8 @@ request.interceptors.request.use(
   async (config) => {
     if (import.meta.env.DEV) {
       const { shouldMock, mockRequest } = await import('./mock');
-      if (shouldMock(config.url)) {
+      const fullUrl = (config.baseURL || '') + (config.url || '');
+      if (shouldMock(fullUrl)) {
         const mockResponse = await mockRequest(config);
         if (mockResponse) {
           config.adapter = async () => mockResponse;
