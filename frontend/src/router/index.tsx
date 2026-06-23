@@ -4,6 +4,9 @@ import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
 import { AuthGuard, PageLoader } from './components';
 import {
+  CommitAIReview,
+  CommitAlertDetail,
+  CommitDetail,
   CommitList,
   CredentialList,
   CredentialUsage,
@@ -45,6 +48,9 @@ export const router = createBrowserRouter([
           { path: 'repositories', element: <PageLoader><RepositoryList /></PageLoader> },
           { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader> },
           { path: 'credentials/:id/usage', element: <PageLoader><CredentialUsage /></PageLoader> },
+          { path: 'commits/alerts', element: <PageLoader><CommitAlertDetail /></PageLoader> },
+          { path: 'commits/:id/ai-review', element: <PageLoader><CommitAIReview /></PageLoader> },
+          { path: 'commits/:id', element: <PageLoader><CommitDetail /></PageLoader> },
           { path: 'commits', element: <PageLoader><CommitList /></PageLoader> },
           { path: 'tags', element: <PageLoader><TagGenerator /></PageLoader> },
           { path: 'jenkins', element: <PageLoader><Jenkins /></PageLoader> },

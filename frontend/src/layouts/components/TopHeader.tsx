@@ -62,6 +62,30 @@ export function TopHeader() {
       }
     }
 
+    // 提交规范审查子路由动态面包屑
+    const commitAiReviewMatch = location.pathname.match(/^\/commits\/([^/]+)\/ai-review/);
+    if (commitAiReviewMatch) {
+      return [
+        { title: '提交规范审查', path: '/commits' },
+        { title: 'AI 审查详情' },
+      ];
+    }
+
+    if (location.pathname === '/commits/alerts') {
+      return [
+        { title: '提交规范审查', path: '/commits' },
+        { title: '非法提交预警详情' },
+      ];
+    }
+
+    const commitDetailMatch = location.pathname.match(/^\/commits\/([^/]+)/);
+    if (commitDetailMatch) {
+      return [
+        { title: '提交规范审查', path: '/commits' },
+        { title: '查看详情' },
+      ];
+    }
+
     const pathSnippets = location.pathname.split('/').filter((i) => i);
     const items: { title: string; path?: string }[] = [];
     let currentPath = '';

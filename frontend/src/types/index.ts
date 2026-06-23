@@ -101,6 +101,45 @@ export interface CommitRecord {
   change_type: string;
   review_status: ReviewStatus;
   ai_suggestion?: string;
+  project_name?: string;
+  repo_name?: string;
+}
+
+export type AlertStatus = 'pending' | 'resolved' | 'ignored';
+
+export interface CommitAlertRecord extends CommitRecord {
+  illegal_reason: string;
+  alert_status: AlertStatus;
+}
+
+export interface AIReviewImpact {
+  module: string;
+  level: 'direct' | 'none';
+}
+
+export interface AIReviewSuggestion {
+  text: string;
+  type: 'success' | 'warning' | 'danger';
+}
+
+export interface AIReviewScores {
+  completeness: number;
+  clarity: number;
+  risk_control: number;
+}
+
+export interface AIReviewResult {
+  conclusion: string;
+  suggestions: AIReviewSuggestion[];
+  impacts: AIReviewImpact[];
+  risk_level: 'low' | 'medium' | 'high';
+  scores: AIReviewScores;
+  tip: string;
+}
+
+export interface CommitDetailData extends CommitRecord {
+  parsed_message: Record<string, unknown>;
+  ai_review: AIReviewResult;
 }
 
 export type BuildStatus = 'queue' | 'building' | 'success' | 'failure' | 'aborted';

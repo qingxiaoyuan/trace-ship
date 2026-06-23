@@ -125,7 +125,7 @@ export default function CredentialList() {
         open={modalOpen}
         credential={editingCredential}
         onCancel={() => setModalOpen(false)}
-        onOk={() => { setModalOpen(false); message.success('保存成功'); }}
+        onOk={(values) => { console.log('save credential', values); setModalOpen(false); message.success('保存成功'); }}
       />
     </div>
   );

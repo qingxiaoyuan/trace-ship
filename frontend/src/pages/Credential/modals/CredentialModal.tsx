@@ -1,4 +1,5 @@
 import { Form, Input, Select, DatePicker, Radio } from 'antd';
+import dayjs from 'dayjs';
 import { TsModal } from '@/components/TsModal';
 import type { Credential } from '@/types';
 
@@ -6,11 +7,18 @@ interface CredentialModalProps {
   open: boolean;
   credential: Credential | null;
   onCancel: () => void;
-  onOk: () => void;
+  onOk: (values: Partial<Credential>) => void;
 }
 
 export function CredentialModal({ open, credential, onCancel, onOk }: CredentialModalProps) {
   const [form] = Form.useForm();
+
+  const initialValues = credential
+    ? {
+        ...credential,
+        expires_at: credential.expires_at ? dayjs(credential.expires_at) : undefined,
+      }
+    : { is_active: true, scope: 'project' };
 
   return (
     <TsModal
@@ -21,13 +29,17 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         onCancel();
       }}
       onOk={() => {
-        form.validateFields().then(() => {
-          onOk();
+        form.validateFields().then((values) => {
+          onOk({
+            ...credential,
+            ...values,
+            expires_at: values.expires_at ? values.expires_at.format() : undefined,
+          });
           form.resetFields();
         });
       }}
     >
-      <Form form={form} layout="vertical" initialValues={credential || { is_active: true, scope: 'project' }}>
+      <Form form={form} layout="vertical" initialValues={initialValues}>
         <Form.Item name="name" label="凭证名称" rules={[{ required: true }]}>
           <Input placeholder="请输入凭证名称" />
         </Form.Item>

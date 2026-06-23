@@ -1,80 +1,156 @@
-import { useState } from 'react';
-import { Table, Button, Space, Tag, message, Drawer } from 'antd';
+import { useMemo, useState } from 'react';
+import { Table, Button, Space, message } from 'antd';
 import {
   SyncOutlined,
   RobotOutlined,
   EyeOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
-import { mockCommits, reviewStatusOptions } from '@/mock/dashboard';
-import type { CommitRecord } from '@/types';
+import {
+  mockCommits,
+  mockCommitAlerts,
+  reviewStatusOptions,
+} from '@/mock/dashboard';
+import { formatRelativeTime } from '@/utils/time';
+import type { CommitRecord, ReviewStatus } from '@/types';
 
-const changeTypeMap: Record<string, string> = {
-  'A类': 'blue',
-  'F类': 'orange',
-  '-': 'default',
+const reviewStatusMap: Record<ReviewStatus, { status: 'success' | 'warning' | 'danger'; text: string }> = {
+  pass: { status: 'success', text: '合规' },
+  warning: { status: 'warning', text: '警告' },
+  illegal: { status: 'danger', text: '不合规' },
 };
 
-export default function CommitList() {
-  const [filters, setFilters] = useState({ project_id: undefined, branch: undefined, author: '', review_status: undefined });
-  const [data] = useState<CommitRecord[]>(mockCommits);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedCommit, setSelectedCommit] = useState<CommitRecord | null>(null);
+const changeTypeStatusMap: Record<string, 'info' | 'warning' | 'neutral'> = {
+  'A类': 'info',
+  'F类': 'warning',
+  '-': 'neutral',
+};
 
-  const handleAiReview = (commit: CommitRecord) => {
-    setSelectedCommit(commit);
-    setDrawerOpen(true);
-  };
+const projectOptions = Array.from(
+  new Map(
+    mockCommits
+      .filter((c) => c.project_name)
+      .map((c) => [c.project_name, c.project_name] as [string, string])
+  ).entries()
+).map(([label, value]) => ({ label, value }));
+
+const branchOptions = Array.from(new Set(mockCommits.map((c) => c.branch))).map((b) => ({
+  label: b,
+  value: b,
+}));
+
+function getMessageSummary(record: CommitRecord): string {
+  const lines = record.message.split('\n');
+  const firstLine = lines[0];
+  const typePrefixMatch = firstLine.match(/^变更类型[：:]\s*([A-Z类-]+)/);
+  if (typePrefixMatch) {
+    const short = typePrefixMatch[1].replace('类', '');
+    const contentLine = lines[1] || '';
+    const content = contentLine.replace(/^更新内容[：:]\s*/, '');
+    return `[${short}] ${content || firstLine}`;
+  }
+  if (record.change_type && record.change_type !== '-') {
+    const short = record.change_type.replace('类', '');
+    return `[${short}] ${firstLine}`;
+  }
+  return firstLine;
+}
+
+export default function CommitList() {
+  const navigate = useNavigate();
+  const [filters, setFilters] = useState({
+    project_name: undefined as string | undefined,
+    branch: undefined as string | undefined,
+    author: '',
+    review_status: undefined as string | undefined,
+  });
+
+  const filteredData = useMemo(() => {
+    return mockCommits.filter((item) => {
+      if (filters.project_name && item.project_name !== filters.project_name) return false;
+      if (filters.branch && item.branch !== filters.branch) return false;
+      if (filters.author && !item.author.includes(filters.author)) return false;
+      if (filters.review_status && item.review_status !== filters.review_status) return false;
+      return true;
+    });
+  }, [filters]);
+
+  const alertTotal = mockCommitAlerts.length;
+  const configAlertCount = useMemo(
+    () =>
+      mockCommitAlerts.filter(
+        (a) =>
+          a.illegal_reason.includes('配置') ||
+          a.message.includes('配置') ||
+          a.message.toLowerCase().includes('config') ||
+          a.message.includes('[System]')
+      ).length,
+    []
+  );
 
   const columns = [
     {
       title: 'Commit',
       dataIndex: 'commit_hash',
       render: (hash: string) => (
-        <span className="font-mono text-xs text-slate-500">{hash.slice(0, 12)}</span>
+        <span className="font-mono text-xs text-slate-500">{hash.slice(0, 8)}</span>
       ),
     },
     { title: '作者', dataIndex: 'author' },
     {
-      title: '提交时间',
+      title: '时间',
       dataIndex: 'committed_at',
-      render: (text: string) => text?.replace('T', ' ').slice(0, 16),
+      render: (text: string) => (
+        <span className="text-slate-500">{formatRelativeTime(text)}</span>
+      ),
     },
-    { title: '分支', dataIndex: 'branch' },
     {
       title: '消息摘要',
       dataIndex: 'message',
       ellipsis: true,
-      render: (text: string) => text?.split('\n')[0],
+      render: (_: string, record: CommitRecord) => (
+        <span className="font-medium text-slate-900">{getMessageSummary(record)}</span>
+      ),
     },
     {
       title: '变更类型',
       dataIndex: 'change_type',
-      render: (type: string) => <Tag color={changeTypeMap[type] || 'default'}>{type}</Tag>,
+      render: (type: string) => {
+        const status = changeTypeStatusMap[type] || 'neutral';
+        return <StatusTag status={status}>{type === '-' ? '-' : type}</StatusTag>;
+      },
     },
     {
       title: '合规状态',
       dataIndex: 'review_status',
-      render: (status: string) => {
-        const map: Record<string, { status: any; text: string }> = {
-          pass: { status: 'success', text: '合规' },
-          warning: { status: 'warning', text: '警告' },
-          illegal: { status: 'danger', text: '不合规' },
-        };
-        const item = map[status];
+      render: (status: ReviewStatus) => {
+        const item = reviewStatusMap[status];
         return <StatusTag status={item.status}>{item.text}</StatusTag>;
       },
     },
     {
       title: '操作',
-      width: 180,
+      width: 160,
       render: (_: unknown, record: CommitRecord) => (
         <Space size="small">
-          <Button type="text" icon={<RobotOutlined />} onClick={() => handleAiReview(record)}>AI 审查</Button>
-          <Button type="text" icon={<EyeOutlined />}>详情</Button>
+          <span
+            className="inline-flex items-center gap-1 text-sm text-violet-600 cursor-pointer hover:text-violet-700"
+            onClick={() => navigate(`/commits/${record.id}/ai-review`)}
+          >
+            <RobotOutlined />
+            AI 审查
+          </span>
+          <span
+            className="inline-flex items-center gap-1 text-sm text-blue-600 cursor-pointer hover:text-blue-700"
+            onClick={() => navigate(`/commits/${record.id}`)}
+          >
+            <EyeOutlined />
+            详情
+          </span>
         </Space>
       ),
     },
@@ -86,18 +162,18 @@ export default function CommitList() {
         <SearchFilterBar
           filters={[
             {
-              key: 'project_id',
+              key: 'project_name',
               type: 'select',
               placeholder: '选择项目',
               width: 176,
-              options: [{ label: '核心交易平台', value: '1' }],
+              options: projectOptions,
             },
             {
               key: 'branch',
               type: 'select',
               placeholder: '选择分支',
               width: 144,
-              options: [{ label: 'develop', value: 'develop' }, { label: 'main', value: 'main' }],
+              options: branchOptions,
             },
             { key: 'author', type: 'input', placeholder: '提交人', width: 128 },
             {
@@ -109,62 +185,44 @@ export default function CommitList() {
             },
           ]}
           values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value as string }))}
           onSearch={() => message.info('执行查询')}
-          onReset={() => setFilters({ project_id: undefined, branch: undefined, author: '', review_status: undefined })}
+          onReset={() =>
+            setFilters({ project_name: undefined, branch: undefined, author: '', review_status: undefined })
+          }
           extra={
-            <Button type="primary" icon={<SyncOutlined />}>同步提交</Button>
+            <Button type="primary" icon={<SyncOutlined />} onClick={() => message.info('同步提交')}>
+              同步提交
+            </Button>
           }
         />
       </TsCard>
 
       <TsCard title="提交记录">
-        <Table rowKey="id" columns={columns} dataSource={data} pagination={{ pageSize: 10 }} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={filteredData}
+          pagination={{ pageSize: 10 }}
+        />
       </TsCard>
 
       <TsCard bodyStyle={{ padding: 20 }}>
         <div className="flex items-center gap-4">
-          <div
-            className="w-14 h-14 rounded-xl flex items-center justify-center text-white text-2xl"
-            style={{ background: 'linear-gradient(135deg, #F59E0B, #FBBF24)' }}
-          >
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-amber-100 text-amber-600 text-2xl">
             <ExclamationCircleOutlined />
           </div>
           <div className="flex-1">
-            <div className="text-2xl font-bold text-slate-900">7</div>
-            <div className="text-slate-500">待处理的不合规 commit</div>
+            <div className="text-base font-semibold text-slate-900">非法提交预警</div>
+            <div className="text-sm text-slate-500 mt-0.5">
+              发现 {alertTotal} 条不合规提交，其中 {configAlertCount} 条包含配置项改动
+            </div>
           </div>
-          <Button type="default">查看预警</Button>
+          <Button type="default" onClick={() => navigate('/commits/alerts')}>
+            查看预警
+          </Button>
         </div>
       </TsCard>
-
-      <Drawer
-        title="AI 审查建议"
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        width={480}
-      >
-        {selectedCommit && (
-          <div className="space-y-4">
-            <div className="bg-purple-50 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-purple-700 font-semibold mb-2">
-                <RobotOutlined /> AI 审查结论
-              </div>
-              <div className="text-slate-600">
-                {selectedCommit.review_status === 'pass'
-                  ? '该提交符合规范要求。'
-                  : selectedCommit.review_status === 'warning'
-                  ? '配置项改动格式不标准，建议统一为 [System] 段落格式。'
-                  : '缺少变更类型标记，请补充变更类型后再提交。'}
-              </div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-4">
-              <div className="font-semibold text-slate-900 mb-2">原始 Commit Message</div>
-              <pre className="font-mono text-sm text-slate-600 whitespace-pre-wrap">{selectedCommit.message}</pre>
-            </div>
-          </div>
-        )}
-      </Drawer>
     </div>
   );
 }
