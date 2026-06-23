@@ -48,6 +48,8 @@ urlpatterns = [
     path("api/auth/", include("apps.account.urls")),
     path("api/account/", include("apps.account.urls_account")),
     path("api/projects/", include("apps.project.urls")),
+    path("api/repositories/", include("apps.repository.urls")),
+    path("api/commits/", include("apps.repository.urls_commits")),
     path("api/credentials/", include("apps.credential.urls")),
     path("api/system/", include("apps.system.urls")),
     # API Docs

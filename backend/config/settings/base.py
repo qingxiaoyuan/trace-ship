@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.account.apps.AccountConfig",
     "apps.credential.apps.CredentialConfig",
     "apps.project.apps.ProjectConfig",
+    "apps.repository.apps.RepositoryConfig",
     "apps.system.apps.SystemConfig",
 ]
 
