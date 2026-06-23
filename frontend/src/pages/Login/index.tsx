@@ -16,15 +16,16 @@ export default function Login() {
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hydrated = useAuthStore((state) => state.hydrated);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<LoginTab>("domain");
   const [form] = Form.useForm();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (hydrated && isAuthenticated) {
       navigate("/", { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [hydrated, isAuthenticated, navigate]);
   const handleLogin = async (values: {
     username: string;
     password: string;

@@ -19,5 +19,15 @@ export function PageLoader({ children }: { children: React.ReactNode }) {
 
 export function AuthGuard() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hydrated = useAuthStore((state) => state.hydrated);
+
+  if (!hydrated) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Spin size="large" />
+      </div>
+    );
+  }
+
   return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
 }
