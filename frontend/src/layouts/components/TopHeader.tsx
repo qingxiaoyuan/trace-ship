@@ -89,6 +89,13 @@ export function TopHeader() {
       ];
     }
 
+    if (location.pathname === '/releases') {
+      return [
+        { title: '工作台', path: '/' },
+        { title: '发布看板' },
+      ];
+    }
+
     const commitDetailMatch = location.pathname.match(/^\/commits\/([^/]+)/);
     if (commitDetailMatch) {
       return [
