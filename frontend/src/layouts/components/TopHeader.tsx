@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import {
   Layout,
   Breadcrumb,
@@ -51,9 +51,8 @@ export function TopHeader() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { currentProjectId, setCurrentProjectId } = useGlobalStore();
-  const [breadcrumbItems, setBreadcrumbItems] = useState<{ title: string; path?: string }[]>([]);
 
-  useEffect(() => {
+  const breadcrumbItems = useMemo<{ title: string; path?: string }[]>(() => {
     const pathSnippets = location.pathname.split('/').filter((i) => i);
     const items: { title: string; path?: string }[] = [];
     let currentPath = '';
@@ -70,7 +69,7 @@ export function TopHeader() {
     if (items.length === 0) {
       items.push({ title: '工作台' });
     }
-    setBreadcrumbItems(items);
+    return items;
   }, [location.pathname]);
 
   const userMenuItems = [

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Menu, Layout, Typography } from 'antd';
 import {
   DashboardOutlined,
@@ -42,9 +42,7 @@ const menuItems = [
 export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [selectedKey, setSelectedKey] = useState(location.pathname);
-
-  useEffect(() => {
+  const selectedKey = useMemo(() => {
     const path = location.pathname;
     const findKey = (items: typeof menuItems): string | undefined => {
       for (const item of items) {
@@ -58,7 +56,7 @@ export function Sidebar() {
       }
       return undefined;
     };
-    setSelectedKey(findKey(menuItems) || '/');
+    return findKey(menuItems) || '/';
   }, [location.pathname]);
 
   return (
