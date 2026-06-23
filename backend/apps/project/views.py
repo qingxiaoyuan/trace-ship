@@ -10,6 +10,9 @@ from apps.project.serializers import (
     ProjectIntegrationSerializer,
 )
 from utils.permissions import IsSuperUser, IsProjectManager
+from utils.provider.credential_resolver import resolve_credential
+from utils.provider.exceptions import ProviderError
+from utils.provider.factory import get_provider
 from utils.response import success_response, error_response
 
 
@@ -85,12 +88,35 @@ class ProjectIntegrationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def test(self, request, project_pk=None, pk=None):
-        """测试外站绑定连通性（Milestone 1 中简化实现）"""
+        """测试外站绑定连通性"""
         integration = self.get_object()
-        # TODO: 根据 integration_type 和 vendor 调用实际的外部接口测试
-        return success_response({
-            "connected": True,
-            "detail": "连通性测试通过（当前为简化实现）",
-            "integration_type": integration.integration_type,
-            "vendor": integration.vendor,
-        })
+        try:
+            cred_data = resolve_credential(integration, request.user)
+            server_url = integration.config.get("server_url", "")
+            if not server_url and integration.external_identity:
+                server_url = integration.external_identity
+            provider = get_provider(integration.vendor, server_url, cred_data)
+            connected = provider.test_connection()
+            return success_response({
+                "connected": connected,
+                "detail": "连接成功",
+                "integration_type": integration.integration_type,
+                "vendor": integration.vendor,
+            })
+        except ProviderError as exc:
+            return success_response({
+                "connected": False,
+                "detail": str(exc),
+                "integration_type": integration.integration_type,
+                "vendor": integration.vendor,
+            })
+        except Exception as exc:
+            return error_response(
+                50000,
+                f"连通性测试异常: {exc}",
+                data={
+                    "integration_type": integration.integration_type,
+                    "vendor": integration.vendor,
+                },
+                status_code=500,
+            )
