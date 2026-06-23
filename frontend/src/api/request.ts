@@ -7,12 +7,21 @@ const request: AxiosInstance = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-    Accept: 'application/vnd.trace-ship.v1+json',
+    Accept: 'application/json',
   },
 });
 
 request.interceptors.request.use(
-  (config) => {
+  async (config) => {
+    if (import.meta.env.DEV) {
+      const { shouldMock, mockRequest } = await import('./mock');
+      if (shouldMock(config.url)) {
+        const mockResponse = await mockRequest(config);
+        if (mockResponse) {
+          config.adapter = async () => mockResponse;
+        }
+      }
+    }
     const token = localStorage.getItem('accessToken');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
