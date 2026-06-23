@@ -128,6 +128,12 @@ export interface AIReviewScores {
   risk_control: number;
 }
 
+export interface RelatedChangeItem {
+  id: string;
+  softwareName: string;
+  version: string;
+}
+
 export interface AIReviewResult {
   conclusion: string;
   suggestions: AIReviewSuggestion[];
