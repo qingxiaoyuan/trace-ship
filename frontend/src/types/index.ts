@@ -128,6 +128,12 @@ export interface AIReviewScores {
   risk_control: number;
 }
 
+export interface RelatedChangeItem {
+  id: string;
+  softwareName: string;
+  version: string;
+}
+
 export interface AIReviewResult {
   conclusion: string;
   suggestions: AIReviewSuggestion[];
@@ -211,6 +217,9 @@ export interface WorkflowTask {
   submit_time: string;
   remaining_time?: string;
   status: WorkflowTaskStatus;
+  version?: string;
+  release_type?: 'formal' | 'test';
+  source_branch?: string;
 }
 
 export interface DashboardOverview {

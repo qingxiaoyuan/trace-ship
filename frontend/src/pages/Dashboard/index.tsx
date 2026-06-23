@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { Row, Col, Progress, Button, Avatar, List, Typography } from 'antd';
 import {
   RocketOutlined,
@@ -48,6 +49,8 @@ const kpiCards = [
 const todoList = mockTodoList;
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+
   return (
     <div className="space-y-6">
       <Row gutter={[16, 16]}>
@@ -79,7 +82,7 @@ export default function Dashboard() {
             extra={
               <div className="flex items-center gap-4">
                 <Text className="text-slate-400 text-sm">最近 10 条发布记录</Text>
-                <Button type="text">查看全部 <RightOutlined /></Button>
+                <Button type="text" onClick={() => navigate('/releases')}>查看全部 <RightOutlined /></Button>
               </div>
             }
           >
@@ -115,7 +118,7 @@ export default function Dashboard() {
                   <div className="flex items-center gap-3 w-full bg-slate-50 rounded-xl p-3">
                     <Avatar
                       size="large"
-                      style={{ background: tokens.colors.primary }}
+                      style={{ background: tokens.colors.userAvatar }}
                     >
                       {item.applicant.charAt(0)}
                     </Avatar>
@@ -123,14 +126,14 @@ export default function Dashboard() {
                       <Text className="font-medium text-slate-900 block">{item.title}</Text>
                       <Text className="text-xs text-slate-400">{item.applicant} · {item.time}</Text>
                     </div>
-                    <Button type="link">去审批</Button>
+                    <Button type="link" onClick={() => navigate('/workflows')}>去审批</Button>
                   </div>
                 </List.Item>
               )}
             />
           </TsCard>
 
-          <TsCard bodyStyle={{ padding: 20 }}>
+          <TsCard title="非法提交预警" bodyStyle={{ padding: 20 }}>
             <div className="flex items-center gap-4">
               <div
                 className="w-14 h-14 rounded-xl flex items-center justify-center text-white text-2xl"
@@ -142,7 +145,7 @@ export default function Dashboard() {
                 <Title level={3} className="!m-0 !text-slate-900">7</Title>
                 <Text className="text-slate-500">待处理的不合规 commit</Text>
               </div>
-              <Button type="default">查看</Button>
+              <Button type="default" onClick={() => navigate('/commits/alerts')}>查看</Button>
             </div>
           </TsCard>
         </Col>

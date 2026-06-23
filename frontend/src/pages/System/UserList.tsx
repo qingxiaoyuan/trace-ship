@@ -5,6 +5,7 @@ import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { mockUsers, sourceMap } from '@/mock/system';
+import { tokens } from '@/styles/theme';
 
 export default function SystemUserList() {
   const [filters, setFilters] = useState({ keyword: '', source: undefined, is_active: undefined });
@@ -17,7 +18,7 @@ export default function SystemUserList() {
       dataIndex: 'nickname',
       render: (name: string) => (
         <Space>
-          <Avatar size="small" style={{ background: '#2563EB' }}>{name?.charAt(0)}</Avatar>
+          <Avatar size="small" style={{ background: tokens.colors.userAvatar }}>{name?.charAt(0)}</Avatar>
           {name}
         </Space>
       ),

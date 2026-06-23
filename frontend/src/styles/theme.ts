@@ -1,23 +1,43 @@
 export const tokens = {
   colors: {
-    primary: '#2563EB',
-    primaryLight: '#3B82F6',
-    primaryDark: '#1D4ED8',
-    success: '#10B981',
-    successDark: '#059669',
-    warning: '#F59E0B',
-    warningDark: '#D97706',
-    danger: '#EF4444',
-    dangerDark: '#DC2626',
-    info: '#3B82F6',
-    ai: '#8B5CF6',
-    bg: '#F8FAFC',
+    // Minimalist warm monochrome foundation
+    primary: '#111111',
+    primaryLight: '#2F3437',
+    primaryDark: '#000000',
+
+    // Muted semantic spot pastels (text / background pairs)
+    success: '#346538',
+    successSoft: '#EDF3EC',
+    warning: '#956400',
+    warningSoft: '#FBF3DB',
+    danger: '#9F2F2D',
+    dangerSoft: '#FDEBEC',
+    info: '#1F6C9F',
+    infoSoft: '#E1F3FE',
+    neutral: '#787774',
+    neutralSoft: '#F1F5F9',
+
+    // Surfaces & structure
+    bg: '#F7F6F3',
     surface: '#FFFFFF',
-    border: '#E2E8F0',
-    textPrimary: '#0F172A',
-    textBody: '#334155',
-    textSecondary: '#64748B',
-    textMuted: '#94A3B8',
+    border: '#EAEAEA',
+    borderSubtle: 'rgba(0, 0, 0, 0.06)',
+
+    // Typography
+    textPrimary: '#111111',
+    textBody: '#2F3437',
+    textSecondary: '#787774',
+    textMuted: '#9F9F9A',
+
+    // Primary action: keep the previous blue for buttons
+    buttonPrimary: '#2563EB',
+    buttonPrimaryHover: '#1D4ED8',
+    buttonPrimaryActive: '#1E40AF',
+
+    // User avatars / main user icons use the same brand blue
+    userAvatar: '#2563EB',
+
+    // Code / terminal
     logBg: '#0F172A',
     logText: '#34D399',
   },
@@ -25,11 +45,20 @@ export const tokens = {
     sidebarWidth: 240,
     headerHeight: 64,
     pagePadding: 24,
-    cardRadius: 16,
-    buttonRadius: 12,
-    inputRadius: 12,
+    cardRadius: 12,
+    buttonRadius: 6,
+    inputRadius: 6,
   },
-};
+  font: {
+    sans: '"SF Pro Display", "Geist Sans", "Helvetica Neue", "Switzer", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif',
+    mono: '"Geist Mono", "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace',
+  },
+  shadow: {
+    card: '0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03)',
+    cardHover: '0 2px 8px rgba(0, 0, 0, 0.04)',
+    buttonPrimary: '0 1px 3px rgba(37, 99, 235, 0.2)',
+  },
+} as const;
 
 export const antdTheme = {
   token: {
@@ -38,11 +67,12 @@ export const antdTheme = {
     colorWarning: tokens.colors.warning,
     colorError: tokens.colors.danger,
     colorInfo: tokens.colors.info,
-    borderRadius: 12,
-    borderRadiusSM: 8,
-    borderRadiusLG: 16,
-    fontFamily:
-      '"PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif',
+    colorTextBase: tokens.colors.textBody,
+    colorBgBase: tokens.colors.surface,
+    borderRadius: tokens.layout.buttonRadius,
+    borderRadiusSM: 4,
+    borderRadiusLG: tokens.layout.cardRadius,
+    fontFamily: tokens.font.sans,
   },
   components: {
     Layout: {
@@ -51,35 +81,56 @@ export const antdTheme = {
       siderBg: tokens.colors.surface,
     },
     Menu: {
-      itemSelectedBg: 'linear-gradient(135deg, #EFF6FF, #DBEAFE)',
-      itemSelectedColor: tokens.colors.primary,
-      itemHoverBg: '#F1F5F9',
+      itemSelectedBg: tokens.colors.infoSoft,
+      itemSelectedColor: tokens.colors.info,
+      itemHoverBg: tokens.colors.bg,
       itemHoverColor: tokens.colors.textBody,
+      activeBarWidth: 0,
     },
     Card: {
-      borderRadius: 16,
+      borderRadius: tokens.layout.cardRadius,
       colorBorderSecondary: tokens.colors.border,
     },
     Button: {
-      borderRadius: 12,
-      borderRadiusSM: 8,
-      primaryShadow: '0 1px 3px rgba(37, 99, 235, 0.2)',
+      borderRadius: tokens.layout.buttonRadius,
+      borderRadiusSM: 4,
+      colorPrimary: tokens.colors.buttonPrimary,
+      primaryShadow: tokens.shadow.buttonPrimary,
+      defaultBg: tokens.colors.surface,
+      defaultColor: tokens.colors.textBody,
+      defaultBorder: tokens.colors.border,
     },
     Input: {
-      borderRadius: 12,
+      borderRadius: tokens.layout.inputRadius,
       colorBorder: tokens.colors.border,
+      activeBorderColor: tokens.colors.textSecondary,
+      hoverBorderColor: '#D1D1CE',
+      activeShadow: '0 0 0 2px rgba(17, 17, 17, 0.06)',
     },
     Select: {
-      borderRadius: 12,
+      borderRadius: tokens.layout.inputRadius,
+      colorBorder: tokens.colors.border,
     },
     Table: {
-      headerBg: '#FAFBFC',
+      headerBg: '#F9F9F8',
       headerColor: tokens.colors.textSecondary,
-      rowHoverBg: '#F8FAFC',
-      borderColor: '#F1F5F9',
+      rowHoverBg: tokens.colors.bg,
+      borderColor: tokens.colors.border,
     },
     Tag: {
       borderRadius: 9999,
+    },
+    Tabs: {
+      inkBarColor: tokens.colors.primary,
+      itemSelectedColor: tokens.colors.primary,
+      itemHoverColor: tokens.colors.textBody,
+      itemColor: tokens.colors.textSecondary,
+    },
+    Modal: {
+      borderRadius: tokens.layout.cardRadius,
+    },
+    Drawer: {
+      borderRadius: 0,
     },
   },
 };

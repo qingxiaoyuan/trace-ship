@@ -25,7 +25,7 @@ export function TsModal({
 }: TsModalProps) {
   return (
     <Modal
-      title={<span className="text-lg font-semibold text-slate-900">{title}</span>}
+      title={<span className="text-lg font-semibold" style={{ color: tokens.colors.textPrimary }}>{title}</span>}
       open={open}
       onCancel={onCancel}
       onOk={onOk}

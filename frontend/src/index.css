@@ -10,9 +10,9 @@ body,
 }
 
 body {
-  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  color: #334155;
-  background: #F8FAFC;
+  font-family: "SF Pro Display", "Geist Sans", "Helvetica Neue", "Switzer", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  color: #2F3437;
+  background: #F7F6F3;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -32,7 +32,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #D1D1CE;
   border-radius: 3px;
 }
 
@@ -40,14 +40,49 @@ body {
   background: transparent;
 }
 
+/* Minimalist design tokens exposed as CSS variables */
+:root {
+  --ts-bg: #F7F6F3;
+  --ts-surface: #FFFFFF;
+  --ts-border: #EAEAEA;
+  --ts-border-subtle: rgba(0, 0, 0, 0.06);
+  --ts-text-primary: #111111;
+  --ts-text-body: #2F3437;
+  --ts-text-secondary: #787774;
+  --ts-text-muted: #9F9F9A;
+
+  --ts-success: #346538;
+  --ts-success-soft: #EDF3EC;
+  --ts-warning: #956400;
+  --ts-warning-soft: #FBF3DB;
+  --ts-danger: #9F2F2D;
+  --ts-danger-soft: #FDEBEC;
+  --ts-info: #1F6C9F;
+  --ts-info-soft: #E1F3FE;
+  --ts-neutral: #787774;
+  --ts-neutral-soft: #F1F5F9;
+
+  --ts-radius-sm: 4px;
+  --ts-radius-md: 6px;
+  --ts-radius-lg: 12px;
+
+  --ts-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --ts-shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --ts-shadow-button-primary: 0 1px 3px rgba(37, 99, 235, 0.2);
+
+  --ts-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Login page gradient remains as a functional page background */
 .login-gradient {
   background: linear-gradient(135deg, #F0F9FF 0%, #EFF6FF 50%, #F5F3FF 100%);
 }
 
+/* Terminal-style build log console */
 .log-console {
   background: #0F172A;
   color: #34D399;
-  font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -60,8 +95,13 @@ body {
   margin-right: 6px;
 }
 
+/* Page / content entry animations */
 .page-fade-in {
   animation: fadeInUp 0.3s ease-out;
+}
+
+.ts-fade-in-up {
+  animation: tsFadeInUp 600ms var(--ts-ease-out) both;
 }
 
 @keyframes fadeInUp {
@@ -73,4 +113,63 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes tsFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Staggered list reveal: apply to container, children get --index inline style */
+.ts-stagger-children > * {
+  opacity: 0;
+  animation: tsFadeInUp 500ms var(--ts-ease-out) both;
+  animation-delay: calc(var(--index, 0) * 60ms);
+}
+
+/* Soft pulse for building / live states */
+.ts-pulse-soft {
+  animation: tsPulseSoft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tsPulseSoft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Ultra-subtle hover lift for cards */
+.ts-hover-lift {
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+.ts-hover-lift:hover {
+  box-shadow: var(--ts-shadow-card-hover);
+}
+
+/* Focus ring consistent with monochrome palette */
+.ts-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.08);
+}
+
+/* Editoral serif utility for hero headings */
+.font-editorial {
+  font-family: "Lyon Text", "Newsreader", "Playfair Display", "Instrument Serif", Georgia, serif;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+/* Monospace utility */
+.font-mono-ui {
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace;
 }

@@ -22,6 +22,7 @@ import { tokens } from '@/styles/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useGlobalStore } from '@/stores/globalStore';
 import { mockProjects } from '@/mock/projects';
+import { mockBuildRecords } from '@/mock/dashboard';
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -62,6 +63,16 @@ export function TopHeader() {
       }
     }
 
+    // Jenkins 构建日志动态面包屑：Jenkins 构建 / 构建日志 #128
+    const jenkinsLogMatch = location.pathname.match(/^\/jenkins\/logs\/([^/]+)/);
+    if (jenkinsLogMatch) {
+      const build = mockBuildRecords.find((b) => b.id === jenkinsLogMatch[1]);
+      return [
+        { title: 'Jenkins 构建', path: '/jenkins' },
+        { title: build ? `构建日志 #${build.build_number}` : '构建日志' },
+      ];
+    }
+
     // 提交规范审查子路由动态面包屑
     const commitAiReviewMatch = location.pathname.match(/^\/commits\/([^/]+)\/ai-review/);
     if (commitAiReviewMatch) {
@@ -75,6 +86,13 @@ export function TopHeader() {
       return [
         { title: '提交规范审查', path: '/commits' },
         { title: '非法提交预警详情' },
+      ];
+    }
+
+    if (location.pathname === '/releases') {
+      return [
+        { title: '工作台', path: '/' },
+        { title: '发布看板' },
       ];
     }
 
@@ -168,7 +186,7 @@ export function TopHeader() {
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow>
           <div className="flex items-center gap-2 cursor-pointer">
             <Avatar
-              style={{ backgroundColor: tokens.colors.primary }}
+              style={{ backgroundColor: tokens.colors.userAvatar }}
               size="small"
             >
               {user?.nickname?.charAt(0) || 'U'}

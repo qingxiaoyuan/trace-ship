@@ -203,7 +203,7 @@ export default function CommitList() {
           rowKey="id"
           columns={columns}
           dataSource={filteredData}
-          pagination={{ pageSize: 10 }}
+          pagination={{ pageSize: 6 }}
         />
       </TsCard>
 

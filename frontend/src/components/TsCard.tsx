@@ -9,9 +9,18 @@ interface TsCardProps {
   className?: string;
   style?: React.CSSProperties;
   bodyStyle?: React.CSSProperties;
+  headStyle?: React.CSSProperties;
 }
 
-export function TsCard({ children, title, extra, className, style, bodyStyle }: TsCardProps) {
+export function TsCard({
+  children,
+  title,
+  extra,
+  className,
+  style,
+  bodyStyle,
+  headStyle,
+}: TsCardProps) {
   return (
     <Card
       title={title}
@@ -20,7 +29,7 @@ export function TsCard({ children, title, extra, className, style, bodyStyle }: 
       style={{
         borderRadius: tokens.layout.cardRadius,
         border: `1px solid ${tokens.colors.border}`,
-        boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.03)',
+        boxShadow: tokens.shadow.card,
         ...style,
       }}
       bodyStyle={{ padding: 20, ...bodyStyle }}
@@ -28,6 +37,7 @@ export function TsCard({ children, title, extra, className, style, bodyStyle }: 
         borderBottom: `1px solid ${tokens.colors.border}`,
         padding: '16px 20px',
         fontWeight: 700,
+        ...headStyle,
       }}
     >
       {children}

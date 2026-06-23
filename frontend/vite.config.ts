@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: true,
     port: 5173,
     proxy: {
       // 当 VITE_ENABLE_MOCK=true 时，/api 请求会被前端 mock 适配器拦截，
