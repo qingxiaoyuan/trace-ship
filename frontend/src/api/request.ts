@@ -43,7 +43,8 @@ request.interceptors.response.use(
   },
   (error: AxiosError<ApiResponse<unknown>>) => {
     const data = error.response?.data;
-    if (error.response?.status === 401 || data?.code === 40100) {
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (!isLoginRequest && (error.response?.status === 401 || data?.code === 40100)) {
       useAuthStore.getState().clearAuth();
       window.location.href = '/login';
     }

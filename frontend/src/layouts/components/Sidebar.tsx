@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Menu, Layout, Typography } from "antd";
+import type { ItemType, MenuItemType } from "antd/es/menu/interface";
 import {
   DashboardOutlined,
   ProjectOutlined,
@@ -10,54 +11,77 @@ import {
   BuildOutlined,
   NodeIndexOutlined,
   SettingOutlined,
+  RocketOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { tokens } from "@/styles/theme";
+import { useAuthStore } from "@/stores/authStore";
+import type { MenuItem } from "@/types";
 
 const { Sider } = Layout;
 const { Title, Text } = Typography;
 
-const menuItems = [
-  { key: "/", icon: <DashboardOutlined />, label: "工作台" },
-  { key: "/projects", icon: <ProjectOutlined />, label: "项目管理" },
-  { key: "/repositories", icon: <DatabaseOutlined />, label: "仓库管理" },
-  { key: "/credentials", icon: <KeyOutlined />, label: "凭证管理" },
-  { key: "/commits", icon: <FileSearchOutlined />, label: "提交规范审查" },
-  { key: "/tags", icon: <TagsOutlined />, label: "Tag 生成与发布" },
-  { key: "/jenkins", icon: <BuildOutlined />, label: "Jenkins 构建" },
-  { key: "/workflows", icon: <NodeIndexOutlined />, label: "工作流审批" },
-  {
-    key: "/system",
-    icon: <SettingOutlined />,
-    label: "系统管理",
-    children: [
-      { key: "/system/users", label: "用户管理" },
-      { key: "/system/roles", label: "角色权限" },
-      { key: "/system/configs", label: "系统配置" },
-      { key: "/system/logs", label: "操作日志" },
-    ],
-  },
-];
+const iconMap: Record<string, React.ReactNode> = {
+  DashboardOutlined: <DashboardOutlined />,
+  ProjectOutlined: <ProjectOutlined />,
+  DatabaseOutlined: <DatabaseOutlined />,
+  KeyOutlined: <KeyOutlined />,
+  FileSearchOutlined: <FileSearchOutlined />,
+  TagsOutlined: <TagsOutlined />,
+  BuildOutlined: <BuildOutlined />,
+  NodeIndexOutlined: <NodeIndexOutlined />,
+  SettingOutlined: <SettingOutlined />,
+  RocketOutlined: <RocketOutlined />,
+  UserOutlined: <UserOutlined />,
+};
+
+function mapMenus(items: MenuItem[]): MenuItemType[] {
+  return items.map((item) => {
+    const menuItem: MenuItemType = {
+      key: item.path,
+      icon: iconMap[item.icon] || null,
+      label: item.name,
+    };
+    if (item.children && item.children.length > 0) {
+      menuItem.children = mapMenus(item.children);
+    }
+    return menuItem;
+  });
+}
 
 export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const menus = useAuthStore((state) => state.menus);
+
+  const menuItems = useMemo(() => mapMenus(menus), [menus]);
+
   const selectedKey = useMemo(() => {
     const path = location.pathname;
-    const findKey = (items: typeof menuItems): string | undefined => {
+    const findKey = (items: ItemType[]): string | undefined => {
       for (const item of items) {
-        if (path === item.key || path.startsWith(`${item.key}/`)) {
-          return item.key;
+        if (!item || typeof item !== "object" || "type" in item) continue;
+        const key = (item as any).key as string;
+        if (path === key || path.startsWith(`${key}/`)) {
+          return key;
         }
-        if (item.children) {
-          const childKey = findKey(item.children as typeof menuItems);
+        const children = (item as any).children as ItemType[] | undefined;
+        if (children) {
+          const childKey = findKey(children);
           if (childKey) return childKey;
         }
       }
       return undefined;
     };
-    return findKey(menuItems) || "/";
-  }, [location.pathname]);
+
+    const key = findKey(menuItems);
+    // /dashboard 与 / 都对应首页菜单
+    if (!key && (path === "/" || path === "/dashboard")) {
+      return "/dashboard";
+    }
+    return key || "/";
+  }, [location.pathname, menuItems]);
 
   return (
     <Sider
