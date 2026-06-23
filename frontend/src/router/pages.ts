@@ -1,0 +1,18 @@
+import { lazy } from 'react';
+
+export const Dashboard = lazy(() => import('@/pages/Dashboard'));
+export const ProjectList = lazy(() => import('@/pages/Project/List'));
+export const ProjectDetail = lazy(() => import('@/pages/Project/Detail'));
+export const RepositoryList = lazy(() => import('@/pages/Repository/List'));
+export const CredentialList = lazy(() => import('@/pages/Credential/List'));
+export const CredentialUsage = lazy(() => import('@/pages/Credential/Usage'));
+export const CommitList = lazy(() => import('@/pages/Commit/List'));
+export const TagGenerator = lazy(() => import('@/pages/TagGenerator'));
+export const Jenkins = lazy(() => import('@/pages/Jenkins'));
+export const Workflow = lazy(() => import('@/pages/Workflow'));
+export const ReleaseBoard = lazy(() => import('@/pages/Release/Board'));
+export const SystemUserList = lazy(() => import('@/pages/System/UserList'));
+export const SystemRoleList = lazy(() => import('@/pages/System/RoleList'));
+export const SystemConfig = lazy(() => import('@/pages/System/Config'));
+export const SystemLogList = lazy(() => import('@/pages/System/LogList'));
+export const Profile = lazy(() => import('@/pages/Profile'));

@@ -1,6 +1,16 @@
-import { Table, Button, Space, Avatar, Tag } from 'antd';
+import { Table, Button, Space, Avatar } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
+import { StatusTag } from '@/components/StatusTag';
 import { mockProjectMembers, projectRoleMap } from '@/mock/projectDetail';
+import { getAvatarColor } from '@/utils/avatar';
+
+const roleStatusMap: Record<string, 'primary' | 'success' | 'info' | 'neutral'> = {
+  manager: 'primary',
+  tester: 'success',
+  developer: 'info',
+  auditor: 'neutral',
+  viewer: 'neutral',
+};
 
 export function MemberTab() {
   return (
@@ -18,7 +28,12 @@ export function MemberTab() {
             dataIndex: 'name',
             render: (name: string) => (
               <Space>
-                <Avatar size="small" style={{ background: '#2563EB' }}>{name.charAt(0)}</Avatar>
+                <Avatar
+                  size="small"
+                  style={{ backgroundColor: getAvatarColor(name), color: '#fff' }}
+                >
+                  {name.charAt(0)}
+                </Avatar>
                 {name}
               </Space>
             ),
@@ -27,7 +42,11 @@ export function MemberTab() {
           {
             title: '角色',
             dataIndex: 'role',
-            render: (role: string) => <Tag color="blue">{projectRoleMap[role]}</Tag>,
+            render: (role: string) => (
+              <StatusTag status={roleStatusMap[role] || 'neutral'}>
+                {projectRoleMap[role] || role}
+              </StatusTag>
+            ),
           },
           { title: '加入时间', dataIndex: 'joinTime' },
           {

@@ -1,46 +1,26 @@
-import { Suspense, lazy } from 'react';
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
-import { Spin } from 'antd';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
-import { useAuthStore } from '@/stores/authStore';
-
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const ProjectList = lazy(() => import('@/pages/Project/List'));
-const ProjectDetail = lazy(() => import('@/pages/Project/Detail'));
-const RepositoryList = lazy(() => import('@/pages/Repository/List'));
-const CredentialList = lazy(() => import('@/pages/Credential/List'));
-const CredentialUsage = lazy(() => import('@/pages/Credential/Usage'));
-const CommitList = lazy(() => import('@/pages/Commit/List'));
-const TagGenerator = lazy(() => import('@/pages/TagGenerator'));
-const Jenkins = lazy(() => import('@/pages/Jenkins'));
-const Workflow = lazy(() => import('@/pages/Workflow'));
-const ReleaseBoard = lazy(() => import('@/pages/Release/Board'));
-const SystemUserList = lazy(() => import('@/pages/System/UserList'));
-const SystemRoleList = lazy(() => import('@/pages/System/RoleList'));
-const SystemConfig = lazy(() => import('@/pages/System/Config'));
-const SystemLogList = lazy(() => import('@/pages/System/LogList'));
-const Profile = lazy(() => import('@/pages/Profile'));
-
-function PageLoader({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense
-      fallback={
-        <div className="h-full flex items-center justify-center">
-          <Spin size="large" />
-        </div>
-      }
-    >
-      {children}
-    </Suspense>
-  );
-}
-
-function AuthGuard() {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
-}
+import { AuthGuard, PageLoader } from './components';
+import {
+  CommitList,
+  CredentialList,
+  CredentialUsage,
+  Dashboard,
+  Jenkins,
+  Profile,
+  ProjectDetail,
+  ProjectList,
+  ReleaseBoard,
+  RepositoryList,
+  SystemConfig,
+  SystemLogList,
+  SystemRoleList,
+  SystemUserList,
+  TagGenerator,
+  Workflow,
+} from './pages';
 
 export const router = createBrowserRouter([
   {

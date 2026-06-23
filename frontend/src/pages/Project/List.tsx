@@ -1,19 +1,12 @@
 import { useState } from 'react';
-import { Table, Button, Space, Avatar, message, Popconfirm } from 'antd';
-import {
-  EditOutlined,
-  TeamOutlined,
-  LinkOutlined,
-  StopOutlined,
-  CheckCircleOutlined,
-  DeleteOutlined,
-} from '@ant-design/icons';
+import { Table, Button, Space, Avatar, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { ProjectModal } from './modals/ProjectModal';
 import { mockProjects, projectStatusOptions } from '@/mock/projects';
+import { getAvatarColor } from '@/utils/avatar';
 import type { Project } from '@/types';
 
 export default function ProjectList() {
@@ -21,22 +14,15 @@ export default function ProjectList() {
   const [filters, setFilters] = useState({ keyword: '', status: undefined });
   const [data] = useState<Project[]>(mockProjects);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-
-  const handleEdit = (project: Project) => {
-    setEditingProject(project);
-    setModalOpen(true);
-  };
 
   const handleAdd = () => {
-    setEditingProject(null);
     setModalOpen(true);
   };
 
   const handleSave = (values: Partial<Project>) => {
     console.log('save project', values);
     setModalOpen(false);
-    message.success(editingProject ? '编辑成功' : '新增成功');
+    message.success('新增成功');
   };
 
   const columns = [
@@ -44,26 +30,35 @@ export default function ProjectList() {
       title: '项目编码',
       dataIndex: 'code',
       key: 'code',
-      render: (text: string, record: Project) => (
-        <Button type="link" onClick={() => navigate(`/projects/${record.id}`)} className="!px-0">
-          {text}
-        </Button>
+      render: (text: string) => (
+        <span className="font-mono text-xs text-slate-600">{text}</span>
       ),
     },
-    { title: '项目名称', dataIndex: 'name', key: 'name' },
+    {
+      title: '项目名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text: string) => (
+        <span className="font-semibold text-slate-900">{text}</span>
+      ),
+    },
     {
       title: '负责人',
       dataIndex: 'leader_name',
       key: 'leader_name',
       render: (text: string) => (
         <Space>
-          <Avatar size="small" style={{ background: '#2563EB' }}>{text?.charAt(0)}</Avatar>
+          <Avatar
+            size="small"
+            style={{ backgroundColor: getAvatarColor(text), color: '#fff' }}
+          >
+            {text?.charAt(0)}
+          </Avatar>
           {text}
         </Space>
       ),
     },
-    { title: '关联仓库数', dataIndex: 'repo_count', key: 'repo_count' },
-    { title: '成员数', dataIndex: 'member_count', key: 'member_count' },
+    { title: '仓库数', dataIndex: 'repo_count', key: 'repo_count' },
     {
       title: '状态',
       dataIndex: 'status',
@@ -83,27 +78,14 @@ export default function ProjectList() {
     {
       title: '操作',
       key: 'action',
-      width: 280,
       render: (_: unknown, record: Project) => (
-        <Space size="small">
-          <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-          <Button type="text" icon={<TeamOutlined />} onClick={() => navigate(`/projects/${record.id}/members`)}>成员</Button>
-          <Button type="text" icon={<LinkOutlined />} onClick={() => navigate(`/projects/${record.id}/integrations`)}>外站绑定</Button>
-          <Popconfirm
-            title={`确定要${record.status === 'active' ? '停用' : '启用'}该项目吗？`}
-            onConfirm={() => message.success('操作成功')}
-          >
-            <Button
-              type="text"
-              icon={record.status === 'active' ? <StopOutlined /> : <CheckCircleOutlined />}
-            >
-              {record.status === 'active' ? '停用' : '启用'}
-            </Button>
-          </Popconfirm>
-          <Popconfirm title="确定要删除该项目吗？" onConfirm={() => message.success('删除成功')}>
-            <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
-        </Space>
+        <Button
+          type="link"
+          className="px-0! text-sm font-medium"
+          onClick={() => navigate(`/projects/${record.id}`)}
+        >
+          编辑
+        </Button>
       ),
     },
   ];
@@ -142,7 +124,7 @@ export default function ProjectList() {
 
       <ProjectModal
         open={modalOpen}
-        project={editingProject}
+        project={null}
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}
       />

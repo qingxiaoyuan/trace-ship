@@ -1,6 +1,13 @@
-import { Table, Button, Space, Tag } from 'antd';
+import { Table, Button, Space } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
+import { StatusTag } from '@/components/StatusTag';
 import { mockProjectIntegrations, integrationTypeMap } from '@/mock/projectDetail';
+
+const integrationStatusMap: Record<string, 'primary' | 'warning' | 'neutral'> = {
+  git_repo: 'primary',
+  jenkins_job: 'warning',
+  svn_repo: 'neutral',
+};
 
 export function IntegrationTab() {
   return (
@@ -16,9 +23,13 @@ export function IntegrationTab() {
           {
             title: '外站类型',
             dataIndex: 'type',
-            render: (type: string) => <Tag color="blue">{integrationTypeMap[type]}</Tag>,
+            render: (type: string) => (
+              <StatusTag status={integrationStatusMap[type] || 'neutral'}>
+                {integrationTypeMap[type] || type}
+              </StatusTag>
+            ),
           },
-          { title: '资源', dataIndex: 'resource' },
+          { title: '资源', dataIndex: 'resource', render: (text: string) => <span className="font-semibold text-slate-900">{text}</span> },
           { title: '凭证', dataIndex: 'credential' },
           { title: '凭证归属', dataIndex: 'owner' },
           {

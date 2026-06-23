@@ -57,6 +57,11 @@ export interface Project {
   repo_count?: number;
   member_count?: number;
   created_at: string;
+  version_rule?: string;
+  release_cycle?: string;
+  formal_branch?: string;
+  test_prefix?: string;
+  compliance_threshold?: number;
 }
 
 export type ReleaseStatus =

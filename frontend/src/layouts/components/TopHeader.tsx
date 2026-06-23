@@ -21,6 +21,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { tokens } from '@/styles/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useGlobalStore } from '@/stores/globalStore';
+import { mockProjects } from '@/mock/projects';
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -40,11 +41,7 @@ const breadcrumbNameMap: Record<string, string> = {
   '/profile': '个人中心',
 };
 
-const mockProjects = [
-  { value: '1', label: '核心交易平台' },
-  { value: '2', label: '数据中台' },
-  { value: '3', label: '支付网关' },
-];
+const projectSelectOptions = mockProjects.map((p) => ({ value: p.id, label: p.name }));
 
 export function TopHeader() {
   const location = useLocation();
@@ -53,6 +50,18 @@ export function TopHeader() {
   const { currentProjectId, setCurrentProjectId } = useGlobalStore();
 
   const breadcrumbItems = useMemo<{ title: string; path?: string }[]>(() => {
+    // 项目详情动态面包屑：项目管理 / 项目名称
+    const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
+    if (projectMatch) {
+      const project = mockProjects.find((p) => p.id === projectMatch[1]);
+      if (project) {
+        return [
+          { title: '项目管理', path: '/projects' },
+          { title: project.name },
+        ];
+      }
+    }
+
     const pathSnippets = location.pathname.split('/').filter((i) => i);
     const items: { title: string; path?: string }[] = [];
     let currentPath = '';
@@ -66,6 +75,7 @@ export function TopHeader() {
         });
       }
     });
+
     if (items.length === 0) {
       items.push({ title: '工作台' });
     }
@@ -122,7 +132,7 @@ export function TopHeader() {
         <Select
           value={currentProjectId || '1'}
           onChange={setCurrentProjectId}
-          options={mockProjects}
+          options={projectSelectOptions}
           style={{ width: 176 }}
           placeholder="选择项目"
         />

@@ -14,14 +14,16 @@ export function WorkflowTab() {
         dataSource={mockProjectWorkflows}
         pagination={false}
         columns={[
-          { title: '流程名称', dataIndex: 'name' },
-          { title: '业务类型', dataIndex: 'bizType' },
+          { title: '流程名称', dataIndex: 'name', render: (text: string) => <span className="font-semibold text-slate-900">{text}</span> },
+          { title: '业务类型', dataIndex: 'bizType', render: (text: string) => <span className="font-mono text-xs text-slate-600">{text}</span> },
           { title: '版本', dataIndex: 'version' },
           {
-            title: '启用状态',
+            title: '是否启用',
             dataIndex: 'active',
             render: (active: boolean) => (
-              <StatusTag status={active ? 'success' : 'neutral'}>{active ? '启用' : '停用'}</StatusTag>
+              <StatusTag status={active ? 'success' : 'neutral'}>
+                {active ? '启用' : '停用'}
+              </StatusTag>
             ),
           },
           {
@@ -29,7 +31,7 @@ export function WorkflowTab() {
             render: () => (
               <Space>
                 <Button type="text">编辑</Button>
-                <Button type="text">停用/启用</Button>
+                <Button type="text">停用</Button>
               </Space>
             ),
           },
