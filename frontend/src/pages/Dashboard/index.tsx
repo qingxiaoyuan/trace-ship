@@ -130,7 +130,7 @@ export default function Dashboard() {
             />
           </TsCard>
 
-          <TsCard bodyStyle={{ padding: 20 }}>
+          <TsCard title="非法提交预警" bodyStyle={{ padding: 20 }}>
             <div className="flex items-center gap-4">
               <div
                 className="w-14 h-14 rounded-xl flex items-center justify-center text-white text-2xl"
