@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Empty, Typography, message } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { getCommitById, getAIReviewByCommitId } from '@/mock/dashboard';
+import { commitApi } from '@/api/dashboard';
 import type { ReviewStatus } from '@/types';
 
 const { Title, Text } = Typography;
@@ -51,8 +51,21 @@ export default function CommitDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const commit = useMemo(() => (id ? getCommitById(id) : undefined), [id]);
-  const aiReview = useMemo(() => (id ? getAIReviewByCommitId(id) : undefined), [id]);
+  const { data: commit, isLoading } = useQuery({
+    queryKey: ['commit', id],
+    queryFn: () => commitApi.getCommit(id || ''),
+    enabled: !!id,
+  });
+
+  const { data: aiReview } = useQuery({
+    queryKey: ['commit-ai-review', id],
+    queryFn: () => commitApi.getAiReview(id || ''),
+    enabled: !!id,
+  });
+
+  if (isLoading) {
+    return <div className="p-6 text-center">加载中...</div>;
+  }
 
   if (!commit) {
     return (
@@ -68,6 +81,7 @@ export default function CommitDetail() {
   const parsedMessage = parseCommitMessage(commit.message);
   const reviewItem = reviewStatusMap[commit.review_status];
   const changeTypeStatus = changeTypeStatusMap[commit.change_type] || 'neutral';
+  const aiReviewData = aiReview as { conclusion?: string } | undefined;
 
   return (
     <div className="space-y-4">
@@ -130,7 +144,7 @@ export default function CommitDetail() {
           </div>
           <div className="flex-1">
             <div className="text-sm text-slate-700 leading-relaxed">
-              {aiReview?.conclusion || commit.ai_suggestion || '暂无 AI 审查建议。'}
+              {aiReviewData?.conclusion || commit.ai_suggestion || '暂无 AI 审查建议。'}
             </div>
           </div>
         </div>

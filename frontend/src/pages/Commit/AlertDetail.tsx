@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Space, Table, Typography, message, Empty } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeftOutlined,
   RobotOutlined,
@@ -11,9 +12,9 @@ import {
 } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { mockCommitAlerts } from '@/mock/dashboard';
+import { commitApi } from '@/api/dashboard';
 import { formatRelativeTime } from '@/utils/time';
-import type { AlertStatus, CommitAlertRecord } from '@/types';
+import type { AlertStatus, CommitRecord } from '@/types';
 
 const { Title, Text } = Typography;
 
@@ -80,7 +81,21 @@ function SummaryCard({ status, value }: { status: AlertStatus; value: number }) 
 
 export default function CommitAlertDetail() {
   const navigate = useNavigate();
-  const [alerts, setAlerts] = useState<CommitAlertRecord[]>(mockCommitAlerts);
+  const [statusMap, setStatusMap] = useState<Record<string, AlertStatus>>({});
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['commit-alerts'],
+    queryFn: () => commitApi.getCommits({ review_status: 'illegal', page_size: 1000 }),
+  });
+
+  const alerts = useMemo(() => {
+    const illegal = (data?.results || []).filter((c) => c.review_status === 'illegal');
+    return illegal.map((c) => ({
+      ...c,
+      illegal_reason: c.ai_suggestion || '提交信息不符合规范',
+      alert_status: statusMap[c.id] || 'pending',
+    }));
+  }, [data, statusMap]);
 
   const counts = useMemo(() => {
     return {
@@ -91,9 +106,7 @@ export default function CommitAlertDetail() {
   }, [alerts]);
 
   const handleStatusChange = (id: string, status: AlertStatus) => {
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, alert_status: status } : a))
-    );
+    setStatusMap((prev) => ({ ...prev, [id]: status }));
     message.success(`已标记为${alertStatusMap[status].text}`);
   };
 
@@ -132,7 +145,7 @@ export default function CommitAlertDetail() {
     {
       title: '操作',
       width: 220,
-      render: (_: unknown, record: CommitAlertRecord) => {
+      render: (_: unknown, record: CommitRecord & { alert_status: AlertStatus; illegal_reason: string }) => {
         if (record.alert_status === 'pending') {
           return (
             <Space size="small">
@@ -181,7 +194,7 @@ export default function CommitAlertDetail() {
     },
   ];
 
-  if (alerts.length === 0) {
+  if (!isLoading && alerts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <Empty description="暂无不合规提交" />
@@ -229,6 +242,7 @@ export default function CommitAlertDetail() {
           rowKey="id"
           columns={columns}
           dataSource={alerts}
+          loading={isLoading}
           pagination={{ pageSize: 10 }}
         />
       </TsCard>

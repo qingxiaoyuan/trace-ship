@@ -44,7 +44,7 @@ export interface MenuItem {
   children?: MenuItem[];
 }
 
-export type ProjectStatus = 'active' | 'inactive';
+export type ProjectStatus = 'active' | 'inactive' | number;
 
 export interface Project {
   id: string;

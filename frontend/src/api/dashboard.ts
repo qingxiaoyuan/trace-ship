@@ -16,6 +16,7 @@ export const releaseApi = {
 export const commitApi = {
   getCommits: (params?: Record<string, unknown>) =>
     get<PaginatedData<CommitRecord>>('/commits/', { params }),
+  getCommit: (id: string) => get<CommitRecord>(`/commits/${id}/`),
   reviewCommit: (id: string, data: { review_status: string; reason?: string }) =>
     post<CommitRecord>(`/commits/${id}/review/`, data),
   getAiReview: (id: string) => get<unknown>(`/commits/${id}/ai-review/`),
@@ -24,5 +25,6 @@ export const commitApi = {
 export const jenkinsApi = {
   getBuilds: (params?: Record<string, unknown>) =>
     get<PaginatedData<BuildRecord>>('/jenkins/builds/', { params }),
+  getBuild: (id: string) => get<BuildRecord>(`/jenkins/builds/${id}/`),
   getBuildLog: (id: string) => get<{ content: string }>(`/jenkins/builds/${id}/log/`),
 };

@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Table, Button, Space, message } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { EyeOutlined, ExportOutlined, TagOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
-import { StatusTag } from '@/components/StatusTag';
+import { StatusTag, type StatusType } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
-import { mockRecentReleases, releaseStatusOptions, releaseTypeOptions } from '@/mock/dashboard';
-import type { Release } from '@/types';
+import { releaseStatusOptions, releaseTypeOptions } from '@/mock/dashboard';
+import { releaseApi } from '@/api/dashboard';
 
-const statusMap: Record<string, { status: any; text: string }> = {
+const statusMap: Record<string, { status: StatusType; text: string }> = {
   draft: { status: 'neutral', text: '草稿' },
   pending: { status: 'warning', text: '待审批' },
   building: { status: 'warning', text: '构建中' },
@@ -23,7 +24,20 @@ export default function ReleaseBoard() {
     release_type: undefined,
     status: undefined,
   });
-  const [data] = useState<Release[]>(mockRecentReleases);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['releases', filters, pagination.current, pagination.pageSize],
+    queryFn: () =>
+      releaseApi.getReleases({
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        project_id: filters.project_id || undefined,
+        version: filters.version || undefined,
+        release_type: filters.release_type || undefined,
+        status: filters.status || undefined,
+      }),
+  });
 
   const columns = [
     { title: '版本号', dataIndex: 'version' },
@@ -95,8 +109,11 @@ export default function ReleaseBoard() {
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => message.info('执行查询')}
-          onReset={() => setFilters({ project_id: undefined, version: '', release_type: undefined, status: undefined })}
+          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+          onReset={() => {
+            setFilters({ project_id: undefined, version: '', release_type: undefined, status: undefined });
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
           extra={
             <Button icon={<ExportOutlined />}>导出 Excel</Button>
           }
@@ -104,7 +121,21 @@ export default function ReleaseBoard() {
       </TsCard>
 
       <TsCard title="发布记录">
-        <Table rowKey="id" columns={columns} dataSource={data} pagination={{ pageSize: 10 }} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data?.results || []}
+          loading={isLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: data?.total || 0,
+            showSizeChanger: true,
+          }}
+          onChange={(p) => {
+            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+          }}
+        />
       </TsCard>
     </div>
   );

@@ -1,6 +1,7 @@
 import { Card, Avatar, Tabs, Form, Input, Button, Checkbox, message } from 'antd';
 import { LockOutlined, NotificationOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
+import { useAuthStore } from '@/stores/authStore';
 import { tokens } from '@/styles/theme';
 
 const { TabPane } = Tabs;
@@ -8,6 +9,10 @@ const { TabPane } = Tabs;
 export default function Profile() {
   const [passwordForm] = Form.useForm();
   const [notifyForm] = Form.useForm();
+  const user = useAuthStore((state) => state.user);
+
+  const nickname = user?.nickname || user?.username || '-';
+  const initial = nickname.charAt(0);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -18,10 +23,10 @@ export default function Profile() {
           border: `1px solid ${tokens.colors.border}`,
         }}
       >
-        <Avatar size={80} style={{ background: tokens.colors.userAvatar }}>张</Avatar>
-        <div className="mt-4 text-xl font-semibold">张三</div>
-        <div className="text-slate-500">发布工程师 · 研发部</div>
-        <div className="text-slate-400 text-sm mt-1">zhangsan@example.com</div>
+        <Avatar size={80} style={{ background: tokens.colors.userAvatar }}>{initial}</Avatar>
+        <div className="mt-4 text-xl font-semibold">{nickname}</div>
+        <div className="text-slate-500">{user?.department || '-'} · {user?.roles?.join(', ') || '-'}</div>
+        <div className="text-slate-400 text-sm mt-1">{user?.email || '-'}</div>
       </Card>
 
       <TsCard title="账号设置">

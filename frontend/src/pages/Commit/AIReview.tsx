@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Empty, Typography } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -12,7 +12,7 @@ import {
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { getCommitById, getAIReviewByCommitId } from '@/mock/dashboard';
+import { commitApi } from '@/api/dashboard';
 import type { AIReviewResult, ReviewStatus } from '@/types';
 
 const { Title, Text } = Typography;
@@ -106,8 +106,21 @@ export default function CommitAIReview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const commit = useMemo(() => (id ? getCommitById(id) : undefined), [id]);
-  const aiReview = useMemo(() => (id ? getAIReviewByCommitId(id) : undefined), [id]);
+  const { data: commit, isLoading: commitLoading } = useQuery({
+    queryKey: ['commit', id],
+    queryFn: () => commitApi.getCommit(id || ''),
+    enabled: !!id,
+  });
+
+  const { data: aiReview, isLoading: reviewLoading } = useQuery({
+    queryKey: ['commit-ai-review', id],
+    queryFn: () => commitApi.getAiReview(id || '') as Promise<AIReviewResult>,
+    enabled: !!id,
+  });
+
+  if (commitLoading || reviewLoading) {
+    return <div className="p-6 text-center">加载中...</div>;
+  }
 
   if (!commit || !aiReview) {
     return (

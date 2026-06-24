@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Table, Button, Space, message } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import {
   SyncOutlined,
   RobotOutlined,
@@ -10,11 +11,8 @@ import { useNavigate } from 'react-router-dom';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
-import {
-  mockCommits,
-  mockCommitAlerts,
-  reviewStatusOptions,
-} from '@/mock/dashboard';
+import { reviewStatusOptions } from '@/mock/dashboard';
+import { commitApi } from '@/api/dashboard';
 import { formatRelativeTime } from '@/utils/time';
 import type { CommitRecord, ReviewStatus } from '@/types';
 
@@ -30,18 +28,14 @@ const changeTypeStatusMap: Record<string, 'info' | 'warning' | 'neutral'> = {
   '-': 'neutral',
 };
 
-const projectOptions = Array.from(
-  new Map(
-    mockCommits
-      .filter((c) => c.project_name)
-      .map((c) => [c.project_name, c.project_name] as [string, string])
-  ).entries()
-).map(([label, value]) => ({ label, value }));
+const projectOptions = [
+  { label: '演示项目', value: '演示项目' },
+];
 
-const branchOptions = Array.from(new Set(mockCommits.map((c) => c.branch))).map((b) => ({
-  label: b,
-  value: b,
-}));
+const branchOptions = [
+  { label: 'master', value: 'master' },
+  { label: 'develop', value: 'develop' },
+];
 
 function getMessageSummary(record: CommitRecord): string {
   const lines = record.message.split('\n');
@@ -68,28 +62,33 @@ export default function CommitList() {
     author: '',
     review_status: undefined as string | undefined,
   });
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
-  const filteredData = useMemo(() => {
-    return mockCommits.filter((item) => {
-      if (filters.project_name && item.project_name !== filters.project_name) return false;
-      if (filters.branch && item.branch !== filters.branch) return false;
-      if (filters.author && !item.author.includes(filters.author)) return false;
-      if (filters.review_status && item.review_status !== filters.review_status) return false;
-      return true;
-    });
-  }, [filters]);
+  const { data, isLoading } = useQuery({
+    queryKey: ['commits', filters, pagination.current, pagination.pageSize],
+    queryFn: () =>
+      commitApi.getCommits({
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        project_name: filters.project_name || undefined,
+        branch: filters.branch || undefined,
+        author: filters.author || undefined,
+        review_status: filters.review_status || undefined,
+      }),
+  });
 
-  const alertTotal = mockCommitAlerts.length;
+  const results = useMemo(() => data?.results || [], [data]);
+  const alertTotal = useMemo(() => results.filter((r) => r.review_status === 'illegal').length, [results]);
   const configAlertCount = useMemo(
     () =>
-      mockCommitAlerts.filter(
+      results.filter(
         (a) =>
-          a.illegal_reason.includes('配置') ||
-          a.message.includes('配置') ||
-          a.message.toLowerCase().includes('config') ||
-          a.message.includes('[System]')
+          a.review_status === 'illegal' &&
+          (a.message.includes('配置') ||
+            a.message.toLowerCase().includes('config') ||
+            a.message.includes('[System]'))
       ).length,
-    []
+    [results]
   );
 
   const columns = [
@@ -186,10 +185,11 @@ export default function CommitList() {
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value as string }))}
-          onSearch={() => message.info('执行查询')}
-          onReset={() =>
-            setFilters({ project_name: undefined, branch: undefined, author: '', review_status: undefined })
-          }
+          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+          onReset={() => {
+            setFilters({ project_name: undefined, branch: undefined, author: '', review_status: undefined });
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
           extra={
             <Button type="primary" icon={<SyncOutlined />} onClick={() => message.info('同步提交')}>
               同步提交
@@ -202,8 +202,17 @@ export default function CommitList() {
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={filteredData}
-          pagination={{ pageSize: 6 }}
+          dataSource={results}
+          loading={isLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: data?.total || 0,
+            showSizeChanger: true,
+          }}
+          onChange={(p) => {
+            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+          }}
         />
       </TsCard>
 

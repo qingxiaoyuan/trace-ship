@@ -130,7 +130,7 @@ export function TopHeader() {
           placeholder="选择项目"
         />
 
-        <Badge dot color="red">
+        <Badge dot color="red" offset={[8, -4]}>
           <Button type="text" icon={<BellOutlined />} shape="circle" />
         </Badge>
 

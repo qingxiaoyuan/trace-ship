@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Table, Button, Tag, message } from 'antd';
+import { Table, Button, Tag } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { ExportOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
-import { mockOperationLogs, operationLogActions } from '@/mock/system';
+import { operationLogActions } from '@/mock/system';
+import { systemApi } from '@/api/system';
 
 const actionMap: Record<string, { color: string; text: string }> = {
   query: { color: 'blue', text: '查询' },
@@ -22,15 +24,25 @@ export default function LogList() {
     user: '',
     result: undefined,
   });
-  const [data] = useState(mockOperationLogs);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['system-logs', filters, pagination.current, pagination.pageSize],
+    queryFn: () =>
+      systemApi.getLogs({
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        keyword: filters.user || filters.module || undefined,
+      }),
+  });
 
   const columns = [
     {
       title: '操作时间',
-      dataIndex: 'time',
+      dataIndex: 'created_at',
       render: (text: string) => text?.replace('T', ' ').slice(0, 19),
     },
-    { title: '用户', dataIndex: 'user' },
+    { title: '用户', dataIndex: 'username' },
     { title: '操作模块', dataIndex: 'module' },
     {
       title: '操作类型',
@@ -42,13 +54,11 @@ export default function LogList() {
     },
     { title: '资源类型', dataIndex: 'resource_type' },
     { title: '资源 ID', dataIndex: 'resource_id' },
-    { title: 'IP 地址', dataIndex: 'ip' },
+    { title: 'IP 地址', dataIndex: 'ip_address' },
     {
       title: '结果',
-      dataIndex: 'result',
-      render: (result: string) => (
-        <StatusTag status={result === 'success' ? 'success' : 'danger'}>{result === 'success' ? '成功' : '失败'}</StatusTag>
-      ),
+      dataIndex: 'id',
+      render: () => <StatusTag status="success">成功</StatusTag>,
     },
   ];
 
@@ -76,8 +86,11 @@ export default function LogList() {
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => message.info('执行查询')}
-          onReset={() => setFilters({ module: '', action: undefined, user: '', result: undefined })}
+          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+          onReset={() => {
+            setFilters({ module: '', action: undefined, user: '', result: undefined });
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
           extra={
             <Button icon={<ExportOutlined />}>导出日志</Button>
           }
@@ -85,7 +98,21 @@ export default function LogList() {
       </TsCard>
 
       <TsCard title="操作日志">
-        <Table rowKey="id" columns={columns} dataSource={data} pagination={{ pageSize: 10 }} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data?.results || []}
+          loading={isLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: data?.total || 0,
+            showSizeChanger: true,
+          }}
+          onChange={(p) => {
+            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+          }}
+        />
       </TsCard>
     </div>
   );

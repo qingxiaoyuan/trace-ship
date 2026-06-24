@@ -1,14 +1,71 @@
-import { useState } from 'react';
-import { Form, Input, InputNumber, Checkbox, Button, Select } from 'antd';
+import { useEffect, useState } from 'react';
+import { Form, Input, InputNumber, Checkbox, Button, Select, message } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { TsCard } from '@/components/TsCard';
 import { SystemSubLayout } from '@/layouts/SystemSubLayout';
 import { systemConfigCategories } from '@/mock/system';
+import { systemApi } from '@/api/system';
 
 const { TextArea } = Input;
 
 export default function SystemConfig() {
   const [activeCategory, setActiveCategory] = useState('ldap');
   const [form] = Form.useForm();
+  const [saving, setSaving] = useState(false);
+
+  const { data: configs } = useQuery({
+    queryKey: ['system-configs'],
+    queryFn: () => systemApi.getConfigs({ page_size: 1000 }),
+  });
+
+  useEffect(() => {
+    if (configs?.results) {
+      const values: Record<string, string | number | boolean> = {};
+      configs.results.forEach((cfg) => {
+        if (cfg.key.endsWith('_enabled') || cfg.key.endsWith('_complexity')) {
+          values[cfg.key] = cfg.value === 'true';
+        } else if (
+          cfg.key.includes('_timeout') ||
+          cfg.key.includes('_concurrent') ||
+          cfg.key.includes('_expire') ||
+          cfg.key.includes('_min_length')
+        ) {
+          values[cfg.key] = Number(cfg.value) || 0;
+        } else {
+          values[cfg.key] = cfg.value;
+        }
+      });
+      form.setFieldsValue(values);
+    }
+  }, [configs, form]);
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      const results = configs?.results || [];
+      for (const key of Object.keys(values)) {
+        const cfg = results.find((c) => c.key === key);
+        let value: string;
+        if (typeof values[key] === 'boolean') {
+          value = values[key] ? 'true' : 'false';
+        } else {
+          value = String(values[key] ?? '');
+        }
+        if (cfg) {
+          await systemApi.updateConfig(key, { value });
+        } else {
+          await systemApi.createConfig({ key, value, name: key });
+        }
+      }
+      message.success('保存成功');
+    } catch (error) {
+      message.error('保存失败');
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const renderForm = () => {
     switch (activeCategory) {
@@ -99,7 +156,7 @@ export default function SystemConfig() {
     >
       <TsCard
         title={systemConfigCategories.find((c) => c.key === activeCategory)?.label}
-        extra={<Button type="primary">保存配置</Button>}
+        extra={<Button type="primary" loading={saving} onClick={handleSave}>保存配置</Button>}
       >
         {renderForm()}
       </TsCard>

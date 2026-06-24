@@ -20,6 +20,7 @@ import {
   ConfigProvider,
 } from 'antd';
 import type { FormInstance } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import {
   SaveOutlined,
   FileWordOutlined,
@@ -37,17 +38,12 @@ import {
 } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { mockCommits } from '@/mock/dashboard';
+import { commitApi, releaseApi } from '@/api/dashboard';
+import { projectApi } from '@/api/project';
 import type { CommitRecord, RelatedChangeItem } from '@/types';
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
-
-const projectOptions = [
-  { label: '核心交易平台', value: '1' },
-  { label: '数据中台', value: '2' },
-  { label: '运维门户', value: '3' },
-];
 
 const repoOptions = [
   { label: 'core-trade-backend', value: '1' },
@@ -115,9 +111,22 @@ export default function TagGenerator() {
     { id: '2', type: 'F', content: '信号定时开关新增清除指令并优化控制逻辑' },
   ]);
 
+  const { data: projectData } = useQuery({
+    queryKey: ['tagger-projects'],
+    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
+  });
+
+  const { data: commitData, isLoading: commitsLoading } = useQuery({
+    queryKey: ['tagger-commits'],
+    queryFn: () => commitApi.getCommits({ page_size: 1000 }),
+  });
+
+  const commits = commitData?.results || [];
+  const projectOptions = (projectData?.results || []).map((p) => ({ label: p.name, value: p.id }));
+
   useEffect(() => {
     form.setFieldsValue({
-      project_id: '1',
+      project_id: projectData?.results?.[0]?.id || '1',
       repository_id: '1',
       source_branch: 'develop',
       start_tag: 'v2.4.0',
@@ -131,7 +140,7 @@ export default function TagGenerator() {
       publisher: '蒋鑫',
       impact_other: false,
     });
-  }, [form]);
+  }, [form, projectData]);
 
   const toggleCommit = (id: string) => {
     setSelectedCommits((prev) =>
@@ -141,8 +150,19 @@ export default function TagGenerator() {
 
   const toggleAll = () => {
     setSelectedCommits((prev) =>
-      prev.length === mockCommits.length ? [] : mockCommits.map((c) => c.id)
+      prev.length === commits.length ? [] : commits.map((c) => c.id)
     );
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      await releaseApi.getReleases(); // placeholder to ensure import used
+      message.success('提交审批成功');
+      console.log('release values', values);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const handleAddUpdate = () => {
@@ -165,9 +185,11 @@ export default function TagGenerator() {
   };
 
   const stepContent = [
-    <Step1Branch key="step1" form={form} />,
+    <Step1Branch key="step1" form={form} projectOptions={projectOptions} />,
     <Step2Diff
       key="step2"
+      commits={commits}
+      commitsLoading={commitsLoading}
       selectedCommits={selectedCommits}
       toggleCommit={toggleCommit}
       toggleAll={toggleAll}
@@ -247,7 +269,7 @@ export default function TagGenerator() {
             icon={currentStep === 2 ? <SendOutlined /> : <ArrowRightOutlined />}
             onClick={() => {
               if (currentStep === 2) {
-                message.success('提交审批成功');
+                handleSubmit();
               } else {
                 setCurrentStep((s) => s + 1);
               }
@@ -268,7 +290,7 @@ export default function TagGenerator() {
   );
 }
 
-function Step1Branch({ form }: { form: FormInstance }) {
+function Step1Branch({ form, projectOptions }: { form: FormInstance; projectOptions: { label: string; value: string }[] }) {
   return (
     <TsCard
       title={
@@ -320,32 +342,36 @@ function Step1Branch({ form }: { form: FormInstance }) {
 }
 
 function Step2Diff({
+  commits,
+  commitsLoading,
   selectedCommits,
   toggleCommit,
   toggleAll,
 }: {
+  commits: CommitRecord[];
+  commitsLoading: boolean;
   selectedCommits: string[];
   toggleCommit: (id: string) => void;
   toggleAll: () => void;
 }) {
-  const allSelected = selectedCommits.length === mockCommits.length && mockCommits.length > 0;
-  const indeterminate = selectedCommits.length > 0 && selectedCommits.length < mockCommits.length;
+  const allSelected = selectedCommits.length === commits.length && commits.length > 0;
+  const indeterminate = selectedCommits.length > 0 && selectedCommits.length < commits.length;
 
   const stats = useMemo(() => {
-    const aCount = mockCommits.filter((c) => c.change_type === 'A类').length;
-    const fCount = mockCommits.filter((c) => c.change_type === 'F类').length;
-    const configCount = mockCommits.filter(
+    const aCount = commits.filter((c) => c.change_type === 'A类').length;
+    const fCount = commits.filter((c) => c.change_type === 'F类').length;
+    const configCount = commits.filter(
       (c) => c.message.includes('[System]') || c.message.includes('config')
     ).length;
-    const illegalCount = mockCommits.filter((c) => c.review_status === 'illegal').length;
+    const illegalCount = commits.filter((c) => c.review_status === 'illegal').length;
     return [
-      { label: '总 commit 数', value: mockCommits.length, accent: blueColors.paleBlue },
+      { label: '总 commit 数', value: commits.length, accent: blueColors.paleBlue },
       { label: 'A 类更新', value: aCount, accent: blueColors.paleGreen },
       { label: 'F 类更新', value: fCount, accent: blueColors.paleYellow },
       { label: '配置项改动', value: configCount, accent: blueColors.paleBlue },
       { label: '不合规提交', value: illegalCount, accent: blueColors.paleRed },
     ];
-  }, []);
+  }, [commits]);
 
   const columns = [
     {
@@ -463,7 +489,8 @@ function Step2Diff({
           <Table
             rowKey="id"
             columns={columns}
-            dataSource={mockCommits}
+            dataSource={commits}
+            loading={commitsLoading}
             pagination={false}
             size="middle"
             style={{ borderRadius: 8, overflow: 'hidden' }}

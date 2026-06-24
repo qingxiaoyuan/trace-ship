@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '@/components/StatusTag';
-import { mockBuildRecords, mockBuildLog } from '@/mock/dashboard';
+import { jenkinsApi } from '@/api/dashboard';
 import { tokens } from '@/styles/theme';
 
 const statusMap: Record<
@@ -22,9 +22,25 @@ export default function JenkinsLogDetail() {
   const { buildId } = useParams<{ buildId: string }>();
   const navigate = useNavigate();
 
-  const build = useMemo(() => {
-    return mockBuildRecords.find((b) => b.id === buildId) || null;
-  }, [buildId]);
+  const { data: build, isLoading: buildLoading } = useQuery({
+    queryKey: ['jenkins-build', buildId],
+    queryFn: () => jenkinsApi.getBuild(buildId || ''),
+    enabled: !!buildId,
+  });
+
+  const { data: logData, isLoading: logLoading } = useQuery({
+    queryKey: ['jenkins-build-log', buildId],
+    queryFn: () => jenkinsApi.getBuildLog(buildId || ''),
+    enabled: !!buildId,
+  });
+
+  if (buildLoading) {
+    return (
+      <div className="ts-fade-in-up p-6 text-center" style={{ color: tokens.colors.textSecondary }}>
+        加载中...
+      </div>
+    );
+  }
 
   if (!build) {
     return (
@@ -108,7 +124,7 @@ export default function JenkinsLogDetail() {
           className="log-console p-4 overflow-auto font-mono text-sm leading-relaxed"
           style={{ height: 480 }}
         >
-          {mockBuildLog}
+          {logLoading ? '加载日志中...' : (logData?.content || '暂无日志')}
         </pre>
       </Card>
     </div>

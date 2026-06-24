@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Row, Col, Progress, Button, Avatar, Typography } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import {
   RocketOutlined,
   AuditOutlined,
@@ -11,46 +12,84 @@ import {
 import { TsCard } from '@/components/TsCard';
 import { TsList } from '@/components/TsList';
 import { StatusTag } from '@/components/StatusTag';
-import { mockDashboardOverview, mockRecentReleases, mockTodoList } from '@/mock/dashboard';
+import { releaseApi, commitApi, jenkinsApi } from '@/api/dashboard';
 import { tokens } from '@/styles/theme';
 
 const { Text, Title } = Typography;
 
-const kpiCards = [
-  {
-    title: '近 7 天发布数',
-    value: '12',
-    extra: <StatusTag status="success">+20% 较上周</StatusTag>,
-    icon: <RocketOutlined />,
-    iconBg: 'linear-gradient(135deg, #3B82F6, #60A5FA)',
-  },
-  {
-    title: '待审批数',
-    value: mockDashboardOverview.pending_audit_count.toString(),
-    extra: <Text className="text-slate-400">2 个待审批 · 1 个即将超时</Text>,
-    icon: <AuditOutlined />,
-    iconBg: 'linear-gradient(135deg, #F59E0B, #FBBF24)',
-  },
-  {
-    title: '构建成功/失败',
-    value: '10 / 2',
-    extra: <StatusTag status="danger">2 失败 需关注</StatusTag>,
-    icon: <BuildOutlined />,
-    iconBg: 'linear-gradient(135deg, #EF4444, #F87171)',
-  },
-  {
-    title: 'Commit 合规率',
-    value: '92.5%',
-    extra: <Progress percent={92.5} size="small" showInfo={false} />,
-    icon: <FileSearchOutlined />,
-    iconBg: 'linear-gradient(135deg, #6366F1, #818CF8)',
-  },
-];
-
-const todoList = mockTodoList;
-
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  const { data: releaseData } = useQuery({
+    queryKey: ['dashboard-releases'],
+    queryFn: () => releaseApi.getReleases({ page_size: 10 }),
+  });
+
+  const { data: commitData } = useQuery({
+    queryKey: ['dashboard-commits'],
+    queryFn: () => commitApi.getCommits({ page_size: 1000 }),
+  });
+
+  const { data: buildData } = useQuery({
+    queryKey: ['dashboard-builds'],
+    queryFn: () => jenkinsApi.getBuilds({ page_size: 1000 }),
+  });
+
+  const releases = releaseData?.results || [];
+  const commits = commitData?.results || [];
+  const builds = buildData?.results || [];
+
+  const recentReleases = releases.slice(0, 10);
+  const pendingAuditCount = releases.filter((r) => r.status === 'pending' || r.status === 'auditing').length;
+  const successBuilds = builds.filter((b) => b.status === 'success').length;
+  const failedBuilds = builds.filter((b) => b.status === 'failure').length;
+  const illegalCommits = commits.filter((c) => c.review_status === 'illegal').length;
+  const passCommits = commits.filter((c) => c.review_status === 'pass').length;
+  const complianceRate = commits.length ? Math.round((passCommits / commits.length) * 1000) / 10 : 100;
+
+  const kpiCards = [
+    {
+      title: '近 7 天发布数',
+      value: String(releases.length),
+      extra: <StatusTag status="success">+20% 较上周</StatusTag>,
+      icon: <RocketOutlined />,
+      iconBg: 'linear-gradient(135deg, #3B82F6, #60A5FA)',
+    },
+    {
+      title: '待审批数',
+      value: String(pendingAuditCount),
+      extra: <Text className="text-slate-400">{pendingAuditCount} 个待审批 · 0 个即将超时</Text>,
+      icon: <AuditOutlined />,
+      iconBg: 'linear-gradient(135deg, #F59E0B, #FBBF24)',
+    },
+    {
+      title: '构建成功/失败',
+      value: `${successBuilds} / ${failedBuilds}`,
+      extra: <StatusTag status={failedBuilds > 0 ? 'danger' : 'success'}>{failedBuilds} 失败 需关注</StatusTag>,
+      icon: <BuildOutlined />,
+      iconBg: 'linear-gradient(135deg, #EF4444, #F87171)',
+    },
+    {
+      title: 'Commit 合规率',
+      value: `${complianceRate}%`,
+      extra: <Progress percent={complianceRate} size="small" showInfo={false} />,
+      icon: <FileSearchOutlined />,
+      iconBg: 'linear-gradient(135deg, #6366F1, #818CF8)',
+    },
+  ];
+
+  const todoList = pendingAuditCount > 0
+    ? releases
+        .filter((r) => r.status === 'pending' || r.status === 'auditing')
+        .slice(0, 5)
+        .map((r) => ({
+          title: `审批发布 ${r.version}`,
+          applicant: r.publisher,
+          time: r.created_at?.split('T')[0] || '',
+        }))
+    : [
+        { title: '暂无待审批任务', applicant: '系统', time: '' },
+      ];
 
   return (
     <div className="space-y-6">
@@ -80,6 +119,7 @@ export default function Dashboard() {
         <Col xs={24} lg={16}>
           <TsCard
             title="最近发布"
+            style={{ minHeight: 320 }}
             extra={
               <div className="flex items-center gap-4">
                 <Text className="text-slate-400 text-sm">最近 10 条发布记录</Text>
@@ -88,17 +128,17 @@ export default function Dashboard() {
             }
           >
             <TsList
-              dataSource={mockRecentReleases}
+              dataSource={recentReleases}
               renderItem={(item) => (
                 <div className="flex items-center justify-between w-full py-3">
                   <div className="flex items-center gap-4">
                     <Text className="font-medium text-slate-900 w-32">{item.version}</Text>
-                    <Text className="text-slate-500 w-32">{item.project_name}</Text>
+                    <Text className="text-slate-500 w-32">{item.project_name || '-'}</Text>
                     <StatusTag status={item.release_type === 'formal' ? 'primary' : 'warning'}>
                       {item.release_type === 'formal' ? '正式' : '测试'}
                     </StatusTag>
                     <StatusTag status={item.status === 'released' ? 'success' : 'warning'}>
-                      {item.status === 'released' ? '已发布' : '构建中'}
+                      {item.status === 'released' ? '已发布' : item.status}
                     </StatusTag>
                   </div>
                   <Text className="text-slate-400">{item.created_at?.split('T')[0]}</Text>
@@ -108,7 +148,7 @@ export default function Dashboard() {
           </TsCard>
         </Col>
 
-        <Col xs={24} lg={8} className="space-y-6">
+        <Col xs={24} lg={8}>
           <TsCard title="我的待办">
             <TsList
               dataSource={todoList}
@@ -139,7 +179,7 @@ export default function Dashboard() {
                 <WarningOutlined />
               </div>
               <div className="flex-1">
-                <Title level={3} className="!m-0 !text-slate-900">7</Title>
+                <Title level={3} className="!m-0 !text-slate-900">{illegalCommits}</Title>
                 <Text className="text-slate-500">待处理的不合规 commit</Text>
               </div>
               <Button type="default" onClick={() => navigate('/commits/alerts')}>查看</Button>
