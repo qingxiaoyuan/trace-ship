@@ -11,7 +11,9 @@ import {
   PlayCircleOutlined,
   ProfileOutlined,
   RocketOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
+  TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -32,7 +34,9 @@ const iconMap: Record<string, React.ReactNode> = {
   PlayCircleOutlined: <PlayCircleOutlined />,
   ProfileOutlined: <ProfileOutlined />,
   RocketOutlined: <RocketOutlined />,
+  SafetyCertificateOutlined: <SafetyCertificateOutlined />,
   SettingOutlined: <SettingOutlined />,
+  TeamOutlined: <TeamOutlined />,
   UserOutlined: <UserOutlined />,
 };
 
