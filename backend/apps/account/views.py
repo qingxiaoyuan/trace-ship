@@ -146,10 +146,21 @@ class AuthViewSet(viewsets.GenericViewSet):
             {"id": "tags", "name": "Tag 生成与发布", "path": "/tags", "icon": "TagsOutlined"},
             {"id": "jenkins", "name": "Jenkins构建", "path": "/jenkins", "icon": "PlayCircleOutlined"},
             {"id": "workflows", "name": "工作流审批", "path": "/workflows", "icon": "ProfileOutlined"},
-            {"id": "system", "name": "系统管理", "path": "/system", "icon": "SettingOutlined"},
+            {
+                "id": "system",
+                "name": "系统管理",
+                "path": "/system",
+                "icon": "SettingOutlined",
+                "children": [
+                    {"id": "system_users", "name": "用户管理", "path": "/system/users", "icon": "TeamOutlined"},
+                    {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined"},
+                    {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined"},
+                    {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined"},
+                ],
+            },
         ]
-        if request.user.is_superuser:
-            menus.append({"id": "account", "name": "账号管理", "path": "/account", "icon": "UserOutlined"})
+        # if request.user.is_superuser:
+        #     menus.append({"id": "account", "name": "账号管理", "path": "/account", "icon": "UserOutlined"})
         return success_response(menus)
 
     @staticmethod
