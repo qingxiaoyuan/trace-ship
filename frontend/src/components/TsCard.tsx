@@ -32,12 +32,14 @@ export function TsCard({
         boxShadow: tokens.shadow.card,
         ...style,
       }}
-      bodyStyle={{ padding: 20, ...bodyStyle }}
-      headStyle={{
-        borderBottom: `1px solid ${tokens.colors.border}`,
-        padding: '16px 20px',
-        fontWeight: 700,
-        ...headStyle,
+      styles={{
+        body: { padding: 20, ...bodyStyle },
+        header: {
+          borderBottom: `1px solid ${tokens.colors.border}`,
+          padding: '16px 20px',
+          fontWeight: 700,
+          ...headStyle,
+        },
       }}
     >
       {children}

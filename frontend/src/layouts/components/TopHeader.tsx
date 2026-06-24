@@ -28,7 +28,8 @@ const { Header } = Layout;
 const { Text } = Typography;
 
 const breadcrumbNameMap: Record<string, string> = {
-  '/': '工作台',
+  '/': '首页',
+  '/dashboard': '首页',
   '/projects': '项目管理',
   '/repositories': '仓库管理',
   '/credentials': '凭证管理',

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Progress, Button, Avatar, List, Typography } from 'antd';
+import { Row, Col, Progress, Button, Avatar, Typography } from 'antd';
 import {
   RocketOutlined,
   AuditOutlined,
@@ -9,6 +9,7 @@ import {
   RightOutlined,
 } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
+import { TsList } from '@/components/TsList';
 import { StatusTag } from '@/components/StatusTag';
 import { mockDashboardOverview, mockRecentReleases, mockTodoList } from '@/mock/dashboard';
 import { tokens } from '@/styles/theme';
@@ -86,24 +87,22 @@ export default function Dashboard() {
               </div>
             }
           >
-            <List
+            <TsList
               dataSource={mockRecentReleases}
               renderItem={(item) => (
-                <List.Item className="!px-0">
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-4">
-                      <Text className="font-medium text-slate-900 w-32">{item.version}</Text>
-                      <Text className="text-slate-500 w-32">{item.project_name}</Text>
-                      <StatusTag status={item.release_type === 'formal' ? 'primary' : 'warning'}>
-                        {item.release_type === 'formal' ? '正式' : '测试'}
-                      </StatusTag>
-                      <StatusTag status={item.status === 'released' ? 'success' : 'warning'}>
-                        {item.status === 'released' ? '已发布' : '构建中'}
-                      </StatusTag>
-                    </div>
-                    <Text className="text-slate-400">{item.created_at?.split('T')[0]}</Text>
+                <div className="flex items-center justify-between w-full py-3">
+                  <div className="flex items-center gap-4">
+                    <Text className="font-medium text-slate-900 w-32">{item.version}</Text>
+                    <Text className="text-slate-500 w-32">{item.project_name}</Text>
+                    <StatusTag status={item.release_type === 'formal' ? 'primary' : 'warning'}>
+                      {item.release_type === 'formal' ? '正式' : '测试'}
+                    </StatusTag>
+                    <StatusTag status={item.status === 'released' ? 'success' : 'warning'}>
+                      {item.status === 'released' ? '已发布' : '构建中'}
+                    </StatusTag>
                   </div>
-                </List.Item>
+                  <Text className="text-slate-400">{item.created_at?.split('T')[0]}</Text>
+                </div>
               )}
             />
           </TsCard>
@@ -111,24 +110,22 @@ export default function Dashboard() {
 
         <Col xs={24} lg={8} className="space-y-6">
           <TsCard title="我的待办">
-            <List
+            <TsList
               dataSource={todoList}
               renderItem={(item) => (
-                <List.Item className="!px-0">
-                  <div className="flex items-center gap-3 w-full bg-slate-50 rounded-xl p-3">
-                    <Avatar
-                      size="large"
-                      style={{ background: tokens.colors.userAvatar }}
-                    >
-                      {item.applicant.charAt(0)}
-                    </Avatar>
-                    <div className="flex-1">
-                      <Text className="font-medium text-slate-900 block">{item.title}</Text>
-                      <Text className="text-xs text-slate-400">{item.applicant} · {item.time}</Text>
-                    </div>
-                    <Button type="link" onClick={() => navigate('/workflows')}>去审批</Button>
+                <div className="flex items-center gap-3 w-full bg-slate-50 rounded-xl p-3">
+                  <Avatar
+                    size="large"
+                    style={{ background: tokens.colors.userAvatar }}
+                  >
+                    {item.applicant.charAt(0)}
+                  </Avatar>
+                  <div className="flex-1">
+                    <Text className="font-medium text-slate-900 block">{item.title}</Text>
+                    <Text className="text-xs text-slate-400">{item.applicant} · {item.time}</Text>
                   </div>
-                </List.Item>
+                  <Button type="link" onClick={() => navigate('/workflows')}>去审批</Button>
+                </div>
               )}
             />
           </TsCard>

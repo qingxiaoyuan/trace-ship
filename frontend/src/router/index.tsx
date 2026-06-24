@@ -43,6 +43,7 @@ export const router = createBrowserRouter([
         element: <MainLayout />,
         children: [
           { index: true, element: <PageLoader><Dashboard /></PageLoader> },
+          { path: 'dashboard', element: <PageLoader><Dashboard /></PageLoader> },
           { path: 'projects', element: <PageLoader><ProjectList /></PageLoader> },
           { path: 'projects/:id', element: <PageLoader><ProjectDetail /></PageLoader> },
           { path: 'projects/:id/:tab', element: <PageLoader><ProjectDetail /></PageLoader> },

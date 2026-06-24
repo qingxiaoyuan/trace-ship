@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Menu, Layout, Typography } from "antd";
-import type { ItemType, MenuItemType } from "antd/es/menu/interface";
+import type { MenuProps } from "antd";
 import {
   DashboardOutlined,
   ProjectOutlined,
@@ -36,18 +36,32 @@ const iconMap: Record<string, React.ReactNode> = {
   UserOutlined: <UserOutlined />,
 };
 
-function mapMenus(items: MenuItem[]): MenuItemType[] {
+type AntdMenuItem = NonNullable<MenuProps["items"]>[number];
+
+function mapMenus(items: MenuItem[]): AntdMenuItem[] {
   return items.map((item) => {
-    const menuItem: MenuItemType = {
+    const base = {
       key: item.path,
       icon: iconMap[item.icon] || null,
       label: item.name,
     };
     if (item.children && item.children.length > 0) {
-      menuItem.children = mapMenus(item.children);
+      return { ...base, children: mapMenus(item.children) };
     }
-    return menuItem;
+    return base;
   });
+}
+
+function isMenuItemWithChildren(
+  item: AntdMenuItem
+): item is AntdMenuItem & { children: AntdMenuItem[] } {
+  return (
+    !!item &&
+    typeof item === "object" &&
+    !("type" in item) &&
+    "children" in item &&
+    Array.isArray((item as { children?: unknown }).children)
+  );
 }
 
 export function Sidebar() {
@@ -59,16 +73,15 @@ export function Sidebar() {
 
   const selectedKey = useMemo(() => {
     const path = location.pathname;
-    const findKey = (items: ItemType[]): string | undefined => {
+    const findKey = (items: AntdMenuItem[]): string | undefined => {
       for (const item of items) {
         if (!item || typeof item !== "object" || "type" in item) continue;
-        const key = (item as any).key as string;
+        const key = String((item as { key?: React.Key }).key);
         if (path === key || path.startsWith(`${key}/`)) {
           return key;
         }
-        const children = (item as any).children as ItemType[] | undefined;
-        if (children) {
-          const childKey = findKey(children);
+        if (isMenuItemWithChildren(item)) {
+          const childKey = findKey(item.children);
           if (childKey) return childKey;
         }
       }
