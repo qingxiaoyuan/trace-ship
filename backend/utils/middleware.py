@@ -1,7 +1,5 @@
-import json
 import time
 from django.utils.deprecation import MiddlewareMixin
-from django.utils import timezone
 
 
 class OperationLogMiddleware(MiddlewareMixin):

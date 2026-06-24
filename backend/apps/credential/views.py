@@ -3,11 +3,9 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 
 from apps.credential.models import Credential
 from apps.credential.serializers import CredentialSerializer, CredentialListSerializer
-from utils.permissions import IsSuperUser
 from utils.response import success_response, error_response
 
 
