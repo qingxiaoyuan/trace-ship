@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import type { RouteObject } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
@@ -26,7 +27,16 @@ import {
   Workflow,
 } from './pages';
 
-export const router = createBrowserRouter([
+interface AppRouteHandle {
+  title?: string;
+}
+
+type AppRouteObject = RouteObject & {
+  handle?: AppRouteHandle;
+  children?: AppRouteObject[];
+};
+
+const routes: AppRouteObject[] = [
   {
     path: '/login',
     element: (
@@ -42,31 +52,51 @@ export const router = createBrowserRouter([
         path: '/',
         element: <MainLayout />,
         children: [
-          { index: true, element: <PageLoader><Dashboard /></PageLoader> },
-          { path: 'dashboard', element: <PageLoader><Dashboard /></PageLoader> },
-          { path: 'projects', element: <PageLoader><ProjectList /></PageLoader> },
-          { path: 'projects/:id', element: <PageLoader><ProjectDetail /></PageLoader> },
-          { path: 'projects/:id/:tab', element: <PageLoader><ProjectDetail /></PageLoader> },
-          { path: 'repositories', element: <PageLoader><RepositoryList /></PageLoader> },
-          { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader> },
-          { path: 'credentials/:id/usage', element: <PageLoader><CredentialUsage /></PageLoader> },
-          { path: 'commits/alerts', element: <PageLoader><CommitAlertDetail /></PageLoader> },
-          { path: 'commits/:id/ai-review', element: <PageLoader><CommitAIReview /></PageLoader> },
-          { path: 'commits/:id', element: <PageLoader><CommitDetail /></PageLoader> },
-          { path: 'commits', element: <PageLoader><CommitList /></PageLoader> },
-          { path: 'tags', element: <PageLoader><TagGenerator /></PageLoader> },
-          { path: 'jenkins', element: <PageLoader><Jenkins /></PageLoader> },
-          { path: 'jenkins/logs/:buildId', element: <PageLoader><JenkinsLogDetail /></PageLoader> },
-          { path: 'workflows', element: <PageLoader><Workflow /></PageLoader> },
-          { path: 'releases', element: <PageLoader><ReleaseBoard /></PageLoader> },
-          { path: 'system/users', element: <PageLoader><SystemUserList /></PageLoader> },
-          { path: 'system/roles', element: <PageLoader><SystemRoleList /></PageLoader> },
-          { path: 'system/configs', element: <PageLoader><SystemConfig /></PageLoader> },
-          { path: 'system/logs', element: <PageLoader><SystemLogList /></PageLoader> },
-          { path: 'profile', element: <PageLoader><Profile /></PageLoader> },
+          { index: true, element: <PageLoader><Dashboard /></PageLoader>, handle: { title: '工作台' } },
+          { path: 'dashboard', element: <PageLoader><Dashboard /></PageLoader>, handle: { title: '工作台' } },
+          { path: 'projects', element: <PageLoader><ProjectList /></PageLoader>, handle: { title: '项目管理' } },
+          { path: 'projects/:id', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '项目详情' } },
+          { path: 'projects/:id/:tab', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '项目详情' } },
+          { path: 'repositories', element: <PageLoader><RepositoryList /></PageLoader>, handle: { title: '仓库管理' } },
+          { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader>, handle: { title: '凭证管理' } },
+          { path: 'credentials/:id/usage', element: <PageLoader><CredentialUsage /></PageLoader>, handle: { title: '使用记录' } },
+          {
+            path: 'commits',
+            handle: { title: '提交规范审查' },
+            children: [
+              { index: true, element: <PageLoader><CommitList /></PageLoader> },
+              { path: 'alerts', element: <PageLoader><CommitAlertDetail /></PageLoader>, handle: { title: '非法提交预警详情' } },
+              { path: ':id/ai-review', element: <PageLoader><CommitAIReview /></PageLoader>, handle: { title: 'AI 审查详情' } },
+              { path: ':id', element: <PageLoader><CommitDetail /></PageLoader>, handle: { title: '查看详情' } },
+            ],
+          },
+          { path: 'tags', element: <PageLoader><TagGenerator /></PageLoader>, handle: { title: 'Tag 生成与发布' } },
+          {
+            path: 'jenkins',
+            handle: { title: 'Jenkins 构建' },
+            children: [
+              { index: true, element: <PageLoader><Jenkins /></PageLoader> },
+              { path: 'logs/:buildId', element: <PageLoader><JenkinsLogDetail /></PageLoader>, handle: { title: '构建日志' } },
+            ],
+          },
+          { path: 'workflows', element: <PageLoader><Workflow /></PageLoader>, handle: { title: '工作流审批' } },
+          { path: 'releases', element: <PageLoader><ReleaseBoard /></PageLoader>, handle: { title: '发布看板' } },
+          {
+            path: 'system',
+            handle: { title: '系统管理' },
+            children: [
+              { path: 'users', element: <PageLoader><SystemUserList /></PageLoader>, handle: { title: '用户管理' } },
+              { path: 'roles', element: <PageLoader><SystemRoleList /></PageLoader>, handle: { title: '角色管理' } },
+              { path: 'configs', element: <PageLoader><SystemConfig /></PageLoader>, handle: { title: '系统配置' } },
+              { path: 'logs', element: <PageLoader><SystemLogList /></PageLoader>, handle: { title: '操作日志' } },
+            ],
+          },
+          { path: 'profile', element: <PageLoader><Profile /></PageLoader>, handle: { title: '个人中心' } },
         ],
       },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
-]);
+];
+
+export const router = createBrowserRouter(routes as RouteObject[]);

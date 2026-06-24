@@ -2,16 +2,16 @@ import { useMemo } from "react";
 import { Menu, Layout, Typography } from "antd";
 import type { MenuProps } from "antd";
 import {
-  DashboardOutlined,
-  ProjectOutlined,
+  AppstoreOutlined,
+  FolderOutlined,
   DatabaseOutlined,
   KeyOutlined,
-  FileSearchOutlined,
+  FileTextOutlined,
   TagsOutlined,
-  BuildOutlined,
-  NodeIndexOutlined,
-  SettingOutlined,
+  PlayCircleOutlined,
+  ProfileOutlined,
   RocketOutlined,
+  SettingOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -23,16 +23,16 @@ const { Sider } = Layout;
 const { Title, Text } = Typography;
 
 const iconMap: Record<string, React.ReactNode> = {
-  DashboardOutlined: <DashboardOutlined />,
-  ProjectOutlined: <ProjectOutlined />,
+  AppstoreOutlined: <AppstoreOutlined />,
+  FolderOutlined: <FolderOutlined />,
   DatabaseOutlined: <DatabaseOutlined />,
   KeyOutlined: <KeyOutlined />,
-  FileSearchOutlined: <FileSearchOutlined />,
+  FileTextOutlined: <FileTextOutlined />,
   TagsOutlined: <TagsOutlined />,
-  BuildOutlined: <BuildOutlined />,
-  NodeIndexOutlined: <NodeIndexOutlined />,
-  SettingOutlined: <SettingOutlined />,
+  PlayCircleOutlined: <PlayCircleOutlined />,
+  ProfileOutlined: <ProfileOutlined />,
   RocketOutlined: <RocketOutlined />,
+  SettingOutlined: <SettingOutlined />,
   UserOutlined: <UserOutlined />,
 };
 

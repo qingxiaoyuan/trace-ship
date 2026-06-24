@@ -17,7 +17,7 @@ import {
   UserOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useMatches, useNavigate } from 'react-router-dom';
 import { tokens } from '@/styles/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useGlobalStore } from '@/stores/globalStore';
@@ -27,26 +27,11 @@ import { mockBuildRecords } from '@/mock/dashboard';
 const { Header } = Layout;
 const { Text } = Typography;
 
-const breadcrumbNameMap: Record<string, string> = {
-  '/': '首页',
-  '/dashboard': '首页',
-  '/projects': '项目管理',
-  '/repositories': '仓库管理',
-  '/credentials': '凭证管理',
-  '/commits': '提交规范审查',
-  '/tags': 'Tag 生成与发布',
-  '/jenkins': 'Jenkins 构建',
-  '/workflows': '工作流审批',
-  '/releases': '发布看板',
-  '/system': '系统管理',
-  '/system/users': '用户管理',
-  '/profile': '个人中心',
-};
-
 const projectSelectOptions = mockProjects.map((p) => ({ value: p.id, label: p.name }));
 
 export function TopHeader() {
   const location = useLocation();
+  const matches = useMatches();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { currentProjectId, setCurrentProjectId } = useGlobalStore();
@@ -56,12 +41,10 @@ export function TopHeader() {
     const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
     if (projectMatch) {
       const project = mockProjects.find((p) => p.id === projectMatch[1]);
-      if (project) {
-        return [
-          { title: '项目管理', path: '/projects' },
-          { title: project.name },
-        ];
-      }
+      return [
+        { title: '项目管理', path: '/projects' },
+        { title: project?.name || '项目详情' },
+      ];
     }
 
     // Jenkins 构建日志动态面包屑：Jenkins 构建 / 构建日志 #128
@@ -74,47 +57,14 @@ export function TopHeader() {
       ];
     }
 
-    // 提交规范审查子路由动态面包屑
-    const commitAiReviewMatch = location.pathname.match(/^\/commits\/([^/]+)\/ai-review/);
-    if (commitAiReviewMatch) {
-      return [
-        { title: '提交规范审查', path: '/commits' },
-        { title: 'AI 审查详情' },
-      ];
-    }
-
-    if (location.pathname === '/commits/alerts') {
-      return [
-        { title: '提交规范审查', path: '/commits' },
-        { title: '非法提交预警详情' },
-      ];
-    }
-
-    if (location.pathname === '/releases') {
-      return [
-        { title: '工作台', path: '/' },
-        { title: '发布看板' },
-      ];
-    }
-
-    const commitDetailMatch = location.pathname.match(/^\/commits\/([^/]+)/);
-    if (commitDetailMatch) {
-      return [
-        { title: '提交规范审查', path: '/commits' },
-        { title: '查看详情' },
-      ];
-    }
-
-    const pathSnippets = location.pathname.split('/').filter((i) => i);
+    // 通过路由 handle.title 生成面包屑
     const items: { title: string; path?: string }[] = [];
-    let currentPath = '';
-    pathSnippets.forEach((_, index) => {
-      currentPath += `/${pathSnippets[index]}`;
-      const name = breadcrumbNameMap[currentPath];
-      if (name) {
+    matches.forEach((match, index) => {
+      const title = (match.handle as { title?: string } | undefined)?.title;
+      if (title) {
         items.push({
-          title: name,
-          path: index === pathSnippets.length - 1 ? undefined : currentPath,
+          title,
+          path: index === matches.length - 1 ? undefined : match.pathname,
         });
       }
     });
@@ -123,7 +73,7 @@ export function TopHeader() {
       items.push({ title: '工作台' });
     }
     return items;
-  }, [location.pathname]);
+  }, [location.pathname, matches]);
 
   const userMenuItems = [
     {

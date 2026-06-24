@@ -138,10 +138,14 @@ class AuthViewSet(viewsets.GenericViewSet):
     def menus(self, request):
         # 简化菜单，后续可根据角色权限动态生成
         menus = [
-            {"id": "dashboard", "name": "首页", "path": "/dashboard", "icon": "DashboardOutlined"},
-            {"id": "project", "name": "项目管理", "path": "/projects", "icon": "ProjectOutlined"},
-            {"id": "credential", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined"},
-            {"id": "release", "name": "发布管理", "path": "/releases", "icon": "RocketOutlined"},
+            {"id": "dashboard", "name": "工作台", "path": "/dashboard", "icon": "AppstoreOutlined"},
+            {"id": "projects", "name": "项目管理", "path": "/projects", "icon": "FolderOutlined"},
+            {"id": "repositories", "name": "仓库管理", "path": "/repositories", "icon": "DatabaseOutlined"},
+            {"id": "credentials", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined"},
+            {"id": "commits", "name": "提交规范审查", "path": "/commits", "icon": "FileTextOutlined"},
+            {"id": "tags", "name": "Tag 生成与发布", "path": "/tags", "icon": "TagsOutlined"},
+            {"id": "jenkins", "name": "Jenkins构建", "path": "/jenkins", "icon": "PlayCircleOutlined"},
+            {"id": "workflows", "name": "工作流审批", "path": "/workflows", "icon": "ProfileOutlined"},
             {"id": "system", "name": "系统管理", "path": "/system", "icon": "SettingOutlined"},
         ]
         if request.user.is_superuser:

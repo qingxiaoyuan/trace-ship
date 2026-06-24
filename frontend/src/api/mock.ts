@@ -626,15 +626,15 @@ const routes: MockRoute[] = [
     path: '/api/auth/menus/',
     handler: () => ({
       data: createResponse([
-        { id: 'dashboard', name: '工作台', path: '/', icon: 'DashboardOutlined' },
-        { id: 'projects', name: '项目管理', path: '/projects', icon: 'ProjectOutlined' },
+        { id: 'dashboard', name: '工作台', path: '/', icon: 'AppstoreOutlined' },
+        { id: 'projects', name: '项目管理', path: '/projects', icon: 'FolderOutlined' },
         { id: 'repositories', name: '仓库管理', path: '/repositories', icon: 'DatabaseOutlined' },
         { id: 'credentials', name: '凭证管理', path: '/credentials', icon: 'KeyOutlined' },
-        { id: 'commits', name: '提交规范审查', path: '/commits', icon: 'FileSearchOutlined' },
+        { id: 'commits', name: '提交规范审查', path: '/commits', icon: 'FileTextOutlined' },
         { id: 'tags', name: 'Tag 生成与发布', path: '/tags', icon: 'TagsOutlined' },
-        { id: 'jenkins', name: 'Jenkins 构建', path: '/jenkins', icon: 'BuildOutlined' },
-        { id: 'workflows', name: '工作流审批', path: '/workflows', icon: 'NodeIndexOutlined' },
-        { id: 'releases', name: '发布看板', path: '/releases', icon: 'AppstoreOutlined' },
+        { id: 'jenkins', name: 'Jenkins 构建', path: '/jenkins', icon: 'PlayCircleOutlined' },
+        { id: 'workflows', name: '工作流审批', path: '/workflows', icon: 'ProfileOutlined' },
+        { id: 'releases', name: '发布看板', path: '/releases', icon: 'RocketOutlined' },
         {
           id: 'system',
           name: '系统管理',
