@@ -1,11 +1,19 @@
 #!/usr/bin/env python
-"""Django's command-line utility for administrative tasks."""
+"""
+Django 命令行工具入口
+
+用于执行 manage.py 命令，默认使用开发环境配置 config.settings.dev。
+"""
 import os
 import sys
 
 
 def main():
-    """Run administrative tasks."""
+    """
+    运行 Django 管理命令
+
+    设置默认 DJANGO_SETTINGS_MODULE 并执行命令行传入的指令。
+    """
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
     try:
         from django.core.management import execute_from_command_line

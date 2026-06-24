@@ -1,3 +1,10 @@
+"""
+Provider 异常类
+
+定义 Provider 相关异常的继承体系。
+"""
+
+
 class ProviderError(Exception):
     """Provider 通用异常"""
     pass

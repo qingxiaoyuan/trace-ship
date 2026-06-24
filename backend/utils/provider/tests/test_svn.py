@@ -1,3 +1,8 @@
+"""
+SVNProvider 单元测试
+
+使用 mock 模拟 svn 命令行输出。
+"""
 import pytest
 from unittest.mock import patch
 
@@ -23,10 +28,12 @@ SAMPLE_LOG_XML = """<?xml version="1.0"?>
 
 @pytest.fixture
 def provider():
+    """SVNProvider 实例"""
     return SVNProvider("https://svn.example.com/repo", {"username": "user", "password": "pass"})
 
 
 def test_test_connection_success(provider):
+    """测试 SVN 连通性成功"""
     with patch("utils.provider.svn.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stderr = ""
@@ -37,6 +44,7 @@ def test_test_connection_success(provider):
 
 
 def test_test_connection_failure(provider):
+    """测试 SVN 认证失败"""
     with patch("utils.provider.svn.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 1
         mock_run.return_value.stderr = "认证失败"
@@ -45,6 +53,7 @@ def test_test_connection_failure(provider):
 
 
 def test_list_commits(provider):
+    """测试 SVN 日志解析"""
     with patch("utils.provider.svn.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stderr = ""
@@ -57,6 +66,7 @@ def test_list_commits(provider):
 
 
 def test_svn_command_not_found(provider):
+    """测试未安装 svn 命令"""
     with patch("utils.provider.svn.subprocess.run", side_effect=FileNotFoundError()):
         with pytest.raises(ConnectionError) as exc_info:
             provider.test_connection()

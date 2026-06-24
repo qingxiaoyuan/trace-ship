@@ -1,30 +1,42 @@
+"""
+Django 项目基础配置（所有环境共享）
+
+包含数据库、认证、REST Framework、JWT、Celery、Redis、缓存等核心配置。
+环境特定覆盖项位于 dev.py / prod.py / test.py。
+"""
 import os
 from pathlib import Path
 from datetime import timedelta
 
+# 项目根目录：backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# 安全密钥：生产环境必须通过环境变量注入，不可使用默认值
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-change-me-in-production")
+
+# 调试模式：仅开发环境开启
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
+# 允许访问的域名列表，逗号分隔
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
-# Application definition
+# Django 应用定义
 INSTALLED_APPS = [
+    # Django 内置应用
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Third party
+    # 第三方应用
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
     "drf_spectacular",
-    # Local apps
+    # 本地业务应用
     "apps.account.apps.AccountConfig",
     "apps.credential.apps.CredentialConfig",
     "apps.project.apps.ProjectConfig",
@@ -32,19 +44,31 @@ INSTALLED_APPS = [
     "apps.system.apps.SystemConfig",
 ]
 
+# 中间件：请求/响应依次经过下列中间件处理
 MIDDLEWARE = [
+    # 跨域中间件（必须放在最前面）
     "corsheaders.middleware.CorsMiddleware",
+    # Django 安全中间件
     "django.middleware.security.SecurityMiddleware",
+    # 会话中间件
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # 通用中间件（URL 重写、Content-Type 等）
     "django.middleware.common.CommonMiddleware",
+    # CSRF 校验（前后端分离场景下主要保护 admin 等传统表单）
     "django.middleware.csrf.CsrfViewMiddleware",
+    # 认证中间件：将 request.user 注入到请求对象
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # 消息框架中间件
     "django.contrib.messages.middleware.MessageMiddleware",
+    # 点击劫持防护
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # 自定义操作日志中间件
     "utils.middleware.OperationLogMiddleware",
+    # 自定义异常处理中间件
     "utils.middleware.ExceptionHandlerMiddleware",
 ]
 
+# 模板引擎配置
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -61,10 +85,13 @@ TEMPLATES = [
     },
 ]
 
+# 根 URL 配置模块
 ROOT_URLCONF = "config.urls"
+
+# WSGI 应用入口
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database
+# 数据库配置（默认 PostgreSQL）
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -76,7 +103,7 @@ DATABASES = {
     }
 }
 
-# Password validation
+# 密码校验器（用于创建/修改密码时的复杂度检查）
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -84,10 +111,10 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# Custom user model
+# 自定义用户模型（替代 Django 默认 User）
 AUTH_USER_MODEL = "account.User"
 
-# LDAP configuration
+# LDAP 认证配置
 AUTH_LDAP_SERVER_URI = os.getenv("LDAP_SERVER_URI", "")
 AUTH_LDAP_BIND_DN = os.getenv("LDAP_BIND_DN", "")
 AUTH_LDAP_BIND_PASSWORD = os.getenv("LDAP_BIND_PASSWORD", "")
@@ -98,7 +125,7 @@ AUTH_LDAP_USER_ATTR_MAP = {
 }
 AUTH_LDAP_ALWAYS_UPDATE_USER = True
 
-# Authentication backends
+# 认证后端：配置了 LDAP 时优先使用 LDAP，否则仅使用 Django 本地认证
 if AUTH_LDAP_SERVER_URI and AUTH_LDAP_USER_SEARCH_BASE:
     import ldap
     from django_auth_ldap.config import LDAPSearch
@@ -116,20 +143,20 @@ else:
         "django.contrib.auth.backends.ModelBackend",
     ]
 
-# Internationalization
+# 国际化与时区
 LANGUAGE_CODE = "zh-hans"
 TIME_ZONE = "Asia/Shanghai"
 USE_I18N = True
 USE_TZ = True
 
-# Static files
+# 静态文件配置
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Default primary key field type
+# 模型默认主键类型
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Redis & Cache
+# Redis 连接配置
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
@@ -137,9 +164,11 @@ REDIS_DB_CACHE = int(os.getenv("REDIS_DB_CACHE", "1"))
 REDIS_DB_CELERY = int(os.getenv("REDIS_DB_CELERY", "0"))
 REDIS_DB_BLACKLIST = int(os.getenv("REDIS_DB_BLACKLIST", "2"))
 
+# 拼接 Redis 连接 URL（带密码时格式为 redis://:password@host:port）
 _redis_password_part = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
 _redis_base_url = f"redis://{_redis_password_part}{REDIS_HOST}:{REDIS_PORT}"
 
+# Django 缓存后端（使用 Redis）
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -150,7 +179,7 @@ CACHES = {
     }
 }
 
-# Celery
+# Celery 配置
 CELERY_BROKER_URL = f"{_redis_base_url}/{REDIS_DB_CELERY}"
 CELERY_RESULT_BACKEND = f"{_redis_base_url}/{REDIS_DB_CELERY}"
 CELERY_ACCEPT_CONTENT = ["json"]
@@ -159,12 +188,14 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 
-# Django REST Framework
+# Django REST Framework 全局配置
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        # 默认使用 JWT 认证
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
+        # 默认所有接口需要登录
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_PAGINATION_CLASS": "utils.pagination.StandardPagination",
@@ -177,7 +208,7 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "utils.exceptions.custom_exception_handler",
 }
 
-# JWT
+# JWT 认证配置
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_TOKEN_LIFETIME_MINUTES", "60"))),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_TOKEN_LIFETIME_DAYS", "7"))),
@@ -188,7 +219,7 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# drf-spectacular
+# drf-spectacular 自动 API 文档配置
 SPECTACULAR_SETTINGS = {
     "TITLE": "Trace Ship API",
     "DESCRIPTION": "软件版本发布管理系统 API",
@@ -197,10 +228,10 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
 }
 
-# Credential encryption
+# 凭证加密密钥（用于加密存储 Git/Jenkins 等凭据）
 CREDENTIAL_SECRET_KEY = os.getenv("CREDENTIAL_SECRET_KEY", "change-me-in-production-32bytes!")
 
-# CORS
+# 跨域资源共享（CORS）配置
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "True").lower() == "true"
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
@@ -208,7 +239,7 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-# Logging
+# 日志配置
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

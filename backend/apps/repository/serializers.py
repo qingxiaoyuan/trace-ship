@@ -1,3 +1,9 @@
+"""
+仓库管理序列化器
+
+包含仓库（Repository）和提交记录（CommitRecord）的序列化器。
+"""
+from typing import Set
 from rest_framework import serializers
 
 from apps.project.models import ProjectMember
@@ -5,6 +11,12 @@ from apps.repository.models import CommitRecord, Repository
 
 
 class RepositorySerializer(serializers.ModelSerializer):
+    """
+    仓库序列化器
+
+    读取时展开项目名称和凭证 ID，写入时校验项目归属、vendor 与凭证模式一致性。
+    """
+
     project_name = serializers.CharField(source="project.name", read_only=True)
     credential_id = serializers.UUIDField(source="credential.id", read_only=True)
 
@@ -19,6 +31,18 @@ class RepositorySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "health_status", "last_sync_at", "created_at", "updated_at"]
 
     def validate_project(self, value):
+        """
+        校验用户只能为所属项目创建仓库
+
+        Args:
+            value: 项目实例
+
+        Returns:
+            项目实例
+
+        Raises:
+            ValidationError: 用户无权限时抛出
+        """
         user = self.context["request"].user
         if user.is_superuser:
             return value
@@ -27,6 +51,15 @@ class RepositorySerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        """
+        校验仓库类型与 vendor、凭证模式的一致性
+
+        Args:
+            attrs: 待校验属性
+
+        Returns:
+            校验通过的数据
+        """
         repo_type = attrs.get("repo_type", getattr(self.instance, "repo_type", None))
         vendor = attrs.get("vendor", getattr(self.instance, "vendor", None))
         credential_mode = attrs.get("credential_mode", getattr(self.instance, "credential_mode", "fixed"))
@@ -49,6 +82,12 @@ class RepositorySerializer(serializers.ModelSerializer):
 
 
 class RepositoryListSerializer(serializers.ModelSerializer):
+    """
+    仓库列表序列化器
+
+    字段精简，适合列表展示。
+    """
+
     project_name = serializers.CharField(source="project.name", read_only=True)
 
     class Meta:
@@ -61,6 +100,12 @@ class RepositoryListSerializer(serializers.ModelSerializer):
 
 
 class CommitRecordSerializer(serializers.ModelSerializer):
+    """
+    提交记录序列化器
+
+    读取时展开项目/仓库名称，并基于 parsed_message 计算变更类型。
+    """
+
     project_name = serializers.CharField(source="project.name", read_only=True)
     repository_name = serializers.CharField(source="repository.name", read_only=True)
     change_type = serializers.SerializerMethodField(read_only=True)
@@ -81,10 +126,19 @@ class CommitRecordSerializer(serializers.ModelSerializer):
         ]
 
     def get_change_type(self, obj: CommitRecord) -> str:
+        """
+        根据解析结果计算变更类型展示文本
+
+        Args:
+            obj: CommitRecord 实例
+
+        Returns:
+            变更类型描述，如 "A类"、"A/F类" 或 "-"
+        """
         updates = obj.parsed_message.get("updates", [])
         if not updates:
             return "-"
-        types = {u.get("type") for u in updates if u.get("type")}
+        types: Set[str] = {u.get("type") for u in updates if u.get("type")}
         if types == {"A"}:
             return "A类"
         if types == {"F"}:

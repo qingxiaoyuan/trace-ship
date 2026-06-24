@@ -1,11 +1,27 @@
+"""
+初始化基础数据命令
+
+创建默认权限、基础角色、超管账号，并将超管绑定到 super_admin 角色。
+可重复执行，使用 get_or_create 保证幂等。
+"""
+from typing import Dict, List
 from django.core.management.base import BaseCommand
 from apps.account.models import User, Role, Permission, UserRole, RolePermission
 
 
 class Command(BaseCommand):
+    """
+    Django 管理命令：初始化系统基础数据
+
+    包括权限、角色、超管账号及角色绑定。
+    """
+
     help = "初始化基础数据：超管账号、基础角色和权限"
 
-    def handle(self, *args, **options):
+    def handle(self, *args, **options) -> None:
+        """
+        命令入口
+        """
         self.stdout.write("开始初始化基础数据...")
 
         # 创建基础权限
@@ -22,7 +38,7 @@ class Command(BaseCommand):
             {"name": "审批发布", "code": "release.audit", "module": "release"},
             {"name": "系统管理", "code": "system.manage", "module": "system"},
         ]
-        permission_map = {}
+        permission_map: Dict[str, Permission] = {}
         for item in permissions_data:
             perm, _ = Permission.objects.get_or_create(
                 code=item["code"],
@@ -30,8 +46,8 @@ class Command(BaseCommand):
             )
             permission_map[item["code"]] = perm
 
-        # 创建基础角色
-        roles_data = [
+        # 创建基础角色及权限绑定关系
+        roles_data: List[Dict[str, any]] = [
             {"name": "超级管理员", "code": "super_admin", "perms": list(permission_map.keys())},
             {"name": "项目管理员", "code": "project_manager", "perms": [
                 "project.view", "project.create", "project.edit", "project.member",
@@ -50,14 +66,14 @@ class Command(BaseCommand):
                 "project.view",
             ]},
         ]
-        role_map = {}
+        role_map: Dict[str, Role] = {}
         for item in roles_data:
             role, _ = Role.objects.get_or_create(
                 code=item["code"],
                 defaults={"name": item["name"]},
             )
             role_map[item["code"]] = role
-            # 绑定权限
+            # 绑定权限：先清空再绑定，保证角色权限与配置一致
             RolePermission.objects.filter(role=role).delete()
             for perm_code in item["perms"]:
                 if perm_code in permission_map:

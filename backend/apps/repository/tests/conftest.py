@@ -1,3 +1,8 @@
+"""
+仓库模块测试夹具
+
+提供用户、项目、凭证、仓库、提交记录等通用测试数据。
+"""
 import pytest
 
 from apps.account.models import User
@@ -8,6 +13,7 @@ from apps.repository.models import CommitRecord, Repository
 
 @pytest.fixture
 def user():
+    """测试用户"""
     return User.objects.create_user(
         username="testuser",
         password="testpass",
@@ -17,6 +23,7 @@ def user():
 
 @pytest.fixture
 def project(user):
+    """测试项目，用户为项目管理员"""
     project = Project.objects.create(
         code="TEST",
         name="测试项目",
@@ -29,6 +36,7 @@ def project(user):
 
 @pytest.fixture
 def credential(user, project):
+    """测试凭证（项目级 GitLab Token）"""
     cred = Credential.objects.create(
         name="GitLab Token",
         cred_type="gitlab_token",
@@ -44,6 +52,7 @@ def credential(user, project):
 
 @pytest.fixture
 def repository(project, credential):
+    """测试仓库"""
     return Repository.objects.create(
         project=project,
         repo_type="git",
@@ -60,6 +69,7 @@ def repository(project, credential):
 
 @pytest.fixture
 def commit(repository, project):
+    """测试提交记录"""
     return CommitRecord.objects.create(
         project=project,
         repository=repository,

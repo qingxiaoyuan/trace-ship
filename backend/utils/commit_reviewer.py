@@ -1,8 +1,18 @@
+"""
+提交审查规则引擎
+
+基于 CommitParser 的解析结果，按规则判定提交信息是否合法、警告或通过。
+"""
+from typing import Tuple
 from .commit_parser import CommitParser
 
 
 class CommitReviewer:
-    """Commit 审查规则引擎"""
+    """
+    Commit 审查规则引擎
+
+    内置规则覆盖：变更类型必填、更新内容必填、配置项改动一致性、更新内容类型规范。
+    """
 
     RULES = [
         {
@@ -32,10 +42,16 @@ class CommitReviewer:
     ]
 
     @classmethod
-    def review(cls, message: str) -> tuple:
+    def review(cls, message: str) -> Tuple[str, str, dict]:
         """
-        返回 (review_status, reason, parsed_dict)
-        review_status: pass / warning / illegal
+        审查提交信息
+
+        Args:
+            message: 原始 commit message
+
+        Returns:
+            (review_status, reason, parsed_dict)
+            review_status 取值：pass / warning / illegal
         """
         parsed = CommitParser.parse(message)
 
@@ -57,7 +73,15 @@ class CommitReviewer:
 
     @classmethod
     def suggest(cls, message: str) -> str:
-        """基于规则引擎给出轻量 AI 建议（阶段二占位）"""
+        """
+        基于规则引擎给出轻量 AI 建议（阶段二占位）
+
+        Args:
+            message: 原始 commit message
+
+        Returns:
+            建议文本
+        """
         status, reason, parsed = cls.review(message)
         if status == "pass":
             return "提交信息符合规范。"

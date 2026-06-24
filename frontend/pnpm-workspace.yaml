@@ -1,0 +1,2 @@
+allowBuilds:
+  '@logicflow/core': set this to true or false

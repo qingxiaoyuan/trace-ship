@@ -1,3 +1,8 @@
+"""
+全局异常处理
+
+统一 DRF 异常响应格式为 {code, message, data}，便于前端统一处理。
+"""
 from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
@@ -5,8 +10,19 @@ from django.core.exceptions import ValidationError, PermissionDenied
 from django.http import Http404
 
 
-def custom_exception_handler(exc, context):
-    """统一异常处理，返回 {code, message, data} 格式"""
+def custom_exception_handler(exc, context) -> Response:
+    """
+    统一异常处理函数
+
+    将 DRF 内置异常、Django 校验/权限/404 异常以及未知异常统一包装为项目标准响应格式。
+
+    Args:
+        exc: 异常实例
+        context: 异常上下文（包含 view、request 等）
+
+    Returns:
+        统一格式 Response
+    """
     response = exception_handler(exc, context)
 
     if response is not None:
