@@ -71,20 +71,3 @@ class CommitReviewer:
 
         return "pass", "", parsed.to_dict()
 
-    @classmethod
-    def suggest(cls, message: str) -> str:
-        """
-        基于规则引擎给出轻量 AI 建议（阶段二占位）
-
-        Args:
-            message: 原始 commit message
-
-        Returns:
-            建议文本
-        """
-        status, reason, parsed = cls.review(message)
-        if status == "pass":
-            return "提交信息符合规范。"
-        if reason:
-            return reason
-        return "请检查提交信息格式是否完整。"

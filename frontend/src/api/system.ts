@@ -19,7 +19,9 @@ export interface SystemLog {
   resource_type?: string;
   resource_id?: string;
   detail?: string;
-  ip_address?: string;
+  description?: string;
+  result?: 'success' | 'failure';
+  ip?: string;
   created_at: string;
 }
 
@@ -32,6 +34,11 @@ export interface ConfigListParams {
 export interface LogListParams {
   keyword?: string;
   module?: string;
+  action?: string;
+  user?: string;
+  result?: string;
+  created_at__gte?: string;
+  created_at__lte?: string;
   page?: number;
   page_size?: number;
 }

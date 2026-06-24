@@ -9,6 +9,9 @@ from rest_framework.test import APIClient
 from apps.release.models import ReleaseRecord
 
 
+from apps.workflow.models import WorkflowDefinition
+
+
 pytestmark = pytest.mark.django_db
 
 
@@ -97,8 +100,26 @@ class TestReleaseViews:
         assert response.data["code"] == 0
         assert response.data["data"]["change_type"] == "无配置项改动"
 
-    def test_submit_audit(self, api_client, project, repository, commit, patched_provider):
+    def test_submit_audit(self, api_client, project, repository, commit, patched_provider, user):
         """提交审批"""
+        WorkflowDefinition.objects.create(
+            project=project,
+            name="发布审批",
+            biz_type="release",
+            is_active=True,
+            graph_data={
+                "nodes": [
+                    {"id": "start", "type": "start-node", "x": 100, "y": 200, "text": "开始"},
+                    {"id": "approval", "type": "approval-node", "x": 300, "y": 200, "text": "审批", "properties": {"approver_type": "leader"}},
+                    {"id": "end", "type": "end-node", "x": 500, "y": 200, "text": "结束"},
+                ],
+                "edges": [
+                    {"id": "e1", "sourceNodeId": "start", "targetNodeId": "approval"},
+                    {"id": "e2", "sourceNodeId": "approval", "targetNodeId": "end"},
+                ],
+            },
+            created_by=user,
+        )
         release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,

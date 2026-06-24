@@ -12,13 +12,20 @@ import {
 import { TsCard } from '@/components/TsCard';
 import { TsList } from '@/components/TsList';
 import { StatusTag } from '@/components/StatusTag';
-import { releaseApi, commitApi, jenkinsApi } from '@/api/dashboard';
+import { dashboardApi } from '@/api/dashboard';
+import { releaseApi } from '@/api/release';
+import { commitApi } from '@/api/commit';
 import { tokens } from '@/styles/theme';
 
 const { Text, Title } = Typography;
 
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  const { data: overview } = useQuery({
+    queryKey: ['dashboard-overview'],
+    queryFn: () => dashboardApi.getOverview(),
+  });
 
   const { data: releaseData } = useQuery({
     queryKey: ['dashboard-releases'],
@@ -30,42 +37,38 @@ export default function Dashboard() {
     queryFn: () => commitApi.getCommits({ page_size: 1000 }),
   });
 
-  const { data: buildData } = useQuery({
-    queryKey: ['dashboard-builds'],
-    queryFn: () => jenkinsApi.getBuilds({ page_size: 1000 }),
-  });
-
   const releases = releaseData?.results || [];
   const commits = commitData?.results || [];
-  const builds = buildData?.results || [];
 
   const recentReleases = releases.slice(0, 10);
-  const pendingAuditCount = releases.filter((r) => r.status === 'pending' || r.status === 'auditing').length;
-  const successBuilds = builds.filter((b) => b.status === 'success').length;
-  const failedBuilds = builds.filter((b) => b.status === 'failure').length;
+  const pendingAuditCount = overview?.pending_audit_count || 0;
+  const successRate = Math.round((overview?.success_rate || 0) * 1000) / 10;
+  const totalReleases = overview?.total_releases || 0;
+  const buildingCount = overview?.building_count || 0;
+  const rejectedCount = overview?.rejected_count || 0;
   const illegalCommits = commits.filter((c) => c.review_status === 'illegal').length;
   const passCommits = commits.filter((c) => c.review_status === 'pass').length;
   const complianceRate = commits.length ? Math.round((passCommits / commits.length) * 1000) / 10 : 100;
 
   const kpiCards = [
     {
-      title: '近 7 天发布数',
-      value: String(releases.length),
-      extra: <StatusTag status="success">+20% 较上周</StatusTag>,
+      title: '累计发布数',
+      value: String(totalReleases),
+      extra: <StatusTag status="success">{successRate}% 成功率</StatusTag>,
       icon: <RocketOutlined />,
       iconBg: 'linear-gradient(135deg, #3B82F6, #60A5FA)',
     },
     {
       title: '待审批数',
       value: String(pendingAuditCount),
-      extra: <Text className="text-slate-400">{pendingAuditCount} 个待审批 · 0 个即将超时</Text>,
+      extra: <Text className="text-slate-400">{pendingAuditCount} 个待审批 · {overview?.auditing_count || 0} 个审批中</Text>,
       icon: <AuditOutlined />,
       iconBg: 'linear-gradient(135deg, #F59E0B, #FBBF24)',
     },
     {
-      title: '构建成功/失败',
-      value: `${successBuilds} / ${failedBuilds}`,
-      extra: <StatusTag status={failedBuilds > 0 ? 'danger' : 'success'}>{failedBuilds} 失败 需关注</StatusTag>,
+      title: '构建中/已驳回',
+      value: `${buildingCount} / ${rejectedCount}`,
+      extra: <StatusTag status={rejectedCount > 0 ? 'danger' : 'success'}>{rejectedCount} 驳回 需关注</StatusTag>,
       icon: <BuildOutlined />,
       iconBg: 'linear-gradient(135deg, #EF4444, #F87171)',
     },

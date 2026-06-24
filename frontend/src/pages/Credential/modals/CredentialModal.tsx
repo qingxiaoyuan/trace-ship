@@ -51,7 +51,6 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
               { label: 'SVN 密码', value: 'svn_password' },
               { label: 'Jenkins Token', value: 'jenkins_token' },
               { label: 'LDAP 密码', value: 'ldap_password' },
-              { label: 'AI API Key', value: 'ai_api_key' },
             ]}
           />
         </Form.Item>

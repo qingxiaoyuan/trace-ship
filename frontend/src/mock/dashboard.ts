@@ -1,7 +1,6 @@
 import type {
   CommitRecord,
   CommitAlertRecord,
-  AIReviewResult,
   Release,
   BuildRecord,
   DashboardOverview,
@@ -12,7 +11,9 @@ export const mockDashboardOverview: DashboardOverview = {
   total_releases: 120,
   success_rate: 0.95,
   pending_audit_count: 5,
-  upcoming_releases: 3,
+  building_count: 2,
+  auditing_count: 3,
+  rejected_count: 1,
 };
 
 export const mockRecentReleases: Release[] = [
@@ -43,7 +44,6 @@ export const mockCommits: CommitRecord[] = [
     branch: 'develop',
     change_type: 'F类',
     review_status: 'warning',
-    ai_suggestion: '配置项改动格式不标准，建议统一为 [System] 段落格式。',
     project_name: '核心交易平台',
     repo_name: 'trade-config',
   },
@@ -56,7 +56,6 @@ export const mockCommits: CommitRecord[] = [
     branch: 'develop',
     change_type: '-',
     review_status: 'illegal',
-    ai_suggestion: '缺少变更类型标记，请补充变更类型。',
     project_name: '核心交易平台',
     repo_name: 'trade-gateway',
   },
@@ -81,7 +80,6 @@ export const mockCommits: CommitRecord[] = [
     branch: 'develop',
     change_type: 'F类',
     review_status: 'warning',
-    ai_suggestion: '配置项改动格式不标准，建议统一为 [System] 段落格式。',
     project_name: '核心交易平台',
     repo_name: 'trade-pay',
   },
@@ -94,7 +92,6 @@ export const mockCommits: CommitRecord[] = [
     branch: 'develop',
     change_type: '-',
     review_status: 'illegal',
-    ai_suggestion: '缺少变更类型标记，请补充变更类型。',
     project_name: '数据中台',
     repo_name: 'data-etl',
   },
@@ -119,7 +116,6 @@ export const mockCommits: CommitRecord[] = [
     branch: 'develop',
     change_type: '-',
     review_status: 'illegal',
-    ai_suggestion: '配置项改动缺少 [System] 标记，请补充变更类型与影响范围。',
     project_name: '核心交易平台',
     repo_name: 'trade-config',
   },
@@ -153,130 +149,8 @@ export const mockCommitAlerts: CommitAlertRecord[] = [
   },
 ];
 
-export const mockAIReviews: Record<string, AIReviewResult> = {
-  '1': {
-    conclusion: '该提交符合规范要求。变更类型、描述清晰度、影响范围均完整，可直接纳入发布流程。',
-    suggestions: [
-      { text: '变更类型标记完整，符合 [A] 类规范', type: 'success' },
-      { text: '描述清晰，影响模块明确', type: 'success' },
-    ],
-    impacts: [
-      { module: 'trade-core', level: 'direct' },
-      { module: 'trade-gateway', level: 'none' },
-      { module: 'data-hub', level: 'none' },
-    ],
-    risk_level: 'low',
-    scores: { completeness: 95, clarity: 92, risk_control: 96 },
-    tip: '该提交规范完整，风险可控，建议正常发布。',
-  },
-  '2': {
-    conclusion: '配置项改动格式不标准，建议统一为 [System] 段落格式，并补充影响范围说明。',
-    suggestions: [
-      { text: '缺少 [System] 段落标记，建议标题使用 [System] 开头', type: 'warning' },
-      { text: '配置影响范围描述不够清晰，需说明涉及哪些环境', type: 'warning' },
-    ],
-    impacts: [
-      { module: 'trade-config', level: 'direct' },
-      { module: 'trade-pay', level: 'direct' },
-      { module: 'trade-core', level: 'none' },
-    ],
-    risk_level: 'medium',
-    scores: { completeness: 72, clarity: 65, risk_control: 78 },
-    tip: '涉及配置项改动，请在发布前由测试负责人复核，避免影响线上环境。',
-  },
-  '3': {
-    conclusion: '缺少变更类型标记，请补充变更类型后再提交；Commit message 过短，无法判断影响范围。',
-    suggestions: [
-      { text: '未识别到 [A]/[F] 等变更类型前缀，不符合提交规范', type: 'danger' },
-      { text: 'Commit message 过短，缺少更新内容说明', type: 'danger' },
-    ],
-    impacts: [
-      { module: 'trade-gateway', level: 'direct' },
-      { module: 'trade-core', level: 'direct' },
-      { module: 'data-hub', level: 'none' },
-    ],
-    risk_level: 'high',
-    scores: { completeness: 35, clarity: 40, risk_control: 30 },
-    tip: '该提交不符合规范，不可纳入发布，请整改后重新提交。',
-  },
-  '4': {
-    conclusion: '该提交符合规范要求。变更类型明确，描述完整。',
-    suggestions: [
-      { text: '变更类型 [A] 已正确标记', type: 'success' },
-      { text: '更新内容与影响范围描述清晰', type: 'success' },
-    ],
-    impacts: [
-      { module: 'data-hub', level: 'direct' },
-      { module: 'trade-core', level: 'none' },
-    ],
-    risk_level: 'low',
-    scores: { completeness: 94, clarity: 90, risk_control: 93 },
-    tip: '该提交规范完整，风险可控，建议正常发布。',
-  },
-  '5': {
-    conclusion: '配置项改动已使用 [System] 标记，但缺少影响环境说明，建议补充后再发布。',
-    suggestions: [
-      { text: '已使用 [System] 标记，格式正确', type: 'success' },
-      { text: '建议补充影响环境（线上/预发/测试）说明', type: 'warning' },
-    ],
-    impacts: [
-      { module: 'trade-pay', level: 'direct' },
-      { module: 'trade-core', level: 'none' },
-    ],
-    risk_level: 'medium',
-    scores: { completeness: 78, clarity: 70, risk_control: 82 },
-    tip: '配置改动建议由发布负责人二次确认后纳入发布。',
-  },
-  '6': {
-    conclusion: 'Commit message 过短且缺少变更类型，无法完成规范审查。',
-    suggestions: [
-      { text: '缺少变更类型前缀', type: 'danger' },
-      { text: '缺少更新内容描述', type: 'danger' },
-    ],
-    impacts: [
-      { module: 'data-etl', level: 'direct' },
-      { module: 'data-hub', level: 'none' },
-    ],
-    risk_level: 'high',
-    scores: { completeness: 30, clarity: 35, risk_control: 28 },
-    tip: '该提交不符合规范，不可纳入发布，请整改后重新提交。',
-  },
-  '7': {
-    conclusion: '该提交符合规范要求，影响模块明确。',
-    suggestions: [
-      { text: '变更类型 [A] 完整', type: 'success' },
-      { text: '权限校验改动需关注回归范围', type: 'warning' },
-    ],
-    impacts: [
-      { module: 'ops-portal', level: 'direct' },
-      { module: 'trade-core', level: 'none' },
-    ],
-    risk_level: 'low',
-    scores: { completeness: 91, clarity: 88, risk_control: 90 },
-    tip: '建议补充一条测试用例覆盖白名单校验逻辑。',
-  },
-  '8': {
-    conclusion: '配置项改动缺少 [System] 标记，且未说明影响范围，不符合规范。',
-    suggestions: [
-      { text: '缺少 [System] 标记', type: 'danger' },
-      { text: '配置项改动未说明影响范围与环境', type: 'danger' },
-    ],
-    impacts: [
-      { module: 'trade-config', level: 'direct' },
-      { module: 'trade-pay', level: 'direct' },
-    ],
-    risk_level: 'high',
-    scores: { completeness: 42, clarity: 45, risk_control: 38 },
-    tip: '配置项改动需严格遵循 [System] 格式并说明影响范围。',
-  },
-};
-
 export function getCommitById(id: string): CommitRecord | undefined {
   return mockCommits.find((c) => c.id === id);
-}
-
-export function getAIReviewByCommitId(id: string): AIReviewResult | undefined {
-  return mockAIReviews[id];
 }
 
 export const mockBuildRecords: BuildRecord[] = [

@@ -5,9 +5,8 @@ import { ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { commitApi } from '@/api/dashboard';
+import { commitApi } from '@/api/commit';
 import type { ReviewStatus } from '@/types';
-
 const { Title, Text } = Typography;
 
 const reviewStatusMap: Record<ReviewStatus, { status: 'success' | 'warning' | 'danger'; text: string }> = {
@@ -57,12 +56,6 @@ export default function CommitDetail() {
     enabled: !!id,
   });
 
-  const { data: aiReview } = useQuery({
-    queryKey: ['commit-ai-review', id],
-    queryFn: () => commitApi.getAiReview(id || ''),
-    enabled: !!id,
-  });
-
   if (isLoading) {
     return <div className="p-6 text-center">加载中...</div>;
   }
@@ -81,7 +74,6 @@ export default function CommitDetail() {
   const parsedMessage = parseCommitMessage(commit.message);
   const reviewItem = reviewStatusMap[commit.review_status];
   const changeTypeStatus = changeTypeStatusMap[commit.change_type] || 'neutral';
-  const aiReviewData = aiReview as { conclusion?: string } | undefined;
 
   return (
     <div className="space-y-4">
@@ -132,22 +124,6 @@ export default function CommitDetail() {
         <pre className="p-4 rounded-xl bg-slate-50 border border-slate-100 font-mono text-sm text-slate-700 leading-relaxed overflow-auto">
           {JSON.stringify(parsedMessage, null, 2)}
         </pre>
-      </TsCard>
-
-      <TsCard
-        className="border border-violet-100 bg-linear-to-r from-white to-violet-50/30"
-        title="AI 审查建议"
-      >
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
-            AI
-          </div>
-          <div className="flex-1">
-            <div className="text-sm text-slate-700 leading-relaxed">
-              {aiReviewData?.conclusion || commit.ai_suggestion || '暂无 AI 审查建议。'}
-            </div>
-          </div>
-        </div>
       </TsCard>
 
       <div className="flex justify-end gap-3">

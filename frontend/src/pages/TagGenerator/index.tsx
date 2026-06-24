@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Steps,
   Form,
@@ -25,9 +26,6 @@ import {
   SaveOutlined,
   FileWordOutlined,
   FilePdfOutlined,
-  RobotOutlined,
-  WarningOutlined,
-  ThunderboltOutlined,
   EyeOutlined,
   MergeCellsOutlined,
   DeleteOutlined,
@@ -38,9 +36,16 @@ import {
 } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { commitApi, releaseApi } from '@/api/dashboard';
+import { commitApi } from '@/api/commit';
+import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
-import type { CommitRecord, RelatedChangeItem } from '@/types';
+import type { CommitRecord } from '@/types';
+
+interface RelatedChangeItem {
+  id: string;
+  softwareName: string;
+  version: string;
+}
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
@@ -102,6 +107,7 @@ const blueColors = {
 };
 
 export default function TagGenerator() {
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedCommits, setSelectedCommits] = useState<string[]>([]);
   const [form] = Form.useForm();
@@ -157,9 +163,17 @@ export default function TagGenerator() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      await releaseApi.getReleases(); // placeholder to ensure import used
+      const release = await releaseApi.createRelease({
+        project: values.project_id,
+        repository: values.repository_id,
+        release_type: values.release_type,
+        source_branch: values.source_branch,
+        target_branch: values.source_branch,
+        version: values.version,
+      });
+      await releaseApi.submitAudit(release.id);
       message.success('提交审批成功');
-      console.log('release values', values);
+      navigate('/workflows');
     } catch (error) {
       console.error(error);
     }
@@ -439,12 +453,9 @@ function Step2Diff({
     },
     {
       title: '操作',
-      width: 110,
+      width: 70,
       render: () => (
         <Space size="small">
-          <Tooltip title="AI 审查">
-            <Button type="text" size="small" icon={<RobotOutlined />} style={{ color: blueColors.muted }} />
-          </Tooltip>
           <Tooltip title="详情">
             <Button type="text" size="small" icon={<EyeOutlined />} style={{ color: blueColors.muted }} />
           </Tooltip>
@@ -463,19 +474,12 @@ function Step2Diff({
                 步骤 2：提取并编辑 commit 差异
               </span>
               <Text type="secondary" style={{ fontSize: 13, color: blueColors.muted }}>
-                已选 {selectedCommits.length} / {mockCommits.length} 条
+                已选 {selectedCommits.length} / {commits.length} 条
               </Text>
             </div>
           }
           extra={
             <Space>
-              <Button
-                icon={<ThunderboltOutlined />}
-                type="primary"
-                style={{ borderRadius: 6, background: blueColors.charcoal, borderColor: blueColors.charcoal }}
-              >
-                AI 辅助生成摘要
-              </Button>
               <Button icon={<MergeCellsOutlined />} disabled={selectedCommits.length === 0} style={{ borderRadius: 6, borderColor: blueColors.border }}>
                 合并选中
               </Button>
@@ -530,26 +534,6 @@ function Step2Diff({
               </List.Item>
             )}
           />
-        </TsCard>
-
-        <TsCard
-          style={{
-            background: blueColors.paleYellow.bg,
-            borderColor: '#F5E6C8',
-            borderRadius: 12,
-          }}
-        >
-          <div className="flex items-start gap-3">
-            <WarningOutlined style={{ color: blueColors.paleYellow.text, fontSize: 20, marginTop: 2 }} />
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15, color: blueColors.paleYellow.text }}>
-                AI 风险提示
-              </div>
-              <div style={{ color: blueColors.paleYellow.text, fontSize: 14, marginTop: 6, lineHeight: 1.6, opacity: 0.9 }}>
-                本次发布包含配置项改动与不合规提交，建议人工复核后再提交审批。
-              </div>
-            </div>
-          </div>
         </TsCard>
       </Col>
     </Row>

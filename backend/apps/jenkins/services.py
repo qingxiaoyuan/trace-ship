@@ -87,7 +87,7 @@ class JenkinsService:
     def trigger_build(
         cls,
         job: JenkinsJob,
-        params: Dict[str, Any],
+        release,
         request_user=None,
     ) -> JenkinsBuild:
         """
@@ -95,7 +95,7 @@ class JenkinsService:
 
         Args:
             job: JenkinsJob 实例
-            params: 构建参数，如 {"version": "VA.x", "branch": "main", "git_hash": "..."}
+            release: ReleaseRecord 实例
             request_user: 当前请求用户
 
         Returns:
@@ -104,9 +104,9 @@ class JenkinsService:
         provider = cls._get_provider(job, request_user)
 
         context = {
-            "version": params.get("version", ""),
-            "branch": params.get("branch", ""),
-            "git_hash": params.get("git_hash", ""),
+            "version": release.version,
+            "branch": release.target_branch,
+            "git_hash": release.git_hash,
         }
         actual_params = cls._render_params(job.params_template or {}, context)
 
@@ -120,6 +120,13 @@ class JenkinsService:
             queue_id=str(result.get("queue_id", "")),
             status="queue",
             params=actual_params,
+        )
+
+        # 关联发布记录
+        from apps.release.models import ReleaseRecord
+        ReleaseRecord.objects.filter(id=release.id).update(
+            jenkins_build=build,
+            updated_at=timezone.now(),
         )
 
         # 启动 Celery 轮询任务
@@ -174,22 +181,13 @@ class JenkinsService:
         Args:
             build: JenkinsBuild 实例
         """
-        from apps.release.models import ReleaseRecord
+        from apps.release.services import ReleaseService
 
-        if build.status == "success":
-            ReleaseRecord.objects.filter(
-                jenkins_build=build,
-                status="building",
-            ).update(status="auditing", updated_at=timezone.now())
-        elif build.status in ("failure", "aborted"):
-            ReleaseRecord.objects.filter(
-                jenkins_build=build,
-                status="building",
-            ).update(
-                status="rejected",
-                rejected_reason=f"Jenkins 构建{build.get_status_display()}",
-                updated_at=timezone.now(),
-            )
+        success = build.status == "success"
+        error_msg = ""
+        if not success:
+            error_msg = f"Jenkins 构建{build.get_status_display()}"
+        ReleaseService.handle_build_completed(build, success, error_msg)
 
     @classmethod
     def get_build_log(cls, build: JenkinsBuild) -> str:

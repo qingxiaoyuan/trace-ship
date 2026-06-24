@@ -41,7 +41,6 @@ class Credential(models.Model):
         ("svn_password", "SVN 密码"),
         ("jenkins_token", "Jenkins Token"),
         ("ldap_password", "LDAP 密码"),
-        ("ai_api_key", "AI API Key"),
     ]
     AUTH_MODE_CHOICES = [
         ("token", "Token"),

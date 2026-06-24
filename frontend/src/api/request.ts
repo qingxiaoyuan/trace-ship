@@ -35,6 +35,10 @@ request.interceptors.request.use(
 
 request.interceptors.response.use(
   (response) => {
+    // 二进制流直接透传，不包装为 ApiResponse 校验
+    if (response.config.responseType === 'blob' || response.data instanceof Blob) {
+      return response;
+    }
     const res = response.data as ApiResponse<unknown>;
     if (res.code !== 0) {
       return Promise.reject(res);
@@ -54,21 +58,41 @@ request.interceptors.response.use(
 
 export async function get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const res = await request.get<ApiResponse<T>>(url, config);
+  if (res.data instanceof Blob) {
+    return res.data as T;
+  }
   return res.data.data;
 }
 
 export async function post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
   const res = await request.post<ApiResponse<T>>(url, data, config);
+  if (res.data instanceof Blob) {
+    return res.data as T;
+  }
   return res.data.data;
 }
 
 export async function put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
   const res = await request.put<ApiResponse<T>>(url, data, config);
+  if (res.data instanceof Blob) {
+    return res.data as T;
+  }
+  return res.data.data;
+}
+
+export async function patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  const res = await request.patch<ApiResponse<T>>(url, data, config);
+  if (res.data instanceof Blob) {
+    return res.data as T;
+  }
   return res.data.data;
 }
 
 export async function del<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const res = await request.delete<ApiResponse<T>>(url, config);
+  if (res.data instanceof Blob) {
+    return res.data as T;
+  }
   return res.data.data;
 }
 

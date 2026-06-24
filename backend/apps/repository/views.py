@@ -209,9 +209,8 @@ class CommitRecordViewSet(viewsets.ReadOnlyModelViewSet):
     """
     提交记录视图集
 
-    默认只读，测试人员可执行人工复核，所有人可查看 AI 审查建议。
+    默认只读，测试人员可执行人工复核。
     """
-
     queryset = CommitRecord.objects.all()
     serializer_class = CommitRecordSerializer
     permission_classes = [IsAuthenticated]
@@ -280,18 +279,3 @@ class CommitRecordViewSet(viewsets.ReadOnlyModelViewSet):
             "reason": commit.review_reason,
         })
 
-    @action(detail=True, methods=["get"], url_path="ai-review")
-    def ai_review(self, request: Request, pk=None) -> Response:
-        """
-        AI 审查建议（阶段二占位）
-
-        Args:
-            request: DRF Request
-            pk: 提交记录主键
-
-        Returns:
-            AI 审查建议
-        """
-        commit = self.get_object()
-        result = RepositoryService.ai_review(commit)
-        return success_response(result)

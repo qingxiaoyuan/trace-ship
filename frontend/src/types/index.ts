@@ -100,7 +100,7 @@ export interface CommitRecord {
   branch: string;
   change_type: string;
   review_status: ReviewStatus;
-  ai_suggestion?: string;
+  review_reason?: string;
   project_name?: string;
   repo_name?: string;
 }
@@ -110,42 +110,6 @@ export type AlertStatus = 'pending' | 'resolved' | 'ignored';
 export interface CommitAlertRecord extends CommitRecord {
   illegal_reason: string;
   alert_status: AlertStatus;
-}
-
-export interface AIReviewImpact {
-  module: string;
-  level: 'direct' | 'none';
-}
-
-export interface AIReviewSuggestion {
-  text: string;
-  type: 'success' | 'warning' | 'danger';
-}
-
-export interface AIReviewScores {
-  completeness: number;
-  clarity: number;
-  risk_control: number;
-}
-
-export interface RelatedChangeItem {
-  id: string;
-  softwareName: string;
-  version: string;
-}
-
-export interface AIReviewResult {
-  conclusion: string;
-  suggestions: AIReviewSuggestion[];
-  impacts: AIReviewImpact[];
-  risk_level: 'low' | 'medium' | 'high';
-  scores: AIReviewScores;
-  tip: string;
-}
-
-export interface CommitDetailData extends CommitRecord {
-  parsed_message: Record<string, unknown>;
-  ai_review: AIReviewResult;
 }
 
 export type BuildStatus = 'queue' | 'building' | 'success' | 'failure' | 'aborted';
@@ -167,8 +131,7 @@ export type CredentialType =
   | 'gitea_token'
   | 'svn_password'
   | 'jenkins_token'
-  | 'ldap_password'
-  | 'ai_api_key';
+  | 'ldap_password';
 
 export type CredentialScope = 'personal' | 'project' | 'global';
 
@@ -226,5 +189,72 @@ export interface DashboardOverview {
   total_releases: number;
   success_rate: number;
   pending_audit_count: number;
-  upcoming_releases: number;
+  building_count: number;
+  auditing_count: number;
+  rejected_count: number;
+}
+
+export interface WorkflowNodeProperties {
+  approver_type?: 'leader' | 'role' | 'user' | 'self';
+  role?: string;
+  user_id?: string;
+}
+
+export interface WorkflowNode {
+  id: string;
+  type: 'start-node' | 'approval-node' | 'end-node' | string;
+  x: number;
+  y: number;
+  text?: string | { value: string };
+  properties?: WorkflowNodeProperties;
+}
+
+export interface WorkflowEdge {
+  id?: string;
+  sourceNodeId?: string;
+  targetNodeId?: string;
+  source?: string;
+  target?: string;
+}
+
+export interface WorkflowDefinition {
+  id: string;
+  project: string;
+  name: string;
+  biz_type: string;
+  graph_data: {
+    nodes: WorkflowNode[];
+    edges: WorkflowEdge[];
+  };
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowInstance {
+  id: string;
+  definition: string;
+  definition_name?: string;
+  biz_type: string;
+  biz_id: string;
+  status: 'running' | 'completed' | 'rejected' | 'revoked';
+  current_node_id: string;
+  node_status: Record<string, string>;
+  graph_data: WorkflowDefinition['graph_data'];
+  tasks: WorkflowTask[];
+  created_by: string;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface Notification {
+  id: string;
+  notification_type: 'audit' | 'build' | 'release' | 'system';
+  title: string;
+  content: string;
+  is_read: boolean;
+  read_at?: string;
+  related_type: string;
+  related_id: string;
+  created_at: string;
 }

@@ -131,7 +131,7 @@ class CommitRecord(models.Model):
     """
     提交记录模型
 
-    存储仓库的每一次提交信息及审查结果，支持规则引擎和 AI 审查。
+    存储仓库的每一次提交信息及审查结果，支持规则引擎审查。
 
     Attributes:
         id: UUID 主键
@@ -146,12 +146,9 @@ class CommitRecord(models.Model):
         parsed_message: 解析结果（JSON）
         review_status: 审查状态
         review_reason: 审查说明
-        ai_suggestion: AI 建议
-        ai_review_at: AI 审查时间
         created_at: 创建时间
         updated_at: 更新时间
     """
-
     REVIEW_STATUS_CHOICES = [
         ("unreviewed", "未审查"),
         ("pass", "通过"),
@@ -186,8 +183,6 @@ class CommitRecord(models.Model):
         verbose_name="审查状态",
     )
     review_reason = models.TextField(blank=True, verbose_name="审查说明")
-    ai_suggestion = models.TextField(blank=True, verbose_name="AI 建议")
-    ai_review_at = models.DateTimeField(null=True, blank=True, verbose_name="AI 审查时间")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

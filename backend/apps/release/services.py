@@ -10,9 +10,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.jenkins.models import JenkinsBuild
+from apps.notification.services import NotificationService
 from apps.project.models import Project
 from apps.release.models import ReleaseCommit, ReleaseRecord
 from apps.repository.models import CommitRecord, Repository
+from apps.system.services import OperationLogService
+from apps.workflow.models import WorkflowDefinition, WorkflowInstance
+from apps.workflow.services import WorkflowEngine
 from utils.provider.base import CommitInfo, GitProvider, TagInfo
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.exceptions import ProviderError
@@ -520,6 +525,11 @@ class ReleaseService:
             status="draft",
             publisher=publisher,
         )
+        OperationLogService.log_release(
+            user=publisher,
+            release=release,
+            action="create",
+        )
         return release
 
     @classmethod
@@ -551,14 +561,16 @@ class ReleaseService:
         return doc
 
     @staticmethod
-    def submit_audit(release: ReleaseRecord) -> ReleaseRecord:
+    def submit_audit(release: ReleaseRecord, user) -> ReleaseRecord:
         """
-        提交审批（阶段三简化版）
+        提交审批
 
-        仅允许草稿状态提交，校验发布说明非空且无非法提交。
+        仅允许草稿状态提交，校验发布说明非空且无非法提交；
+        为项目创建发布审批工作流实例并将 release 置为 pending。
 
         Args:
             release: ReleaseRecord 实例
+            user: 提交人
 
         Returns:
             更新后的 ReleaseRecord
@@ -575,9 +587,167 @@ class ReleaseService:
         if illegal_exists:
             raise serializers.ValidationError({"commits": "包含非法提交，无法提交审批"})
 
+        # 查找项目生效的发布审批流程定义
+        definition = WorkflowDefinition.objects.filter(
+            project=release.project,
+            biz_type="release",
+            is_active=True,
+        ).first()
+        if not definition:
+            raise serializers.ValidationError({"workflow": "项目未配置发布审批流程"})
+
+        instance = WorkflowEngine.create_instance(
+            definition=definition,
+            biz_type="release",
+            biz_id=str(release.id),
+            user=user,
+        )
+        release.workflow_instance = instance
         release.status = "pending"
-        release.save(update_fields=["status", "updated_at"])
+        release.save(update_fields=["workflow_instance", "status", "updated_at"])
+        OperationLogService.log_release(
+            user=user,
+            release=release,
+            action="submit_audit",
+        )
         return release
+
+    @staticmethod
+    def handle_workflow_completed(instance: WorkflowInstance) -> None:
+        """
+        工作流完成时驱动发布状态
+
+        Args:
+            instance: WorkflowInstance 实例
+        """
+        release = ReleaseRecord.objects.filter(workflow_instance=instance).first()
+        if not release:
+            return
+
+        if release.status == "pending":
+            release.status = "building"
+            release.save(update_fields=["status", "updated_at"])
+            ReleaseService.trigger_build_for_release(release)
+        elif release.status == "auditing":
+            # 推 tag 并标记为已发布
+            try:
+                ReleaseService.push_tag(release)
+            except Exception:
+                # push_tag 内部已设置 rejected 状态
+                pass
+
+    @staticmethod
+    def handle_workflow_rejected(instance: WorkflowInstance, comment: str = "") -> None:
+        """
+        工作流驳回时驱动发布状态
+
+        Args:
+            instance: WorkflowInstance 实例
+            comment: 驳回意见
+        """
+        release = ReleaseRecord.objects.filter(workflow_instance=instance).first()
+        if not release:
+            return
+        release.status = "rejected"
+        release.rejected_reason = comment or "审批已驳回"
+        release.save(update_fields=["status", "rejected_reason", "updated_at"])
+
+    @staticmethod
+    def trigger_build_for_release(release: ReleaseRecord) -> None:
+        """
+        为发布触发 Jenkins 构建
+
+        Args:
+            release: ReleaseRecord 实例
+        """
+        from apps.jenkins.services import JenkinsService
+
+        # 查找与 release 仓库关联的 Jenkins 任务
+        from apps.jenkins.models import JenkinsJob
+        job = JenkinsJob.objects.filter(
+            project=release.project,
+            repository=release.repository,
+        ).first()
+        if not job:
+            release.status = "rejected"
+            release.rejected_reason = "未找到关联的 Jenkins 任务"
+            release.save(update_fields=["status", "rejected_reason", "updated_at"])
+            return
+
+        try:
+            JenkinsService.trigger_build(job, release, release.publisher)
+            OperationLogService.log_release(
+                user=release.publisher,
+                release=release,
+                action="build",
+            )
+        except Exception as exc:
+            release.status = "rejected"
+            release.rejected_reason = f"触发构建失败: {exc}"
+            release.save(update_fields=["status", "rejected_reason", "updated_at"])
+            OperationLogService.log_release(
+                user=release.publisher,
+                release=release,
+                action="build",
+                result="failure",
+                detail={"error": str(exc)},
+            )
+            raise
+
+    @staticmethod
+    def handle_build_completed(build, success: bool, error_msg: str = "") -> None:
+        """
+        Jenkins 构建完成时驱动发布状态
+
+        Args:
+            build: JenkinsBuild 实例
+            success: 是否成功
+            error_msg: 失败原因
+        """
+        release = ReleaseRecord.objects.filter(jenkins_build=build).first()
+        if not release:
+            return
+
+        if not success:
+            release.status = "rejected"
+            release.rejected_reason = error_msg or "构建失败"
+            release.save(update_fields=["status", "rejected_reason", "updated_at"])
+            NotificationService.notify_build_result(build, release)
+            OperationLogService.log_release(
+                user=release.publisher,
+                release=release,
+                action="build_failure",
+                result="failure",
+                detail={"error": error_msg},
+            )
+            return
+
+        # 构建成功，进入 auditing 并推进工作流
+        release.status = "auditing"
+        release.save(update_fields=["status", "updated_at"])
+        NotificationService.notify_build_result(build, release)
+        OperationLogService.log_release(
+            user=release.publisher,
+            release=release,
+            action="build_success",
+        )
+
+        if release.workflow_instance and release.workflow_instance.status == "running":
+            # 构建后若流程仍在运行，则推进到后续审批节点。
+            current_node_id = release.workflow_instance.current_node_id
+            next_node = WorkflowEngine._find_next_approval_node(
+                release.workflow_instance.graph_data,
+                current_node_id,
+            )
+            if next_node:
+                WorkflowEngine._advance(release.workflow_instance, current_node_id)
+            else:
+                # 没有更多审批节点，直接发布
+                WorkflowEngine._finish_instance(release.workflow_instance, "completed")
+                ReleaseService.handle_workflow_completed(release.workflow_instance)
+        elif release.workflow_instance:
+            # 构建前审批已完成的流程，构建成功后直接进入发布。
+            ReleaseService.handle_workflow_completed(release.workflow_instance)
 
     @classmethod
     def push_tag(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
@@ -611,4 +781,25 @@ class ReleaseService:
         release.status = "released"
         release.released_at = timezone.now()
         release.save(update_fields=["status", "released_at", "updated_at"])
+        NotificationService.notify_release_released(release)
+        OperationLogService.log_release(
+            user=request_user or release.publisher,
+            release=release,
+            action="push_tag",
+        )
         return tag_info
+
+    @classmethod
+    def push_tag_for_release(cls, release_id: str, request_user=None) -> TagInfo:
+        """
+        为指定发布记录推 tag（供审批完成或外部调用）
+
+        Args:
+            release_id: ReleaseRecord ID
+            request_user: 当前请求用户
+
+        Returns:
+            创建的 TagInfo
+        """
+        release = ReleaseRecord.objects.get(id=release_id)
+        return cls.push_tag(release, request_user)

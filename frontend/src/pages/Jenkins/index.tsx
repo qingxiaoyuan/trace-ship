@@ -19,7 +19,7 @@ import { TsCard } from '@/components/TsCard';
 import { StatusTag, type StatusType } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { TsModal } from '@/components/TsModal';
-import { jenkinsApi } from '@/api/dashboard';
+import { jenkinsApi } from '@/api/jenkins';
 import { tokens } from '@/styles/theme';
 import type { BuildRecord } from '@/types';
 

@@ -117,14 +117,13 @@ class CommitRecordSerializer(serializers.ModelSerializer):
             "id", "project", "project_name", "repository", "repository_name",
             "commit_hash", "author", "author_email", "message", "committed_at",
             "branch", "change_type", "parsed_result", "review_status",
-            "review_reason", "ai_suggestion", "ai_review_at", "created_at",
+            "review_reason", "created_at",
         ]
         read_only_fields = [
             "id", "project", "repository", "commit_hash", "author", "author_email",
             "message", "committed_at", "branch", "parsed_message", "review_status",
-            "review_reason", "ai_suggestion", "ai_review_at", "created_at",
+            "review_reason", "created_at",
         ]
-
     def get_change_type(self, obj: CommitRecord) -> str:
         """
         根据解析结果计算变更类型展示文本

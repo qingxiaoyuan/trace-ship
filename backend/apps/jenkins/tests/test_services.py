@@ -4,6 +4,8 @@ Jenkins 服务单元测试
 import pytest
 from unittest.mock import MagicMock
 
+from types import SimpleNamespace
+
 from apps.jenkins.models import JenkinsBuild
 from apps.jenkins.services import JenkinsService
 from apps.release.models import ReleaseRecord
@@ -44,9 +46,15 @@ class TestJenkinsService:
 
     def test_trigger_build_creates_build(self, jenkins_job, patched_jenkins):
         """触发构建创建 JenkinsBuild 记录"""
+        release = SimpleNamespace(
+            id=None,
+            version="VA.1.0.0",
+            target_branch="main",
+            git_hash="abc",
+        )
         build = JenkinsService.trigger_build(
             jenkins_job,
-            {"version": "VA.1.0.0", "branch": "main", "git_hash": "abc"},
+            release,
         )
         assert build.status == "queue"
         assert build.queue_id == "123"

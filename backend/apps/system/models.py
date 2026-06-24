@@ -59,6 +59,11 @@ class OperationLog(models.Model):
         created_at: 操作时间
     """
 
+    RESULT_CHOICES = [
+        ("success", "成功"),
+        ("failure", "失败"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -73,6 +78,13 @@ class OperationLog(models.Model):
     resource_type = models.CharField(max_length=100, verbose_name="资源类型")
     resource_id = models.CharField(max_length=200, blank=True, verbose_name="资源ID")
     detail = models.JSONField(default=dict, verbose_name="详情")
+    result = models.CharField(
+        max_length=20,
+        choices=RESULT_CHOICES,
+        default="success",
+        verbose_name="结果",
+    )
+    description = models.CharField(max_length=500, blank=True, verbose_name="操作描述")
     ip = models.CharField(max_length=100, blank=True, verbose_name="IP地址")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="操作时间")
 

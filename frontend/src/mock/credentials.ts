@@ -35,7 +35,6 @@ export const credentialTypeMap: Record<string, string> = {
   svn_password: 'SVN',
   jenkins_token: 'Jenkins',
   ldap_password: 'LDAP',
-  ai_api_key: 'AI Key',
 };
 
 export const credentialScopeMap: Record<string, string> = {

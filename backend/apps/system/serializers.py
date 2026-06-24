@@ -30,7 +30,10 @@ class OperationLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OperationLog
-        fields = ["id", "user", "module", "action", "resource_type", "resource_id", "detail", "ip", "created_at"]
+        fields = [
+            "id", "user", "module", "action", "resource_type", "resource_id",
+            "detail", "description", "result", "ip", "created_at",
+        ]
 
     def get_user(self, obj: OperationLog) -> Optional[Dict[str, str]]:
         """

@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     "apps.release.apps.ReleaseConfig",
     "apps.jenkins.apps.JenkinsConfig",
     "apps.system.apps.SystemConfig",
+    "apps.workflow.apps.WorkflowConfig",
+    "apps.notification.apps.NotificationConfig",
 ]
 
 # 中间件：请求/响应依次经过下列中间件处理

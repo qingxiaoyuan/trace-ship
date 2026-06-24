@@ -1,7 +1,7 @@
 """
 CommitReviewer 单元测试
 
-覆盖通过、非法、警告以及 suggest 建议场景。
+覆盖通过、非法、警告等规则审查场景。
 """
 import pytest
 
@@ -48,12 +48,3 @@ def test_review_warning_bad_update_type():
     status, reason, parsed = CommitReviewer.review(message)
     assert status == "warning"
     assert "A 或 F" in reason
-
-
-def test_review_suggest():
-    """测试建议输出"""
-    suggestion = CommitReviewer.suggest(VALID_MESSAGE)
-    assert "符合规范" in suggestion
-
-    suggestion = CommitReviewer.suggest("bad message")
-    assert suggestion != ""

@@ -132,20 +132,28 @@ class JenkinsJobViewSet(viewsets.ModelViewSet):
         触发构建
 
         Args:
-            request: DRF Request，body 包含 version/branch/git_hash
+            request: DRF Request，body 可包含 release_id 或 version/branch/git_hash
             pk: 任务主键
 
         Returns:
             构建记录
         """
         job = self.get_object()
-        params = {
-            "version": request.data.get("version", ""),
-            "branch": request.data.get("branch", ""),
-            "git_hash": request.data.get("git_hash", ""),
-        }
+        release_id = request.data.get("release_id")
         try:
-            build = JenkinsService.trigger_build(job, params, request.user)
+            if release_id:
+                from apps.release.models import ReleaseRecord
+                release = ReleaseRecord.objects.get(id=release_id)
+                build = JenkinsService.trigger_build(job, release, request.user)
+            else:
+                from types import SimpleNamespace
+                release = SimpleNamespace(
+                    id=None,
+                    version=request.data.get("version", ""),
+                    target_branch=request.data.get("branch", ""),
+                    git_hash=request.data.get("git_hash", ""),
+                )
+                build = JenkinsService.trigger_build(job, release, request.user)
         except Exception as exc:
             return error_response(50001, f"触发构建失败: {exc}", status_code=500)
         serializer = JenkinsBuildSerializer(build, context={"request": request})

@@ -1,7 +1,7 @@
 """
 仓库业务服务
 
-封装仓库连通性测试、分支/commit 查询、提交同步以及 AI 审查建议等业务逻辑。
+封装仓库连通性测试、分支/commit 查询、提交同步等业务逻辑。
 """
 from typing import List, Optional
 
@@ -168,22 +168,3 @@ class RepositoryService:
 
         return {"synced_count": synced_count, "illegal_count": illegal_count}
 
-    @staticmethod
-    def ai_review(commit: CommitRecord) -> dict:
-        """
-        AI 审查建议（阶段二占位）
-
-        当前基于规则引擎返回建议，后续可接入 LLM。
-
-        Args:
-            commit: CommitRecord 实例
-
-        Returns:
-            审查建议字典
-        """
-        suggestion = CommitReviewer.suggest(commit.message)
-        return {
-            "review_status": commit.review_status,
-            "suggestion": suggestion,
-            "risks": [],
-        }

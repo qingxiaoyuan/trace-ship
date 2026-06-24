@@ -12,11 +12,20 @@ class OperationLogMiddleware(MiddlewareMixin):
     操作日志中间件
 
     自动记录已认证用户的请求路径、方法、状态码、耗时和 IP。
-    健康检查、API 文档等路径会被跳过。
+    健康检查、API 文档等路径会被跳过；高频只读列表查询也会跳过。
     """
 
     # 不需要记录操作日志的路径前缀
-    EXCLUDED_PATHS = {"/health/", "/api/schema/", "/swagger/", "/redoc/", "/static/"}
+    EXCLUDED_PATHS = {
+        "/health/",
+        "/api/schema/",
+        "/swagger/",
+        "/redoc/",
+        "/static/",
+    }
+
+    # 高频只读路径后缀，避免日志爆炸
+    EXCLUDED_SUFFIXES = ("/", "/list", "/todo", "/done")
 
     def process_request(self, request):
         """记录请求开始时间"""
@@ -36,11 +45,16 @@ class OperationLogMiddleware(MiddlewareMixin):
         if not user:
             return response
 
+        method = request.method.upper()
+        # 跳过 GET 列表查询
+        if method == "GET" and any(path.endswith(s) for s in self.EXCLUDED_SUFFIXES):
+            return response
+
         try:
             from apps.system.models import OperationLog
 
             module = path.split("/")[2] if len(path.split("/")) > 2 else "unknown"
-            action = request.method.lower()
+            action = method.lower()
             duration = int((time.time() - getattr(request, "_start_time", time.time())) * 1000)
 
             OperationLog.objects.create(
@@ -51,11 +65,12 @@ class OperationLogMiddleware(MiddlewareMixin):
                 resource_id="",
                 detail={
                     "path": path,
-                    "method": request.method,
+                    "method": method,
                     "status_code": response.status_code,
                     "duration_ms": duration,
                     "ip": self.get_client_ip(request),
                 },
+                result="success" if response.status_code < 400 else "failure",
                 ip=self.get_client_ip(request),
             )
         except Exception:

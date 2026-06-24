@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Table, Button, Tag } from 'antd';
+import { Table, Button, Tag, Typography } from 'antd';
+import type { Dayjs } from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
 import { ExportOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
@@ -7,6 +8,8 @@ import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { operationLogActions } from '@/mock/system';
 import { systemApi } from '@/api/system';
+
+const { Text } = Typography;
 
 const actionMap: Record<string, { color: string; text: string }> = {
   query: { color: 'blue', text: '查询' },
@@ -20,9 +23,11 @@ const actionMap: Record<string, { color: string; text: string }> = {
 export default function LogList() {
   const [filters, setFilters] = useState({
     module: '',
-    action: undefined,
+    action: undefined as string | undefined,
     user: '',
-    result: undefined,
+    result: undefined as string | undefined,
+    created_at__gte: undefined as Dayjs | undefined,
+    created_at__lte: undefined as Dayjs | undefined,
   });
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
@@ -32,7 +37,12 @@ export default function LogList() {
       systemApi.getLogs({
         page: pagination.current,
         page_size: pagination.pageSize,
-        keyword: filters.user || filters.module || undefined,
+        module: filters.module || undefined,
+        action: filters.action || undefined,
+        user: filters.user || undefined,
+        result: filters.result || undefined,
+        created_at__gte: filters.created_at__gte?.format('YYYY-MM-DD 00:00:00') || undefined,
+        created_at__lte: filters.created_at__lte?.format('YYYY-MM-DD 23:59:59') || undefined,
       }),
   });
 
@@ -54,11 +64,21 @@ export default function LogList() {
     },
     { title: '资源类型', dataIndex: 'resource_type' },
     { title: '资源 ID', dataIndex: 'resource_id' },
-    { title: 'IP 地址', dataIndex: 'ip_address' },
+    { title: 'IP 地址', dataIndex: 'ip' },
     {
       title: '结果',
-      dataIndex: 'id',
-      render: () => <StatusTag status="success">成功</StatusTag>,
+      dataIndex: 'result',
+      render: (result: string) => (
+        <StatusTag status={result === 'success' ? 'success' : result === 'failure' ? 'danger' : 'neutral'}>
+          {result === 'success' ? '成功' : result === 'failure' ? '失败' : '-'}
+        </StatusTag>
+      ),
+    },
+    {
+      title: '说明',
+      dataIndex: 'description',
+      ellipsis: true,
+      render: (text: string) => <Text type="secondary">{text || '-'}</Text>,
     },
   ];
 
@@ -83,12 +103,21 @@ export default function LogList() {
               width: 128,
               options: [{ label: '成功', value: 'success' }, { label: '失败', value: 'failure' }],
             },
+            { key: 'created_at__gte', type: 'date', placeholder: '开始日期', width: 160 },
+            { key: 'created_at__lte', type: 'date', placeholder: '结束日期', width: 160 },
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
           onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
           onReset={() => {
-            setFilters({ module: '', action: undefined, user: '', result: undefined });
+            setFilters({
+              module: '',
+              action: undefined,
+              user: '',
+              result: undefined,
+              created_at__gte: undefined,
+              created_at__lte: undefined,
+            });
             setPagination((prev) => ({ ...prev, current: 1 }));
           }}
           extra={

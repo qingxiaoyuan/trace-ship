@@ -4,7 +4,6 @@ import { Button, Space, Table, Typography, message, Empty } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeftOutlined,
-  RobotOutlined,
   BellOutlined,
   ExclamationCircleOutlined,
   CheckCircleOutlined,
@@ -12,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { commitApi } from '@/api/dashboard';
+import { commitApi } from '@/api/commit';
 import { formatRelativeTime } from '@/utils/time';
 import type { AlertStatus, CommitRecord } from '@/types';
 
@@ -92,7 +91,7 @@ export default function CommitAlertDetail() {
     const illegal = (data?.results || []).filter((c) => c.review_status === 'illegal');
     return illegal.map((c) => ({
       ...c,
-      illegal_reason: c.ai_suggestion || '提交信息不符合规范',
+      illegal_reason: c.review_reason || '提交信息不符合规范',
       alert_status: statusMap[c.id] || 'pending',
     }));
   }, [data, statusMap]);
@@ -150,13 +149,6 @@ export default function CommitAlertDetail() {
           return (
             <Space size="small">
               <span
-                className="inline-flex items-center gap-1 text-sm text-violet-600 cursor-pointer hover:text-violet-700"
-                onClick={() => navigate(`/commits/${record.id}/ai-review`)}
-              >
-                <RobotOutlined />
-                AI 审查
-              </span>
-              <span
                 className="inline-flex items-center gap-1 text-sm text-emerald-600 cursor-pointer hover:text-emerald-700"
                 onClick={() => handleStatusChange(record.id, 'resolved')}
               >
@@ -174,13 +166,6 @@ export default function CommitAlertDetail() {
         }
         return (
           <Space size="small">
-            <span
-              className="inline-flex items-center gap-1 text-sm text-violet-600 cursor-pointer hover:text-violet-700"
-              onClick={() => navigate(`/commits/${record.id}/ai-review`)}
-            >
-              <RobotOutlined />
-              AI 审查
-            </span>
             <span
               className="inline-flex items-center gap-1 text-sm text-blue-600 cursor-pointer hover:text-blue-700"
               onClick={() => message.success('已发送提醒')}

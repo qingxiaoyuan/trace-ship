@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Table, Button, Space, message } from 'antd';
+import { Table, Button, Space, message, Tabs } from 'antd';
+import type { Dayjs } from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
-import { EyeOutlined, ExportOutlined, TagOutlined } from '@ant-design/icons';
+import { EyeOutlined, FilePdfOutlined, FileWordOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag, type StatusType } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { releaseStatusOptions, releaseTypeOptions } from '@/mock/dashboard';
-import { releaseApi } from '@/api/dashboard';
+import { releaseApi } from '@/api/release';
+import { projectApi } from '@/api/project';
 
 const statusMap: Record<string, { status: StatusType; text: string }> = {
   draft: { status: 'neutral', text: '草稿' },
@@ -17,14 +19,33 @@ const statusMap: Record<string, { status: StatusType; text: string }> = {
   rejected: { status: 'danger', text: '已驳回' },
 };
 
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+};
+
 export default function ReleaseBoard() {
   const [filters, setFilters] = useState({
-    project_id: undefined,
+    project_id: undefined as string | undefined,
     version: '',
-    release_type: undefined,
-    status: undefined,
+    release_type: undefined as string | undefined,
+    status: undefined as string | undefined,
+    created_at__gte: undefined as Dayjs | undefined,
+    created_at__lte: undefined as Dayjs | undefined,
   });
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const [activeTab, setActiveTab] = useState('list');
+
+  const { data: projectData } = useQuery({
+    queryKey: ['release-board-projects'],
+    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['releases', filters, pagination.current, pagination.pageSize],
@@ -36,8 +57,38 @@ export default function ReleaseBoard() {
         version: filters.version || undefined,
         release_type: filters.release_type || undefined,
         status: filters.status || undefined,
+        created_at__gte: filters.created_at__gte?.format('YYYY-MM-DD 00:00:00') || undefined,
+        created_at__lte: filters.created_at__lte?.format('YYYY-MM-DD 23:59:59') || undefined,
       }),
   });
+
+  const { data: catalogData, isLoading: catalogLoading } = useQuery({
+    queryKey: ['release-catalog'],
+    queryFn: () => releaseApi.getCatalog(),
+    enabled: activeTab === 'catalog',
+  });
+
+  const projectOptions = (projectData?.results || []).map((p) => ({ label: p.name, value: p.id }));
+
+  const handleExportPdf = async (id: string, version: string) => {
+    try {
+      const blob = await releaseApi.exportPdf(id);
+      downloadBlob(blob, `${version}_发布单.pdf`);
+      message.success('PDF 导出成功');
+    } catch {
+      message.error('PDF 导出失败');
+    }
+  };
+
+  const handleExportWord = async (id: string, version: string) => {
+    try {
+      const blob = await releaseApi.exportWord(id);
+      downloadBlob(blob, `${version}_发布单.docx`);
+      message.success('Word 导出成功');
+    } catch {
+      message.error('Word 导出失败');
+    }
+  };
 
   const columns = [
     { title: '版本号', dataIndex: 'version' },
@@ -69,11 +120,11 @@ export default function ReleaseBoard() {
     {
       title: '操作',
       width: 220,
-      render: () => (
+      render: (_: unknown, record: { id: string; version: string }) => (
         <Space size="small">
           <Button type="text" icon={<EyeOutlined />}>详情</Button>
-          <Button type="text" icon={<TagOutlined />} onClick={() => message.success('推 Tag 成功')}>推 Tag</Button>
-          <Button type="text" icon={<ExportOutlined />}>导出</Button>
+          <Button type="text" icon={<FilePdfOutlined />} onClick={() => handleExportPdf(record.id, record.version)}>PDF</Button>
+          <Button type="text" icon={<FileWordOutlined />} onClick={() => handleExportWord(record.id, record.version)}>Word</Button>
         </Space>
       ),
     },
@@ -89,7 +140,7 @@ export default function ReleaseBoard() {
               type: 'select',
               placeholder: '选择项目',
               width: 176,
-              options: [{ label: '核心交易平台', value: '1' }, { label: '数据中台', value: '2' }],
+              options: projectOptions,
             },
             { key: 'version', type: 'input', placeholder: '版本号', width: 160 },
             {
@@ -106,37 +157,89 @@ export default function ReleaseBoard() {
               width: 128,
               options: releaseStatusOptions,
             },
+            { key: 'created_at__gte', type: 'date', placeholder: '开始日期', width: 160 },
+            { key: 'created_at__lte', type: 'date', placeholder: '结束日期', width: 160 },
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
           onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
           onReset={() => {
-            setFilters({ project_id: undefined, version: '', release_type: undefined, status: undefined });
+            setFilters({
+              project_id: undefined,
+              version: '',
+              release_type: undefined,
+              status: undefined,
+              created_at__gte: undefined,
+              created_at__lte: undefined,
+            });
             setPagination((prev) => ({ ...prev, current: 1 }));
           }}
-          extra={
-            <Button icon={<ExportOutlined />}>导出 Excel</Button>
-          }
         />
       </TsCard>
 
-      <TsCard title="发布记录">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
-      </TsCard>
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+        {
+          key: 'list',
+          label: '发布记录',
+          children: (
+            <TsCard title="发布记录">
+              <Table
+                rowKey="id"
+                columns={columns}
+                dataSource={data?.results || []}
+                loading={isLoading}
+                pagination={{
+                  current: pagination.current,
+                  pageSize: pagination.pageSize,
+                  total: data?.total || 0,
+                  showSizeChanger: true,
+                }}
+                onChange={(p) => {
+                  setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+                }}
+              />
+            </TsCard>
+          ),
+        },
+        {
+          key: 'catalog',
+          label: '版本目录',
+          children: (
+            <TsCard title="版本目录">
+              <Tabs
+                items={[
+                  {
+                    key: 'formal',
+                    label: '正式版本',
+                    children: (
+                      <Table
+                        rowKey="id"
+                        columns={columns.filter((c) => c.dataIndex !== 'release_type')}
+                        dataSource={catalogData?.formal || []}
+                        loading={catalogLoading}
+                        pagination={false}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'test',
+                    label: '测试版本',
+                    children: (
+                      <Table
+                        rowKey="id"
+                        columns={columns.filter((c) => c.dataIndex !== 'release_type')}
+                        dataSource={catalogData?.test || []}
+                        loading={catalogLoading}
+                        pagination={false}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            </TsCard>
+          ),
+        },
+      ]} />
     </div>
   );
 }

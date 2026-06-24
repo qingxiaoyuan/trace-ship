@@ -74,6 +74,8 @@ urlpatterns = [
     path("api/jenkins/", include("apps.jenkins.urls")),
     path("api/credentials/", include("apps.credential.urls")),
     path("api/system/", include("apps.system.urls")),
+    path("api/workflow/", include("apps.workflow.urls")),
+    path("api/notifications/", include("apps.notification.urls")),
     # API 文档（OpenAPI Schema、Swagger UI、ReDoc）
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("swagger/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

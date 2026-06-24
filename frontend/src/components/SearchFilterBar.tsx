@@ -1,6 +1,7 @@
-import { Input, Select, Button, Space } from 'antd';
+import { Input, Select, Button, Space, DatePicker } from 'antd';
 import { SearchOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ReactNode } from 'react';
+import type { Dayjs } from 'dayjs';
 
 interface FilterOption {
   label: string;
@@ -12,7 +13,7 @@ interface FilterField {
   placeholder?: string;
   width?: number;
   options?: FilterOption[];
-  type: 'input' | 'select';
+  type: 'input' | 'select' | 'date';
 }
 
 interface SearchFilterBarProps {
@@ -41,19 +42,34 @@ export function SearchFilterBar({
   return (
     <Space wrap className="w-full justify-between">
       <Space wrap size="middle">
-        {filters.map((field) =>
-          field.type === 'input' ? (
-            <Input
-              key={field.key}
-              placeholder={field.placeholder}
-              value={(values[field.key] as string) || ''}
-              onChange={(e) => onChange(field.key, e.target.value)}
-              onPressEnter={onSearch}
-              style={{ width: field.width || 256 }}
-              prefix={<SearchOutlined className="text-slate-400" />}
-              allowClear
-            />
-          ) : (
+        {filters.map((field) => {
+          if (field.type === 'input') {
+            return (
+              <Input
+                key={field.key}
+                placeholder={field.placeholder}
+                value={(values[field.key] as string) || ''}
+                onChange={(e) => onChange(field.key, e.target.value)}
+                onPressEnter={onSearch}
+                style={{ width: field.width || 256 }}
+                prefix={<SearchOutlined className="text-slate-400" />}
+                allowClear
+              />
+            );
+          }
+          if (field.type === 'date') {
+            return (
+              <DatePicker
+                key={field.key}
+                placeholder={field.placeholder}
+                value={(values[field.key] as Dayjs) || null}
+                onChange={(value) => onChange(field.key, value)}
+                style={{ width: field.width || 160 }}
+                allowClear
+              />
+            );
+          }
+          return (
             <Select
               key={field.key}
               placeholder={field.placeholder}
@@ -63,8 +79,8 @@ export function SearchFilterBar({
               style={{ width: field.width || 144 }}
               allowClear
             />
-          )
-        )}
+          );
+        })}
         <Button type="primary" icon={<SearchOutlined />} onClick={onSearch} loading={loading}>
           查询
         </Button>

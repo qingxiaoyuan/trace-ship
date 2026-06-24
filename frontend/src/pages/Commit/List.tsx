@@ -3,7 +3,6 @@ import { Table, Button, Space, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import {
   SyncOutlined,
-  RobotOutlined,
   EyeOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
@@ -12,7 +11,7 @@ import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { reviewStatusOptions } from '@/mock/dashboard';
-import { commitApi } from '@/api/dashboard';
+import { commitApi } from '@/api/commit';
 import { formatRelativeTime } from '@/utils/time';
 import type { CommitRecord, ReviewStatus } from '@/types';
 
@@ -133,16 +132,9 @@ export default function CommitList() {
     },
     {
       title: '操作',
-      width: 160,
+      width: 100,
       render: (_: unknown, record: CommitRecord) => (
         <Space size="small">
-          <span
-            className="inline-flex items-center gap-1 text-sm text-violet-600 cursor-pointer hover:text-violet-700"
-            onClick={() => navigate(`/commits/${record.id}/ai-review`)}
-          >
-            <RobotOutlined />
-            AI 审查
-          </span>
           <span
             className="inline-flex items-center gap-1 text-sm text-blue-600 cursor-pointer hover:text-blue-700"
             onClick={() => navigate(`/commits/${record.id}`)}

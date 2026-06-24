@@ -95,6 +95,14 @@ class ReleaseRecord(models.Model):
         related_name="releases",
         verbose_name="Jenkins 构建记录",
     )
+    workflow_instance = models.ForeignKey(
+        "workflow.WorkflowInstance",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="releases",
+        verbose_name="关联工作流实例",
+    )
     rejected_reason = models.TextField(blank=True, verbose_name="驳回原因")
     released_at = models.DateTimeField(null=True, blank=True, verbose_name="发布时间")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")

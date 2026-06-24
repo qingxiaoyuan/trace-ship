@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '@/components/StatusTag';
-import { jenkinsApi } from '@/api/dashboard';
+import { jenkinsApi } from '@/api/jenkins';
 import { tokens } from '@/styles/theme';
 
 const statusMap: Record<

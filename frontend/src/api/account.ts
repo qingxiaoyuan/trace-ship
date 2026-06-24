@@ -33,6 +33,8 @@ export interface AccountPermission {
 export interface UserListParams {
   keyword?: string;
   role?: string;
+  source?: string;
+  is_active?: boolean;
   page?: number;
   page_size?: number;
 }
