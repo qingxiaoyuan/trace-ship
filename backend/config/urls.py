@@ -70,6 +70,8 @@ urlpatterns = [
     path("api/projects/", include("apps.project.urls")),
     path("api/repositories/", include("apps.repository.urls")),
     path("api/commits/", include("apps.repository.urls_commits")),
+    path("api/releases/", include("apps.release.urls")),
+    path("api/jenkins/", include("apps.jenkins.urls")),
     path("api/credentials/", include("apps.credential.urls")),
     path("api/system/", include("apps.system.urls")),
     # API 文档（OpenAPI Schema、Swagger UI、ReDoc）

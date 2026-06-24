@@ -35,6 +35,16 @@ CACHES = {
 # Celery 使用内存消息队列，无需外部 Redis
 CELERY_BROKER_URL = "memory://"
 CELERY_RESULT_BACKEND = "memory://"
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
+
+# 强制 Celery 应用使用测试配置，避免测试时连接真实 broker
+from config.celery import app as celery_app  # noqa: E402
+
+celery_app.conf.task_always_eager = CELERY_TASK_ALWAYS_EAGER
+celery_app.conf.task_eager_propagates = CELERY_TASK_EAGER_PROPAGATES
+celery_app.conf.broker_url = CELERY_BROKER_URL
+celery_app.conf.result_backend = CELERY_RESULT_BACKEND
 
 # 测试环境允许所有跨域来源
 CORS_ALLOW_ALL_ORIGINS = True

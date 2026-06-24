@@ -41,6 +41,8 @@ INSTALLED_APPS = [
     "apps.credential.apps.CredentialConfig",
     "apps.project.apps.ProjectConfig",
     "apps.repository.apps.RepositoryConfig",
+    "apps.release.apps.ReleaseConfig",
+    "apps.jenkins.apps.JenkinsConfig",
     "apps.system.apps.SystemConfig",
 ]
 

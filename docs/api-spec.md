@@ -799,6 +799,7 @@
 ```json
 {
   "project_id": "uuid",
+  "repository_id": "uuid",
   "release_type": "formal",
   "source_branch": "develop",
   "target_branch": "main",
@@ -806,6 +807,9 @@
   "description": "本次发布修复了信号定时开关问题"
 }
 ```
+
+> `version` 可选，为空时后端按项目 `version_rule` 自动计算。
+> `repository_id` 为第三阶段新增，用于明确本次发布要推 tag 的目标仓库。
 
 ### 8.3 发布详情
 
@@ -820,6 +824,7 @@
   "data": {
     "id": "uuid",
     "project_id": "uuid",
+    "repository_id": "uuid",
     "version": "VA.4.1.155",
     "tag_name": "VA.4.1.155",
     "source_branch": "develop",
@@ -919,10 +924,13 @@
   "data": {
     "release_id": "uuid",
     "status": "pending",
-    "workflow_instance_id": "uuid"
+    "workflow_instance_id": null
   }
 }
 ```
+
+> 第三阶段 `submit-audit` 为简化状态流转（`draft → pending`），暂不创建工作流实例，
+> `workflow_instance_id` 固定返回 `null`，完整审批流在第四阶段实现。
 
 ### 8.7 推 Tag
 
@@ -1001,6 +1009,7 @@
   "message": "success",
   "data": {
     "build_id": "uuid",
+    "queue_id": "123",
     "build_number": 123,
     "status": "queue"
   }
@@ -1020,6 +1029,7 @@
   "data": {
     "id": "uuid",
     "job_id": "uuid",
+    "queue_id": "123",
     "build_number": 123,
     "status": "success",
     "params": {
