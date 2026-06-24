@@ -1,11 +1,11 @@
-from django.db import models
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets, filters, status
+from rest_framework import serializers, viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from apps.credential.models import Credential
 from apps.credential.serializers import CredentialSerializer, CredentialListSerializer
+from apps.credential.services import CredentialService
 from utils.response import success_response, error_response
 
 
@@ -26,28 +26,19 @@ class CredentialViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Credential.objects.none()
-        user = self.request.user
-        if not user or not user.is_authenticated:
-            return Credential.objects.none()
-        if user.is_superuser:
-            return Credential.objects.all()
-        # 个人凭证 + 项目凭证 + 全局凭证
-        return Credential.objects.filter(
-            models.Q(owner=user)
-            | models.Q(is_global=True)
-            | models.Q(scope="project", project__members__user=user)
-        ).distinct()
+        return CredentialService.queryset_for_user(self.request.user)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user, created_by=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
         credential = self.get_object()
-        # 检查是否被外站绑定引用
-        if credential.integrations.exists():
+        try:
+            CredentialService.ensure_can_delete(credential)
+        except serializers.ValidationError as exc:
             return error_response(
                 40900,
-                "凭证已被外站绑定引用，无法删除",
+                exc.detail[0] if isinstance(exc.detail, list) else str(exc.detail),
                 status_code=status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)

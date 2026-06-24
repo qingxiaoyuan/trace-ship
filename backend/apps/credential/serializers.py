@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.credential.models import Credential
+from apps.credential.services import CredentialService
 
 
 class CredentialSerializer(serializers.ModelSerializer):
@@ -19,6 +20,7 @@ class CredentialSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "masked_data", "owner", "last_used_at", "created_at", "updated_at"]
 
     def create(self, validated_data):
+        validated_data = CredentialService.validate_scope(validated_data)
         data = validated_data.pop("data", {})
         credential = Credential(**validated_data)
         credential.set_data(data)
@@ -26,6 +28,7 @@ class CredentialSerializer(serializers.ModelSerializer):
         return credential
 
     def update(self, instance, validated_data):
+        validated_data = CredentialService.validate_scope(validated_data, instance)
         data = validated_data.pop("data", None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)

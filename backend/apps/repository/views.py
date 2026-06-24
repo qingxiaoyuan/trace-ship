@@ -34,10 +34,11 @@ class RepositoryViewSet(viewsets.ModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return Repository.objects.none()
         user = self.request.user
+        queryset = Repository.objects.select_related("project", "credential", "specified_user", "integration")
         if user.is_superuser:
-            return Repository.objects.all()
+            return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
-        return Repository.objects.filter(project_id__in=project_ids)
+        return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
         if self.action in ["create", "update", "partial_update", "destroy"]:
@@ -91,7 +92,7 @@ class RepositoryViewSet(viewsets.ModelViewSet):
     def commits(self, request, pk=None):
         """获取该仓库已同步的 commit 列表"""
         repo = self.get_object()
-        queryset = repo.commits.all()
+        queryset = repo.commits.select_related("project", "repository").all()
         review_status = request.query_params.get("review_status")
         if review_status:
             queryset = queryset.filter(review_status=review_status)
@@ -137,10 +138,11 @@ class CommitRecordViewSet(viewsets.ReadOnlyModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return CommitRecord.objects.none()
         user = self.request.user
+        queryset = CommitRecord.objects.select_related("project", "repository")
         if user.is_superuser:
-            return CommitRecord.objects.all()
+            return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
-        return CommitRecord.objects.filter(project_id__in=project_ids)
+        return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
         if self.action == "review":

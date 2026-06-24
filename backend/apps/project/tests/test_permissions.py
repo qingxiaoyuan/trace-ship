@@ -2,6 +2,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.account.models import User
+from apps.credential.models import Credential
 from apps.project.models import Project, ProjectMember
 
 
@@ -74,3 +75,37 @@ def test_project_developer_cannot_create_integration(project, developer):
     )
 
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_manager_cannot_create_git_integration_with_svn_vendor(project, manager):
+    credential = Credential.objects.create(
+        name="Token",
+        cred_type="gitlab_token",
+        auth_mode="token",
+        owner=manager,
+        scope="project",
+        project=project,
+    )
+    credential.set_data({"token": "glpat-test"})
+    credential.save()
+
+    payload = {
+        "integration_type": "git_repo",
+        "vendor": "svn",
+        "name": "Invalid",
+        "external_identity": "group/repo",
+        "config": {"server_url": "https://gitlab.example.com"},
+        "credential": str(credential.id),
+        "credential_mode": "fixed",
+        "is_active": True,
+    }
+
+    response = auth_client(manager).post(
+        f"/api/projects/{project.id}/integrations/",
+        payload,
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "vendor" in response.data["data"]

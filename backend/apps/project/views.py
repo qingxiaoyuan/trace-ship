@@ -9,6 +9,7 @@ from apps.project.serializers import (
     ProjectSerializer, ProjectListSerializer, ProjectMemberSerializer,
     ProjectIntegrationSerializer,
 )
+from apps.project.services import ProjectService
 from utils.permissions import IsSuperUser, IsProjectManager
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.exceptions import ProviderError
@@ -38,9 +39,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
         if not user or not user.is_authenticated:
             return Project.objects.none()
         if user.is_superuser:
-            return Project.objects.all()
+            return Project.objects.select_related("leader").all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
-        return Project.objects.filter(id__in=project_ids)
+        return Project.objects.select_related("leader").filter(id__in=project_ids)
 
     def get_permissions(self):
         if self.action == "create":
@@ -51,12 +52,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         project = serializer.save()
-        # 创建者自动成为项目管理员
-        ProjectMember.objects.get_or_create(
-            project=project,
-            user=self.request.user,
-            defaults={"role": "manager"},
-        )
+        ProjectService.add_creator_as_manager(project, self.request.user)
 
 
 class NestedProjectPermissionMixin:
@@ -79,7 +75,12 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return ProjectMember.objects.none()
-        return ProjectMember.objects.filter(project_id=self.kwargs["project_pk"]).order_by("-created_at")
+        return (
+            ProjectMember.objects
+            .select_related("user", "project")
+            .filter(project_id=self.kwargs["project_pk"])
+            .order_by("-created_at")
+        )
 
     def perform_create(self, serializer):
         serializer.save(project=self.get_parent_project())
@@ -92,7 +93,12 @@ class ProjectIntegrationViewSet(NestedProjectPermissionMixin, viewsets.ModelView
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return ProjectIntegration.objects.none()
-        return ProjectIntegration.objects.filter(project_id=self.kwargs["project_pk"]).order_by("-created_at")
+        return (
+            ProjectIntegration.objects
+            .select_related("project", "credential", "specified_user")
+            .filter(project_id=self.kwargs["project_pk"])
+            .order_by("-created_at")
+        )
 
     def perform_create(self, serializer):
         serializer.save(project=self.get_parent_project())

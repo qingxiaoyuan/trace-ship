@@ -40,6 +40,26 @@ def test_create_repository(api_client, project, credential):
 
 
 @pytest.mark.django_db
+def test_create_repository_rejects_invalid_vendor(api_client, project, credential):
+    payload = {
+        "project": str(project.id),
+        "repo_type": "git",
+        "vendor": "svn",
+        "name": "错误仓库",
+        "url": "https://gitlab.example.com/test/wrong.git",
+        "external_identity": "test/wrong",
+        "default_branch": "main",
+        "credential": str(credential.id),
+        "credential_mode": "fixed",
+    }
+
+    response = api_client.post("/api/repositories/", payload, format="json")
+
+    assert response.status_code == 400
+    assert "vendor" in response.data["data"]
+
+
+@pytest.mark.django_db
 def test_sync_commits(api_client, repository):
     fake_commit = type("CommitInfo", (), {
         "hash": "def456",

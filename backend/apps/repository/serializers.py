@@ -26,6 +26,27 @@ class RepositorySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("你只能为所属项目创建仓库")
         return value
 
+    def validate(self, attrs):
+        repo_type = attrs.get("repo_type", getattr(self.instance, "repo_type", None))
+        vendor = attrs.get("vendor", getattr(self.instance, "vendor", None))
+        credential_mode = attrs.get("credential_mode", getattr(self.instance, "credential_mode", "fixed"))
+        credential = attrs.get("credential", getattr(self.instance, "credential", None))
+        specified_user = attrs.get("specified_user", getattr(self.instance, "specified_user", None))
+
+        if repo_type == "svn" and vendor != "svn":
+            raise serializers.ValidationError({"vendor": "SVN 仓库的 vendor 必须为 svn"})
+        if repo_type == "git" and vendor == "svn":
+            raise serializers.ValidationError({"vendor": "Git 仓库不能使用 svn vendor"})
+        if credential_mode == "fixed" and credential is None:
+            raise serializers.ValidationError({"credential": "fixed 凭证模式必须选择凭证"})
+        if credential_mode != "fixed" and credential is not None:
+            raise serializers.ValidationError({"credential": "非 fixed 凭证模式不能直接绑定凭证"})
+        if credential_mode == "specified_user" and specified_user is None:
+            raise serializers.ValidationError({"specified_user": "specified_user 凭证模式必须指定用户"})
+        if credential_mode != "specified_user" and specified_user is not None:
+            raise serializers.ValidationError({"specified_user": "仅 specified_user 凭证模式可以指定用户"})
+        return attrs
+
 
 class RepositoryListSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source="project.name", read_only=True)

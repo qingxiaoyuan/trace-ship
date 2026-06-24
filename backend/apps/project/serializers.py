@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.project.models import Project, ProjectMember, ProjectIntegration
 from apps.account.serializers import UserSerializer
+from apps.project.services import ProjectService
 
 
 class ProjectStatusField(serializers.IntegerField):
@@ -65,3 +66,6 @@ class ProjectIntegrationSerializer(serializers.ModelSerializer):
             "specified_user", "specified_user_name", "is_active", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        return ProjectService.validate_integration(attrs, self.instance)

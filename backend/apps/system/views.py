@@ -17,7 +17,7 @@ class SystemConfigViewSet(viewsets.ModelViewSet):
 
 
 class OperationLogViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = OperationLog.objects.all()
+    queryset = OperationLog.objects.select_related("user")
     serializer_class = OperationLogSerializer
     permission_classes = [IsAuthenticated, IsSuperUser]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
