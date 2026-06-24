@@ -176,12 +176,12 @@ services:
       LDAP_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD:-LDAPAdmin@2024}
       LDAP_USER_SEARCH_BASE: ou=users,dc=example,dc=com
       # Django
-      SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
-      ALLOWED_HOSTS: "*"
+      SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY must be set for production settings}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS must be set for production settings}
       # 凭证加密
-      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-change-me-in-production-32bytes!}
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:?CREDENTIAL_SECRET_KEY must be set for production settings}
       # CORS
-      CORS_ALLOW_ALL_ORIGINS: "True"
+      CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-False}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -229,8 +229,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-ReleaseManager@2024}
-      SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
-      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-change-me-in-production-32bytes!}
+      SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY must be set for production settings}
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:?CREDENTIAL_SECRET_KEY must be set for production settings}
     volumes:
       - ../backend:/app
     networks:
@@ -258,8 +258,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-ReleaseManager@2024}
-      SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-change-me-in-production}
-      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-change-me-in-production-32bytes!}
+      SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY must be set for production settings}
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:?CREDENTIAL_SECRET_KEY must be set for production settings}
     volumes:
       - ../backend:/app
     networks:

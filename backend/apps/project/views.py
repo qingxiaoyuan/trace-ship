@@ -1,4 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -59,32 +60,43 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
 
 
-class ProjectMemberViewSet(viewsets.ModelViewSet):
+class NestedProjectPermissionMixin:
+    """Ensure nested project resources check permissions against the parent project."""
+
+    def get_parent_project(self):
+        if not hasattr(self, "_parent_project"):
+            self._parent_project = get_object_or_404(Project, id=self.kwargs["project_pk"])
+        return self._parent_project
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        self.check_object_permissions(request, self.get_parent_project())
+
+
+class ProjectMemberViewSet(NestedProjectPermissionMixin, viewsets.ModelViewSet):
     serializer_class = ProjectMemberSerializer
     permission_classes = [IsAuthenticated, IsProjectManager]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return ProjectMember.objects.none()
-        return ProjectMember.objects.filter(project_id=self.kwargs["project_pk"])
+        return ProjectMember.objects.filter(project_id=self.kwargs["project_pk"]).order_by("-created_at")
 
     def perform_create(self, serializer):
-        project = Project.objects.get(id=self.kwargs["project_pk"])
-        serializer.save(project=project)
+        serializer.save(project=self.get_parent_project())
 
 
-class ProjectIntegrationViewSet(viewsets.ModelViewSet):
+class ProjectIntegrationViewSet(NestedProjectPermissionMixin, viewsets.ModelViewSet):
     serializer_class = ProjectIntegrationSerializer
     permission_classes = [IsAuthenticated, IsProjectManager]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return ProjectIntegration.objects.none()
-        return ProjectIntegration.objects.filter(project_id=self.kwargs["project_pk"])
+        return ProjectIntegration.objects.filter(project_id=self.kwargs["project_pk"]).order_by("-created_at")
 
     def perform_create(self, serializer):
-        project = Project.objects.get(id=self.kwargs["project_pk"])
-        serializer.save(project=project)
+        serializer.save(project=self.get_parent_project())
 
     @action(detail=True, methods=["post"])
     def test(self, request, project_pk=None, pk=None):
