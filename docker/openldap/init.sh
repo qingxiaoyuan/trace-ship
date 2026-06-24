@@ -7,21 +7,27 @@ DATA_DIR=/var/lib/openldap/openldap-data
 CONFIG_FILE=/etc/openldap/slapd.conf
 RUNTIME_CONFIG=/tmp/slapd-running.conf
 ADMIN_PASSWORD="${LDAP_ADMIN_PASSWORD:-LDAPAdmin@2024}"
+LDAP_USER=ldap
+LDAP_GROUP=ldap
+
+# 确保数据目录属主正确（卷挂载后可能变为 root）
+chown -R "${LDAP_USER}:${LDAP_GROUP}" "$DATA_DIR" /run/openldap /etc/openldap
 
 # 生成 SSHA 密码哈希
 ADMIN_PASSWORD_HASH=$(/usr/sbin/slappasswd -s "$ADMIN_PASSWORD")
 
 # 生成运行时配置文件（替换密码占位符）
 sed "s|__LDAP_ADMIN_PASSWORD__|${ADMIN_PASSWORD_HASH}|g" "$CONFIG_FILE" > "$RUNTIME_CONFIG"
+chown "${LDAP_USER}:${LDAP_GROUP}" "$RUNTIME_CONFIG"
 
 # 如果数据目录为空，初始化数据库
 if [ -z "$(ls -A "$DATA_DIR" 2>/dev/null)" ]; then
     echo "✅ 初始化 OpenLDAP 数据库..."
-    /usr/sbin/slaptest -f "$RUNTIME_CONFIG" -F "$DATA_DIR"
+    su "$LDAP_USER" -s /bin/sh -c "/usr/sbin/slaptest -f '$RUNTIME_CONFIG' -F '$DATA_DIR'"
 fi
 
-# 启动 slapd 后台运行
-/usr/sbin/slapd -f "$RUNTIME_CONFIG" -d 256 &
+# 启动 slapd 后台运行（以 ldap 用户运行）
+su "$LDAP_USER" -s /bin/sh -c "/usr/sbin/slapd -f '$RUNTIME_CONFIG' -d 256" &
 SLAPD_PID=$!
 
 # 等待 slapd 就绪

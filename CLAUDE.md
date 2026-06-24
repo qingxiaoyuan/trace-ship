@@ -8,7 +8,7 @@ Trace Ship 是一个软件版本发布管理系统。仓库分为三个主要部
 
 - `backend/` — Django 5.0 + Django REST Framework 后端服务。
 - `frontend/` — React + Vite + TypeScript 前端工程（已初始化，待完整接入业务）。
-- `docker/` — Docker Compose 编排，包含 PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、SVN、Celery Worker/Beat。
+- `docker/` — Docker Compose 编排，包含 PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、SVN 等第三方依赖（backend / frontend / Celery 默认在本地启动）。
 
 ## Language
 
@@ -16,18 +16,32 @@ Trace Ship 是一个软件版本发布管理系统。仓库分为三个主要部
 
 ## Common Commands
 
-### 一键启动全栈（Docker）
+### 启动第三方依赖（Docker）
+
+Trace Ship 的第三方依赖统一使用 Docker 部署；前端、后端、Celery 在本地启动以便调试。
 
 ```bash
 cd /media/sangfor/vdb/front-workspace/trace-ship
 
-# 构建并启动所有服务
+# 一键启动第三方依赖（PostgreSQL / Redis / Gitea / Jenkins / OpenLDAP / SVN）
+bash docker/start.sh
+
+# 或手动启动（默认不启动带 app profile 的应用服务）
 docker compose -f docker/docker-compose.yml up -d --build
 
-# 查看后端日志
+# 查看 PostgreSQL 日志
+docker compose -f docker/docker-compose.yml logs postgres -f
+
+# 查看 Redis 日志
+docker compose -f docker/docker-compose.yml logs redis -f
+
+# 如需一键启动完整应用服务（含 backend / frontend / celery-worker / celery-beat）
+docker compose -f docker/docker-compose.yml --profile app up -d --build
+
+# 查看后端日志（仅在启用 app profile 时可用）
 docker compose -f docker/docker-compose.yml logs backend -f
 
-# 查看 Celery Worker 日志
+# 查看 Celery Worker 日志（仅在启用 app profile 时可用）
 docker compose -f docker/docker-compose.yml logs celery-worker -f
 ```
 

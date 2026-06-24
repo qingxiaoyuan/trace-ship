@@ -84,17 +84,51 @@ trace-ship/
 
 - Docker >= 24.0
 - Docker Compose >= 2.20
+- Python >= 3.11（后端本地开发）
+- Node.js >= 18（前端本地开发）
 
-### 一键启动
+### 1. 启动第三方依赖（Docker）
+
+Trace Ship 的第三方依赖统一使用 Docker 部署，包括 PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、SVN。
 
 ```bash
 cd /media/sangfor/vdb/front-workspace/trace-ship
 
-# 启动全部服务
-docker compose -f docker/docker-compose.yml up -d --build
+# 启动全部第三方服务
+bash docker/start.sh
 
-# 查看后端日志
-docker compose -f docker/docker-compose.yml logs backend -f
+# 或手动启动（不构建应用服务）
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
+### 2. 本地启动后端
+
+```bash
+cd backend
+
+# 激活虚拟环境
+source .venv/bin/activate
+
+# 执行迁移并启动开发服务器
+python manage.py migrate
+python manage.py init_base_data
+python manage.py runserver 0.0.0.0:8000
+```
+
+也可以使用后端自带的开发启动脚本：
+
+```bash
+cd backend
+bash start_dev.sh
+```
+
+### 3. 本地启动前端
+
+```bash
+cd frontend
+
+npm install
+npm run dev
 ```
 
 ### 默认访问地址
@@ -102,6 +136,7 @@ docker compose -f docker/docker-compose.yml logs backend -f
 | 服务 | 地址 | 默认账号 |
 |------|------|---------|
 | Trace Ship 后端 | http://localhost:8000/ | admin / admin@123 |
+| 前端开发服务器 | http://localhost:5173/ | - |
 | Swagger UI | http://localhost:8000/swagger/ | - |
 | Redoc | http://localhost:8000/redoc/ | - |
 | 健康检查 | http://localhost:8000/health/ | - |
@@ -152,6 +187,12 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 
 ## 开发说明
 
+Trace Ship 采用「本地运行应用服务 + Docker 运行第三方依赖」的开发模式：
+
+- **前端**和**后端**在本地启动，便于热重载、断点调试和快速迭代。
+- **第三方依赖**（PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、SVN）统一通过 `docker/start.sh` 启动，保持环境一致性。
+- 如需一键启动完整应用服务（含 backend、frontend、celery），可使用 `docker compose --profile app up -d --build`。
+
 ### 后端开发
 
 详见 [backend/README.md](backend/README.md)。
@@ -161,11 +202,18 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 ```bash
 cd backend
 
+# 激活虚拟环境
+source .venv/bin/activate
+export DJANGO_SETTINGS_MODULE=config.settings.dev
+
 # 迁移
 python manage.py migrate
 
 # 初始化基础数据
 python manage.py init_base_data
+
+# 启动开发服务器
+python manage.py runserver 0.0.0.0:8000
 
 # 测试
 pytest
@@ -176,7 +224,16 @@ python manage.py spectacular --file schema.yml
 
 ### 前端开发
 
-前端工程位于 `frontend/`，待接入实现。
+前端工程位于 `frontend/`，使用 React + Vite + TypeScript。
+
+```bash
+cd frontend
+
+npm install
+npm run dev       # 默认端口 5173，/api 代理到 localhost:8000
+npm run build
+npm run lint
+```
 
 ---
 
