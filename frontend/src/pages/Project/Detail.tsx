@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Tabs, Typography, Empty, Button } from 'antd';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
@@ -9,7 +10,7 @@ import { MemberTab } from './tabs/MemberTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
 import { RuleTab } from './tabs/RuleTab';
 import { IntegrationTab } from './tabs/IntegrationTab';
-import { mockProjects } from '@/mock/projects';
+import { projectApi } from '@/api/project';
 
 const { Title, Text } = Typography;
 
@@ -27,12 +28,20 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(tab);
 
-  const project = useMemo(() => mockProjects.find((p) => p.id === id), [id]);
+  const { data: project, isLoading } = useQuery({
+    queryKey: ['project', id],
+    queryFn: () => projectApi.getProject(id || ''),
+    enabled: !!id,
+  });
 
   const handleTabChange = (key: string) => {
     setActiveTab(key);
     navigate(`/projects/${id}/${key}`, { replace: true });
   };
+
+  if (isLoading) {
+    return <div className="p-6 text-center">加载中...</div>;
+  }
 
   if (!project) {
     return (
@@ -45,6 +54,8 @@ export default function ProjectDetail() {
     );
   }
 
+  const isActive = project.status === 1 || project.status === 'active';
+
   return (
     <div className="space-y-4">
       <TsCard bodyStyle={{ padding: 0 }}>
@@ -52,11 +63,11 @@ export default function ProjectDetail() {
           <div>
             <Title level={4} className="m-0! text-slate-900!">{project.name}</Title>
             <Text className="text-xs text-slate-500 mt-0.5 block">
-              {project.code} · 负责人：{project.leader_name}
+              {project.code} · 负责人：{project.leader_name || '-'}
             </Text>
           </div>
-          <StatusTag status={project.status === 'active' ? 'success' : 'neutral'}>
-            {project.status === 'active' ? '启用' : '停用'}
+          <StatusTag status={isActive ? 'success' : 'neutral'}>
+            {isActive ? '启用' : '停用'}
           </StatusTag>
         </div>
 

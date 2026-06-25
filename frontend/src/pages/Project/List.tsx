@@ -1,28 +1,48 @@
 import { useState } from 'react';
 import { Table, Button, Space, Avatar, message } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { ProjectModal } from './modals/ProjectModal';
-import { mockProjects, projectStatusOptions } from '@/mock/projects';
+import { projectStatusOptions } from '@/mock/projects';
+import { projectApi } from '@/api/project';
 import { getAvatarColor } from '@/utils/avatar';
 import type { Project } from '@/types';
 
 export default function ProjectList() {
   const navigate = useNavigate();
   const [filters, setFilters] = useState({ keyword: '', status: undefined });
-  const [data] = useState<Project[]>(mockProjects);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
   const [modalOpen, setModalOpen] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['projects', filters, pagination.current, pagination.pageSize],
+    queryFn: () =>
+      projectApi.getProjects({
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        keyword: filters.keyword || undefined,
+        status: filters.status || undefined,
+      }),
+  });
 
   const handleAdd = () => {
     setModalOpen(true);
   };
 
-  const handleSave = (values: Partial<Project>) => {
-    console.log('save project', values);
-    setModalOpen(false);
-    message.success('新增成功');
+  const handleSave = async (values: Partial<Project>) => {
+    try {
+      await projectApi.createProject(values);
+      message.success('新增成功');
+      setModalOpen(false);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      refetch();
+    } catch (error) {
+      message.error('新增失败');
+      console.error(error);
+    }
   };
 
   const columns = [
@@ -46,16 +66,20 @@ export default function ProjectList() {
       title: '负责人',
       dataIndex: 'leader_name',
       key: 'leader_name',
-      render: (text: string) => (
-        <Space>
-          <Avatar
-            size="small"
-            style={{ backgroundColor: getAvatarColor(text), color: '#fff' }}
-          >
-            {text?.charAt(0)}
-          </Avatar>
-          {text}
-        </Space>
+      render: (text?: string) => (
+        text ? (
+          <Space>
+            <Avatar
+              size="small"
+              style={{ backgroundColor: getAvatarColor(text), color: '#fff' }}
+            >
+              {text?.charAt(0)}
+            </Avatar>
+            {text}
+          </Space>
+        ) : (
+          '-'
+        )
       ),
     },
     { title: '仓库数', dataIndex: 'repo_count', key: 'repo_count' },
@@ -63,11 +87,14 @@ export default function ProjectList() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <StatusTag status={status === 'active' ? 'success' : 'neutral'}>
-          {status === 'active' ? '启用' : '停用'}
-        </StatusTag>
-      ),
+      render: (status: number | string) => {
+        const isActive = status === 1 || status === 'active';
+        return (
+          <StatusTag status={isActive ? 'success' : 'neutral'}>
+            {isActive ? '启用' : '停用'}
+          </StatusTag>
+        );
+      },
     },
     {
       title: '创建时间',
@@ -106,8 +133,14 @@ export default function ProjectList() {
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => message.info('执行查询')}
-          onReset={() => setFilters({ keyword: '', status: undefined })}
+          onSearch={() => {
+            setPagination((prev) => ({ ...prev, current: 1 }));
+            refetch();
+          }}
+          onReset={() => {
+            setFilters({ keyword: '', status: undefined });
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
           addText="新增项目"
           onAdd={handleAdd}
         />
@@ -117,8 +150,17 @@ export default function ProjectList() {
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={data}
-          pagination={{ pageSize: 10 }}
+          dataSource={data?.results || []}
+          loading={isLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: data?.total || 0,
+            showSizeChanger: true,
+          }}
+          onChange={(p) => {
+            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+          }}
         />
       </TsCard>
 

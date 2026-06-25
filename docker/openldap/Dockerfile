@@ -13,6 +13,4 @@ RUN chown ldap:ldap /etc/openldap/slapd.conf /docker-entrypoint-init.d/init.sh /
 
 EXPOSE 389 636
 
-USER ldap
-
 ENTRYPOINT ["/docker-entrypoint-init.d/init.sh"]

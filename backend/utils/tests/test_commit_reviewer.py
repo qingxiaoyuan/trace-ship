@@ -1,3 +1,8 @@
+"""
+CommitReviewer 单元测试
+
+覆盖通过、非法、警告等规则审查场景。
+"""
 import pytest
 
 from utils.commit_reviewer import CommitReviewer
@@ -18,6 +23,7 @@ DeviceType=0
 
 
 def test_review_pass():
+    """测试符合规范的提交"""
     status, reason, parsed = CommitReviewer.review(VALID_MESSAGE)
     assert status == "pass"
     assert reason == ""
@@ -25,12 +31,14 @@ def test_review_pass():
 
 
 def test_review_illegal_missing_change_type():
+    """测试缺少变更类型"""
     status, reason, parsed = CommitReviewer.review("fix bug")
     assert status == "illegal"
     assert "变更类型" in reason
 
 
 def test_review_warning_bad_update_type():
+    """测试更新类型不规范"""
     message = """变更类型：
 ☑ 无配置项改动 □有配置项改动
 
@@ -40,11 +48,3 @@ def test_review_warning_bad_update_type():
     status, reason, parsed = CommitReviewer.review(message)
     assert status == "warning"
     assert "A 或 F" in reason
-
-
-def test_review_suggest():
-    suggestion = CommitReviewer.suggest(VALID_MESSAGE)
-    assert "符合规范" in suggestion
-
-    suggestion = CommitReviewer.suggest("bad message")
-    assert suggestion != ""

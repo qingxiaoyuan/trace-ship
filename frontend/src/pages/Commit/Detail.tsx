@@ -1,13 +1,12 @@
-import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Empty, Typography, message } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
-import { getCommitById, getAIReviewByCommitId } from '@/mock/dashboard';
+import { commitApi } from '@/api/commit';
 import type { ReviewStatus } from '@/types';
-
 const { Title, Text } = Typography;
 
 const reviewStatusMap: Record<ReviewStatus, { status: 'success' | 'warning' | 'danger'; text: string }> = {
@@ -51,8 +50,15 @@ export default function CommitDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const commit = useMemo(() => (id ? getCommitById(id) : undefined), [id]);
-  const aiReview = useMemo(() => (id ? getAIReviewByCommitId(id) : undefined), [id]);
+  const { data: commit, isLoading } = useQuery({
+    queryKey: ['commit', id],
+    queryFn: () => commitApi.getCommit(id || ''),
+    enabled: !!id,
+  });
+
+  if (isLoading) {
+    return <div className="p-6 text-center">加载中...</div>;
+  }
 
   if (!commit) {
     return (
@@ -118,22 +124,6 @@ export default function CommitDetail() {
         <pre className="p-4 rounded-xl bg-slate-50 border border-slate-100 font-mono text-sm text-slate-700 leading-relaxed overflow-auto">
           {JSON.stringify(parsedMessage, null, 2)}
         </pre>
-      </TsCard>
-
-      <TsCard
-        className="border border-violet-100 bg-linear-to-r from-white to-violet-50/30"
-        title="AI 审查建议"
-      >
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
-            AI
-          </div>
-          <div className="flex-1">
-            <div className="text-sm text-slate-700 leading-relaxed">
-              {aiReview?.conclusion || commit.ai_suggestion || '暂无 AI 审查建议。'}
-            </div>
-          </div>
-        </div>
       </TsCard>
 
       <div className="flex justify-end gap-3">

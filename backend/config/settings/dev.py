@@ -1,20 +1,32 @@
+"""
+开发环境配置
+
+继承 base.py 并开启调试模式、SQL 日志，同时禁用 LDAP 以避免本地安装 python-ldap。
+"""
 from .base import *
 
+# 开启调试模式
 DEBUG = True
 
+# 开发环境允许所有 Host
 ALLOWED_HOSTS = ["*"]
 
+# 开发环境允许所有跨域来源
 CORS_ALLOW_ALL_ORIGINS = True
 
-# 开发环境不使用 LDAP，避免本地必须安装 python-ldap
+# 开发环境默认不使用 LDAP，避免本地必须安装 python-ldap。
+# 如需启用 LDAP 认证，设置对应环境变量即可（base.py 会根据这些变量自动配置 LDAPBackend）。
+import os
+
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
 ]
-AUTH_LDAP_SERVER_URI = ""
-AUTH_LDAP_BIND_DN = ""
-AUTH_LDAP_BIND_PASSWORD = ""
-AUTH_LDAP_USER_SEARCH_BASE = ""
+AUTH_LDAP_SERVER_URI = os.getenv("LDAP_SERVER_URI", "")
+AUTH_LDAP_BIND_DN = os.getenv("LDAP_BIND_DN", "")
+AUTH_LDAP_BIND_PASSWORD = os.getenv("LDAP_BIND_PASSWORD", "")
+AUTH_LDAP_USER_SEARCH_BASE = os.getenv("LDAP_USER_SEARCH_BASE", "")
 
+# 开发环境日志：同时输出 INFO 级别日志和 SQL 调试日志
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

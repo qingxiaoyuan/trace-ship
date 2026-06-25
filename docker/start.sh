@@ -1,5 +1,6 @@
 #!/bin/bash
-# 第三方服务一键启动脚本
+# 第三方服务一键启动脚本（数据库、缓存、Git、Jenkins、LDAP、SVN）
+# 应用服务（backend / frontend / celery）请在本地分别启动，便于开发调试
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +50,7 @@ fi
 echo "✅ 使用命令: ${COMPOSE_CMD}"
 echo ""
 
-# 启动服务
+# 启动服务（默认仅启动无 profile 的第三方依赖服务）
 echo "🚀 启动第三方服务..."
 ${COMPOSE_CMD} up -d --build
 
@@ -79,7 +80,7 @@ fi
 
 echo ""
 echo "====================================="
-echo "服务启动完成，访问地址如下："
+echo "第三方服务启动完成，访问地址如下："
 echo "====================================="
 echo ""
 echo "🌐 Gitea (Git 仓库):     http://localhost:${GITEA_HTTP_PORT:-3000}"
@@ -107,5 +108,8 @@ echo "🔴 Redis:                localhost:${REDIS_PORT:-6379}"
 echo "   密码: ${REDIS_PASSWORD:-ReleaseManager@2024}"
 echo ""
 echo "====================================="
-echo "提示：首次启动 Jenkins 插件安装可能需要 2-3 分钟"
+echo "提示："
+echo "- 首次启动 Jenkins 插件安装可能需要 2-3 分钟"
+echo "- backend / frontend / celery 请在本地启动，便于开发调试"
+echo "- 如需一键启动完整应用服务，请使用: ${COMPOSE_CMD} --profile app up -d --build"
 echo "====================================="

@@ -6,7 +6,7 @@ interface RepositoryModalProps {
   open: boolean;
   repo: Repository | null;
   onCancel: () => void;
-  onOk: () => void;
+  onOk: (values: Partial<Repository>) => void | Promise<void>;
 }
 
 export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalProps) {
@@ -21,8 +21,8 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
         onCancel();
       }}
       onOk={() => {
-        form.validateFields().then(() => {
-          onOk();
+        form.validateFields().then((values) => {
+          onOk(values);
           form.resetFields();
         });
       }}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Layout,
   Breadcrumb,
@@ -9,6 +9,8 @@ import {
   Button,
   Typography,
   Space,
+  List,
+  Tabs,
 } from 'antd';
 import {
   BellOutlined,
@@ -18,16 +20,24 @@ import {
   SettingOutlined,
 } from '@ant-design/icons';
 import { useLocation, useMatches, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tokens } from '@/styles/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useGlobalStore } from '@/stores/globalStore';
+import { projectApi } from '@/api/project';
+import { notificationApi } from '@/api/notification';
 import { mockProjects } from '@/mock/projects';
 import { mockBuildRecords } from '@/mock/dashboard';
 
 const { Header } = Layout;
 const { Text } = Typography;
 
-const projectSelectOptions = mockProjects.map((p) => ({ value: p.id, label: p.name }));
+const typeMap: Record<string, string> = {
+  audit: '审批',
+  build: '构建',
+  release: '发布',
+  system: '系统',
+};
 
 export function TopHeader() {
   const location = useLocation();
@@ -35,6 +45,117 @@ export function TopHeader() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { currentProjectId, setCurrentProjectId } = useGlobalStore();
+  const queryClient = useQueryClient();
+  const [bellOpen, setBellOpen] = useState(false);
+
+  const { data: projectData } = useQuery({
+    queryKey: ['header-projects'],
+    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
+  });
+
+  const { data: unreadCountData } = useQuery({
+    queryKey: ['notification-unread-count'],
+    queryFn: () => notificationApi.getUnreadCount(),
+  });
+
+  const { data: notificationData } = useQuery({
+    queryKey: ['header-notifications'],
+    queryFn: () => notificationApi.getNotifications({ page_size: 5 }),
+    enabled: bellOpen,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) => notificationApi.markRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
+      queryClient.invalidateQueries({ queryKey: ['header-notifications'] });
+    },
+  });
+
+  const projectOptions = (projectData?.results || []).map((p) => ({ value: p.id, label: p.name }));
+  const unreadCount = unreadCountData?.count || 0;
+  const notifications = notificationData?.results || [];
+
+  const notificationMenu = {
+    items: [
+      {
+        key: 'list',
+        label: (
+          <div style={{ width: 320 }}>
+            <Tabs
+              centered
+              items={[
+                {
+                  key: 'unread',
+                  label: `未读 (${unreadCount})`,
+                  children: (
+                    <List
+                      size="small"
+                      dataSource={notifications.filter((n) => !n.is_read)}
+                      locale={{ emptyText: '暂无未读通知' }}
+                      renderItem={(item) => (
+                        <List.Item
+                          actions={[
+                            <Button
+                              type="link"
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markReadMutation.mutate(item.id);
+                              }}
+                            >
+                              标记已读
+                            </Button>,
+                          ]}
+                        >
+                          <div className="cursor-pointer" onClick={() => navigate('/notifications')}>
+                            <Text strong>[{typeMap[item.notification_type] || item.notification_type}] {item.title}</Text>
+                            <div>
+                              <Text type="secondary" ellipsis style={{ maxWidth: 240 }}>
+                                {item.content}
+                              </Text>
+                            </div>
+                          </div>
+                        </List.Item>
+                      )}
+                    />
+                  ),
+                },
+                {
+                  key: 'recent',
+                  label: '最近',
+                  children: (
+                    <List
+                      size="small"
+                      dataSource={notifications}
+                      locale={{ emptyText: '暂无通知' }}
+                      renderItem={(item) => (
+                        <List.Item>
+                          <div className="cursor-pointer" onClick={() => navigate('/notifications')}>
+                            <Text type={item.is_read ? 'secondary' : undefined}>
+                              [{typeMap[item.notification_type] || item.notification_type}] {item.title}
+                            </Text>
+                            <div>
+                              <Text type="secondary" ellipsis style={{ maxWidth: 240 }}>
+                                {item.content}
+                              </Text>
+                            </div>
+                          </div>
+                        </List.Item>
+                      )}
+                    />
+                  ),
+                },
+              ]}
+            />
+            <div className="text-center pb-2">
+              <Button type="link" onClick={() => navigate('/notifications')}>查看全部通知</Button>
+            </div>
+          </div>
+        ),
+      },
+    ],
+  };
 
   const breadcrumbItems = useMemo<{ title: string; path?: string }[]>(() => {
     // 项目详情动态面包屑：项目管理 / 项目名称
@@ -123,16 +244,23 @@ export function TopHeader() {
 
       <Space size="middle">
         <Select
-          value={currentProjectId || '1'}
+          value={currentProjectId || undefined}
           onChange={setCurrentProjectId}
-          options={projectSelectOptions}
+          options={projectOptions}
           style={{ width: 176 }}
           placeholder="选择项目"
         />
 
-        <Badge dot color="red">
-          <Button type="text" icon={<BellOutlined />} shape="circle" />
-        </Badge>
+        <Dropdown
+          menu={notificationMenu}
+          placement="bottomRight"
+          arrow
+          onOpenChange={(open) => setBellOpen(open)}
+        >
+          <Badge count={unreadCount} size="small" offset={[8, -4]}>
+            <Button type="text" icon={<BellOutlined />} shape="circle" />
+          </Badge>
+        </Dropdown>
 
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow>
           <div className="flex items-center gap-2 cursor-pointer">

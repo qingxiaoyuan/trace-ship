@@ -1,3 +1,8 @@
+"""
+CommitParser 单元测试
+
+覆盖标准提交信息、缺少变更类型、缺少更新内容、配置项不一致等场景。
+"""
 import pytest
 from datetime import datetime
 
@@ -22,6 +27,7 @@ PXX板卡硬件版本: 1.0
 
 
 def test_parse_valid_commit():
+    """测试标准提交信息解析"""
     result = CommitParser.parse(VALID_MESSAGE)
     assert result.is_valid is True
     assert result.change_type == "有配置项改动"
@@ -33,6 +39,7 @@ def test_parse_valid_commit():
 
 
 def test_parse_missing_change_type():
+    """测试缺少变更类型"""
     message = "更新内容：\n[A为功能增加 F为BUG修复]：\n1. A xxx"
     result = CommitParser.parse(message)
     assert result.is_valid is False
@@ -40,6 +47,7 @@ def test_parse_missing_change_type():
 
 
 def test_parse_missing_updates():
+    """测试缺少更新内容"""
     message = """变更类型：
 □ 无配置项改动 □有配置项改动
 """
@@ -49,6 +57,7 @@ def test_parse_missing_updates():
 
 
 def test_parse_config_inconsistent():
+    """测试声明有配置项改动但未提供"""
     message = """变更类型：
 □ 无配置项改动 ☑有配置项改动
 
@@ -62,6 +71,7 @@ def test_parse_config_inconsistent():
 
 
 def test_parse_no_config_declared():
+    """测试声明无配置项改动"""
     message = """变更类型：
 ☑ 无配置项改动 □有配置项改动
 

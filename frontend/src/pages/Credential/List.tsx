@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Table, Button, Space, message, Popconfirm } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { EditOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { TsCard } from '@/components/TsCard';
@@ -7,20 +8,32 @@ import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { CredentialModal } from './modals/CredentialModal';
 import {
-  mockCredentials,
   credentialTypeMap,
   credentialScopeMap,
   credentialTypeOptions,
   credentialScopeOptions,
 } from '@/mock/credentials';
+import { credentialApi } from '@/api/credential';
 import type { Credential } from '@/types';
 
 export default function CredentialList() {
   const navigate = useNavigate();
   const [filters, setFilters] = useState({ keyword: '', cred_type: undefined, scope: undefined });
-  const [data] = useState(mockCredentials);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['credentials', filters, pagination.current, pagination.pageSize],
+    queryFn: () =>
+      credentialApi.getCredentials({
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        keyword: filters.keyword || undefined,
+        cred_type: filters.cred_type || undefined,
+        scope: filters.scope || undefined,
+      }),
+  });
 
   const isExpired = (date?: string) => date && new Date(date) < new Date();
   const isNearExpiry = (date?: string) => {
@@ -31,8 +44,37 @@ export default function CredentialList() {
     return diff > 0 && diff < 30 * 24 * 60 * 60 * 1000;
   };
 
+  const handleDelete = async (id: string) => {
+    try {
+      await credentialApi.deleteCredential(id);
+      message.success('删除成功');
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      refetch();
+    } catch (error) {
+      message.error('删除失败');
+      console.error(error);
+    }
+  };
+
+  const handleSave = async (values: Partial<Credential>) => {
+    try {
+      if (editingCredential?.id) {
+        await credentialApi.updateCredential(editingCredential.id, values);
+      } else {
+        await credentialApi.createCredential(values);
+      }
+      message.success('保存成功');
+      setModalOpen(false);
+      setEditingCredential(null);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      refetch();
+    } catch (error) {
+      message.error('保存失败');
+      console.error(error);
+    }
+  };
+
   const columns = [
-    { title: '凭证名称', dataIndex: 'name', key: 'name' },
     {
       title: '类型',
       dataIndex: 'cred_type',
@@ -79,7 +121,7 @@ export default function CredentialList() {
         <Space size="small">
           <Button type="text" icon={<EditOutlined />} onClick={() => { setEditingCredential(record); setModalOpen(true); }}>编辑</Button>
           <Button type="text" icon={<HistoryOutlined />} onClick={() => navigate(`/credentials/${record.id}/usage`)}>使用记录</Button>
-          <Popconfirm title="确定删除该凭证？" onConfirm={() => message.success('删除成功')}>
+          <Popconfirm title="确定删除该凭证？" onConfirm={() => handleDelete(record.id)}>
             <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>
         </Space>
@@ -110,22 +152,42 @@ export default function CredentialList() {
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => message.info('执行查询')}
-          onReset={() => setFilters({ keyword: '', cred_type: undefined, scope: undefined })}
+          onSearch={() => {
+            setPagination((prev) => ({ ...prev, current: 1 }));
+            refetch();
+          }}
+          onReset={() => {
+            setFilters({ keyword: '', cred_type: undefined, scope: undefined });
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
           addText="新增凭证"
           onAdd={() => { setEditingCredential(null); setModalOpen(true); }}
         />
       </TsCard>
 
       <TsCard title="凭证列表">
-        <Table rowKey="id" columns={columns} dataSource={data} pagination={{ pageSize: 10 }} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data?.results || []}
+          loading={isLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: data?.total || 0,
+            showSizeChanger: true,
+          }}
+          onChange={(p) => {
+            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+          }}
+        />
       </TsCard>
 
       <CredentialModal
         open={modalOpen}
         credential={editingCredential}
-        onCancel={() => setModalOpen(false)}
-        onOk={(values) => { console.log('save credential', values); setModalOpen(false); message.success('保存成功'); }}
+        onCancel={() => { setModalOpen(false); setEditingCredential(null); }}
+        onOk={handleSave}
       />
     </div>
   );

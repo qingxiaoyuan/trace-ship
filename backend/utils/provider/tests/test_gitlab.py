@@ -1,3 +1,8 @@
+"""
+GitLabProvider 单元测试
+
+使用 responses 库模拟 GitLab REST API。
+"""
 import pytest
 import responses
 from urllib.parse import quote
@@ -8,11 +13,13 @@ from utils.provider.exceptions import AuthenticationError, ProviderError
 
 @pytest.fixture
 def provider():
+    """GitLabProvider 实例"""
     return GitLabProvider("https://gitlab.example.com", {"token": "glpat-test"})
 
 
 @responses.activate
 def test_test_connection_success(provider):
+    """测试连通性成功"""
     responses.add(
         responses.GET,
         "https://gitlab.example.com/api/v4/user",
@@ -24,6 +31,7 @@ def test_test_connection_success(provider):
 
 @responses.activate
 def test_test_connection_auth_failure(provider):
+    """测试 Token 认证失败"""
     responses.add(
         responses.GET,
         "https://gitlab.example.com/api/v4/user",
@@ -36,6 +44,7 @@ def test_test_connection_auth_failure(provider):
 
 @responses.activate
 def test_list_branches(provider):
+    """测试分支列表"""
     encoded = quote("group/project", safe="")
     responses.add(
         responses.GET,
@@ -54,6 +63,7 @@ def test_list_branches(provider):
 
 @responses.activate
 def test_list_commits(provider):
+    """测试 commit 列表"""
     encoded = quote("group/project", safe="")
     responses.add(
         responses.GET,
@@ -77,6 +87,7 @@ def test_list_commits(provider):
 
 @responses.activate
 def test_list_commits_not_found(provider):
+    """测试仓库不存在"""
     encoded = quote("group/notfound", safe="")
     responses.add(
         responses.GET,

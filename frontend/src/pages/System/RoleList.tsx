@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Table, Button, Space, Drawer, Tree, Checkbox, message } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { PlusOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
-import { mockRoles } from '@/mock/system';
+import { accountApi } from '@/api/account';
+import type { AccountRole } from '@/api/account';
 
 const menuTreeData = [
   {
@@ -32,9 +34,14 @@ const menuTreeData = [
 
 export default function RoleList() {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<typeof mockRoles[0] | null>(null);
+  const [selectedRole, setSelectedRole] = useState<AccountRole | null>(null);
 
-  const handleEditPermission = (role: typeof mockRoles[0]) => {
+  const { data, isLoading } = useQuery({
+    queryKey: ['account-roles'],
+    queryFn: () => accountApi.getRoles({ page_size: 1000 }),
+  });
+
+  const handleEditPermission = (role: AccountRole) => {
     setSelectedRole(role);
     setDrawerOpen(true);
   };
@@ -46,7 +53,7 @@ export default function RoleList() {
     {
       title: '操作',
       width: 180,
-      render: (_: unknown, record: typeof mockRoles[0]) => (
+      render: (_: unknown, record: AccountRole) => (
         <Space size="small">
           <Button type="text" icon={<SettingOutlined />} onClick={() => handleEditPermission(record)}>编辑权限</Button>
           <Button type="text" icon={<EditOutlined />}>编辑</Button>
@@ -61,7 +68,13 @@ export default function RoleList() {
         title="角色权限"
         extra={<Button type="primary" icon={<PlusOutlined />}>新增角色</Button>}
       >
-        <Table rowKey="id" columns={columns} dataSource={mockRoles} pagination={false} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data?.results || []}
+          loading={isLoading}
+          pagination={false}
+        />
       </TsCard>
 
       <Drawer

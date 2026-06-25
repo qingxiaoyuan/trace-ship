@@ -1,15 +1,29 @@
 import { useState } from 'react';
 import { Table, Button, Space, Avatar, message, Popconfirm } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { SyncOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
-import { mockUsers, sourceMap } from '@/mock/system';
+import { sourceMap } from '@/mock/system';
+import { accountApi } from '@/api/account';
 import { tokens } from '@/styles/theme';
 
 export default function SystemUserList() {
   const [filters, setFilters] = useState({ keyword: '', source: undefined, is_active: undefined });
-  const [data] = useState(mockUsers);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['account-users', filters, pagination.current, pagination.pageSize],
+    queryFn: () =>
+      accountApi.getUsers({
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        keyword: filters.keyword || undefined,
+        source: filters.source || undefined,
+        is_active: filters.is_active || undefined,
+      }),
+  });
 
   const columns = [
     { title: '用户名', dataIndex: 'username' },
@@ -84,8 +98,11 @@ export default function SystemUserList() {
           ]}
           values={filters}
           onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => message.info('执行查询')}
-          onReset={() => setFilters({ keyword: '', source: undefined, is_active: undefined })}
+          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+          onReset={() => {
+            setFilters({ keyword: '', source: undefined, is_active: undefined });
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
           extra={
             <Button icon={<SyncOutlined />}>同步 LDAP</Button>
           }
@@ -95,7 +112,21 @@ export default function SystemUserList() {
       </TsCard>
 
       <TsCard title="用户列表">
-        <Table rowKey="id" columns={columns} dataSource={data} pagination={{ pageSize: 10 }} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data?.results || []}
+          loading={isLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: data?.total || 0,
+            showSizeChanger: true,
+          }}
+          onChange={(p) => {
+            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+          }}
+        />
       </TsCard>
     </div>
   );

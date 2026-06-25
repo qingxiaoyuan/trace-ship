@@ -1,3 +1,8 @@
+"""
+SVN Provider
+
+基于 svn 命令行的适配器，对外提供 list_commits / test_connection 接口。
+"""
 import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -10,14 +15,24 @@ from .exceptions import ConnectionError, ProviderError
 
 
 class SVNProvider:
-    """SVN 命令行适配器，语义上与 GitProvider 不同，但对外提供 list_commits / test_connection"""
+    """
+    SVN 命令行适配器
+
+    语义上与 GitProvider 不同，但对外提供 list_commits / test_connection 能力。
+    """
 
     def __init__(self, repo_url: str, credential_data: dict):
+        """
+        Args:
+            repo_url: SVN 仓库地址
+            credential_data: 解密后的凭证数据，可包含 username/password
+        """
         self.repo_url = repo_url.rstrip("/")
         self.username = credential_data.get("username", "")
         self.password = credential_data.get("password", "")
 
     def _base_cmd(self) -> List[str]:
+        """构造带认证的 svn 基础命令"""
         cmd = ["svn", "--non-interactive", "--no-auth-cache"]
         if self.username:
             cmd.extend(["--username", self.username])
@@ -26,6 +41,19 @@ class SVNProvider:
         return cmd
 
     def _run(self, cmd: List[str], timeout: int = 60) -> str:
+        """
+        执行 svn 命令
+
+        Args:
+            cmd: 命令参数列表
+            timeout: 超时时间（秒）
+
+        Returns:
+            命令标准输出
+
+        Raises:
+            ConnectionError: 命令执行失败、超时或未安装 svn
+        """
         try:
             result = subprocess.run(
                 cmd,
@@ -46,6 +74,7 @@ class SVNProvider:
         return result.stdout
 
     def test_connection(self) -> bool:
+        """测试 SVN 仓库连通性"""
         cmd = self._base_cmd() + ["info", self.repo_url]
         self._run(cmd, timeout=30)
         return True
@@ -57,11 +86,35 @@ class SVNProvider:
         until: Optional[datetime] = None,
         per_page: int = 100,
     ) -> List[CommitInfo]:
+        """
+        拉取 SVN 提交日志
+
+        Args:
+            branch: SVN 中分支概念较弱，暂不使用
+            since: 起始时间
+            until: 结束时间
+            per_page: 最大条数
+
+        Returns:
+            CommitInfo 列表
+        """
         cmd = self._base_cmd() + ["log", "--xml", "-l", str(per_page), self.repo_url]
         xml_data = self._run(cmd, timeout=60)
         return self._parse_xml_log(xml_data)
 
     def _parse_xml_log(self, xml_data: str) -> List[CommitInfo]:
+        """
+        解析 SVN log XML
+
+        Args:
+            xml_data: svn log --xml 输出
+
+        Returns:
+            CommitInfo 列表
+
+        Raises:
+            ProviderError: XML 解析失败
+        """
         try:
             root = ET.fromstring(xml_data)
         except ET.ParseError as exc:
@@ -86,8 +139,12 @@ class SVNProvider:
 
     @staticmethod
     def _parse_svn_date(value: str) -> Optional[datetime]:
+        """
+        解析 SVN 日期格式
+
+        SVN 日期通常形如 2023-01-01T12:00:00.000000Z
+        """
         if not value:
             return None
-        # SVN 日期通常形如 2023-01-01T12:00:00.000000Z
         dt = parse_datetime(value)
         return dt

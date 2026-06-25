@@ -1,10 +1,40 @@
-from apps.repository.managers import CommitRecordManager
+"""
+仓库管理数据模型
+
+包含代码仓库（Repository）和提交记录（CommitRecord）。
+"""
 import uuid
 from django.db import models
 from django.conf import settings
 
+from apps.repository.managers import CommitRecordManager
+
 
 class Repository(models.Model):
+    """
+    代码仓库模型
+
+    表示项目下的一个代码仓库或外部仓库绑定，支持 Git/SVN 以及多种平台。
+
+    Attributes:
+        id: UUID 主键
+        project: 所属项目
+        integration: 关联的项目外站绑定
+        repo_type: 仓库类型（git/svn）
+        vendor: 平台厂商
+        name: 仓库名称
+        url: 仓库地址
+        external_identity: 外部唯一标识
+        default_branch: 默认分支
+        credential: 关联凭证
+        credential_mode: 凭证使用模式
+        specified_user: 指定用户
+        health_status: 健康状态
+        last_sync_at: 最后同步时间
+        created_at: 创建时间
+        updated_at: 更新时间
+    """
+
     REPO_TYPE_CHOICES = [
         ("git", "Git"),
         ("svn", "SVN"),
@@ -92,11 +122,33 @@ class Repository(models.Model):
             models.Index(fields=["health_status"]),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """返回项目-仓库名称描述"""
         return f"{self.project.name} - {self.name}"
 
 
 class CommitRecord(models.Model):
+    """
+    提交记录模型
+
+    存储仓库的每一次提交信息及审查结果，支持规则引擎审查。
+
+    Attributes:
+        id: UUID 主键
+        project: 所属项目
+        repository: 所属仓库
+        commit_hash: 提交哈希
+        author: 提交人
+        author_email: 提交人邮箱
+        message: 原始提交信息
+        committed_at: 提交时间
+        branch: 所属分支
+        parsed_message: 解析结果（JSON）
+        review_status: 审查状态
+        review_reason: 审查说明
+        created_at: 创建时间
+        updated_at: 更新时间
+    """
     REVIEW_STATUS_CHOICES = [
         ("unreviewed", "未审查"),
         ("pass", "通过"),
@@ -131,11 +183,10 @@ class CommitRecord(models.Model):
         verbose_name="审查状态",
     )
     review_reason = models.TextField(blank=True, verbose_name="审查说明")
-    ai_suggestion = models.TextField(blank=True, verbose_name="AI 建议")
-    ai_review_at = models.DateTimeField(null=True, blank=True, verbose_name="AI 审查时间")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # 使用自定义管理器
     objects = CommitRecordManager()
 
     class Meta:
@@ -152,5 +203,6 @@ class CommitRecord(models.Model):
             models.Index(fields=["repository", "committed_at"]),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """返回提交哈希前 8 位和作者"""
         return f"{self.commit_hash[:8]} - {self.author}"

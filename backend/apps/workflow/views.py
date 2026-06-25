@@ -1,0 +1,253 @@
+"""
+工作流视图
+
+提供流程定义、流程实例、审批任务的 RESTful API。
+"""
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
+
+from apps.account.models import User
+from apps.project.models import ProjectMember
+from apps.release.services import ReleaseService
+from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
+from apps.workflow.serializers import (
+    WorkflowDefinitionListSerializer,
+    WorkflowDefinitionSerializer,
+    WorkflowInstanceSerializer,
+    WorkflowTaskSerializer,
+)
+from apps.workflow.services import WorkflowEngine
+from utils.permissions import IsProjectDeveloper, IsProjectManager
+from utils.response import error_response, success_response
+
+
+class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
+    """
+    工作流定义视图集
+
+    项目管理员可创建/修改/删除，项目成员可查看。
+    """
+
+    queryset = WorkflowDefinition.objects.all()
+    serializer_class = WorkflowDefinitionSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["project", "biz_type", "is_active"]
+    search_fields = ["name"]
+    ordering_fields = ["created_at", "updated_at"]
+    ordering = ["-created_at"]
+
+    def get_serializer_class(self):
+        """列表使用精简序列化器"""
+        if self.action == "list":
+            return WorkflowDefinitionListSerializer
+        return WorkflowDefinitionSerializer
+
+    def get_queryset(self):
+        """根据用户身份返回可见定义"""
+        if getattr(self, "swagger_fake_view", False):
+            return WorkflowDefinition.objects.none()
+        user = self.request.user
+        queryset = WorkflowDefinition.objects.select_related("project", "created_by")
+        if user.is_superuser:
+            return queryset.all()
+        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        return queryset.filter(project_id__in=project_ids)
+
+    def get_permissions(self):
+        """写操作需项目管理员"""
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAuthenticated(), IsProjectManager()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        """创建时自动设置创建人"""
+        serializer.save(created_by=self.request.user)
+
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        """创建流程定义"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return success_response(serializer.data, message="创建成功", status=201)
+
+    def update(self, request: Request, *args, **kwargs) -> Response:
+        """更新流程定义"""
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return success_response(serializer.data, message="更新成功")
+
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        """删除流程定义"""
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return success_response(None, message="删除成功")
+
+
+class WorkflowInstanceViewSet(viewsets.ModelViewSet):
+    """
+    工作流实例视图集
+
+    项目开发者可创建实例，项目成员可查看详情。
+    """
+
+    queryset = WorkflowInstance.objects.all()
+    serializer_class = WorkflowInstanceSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["biz_type", "biz_id", "status", "created_by"]
+    ordering_fields = ["created_at", "updated_at"]
+    ordering = ["-created_at"]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        """根据用户身份返回可见实例"""
+        if getattr(self, "swagger_fake_view", False):
+            return WorkflowInstance.objects.none()
+        user = self.request.user
+        queryset = WorkflowInstance.objects.select_related("definition", "created_by").prefetch_related("tasks")
+        if user.is_superuser:
+            return queryset.all()
+        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        return queryset.filter(definition__project_id__in=project_ids)
+
+    def get_permissions(self):
+        """创建实例需项目开发者"""
+        if self.action == "create":
+            return [IsAuthenticated(), IsProjectDeveloper()]
+        return super().get_permissions()
+
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        """创建流程实例"""
+        definition_id = request.data.get("definition_id")
+        biz_type = request.data.get("biz_type", "release")
+        biz_id = request.data.get("biz_id")
+
+        if not definition_id or not biz_id:
+            return error_response(40001, "definition_id 和 biz_id 不能为空")
+
+        try:
+            definition = WorkflowDefinition.objects.get(id=definition_id, is_active=True)
+        except WorkflowDefinition.DoesNotExist:
+            return error_response(40401, "流程定义不存在或已停用")
+
+        instance = WorkflowEngine.create_instance(
+            definition=definition,
+            biz_type=biz_type,
+            biz_id=biz_id,
+            user=request.user,
+        )
+        serializer = self.get_serializer(instance)
+        return success_response(serializer.data, message="创建成功", status=201)
+
+    def retrieve(self, request: Request, *args, **kwargs) -> Response:
+        """查询实例详情"""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return success_response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="revoke")
+    def revoke(self, request: Request, pk=None) -> Response:
+        """发起人撤销实例"""
+        instance = self.get_object()
+        try:
+            WorkflowEngine.revoke_instance(instance, request.user)
+        except Exception as exc:
+            return error_response(40001, str(exc))
+        serializer = self.get_serializer(instance)
+        return success_response(serializer.data, message="撤销成功")
+
+
+class WorkflowTaskViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    审批任务视图集
+
+    提供我的待办、我的已办以及审批操作 API。
+    """
+
+    queryset = WorkflowTask.objects.all()
+    serializer_class = WorkflowTaskSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["instance", "node_id", "status"]
+    ordering_fields = ["created_at", "action_time"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        """根据用户身份返回可见任务"""
+        if getattr(self, "swagger_fake_view", False):
+            return WorkflowTask.objects.none()
+        user = self.request.user
+        queryset = WorkflowTask.objects.select_related("instance", "approver", "transferred_from")
+        if user.is_superuser:
+            return queryset.all()
+        return queryset.filter(approver=user)
+
+    @action(detail=False, methods=["get"], url_path="todo")
+    def todo(self, request: Request) -> Response:
+        """我的待办"""
+        queryset = self.get_queryset().filter(status="pending")
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="done")
+    def done(self, request: Request) -> Response:
+        """我的已办"""
+        queryset = self.get_queryset().exclude(status="pending")
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request: Request, pk=None) -> Response:
+        """审批通过"""
+        task = self.get_object()
+        comment = request.data.get("comment", "")
+        try:
+            instance = WorkflowEngine.process_task(task, "approve", comment)
+            if instance.status == "completed":
+                ReleaseService.handle_workflow_completed(instance)
+        except Exception as exc:
+            return error_response(40001, str(exc))
+        serializer = self.get_serializer(task)
+        return success_response(serializer.data, message="审批通过")
+
+    @action(detail=True, methods=["post"], url_path="reject")
+    def reject(self, request: Request, pk=None) -> Response:
+        """审批驳回"""
+        task = self.get_object()
+        comment = request.data.get("comment", "")
+        try:
+            instance = WorkflowEngine.process_task(task, "reject", comment)
+            if instance.status == "rejected":
+                ReleaseService.handle_workflow_rejected(instance, comment)
+        except Exception as exc:
+            return error_response(40001, str(exc))
+        serializer = self.get_serializer(task)
+        return success_response(serializer.data, message="审批驳回")
+
+    @action(detail=True, methods=["post"], url_path="transfer")
+    def transfer(self, request: Request, pk=None) -> Response:
+        """转交他人"""
+        task = self.get_object()
+        comment = request.data.get("comment", "")
+        to_user_id = request.data.get("to_user_id")
+        if not to_user_id:
+            return error_response(40001, "to_user_id 不能为空")
+        to_user = User.objects.filter(id=to_user_id).first()
+        if not to_user:
+            return error_response(40401, "目标用户不存在")
+        try:
+            WorkflowEngine.process_task(task, "transfer", comment, to_user)
+        except Exception as exc:
+            return error_response(40001, str(exc))
+        serializer = self.get_serializer(task)
+        return success_response(serializer.data, message="转交成功")

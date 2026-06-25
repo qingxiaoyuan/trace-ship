@@ -41,7 +41,6 @@ export const sourceMap: Record<string, string> = {
 export const systemConfigCategories = [
   { key: 'ldap', label: 'LDAP/AD' },
   { key: 'jenkins', label: 'Jenkins' },
-  { key: 'ai', label: 'AI 服务' },
   { key: 'storage', label: '存储' },
   { key: 'notification', label: '通知' },
   { key: 'security', label: '安全策略' },

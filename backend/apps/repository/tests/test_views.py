@@ -1,3 +1,8 @@
+"""
+仓库视图测试
+
+覆盖仓库列表、创建、vendor 校验、commit 同步以及提交复核接口。
+"""
 import pytest
 from unittest.mock import patch
 from rest_framework.test import APIClient
@@ -7,6 +12,7 @@ from apps.repository.models import CommitRecord
 
 @pytest.fixture
 def api_client(user):
+    """已认证 APIClient"""
     client = APIClient()
     client.force_authenticate(user=user)
     return client
@@ -14,6 +20,7 @@ def api_client(user):
 
 @pytest.mark.django_db
 def test_list_repositories(api_client, repository):
+    """测试仓库列表接口"""
     response = api_client.get("/api/repositories/")
     assert response.status_code == 200
     assert response.data["code"] == 0
@@ -22,6 +29,7 @@ def test_list_repositories(api_client, repository):
 
 @pytest.mark.django_db
 def test_create_repository(api_client, project, credential):
+    """测试创建仓库"""
     payload = {
         "project": str(project.id),
         "repo_type": "git",
@@ -40,7 +48,29 @@ def test_create_repository(api_client, project, credential):
 
 
 @pytest.mark.django_db
+def test_create_repository_rejects_invalid_vendor(api_client, project, credential):
+    """测试 Git 仓库拒绝 SVN vendor"""
+    payload = {
+        "project": str(project.id),
+        "repo_type": "git",
+        "vendor": "svn",
+        "name": "错误仓库",
+        "url": "https://gitlab.example.com/test/wrong.git",
+        "external_identity": "test/wrong",
+        "default_branch": "main",
+        "credential": str(credential.id),
+        "credential_mode": "fixed",
+    }
+
+    response = api_client.post("/api/repositories/", payload, format="json")
+
+    assert response.status_code == 400
+    assert "vendor" in response.data["data"]
+
+
+@pytest.mark.django_db
 def test_sync_commits(api_client, repository):
+    """测试手动同步 commits"""
     fake_commit = type("CommitInfo", (), {
         "hash": "def456",
         "author": "李四",
@@ -62,6 +92,7 @@ def test_sync_commits(api_client, repository):
 
 @pytest.mark.django_db
 def test_commit_review(api_client, commit):
+    """测试提交复核"""
     response = api_client.post(
         f"/api/commits/{commit.id}/review/",
         {"review_status": "illegal", "reason": "测试标记"},
@@ -74,6 +105,7 @@ def test_commit_review(api_client, commit):
 
 @pytest.mark.django_db
 def test_unauthorized_access_other_project(api_client):
+    """测试未参与项目时仓库列表为空"""
     # api_client 用户没有 project 2 的权限
     response = api_client.get("/api/repositories/")
     assert response.status_code == 200

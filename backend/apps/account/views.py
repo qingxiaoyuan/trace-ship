@@ -1,8 +1,17 @@
+"""
+账号管理视图
+
+提供认证相关接口（登录、登出、Token 刷新、用户信息、菜单）以及
+用户、角色、权限的 CRUD 管理接口。
+"""
+from typing import Optional
 from django.contrib.auth import authenticate
 from django.utils import timezone
+from django.http import HttpRequest
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -15,8 +24,29 @@ from utils.permissions import IsSuperUser
 from utils.response import success_response, error_response
 
 
-def create_operation_log(user, module, action, resource_type, resource_id, detail, ip):
-    """创建操作日志"""
+def create_operation_log(
+    user: Optional[User],
+    module: str,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    detail: dict,
+    ip: str,
+) -> None:
+    """
+    创建操作日志
+
+    记录用户关键操作，异常时不影响主流程。
+
+    Args:
+        user: 操作用户，未登录时为 None
+        module: 功能模块名称
+        action: 操作动作
+        resource_type: 资源类型
+        resource_id: 资源标识
+        detail: 详细内容字典
+        ip: 客户端 IP
+    """
     try:
         from apps.system.models import OperationLog
         OperationLog.objects.create(
@@ -33,10 +63,29 @@ def create_operation_log(user, module, action, resource_type, resource_id, detai
 
 
 class AuthViewSet(viewsets.GenericViewSet):
+    """
+    认证视图集
+
+    开放接口（无需登录）：
+        POST /login/          登录（LDAP 优先，本地兜底）
+        POST /token/refresh/  刷新 Access Token
+        POST /logout/         登出并黑名单 Refresh Token
+
+    需登录接口：
+        GET  /user-info/      当前用户信息
+        GET  /menus/          侧边栏菜单
+    """
+
     permission_classes = [AllowAny]
     serializer_class = LoginSerializer
 
     def get_serializer_class(self):
+        """
+        根据当前 action 返回对应序列化器
+
+        Returns:
+            当前 action 使用的 Serializer 类
+        """
         if self.action == "login":
             return LoginSerializer
         if self.action == "token_refresh":
@@ -45,13 +94,24 @@ class AuthViewSet(viewsets.GenericViewSet):
         return self.serializer_class
 
     @action(detail=False, methods=["post"], url_path="login")
-    def login(self, request):
+    def login(self, request: Request) -> Response:
+        """
+        用户登录接口
+
+        先尝试 LDAP 认证，失败后再使用本地账号认证；认证成功后颁发 JWT Token。
+
+        Args:
+            request: DRF Request，body 需包含 username 和 password
+
+        Returns:
+            成功返回用户信息及双 Token，失败返回 401
+        """
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        username = serializer.validated_data["username"]
-        password = serializer.validated_data["password"]
+        username: str = serializer.validated_data["username"]
+        password: str = serializer.validated_data["password"]
 
-        user = None
+        user: Optional[User] = None
         error_msg = ""
 
         # 1. 尝试 LDAP 认证
@@ -89,8 +149,10 @@ class AuthViewSet(viewsets.GenericViewSet):
         if not user.is_active:
             return error_response(40100, "账号已停用", status_code=status.HTTP_401_UNAUTHORIZED)
 
+        # 生成 JWT Token
         refresh = RefreshToken.for_user(user)
 
+        # 记录登录日志
         create_operation_log(
             user=user,
             module="auth",
@@ -111,7 +173,18 @@ class AuthViewSet(viewsets.GenericViewSet):
         })
 
     @action(detail=False, methods=["post"], url_path="token/refresh")
-    def token_refresh(self, request):
+    def token_refresh(self, request: Request) -> Response:
+        """
+        刷新 Access Token
+
+        使用有效的 Refresh Token 换取新的 Access/Refresh Token 对。
+
+        Args:
+            request: DRF Request，body 需包含 refresh
+
+        Returns:
+            成功返回新 Token，失败返回 401
+        """
         from rest_framework_simplejwt.views import TokenRefreshView
         response = TokenRefreshView.as_view()(request._request)
         if response.status_code == 200:
@@ -119,7 +192,18 @@ class AuthViewSet(viewsets.GenericViewSet):
         return error_response(40100, "Token 刷新失败", response.data, status_code=response.status_code)
 
     @action(detail=False, methods=["post"], url_path="logout")
-    def logout(self, request):
+    def logout(self, request: Request) -> Response:
+        """
+        用户登出接口
+
+        将传入的 Refresh Token 加入黑名单，使其无法再刷新 Token。
+
+        Args:
+            request: DRF Request，body 可包含 refresh
+
+        Returns:
+            统一成功响应
+        """
         try:
             refresh_token = request.data.get("refresh")
             if refresh_token:
@@ -130,12 +214,32 @@ class AuthViewSet(viewsets.GenericViewSet):
         return success_response(None, "登出成功")
 
     @action(detail=False, methods=["get"], url_path="user-info", permission_classes=[IsAuthenticated])
-    def user_info(self, request):
+    def user_info(self, request: Request) -> Response:
+        """
+        获取当前登录用户信息
+
+        Args:
+            request: 已认证的 DRF Request
+
+        Returns:
+            当前用户详情
+        """
         serializer = UserInfoSerializer(request.user)
         return success_response(serializer.data)
 
     @action(detail=False, methods=["get"], url_path="menus", permission_classes=[IsAuthenticated])
-    def menus(self, request):
+    def menus(self, request: Request) -> Response:
+        """
+        获取当前用户侧边栏菜单
+
+        当前为固定菜单，后续可根据角色权限动态生成。
+
+        Args:
+            request: 已认证的 DRF Request
+
+        Returns:
+            菜单结构列表
+        """
         # 简化菜单，后续可根据角色权限动态生成
         menus = [
             {"id": "dashboard", "name": "工作台", "path": "/dashboard", "icon": "AppstoreOutlined"},
@@ -164,7 +268,18 @@ class AuthViewSet(viewsets.GenericViewSet):
         return success_response(menus)
 
     @staticmethod
-    def get_client_ip(request):
+    def get_client_ip(request: Request) -> str:
+        """
+        获取客户端真实 IP
+
+        优先从 X-Forwarded-For 头部获取，无代理时取 REMOTE_ADDR。
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            客户端 IP 字符串
+        """
         x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
         if x_forwarded_for:
             return x_forwarded_for.split(",")[0].strip()
@@ -172,10 +287,22 @@ class AuthViewSet(viewsets.GenericViewSet):
 
 
 class UserViewSet(viewsets.ModelViewSet):
+    """
+    用户管理视图集
+
+    提供用户的增删改查；普通用户只能查看/修改自己，超管可操作全部。
+    """
+
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        """
+        根据当前用户身份返回查询集
+
+        Returns:
+            超管返回全部用户，普通用户仅返回自己
+        """
         if getattr(self, "swagger_fake_view", False):
             return User.objects.none()
         if self.request.user.is_superuser:
@@ -183,26 +310,56 @@ class UserViewSet(viewsets.ModelViewSet):
         return User.objects.filter(id=self.request.user.id)
 
     def get_serializer_class(self):
+        """
+        写操作使用 UserCreateSerializer，读操作使用 UserSerializer
+
+        Returns:
+            当前 action 对应的 Serializer 类
+        """
         if self.action in ["create", "update", "partial_update"]:
             return UserCreateSerializer
         return UserSerializer
 
     def get_permissions(self):
+        """
+        创建和删除用户需要超管权限
+
+        Returns:
+            当前 action 对应的权限实例列表
+        """
         if self.action in ["create", "destroy"]:
             return [IsAuthenticated(), IsSuperUser()]
         return super().get_permissions()
 
     def perform_create(self, serializer):
+        """
+        执行用户创建
+
+        Args:
+            serializer: 已校验的 UserCreateSerializer 实例
+        """
         serializer.save()
 
 
 class RoleViewSet(viewsets.ModelViewSet):
+    """
+    角色管理视图集
+
+    提供角色增删改查，仅超管可操作。
+    """
+
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
     permission_classes = [IsAuthenticated, IsSuperUser]
 
 
 class PermissionViewSet(viewsets.ModelViewSet):
+    """
+    权限管理视图集
+
+    提供权限列表查询，仅超管可访问，且只允许 GET 请求。
+    """
+
     queryset = Permission.objects.all()
     serializer_class = PermissionSerializer
     permission_classes = [IsAuthenticated, IsSuperUser]

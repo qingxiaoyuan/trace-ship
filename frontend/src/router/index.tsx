@@ -5,7 +5,6 @@ import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
 import { AuthGuard, PageLoader } from './components';
 import {
-  CommitAIReview,
   CommitAlertDetail,
   CommitDetail,
   CommitList,
@@ -14,6 +13,7 @@ import {
   Dashboard,
   Jenkins,
   JenkinsLogDetail,
+  Notification,
   Profile,
   ProjectDetail,
   ProjectList,
@@ -66,7 +66,6 @@ const routes: AppRouteObject[] = [
             children: [
               { index: true, element: <PageLoader><CommitList /></PageLoader> },
               { path: 'alerts', element: <PageLoader><CommitAlertDetail /></PageLoader>, handle: { title: '非法提交预警详情' } },
-              { path: ':id/ai-review', element: <PageLoader><CommitAIReview /></PageLoader>, handle: { title: 'AI 审查详情' } },
               { path: ':id', element: <PageLoader><CommitDetail /></PageLoader>, handle: { title: '查看详情' } },
             ],
           },
@@ -81,6 +80,7 @@ const routes: AppRouteObject[] = [
           },
           { path: 'workflows', element: <PageLoader><Workflow /></PageLoader>, handle: { title: '工作流审批' } },
           { path: 'releases', element: <PageLoader><ReleaseBoard /></PageLoader>, handle: { title: '发布看板' } },
+          { path: 'notifications', element: <PageLoader><Notification /></PageLoader>, handle: { title: '通知中心' } },
           {
             path: 'system',
             handle: { title: '系统管理' },

@@ -1,3 +1,8 @@
+"""
+Provider 抽象基类与数据类
+
+定义 Git 平台统一适配器接口以及 Commit/Branch/Tag 信息的数据结构。
+"""
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -6,6 +11,18 @@ from typing import Dict, List, Optional
 
 @dataclass
 class CommitInfo:
+    """
+    提交信息数据类
+
+    Attributes:
+        hash: 提交哈希
+        author: 提交人姓名
+        author_email: 提交人邮箱
+        message: 提交信息
+        committed_at: 提交时间
+        files_changed: 变更文件列表（可选）
+    """
+
     hash: str
     author: str
     author_email: str
@@ -16,6 +33,15 @@ class CommitInfo:
 
 @dataclass
 class BranchInfo:
+    """
+    分支信息数据类
+
+    Attributes:
+        name: 分支名称
+        is_default: 是否为默认分支
+        last_commit_hash: 最新提交哈希
+    """
+
     name: str
     is_default: bool = False
     last_commit_hash: Optional[str] = None
@@ -23,15 +49,33 @@ class BranchInfo:
 
 @dataclass
 class TagInfo:
+    """
+    Tag 信息数据类
+
+    Attributes:
+        name: Tag 名称
+        commit_hash: 关联提交哈希
+        created_at: 创建时间
+    """
+
     name: str
     commit_hash: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
 class GitProvider(ABC):
-    """Git 平台统一适配器抽象基类"""
+    """
+    Git 平台统一适配器抽象基类
+
+    所有 Git 类 Provider（GitLab/Gitea/GitHub/Gitee）应继承此类并实现抽象方法。
+    """
 
     def __init__(self, server_url: str, credential_data: dict):
+        """
+        Args:
+            server_url: 服务器地址
+            credential_data: 解密后的凭证数据
+        """
         self.server_url = server_url.rstrip("/")
         self.credential_data = credential_data
 

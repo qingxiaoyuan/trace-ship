@@ -30,6 +30,7 @@ export function TsCard({
         borderRadius: tokens.layout.cardRadius,
         border: `1px solid ${tokens.colors.border}`,
         boxShadow: tokens.shadow.card,
+        marginBottom: 16,
         ...style,
       }}
       styles={{

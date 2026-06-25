@@ -29,6 +29,9 @@ backend/
 │   ├── account/          # 用户、角色、权限、登录认证
 │   ├── credential/       # 凭证管理（AES 加密存储）
 │   ├── project/          # 项目管理、项目成员、外站绑定
+│   ├── repository/       # 仓库管理、提交记录、Commit 审查
+│   ├── release/          # 发布记录、版本号计算、发布说明、推 tag
+│   ├── jenkins/          # Jenkins 任务配置与构建调度
 │   └── system/           # 系统参数、操作日志
 ├── config/
 │   ├── settings/
@@ -276,6 +279,16 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 - 系统参数 key-value 配置。
 - 操作日志中间件自动记录关键请求。
+
+### 发布管理（apps/release）
+
+- 发布记录全生命周期：草稿 → 待审批 → 构建中 → 待发布 → 已发布/已驳回。
+- 版本号自动计算、发布说明生成、推 tag。
+
+### Jenkins 集成（apps/jenkins）
+
+- Jenkins 任务配置、构建触发、构建记录查询。
+- Celery 轮询构建状态，失败时自动阻断发布流程。
 
 ---
 

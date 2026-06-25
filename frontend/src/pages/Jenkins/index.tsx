@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Table,
   Button,
@@ -18,7 +19,7 @@ import { TsCard } from '@/components/TsCard';
 import { StatusTag, type StatusType } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { TsModal } from '@/components/TsModal';
-import { mockBuildRecords } from '@/mock/dashboard';
+import { jenkinsApi } from '@/api/jenkins';
 import { tokens } from '@/styles/theme';
 import type { BuildRecord } from '@/types';
 
@@ -60,10 +61,21 @@ export default function Jenkins() {
     project_id: undefined,
     status: undefined,
   });
-  const [data] = useState<BuildRecord[]>(mockBuildRecords);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
   const [configOpen, setConfigOpen] = useState(false);
   const [form] = Form.useForm<JenkinsConfigForm>();
   const [testing, setTesting] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['jenkins-builds', filters, pagination.current, pagination.pageSize],
+    queryFn: () =>
+      jenkinsApi.getBuilds({
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        project_id: filters.project_id || undefined,
+        status: filters.status || undefined,
+      }),
+  });
 
   const columns = [
     { title: '任务名', dataIndex: 'job_name' },
@@ -218,8 +230,11 @@ export default function Jenkins() {
           onChange={(key, value) =>
             setFilters((prev) => ({ ...prev, [key]: value }))
           }
-          onSearch={() => message.info('执行查询')}
-          onReset={() => setFilters({ project_id: undefined, status: undefined })}
+          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+          onReset={() => {
+            setFilters({ project_id: undefined, status: undefined });
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
         />
       </TsCard>
 
@@ -228,8 +243,17 @@ export default function Jenkins() {
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={data}
-          pagination={{ pageSize: 10 }}
+          dataSource={data?.results || []}
+          loading={isLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: data?.total || 0,
+            showSizeChanger: true,
+          }}
+          onChange={(p) => {
+            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+          }}
         />
       </TsCard>
 

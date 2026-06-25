@@ -250,7 +250,6 @@ const commits = [
     branch: 'develop',
     change_type: 'A类',
     review_status: 'pass',
-    ai_suggestion: '',
     parsed_result: {
       change_type: '有配置项改动',
       updates: [
@@ -272,7 +271,6 @@ const commits = [
     branch: 'develop',
     change_type: 'F类',
     review_status: 'warning',
-    ai_suggestion: '配置项改动格式不标准，建议统一为 [System] 段落格式。',
     parsed_result: {
       change_type: '有配置项改动',
       updates: [{ type: 'F', content: '信号定时开关新增清除指令并优化控制逻辑' }],
@@ -291,7 +289,6 @@ const commits = [
     branch: 'develop',
     change_type: '-',
     review_status: 'illegal',
-    ai_suggestion: '缺少变更类型标记，请补充变更类型。',
     parsed_result: {},
   },
 ];
@@ -570,7 +567,6 @@ const operationLogs = [
 const systemConfigs = [
   { key: 'ldap_server', value: 'ldap://ldap.example.com', description: 'LDAP 服务器地址' },
   { key: 'jenkins_default_url', value: 'https://jenkins.example.com', description: 'Jenkins 默认地址' },
-  { key: 'ai_provider', value: 'anthropic', description: 'AI Provider' },
   { key: 'token_expire_seconds', value: '3600', description: 'Token 过期时间' },
 ];
 
@@ -925,7 +921,6 @@ const routes: MockRoute[] = [
         { value: 'svn_password', label: 'SVN' },
         { value: 'jenkins_token', label: 'Jenkins' },
         { value: 'ldap_password', label: 'LDAP' },
-        { value: 'ai_api_key', label: 'AI Key' },
       ]),
     }),
   },
@@ -953,17 +948,6 @@ const routes: MockRoute[] = [
         id: '1',
         review_status: (getBody(config))?.review_status || 'pass',
         reason: (getBody(config))?.reason || '',
-      }),
-    }),
-  },
-  {
-    method: 'get',
-    path: /\/api\/commits\/[^/]+\/ai-review\//,
-    handler: () => ({
-      data: createResponse({
-        review_status: 'warning',
-        suggestion: '配置项改动格式不标准，建议统一为 [System] 段落格式。',
-        risks: ['配置项改动可能影响启动参数'],
       }),
     }),
   },
@@ -1308,22 +1292,6 @@ const routes: MockRoute[] = [
     handler: (config) => {
       const { page, page_size } = getParams(config);
       return { data: createPaginatedResponse(operationLogs, page, page_size) };
-    },
-  },
-  {
-    method: 'get',
-    path: '/api/system/ai-logs/',
-    handler: (config) => {
-      const { page, page_size } = getParams(config);
-      return {
-        data: createPaginatedResponse(
-          [
-            { id: '1', prompt: '审查 commit 规范', model: 'claude-3-sonnet', tokens: 1200, used_at: '2026-06-22T10:00:00+08:00' },
-          ],
-          page,
-          page_size
-        ),
-      };
     },
   },
 ];
