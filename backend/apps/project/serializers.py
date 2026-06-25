@@ -1,12 +1,12 @@
 """
 项目管理序列化器
 
-包含项目、项目成员、项目外站绑定的序列化器，以及支持字符串/数字双格式的状态字段。
+包含项目、项目成员的序列化器，以及支持字符串/数字双格式的状态字段。
 """
 from typing import Any
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from apps.project.models import Project, ProjectMember, ProjectIntegration
+from apps.project.models import Project, ProjectMember
 from apps.account.serializers import UserSerializer
 from apps.project.services import ProjectService
 
@@ -136,35 +136,3 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
         model = ProjectMember
         fields = ["id", "user", "user_id", "role", "created_at"]
         read_only_fields = ["id", "created_at"]
-
-
-class ProjectIntegrationSerializer(serializers.ModelSerializer):
-    """
-    项目外站绑定序列化器
-
-    读取时展开关联凭证名称和指定用户名称，写入时调用 ProjectService 校验 vendor 与凭证模式。
-    """
-
-    credential_name = serializers.CharField(source="credential.name", read_only=True)
-    specified_user_name = serializers.CharField(source="specified_user.nickname", read_only=True)
-
-    class Meta:
-        model = ProjectIntegration
-        fields = [
-            "id", "integration_type", "vendor", "name", "external_identity",
-            "config", "credential", "credential_name", "credential_mode",
-            "specified_user", "specified_user_name", "is_active", "created_at", "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-    def validate(self, attrs: dict) -> dict:
-        """
-        校验外站绑定的 vendor 与凭证模式一致性
-
-        Args:
-            attrs: 待校验的属性字典
-
-        Returns:
-            校验通过的字典
-        """
-        return ProjectService.validate_integration(attrs, self.instance)

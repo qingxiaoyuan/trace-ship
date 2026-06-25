@@ -38,6 +38,50 @@ class CredentialSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "masked_data", "owner", "last_used_at", "created_at", "updated_at"]
 
+    def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        校验凭证类型与认证模式的一致性
+
+        Git 类 Token 凭证和 Jenkins Token 只能使用 token 模式；
+        SVN/LDAP 密码类凭证只能使用 password 模式。
+
+        Args:
+            attrs: 待校验属性
+
+        Returns:
+            校验通过的数据
+
+        Raises:
+            ValidationError: 类型与模式不匹配时抛出
+        """
+        cred_type = attrs.get("cred_type", getattr(self.instance, "cred_type", None))
+        auth_mode = attrs.get("auth_mode", getattr(self.instance, "auth_mode", None))
+
+        token_types = {"gitlab_token", "gitea_token", "github_token", "gitee_token", "jenkins_token"}
+        password_types = {"svn_password", "ldap_password"}
+
+        # 凭证类型友好名称映射
+        CRED_TYPE_LABELS = {
+            "gitlab_token": "GitLab Token",
+            "gitea_token": "Gitea Token",
+            "github_token": "GitHub Token",
+            "gitee_token": "Gitee Token",
+            "jenkins_token": "Jenkins Token",
+            "svn_password": "SVN 密码",
+            "ldap_password": "LDAP 密码",
+        }
+
+        if cred_type in token_types and auth_mode != "token":
+            raise serializers.ValidationError(
+                {"auth_mode": f"{CRED_TYPE_LABELS.get(cred_type, cred_type)} 必须使用 Token 认证模式"}
+            )
+        if cred_type in password_types and auth_mode != "password":
+            raise serializers.ValidationError(
+                {"auth_mode": f"{CRED_TYPE_LABELS.get(cred_type, cred_type)} 必须使用用户名密码认证模式"}
+            )
+
+        return attrs
+
     def create(self, validated_data: Dict[str, Any]) -> Credential:
         """
         创建凭证并加密敏感数据

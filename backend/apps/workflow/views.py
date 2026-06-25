@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.account.models import User
 from apps.project.models import ProjectMember
@@ -25,7 +26,7 @@ from utils.permissions import IsProjectDeveloper, IsProjectManager
 from utils.response import error_response, success_response
 
 
-class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
+class WorkflowDefinitionViewSet(StandardModelViewSet):
     """
     工作流定义视图集
 
@@ -91,7 +92,7 @@ class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
         return success_response(None, message="删除成功")
 
 
-class WorkflowInstanceViewSet(viewsets.ModelViewSet):
+class WorkflowInstanceViewSet(StandardModelViewSet):
     """
     工作流实例视图集
 
@@ -165,7 +166,7 @@ class WorkflowInstanceViewSet(viewsets.ModelViewSet):
         return success_response(serializer.data, message="撤销成功")
 
 
-class WorkflowTaskViewSet(viewsets.ReadOnlyModelViewSet):
+class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
     """
     审批任务视图集
 

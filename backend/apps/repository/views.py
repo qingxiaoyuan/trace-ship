@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.project.models import ProjectMember
 from apps.repository.models import CommitRecord, Repository
@@ -22,7 +23,7 @@ from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectTes
 from utils.response import error_response, success_response
 
 
-class RepositoryViewSet(viewsets.ModelViewSet):
+class RepositoryViewSet(StandardModelViewSet):
     """
     仓库管理视图集
 
@@ -61,7 +62,7 @@ class RepositoryViewSet(viewsets.ModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return Repository.objects.none()
         user = self.request.user
-        queryset = Repository.objects.select_related("project", "credential", "specified_user", "integration")
+        queryset = Repository.objects.select_related("project", "credential", "specified_user")
         if user.is_superuser:
             return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
@@ -205,7 +206,7 @@ class RepositoryViewSet(viewsets.ModelViewSet):
         ])
 
 
-class CommitRecordViewSet(viewsets.ReadOnlyModelViewSet):
+class CommitRecordViewSet(StandardReadOnlyModelViewSet):
     """
     提交记录视图集
 
@@ -278,4 +279,3 @@ class CommitRecordViewSet(viewsets.ReadOnlyModelViewSet):
             "review_status": commit.review_status,
             "reason": commit.review_reason,
         })
-

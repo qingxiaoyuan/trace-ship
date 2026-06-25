@@ -1,7 +1,7 @@
 """
 凭证解析器
 
-根据 Repository 或 ProjectIntegration 的 credential_mode 解析出实际可用的凭证数据。
+根据 Repository 或 JenkinsJob 的 credential_mode 解析出实际可用的凭证数据。
 """
 from typing import Optional
 
@@ -35,7 +35,7 @@ def resolve_credential(source, request_user=None) -> dict:
     返回解密后的 dict，例如 {"token": "xxx"} 或 {"username": "x", "password": "y"}。
 
     Args:
-        source: Repository 或 ProjectIntegration 实例
+        source: Repository 或 JenkinsJob 实例
         request_user: 当前请求用户（current_user 模式需要）
 
     Returns:

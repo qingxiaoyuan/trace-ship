@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.jenkins.models import JenkinsBuild, JenkinsJob
 from apps.jenkins.serializers import (
@@ -22,7 +23,7 @@ from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectMem
 from utils.response import error_response, success_response
 
 
-class JenkinsJobViewSet(viewsets.ModelViewSet):
+class JenkinsJobViewSet(StandardModelViewSet):
     """
     Jenkins 任务视图集
 
@@ -61,7 +62,7 @@ class JenkinsJobViewSet(viewsets.ModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return JenkinsJob.objects.none()
         user = self.request.user
-        queryset = JenkinsJob.objects.select_related("project", "credential", "specified_user", "integration")
+        queryset = JenkinsJob.objects.select_related("project", "credential", "specified_user", "repository")
         if user.is_superuser:
             return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
@@ -160,7 +161,7 @@ class JenkinsJobViewSet(viewsets.ModelViewSet):
         return success_response(serializer.data, message="触发成功", status=201)
 
 
-class JenkinsBuildViewSet(viewsets.ReadOnlyModelViewSet):
+class JenkinsBuildViewSet(StandardReadOnlyModelViewSet):
     """
     Jenkins 构建记录视图集
 

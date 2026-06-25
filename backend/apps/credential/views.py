@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.credential.models import Credential
 from apps.credential.serializers import CredentialSerializer, CredentialListSerializer
@@ -16,7 +17,7 @@ from apps.credential.services import CredentialService
 from utils.response import success_response, error_response
 
 
-class CredentialViewSet(viewsets.ModelViewSet):
+class CredentialViewSet(StandardModelViewSet):
     """
     凭证管理视图集
 

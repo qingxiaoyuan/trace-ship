@@ -14,12 +14,13 @@ class JenkinsJob(models.Model):
     """
     Jenkins 任务配置模型
 
-    表示项目维度的一个 Jenkins Job 配置，包含服务器地址、Job 名、凭证与参数模板。
+    直接归属项目，并可关联到具体仓库用于发布流程匹配；
+    包含服务器地址、Job 名、凭证与参数模板。
 
     Attributes:
         id: UUID 主键
         project: 所属项目
-        integration: 关联的项目外站绑定（可选）
+        repository: 关联仓库（可选，用于匹配发布流程）
         name: 任务名称
         server_url: Jenkins 服务器地址
         job_name: Jenkins Job 名
@@ -46,13 +47,13 @@ class JenkinsJob(models.Model):
         related_name="jenkins_jobs",
         verbose_name="项目",
     )
-    integration = models.ForeignKey(
-        "project.ProjectIntegration",
+    repository = models.ForeignKey(
+        "repository.Repository",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="jenkins_jobs",
-        verbose_name="外站绑定",
+        verbose_name="关联仓库",
     )
     name = models.CharField(max_length=200, verbose_name="任务名称")
     server_url = models.CharField(max_length=500, verbose_name="Jenkins 地址")

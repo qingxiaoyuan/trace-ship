@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Table, Button, Space, message, Tabs } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
-import { EyeOutlined, FilePdfOutlined, FileWordOutlined } from '@ant-design/icons';
+import { EyeOutlined, FilePdfOutlined, FileWordOutlined, PlusOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag, type StatusType } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
@@ -31,6 +32,7 @@ const downloadBlob = (blob: Blob, filename: string) => {
 };
 
 export default function ReleaseBoard() {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState({
     project_id: undefined as string | undefined,
     version: '',
@@ -132,7 +134,11 @@ export default function ReleaseBoard() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }}>
+      <TsCard bodyStyle={{ padding: 20 }} extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/releases/create')}>
+          新建发布
+        </Button>
+      }>
         <SearchFilterBar
           filters={[
             {

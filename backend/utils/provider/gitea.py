@@ -25,7 +25,8 @@ class GiteaProvider(GitProvider):
             credential_data: 解密后的凭证数据，需包含 token
         """
         super().__init__(server_url, credential_data)
-        self.token = credential_data.get("token", "")
+        # 兼容 token 模式和 password 模式（后者可能把 token 存在 password 字段）
+        self.token = credential_data.get("token") or credential_data.get("password", "")
         self.session = requests.Session()
         self.session.headers.update({"Authorization": f"token {self.token}"})
         self.session.headers.update({"Accept": "application/json"})
@@ -67,7 +68,7 @@ class GiteaProvider(GitProvider):
         if resp.status_code == 401:
             raise AuthenticationError("Gitea Token 无效或已过期")
         if resp.status_code == 404:
-            raise ProviderError(f"Gitea 资源不存在: {path}")
+            raise ProviderError(f"Gitea 资源不存在: {path} (URL: {url})")
         resp.raise_for_status()
         return resp
 

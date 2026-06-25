@@ -12,7 +12,7 @@ const statusMap: Record<
   { status: 'success' | 'warning' | 'danger' | 'info' | 'neutral'; text: string }
 > = {
   queue: { status: 'info', text: '排队中' },
-  building: { status: 'warning', text: '构建中' },
+  running: { status: 'warning', text: '构建中' },
   success: { status: 'success', text: '成功' },
   failure: { status: 'danger', text: '失败' },
   aborted: { status: 'neutral', text: '中止' },
@@ -98,7 +98,7 @@ export default function JenkinsLogDetail() {
           style={{ borderColor: tokens.colors.border, background: tokens.colors.surface }}
         >
           <div className="flex items-center gap-3">
-            {build.status === 'building' && (
+            {build.status === 'running' && (
               <span
                 className="w-2 h-2 rounded-full ts-pulse-soft"
                 style={{ background: tokens.colors.warning }}
@@ -108,7 +108,7 @@ export default function JenkinsLogDetail() {
               控制台输出
             </span>
           </div>
-          {build.status === 'building' && (
+          {build.status === 'running' && (
             <span
               className="text-xs font-mono px-2 py-0.5 rounded"
               style={{

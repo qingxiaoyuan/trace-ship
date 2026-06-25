@@ -147,31 +147,6 @@ const projectMembers = [
   { id: 'm3', user: { id: 'u3', username: 'wangwu', nickname: '王五' }, role: 'developer', created_at: '2026-03-10T10:00:00+08:00' },
 ];
 
-const integrations = [
-  {
-    id: 'i1',
-    integration_type: 'git_repo',
-    vendor: 'gitlab',
-    name: '后端代码仓库',
-    external_identity: 'core/backend',
-    config: { server_url: 'https://gitlab.example.com', default_branch: 'develop' },
-    credential_mode: 'fixed',
-    is_active: true,
-    created_at: '2026-01-15T10:00:00+08:00',
-  },
-  {
-    id: 'i2',
-    integration_type: 'jenkins_job',
-    vendor: 'jenkins',
-    name: '后端打包任务',
-    external_identity: 'backend-build',
-    config: { server_url: 'https://jenkins.example.com' },
-    credential_mode: 'fixed',
-    is_active: true,
-    created_at: '2026-02-01T10:00:00+08:00',
-  },
-];
-
 const repositories = [
   {
     id: '1',
@@ -331,7 +306,7 @@ const releases = [
     target_branch: 'main',
     git_hash: 'def456',
     release_type: 'test',
-    status: 'building',
+    status: 'running',
     publisher: '李四',
     publisher_id: 'u2',
     created_at: '2026-06-14T10:00:00+08:00',
@@ -359,7 +334,6 @@ const jenkinsJobs = [
   {
     id: 'j1',
     project_id: '1',
-    integration_id: 'i2',
     name: '后端打包任务',
     server_url: 'https://jenkins.example.com',
     job_name: 'trace-ship-backend-build',
@@ -390,7 +364,7 @@ const jenkinsBuilds = [
     job_name: '前端打包任务',
     build_number: 89,
     version: 'v2.4.1-test.3',
-    status: 'building',
+    status: 'running',
     params: { VERSION: 'v2.4.1-test.3', BRANCH: 'develop' },
     started_at: '2026-06-14T10:00:00+08:00',
     duration: '进行中',
@@ -769,31 +743,6 @@ const routes: MockRoute[] = [
         created_at: new Date().toISOString(),
       }),
     }),
-  },
-  {
-    method: 'get',
-    path: '/api/projects/:id/integrations/',
-    handler: (config) => {
-      const { page, page_size } = getParams(config);
-      return { data: createPaginatedResponse(integrations, page, page_size) };
-    },
-  },
-  {
-    method: 'post',
-    path: '/api/projects/:id/integrations/',
-    handler: (config) => ({
-      data: createResponse({
-        id: 'i' + Date.now(),
-        ...(getBody(config)),
-        is_active: true,
-        created_at: new Date().toISOString(),
-      }),
-    }),
-  },
-  {
-    method: 'post',
-    path: /\/api\/projects\/[^/]+\/integrations\/[^/]+\/test\//,
-    handler: () => ({ data: createResponse({ connected: true, detail: '连接成功' }) }),
   },
 
   // Repositories

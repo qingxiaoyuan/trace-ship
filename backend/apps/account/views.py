@@ -10,6 +10,7 @@ from django.contrib.auth import authenticate
 from django.utils import timezone
 from django.http import HttpRequest
 from rest_framework import viewsets, status
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.request import Request
@@ -289,7 +290,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         return request.META.get("REMOTE_ADDR", "")
 
 
-class UserViewSet(viewsets.ModelViewSet):
+class UserViewSet(StandardModelViewSet):
     """
     用户管理视图集
 
@@ -344,7 +345,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.save()
 
 
-class RoleViewSet(viewsets.ModelViewSet):
+class RoleViewSet(StandardModelViewSet):
     """
     角色管理视图集
 
@@ -356,7 +357,7 @@ class RoleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSuperUser]
 
 
-class PermissionViewSet(viewsets.ModelViewSet):
+class PermissionViewSet(StandardModelViewSet):
     """
     权限管理视图集
 

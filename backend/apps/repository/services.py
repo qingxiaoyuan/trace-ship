@@ -4,6 +4,7 @@
 封装仓库连通性测试、分支/commit 查询、提交同步等业务逻辑。
 """
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from django.utils import timezone
 
@@ -25,19 +26,23 @@ class RepositoryService:
         """
         解析仓库服务端地址
 
-        优先从 ProjectIntegration.config 读取 server_url，否则回退到 Repository.url。
+        支持两种录入方式：
+        - 服务器根地址，如 http://gitea.example.com
+        - 仓库克隆地址，如 http://gitea.example.com/owner/repo.git
 
         Args:
             repo: Repository 实例
 
         Returns:
-            服务端地址字符串
+            服务端根地址字符串
         """
-        if repo.integration and repo.integration.config:
-            server_url = repo.integration.config.get("server_url")
-            if server_url:
-                return server_url
-        return repo.url
+        url = repo.url.rstrip("/")
+        parsed = urlparse(url)
+        # 如果路径看起来像仓库克隆地址（包含 /owner/repo.git），只取 scheme + netloc
+        path = parsed.path.strip("/")
+        if path and ".git" in path:
+            return f"{parsed.scheme}://{parsed.netloc}"
+        return url
 
     @staticmethod
     def test_connection(repo: Repository, request_user=None) -> dict:

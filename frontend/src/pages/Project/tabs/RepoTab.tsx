@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Table, Button, Space, App } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined } from '@ant-design/icons';
 import { repositoryApi } from '@/api/repository';
 import { StatusTag } from '@/components/StatusTag';
+import { RepositoryModal } from '@/pages/Repository/modals/RepositoryModal';
 import type { Repository } from '@/types';
 
 const vendorMap: Record<string, { label: string; status: 'primary' | 'info' | 'neutral' }> = {
@@ -20,6 +22,8 @@ interface RepoTabProps {
 export function RepoTab({ projectId }: RepoTabProps) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingRepo, setEditingRepo] = useState<Repository | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['repositories', projectId],
@@ -54,6 +58,22 @@ export function RepoTab({ projectId }: RepoTabProps) {
     onError: () => message.error('删除失败'),
   });
 
+  const saveMutation = useMutation({
+    mutationFn: (values: Partial<Repository> & { id?: string }) => {
+      if (values.id) {
+        return repositoryApi.updateRepository(values.id, values);
+      }
+      return repositoryApi.createRepository(values);
+    },
+    onSuccess: () => {
+      message.success('保存成功');
+      setModalOpen(false);
+      setEditingRepo(null);
+      queryClient.invalidateQueries({ queryKey: ['repositories', projectId] });
+    },
+    onError: () => message.error('保存失败'),
+  });
+
   const handleDelete = (record: Repository) => {
     modal.confirm({
       title: '确认删除仓库',
@@ -63,6 +83,24 @@ export function RepoTab({ projectId }: RepoTabProps) {
       cancelText: '取消',
       onOk: () => deleteMutation.mutate(record.id),
     });
+  };
+
+  const handleEdit = (record: Repository) => {
+    setEditingRepo(record);
+    setModalOpen(true);
+  };
+
+  const handleAdd = () => {
+    setEditingRepo(null);
+    setModalOpen(true);
+  };
+
+  const handleSave = (values: Partial<Repository>) => {
+    if (editingRepo?.id) {
+      saveMutation.mutate({ ...values, id: editingRepo.id });
+    } else {
+      saveMutation.mutate(values);
+    }
   };
 
   const columns = [
@@ -151,7 +189,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
           >
             同步提交
           </Button>
-          <Button type="text" onClick={() => message.info('编辑功能待实现')}>
+          <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
           <Button
@@ -173,7 +211,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => message.info('添加仓库功能待实现')}
+          onClick={handleAdd}
         >
           添加仓库
         </Button>
@@ -184,6 +222,13 @@ export function RepoTab({ projectId }: RepoTabProps) {
         loading={isLoading}
         pagination={false}
         columns={columns}
+      />
+      <RepositoryModal
+        open={modalOpen}
+        repo={editingRepo}
+        projectId={projectId}
+        onCancel={() => { setModalOpen(false); setEditingRepo(null); }}
+        onOk={handleSave}
       />
     </div>
   );

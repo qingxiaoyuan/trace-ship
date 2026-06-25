@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.notification.models import Notification
 from apps.notification.serializers import NotificationSerializer
@@ -16,7 +17,7 @@ from apps.notification.services import NotificationService
 from utils.response import error_response, success_response
 
 
-class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+class NotificationViewSet(StandardReadOnlyModelViewSet):
     """
     通知视图集
 

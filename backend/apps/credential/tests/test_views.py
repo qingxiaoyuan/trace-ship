@@ -1,7 +1,7 @@
 """
 凭证模块视图测试
 
-覆盖作用域校验和删除前引用检查。
+覆盖作用域校验、类型与认证模式一致性校验和删除前引用检查。
 """
 import pytest
 from rest_framework.test import APIClient
@@ -69,6 +69,39 @@ def test_project_scope_credential_requires_project(api_client):
 
     assert response.status_code == 400
     assert "project" in response.data["data"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "cred_type,auth_mode,expected_error",
+    [
+        ("gitlab_token", "password", "auth_mode"),
+        ("gitea_token", "password", "auth_mode"),
+        ("svn_password", "token", "auth_mode"),
+        ("ldap_password", "token", "auth_mode"),
+    ],
+)
+def test_cred_type_auth_mode_consistency(api_client, project, cred_type, auth_mode, expected_error):
+    """
+    测试凭证类型与认证模式必须匹配
+
+    Git 类 Token 凭证只能使用 token 模式；SVN/LDAP 密码类只能使用 password 模式。
+    """
+    payload = {
+        "name": "Inconsistent Cred",
+        "cred_type": cred_type,
+        "auth_mode": auth_mode,
+        "scope": "project",
+        "project": str(project.id),
+        "data": {"token": "test-token"},
+    }
+
+    response = api_client.post("/api/credentials/", payload, format="json")
+
+    assert response.status_code == 400
+    assert expected_error in response.data["data"]
+    # 错误文案应使用中文友好名称
+    assert "必须使用" in str(response.data["data"])
 
 
 @pytest.mark.django_db

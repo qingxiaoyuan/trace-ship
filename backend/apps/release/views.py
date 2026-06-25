@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.project.models import ProjectMember
 from apps.release.models import ReleaseRecord
@@ -44,7 +45,7 @@ class ReleaseFilter(filters.FilterSet):
         ]
 
 
-class ReleaseViewSet(viewsets.ModelViewSet):
+class ReleaseViewSet(StandardModelViewSet):
     """
     发布管理视图集
 

@@ -25,17 +25,6 @@ export const mockProjectReleases = [
   { id: '2', version: 'v2.4.0', type: 'formal', status: 'released', time: '2026-06-10' },
 ];
 
-export const mockProjectIntegrations = [
-  { id: '1', type: 'git_repo', resource: 'group/backend', credential: 'GitLab 管理员', owner: '项目' },
-  { id: '2', type: 'jenkins_job', resource: 'backend-build', credential: 'Jenkins Token', owner: '个人' },
-];
-
-export const integrationTypeMap: Record<string, string> = {
-  git_repo: 'Git 仓库',
-  jenkins_job: 'Jenkins 任务',
-  svn_repo: 'SVN 仓库',
-};
-
 export const projectRuleInitialValues = {
   versionRule: 'VA.{major}.{minor}.{patch}',
   releaseCycle: 3,

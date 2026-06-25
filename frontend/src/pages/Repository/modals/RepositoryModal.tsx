@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Form, Input, Select } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { TsModal } from '@/components/TsModal';
@@ -10,6 +10,7 @@ import type { Repository } from '@/types';
 interface RepositoryModalProps {
   open: boolean;
   repo: Repository | null;
+  projectId?: string;
   onCancel: () => void;
   onOk: (values: Partial<Repository>) => void | Promise<void>;
 }
@@ -21,7 +22,16 @@ const credentialModeOptions = [
   { label: '系统全局凭证', value: 'global' },
 ];
 
-export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalProps) {
+// 仓库平台与凭证类型的对应关系，与后端 VENDOR_TO_CRED_TYPE 保持一致
+const VENDOR_TO_CRED_TYPE: Record<string, string> = {
+  gitlab: 'gitlab_token',
+  gitea: 'gitea_token',
+  github: 'github_token',
+  gitee: 'gitee_token',
+  svn: 'svn_password',
+};
+
+export function RepositoryModal({ open, repo, projectId, onCancel, onOk }: RepositoryModalProps) {
   const [form] = Form.useForm();
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
@@ -44,13 +54,38 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
 
   const projectOptions =
     projectData?.results.map((p) => ({ label: p.name, value: p.id })) || [];
-  const credentialOptions =
-    credentialData?.results.map((c) => ({ label: c.name, value: c.id })) || [];
+  const credentialOptions = useMemo(
+    () =>
+      credentialData?.results.map((c) => ({
+        label: `${c.name} (${c.cred_type})`,
+        value: c.id,
+        cred_type: c.cred_type,
+      })) || [],
+    [credentialData]
+  );
   const userOptions =
     usersData?.results.map((u) => ({
       label: `${u.nickname || u.username} (${u.username})`,
       value: u.id,
     })) || [];
+
+  const credentialMode = Form.useWatch('credential_mode', form);
+  const vendor = Form.useWatch('vendor', form);
+  const expectedCredType = VENDOR_TO_CRED_TYPE[vendor] || '';
+
+  // 按平台过滤凭证选项，避免选错类型
+  const filteredCredentialOptions = credentialOptions.filter(
+    (c) => c.cred_type === expectedCredType
+  );
+
+  // 平台切换时，如果已选凭证类型不匹配则清空
+  useEffect(() => {
+    const currentCredentialId = form.getFieldValue('credential_id');
+    const currentCredential = credentialOptions.find((c) => c.value === currentCredentialId);
+    if (currentCredential && currentCredential.cred_type !== expectedCredType) {
+      form.setFieldsValue({ credential_id: undefined });
+    }
+  }, [vendor, credentialOptions, expectedCredType, form]);
 
   useEffect(() => {
     if (open) {
@@ -61,7 +96,6 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
           vendor: repo.vendor,
           name: repo.name,
           url: repo.url,
-          external_identity: repo.external_identity,
           default_branch: repo.default_branch,
           credential_mode: repo.credential_mode || 'fixed',
           credential_id: repo.credential_id,
@@ -69,6 +103,7 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
       } else {
         form.resetFields();
         form.setFieldsValue({
+          project_id: projectId,
           repo_type: 'git',
           vendor: 'gitlab',
           default_branch: 'main',
@@ -76,9 +111,7 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
         });
       }
     }
-  }, [open, repo, form]);
-
-  const credentialMode = Form.useWatch('credential_mode', form);
+  }, [open, repo, projectId, form]);
 
   const handleOk = () => {
     form.validateFields().then((values) => {
@@ -88,7 +121,7 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
         specified_user?: string;
       } = {
         ...values,
-        project: values.project_id,
+        project: projectId || values.project_id,
         credential: values.credential_mode === 'fixed' ? values.credential_id : undefined,
         specified_user:
           values.credential_mode === 'specified_user' ? values.specified_user_id : undefined,
@@ -117,15 +150,22 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
       confirmLoading={projectsLoading || credentialsLoading || usersLoading}
     >
       <Form form={form} layout="vertical">
-        <Form.Item name="project_id" label="关联项目" rules={[{ required: true, message: '请选择项目' }]}>
-          <Select
-            showSearch
-            placeholder="选择项目"
-            loading={projectsLoading}
-            options={projectOptions}
-            optionFilterProp="label"
-          />
-        </Form.Item>
+        {!projectId && (
+          <Form.Item name="project_id" label="关联项目" rules={[{ required: true, message: '请选择项目' }]}>
+            <Select
+              showSearch
+              placeholder="选择项目"
+              loading={projectsLoading}
+              options={projectOptions}
+              optionFilterProp="label"
+            />
+          </Form.Item>
+        )}
+        {projectId && (
+          <Form.Item label="关联项目">
+            <Input value={projectOptions.find((p) => p.value === projectId)?.label || projectId} disabled />
+          </Form.Item>
+        )}
         <Form.Item name="repo_type" label="仓库类型" rules={[{ required: true, message: '请选择仓库类型' }]}>
           <Select options={[{ label: 'Git', value: 'git' }, { label: 'SVN', value: 'svn' }]} />
         </Form.Item>
@@ -144,10 +184,7 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
           <Input placeholder="请输入仓库名称" />
         </Form.Item>
         <Form.Item name="url" label="仓库地址" rules={[{ required: true, message: '请输入仓库地址' }]}>
-          <Input placeholder="https://..." />
-        </Form.Item>
-        <Form.Item name="external_identity" label="外部唯一标识">
-          <Input placeholder="可选，如仓库 ID 或路径" />
+          <Input placeholder="https://gitea.example.com/owner/repo.git" />
         </Form.Item>
         <Form.Item
           name="default_branch"
@@ -173,7 +210,7 @@ export function RepositoryModal({ open, repo, onCancel, onOk }: RepositoryModalP
               showSearch
               placeholder="选择凭证"
               loading={credentialsLoading}
-              options={credentialOptions}
+              options={filteredCredentialOptions}
               optionFilterProp="label"
             />
           </Form.Item>

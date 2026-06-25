@@ -48,10 +48,11 @@ def repository(project):
 
 
 @pytest.fixture
-def jenkins_job(project):
+def jenkins_job(project, repository):
     """测试 Jenkins 任务"""
     return JenkinsJob.objects.create(
         project=project,
+        repository=repository,
         name="后端打包",
         server_url="https://jenkins.example.com",
         job_name="backend-build",

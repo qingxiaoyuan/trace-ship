@@ -1,408 +1,264 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import {
-  Table,
-  Button,
-  Space,
-  Input,
-  Select,
-  Form,
-  message,
-} from 'antd';
-import {
-  CaretRightFilled,
-  SettingOutlined,
-} from '@ant-design/icons';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Table, Button, Space, App, Tabs } from 'antd';
+import { PlusOutlined, EditOutlined, PlayCircleOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag, type StatusType } from '@/components/StatusTag';
 import { SearchFilterBar } from '@/components/SearchFilterBar';
-import { TsModal } from '@/components/TsModal';
+import { JenkinsJobModal } from './modals/JenkinsJobModal';
 import { jenkinsApi } from '@/api/jenkins';
-import { tokens } from '@/styles/theme';
-import type { BuildRecord } from '@/types';
+import { projectApi } from '@/api/project';
+import type { JenkinsJob, BuildRecord } from '@/types';
 
-const statusMap: Record<
-  string,
-  { status: StatusType; text: string }
-> = {
+const jobStatusMap: Record<string, { status: StatusType; text: string }> = {
+  true: { status: 'success', text: '启用' },
+  false: { status: 'neutral', text: '停用' },
+};
+
+const buildStatusMap: Record<string, { status: StatusType; text: string }> = {
   queue: { status: 'info', text: '排队中' },
-  building: { status: 'warning', text: '构建中' },
+  running: { status: 'warning', text: '构建中' },
   success: { status: 'success', text: '成功' },
   failure: { status: 'danger', text: '失败' },
   aborted: { status: 'neutral', text: '中止' },
 };
 
-const credentialOptions = [
-  { value: 'jenkins-core', label: 'Jenkins-构建中心' },
-  { value: 'jenkins-data', label: 'Jenkins-数据中台' },
-  { value: 'jenkins-ops', label: 'Jenkins-运维门户' },
-];
-
-const projectOptions = [
-  { value: '1', label: '核心交易平台' },
-  { value: '2', label: '数据中台' },
-  { value: '3', label: '运维门户' },
-];
-
-interface JenkinsConfigForm {
-  project_id?: string;
-  name?: string;
-  url?: string;
-  job_name?: string;
-  credential?: string;
-  params?: string;
-}
+const credentialModeMap: Record<string, string> = {
+  fixed: '项目固定凭证',
+  current_user: '当前用户',
+  specified_user: '指定用户',
+  global: '系统全局凭证',
+};
 
 export default function Jenkins() {
   const navigate = useNavigate();
-  const [filters, setFilters] = useState({
-    project_id: undefined,
-    status: undefined,
-  });
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  const [configOpen, setConfigOpen] = useState(false);
-  const [form] = Form.useForm<JenkinsConfigForm>();
-  const [testing, setTesting] = useState(false);
+  const { message, modal } = App.useApp();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('jobs');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['jenkins-builds', filters, pagination.current, pagination.pageSize],
-    queryFn: () =>
-      jenkinsApi.getBuilds({
-        page: pagination.current,
-        page_size: pagination.pageSize,
-        project_id: filters.project_id || undefined,
-        status: filters.status || undefined,
-      }),
+  const [jobFilters, setJobFilters] = useState<{ project?: string; keyword?: string }>({ project: undefined, keyword: '' });
+  const [jobPagination, setJobPagination] = useState({ current: 1, pageSize: 10 });
+  const [jobModalOpen, setJobModalOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<JenkinsJob | null>(null);
+
+  const [buildFilters, setBuildFilters] = useState<{ status?: string }>({ status: undefined });
+  const [buildPagination, setBuildPagination] = useState({ current: 1, pageSize: 10 });
+
+  const { data: projectData } = useQuery({
+    queryKey: ['projects-all'],
+    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
   });
 
-  const columns = [
-    { title: '任务名', dataIndex: 'job_name' },
-    {
-      title: '构建编号',
-      dataIndex: 'build_number',
-      render: (n: number) => (
-        <span className="font-mono text-xs text-ts-text-secondary">#{n}</span>
-      ),
+  const { data: jobData, isLoading: jobsLoading } = useQuery({
+    queryKey: ['jenkins-jobs', jobFilters, jobPagination.current, jobPagination.pageSize],
+    queryFn: () => jenkinsApi.getJobs({
+      project: jobFilters.project,
+      page: jobPagination.current,
+      page_size: jobPagination.pageSize,
+    }),
+  });
+
+  const { data: buildData, isLoading: buildsLoading } = useQuery({
+    queryKey: ['jenkins-builds', buildFilters, buildPagination.current, buildPagination.pageSize],
+    queryFn: () => jenkinsApi.getBuilds({
+      status: buildFilters.status,
+      page: buildPagination.current,
+      page_size: buildPagination.pageSize,
+    }),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (values: Partial<JenkinsJob> & { id?: string }) => {
+      if (values.id) return jenkinsApi.updateJob(values.id, values);
+      return jenkinsApi.createJob(values);
     },
-    {
-      title: '版本号',
-      dataIndex: 'version',
-      render: (v: string) => (
-        <span className="font-mono text-xs text-ts-text-secondary">{v}</span>
-      ),
+    onSuccess: () => {
+      message.success('保存成功');
+      setJobModalOpen(false);
+      setEditingJob(null);
+      queryClient.invalidateQueries({ queryKey: ['jenkins-jobs'] });
     },
+    onError: () => message.error('保存失败'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => jenkinsApi.deleteJob(id),
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['jenkins-jobs'] });
+    },
+    onError: () => message.error('删除失败'),
+  });
+
+  const triggerMutation = useMutation({
+    mutationFn: (id: string) => jenkinsApi.triggerJob(id),
+    onSuccess: () => message.success('触发构建成功'),
+    onError: () => message.error('触发构建失败'),
+  });
+
+  const projectOptions = (projectData?.results || []).map((p) => ({ label: p.name, value: p.id }));
+
+  const handleAddJob = () => {
+    setEditingJob(null);
+    setJobModalOpen(true);
+  };
+
+  const handleEditJob = (record: JenkinsJob) => {
+    setEditingJob(record);
+    setJobModalOpen(true);
+  };
+
+  const handleDeleteJob = (record: JenkinsJob) => {
+    modal.confirm({
+      title: '确认删除任务',
+      content: `确定要删除任务「${record.name}」吗？`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => deleteMutation.mutate(record.id),
+    });
+  };
+
+  const handleSaveJob = (values: Partial<JenkinsJob>) => {
+    if (editingJob?.id) {
+      saveMutation.mutate({ ...values, id: editingJob.id });
+    } else {
+      saveMutation.mutate(values);
+    }
+  };
+
+  const jobColumns = [
+    { title: '任务名称', dataIndex: 'name', key: 'name' },
+    { title: '项目', dataIndex: 'project_name', key: 'project_name' },
+    { title: 'Jenkins 地址', dataIndex: 'server_url', key: 'server_url' },
+    { title: 'Job 名', dataIndex: 'job_name', key: 'job_name' },
+    { title: '关联仓库', dataIndex: 'repository_name', key: 'repository_name', render: (v?: string) => v || '-' },
+    { title: '凭证模式', dataIndex: 'credential_mode', key: 'credential_mode', render: (v?: string) => credentialModeMap[v || ''] || v || '-' },
     {
       title: '状态',
-      dataIndex: 'status',
-      render: (status: string) => {
-        const item = statusMap[status];
-        return item ? <StatusTag status={item.status}>{item.text}</StatusTag> : status;
+      dataIndex: 'is_active',
+      key: 'is_active',
+      render: (v: boolean) => {
+        const item = jobStatusMap[String(v)];
+        return <StatusTag status={item.status}>{item.text}</StatusTag>;
       },
     },
     {
-      title: '开始时间',
-      dataIndex: 'started_at',
-      render: (text: string) => (
-        <span className="text-ts-text-secondary text-sm">
-          {text ? dayjs(text).format('HH:mm') : '-'}
-        </span>
-      ),
-    },
-    {
-      title: '耗时',
-      dataIndex: 'duration',
-      render: (v?: string) => <span className="text-sm">{v || '-'}</span>,
-    },
-    {
       title: '操作',
-      width: 180,
-      render: (_: unknown, record: BuildRecord) => (
-        <Space size="small">
-          <Button
-            type="text"
-            icon={<CaretRightFilled />}
-            style={{ color: tokens.colors.info }}
-            onClick={() => message.success(`已触发 ${record.job_name} #${record.build_number}`)}
-          >
-            构建
-          </Button>
-          <Button
-            type="text"
-            style={{ color: tokens.colors.textSecondary }}
-            onClick={() => navigate(`/jenkins/logs/${record.id}`)}
-          >
-            查看日志
-          </Button>
+      key: 'action',
+      render: (_: unknown, record: JenkinsJob) => (
+        <Space>
+          <Button type="text" icon={<PlayCircleOutlined />} loading={triggerMutation.isPending && triggerMutation.variables === record.id} onClick={() => triggerMutation.mutate(record.id)}>触发构建</Button>
+          <Button type="text" icon={<EditOutlined />} onClick={() => handleEditJob(record)}>编辑</Button>
+          <Button type="text" danger loading={deleteMutation.isPending && deleteMutation.variables === record.id} onClick={() => handleDeleteJob(record)}>删除</Button>
         </Space>
       ),
     },
   ];
 
-  const handleSaveConfig = async () => {
-    try {
-      await form.validateFields();
-      message.success('任务配置保存成功');
-      setConfigOpen(false);
-      form.resetFields();
-    } catch {
-      // validation failed
-    }
-  };
+  const buildColumns = [
+    { title: '任务名', dataIndex: 'job_name', key: 'job_name' },
+    { title: '构建号', dataIndex: 'build_number', key: 'build_number', render: (n?: number) => (n ? <span className="font-mono text-xs">#{n}</span> : '-') },
+    { title: '版本号', dataIndex: 'version', key: 'version', render: (v?: string) => v || '-' },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => {
+        const item = buildStatusMap[status];
+        return item ? <StatusTag status={item.status}>{item.text}</StatusTag> : status;
+      },
+    },
+    { title: '开始时间', dataIndex: 'started_at', key: 'started_at', render: (v?: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-') },
+    { title: '结束时间', dataIndex: 'finished_at', key: 'finished_at', render: (v?: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-') },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: unknown, record: BuildRecord) => (
+        <Button type="text" icon={<FileTextOutlined />} onClick={() => navigate(`/jenkins/logs/${record.id}`)}>查看日志</Button>
+      ),
+    },
+  ];
 
-  const handleTestConnection = () => {
-    setTesting(true);
-    setTimeout(() => {
-      setTesting(false);
-      message.success('Jenkins 连接测试通过');
-    }, 1200);
-  };
+  const statusOptions = Object.entries(buildStatusMap).map(([value, { text }]) => ({ value, label: text }));
 
   return (
-    <div className="space-y-5 ts-fade-in-up">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1
-            className="text-lg font-bold"
-            style={{ color: tokens.colors.textPrimary }}
-          >
-            Jenkins 构建状态
-          </h1>
-          <p
-            className="text-sm mt-0.5"
-            style={{ color: tokens.colors.textSecondary }}
-          >
-            实时监控构建任务与日志
-          </p>
-        </div>
-        <Space>
-          <Button
-            type="primary"
-            icon={<CaretRightFilled />}
-            style={{
-              background: tokens.colors.buttonPrimary,
-              borderColor: tokens.colors.buttonPrimary,
-              borderRadius: tokens.layout.buttonRadius,
-            }}
-            onClick={() => message.success('已加入构建队列')}
-          >
-            立即构建
-          </Button>
-          <Button
-            icon={<SettingOutlined />}
-            style={{
-              borderRadius: tokens.layout.buttonRadius,
-              color: tokens.colors.textBody,
-              borderColor: tokens.colors.border,
-            }}
-            onClick={() => setConfigOpen(true)}
-          >
-            配置任务
-          </Button>
-        </Space>
-      </div>
-
-      {/* Filter */}
-      <TsCard bodyStyle={{ padding: 20 }}>
-        <SearchFilterBar
-          filters={[
-            {
-              key: 'project_id',
-              type: 'select',
-              placeholder: '关联项目',
-              width: 176,
-              options: projectOptions,
-            },
-            {
-              key: 'status',
-              type: 'select',
-              placeholder: '构建状态',
-              width: 144,
-              options: Object.entries(statusMap).map(([value, { text }]) => ({
-                value,
-                label: text,
-              })),
-            },
-          ]}
-          values={filters}
-          onChange={(key, value) =>
-            setFilters((prev) => ({ ...prev, [key]: value }))
-          }
-          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
-          onReset={() => {
-            setFilters({ project_id: undefined, status: undefined });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-        />
-      </TsCard>
-
-      {/* Build status table */}
-      <TsCard title="构建状态">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
-      </TsCard>
-
-      {/* Config task modal */}
-      <TsModal
-        title="新增任务配置"
-        open={configOpen}
-        onCancel={() => {
-          setConfigOpen(false);
-          form.resetFields();
-        }}
-        footer={
-          <div className="flex justify-end gap-3">
-            <Button
-              onClick={() => {
-                setConfigOpen(false);
-                form.resetFields();
-              }}
-              style={{
-                borderRadius: tokens.layout.buttonRadius,
-                borderColor: tokens.colors.border,
-              }}
-            >
-              取消
-            </Button>
-            <Button
-              loading={testing}
-              onClick={handleTestConnection}
-              style={{
-                borderRadius: tokens.layout.buttonRadius,
-                borderColor: tokens.colors.border,
-              }}
-            >
-              测试连接
-            </Button>
-            <Button
-              type="primary"
-              onClick={handleSaveConfig}
-              style={{
-                background: tokens.colors.buttonPrimary,
-                borderColor: tokens.colors.buttonPrimary,
-                borderRadius: tokens.layout.buttonRadius,
-              }}
-            >
-              保存
-            </Button>
-          </div>
-        }
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{
-            project_id: '1',
-            name: 'core-trade-build',
-            url: 'https://jenkins.corp.example.com',
-            job_name: 'core-trade/job/build',
-            credential: 'jenkins-core',
-            params: JSON.stringify(
-              {
-                BRANCH: '${branch}',
-                VERSION: '${version}',
-                COMMIT: '${commit}',
-              },
-              null,
-              2
-            ),
-          }}
-        >
-          <div className="grid grid-cols-2 gap-5">
-            <Form.Item
-              label={
-                <span>
-                  <span style={{ color: tokens.colors.danger }}>*</span> 关联项目
-                </span>
-              }
-              name="project_id"
-              rules={[{ required: true, message: '请选择关联项目' }]}
-            >
-              <Select options={projectOptions} placeholder="请选择" />
-            </Form.Item>
-            <Form.Item
-              label={
-                <span>
-                  <span style={{ color: tokens.colors.danger }}>*</span> 任务名称
-                </span>
-              }
-              name="name"
-              rules={[{ required: true, message: '请输入任务名称' }]}
-            >
-              <Input placeholder="例如 core-trade-build" />
-            </Form.Item>
-          </div>
-
-          <Form.Item
-            label={
-              <span>
-                <span style={{ color: tokens.colors.danger }}>*</span> Jenkins 地址
-              </span>
-            }
-            name="url"
-            rules={[{ required: true, message: '请输入 Jenkins 地址' }]}
-          >
-            <Input placeholder="https://jenkins.corp.example.com" />
-          </Form.Item>
-
-          <div className="grid grid-cols-2 gap-5">
-            <Form.Item
-              label={
-                <span>
-                  <span style={{ color: tokens.colors.danger }}>*</span> Jenkins Job 名
-                </span>
-              }
-              name="job_name"
-              rules={[{ required: true, message: '请输入 Jenkins Job 名' }]}
-            >
-              <Input placeholder="例如 core-trade/job/build" />
-            </Form.Item>
-            <Form.Item
-              label={
-                <span>
-                  <span style={{ color: tokens.colors.danger }}>*</span> 凭证
-                </span>
-              }
-              name="credential"
-              rules={[{ required: true, message: '请选择 Jenkins 凭证' }]}
-            >
-              <Select
-                options={credentialOptions}
-                placeholder="请选择 Jenkins 凭证"
+    <div className="space-y-4">
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+        {
+          key: 'jobs',
+          label: 'Jenkins 任务',
+          children: (
+            <TsCard title="任务列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={handleAddJob}>新增任务</Button>}>
+              <div className="mb-4">
+                <SearchFilterBar
+                  filters={[
+                    { key: 'project', type: 'select', placeholder: '关联项目', width: 176, options: projectOptions },
+                    { key: 'keyword', type: 'input', placeholder: '搜索任务/Job 名', width: 256 },
+                  ]}
+                  values={jobFilters}
+                  onChange={(key, value) => setJobFilters((prev) => ({ ...prev, [key]: value }))}
+                  onSearch={() => setJobPagination((prev) => ({ ...prev, current: 1 }))}
+                  onReset={() => { setJobFilters({ project: undefined, keyword: '' }); setJobPagination((prev) => ({ ...prev, current: 1 })); }}
+                />
+              </div>
+              <Table
+                rowKey="id"
+                columns={jobColumns}
+                dataSource={jobData?.results || []}
+                loading={jobsLoading}
+                pagination={{
+                  current: jobPagination.current,
+                  pageSize: jobPagination.pageSize,
+                  total: jobData?.total || 0,
+                  showSizeChanger: true,
+                }}
+                onChange={(p) => setJobPagination({ current: p.current || 1, pageSize: p.pageSize || 10 })}
               />
-            </Form.Item>
-          </div>
-
-          <Form.Item label="参数模板（JSON）" name="params">
-            <Input.TextArea
-              rows={8}
-              className="font-mono text-sm"
-              placeholder='{"BRANCH": "${branch}", "VERSION": "${version}"}'
-            />
-          </Form.Item>
-          <p
-            className="text-xs -mt-4 mb-0"
-            style={{ color: tokens.colors.textSecondary }}
-          >
-            支持使用 {'${branch}'}、{'${version}'}、{'${commit}'} 等变量，构建时自动替换。
-          </p>
-        </Form>
-      </TsModal>
+            </TsCard>
+          ),
+        },
+        {
+          key: 'builds',
+          label: '构建记录',
+          children: (
+            <TsCard title="构建记录">
+              <div className="mb-4">
+                <SearchFilterBar
+                  filters={[
+                    { key: 'status', type: 'select', placeholder: '构建状态', width: 144, options: statusOptions },
+                  ]}
+                  values={buildFilters}
+                  onChange={(key, value) => setBuildFilters((prev) => ({ ...prev, [key]: value }))}
+                  onSearch={() => setBuildPagination((prev) => ({ ...prev, current: 1 }))}
+                  onReset={() => { setBuildFilters({ status: undefined }); setBuildPagination((prev) => ({ ...prev, current: 1 })); }}
+                />
+              </div>
+              <Table
+                rowKey="id"
+                columns={buildColumns}
+                dataSource={buildData?.results || []}
+                loading={buildsLoading}
+                pagination={{
+                  current: buildPagination.current,
+                  pageSize: buildPagination.pageSize,
+                  total: buildData?.total || 0,
+                  showSizeChanger: true,
+                }}
+                onChange={(p) => setBuildPagination({ current: p.current || 1, pageSize: p.pageSize || 10 })}
+              />
+            </TsCard>
+          ),
+        },
+      ]} />
+      <JenkinsJobModal
+        open={jobModalOpen}
+        job={editingJob}
+        onCancel={() => { setJobModalOpen(false); setEditingJob(null); }}
+        onOk={handleSaveJob}
+      />
     </div>
   );
 }

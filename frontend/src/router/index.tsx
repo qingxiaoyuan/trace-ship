@@ -18,6 +18,7 @@ import {
   ProjectDetail,
   ProjectList,
   ReleaseBoard,
+  ReleaseCreate,
   RepositoryList,
   SystemConfig,
   SystemLogList,
@@ -80,6 +81,7 @@ const routes: AppRouteObject[] = [
           },
           { path: 'workflows', element: <PageLoader><Workflow /></PageLoader>, handle: { title: '工作流审批' } },
           { path: 'releases', element: <PageLoader><ReleaseBoard /></PageLoader>, handle: { title: '发布看板' } },
+          { path: 'releases/create', element: <PageLoader><ReleaseCreate /></PageLoader>, handle: { title: '新建发布' } },
           { path: 'notifications', element: <PageLoader><Notification /></PageLoader>, handle: { title: '通知中心' } },
           {
             path: 'system',

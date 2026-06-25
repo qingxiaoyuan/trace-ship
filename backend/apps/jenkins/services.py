@@ -28,7 +28,7 @@ class JenkinsService:
         """
         解析 Jenkins 服务器地址
 
-        优先使用 ProjectIntegration.config 中的 server_url，其次回退到 job.server_url。
+        任务直接保存服务器地址，不再经过外站绑定层。
 
         Args:
             job: JenkinsJob 实例
@@ -36,10 +36,6 @@ class JenkinsService:
         Returns:
             服务器地址字符串
         """
-        if job.integration and job.integration.config:
-            server_url = job.integration.config.get("server_url")
-            if server_url:
-                return server_url
         return job.server_url
 
     @staticmethod

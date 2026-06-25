@@ -21,4 +21,5 @@ export const repositoryApi = {
     post<{ connected: boolean; detail?: string }>(`/repositories/${id}/test/`, {}),
   syncCommits: (id: string) => post<unknown>(`/repositories/${id}/sync-commits/`, {}),
   getVendors: () => get<{ value: string; label: string }[]>('/repositories/vendors/'),
+  getBranches: (id: string) => get<{ name: string; is_default: boolean; last_commit_hash?: string }[]>(`/repositories/${id}/branches/`),
 };

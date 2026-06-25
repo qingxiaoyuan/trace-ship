@@ -9,7 +9,7 @@ import { RepoTab } from './tabs/RepoTab';
 import { MemberTab } from './tabs/MemberTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
 import { RuleTab } from './tabs/RuleTab';
-import { IntegrationTab } from './tabs/IntegrationTab';
+import { JenkinsTab } from './tabs/JenkinsTab';
 import { projectApi } from '@/api/project';
 
 const { Title, Text } = Typography;
@@ -17,10 +17,10 @@ const { Title, Text } = Typography;
 const tabItems = [
   { key: 'overview', label: '基本信息' },
   { key: 'repos', label: '仓库' },
+  { key: 'jenkins', label: 'Jenkins' },
   { key: 'members', label: '成员' },
   { key: 'workflows', label: '审批流' },
   { key: 'rules', label: '规则配置' },
-  { key: 'integrations', label: '外站绑定' },
 ];
 
 export default function ProjectDetail() {
@@ -86,10 +86,10 @@ export default function ProjectDetail() {
         <div className="p-6">
           {activeTab === 'overview' && <OverviewTab project={project} />}
           {activeTab === 'repos' && <RepoTab projectId={id || ''} />}
+          {activeTab === 'jenkins' && <JenkinsTab projectId={id || ''} />}
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
           {activeTab === 'workflows' && <WorkflowTab />}
           {activeTab === 'rules' && <RuleTab project={project} />}
-          {activeTab === 'integrations' && <IntegrationTab projectId={id || ''} />}
         </div>
       </TsCard>
     </div>

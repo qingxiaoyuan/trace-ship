@@ -154,9 +154,9 @@ export function getCommitById(id: string): CommitRecord | undefined {
 }
 
 export const mockBuildRecords: BuildRecord[] = [
-  { id: '1', job_id: 'j1', job_name: '后端打包任务', build_number: 128, version: 'v2.4.1', status: 'success', started_at: '2026-06-15T10:00:00+08:00', finished_at: '2026-06-15T10:05:00+08:00', duration: '5分12秒' },
-  { id: '2', job_id: 'j2', job_name: '前端打包任务', build_number: 89, version: 'v2.4.1-test.3', status: 'building', started_at: '2026-06-14T10:00:00+08:00', duration: '进行中' },
-  { id: '3', job_id: 'j1', job_name: '后端打包任务', build_number: 127, version: 'v2.4.0', status: 'failure', started_at: '2026-06-10T10:00:00+08:00', finished_at: '2026-06-10T10:03:00+08:00', duration: '3分45秒' },
+  { id: '1', job_id: 'j1', job_name: '后端打包任务', build_number: 128, version: 'v2.4.1', status: 'success', started_at: '2026-06-15T10:00:00+08:00', finished_at: '2026-06-15T10:05:00+08:00', duration: '5分12秒', created_at: '2026-06-15T10:00:00+08:00' },
+  { id: '2', job_id: 'j2', job_name: '前端打包任务', build_number: 89, version: 'v2.4.1-test.3', status: 'running', started_at: '2026-06-14T10:00:00+08:00', duration: '进行中', created_at: '2026-06-14T10:00:00+08:00' },
+  { id: '3', job_id: 'j1', job_name: '后端打包任务', build_number: 127, version: 'v2.4.0', status: 'failure', started_at: '2026-06-10T10:00:00+08:00', finished_at: '2026-06-10T10:03:00+08:00', duration: '3分45秒', created_at: '2026-06-10T10:00:00+08:00' },
 ];
 
 export const mockBuildLog = `Started by user 张三
@@ -208,7 +208,7 @@ export const releaseTypeOptions = [
 
 export const buildStatusOptions = [
   { label: '排队中', value: 'queue' },
-  { label: '构建中', value: 'building' },
+  { label: '构建中', value: 'running' },
   { label: '成功', value: 'success' },
   { label: '失败', value: 'failure' },
   { label: '中止', value: 'aborted' },

@@ -7,24 +7,25 @@ from rest_framework import serializers
 
 from apps.credential.models import Credential
 from apps.jenkins.models import JenkinsBuild, JenkinsJob
-from apps.project.models import ProjectIntegration, ProjectMember
+from apps.project.models import ProjectMember
 
 
 class JenkinsJobSerializer(serializers.ModelSerializer):
     """
     Jenkins 任务序列化器
 
-    写入时校验项目归属、凭证模式与集成类型一致性。
+    写入时校验项目归属、凭证模式与仓库归属一致性。
     """
 
     project_name = serializers.CharField(source="project.name", read_only=True)
     credential_name = serializers.CharField(source="credential.name", read_only=True)
     specified_user_name = serializers.CharField(source="specified_user.nickname", read_only=True, default="")
+    repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
 
     class Meta:
         model = JenkinsJob
         fields = [
-            "id", "project", "project_name", "integration", "name",
+            "id", "project", "project_name", "repository", "repository_name", "name",
             "server_url", "job_name", "credential", "credential_name",
             "credential_mode", "specified_user", "specified_user_name",
             "params_template", "is_active", "created_at", "updated_at",
@@ -51,18 +52,23 @@ class JenkinsJobSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("只有项目管理员才能创建/修改 Jenkins 任务")
         return value
 
-    def validate_integration(self, value):
+    def validate_repository(self, value):
         """
-        校验集成类型必须为 jenkins
+        校验关联仓库必须属于当前项目
 
         Args:
-            value: ProjectIntegration 实例
+            value: Repository 实例
 
         Returns:
-            集成实例
+            仓库实例
         """
-        if value and value.integration_type != "jenkins":
-            raise serializers.ValidationError("集成类型必须为 jenkins")
+        if value is None:
+            return value
+        project = self.instance.project if self.instance else self.initial_data.get("project")
+        if isinstance(project, str):
+            project = getattr(self.instance, "project_id", project)
+        if str(value.project_id) != str(project):
+            raise serializers.ValidationError("关联仓库必须属于当前项目")
         return value
 
     def validate(self, attrs: dict) -> dict:
@@ -102,11 +108,12 @@ class JenkinsJobListSerializer(serializers.ModelSerializer):
     """
 
     project_name = serializers.CharField(source="project.name", read_only=True)
+    repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
 
     class Meta:
         model = JenkinsJob
         fields = [
-            "id", "project", "project_name", "name", "job_name",
+            "id", "project", "project_name", "repository", "repository_name", "name", "job_name",
             "server_url", "is_active", "created_at", "updated_at",
         ]
 

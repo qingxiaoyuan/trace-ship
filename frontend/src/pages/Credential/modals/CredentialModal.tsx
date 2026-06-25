@@ -1,6 +1,9 @@
+import { useEffect } from 'react';
 import { Form, Input, Select, DatePicker, Radio } from 'antd';
 import dayjs from 'dayjs';
+import { useQuery } from '@tanstack/react-query';
 import { TsModal } from '@/components/TsModal';
+import { projectApi } from '@/api/project';
 import type { Credential } from '@/types';
 
 interface CredentialModalProps {
@@ -13,12 +16,76 @@ interface CredentialModalProps {
 export function CredentialModal({ open, credential, onCancel, onOk }: CredentialModalProps) {
   const [form] = Form.useForm();
 
-  const initialValues = credential
-    ? {
-        ...credential,
-        expires_at: credential.expires_at ? dayjs(credential.expires_at) : undefined,
+  const { data: projectData, isLoading: projectsLoading } = useQuery({
+    queryKey: ['projects-all'],
+    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
+    enabled: open,
+  });
+
+  const scope = Form.useWatch('scope', form);
+  const authMode = Form.useWatch('auth_mode', form);
+  const credType = Form.useWatch('cred_type', form);
+
+  // GitLab/Gitea 等 Token 类凭证固定使用 token 认证模式
+  const tokenOnlyTypes = ['gitlab_token', 'gitea_token', 'github_token', 'gitee_token'];
+  const isTokenOnly = tokenOnlyTypes.includes(credType);
+
+  const projectOptions =
+    projectData?.results.map((p) => ({ label: p.name, value: p.id })) || [];
+
+  useEffect(() => {
+    if (open) {
+      if (credential) {
+        form.setFieldsValue({
+          ...credential,
+          project: credential.project_id,
+          expires_at: credential.expires_at ? dayjs(credential.expires_at) : undefined,
+        });
+      } else {
+        form.resetFields();
+        form.setFieldsValue({ is_active: true, scope: 'project' });
       }
-    : { is_active: true, scope: 'project' };
+    }
+  }, [open, credential, form]);
+
+  // Token 类凭证自动锁定认证模式为 token
+  useEffect(() => {
+    if (isTokenOnly) {
+      form.setFieldsValue({ auth_mode: 'token' });
+    }
+  }, [isTokenOnly, form]);
+
+  const handleOk = () => {
+    form.validateFields().then((values) => {
+      const payload: Partial<Credential> & { data?: Record<string, string>; token?: string } = {
+        ...credential,
+        ...values,
+        project: values.scope === 'project' ? values.project : undefined,
+        expires_at: values.expires_at ? values.expires_at.format() : undefined,
+      };
+
+      // Token 类凭证强制使用 token 模式
+      const effectiveAuthMode = isTokenOnly ? 'token' : values.auth_mode;
+      payload.auth_mode = effectiveAuthMode;
+
+      // 凭证内容映射为后端加密需要的 data 字段
+      if (values.token) {
+        if (effectiveAuthMode === 'password') {
+          payload.data = {
+            username: values.username || '',
+            password: values.token,
+          };
+        } else {
+          payload.data = { token: values.token };
+        }
+      }
+
+      delete payload.token;
+
+      onOk(payload);
+      form.resetFields();
+    });
+  };
 
   return (
     <TsModal
@@ -28,18 +95,10 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         form.resetFields();
         onCancel();
       }}
-      onOk={() => {
-        form.validateFields().then((values) => {
-          onOk({
-            ...credential,
-            ...values,
-            expires_at: values.expires_at ? values.expires_at.format() : undefined,
-          });
-          form.resetFields();
-        });
-      }}
+      onOk={handleOk}
+      confirmLoading={projectsLoading}
     >
-      <Form form={form} layout="vertical" initialValues={initialValues}>
+      <Form form={form} layout="vertical" initialValues={{ is_active: true, scope: 'project' }}>
         <Form.Item name="name" label="凭证名称" rules={[{ required: true }]}>
           <Input placeholder="请输入凭证名称" />
         </Form.Item>
@@ -54,15 +113,23 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
             ]}
           />
         </Form.Item>
-        <Form.Item name="auth_mode" label="认证模式" rules={[{ required: true }]}>
-          <Select options={[{ label: 'Token', value: 'token' }, { label: '用户名密码', value: 'password' }]} />
+        {!isTokenOnly && (
+          <Form.Item name="auth_mode" label="认证模式" rules={[{ required: true }]}>
+            <Select options={[{ label: 'Token', value: 'token' }, { label: '用户名密码', value: 'password' }]} />
+          </Form.Item>
+        )}
+        <Form.Item
+          name="token"
+          label={authMode === 'password' ? '密码' : 'Token'}
+          rules={[{ required: !credential }]}
+        >
+          <Input.Password placeholder={authMode === 'password' ? '请输入密码' : '请输入 Token'} />
         </Form.Item>
-        <Form.Item name="token" label="凭证内容" rules={[{ required: !credential }]}>
-          <Input.Password placeholder="请输入凭证内容" />
-        </Form.Item>
-        <Form.Item name="username" label="用户名">
-          <Input placeholder="可选，认证模式为密码时必填" />
-        </Form.Item>
+        {authMode === 'password' && (
+          <Form.Item name="username" label="用户名" rules={[{ required: true, message: '密码模式必须填写用户名' }]}>
+            <Input placeholder="请输入用户名" />
+          </Form.Item>
+        )}
         <Form.Item name="scope" label="作用范围" rules={[{ required: true }]}>
           <Radio.Group>
             <Radio value="personal">个人</Radio>
@@ -70,6 +137,21 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
             <Radio value="global">全局</Radio>
           </Radio.Group>
         </Form.Item>
+        {scope === 'project' && (
+          <Form.Item
+            name="project"
+            label="关联项目"
+            rules={[{ required: true, message: '项目级凭证必须关联项目' }]}
+          >
+            <Select
+              showSearch
+              placeholder="选择项目"
+              loading={projectsLoading}
+              options={projectOptions}
+              optionFilterProp="label"
+            />
+          </Form.Item>
+        )}
         <Form.Item name="expires_at" label="过期时间">
           <DatePicker showTime className="w-full" />
         </Form.Item>

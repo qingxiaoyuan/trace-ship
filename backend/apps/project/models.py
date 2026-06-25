@@ -1,7 +1,8 @@
 """
 项目管理数据模型
 
-包含项目（Project）、项目成员（ProjectMember）以及项目外站绑定（ProjectIntegration）。
+包含项目（Project）、项目成员（ProjectMember）。
+仓库与 Jenkins 任务直接归属项目并绑定凭证，不再经过外站绑定层。
 """
 import uuid
 from django.db import models
@@ -12,7 +13,7 @@ class Project(models.Model):
     """
     项目模型
 
-    表示一个软件项目，包含基本资料、负责人、版本/发布规则以及状态。
+    表示一个软件项目，是 Git 仓库、发布流程、Jenkins 打包任务的合集。
 
     Attributes:
         id: UUID 主键
@@ -101,87 +102,3 @@ class ProjectMember(models.Model):
     def __str__(self) -> str:
         """返回项目-用户-角色描述"""
         return f"{self.project.name} - {self.user.username} ({self.role})"
-
-
-class ProjectIntegration(models.Model):
-    """
-    项目外站绑定模型
-
-    用于将外部系统（Git/SVN/Jenkins）绑定到项目，并配置凭证使用模式。
-
-    Attributes:
-        id: UUID 主键
-        project: 关联项目
-        integration_type: 绑定类型
-        vendor: 平台厂商
-        name: 绑定名称
-        external_identity: 外部唯一标识
-        config: 额外配置（JSON）
-        credential: 关联凭证
-        credential_mode: 凭证使用模式
-        specified_user: 指定用户（specified_user 模式使用）
-        is_active: 是否启用
-        created_at: 创建时间
-        updated_at: 更新时间
-    """
-
-    INTEGRATION_TYPE_CHOICES = [
-        ("git_repo", "Git仓库"),
-        ("svn_repo", "SVN仓库"),
-        ("jenkins", "Jenkins任务"),
-    ]
-    VENDOR_CHOICES = [
-        ("gitlab", "GitLab"),
-        ("gitea", "Gitea"),
-        ("github", "GitHub"),
-        ("gitee", "Gitee"),
-        ("svn", "SVN"),
-        ("jenkins", "Jenkins"),
-    ]
-    CREDENTIAL_MODE_CHOICES = [
-        ("current_user", "当前用户"),
-        ("specified_user", "指定用户"),
-        ("fixed", "项目固定凭证"),
-        ("global", "系统全局凭证"),
-    ]
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="integrations", verbose_name="项目")
-    integration_type = models.CharField(max_length=20, choices=INTEGRATION_TYPE_CHOICES, verbose_name="绑定类型")
-    vendor = models.CharField(max_length=20, choices=VENDOR_CHOICES, blank=True, verbose_name="平台")
-    name = models.CharField(max_length=200, verbose_name="绑定名称")
-    external_identity = models.CharField(max_length=500, blank=True, verbose_name="外部唯一标识")
-    config = models.JSONField(default=dict, verbose_name="额外配置")
-    credential = models.ForeignKey(
-        "credential.Credential",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="integrations",
-        verbose_name="关联凭证",
-    )
-    credential_mode = models.CharField(
-        max_length=20,
-        choices=CREDENTIAL_MODE_CHOICES,
-        default="fixed",
-        verbose_name="凭证使用模式",
-    )
-    specified_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="specified_integrations",
-        verbose_name="指定用户",
-    )
-    is_active = models.BooleanField(default=True, verbose_name="是否启用")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "sys_project_integration"
-        verbose_name = "项目外站绑定"
-
-    def __str__(self) -> str:
-        """返回项目-绑定名称描述"""
-        return f"{self.project.name} - {self.name}"

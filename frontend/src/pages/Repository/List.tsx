@@ -103,21 +103,30 @@ export default function RepositoryList() {
     { title: '关联项目', dataIndex: 'project_name', key: 'project_name' },
     {
       title: '仓库地址',
-      dataIndex: 'url',
-      key: 'url',
-      render: (url: string) => (
-        <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1">
-          {url} <LinkOutlined />
+      dataIndex: 'clone_url',
+      key: 'clone_url',
+      render: (clone_url: string, record: Repository) => (
+        <a href={clone_url || record.url} target="_blank" rel="noreferrer" className="flex items-center gap-1">
+          {clone_url || record.url} <LinkOutlined />
         </a>
       ),
     },
     { title: '默认分支', dataIndex: 'default_branch', key: 'default_branch' },
-    { title: '凭证归属', dataIndex: 'credential_mode', key: 'credential_mode' },
+    {
+      title: '凭证归属',
+      key: 'credential',
+      render: (_: unknown, record: Repository) => {
+        if (record.credential_owner_name || record.credential_name) {
+          return `${record.credential_owner_name || '-'} / ${record.credential_name || '-'}`;
+        }
+        return record.credential_mode_display || record.credential_mode || '-';
+      },
+    },
     {
       title: '最近同步',
       dataIndex: 'last_sync_at',
       key: 'last_sync_at',
-      render: (text: string) => text?.replace('T', ' ').slice(0, 16),
+      render: (text: string) => text ? text.replace('T', ' ').slice(0, 16) : '-',
     },
     {
       title: '健康状态',

@@ -19,7 +19,6 @@ class Repository(models.Model):
     Attributes:
         id: UUID 主键
         project: 所属项目
-        integration: 关联的项目外站绑定
         repo_type: 仓库类型（git/svn）
         vendor: 平台厂商
         name: 仓库名称
@@ -64,14 +63,6 @@ class Repository(models.Model):
         on_delete=models.CASCADE,
         related_name="repositories",
         verbose_name="项目",
-    )
-    integration = models.ForeignKey(
-        "project.ProjectIntegration",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="repositories",
-        verbose_name="外站绑定",
     )
     repo_type = models.CharField(max_length=10, choices=REPO_TYPE_CHOICES, verbose_name="仓库类型")
     vendor = models.CharField(max_length=20, choices=VENDOR_CHOICES, verbose_name="平台")

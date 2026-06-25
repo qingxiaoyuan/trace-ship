@@ -6,6 +6,7 @@
 from django_filters.rest_framework import DjangoFilterBackend, DateTimeFromToRangeFilter
 from django_filters import FilterSet
 from rest_framework import viewsets, filters
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticated
 
 from apps.system.models import SystemConfig, OperationLog
@@ -13,7 +14,7 @@ from apps.system.serializers import SystemConfigSerializer, OperationLogSerializ
 from utils.permissions import IsSuperUser
 
 
-class SystemConfigViewSet(viewsets.ModelViewSet):
+class SystemConfigViewSet(StandardModelViewSet):
     """
     系统参数视图集
 
@@ -38,7 +39,7 @@ class OperationLogFilter(FilterSet):
         fields = ["module", "action", "user", "result", "created_at"]
 
 
-class OperationLogViewSet(viewsets.ReadOnlyModelViewSet):
+class OperationLogViewSet(StandardReadOnlyModelViewSet):
     """
     操作日志视图集
 

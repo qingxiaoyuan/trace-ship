@@ -4,10 +4,41 @@
 包含仓库（Repository）和提交记录（CommitRecord）的序列化器。
 """
 from typing import Set
+from urllib.parse import urlparse
+
 from rest_framework import serializers
 
 from apps.project.models import ProjectMember
 from apps.repository.models import CommitRecord, Repository
+
+
+def _parse_owner_repo_from_url(url: str) -> str | None:
+    """
+    从 Git 仓库地址解析 owner/repo
+
+    支持 http(s)://host/owner/repo.git 和 git@host:owner/repo.git 等格式，
+    同时兼容 GitLab 嵌套 group，如 https://gitlab.com/group/subgroup/repo.git。
+
+    Args:
+        url: 仓库地址
+
+    Returns:
+        owner/repo 字符串，解析失败返回 None
+    """
+    if not url:
+        return None
+    # SSH 格式 git@host:owner/repo.git
+    if url.startswith("git@") and ":" in url:
+        path = url.split(":", 1)[1]
+    else:
+        parsed = urlparse(url)
+        path = parsed.path
+    path = path.strip("/")
+    path = path.removesuffix(".git")
+    parts = path.split("/")
+    if len(parts) >= 2:
+        return "/".join(parts)
+    return None
 
 
 class RepositorySerializer(serializers.ModelSerializer):
@@ -23,7 +54,7 @@ class RepositorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Repository
         fields = [
-            "id", "project", "project_name", "integration",
+            "id", "project", "project_name",
             "repo_type", "vendor", "name", "url", "external_identity",
             "default_branch", "credential", "credential_id", "credential_mode",
             "specified_user", "health_status", "last_sync_at", "created_at", "updated_at",
@@ -52,7 +83,7 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """
-        校验仓库类型与 vendor、凭证模式的一致性
+        校验仓库类型与 vendor、凭证模式的一致性，并规范化 Git 仓库地址。
 
         Args:
             attrs: 待校验属性
@@ -78,6 +109,22 @@ class RepositorySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"specified_user": "specified_user 凭证模式必须指定用户"})
         if credential_mode != "specified_user" and specified_user is not None:
             raise serializers.ValidationError({"specified_user": "仅 specified_user 凭证模式可以指定用户"})
+
+        # Git 仓库地址规范化：把克隆地址统一解析为服务器根地址 + owner/repo
+        url = attrs.get("url")
+        external_identity = attrs.get("external_identity")
+        if url and repo_type == "git" and vendor != "svn":
+            parsed = urlparse(url.rstrip("/"))
+            path = parsed.path.strip("/")
+            if path and ".git" in path:
+                # 用户填的是克隆地址，提取服务器根地址
+                attrs["url"] = f"{parsed.scheme}://{parsed.netloc}"
+            if not external_identity:
+                # 未填写外部标识时，从地址自动解析 owner/repo
+                parsed_identity = _parse_owner_repo_from_url(url)
+                if parsed_identity:
+                    attrs["external_identity"] = parsed_identity
+
         return attrs
 
 
@@ -89,14 +136,36 @@ class RepositoryListSerializer(serializers.ModelSerializer):
     """
 
     project_name = serializers.CharField(source="project.name", read_only=True)
+    clone_url = serializers.SerializerMethodField()
+    credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
+    credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
+    credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
 
     class Meta:
         model = Repository
         fields = [
             "id", "project", "project_name", "repo_type", "vendor",
-            "name", "url", "external_identity", "default_branch",
+            "name", "url", "clone_url", "external_identity", "default_branch",
+            "credential_mode", "credential_mode_display",
+            "credential_name", "credential_owner_name",
             "health_status", "last_sync_at", "created_at",
         ]
+
+    def get_clone_url(self, obj: Repository) -> str:
+        """
+        返回仓库克隆地址
+
+        如果 url 字段本身已是克隆地址则直接返回；
+        否则根据服务器地址和外部标识拼出 http(s)://host/owner/repo.git。
+        """
+        url = obj.url or ""
+        # url 已包含 .git 后缀或外部标识，说明用户填的就是克隆地址
+        if url.endswith(".git") or (obj.external_identity and obj.external_identity in url):
+            return url
+        if obj.repo_type == "svn" or not obj.external_identity:
+            return url
+        base = url.rstrip("/")
+        return f"{base}/{obj.external_identity}.git"
 
 
 class CommitRecordSerializer(serializers.ModelSerializer):

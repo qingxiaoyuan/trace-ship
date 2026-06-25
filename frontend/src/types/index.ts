@@ -109,18 +109,27 @@ export interface CommitAlertRecord extends CommitRecord {
   alert_status: AlertStatus;
 }
 
-export type BuildStatus = 'queue' | 'building' | 'success' | 'failure' | 'aborted';
+export type BuildStatus = 'queue' | 'running' | 'success' | 'failure' | 'aborted';
 
 export interface BuildRecord {
   id: string;
   job_id: string;
   job_name: string;
-  build_number: number;
-  version: string;
+  project_id?: string;
+  project_name?: string;
+  queue_id?: string;
+  build_number?: number;
+  version?: string;
   status: BuildStatus;
-  started_at: string;
+  status_display?: string;
+  params?: unknown;
+  log_url?: string;
+  artifact_info?: unknown[];
+  started_at?: string;
   finished_at?: string;
   duration?: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 export type CredentialType =
@@ -152,18 +161,40 @@ export interface Repository {
   id: string;
   project_id: string;
   project_name?: string;
-  integration_id?: string;
   repo_type: 'git' | 'svn';
   vendor: string;
   name: string;
   url: string;
+  clone_url?: string;
   external_identity: string;
   default_branch: string;
   credential_id?: string;
   credential_mode?: string;
+  credential_mode_display?: string;
+  credential_name?: string;
+  credential_owner_name?: string;
   health_status: 'healthy' | 'unhealthy' | 'unknown';
   last_sync_at?: string;
   created_at: string;
+}
+
+export interface JenkinsJob {
+  id: string;
+  project_id: string;
+  project_name?: string;
+  repository_id?: string;
+  repository_name?: string;
+  name: string;
+  server_url: string;
+  job_name: string;
+  credential_id?: string;
+  credential_mode?: string;
+  specified_user_id?: string;
+  specified_user_name?: string;
+  params_template?: unknown;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred';
