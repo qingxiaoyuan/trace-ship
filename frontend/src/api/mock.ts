@@ -597,7 +597,11 @@ const routes: MockRoute[] = [
     method: 'post',
     path: '/api/auth/token/refresh/',
     handler: () => ({
-      data: createResponse({ access: 'mock_access_token_' + Date.now(), expires_in: 3600 }),
+      data: createResponse({
+        access: 'mock_access_token_' + Date.now(),
+        refresh: 'mock_refresh_token_' + Date.now(),
+        expires_in: 3600,
+      }),
     }),
   },
   {

@@ -10,10 +10,13 @@ interface AuthState {
   menus: MenuItem[];
   isAuthenticated: boolean;
   hydrated: boolean;
+  isInitializing: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   clearAuth: () => void;
   fetchUserInfo: () => Promise<void>;
+  initializeAuth: () => Promise<boolean>;
+  setTokens: (token: string, refreshToken?: string) => void;
   setUser: (user: UserInfo) => void;
   setHydrated: (hydrated: boolean) => void;
 }
@@ -27,16 +30,11 @@ export const useAuthStore = create<AuthState>()(
       menus: [],
       isAuthenticated: false,
       hydrated: false,
+      isInitializing: false,
 
       login: async (username, password) => {
         const data = await authApi.login({ username, password });
-        localStorage.setItem('accessToken', data.access_token);
-        localStorage.setItem('refreshToken', data.refresh_token);
-        set({
-          token: data.access_token,
-          refreshToken: data.refresh_token,
-          isAuthenticated: true,
-        });
+        get().setTokens(data.access_token, data.refresh_token);
         try {
           await get().fetchUserInfo();
         } catch (e) {
@@ -56,6 +54,40 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         set({ token: null, refreshToken: null, user: null, menus: [], isAuthenticated: false });
+      },
+
+      setTokens: (token, refreshToken) => {
+        localStorage.setItem('accessToken', token);
+        if (refreshToken) {
+          localStorage.setItem('refreshToken', refreshToken);
+        }
+        set({ token, ...(refreshToken ? { refreshToken } : {}), isAuthenticated: true });
+      },
+
+      initializeAuth: async () => {
+        set({ isInitializing: true });
+        try {
+          const refreshToken = get().refreshToken || localStorage.getItem('refreshToken');
+          if (!refreshToken) {
+            get().clearAuth();
+            return false;
+          }
+          const data = await authApi.refresh(refreshToken);
+          const newRefreshToken = data.refresh || refreshToken;
+          get().setTokens(data.access, newRefreshToken);
+          try {
+            await get().fetchUserInfo();
+          } catch (e) {
+            console.warn('恢复用户信息失败', e);
+          }
+          return true;
+        } catch (e) {
+          console.warn('恢复会话失败', e);
+          get().clearAuth();
+          return false;
+        } finally {
+          set({ isInitializing: false });
+        }
       },
 
       fetchUserInfo: async () => {

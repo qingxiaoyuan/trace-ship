@@ -2,6 +2,7 @@ import axios from 'axios';
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
+import { authApi } from './auth';
 
 const request: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -11,6 +12,18 @@ const request: AxiosInstance = axios.create({
     Accept: 'application/json',
   },
 });
+
+let isRefreshing = false;
+let refreshSubscribers: Array<(token: string) => void> = [];
+
+function isAuthRequest(url?: string) {
+  return url?.includes('/auth/token/refresh') || url?.includes('/auth/login');
+}
+
+function onRefreshed(token: string) {
+  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers = [];
+}
 
 request.interceptors.request.use(
   async (config) => {
@@ -42,12 +55,63 @@ request.interceptors.response.use(
     return response;
   },
   (error: AxiosError<ApiResponse<unknown>>) => {
+    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
     const data = error.response?.data;
-    const isLoginRequest = error.config?.url?.includes('/auth/login');
-    if (!isLoginRequest && (error.response?.status === 401 || data?.code === 40100)) {
-      useAuthStore.getState().clearAuth();
-      window.location.href = '/login';
+
+    if (isAuthRequest(originalRequest?.url)) {
+      return Promise.reject(data || error);
     }
+
+    if (
+      !originalRequest?._retry &&
+      (error.response?.status === 401 || data?.code === 40100)
+    ) {
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          refreshSubscribers.push((token: string) => {
+            originalRequest.headers = originalRequest.headers || {};
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(request(originalRequest));
+          });
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) {
+        useAuthStore.getState().clearAuth();
+        window.location.href = '/login';
+        return Promise.reject(data || error);
+      }
+
+      return new Promise((resolve, reject) => {
+        authApi
+          .refresh(refreshToken)
+          .then((res) => {
+            const newAccessToken = res.access;
+            const newRefreshToken = res.refresh || refreshToken;
+            localStorage.setItem('accessToken', newAccessToken);
+            localStorage.setItem('refreshToken', newRefreshToken);
+            useAuthStore.getState().setTokens(newAccessToken, newRefreshToken);
+            request.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
+            onRefreshed(newAccessToken);
+            originalRequest.headers = originalRequest.headers || {};
+            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+            resolve(request(originalRequest));
+          })
+          .catch((refreshError) => {
+            useAuthStore.getState().clearAuth();
+            window.location.href = '/login';
+            reject(refreshError);
+          })
+          .finally(() => {
+            isRefreshing = false;
+          });
+      });
+    }
+
     return Promise.reject(data || error);
   }
 );
