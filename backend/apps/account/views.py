@@ -5,6 +5,7 @@
 用户、角色、权限的 CRUD 管理接口。
 """
 from typing import Optional
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.utils import timezone
 from django.http import HttpRequest
@@ -114,30 +115,32 @@ class AuthViewSet(viewsets.GenericViewSet):
         user: Optional[User] = None
         error_msg = ""
 
-        # 1. 尝试 LDAP 认证
-        try:
-            from django_auth_ldap.backend import LDAPBackend
-            ldap_backend = LDAPBackend()
-            ldap_user = ldap_backend.authenticate(request, username=username, password=password)
-            if ldap_user and isinstance(ldap_user, User):
-                # 同步/更新本地用户记录
-                local_user, created = User.objects.get_or_create(
-                    username=username,
-                    defaults={
-                        "source": "ldap",
-                        "nickname": getattr(ldap_user, "first_name", username),
-                        "email": getattr(ldap_user, "email", ""),
-                    },
-                )
-                if not created:
-                    local_user.source = "ldap"
-                    local_user.last_login = timezone.now()
-                    local_user.save(update_fields=["source", "last_login"])
-                user = local_user
-        except Exception as e:
-            error_msg = str(e)
+        # 1. 尝试 LDAP 认证（仅在 settings 中显式启用 LDAPBackend 时）
+        if "django_auth_ldap.backend.LDAPBackend" in settings.AUTHENTICATION_BACKENDS:
+            try:
+                from django_auth_ldap.backend import LDAPBackend
+                ldap_backend = LDAPBackend()
+                ldap_user = ldap_backend.authenticate(request, username=username, password=password)
+                if ldap_user and isinstance(ldap_user, User):
+                    # 同步/更新本地用户记录
+                    local_user, created = User.objects.get_or_create(
+                        username=username,
+                        defaults={
+                            "source": "ldap",
+                            "nickname": getattr(ldap_user, "first_name", username) or username,
+                            "email": getattr(ldap_user, "email", ""),
+                        },
+                    )
+                    if not created:
+                        local_user.source = "ldap"
+                        local_user.nickname = getattr(ldap_user, "first_name", username) or username
+                        local_user.last_login = timezone.now()
+                        local_user.save(update_fields=["source", "nickname", "last_login"])
+                    user = local_user
+            except Exception as e:
+                error_msg = str(e)
 
-        # 2. LDAP 失败，尝试本地认证
+        # 2. LDAP 失败或未启用，尝试本地认证
         if not user:
             local_auth_user = authenticate(request, username=username, password=password)
             if local_auth_user and isinstance(local_auth_user, User) and local_auth_user.source == "local":

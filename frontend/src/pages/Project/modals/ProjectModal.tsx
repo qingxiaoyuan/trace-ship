@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Form, Input, Select, Radio } from 'antd';
 import { TsModal } from '@/components/TsModal';
+import { accountApi, type AccountUser } from '@/api/account';
 import type { Project } from '@/types';
 
 interface ProjectModalProps {
@@ -11,6 +13,15 @@ interface ProjectModalProps {
 
 export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProps) {
   const [form] = Form.useForm();
+  const [users, setUsers] = useState<AccountUser[]>([]);
+
+  useEffect(() => {
+    if (open) {
+      accountApi.getUsers({ page_size: 1000 }).then((res) => {
+        setUsers(res.results || []);
+      });
+    }
+  }, [open]);
 
   return (
     <TsModal
@@ -37,14 +48,6 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
         }
       >
         <Form.Item
-          name="code"
-          label="项目编码"
-          rules={[{ required: true, message: '请输入项目编码' }]}
-        >
-          <Input placeholder="如：CORE_TRADE" />
-        </Form.Item>
-
-        <Form.Item
           name="name"
           label="项目名称"
           rules={[{ required: true, message: '请输入项目名称' }]}
@@ -57,7 +60,10 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
           label="项目负责人"
           rules={[{ required: true, message: '请选择项目负责人' }]}
         >
-          <Select placeholder="请选择项目负责人" options={[{ label: '张三', value: 'u1' }]} />
+          <Select
+            placeholder="请选择项目负责人"
+            options={users.map((u) => ({ label: u.nickname || u.username, value: u.id }))}
+          />
         </Form.Item>
 
         <Form.Item name="description" label="项目描述">

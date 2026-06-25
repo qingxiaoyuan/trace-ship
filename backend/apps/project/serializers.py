@@ -4,10 +4,13 @@
 包含项目、项目成员、项目外站绑定的序列化器，以及支持字符串/数字双格式的状态字段。
 """
 from typing import Any
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from apps.project.models import Project, ProjectMember, ProjectIntegration
 from apps.account.serializers import UserSerializer
 from apps.project.services import ProjectService
+
+User = get_user_model()
 
 
 class ProjectStatusField(serializers.IntegerField):
@@ -57,16 +60,51 @@ class ProjectSerializer(serializers.ModelSerializer):
     读取时展开负责人名称，状态字段支持字符串/数字双格式。
     """
 
+    leader_id = serializers.PrimaryKeyRelatedField(
+        source="leader", queryset=User.objects.all()
+    )
     leader_name = serializers.CharField(source="leader.nickname", read_only=True)
     status = ProjectStatusField()
 
     class Meta:
         model = Project
         fields = [
-            "id", "code", "name", "leader", "leader_name", "description",
+            "id", "code", "name", "leader_id", "leader_name", "description",
             "version_rule", "release_rule", "status", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def create(self, validated_data: dict) -> Project:
+        """
+        创建项目时自动生成编码
+
+        若调用方未提供 code，则按 PROJ + 年月日 + 4位自增序号规则生成。
+
+        Args:
+            validated_data: 已校验的数据
+
+        Returns:
+            新创建的项目实例
+        """
+        if not validated_data.get("code"):
+            validated_data["code"] = ProjectService.generate_project_code()
+        return super().create(validated_data)
+
+    def update(self, instance: Project, validated_data: dict) -> Project:
+        """
+        更新项目时保留原编码
+
+        防止前端未传 code 时意外清空已有编码。
+
+        Args:
+            instance: 待更新的项目实例
+            validated_data: 已校验的数据
+
+        Returns:
+            更新后的项目实例
+        """
+        validated_data.pop("code", None)
+        return super().update(instance, validated_data)
 
 
 class ProjectListSerializer(serializers.ModelSerializer):

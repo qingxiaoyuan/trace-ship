@@ -4,9 +4,11 @@
 封装外站绑定的 vendor 校验、凭证模式校验以及创建者自动加入项目等逻辑。
 """
 from typing import Optional
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
-from apps.project.models import ProjectIntegration, ProjectMember
+from apps.project.models import Project, ProjectIntegration, ProjectMember
 
 
 class ProjectService:
@@ -20,6 +22,39 @@ class ProjectService:
         "svn_repo": {"svn"},
         "jenkins": {"jenkins"},
     }
+
+    @staticmethod
+    def generate_project_code() -> str:
+        """
+        自动生成项目编码
+
+        格式：PROJ + 年月日 + 4位自增序号，如 PROJ202506250001。
+        使用 select_for_update 保证并发安全。
+
+        Returns:
+            新生成的项目编码
+        """
+        prefix = "PROJ"
+        today = timezone.now().strftime("%Y%m%d")
+        base_code = f"{prefix}{today}"
+
+        with transaction.atomic():
+            latest = (
+                Project.objects.select_for_update()
+                .filter(code__startswith=base_code)
+                .order_by("-code")
+                .first()
+            )
+            if latest and len(latest.code) >= len(base_code) + 4:
+                seq_str = latest.code[-4:]
+                try:
+                    seq = int(seq_str) + 1
+                except ValueError:
+                    seq = 1
+            else:
+                seq = 1
+
+            return f"{base_code}{seq:04d}"
 
     @staticmethod
     def validate_integration(data: dict, instance: Optional[ProjectIntegration] = None) -> dict:

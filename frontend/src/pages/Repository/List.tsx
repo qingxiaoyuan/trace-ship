@@ -8,10 +8,11 @@ import { SearchFilterBar } from '@/components/SearchFilterBar';
 import { RepositoryModal } from './modals/RepositoryModal';
 import { repoTypeOptions } from '@/mock/repositories';
 import { repositoryApi } from '@/api/repository';
+import { projectApi } from '@/api/project';
 import type { Repository } from '@/types';
 
 export default function RepositoryList() {
-  const [filters, setFilters] = useState({ keyword: '', project_id: undefined, repo_type: undefined });
+  const [filters, setFilters] = useState({ keyword: '', project: undefined, repo_type: undefined });
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRepo, setEditingRepo] = useState<Repository | null>(null);
@@ -23,10 +24,18 @@ export default function RepositoryList() {
         page: pagination.current,
         page_size: pagination.pageSize,
         keyword: filters.keyword || undefined,
-        project_id: filters.project_id || undefined,
+        project: filters.project || undefined,
         repo_type: filters.repo_type || undefined,
       }),
   });
+
+  const { data: projectData } = useQuery({
+    queryKey: ['projects-all'],
+    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
+  });
+
+  const projectFilterOptions =
+    projectData?.results.map((p) => ({ label: p.name, value: p.id })) || [];
 
   const handleTest = async (id: string) => {
     message.loading({ content: '连通性测试中...', key: 'test' });
@@ -144,11 +153,11 @@ export default function RepositoryList() {
           filters={[
             { key: 'keyword', type: 'input', placeholder: '搜索仓库名称/地址', width: 256 },
             {
-              key: 'project_id',
+              key: 'project',
               type: 'select',
               placeholder: '关联项目',
               width: 176,
-              options: [{ label: '核心交易平台', value: '1' }],
+              options: projectFilterOptions,
             },
             {
               key: 'repo_type',
@@ -165,7 +174,7 @@ export default function RepositoryList() {
             refetch();
           }}
           onReset={() => {
-            setFilters({ keyword: '', project_id: undefined, repo_type: undefined });
+            setFilters({ keyword: '', project: undefined, repo_type: undefined });
             setPagination((prev) => ({ ...prev, current: 1 }));
           }}
           addText="新增仓库"

@@ -4,12 +4,20 @@ interface OverviewTabProps {
   project: Project;
 }
 
+function formatFieldValue(value: unknown): string {
+  if (value === undefined || value === null) return '-';
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
 export function OverviewTab({ project }: OverviewTabProps) {
   const items = [
-    { label: '项目编码', value: project.code, mono: true },
-    { label: '项目负责人', value: project.leader_name },
-    { label: '版本号规则', value: project.version_rule || '-' },
-    { label: '发布周期', value: project.release_cycle || '-' },
+    { label: '项目编码', value: formatFieldValue(project.code), mono: true },
+    { label: '项目负责人', value: formatFieldValue(project.leader_name) },
+    { label: '版本号规则', value: formatFieldValue(project.version_rule) },
+    { label: '发布规则', value: formatFieldValue(project.release_rule) },
   ];
 
   return (
@@ -35,7 +43,7 @@ export function OverviewTab({ project }: OverviewTabProps) {
         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           描述
         </label>
-        <p className="text-sm text-slate-700 mt-1.5 leading-relaxed">{project.description}</p>
+        <p className="text-sm text-slate-700 mt-1.5 leading-relaxed">{formatFieldValue(project.description)}</p>
       </div>
     </div>
   );

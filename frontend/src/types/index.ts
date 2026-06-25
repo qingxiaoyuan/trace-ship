@@ -48,7 +48,7 @@ export type ProjectStatus = 'active' | 'inactive' | number;
 
 export interface Project {
   id: string;
-  code: string;
+  code?: string;
   name: string;
   leader_id: string;
   leader_name?: string;
@@ -57,11 +57,8 @@ export interface Project {
   repo_count?: number;
   member_count?: number;
   created_at: string;
-  version_rule?: string;
-  release_cycle?: string;
-  formal_branch?: string;
-  test_prefix?: string;
-  compliance_threshold?: number;
+  version_rule?: unknown;
+  release_rule?: unknown;
 }
 
 export type ReleaseStatus =

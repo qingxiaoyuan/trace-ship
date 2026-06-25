@@ -13,10 +13,12 @@ export const mockProjects: Project[] = [
     member_count: 12,
     created_at: '2025-03-12T10:00:00+08:00',
     version_rule: '主版本.次版本.修订号',
-    release_cycle: '正式版本 3 天一发',
-    formal_branch: 'master,main',
-    test_prefix: '-test',
-    compliance_threshold: 100,
+    release_rule: {
+      release_cycle_days: 3,
+      formal_branch: 'master,main',
+      test_prefix: '-test',
+      compliance_threshold: 100,
+    },
   },
   {
     id: '2',
@@ -30,10 +32,12 @@ export const mockProjects: Project[] = [
     member_count: 8,
     created_at: '2025-06-20T10:00:00+08:00',
     version_rule: '主版本.次版本.修订号',
-    release_cycle: '正式版本 7 天一发',
-    formal_branch: 'main',
-    test_prefix: '-test',
-    compliance_threshold: 90,
+    release_rule: {
+      release_cycle_days: 7,
+      formal_branch: 'main',
+      test_prefix: '-test',
+      compliance_threshold: 90,
+    },
   },
   {
     id: '3',
@@ -47,10 +51,12 @@ export const mockProjects: Project[] = [
     member_count: 6,
     created_at: '2024-11-08T10:00:00+08:00',
     version_rule: '年月日.修订号',
-    release_cycle: '按需发布',
-    formal_branch: 'main',
-    test_prefix: '-rc',
-    compliance_threshold: 85,
+    release_rule: {
+      release_cycle_days: 0,
+      formal_branch: 'main',
+      test_prefix: '-rc',
+      compliance_threshold: 85,
+    },
   },
 ];
 

@@ -5,7 +5,7 @@
 """
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -83,6 +83,81 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), IsProjectManager()]
         return super().get_permissions()
 
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        """
+        创建项目并返回统一格式响应
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            统一成功响应，HTTP 201
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return success_response(serializer.data, "创建成功", status=status.HTTP_201_CREATED)
+
+    def retrieve(self, request: Request, *args, **kwargs) -> Response:
+        """
+        获取项目详情并返回统一格式响应
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            统一成功响应
+        """
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return success_response(serializer.data)
+
+    def update(self, request: Request, *args, **kwargs) -> Response:
+        """
+        更新项目并返回统一格式响应
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            统一成功响应
+        """
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        if getattr(instance, "_prefetched_objects_cache", None):
+            instance._prefetched_objects_cache = {}
+        return success_response(serializer.data, "更新成功")
+
+    def partial_update(self, request: Request, *args, **kwargs) -> Response:
+        """
+        部分更新项目
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            统一成功响应
+        """
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        """
+        删除项目并返回统一格式响应
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            统一成功响应
+        """
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return success_response(None, "删除成功")
+
     def perform_create(self, serializer):
         """
         创建项目后自动将创建者设为项目管理员
@@ -127,6 +202,7 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, viewsets.ModelViewSet):
     提供项目成员的增删改查，仅项目管理员可操作。
     """
 
+    queryset = ProjectMember.objects.all()
     serializer_class = ProjectMemberSerializer
     permission_classes = [IsAuthenticated, IsProjectManager]
 
@@ -146,6 +222,39 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, viewsets.ModelViewSet):
             .order_by("-created_at")
         )
 
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        """添加成员并返回统一格式响应"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return success_response(serializer.data, "添加成功", status=status.HTTP_201_CREATED)
+
+    def retrieve(self, request: Request, *args, **kwargs) -> Response:
+        """查询单个成员详情"""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return success_response(serializer.data)
+
+    def update(self, request: Request, *args, **kwargs) -> Response:
+        """更新成员角色"""
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return success_response(serializer.data, "更新成功")
+
+    def partial_update(self, request: Request, *args, **kwargs) -> Response:
+        """部分更新成员"""
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        """移除成员"""
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return success_response(None, "移除成功")
+
     def perform_create(self, serializer):
         """
         创建成员时自动关联到当前项目
@@ -163,24 +272,42 @@ class ProjectIntegrationViewSet(NestedProjectPermissionMixin, viewsets.ModelView
     提供外站绑定的增删改查以及连通性测试，仅项目管理员可操作。
     """
 
+    queryset = ProjectIntegration.objects.all()
     serializer_class = ProjectIntegrationSerializer
     permission_classes = [IsAuthenticated, IsProjectManager]
 
-    def get_queryset(self):
-        """
-        返回当前项目的外站绑定列表
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        """创建外站绑定并返回统一格式响应"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return success_response(serializer.data, "创建成功", status=status.HTTP_201_CREATED)
 
-        Returns:
-            ProjectIntegration QuerySet
-        """
-        if getattr(self, "swagger_fake_view", False):
-            return ProjectIntegration.objects.none()
-        return (
-            ProjectIntegration.objects
-            .select_related("project", "credential", "specified_user")
-            .filter(project_id=self.kwargs["project_pk"])
-            .order_by("-created_at")
-        )
+    def retrieve(self, request: Request, *args, **kwargs) -> Response:
+        """查询单个外站绑定详情"""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return success_response(serializer.data)
+
+    def update(self, request: Request, *args, **kwargs) -> Response:
+        """更新外站绑定"""
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return success_response(serializer.data, "更新成功")
+
+    def partial_update(self, request: Request, *args, **kwargs) -> Response:
+        """部分更新外站绑定"""
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        """删除外站绑定"""
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return success_response(None, "删除成功")
 
     def perform_create(self, serializer):
         """

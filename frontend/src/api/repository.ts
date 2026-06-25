@@ -3,7 +3,7 @@ import type { PaginatedData, Repository } from '@/types';
 
 export interface RepositoryListParams {
   keyword?: string;
-  project_id?: string;
+  project?: string;
   repo_type?: string;
   page?: number;
   page_size?: number;

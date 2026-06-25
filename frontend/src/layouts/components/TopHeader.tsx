@@ -268,10 +268,10 @@ export function TopHeader() {
               style={{ backgroundColor: tokens.colors.userAvatar }}
               size="small"
             >
-              {user?.nickname?.charAt(0) || 'U'}
+              {(user?.nickname || user?.username)?.charAt(0) || 'U'}
             </Avatar>
             <div className="hidden md:flex flex-col leading-tight">
-              <Text className="text-sm font-medium">{user?.nickname || '未登录'}</Text>
+              <Text className="text-sm font-medium">{user?.nickname || user?.username || '未登录'}</Text>
               <Text className="text-xs text-slate-400">{user?.roles?.[0] || '用户'}</Text>
             </div>
             <DownOutlined className="text-xs text-slate-400" />

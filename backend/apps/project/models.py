@@ -33,7 +33,7 @@ class Project(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    code = models.CharField(max_length=100, unique=True, verbose_name="项目编码")
+    code = models.CharField(max_length=100, unique=True, blank=True, verbose_name="项目编码")
     name = models.CharField(max_length=200, verbose_name="项目名称")
     leader = models.ForeignKey(
         settings.AUTH_USER_MODEL,

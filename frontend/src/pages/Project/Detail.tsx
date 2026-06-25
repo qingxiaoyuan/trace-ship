@@ -85,11 +85,11 @@ export default function ProjectDetail() {
 
         <div className="p-6">
           {activeTab === 'overview' && <OverviewTab project={project} />}
-          {activeTab === 'repos' && <RepoTab />}
-          {activeTab === 'members' && <MemberTab />}
+          {activeTab === 'repos' && <RepoTab projectId={id || ''} />}
+          {activeTab === 'members' && <MemberTab projectId={id || ''} />}
           {activeTab === 'workflows' && <WorkflowTab />}
           {activeTab === 'rules' && <RuleTab project={project} />}
-          {activeTab === 'integrations' && <IntegrationTab />}
+          {activeTab === 'integrations' && <IntegrationTab projectId={id || ''} />}
         </div>
       </TsCard>
     </div>

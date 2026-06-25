@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Table, Button, Space, Avatar, message } from 'antd';
+import { Table, Button, Space, Avatar, App } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { TsCard } from '@/components/TsCard';
@@ -13,6 +13,7 @@ import type { Project } from '@/types';
 
 export default function ProjectList() {
   const navigate = useNavigate();
+  const { message, modal } = App.useApp();
   const [filters, setFilters] = useState({ keyword: '', status: undefined });
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
   const [modalOpen, setModalOpen] = useState(false);
@@ -43,6 +44,26 @@ export default function ProjectList() {
       message.error('新增失败');
       console.error(error);
     }
+  };
+
+  const handleDelete = (record: Project) => {
+    modal.confirm({
+      title: '确认删除项目',
+      content: `确定要删除「${record.name}」吗？删除后不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          await projectApi.deleteProject(record.id);
+          message.success('删除成功');
+          refetch();
+        } catch (error) {
+          message.error('删除失败');
+          console.error(error);
+        }
+      },
+    });
   };
 
   const columns = [
@@ -106,13 +127,23 @@ export default function ProjectList() {
       title: '操作',
       key: 'action',
       render: (_: unknown, record: Project) => (
-        <Button
-          type="link"
-          className="px-0! text-sm font-medium"
-          onClick={() => navigate(`/projects/${record.id}`)}
-        >
-          编辑
-        </Button>
+        <Space size="small">
+          <Button
+            type="link"
+            className="px-0! text-sm font-medium"
+            onClick={() => navigate(`/projects/${record.id}`)}
+          >
+            编辑
+          </Button>
+          <Button
+            type="link"
+            danger
+            className="px-0! text-sm font-medium"
+            onClick={() => handleDelete(record)}
+          >
+            删除
+          </Button>
+        </Space>
       ),
     },
   ];
