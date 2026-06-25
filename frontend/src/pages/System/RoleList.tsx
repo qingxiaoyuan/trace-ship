@@ -67,14 +67,17 @@ export default function RoleList() {
       <TsCard
         title="角色权限"
         extra={<Button type="primary" icon={<PlusOutlined />}>新增角色</Button>}
+        bodyStyle={{ padding: 0 }}
       >
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={false}
-        />
+        <div className="p-5">
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={data?.results || []}
+            loading={isLoading}
+            pagination={false}
+          />
+        </div>
       </TsCard>
 
       <Drawer

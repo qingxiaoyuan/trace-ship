@@ -134,118 +134,122 @@ export default function ReleaseBoard() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }} extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/releases/create')}>
-          新建发布
-        </Button>
-      }>
-        <SearchFilterBar
-          filters={[
-            {
-              key: 'project_id',
-              type: 'select',
-              placeholder: '选择项目',
-              width: 176,
-              options: projectOptions,
-            },
-            { key: 'version', type: 'input', placeholder: '版本号', width: 160 },
-            {
-              key: 'release_type',
-              type: 'select',
-              placeholder: '发布类型',
-              width: 128,
-              options: releaseTypeOptions,
-            },
-            {
-              key: 'status',
-              type: 'select',
-              placeholder: '状态',
-              width: 128,
-              options: releaseStatusOptions,
-            },
-            { key: 'created_at__gte', type: 'date', placeholder: '开始日期', width: 160 },
-            { key: 'created_at__lte', type: 'date', placeholder: '结束日期', width: 160 },
-          ]}
-          values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
-          onReset={() => {
-            setFilters({
-              project_id: undefined,
-              version: '',
-              release_type: undefined,
-              status: undefined,
-              created_at__gte: undefined,
-              created_at__lte: undefined,
-            });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-        />
-      </TsCard>
+      <TsCard
+        title="发布记录"
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/releases/create')}>
+            新建发布
+          </Button>
+        }
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
+          <SearchFilterBar
+            filters={[
+              {
+                key: 'project_id',
+                type: 'select',
+                placeholder: '选择项目',
+                width: 176,
+                options: projectOptions,
+              },
+              { key: 'version', type: 'input', placeholder: '版本号', width: 160 },
+              {
+                key: 'release_type',
+                type: 'select',
+                placeholder: '发布类型',
+                width: 128,
+                options: releaseTypeOptions,
+              },
+              {
+                key: 'status',
+                type: 'select',
+                placeholder: '状态',
+                width: 128,
+                options: releaseStatusOptions,
+              },
+              { key: 'created_at__gte', type: 'date', placeholder: '开始日期', width: 160 },
+              { key: 'created_at__lte', type: 'date', placeholder: '结束日期', width: 160 },
+            ]}
+            values={filters}
+            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+            onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+            onReset={() => {
+              setFilters({
+                project_id: undefined,
+                version: '',
+                release_type: undefined,
+                status: undefined,
+                created_at__gte: undefined,
+                created_at__lte: undefined,
+              });
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+          />
+        </div>
 
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
-        {
-          key: 'list',
-          label: '发布记录',
-          children: (
-            <TsCard title="发布记录">
-              <Table
-                rowKey="id"
-                columns={columns}
-                dataSource={data?.results || []}
-                loading={isLoading}
-                pagination={{
-                  current: pagination.current,
-                  pageSize: pagination.pageSize,
-                  total: data?.total || 0,
-                  showSizeChanger: true,
-                }}
-                onChange={(p) => {
-                  setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-                }}
-              />
-            </TsCard>
-          ),
-        },
-        {
-          key: 'catalog',
-          label: '版本目录',
-          children: (
-            <TsCard title="版本目录">
-              <Tabs
-                items={[
-                  {
-                    key: 'formal',
-                    label: '正式版本',
-                    children: (
-                      <Table
-                        rowKey="id"
-                        columns={columns.filter((c) => c.dataIndex !== 'release_type')}
-                        dataSource={catalogData?.formal || []}
-                        loading={catalogLoading}
-                        pagination={false}
-                      />
-                    ),
-                  },
-                  {
-                    key: 'test',
-                    label: '测试版本',
-                    children: (
-                      <Table
-                        rowKey="id"
-                        columns={columns.filter((c) => c.dataIndex !== 'release_type')}
-                        dataSource={catalogData?.test || []}
-                        loading={catalogLoading}
-                        pagination={false}
-                      />
-                    ),
-                  },
-                ]}
-              />
-            </TsCard>
-          ),
-        },
-      ]} />
+        <div className="p-5">
+          <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+            {
+              key: 'list',
+              label: '发布记录',
+              children: (
+                <Table
+                  rowKey="id"
+                  columns={columns}
+                  dataSource={data?.results || []}
+                  loading={isLoading}
+                  pagination={{
+                    current: pagination.current,
+                    pageSize: pagination.pageSize,
+                    total: data?.total || 0,
+                    showSizeChanger: true,
+                  }}
+                  onChange={(p) => {
+                    setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'catalog',
+              label: '版本目录',
+              children: (
+                <Tabs
+                  items={[
+                    {
+                      key: 'formal',
+                      label: '正式版本',
+                      children: (
+                        <Table
+                          rowKey="id"
+                          columns={columns.filter((c) => c.dataIndex !== 'release_type')}
+                          dataSource={catalogData?.formal || []}
+                          loading={catalogLoading}
+                          pagination={false}
+                        />
+                      ),
+                    },
+                    {
+                      key: 'test',
+                      label: '测试版本',
+                      children: (
+                        <Table
+                          rowKey="id"
+                          columns={columns.filter((c) => c.dataIndex !== 'release_type')}
+                          dataSource={catalogData?.test || []}
+                          loading={catalogLoading}
+                          pagination={false}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+              ),
+            },
+          ]} />
+        </div>
+      </TsCard>
     </div>
   );
 }

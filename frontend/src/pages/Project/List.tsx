@@ -150,49 +150,57 @@ export default function ProjectList() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }}>
-        <SearchFilterBar
-          filters={[
-            { key: 'keyword', type: 'input', placeholder: '搜索项目编码/名称', width: 256 },
-            {
-              key: 'status',
-              type: 'select',
-              placeholder: '全部状态',
-              width: 144,
-              options: projectStatusOptions,
-            },
-          ]}
-          values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => {
-            setPagination((prev) => ({ ...prev, current: 1 }));
-            refetch();
-          }}
-          onReset={() => {
-            setFilters({ keyword: '', status: undefined });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-          addText="新增项目"
-          onAdd={handleAdd}
-        />
-      </TsCard>
+      <TsCard
+        title="项目列表"
+        extra={
+          <Button type="primary" onClick={handleAdd}>
+            新增项目
+          </Button>
+        }
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
+          <SearchFilterBar
+            filters={[
+              { key: 'keyword', type: 'input', placeholder: '搜索项目编码/名称', width: 256 },
+              {
+                key: 'status',
+                type: 'select',
+                placeholder: '全部状态',
+                width: 144,
+                options: projectStatusOptions,
+              },
+            ]}
+            values={filters}
+            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+            onSearch={() => {
+              setPagination((prev) => ({ ...prev, current: 1 }));
+              refetch();
+            }}
+            onReset={() => {
+              setFilters({ keyword: '', status: undefined });
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+          />
+        </div>
 
-      <TsCard title="项目列表">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
+        <div className="p-5">
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={data?.results || []}
+            loading={isLoading}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: data?.total || 0,
+              showSizeChanger: true,
+            }}
+            onChange={(p) => {
+              setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+            }}
+          />
+        </div>
       </TsCard>
 
       <ProjectModal

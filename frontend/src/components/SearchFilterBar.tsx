@@ -1,5 +1,10 @@
-import { Input, Select, Button, Space, DatePicker } from 'antd';
-import { SearchOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Input, Select, Button, DatePicker, Tooltip } from 'antd';
+import {
+  SearchOutlined,
+  ReloadOutlined,
+  FilterOutlined,
+  CalendarOutlined,
+} from '@ant-design/icons';
 import type { ReactNode } from 'react';
 import type { Dayjs } from 'dayjs';
 
@@ -22,8 +27,6 @@ interface SearchFilterBarProps {
   onChange: (key: string, value: unknown) => void;
   onSearch: () => void;
   onReset: () => void;
-  addText?: string;
-  onAdd?: () => void;
   extra?: ReactNode;
   loading?: boolean;
 }
@@ -34,14 +37,12 @@ export function SearchFilterBar({
   onChange,
   onSearch,
   onReset,
-  addText = '新增',
-  onAdd,
   extra,
   loading,
 }: SearchFilterBarProps) {
   return (
-    <Space wrap className="w-full justify-between">
-      <Space wrap size="middle">
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {filters.map((field) => {
           if (field.type === 'input') {
             return (
@@ -65,6 +66,7 @@ export function SearchFilterBar({
                 value={(values[field.key] as Dayjs) || null}
                 onChange={(value) => onChange(field.key, value)}
                 style={{ width: field.width || 160 }}
+                prefix={<CalendarOutlined className="text-slate-400" />}
                 allowClear
               />
             );
@@ -77,26 +79,23 @@ export function SearchFilterBar({
               onChange={(value) => onChange(field.key, value)}
               options={field.options}
               style={{ width: field.width || 144 }}
+              prefix={<FilterOutlined className="text-slate-400" />}
               allowClear
             />
           );
         })}
+      </div>
+
+      <div className="flex items-center gap-2">
         <Button type="primary" icon={<SearchOutlined />} onClick={onSearch} loading={loading}>
           查询
         </Button>
-        <Button icon={<ReloadOutlined />} onClick={onReset}>
-          重置
-        </Button>
-      </Space>
+        <Tooltip title="重置">
+          <Button icon={<ReloadOutlined />} onClick={onReset} />
+        </Tooltip>
+      </div>
 
-      <Space>
-        {extra}
-        {onAdd && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
-            {addText}
-          </Button>
-        )}
-      </Space>
-    </Space>
+      {extra && <div className="ml-auto">{extra}</div>}
+    </div>
   );
 }

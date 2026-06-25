@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import {
   Layout,
   Breadcrumb,
-  Select,
   Badge,
   Avatar,
   Dropdown,
@@ -23,8 +22,6 @@ import { useLocation, useMatches, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tokens } from '@/styles/theme';
 import { useAuthStore } from '@/stores/authStore';
-import { useGlobalStore } from '@/stores/globalStore';
-import { projectApi } from '@/api/project';
 import { notificationApi } from '@/api/notification';
 import { mockProjects } from '@/mock/projects';
 import { mockBuildRecords } from '@/mock/dashboard';
@@ -44,14 +41,8 @@ export function TopHeader() {
   const matches = useMatches();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const { currentProjectId, setCurrentProjectId } = useGlobalStore();
   const queryClient = useQueryClient();
   const [bellOpen, setBellOpen] = useState(false);
-
-  const { data: projectData } = useQuery({
-    queryKey: ['header-projects'],
-    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
-  });
 
   const { data: unreadCountData } = useQuery({
     queryKey: ['notification-unread-count'],
@@ -72,7 +63,6 @@ export function TopHeader() {
     },
   });
 
-  const projectOptions = (projectData?.results || []).map((p) => ({ value: p.id, label: p.name }));
   const unreadCount = unreadCountData?.count || 0;
   const notifications = notificationData?.results || [];
 
@@ -168,6 +158,34 @@ export function TopHeader() {
       ];
     }
 
+    // 仓库详情动态面包屑：仓库管理 / 仓库详情
+    const repoMatch = location.pathname.match(/^\/repositories\/([^/]+)/);
+    if (repoMatch) {
+      return [
+        { title: '仓库管理', path: '/repositories' },
+        { title: '仓库详情' },
+      ];
+    }
+
+    // 凭证详情动态面包屑：凭证管理 / 凭证详情
+    const credentialMatch = location.pathname.match(/^\/credentials\/([^/]+)/);
+    if (credentialMatch) {
+      return [
+        { title: '凭证管理', path: '/credentials' },
+        { title: '凭证详情' },
+      ];
+    }
+
+    // 凭证使用记录动态面包屑：凭证管理 / 凭证详情 / 使用记录
+    const credentialUsageMatch = location.pathname.match(/^\/credentials\/([^/]+)\/usage/);
+    if (credentialUsageMatch) {
+      return [
+        { title: '凭证管理', path: '/credentials' },
+        { title: '凭证详情', path: `/credentials/${credentialUsageMatch[1]}` },
+        { title: '使用记录' },
+      ];
+    }
+
     // Jenkins 构建日志动态面包屑：Jenkins 构建 / 构建日志 #128
     const jenkinsLogMatch = location.pathname.match(/^\/jenkins\/logs\/([^/]+)/);
     if (jenkinsLogMatch) {
@@ -243,14 +261,6 @@ export function TopHeader() {
       />
 
       <Space size="middle">
-        <Select
-          value={currentProjectId || undefined}
-          onChange={setCurrentProjectId}
-          options={projectOptions}
-          style={{ width: 176 }}
-          placeholder="选择项目"
-        />
-
         <Dropdown
           menu={notificationMenu}
           placement="bottomRight"

@@ -191,8 +191,8 @@ export default function Jenkins() {
           key: 'jobs',
           label: 'Jenkins 任务',
           children: (
-            <TsCard title="任务列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={handleAddJob}>新增任务</Button>}>
-              <div className="mb-4">
+            <TsCard title="任务列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={handleAddJob}>新增任务</Button>} bodyStyle={{ padding: 0 }}>
+              <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
                 <SearchFilterBar
                   filters={[
                     { key: 'project', type: 'select', placeholder: '关联项目', width: 176, options: projectOptions },
@@ -204,19 +204,21 @@ export default function Jenkins() {
                   onReset={() => { setJobFilters({ project: undefined, keyword: '' }); setJobPagination((prev) => ({ ...prev, current: 1 })); }}
                 />
               </div>
-              <Table
-                rowKey="id"
-                columns={jobColumns}
-                dataSource={jobData?.results || []}
-                loading={jobsLoading}
-                pagination={{
-                  current: jobPagination.current,
-                  pageSize: jobPagination.pageSize,
-                  total: jobData?.total || 0,
-                  showSizeChanger: true,
-                }}
-                onChange={(p) => setJobPagination({ current: p.current || 1, pageSize: p.pageSize || 10 })}
-              />
+              <div className="p-5">
+                <Table
+                  rowKey="id"
+                  columns={jobColumns}
+                  dataSource={jobData?.results || []}
+                  loading={jobsLoading}
+                  pagination={{
+                    current: jobPagination.current,
+                    pageSize: jobPagination.pageSize,
+                    total: jobData?.total || 0,
+                    showSizeChanger: true,
+                  }}
+                  onChange={(p) => setJobPagination({ current: p.current || 1, pageSize: p.pageSize || 10 })}
+                />
+              </div>
             </TsCard>
           ),
         },
@@ -224,8 +226,8 @@ export default function Jenkins() {
           key: 'builds',
           label: '构建记录',
           children: (
-            <TsCard title="构建记录">
-              <div className="mb-4">
+            <TsCard title="构建记录" bodyStyle={{ padding: 0 }}>
+              <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
                 <SearchFilterBar
                   filters={[
                     { key: 'status', type: 'select', placeholder: '构建状态', width: 144, options: statusOptions },
@@ -236,19 +238,21 @@ export default function Jenkins() {
                   onReset={() => { setBuildFilters({ status: undefined }); setBuildPagination((prev) => ({ ...prev, current: 1 })); }}
                 />
               </div>
-              <Table
-                rowKey="id"
-                columns={buildColumns}
-                dataSource={buildData?.results || []}
-                loading={buildsLoading}
-                pagination={{
-                  current: buildPagination.current,
-                  pageSize: buildPagination.pageSize,
-                  total: buildData?.total || 0,
-                  showSizeChanger: true,
-                }}
-                onChange={(p) => setBuildPagination({ current: p.current || 1, pageSize: p.pageSize || 10 })}
-              />
+              <div className="p-5">
+                <Table
+                  rowKey="id"
+                  columns={buildColumns}
+                  dataSource={buildData?.results || []}
+                  loading={buildsLoading}
+                  pagination={{
+                    current: buildPagination.current,
+                    pageSize: buildPagination.pageSize,
+                    total: buildData?.total || 0,
+                    showSizeChanger: true,
+                  }}
+                  onChange={(p) => setBuildPagination({ current: p.current || 1, pageSize: p.pageSize || 10 })}
+                />
+              </div>
             </TsCard>
           ),
         },

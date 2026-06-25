@@ -34,7 +34,7 @@ export function TsModal({
       footer={footer}
       styles={{
         body: {
-          padding: 24,
+          padding: 20,
           maxHeight: '70vh',
           overflow: 'auto',
         },

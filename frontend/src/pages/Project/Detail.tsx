@@ -59,7 +59,7 @@ export default function ProjectDetail() {
   return (
     <div className="space-y-4">
       <TsCard bodyStyle={{ padding: 0 }}>
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-linear-to-r from-white to-slate-50/50">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
           <div>
             <Title level={4} className="m-0! text-slate-900!">{project.name}</Title>
             <Text className="text-xs text-slate-500 mt-0.5 block">

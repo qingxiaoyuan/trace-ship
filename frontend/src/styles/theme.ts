@@ -103,13 +103,24 @@ export const antdTheme = {
     Input: {
       borderRadius: tokens.layout.inputRadius,
       colorBorder: tokens.colors.border,
-      activeBorderColor: tokens.colors.textSecondary,
-      hoverBorderColor: '#D1D1CE',
-      activeShadow: '0 0 0 2px rgba(17, 17, 17, 0.06)',
+      activeBorderColor: tokens.colors.buttonPrimary,
+      hoverBorderColor: tokens.colors.buttonPrimary,
+      activeShadow: '0 0 0 2px rgba(37, 99, 235, 0.12)',
     },
     Select: {
       borderRadius: tokens.layout.inputRadius,
       colorBorder: tokens.colors.border,
+      activeBorderColor: tokens.colors.buttonPrimary,
+      hoverBorderColor: tokens.colors.buttonPrimary,
+    },
+    Radio: {
+      colorPrimary: tokens.colors.buttonPrimary,
+    },
+    Checkbox: {
+      colorPrimary: tokens.colors.buttonPrimary,
+    },
+    Switch: {
+      colorPrimary: tokens.colors.buttonPrimary,
     },
     Table: {
       headerBg: '#F9F9F8',

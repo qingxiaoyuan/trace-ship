@@ -74,59 +74,67 @@ export default function SystemUserList() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }}>
-        <SearchFilterBar
-          filters={[
-            { key: 'keyword', type: 'input', placeholder: '搜索用户名/昵称/邮箱', width: 256 },
-            {
-              key: 'source',
-              type: 'select',
-              placeholder: '来源',
-              width: 128,
-              options: [
-                { label: 'LDAP', value: 'ldap' },
-                { label: '本地', value: 'local' },
-              ],
-            },
-            {
-              key: 'is_active',
-              type: 'select',
-              placeholder: '状态',
-              width: 128,
-              options: [{ label: '启用', value: 'true' }, { label: '停用', value: 'false' }],
-            },
-          ]}
-          values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
-          onReset={() => {
-            setFilters({ keyword: '', source: undefined, is_active: undefined });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-          extra={
+      <TsCard
+        title="用户列表"
+        extra={
+          <Space>
             <Button icon={<SyncOutlined />}>同步 LDAP</Button>
-          }
-          addText="新增本地用户"
-          onAdd={() => message.info('打开新增用户弹窗')}
-        />
-      </TsCard>
+            <Button type="primary" onClick={() => message.info('打开新增用户弹窗')}>
+              新增本地用户
+            </Button>
+          </Space>
+        }
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
+          <SearchFilterBar
+            filters={[
+              { key: 'keyword', type: 'input', placeholder: '搜索用户名/昵称/邮箱', width: 256 },
+              {
+                key: 'source',
+                type: 'select',
+                placeholder: '来源',
+                width: 128,
+                options: [
+                  { label: 'LDAP', value: 'ldap' },
+                  { label: '本地', value: 'local' },
+                ],
+              },
+              {
+                key: 'is_active',
+                type: 'select',
+                placeholder: '状态',
+                width: 128,
+                options: [{ label: '启用', value: 'true' }, { label: '停用', value: 'false' }],
+              },
+            ]}
+            values={filters}
+            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+            onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+            onReset={() => {
+              setFilters({ keyword: '', source: undefined, is_active: undefined });
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+          />
+        </div>
 
-      <TsCard title="用户列表">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
+        <div className="p-5">
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={data?.results || []}
+            loading={isLoading}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: data?.total || 0,
+              showSizeChanger: true,
+            }}
+            onChange={(p) => {
+              setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+            }}
+          />
+        </div>
       </TsCard>
     </div>
   );

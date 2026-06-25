@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { Form, Input, Select, Switch } from 'antd';
+import { Form, Input, Select, Switch, Row, Col, Button } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { TsModal } from '@/components/TsModal';
+import { FormSection } from '@/components/FormSection';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { credentialApi } from '@/api/credential';
@@ -91,7 +92,6 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
 
   const credentialMode = Form.useWatch('credential_mode', form);
 
-
   const handleOk = () => {
     form.validateFields().then((values) => {
       let paramsTemplate: unknown = {};
@@ -122,6 +122,7 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
 
   const isFixed = credentialMode === 'fixed';
   const isSpecifiedUser = credentialMode === 'specified_user';
+  const confirmLoading = projectsLoading || reposLoading || credentialsLoading || usersLoading;
 
   return (
     <TsModal
@@ -131,101 +132,160 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
         form.resetFields();
         onCancel();
       }}
-      onOk={handleOk}
-      confirmLoading={projectsLoading || reposLoading || credentialsLoading || usersLoading}
+      width={720}
+      footer={
+        <div className="flex justify-end gap-3">
+          <Button type="text" className="text-slate-500" onClick={() => {
+            form.resetFields();
+            onCancel();
+          }}>
+            取消
+          </Button>
+          <Button type="primary" onClick={handleOk} loading={confirmLoading}>
+            确认
+          </Button>
+        </div>
+      }
     >
       <Form form={form} layout="vertical">
-        <Form.Item
-          name="project"
-          label="关联项目"
-          rules={[{ required: true, message: '请选择项目' }]}
-        >
-          <Select
-            showSearch
-            placeholder="选择项目"
-            loading={projectsLoading}
-            options={projectOptions}
-            optionFilterProp="label"
-            onChange={() => form.setFieldsValue({ repository: undefined })}
-          />
-        </Form.Item>
-        <Form.Item name="repository" label="关联仓库">
-          <Select
-            showSearch
-            allowClear
-            placeholder="选择关联仓库（用于匹配发布流程）"
-            loading={reposLoading}
-            options={repoOptions}
-            optionFilterProp="label"
-          />
-        </Form.Item>
-        <Form.Item
-          name="name"
-          label="任务名称"
-          rules={[{ required: true, message: '请输入任务名称' }]}
-        >
-          <Input placeholder="如：后端打包" />
-        </Form.Item>
-        <Form.Item
-          name="server_url"
-          label="Jenkins 地址"
-          rules={[{ required: true, message: '请输入 Jenkins 地址' }]}
-        >
-          <Input placeholder="https://jenkins.example.com" />
-        </Form.Item>
-        <Form.Item
-          name="job_name"
-          label="Jenkins Job 名"
-          rules={[{ required: true, message: '请输入 Jenkins Job 名' }]}
-        >
-          <Input placeholder="如：backend-build" />
-        </Form.Item>
-        <Form.Item
-          name="credential_mode"
-          label="凭证模式"
-          rules={[{ required: true, message: '请选择凭证模式' }]}
-        >
-          <Select options={credentialModeOptions} />
-        </Form.Item>
-        {isFixed && (
-          <Form.Item
-            name="credential"
-            label="凭证"
-            rules={[{ required: true, message: '请选择凭证' }]}
-          >
-            <Select
-              showSearch
-              placeholder="选择 jenkins_token 类型凭证"
-              loading={credentialsLoading}
-              options={credentialOptions}
-              optionFilterProp="label"
-            />
-          </Form.Item>
-        )}
-        {isSpecifiedUser && (
-          <Form.Item
-            name="specified_user"
-            label="指定用户"
-            rules={[{ required: true, message: '请选择指定用户' }]}
-          >
-            <Select
-              showSearch
-              placeholder="选择用户"
-              loading={usersLoading}
-              options={userOptions}
-              optionFilterProp="label"
-            />
-          </Form.Item>
-        )}
-        <Form.Item name="params_template" label="参数模板（JSON）">
-          <Input.TextArea
-            rows={4}
-            placeholder={`{\n  "VERSION": "{version}",\n  "BRANCH": "{branch}"\n}`}
-          />
-        </Form.Item>
-        <Form.Item name="is_active" label="是否启用" valuePropName="checked">
-          <Switch checkedChildren="启用" unCheckedChildren="停用" />
-        </Form.Item>
+        <FormSection title="基本信息">
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <Form.Item
+                name="project"
+                label="关联项目"
+                rules={[{ required: true, message: '请选择项目' }]}
+              >
+                <Select
+                  showSearch
+                  placeholder="选择项目"
+                  loading={projectsLoading}
+                  options={projectOptions}
+                  optionFilterProp="label"
+                  onChange={() => form.setFieldsValue({ repository: undefined })}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="repository" label="关联仓库">
+                <Select
+                  showSearch
+                  allowClear
+                  placeholder="选择关联仓库（用于匹配发布流程）"
+                  loading={reposLoading}
+                  options={repoOptions}
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="name"
+                label="任务名称"
+                rules={[{ required: true, message: '请输入任务名称' }]}
+              >
+                <Input placeholder="如：后端打包" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </FormSection>
+
+        <FormSection title="连接信息">
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <Form.Item
+                name="server_url"
+                label="Jenkins 地址"
+                rules={[{ required: true, message: '请输入 Jenkins 地址' }]}
+              >
+                <Input placeholder="https://jenkins.example.com" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="job_name"
+                label="Jenkins Job 名"
+                rules={[{ required: true, message: '请输入 Jenkins Job 名' }]}
+              >
+                <Input placeholder="如：backend-build" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </FormSection>
+
+        <FormSection title="凭证配置">
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <Form.Item
+                name="credential_mode"
+                label="凭证模式"
+                rules={[{ required: true, message: '请选择凭证模式' }]}
+              >
+                <Select options={credentialModeOptions} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  isFixed ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <Form.Item
+                  name="credential"
+                  label="凭证"
+                  rules={[{ required: isFixed, message: '请选择凭证' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="选择 jenkins_token 类型凭证"
+                    loading={credentialsLoading}
+                    options={credentialOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </div>
+            </Col>
+            <Col span={12}>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  isSpecifiedUser ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <Form.Item
+                  name="specified_user"
+                  label="指定用户"
+                  rules={[{ required: isSpecifiedUser, message: '请选择指定用户' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="选择用户"
+                    loading={usersLoading}
+                    options={userOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </div>
+            </Col>
+          </Row>
+        </FormSection>
+
+        <FormSection title="高级设置">
+          <Row gutter={[24, 16]}>
+            <Col span={24}>
+              <Form.Item name="params_template" label="参数模板（JSON）">
+                <Input.TextArea
+                  rows={4}
+                  placeholder={`{\n  "VERSION": "{version}",\n  "BRANCH": "{branch}"\n}`}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="is_active" label="是否启用" valuePropName="checked">
+                <Switch checkedChildren="启用" unCheckedChildren="停用" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </FormSection>
       </Form>
     </TsModal>
   );

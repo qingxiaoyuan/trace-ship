@@ -149,63 +149,65 @@ export default function CommitList() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }}>
-        <SearchFilterBar
-          filters={[
-            {
-              key: 'project_name',
-              type: 'select',
-              placeholder: '选择项目',
-              width: 176,
-              options: projectOptions,
-            },
-            {
-              key: 'branch',
-              type: 'select',
-              placeholder: '选择分支',
-              width: 144,
-              options: branchOptions,
-            },
-            { key: 'author', type: 'input', placeholder: '提交人', width: 128 },
-            {
-              key: 'review_status',
-              type: 'select',
-              placeholder: '合规状态',
-              width: 144,
-              options: reviewStatusOptions,
-            },
-          ]}
-          values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value as string }))}
-          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
-          onReset={() => {
-            setFilters({ project_name: undefined, branch: undefined, author: '', review_status: undefined });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-          extra={
-            <Button type="primary" icon={<SyncOutlined />} onClick={() => message.info('同步提交')}>
-              同步提交
-            </Button>
-          }
-        />
-      </TsCard>
+      <TsCard title="提交记录" bodyStyle={{ padding: 0 }}>
+        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
+          <SearchFilterBar
+            filters={[
+              {
+                key: 'project_name',
+                type: 'select',
+                placeholder: '选择项目',
+                width: 176,
+                options: projectOptions,
+              },
+              {
+                key: 'branch',
+                type: 'select',
+                placeholder: '选择分支',
+                width: 144,
+                options: branchOptions,
+              },
+              { key: 'author', type: 'input', placeholder: '提交人', width: 128 },
+              {
+                key: 'review_status',
+                type: 'select',
+                placeholder: '合规状态',
+                width: 144,
+                options: reviewStatusOptions,
+              },
+            ]}
+            values={filters}
+            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value as string }))}
+            onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+            onReset={() => {
+              setFilters({ project_name: undefined, branch: undefined, author: '', review_status: undefined });
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+            extra={
+              <Button type="primary" icon={<SyncOutlined />} onClick={() => message.info('同步提交')}>
+                同步提交
+              </Button>
+            }
+          />
+        </div>
 
-      <TsCard title="提交记录">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={results}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
+        <div className="p-5">
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={results}
+            loading={isLoading}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: data?.total || 0,
+              showSizeChanger: true,
+            }}
+            onChange={(p) => {
+              setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+            }}
+          />
+        </div>
       </TsCard>
 
       <TsCard bodyStyle={{ padding: 20 }}>

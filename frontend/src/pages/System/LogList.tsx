@@ -84,64 +84,67 @@ export default function LogList() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }}>
-        <SearchFilterBar
-          filters={[
-            { key: 'module', type: 'input', placeholder: '操作模块', width: 160 },
-            {
-              key: 'action',
-              type: 'select',
-              placeholder: '操作类型',
-              width: 128,
-              options: operationLogActions.map((a) => ({ value: a.value, label: a.label })),
-            },
-            { key: 'user', type: 'input', placeholder: '用户', width: 128 },
-            {
-              key: 'result',
-              type: 'select',
-              placeholder: '结果',
-              width: 128,
-              options: [{ label: '成功', value: 'success' }, { label: '失败', value: 'failure' }],
-            },
-            { key: 'created_at__gte', type: 'date', placeholder: '开始日期', width: 160 },
-            { key: 'created_at__lte', type: 'date', placeholder: '结束日期', width: 160 },
-          ]}
-          values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
-          onReset={() => {
-            setFilters({
-              module: '',
-              action: undefined,
-              user: '',
-              result: undefined,
-              created_at__gte: undefined,
-              created_at__lte: undefined,
-            });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-          extra={
-            <Button icon={<ExportOutlined />}>导出日志</Button>
-          }
-        />
-      </TsCard>
+      <TsCard
+        title="操作日志"
+        extra={<Button icon={<ExportOutlined />}>导出日志</Button>}
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
+          <SearchFilterBar
+            filters={[
+              { key: 'module', type: 'input', placeholder: '操作模块', width: 160 },
+              {
+                key: 'action',
+                type: 'select',
+                placeholder: '操作类型',
+                width: 128,
+                options: operationLogActions.map((a) => ({ value: a.value, label: a.label })),
+              },
+              { key: 'user', type: 'input', placeholder: '用户', width: 128 },
+              {
+                key: 'result',
+                type: 'select',
+                placeholder: '结果',
+                width: 128,
+                options: [{ label: '成功', value: 'success' }, { label: '失败', value: 'failure' }],
+              },
+              { key: 'created_at__gte', type: 'date', placeholder: '开始日期', width: 160 },
+              { key: 'created_at__lte', type: 'date', placeholder: '结束日期', width: 160 },
+            ]}
+            values={filters}
+            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+            onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
+            onReset={() => {
+              setFilters({
+                module: '',
+                action: undefined,
+                user: '',
+                result: undefined,
+                created_at__gte: undefined,
+                created_at__lte: undefined,
+              });
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+          />
+        </div>
 
-      <TsCard title="操作日志">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
+        <div className="p-5">
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={data?.results || []}
+            loading={isLoading}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: data?.total || 0,
+              showSizeChanger: true,
+            }}
+            onChange={(p) => {
+              setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+            }}
+          />
+        </div>
       </TsCard>
     </div>
   );

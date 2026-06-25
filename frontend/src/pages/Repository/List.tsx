@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Table, Button, Space, Tag, message, Popconfirm } from 'antd';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { EditOutlined, LinkOutlined, SyncOutlined, DeleteOutlined } from '@ant-design/icons';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
@@ -12,6 +13,7 @@ import { projectApi } from '@/api/project';
 import type { Repository } from '@/types';
 
 export default function RepositoryList() {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState({ keyword: '', project: undefined, repo_type: undefined });
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
   const [modalOpen, setModalOpen] = useState(false);
@@ -100,6 +102,16 @@ export default function RepositoryList() {
       key: 'vendor',
       render: (vendor: string) => <Tag color="blue">{vendor.toUpperCase()}</Tag>,
     },
+    {
+      title: '仓库名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, record: Repository) => (
+        <Button type="link" className="px-0! text-sm font-medium" onClick={() => navigate(`/repositories/${record.id}`)}>
+          {name}
+        </Button>
+      ),
+    },
     { title: '关联项目', dataIndex: 'project_name', key: 'project_name' },
     {
       title: '仓库地址',
@@ -157,56 +169,64 @@ export default function RepositoryList() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }}>
-        <SearchFilterBar
-          filters={[
-            { key: 'keyword', type: 'input', placeholder: '搜索仓库名称/地址', width: 256 },
-            {
-              key: 'project',
-              type: 'select',
-              placeholder: '关联项目',
-              width: 176,
-              options: projectFilterOptions,
-            },
-            {
-              key: 'repo_type',
-              type: 'select',
-              placeholder: '仓库类型',
-              width: 144,
-              options: repoTypeOptions,
-            },
-          ]}
-          values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => {
-            setPagination((prev) => ({ ...prev, current: 1 }));
-            refetch();
-          }}
-          onReset={() => {
-            setFilters({ keyword: '', project: undefined, repo_type: undefined });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-          addText="新增仓库"
-          onAdd={() => { setEditingRepo(null); setModalOpen(true); }}
-        />
-      </TsCard>
+      <TsCard
+        title="仓库列表"
+        extra={
+          <Button type="primary" onClick={() => { setEditingRepo(null); setModalOpen(true); }}>
+            新增仓库
+          </Button>
+        }
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
+          <SearchFilterBar
+            filters={[
+              { key: 'keyword', type: 'input', placeholder: '搜索仓库名称/地址', width: 256 },
+              {
+                key: 'project',
+                type: 'select',
+                placeholder: '关联项目',
+                width: 176,
+                options: projectFilterOptions,
+              },
+              {
+                key: 'repo_type',
+                type: 'select',
+                placeholder: '仓库类型',
+                width: 144,
+                options: repoTypeOptions,
+              },
+            ]}
+            values={filters}
+            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+            onSearch={() => {
+              setPagination((prev) => ({ ...prev, current: 1 }));
+              refetch();
+            }}
+            onReset={() => {
+              setFilters({ keyword: '', project: undefined, repo_type: undefined });
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+          />
+        </div>
 
-      <TsCard title="仓库列表">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
+        <div className="p-5">
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={data?.results || []}
+            loading={isLoading}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: data?.total || 0,
+              showSizeChanger: true,
+            }}
+            onChange={(p) => {
+              setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+            }}
+          />
+        </div>
       </TsCard>
 
       <RepositoryModal

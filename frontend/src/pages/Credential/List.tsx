@@ -76,6 +76,16 @@ export default function CredentialList() {
 
   const columns = [
     {
+      title: '凭证名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, record: Credential) => (
+        <Button type="link" className="px-0! text-sm font-medium" onClick={() => navigate(`/credentials/${record.id}`)}>
+          {name}
+        </Button>
+      ),
+    },
+    {
       title: '类型',
       dataIndex: 'cred_type',
       key: 'cred_type',
@@ -131,56 +141,64 @@ export default function CredentialList() {
 
   return (
     <div className="space-y-4">
-      <TsCard bodyStyle={{ padding: 20 }}>
-        <SearchFilterBar
-          filters={[
-            { key: 'keyword', type: 'input', placeholder: '搜索凭证名称', width: 256 },
-            {
-              key: 'cred_type',
-              type: 'select',
-              placeholder: '凭证类型',
-              width: 160,
-              options: credentialTypeOptions,
-            },
-            {
-              key: 'scope',
-              type: 'select',
-              placeholder: '作用范围',
-              width: 144,
-              options: credentialScopeOptions,
-            },
-          ]}
-          values={filters}
-          onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-          onSearch={() => {
-            setPagination((prev) => ({ ...prev, current: 1 }));
-            refetch();
-          }}
-          onReset={() => {
-            setFilters({ keyword: '', cred_type: undefined, scope: undefined });
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-          addText="新增凭证"
-          onAdd={() => { setEditingCredential(null); setModalOpen(true); }}
-        />
-      </TsCard>
+      <TsCard
+        title="凭证列表"
+        extra={
+          <Button type="primary" onClick={() => { setEditingCredential(null); setModalOpen(true); }}>
+            新增凭证
+          </Button>
+        }
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
+          <SearchFilterBar
+            filters={[
+              { key: 'keyword', type: 'input', placeholder: '搜索凭证名称', width: 256 },
+              {
+                key: 'cred_type',
+                type: 'select',
+                placeholder: '凭证类型',
+                width: 160,
+                options: credentialTypeOptions,
+              },
+              {
+                key: 'scope',
+                type: 'select',
+                placeholder: '作用范围',
+                width: 144,
+                options: credentialScopeOptions,
+              },
+            ]}
+            values={filters}
+            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+            onSearch={() => {
+              setPagination((prev) => ({ ...prev, current: 1 }));
+              refetch();
+            }}
+            onReset={() => {
+              setFilters({ keyword: '', cred_type: undefined, scope: undefined });
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+          />
+        </div>
 
-      <TsCard title="凭证列表">
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.results || []}
-          loading={isLoading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: data?.total || 0,
-            showSizeChanger: true,
-          }}
-          onChange={(p) => {
-            setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-          }}
-        />
+        <div className="p-5">
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={data?.results || []}
+            loading={isLoading}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: data?.total || 0,
+              showSizeChanger: true,
+            }}
+            onChange={(p) => {
+              setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
+            }}
+          />
+        </div>
       </TsCard>
 
       <CredentialModal

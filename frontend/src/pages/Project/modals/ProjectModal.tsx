@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Select, Radio } from 'antd';
+import { Form, Input, Select, Radio, Button } from 'antd';
 import { TsModal } from '@/components/TsModal';
+import { FormSection } from '@/components/FormSection';
 import { accountApi, type AccountUser } from '@/api/account';
 import type { Project } from '@/types';
 
@@ -23,6 +24,13 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
     }
   }, [open]);
 
+  const handleOk = () => {
+    form.validateFields().then((values) => {
+      onOk({ ...project, ...values });
+      form.resetFields();
+    });
+  };
+
   return (
     <TsModal
       title={project ? '编辑项目' : '新增项目'}
@@ -31,12 +39,19 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
         form.resetFields();
         onCancel();
       }}
-      onOk={() => {
-        form.validateFields().then((values) => {
-          onOk({ ...project, ...values });
-          form.resetFields();
-        });
-      }}
+      footer={
+        <div className="flex justify-end gap-3">
+          <Button type="text" className="text-slate-500" onClick={() => {
+            form.resetFields();
+            onCancel();
+          }}>
+            取消
+          </Button>
+          <Button type="primary" onClick={handleOk}>
+            确认
+          </Button>
+        </div>
+      }
     >
       <Form
         form={form}
@@ -47,35 +62,37 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
           }
         }
       >
-        <Form.Item
-          name="name"
-          label="项目名称"
-          rules={[{ required: true, message: '请输入项目名称' }]}
-        >
-          <Input placeholder="请输入项目名称" />
-        </Form.Item>
+        <FormSection title="基本信息">
+          <Form.Item
+            name="name"
+            label="项目名称"
+            rules={[{ required: true, message: '请输入项目名称' }]}
+          >
+            <Input placeholder="请输入项目名称" />
+          </Form.Item>
 
-        <Form.Item
-          name="leader_id"
-          label="项目负责人"
-          rules={[{ required: true, message: '请选择项目负责人' }]}
-        >
-          <Select
-            placeholder="请选择项目负责人"
-            options={users.map((u) => ({ label: u.nickname || u.username, value: u.id }))}
-          />
-        </Form.Item>
+          <Form.Item
+            name="leader_id"
+            label="项目负责人"
+            rules={[{ required: true, message: '请选择项目负责人' }]}
+          >
+            <Select
+              placeholder="请选择项目负责人"
+              options={users.map((u) => ({ label: u.nickname || u.username, value: u.id }))}
+            />
+          </Form.Item>
 
-        <Form.Item name="description" label="项目描述">
-          <Input.TextArea rows={3} placeholder="请输入项目描述" />
-        </Form.Item>
+          <Form.Item name="description" label="项目描述">
+            <Input.TextArea rows={3} placeholder="请输入项目描述" />
+          </Form.Item>
 
-        <Form.Item name="status" label="状态">
-          <Radio.Group>
-            <Radio value="active">启用</Radio>
-            <Radio value="inactive">停用</Radio>
-          </Radio.Group>
-        </Form.Item>
+          <Form.Item name="status" label="状态">
+            <Radio.Group>
+              <Radio value="active">启用</Radio>
+              <Radio value="inactive">停用</Radio>
+            </Radio.Group>
+          </Form.Item>
+        </FormSection>
       </Form>
     </TsModal>
   );

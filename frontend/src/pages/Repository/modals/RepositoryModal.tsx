@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
-import { Form, Input, Select } from 'antd';
+import { Form, Input, Select, Row, Col, Button } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { TsModal } from '@/components/TsModal';
+import { FormSection } from '@/components/FormSection';
 import { projectApi } from '@/api/project';
 import { credentialApi } from '@/api/credential';
 import { accountApi } from '@/api/account';
@@ -137,6 +138,7 @@ export function RepositoryModal({ open, repo, projectId, onCancel, onOk }: Repos
 
   const isFixed = credentialMode === 'fixed';
   const isSpecifiedUser = credentialMode === 'specified_user';
+  const confirmLoading = projectsLoading || credentialsLoading || usersLoading;
 
   return (
     <TsModal
@@ -146,90 +148,136 @@ export function RepositoryModal({ open, repo, projectId, onCancel, onOk }: Repos
         form.resetFields();
         onCancel();
       }}
-      onOk={handleOk}
-      confirmLoading={projectsLoading || credentialsLoading || usersLoading}
+      width={720}
+      footer={
+        <div className="flex justify-end gap-3">
+          <Button type="text" className="text-slate-500" onClick={() => {
+            form.resetFields();
+            onCancel();
+          }}>
+            取消
+          </Button>
+          <Button type="primary" onClick={handleOk} loading={confirmLoading}>
+            确认
+          </Button>
+        </div>
+      }
     >
       <Form form={form} layout="vertical">
-        {!projectId && (
-          <Form.Item name="project_id" label="关联项目" rules={[{ required: true, message: '请选择项目' }]}>
-            <Select
-              showSearch
-              placeholder="选择项目"
-              loading={projectsLoading}
-              options={projectOptions}
-              optionFilterProp="label"
-            />
-          </Form.Item>
-        )}
-        {projectId && (
-          <Form.Item label="关联项目">
-            <Input value={projectOptions.find((p) => p.value === projectId)?.label || projectId} disabled />
-          </Form.Item>
-        )}
-        <Form.Item name="repo_type" label="仓库类型" rules={[{ required: true, message: '请选择仓库类型' }]}>
-          <Select options={[{ label: 'Git', value: 'git' }, { label: 'SVN', value: 'svn' }]} />
-        </Form.Item>
-        <Form.Item name="vendor" label="仓库平台" rules={[{ required: true, message: '请选择仓库平台' }]}>
-          <Select
-            options={[
-              { label: 'GitLab', value: 'gitlab' },
-              { label: 'Gitea', value: 'gitea' },
-              { label: 'GitHub', value: 'github' },
-              { label: 'Gitee', value: 'gitee' },
-              { label: 'SVN', value: 'svn' },
-            ]}
-          />
-        </Form.Item>
-        <Form.Item name="name" label="仓库名称" rules={[{ required: true, message: '请输入仓库名称' }]}>
-          <Input placeholder="请输入仓库名称" />
-        </Form.Item>
-        <Form.Item name="url" label="仓库地址" rules={[{ required: true, message: '请输入仓库地址' }]}>
-          <Input placeholder="https://gitea.example.com/owner/repo.git" />
-        </Form.Item>
-        <Form.Item
-          name="default_branch"
-          label="默认分支"
-          rules={[{ required: true, message: '请输入默认分支' }]}
-        >
-          <Input placeholder="main" />
-        </Form.Item>
-        <Form.Item
-          name="credential_mode"
-          label="凭证模式"
-          rules={[{ required: true, message: '请选择凭证模式' }]}
-        >
-          <Select options={credentialModeOptions} />
-        </Form.Item>
-        {isFixed && (
-          <Form.Item
-            name="credential_id"
-            label="凭证"
-            rules={[{ required: true, message: '请选择凭证' }]}
-          >
-            <Select
-              showSearch
-              placeholder="选择凭证"
-              loading={credentialsLoading}
-              options={filteredCredentialOptions}
-              optionFilterProp="label"
-            />
-          </Form.Item>
-        )}
-        {isSpecifiedUser && (
-          <Form.Item
-            name="specified_user_id"
-            label="指定用户"
-            rules={[{ required: true, message: '请选择指定用户' }]}
-          >
-            <Select
-              showSearch
-              placeholder="选择用户"
-              loading={usersLoading}
-              options={userOptions}
-              optionFilterProp="label"
-            />
-          </Form.Item>
-        )}
+        <FormSection title="基本信息">
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              {!projectId ? (
+                <Form.Item name="project_id" label="关联项目" rules={[{ required: true, message: '请选择项目' }]}>
+                  <Select
+                    showSearch
+                    placeholder="选择项目"
+                    loading={projectsLoading}
+                    options={projectOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              ) : (
+                <Form.Item label="关联项目">
+                  <Input value={projectOptions.find((p) => p.value === projectId)?.label || projectId} disabled />
+                </Form.Item>
+              )}
+            </Col>
+            <Col span={12}>
+              <Form.Item name="name" label="仓库名称" rules={[{ required: true, message: '请输入仓库名称' }]}>
+                <Input placeholder="请输入仓库名称" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="repo_type" label="仓库类型" rules={[{ required: true, message: '请选择仓库类型' }]}>
+                <Select options={[{ label: 'Git', value: 'git' }, { label: 'SVN', value: 'svn' }]} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="vendor" label="仓库平台" rules={[{ required: true, message: '请选择仓库平台' }]}>
+                <Select
+                  options={[
+                    { label: 'GitLab', value: 'gitlab' },
+                    { label: 'Gitea', value: 'gitea' },
+                    { label: 'GitHub', value: 'github' },
+                    { label: 'Gitee', value: 'gitee' },
+                    { label: 'SVN', value: 'svn' },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="url" label="仓库地址" rules={[{ required: true, message: '请输入仓库地址' }]}>
+                <Input placeholder="https://gitea.example.com/owner/repo.git" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="default_branch"
+                label="默认分支"
+                rules={[{ required: true, message: '请输入默认分支' }]}
+              >
+                <Input placeholder="main" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </FormSection>
+
+        <FormSection title="凭证配置">
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <Form.Item
+                name="credential_mode"
+                label="凭证模式"
+                rules={[{ required: true, message: '请选择凭证模式' }]}
+              >
+                <Select options={credentialModeOptions} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  isFixed ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <Form.Item
+                  name="credential_id"
+                  label="凭证"
+                  rules={[{ required: isFixed, message: '请选择凭证' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="选择凭证"
+                    loading={credentialsLoading}
+                    options={filteredCredentialOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </div>
+            </Col>
+            <Col span={12}>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  isSpecifiedUser ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <Form.Item
+                  name="specified_user_id"
+                  label="指定用户"
+                  rules={[{ required: isSpecifiedUser, message: '请选择指定用户' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="选择用户"
+                    loading={usersLoading}
+                    options={userOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </div>
+            </Col>
+          </Row>
+        </FormSection>
       </Form>
     </TsModal>
   );

@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { Form, Input, Select, DatePicker, Radio } from 'antd';
+import { Form, Input, Select, DatePicker, Radio, Row, Col, Button } from 'antd';
 import dayjs from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
 import { TsModal } from '@/components/TsModal';
+import { FormSection } from '@/components/FormSection';
 import { projectApi } from '@/api/project';
 import type { Credential } from '@/types';
 
@@ -95,69 +96,133 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         form.resetFields();
         onCancel();
       }}
-      onOk={handleOk}
-      confirmLoading={projectsLoading}
+      width={720}
+      footer={
+        <div className="flex justify-end gap-3">
+          <Button type="text" className="text-slate-500" onClick={() => {
+            form.resetFields();
+            onCancel();
+          }}>
+            取消
+          </Button>
+          <Button type="primary" onClick={handleOk} loading={projectsLoading}>
+            确认
+          </Button>
+        </div>
+      }
     >
       <Form form={form} layout="vertical" initialValues={{ is_active: true, scope: 'project' }}>
-        <Form.Item name="name" label="凭证名称" rules={[{ required: true }]}>
-          <Input placeholder="请输入凭证名称" />
-        </Form.Item>
-        <Form.Item name="cred_type" label="凭证类型" rules={[{ required: true }]}>
-          <Select
-            options={[
-              { label: 'GitLab Token', value: 'gitlab_token' },
-              { label: 'Gitea Token', value: 'gitea_token' },
-              { label: 'SVN 密码', value: 'svn_password' },
-              { label: 'Jenkins Token', value: 'jenkins_token' },
-              { label: 'LDAP 密码', value: 'ldap_password' },
-            ]}
-          />
-        </Form.Item>
-        {!isTokenOnly && (
-          <Form.Item name="auth_mode" label="认证模式" rules={[{ required: true }]}>
-            <Select options={[{ label: 'Token', value: 'token' }, { label: '用户名密码', value: 'password' }]} />
-          </Form.Item>
-        )}
-        <Form.Item
-          name="token"
-          label={authMode === 'password' ? '密码' : 'Token'}
-          rules={[{ required: !credential }]}
-        >
-          <Input.Password placeholder={authMode === 'password' ? '请输入密码' : '请输入 Token'} />
-        </Form.Item>
-        {authMode === 'password' && (
-          <Form.Item name="username" label="用户名" rules={[{ required: true, message: '密码模式必须填写用户名' }]}>
-            <Input placeholder="请输入用户名" />
-          </Form.Item>
-        )}
-        <Form.Item name="scope" label="作用范围" rules={[{ required: true }]}>
-          <Radio.Group>
-            <Radio value="personal">个人</Radio>
-            <Radio value="project">项目</Radio>
-            <Radio value="global">全局</Radio>
-          </Radio.Group>
-        </Form.Item>
-        {scope === 'project' && (
-          <Form.Item
-            name="project"
-            label="关联项目"
-            rules={[{ required: true, message: '项目级凭证必须关联项目' }]}
-          >
-            <Select
-              showSearch
-              placeholder="选择项目"
-              loading={projectsLoading}
-              options={projectOptions}
-              optionFilterProp="label"
-            />
-          </Form.Item>
-        )}
-        <Form.Item name="expires_at" label="过期时间">
-          <DatePicker showTime className="w-full" />
-        </Form.Item>
-        <Form.Item name="remark" label="备注">
-          <Input.TextArea rows={2} />
-        </Form.Item>
+        <FormSection title="基本信息">
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <Form.Item name="name" label="凭证名称" rules={[{ required: true, message: '请输入凭证名称' }]}>
+                <Input placeholder="请输入凭证名称" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="cred_type" label="凭证类型" rules={[{ required: true, message: '请选择凭证类型' }]}>
+                <Select
+                  options={[
+                    { label: 'GitLab Token', value: 'gitlab_token' },
+                    { label: 'Gitea Token', value: 'gitea_token' },
+                    { label: 'SVN 密码', value: 'svn_password' },
+                    { label: 'Jenkins Token', value: 'jenkins_token' },
+                    { label: 'LDAP 密码', value: 'ldap_password' },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+        </FormSection>
+
+        <FormSection title="认证信息">
+          <Row gutter={[24, 16]}>
+            {!isTokenOnly && (
+              <Col span={12}>
+                <Form.Item name="auth_mode" label="认证模式" rules={[{ required: true, message: '请选择认证模式' }]}>
+                  <Select options={[{ label: 'Token', value: 'token' }, { label: '用户名密码', value: 'password' }]} />
+                </Form.Item>
+              </Col>
+            )}
+            <Col span={isTokenOnly ? 24 : 12}>
+              <Form.Item
+                name="token"
+                label={authMode === 'password' ? '密码' : 'Token'}
+                rules={[{ required: !credential, message: authMode === 'password' ? '请输入密码' : '请输入 Token' }]}
+              >
+                <Input.Password placeholder={authMode === 'password' ? '请输入密码' : '请输入 Token'} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={[24, 16]}>
+            <Col span={24}>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  authMode === 'password' ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <Form.Item
+                  name="username"
+                  label="用户名"
+                  rules={[{ required: authMode === 'password', message: '密码模式必须填写用户名' }]}
+                >
+                  <Input placeholder="请输入用户名" />
+                </Form.Item>
+              </div>
+            </Col>
+          </Row>
+
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <Form.Item name="expires_at" label="过期时间">
+                <DatePicker showTime className="w-full" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="remark" label="备注">
+                <Input.TextArea rows={1} placeholder="可选" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </FormSection>
+
+        <FormSection title="作用范围">
+          <Row gutter={[24, 16]}>
+            <Col span={24}>
+              <Form.Item name="scope" label="作用范围" rules={[{ required: true, message: '请选择作用范围' }]}>
+                <Radio.Group>
+                  <Radio value="personal">个人</Radio>
+                  <Radio value="project">项目</Radio>
+                  <Radio value="global">全局</Radio>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={[24, 16]}>
+            <Col span={12}>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  scope === 'project' ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <Form.Item
+                  name="project"
+                  label="关联项目"
+                  rules={[{ required: scope === 'project', message: '项目级凭证必须关联项目' }]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="选择项目"
+                    loading={projectsLoading}
+                    options={projectOptions}
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </div>
+            </Col>
+          </Row>
+        </FormSection>
       </Form>
     </TsModal>
   );
