@@ -60,12 +60,12 @@ class TestJenkinsService:
         assert build.queue_id == "123"
 
     def test_refresh_build_status_success_updates_release(self, project, repository, jenkins_job, patched_jenkins, user):
-        """构建成功后更新 ReleaseRecord 为 auditing"""
+        """构建成功后发布记录标记为已发布"""
         build = JenkinsBuild.objects.create(
             job=jenkins_job,
             queue_id="123",
             build_number=1,
-            status="building",
+            status="running",
         )
         release = ReleaseRecord.objects.create(
             project=project,
@@ -75,7 +75,7 @@ class TestJenkinsService:
             source_branch="develop",
             target_branch="main",
             release_type="formal",
-            status="building",
+            status="pending",
             publisher=user,
             jenkins_build=build,
         )
@@ -84,7 +84,7 @@ class TestJenkinsService:
         build.refresh_from_db()
         release.refresh_from_db()
         assert build.status == "success"
-        assert release.status == "auditing"
+        assert release.status == "released"
 
     def test_refresh_build_status_failure_rejects_release(self, project, repository, jenkins_job, patched_jenkins, user):
         """构建失败后驳回 ReleaseRecord"""

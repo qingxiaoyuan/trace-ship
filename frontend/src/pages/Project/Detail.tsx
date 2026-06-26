@@ -88,7 +88,7 @@ export default function ProjectDetail() {
           {activeTab === 'repos' && <RepoTab projectId={id || ''} />}
           {activeTab === 'jenkins' && <JenkinsTab projectId={id || ''} />}
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
-          {activeTab === 'workflows' && <WorkflowTab />}
+          {activeTab === 'workflows' && <WorkflowTab project={project} />}
           {activeTab === 'rules' && <RuleTab project={project} />}
         </div>
       </TsCard>

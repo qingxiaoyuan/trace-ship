@@ -93,3 +93,31 @@ class IsProjectTester(ProjectRolePermission):
 class IsProjectAuditor(ProjectRolePermission):
     """项目审计人员权限（含管理员）"""
     required_roles = ["manager", "auditor"]
+
+
+class IsProjectLeader(permissions.BasePermission):
+    """项目负责人权限
+
+    校验当前用户是否为项目 leader。create 时从请求体读取 project，
+    update/destroy 时从对象上读取 project。
+    """
+
+    def has_permission(self, request, view) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        project_id = request.data.get("project")
+        if not project_id:
+            return False
+        from apps.project.models import Project
+
+        return Project.objects.filter(id=project_id, leader=request.user).exists()
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        if request.user.is_superuser:
+            return True
+        project = obj if hasattr(obj, "members") else getattr(obj, "project", None)
+        if not project:
+            return False
+        return str(project.leader_id) == str(request.user.id)

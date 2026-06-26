@@ -89,19 +89,41 @@ class VersionCalculator:
         candidates.sort(key=lambda item: item[2], reverse=True)
         return candidates[0][0], candidates[0][1]
 
-    def calculate(self, tags: List[TagInfo], release_type: str = "formal", test_prefix: str = "test") -> Tuple[str, str]:
+    def calculate(
+        self,
+        tags: List[TagInfo],
+        release_type: str = "formal",
+        prefixes: Optional[Dict[str, str]] = None,
+    ) -> Tuple[str, str]:
         """
         计算下一个版本号和 tag 名称
 
+        从所有 tag 中匹配 version_rule 并找到最大版本号递增，
+        无匹配时使用 initial。最后根据 release_type 拼接前缀。
+
         Args:
             tags: 当前仓库的 tag 列表
-            release_type: 发布类型 formal/test
-            test_prefix: 测试版本前缀
+            release_type: 发布类型 formal/rc/beta
+            prefixes: 各发布类型对应的前缀配置，如 {"rc": "rc", "beta": "beta"}
 
         Returns:
             (version, tag_name) 元组
         """
-        latest = self.find_latest_matching_tag(tags)
+        prefixes = prefixes or {}
+        prefix = (prefixes.get(release_type, "") or "").strip("-")
+
+        # 统一去掉已知前缀后再匹配版本号，确保正式/rc/beta 都基于同一版本序列递增
+        normalized_tags: List[TagInfo] = []
+        all_prefixes = set((p or "").strip("-") for p in prefixes.values())
+        for t in tags:
+            name = t.name
+            for p in all_prefixes:
+                if p and name.startswith(f"{p}-"):
+                    name = name[len(p) + 1 :]
+                    break
+            normalized_tags.append(TagInfo(name=name, commit_hash=t.commit_hash, created_at=t.created_at))
+
+        latest = self.find_latest_matching_tag(normalized_tags)
         if latest is None:
             version = self.initial
         else:
@@ -112,8 +134,7 @@ class VersionCalculator:
             values[increment_field] = values[increment_field] + 1
             version = self.format.format(**values)
 
-        if release_type == "test":
-            prefix = test_prefix.strip("-")
+        if prefix:
             tag_name = f"{prefix}-{version}"
         else:
             tag_name = version
@@ -141,8 +162,21 @@ class ReleaseValidator:
         rule = project.release_rule or {}
         return {
             "formal_branch": rule.get("formal_branch", "main"),
-            "test_prefix": rule.get("test_prefix", "test"),
+            "tag_prefixes": rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes()),
             "release_cycle_days": int(rule.get("release_cycle_days", 3)),
+        }
+
+    @staticmethod
+    def get_default_tag_prefixes() -> Dict[str, str]:
+        """
+        获取默认 tag 前缀配置
+
+        Returns:
+            发布类型到前缀的映射
+        """
+        return {
+            "rc": "rc",
+            "beta": "beta",
         }
 
     @staticmethod
@@ -167,7 +201,7 @@ class ReleaseValidator:
         release_rule: dict,
     ) -> None:
         """
-        校验分支规则与测试前缀
+        校验分支规则与 tag 前缀
 
         Args:
             release_type: 发布类型
@@ -179,16 +213,18 @@ class ReleaseValidator:
             serializers.ValidationError: 校验失败
         """
         formal_branch = release_rule.get("formal_branch", "main")
-        test_prefix = release_rule.get("test_prefix", "test")
+        prefixes = release_rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes())
 
         if release_type == "formal" and target_branch != formal_branch:
             raise serializers.ValidationError(
                 {"target_branch": f"正式版本只能从 {formal_branch} 分支发布"}
             )
-        if release_type == "test" and not tag_name.startswith(test_prefix):
-            raise serializers.ValidationError(
-                {"tag_name": f"测试版本 tag 必须以 {test_prefix} 开头"}
-            )
+        if release_type in ("rc", "beta"):
+            prefix = (prefixes.get(release_type, "") or "").strip("-")
+            if prefix and not tag_name.startswith(prefix):
+                raise serializers.ValidationError(
+                    {"tag_name": f"{release_type} 版本 tag 必须以 {prefix} 开头"}
+                )
 
     @staticmethod
     def validate_release_cycle(project: Project, release_type: str, release_rule: dict) -> None:
@@ -211,7 +247,7 @@ class ReleaseValidator:
             ReleaseRecord.objects.filter(
                 project=project,
                 release_type="formal",
-                status__in=["released", "pending", "building", "auditing"],
+                status__in=["released", "pending"],
                 created_at__gte=cutoff,
             )
             .exclude(status="rejected")
@@ -466,6 +502,7 @@ class ReleaseService:
         target_branch: str,
         publisher,
         version: Optional[str] = None,
+        tag_name: Optional[str] = None,
     ) -> ReleaseRecord:
         """
         创建发布申请
@@ -478,6 +515,7 @@ class ReleaseService:
             target_branch: 目标分支
             publisher: 发布人
             version: 可选的版本号，为空时自动计算
+            tag_name: 可选的 tag 名称，为空时根据版本号与发布类型自动计算
 
         Returns:
             新创建的 ReleaseRecord
@@ -494,17 +532,23 @@ class ReleaseService:
                 raise serializers.ValidationError({"repository": f"获取 tag 列表失败: {exc}"})
             version_rule = project.version_rule or {}
             calculator = VersionCalculator(version_rule)
-            version, tag_name = calculator.calculate(
+            prefixes = release_rule.get("tag_prefixes", {}) or ReleaseValidator.get_default_tag_prefixes()
+            version, auto_tag_name = calculator.calculate(
                 tags,
                 release_type=release_type,
-                test_prefix=release_rule.get("test_prefix", "test"),
+                prefixes=prefixes,
             )
         else:
-            tag_name = version
-            if release_type == "test":
-                prefix = release_rule.get("test_prefix", "test").strip("-")
-                if not tag_name.startswith(prefix):
-                    tag_name = f"{prefix}-{tag_name}"
+            if release_type in ("rc", "beta"):
+                prefixes = release_rule.get("tag_prefixes", {}) or ReleaseValidator.get_default_tag_prefixes()
+                prefix = (prefixes.get(release_type, "") or "").strip("-")
+                auto_tag_name = version
+                if prefix and not auto_tag_name.startswith(prefix):
+                    auto_tag_name = f"{prefix}-{auto_tag_name}"
+            else:
+                auto_tag_name = version
+
+        tag_name = tag_name or auto_tag_name
 
         ReleaseValidator.validate_branch_and_prefix(
             release_type, target_branch, tag_name, release_rule
@@ -617,6 +661,8 @@ class ReleaseService:
         """
         工作流完成时驱动发布状态
 
+        新 Tag 流程：审批通过后直接推 tag，成功后标记为 released。
+
         Args:
             instance: WorkflowInstance 实例
         """
@@ -625,11 +671,6 @@ class ReleaseService:
             return
 
         if release.status == "pending":
-            release.status = "building"
-            release.save(update_fields=["status", "updated_at"])
-            ReleaseService.trigger_build_for_release(release)
-        elif release.status == "auditing":
-            # 推 tag 并标记为已发布
             try:
                 ReleaseService.push_tag(release)
             except Exception:
@@ -655,55 +696,26 @@ class ReleaseService:
     @staticmethod
     def trigger_build_for_release(release: ReleaseRecord) -> None:
         """
-        为发布触发 Jenkins 构建
+        为发布触发 Jenkins 构建（当前流程已替换为 Tag 流程，此方法不再使用）。
 
         Args:
             release: ReleaseRecord 实例
         """
-        from apps.jenkins.services import JenkinsService
-
-        # 查找与 release 仓库关联的 Jenkins 任务
-        from apps.jenkins.models import JenkinsJob
-        job = JenkinsJob.objects.filter(
-            project=release.project,
-            repository=release.repository,
-        ).first()
-        if not job:
-            release.status = "rejected"
-            release.rejected_reason = "未找到关联的 Jenkins 任务"
-            release.save(update_fields=["status", "rejected_reason", "updated_at"])
-            return
-
-        try:
-            JenkinsService.trigger_build(job, release, release.publisher)
-            OperationLogService.log_release(
-                user=release.publisher,
-                release=release,
-                action="build",
-            )
-        except Exception as exc:
-            release.status = "rejected"
-            release.rejected_reason = f"触发构建失败: {exc}"
-            release.save(update_fields=["status", "rejected_reason", "updated_at"])
-            OperationLogService.log_release(
-                user=release.publisher,
-                release=release,
-                action="build",
-                result="failure",
-                detail={"error": str(exc)},
-            )
-            raise
+        # Tag 流程不再触发 Jenkins 构建，保留函数签名避免外部引用报错。
+        pass
 
     @staticmethod
     def handle_build_completed(build, success: bool, error_msg: str = "") -> None:
         """
-        Jenkins 构建完成时驱动发布状态
+        Jenkins 构建完成时驱动发布状态（保留兼容，若被调用则直接结束）。
 
         Args:
             build: JenkinsBuild 实例
             success: 是否成功
             error_msg: 失败原因
         """
+        from apps.release.models import ReleaseRecord
+
         release = ReleaseRecord.objects.filter(jenkins_build=build).first()
         if not release:
             return
@@ -722,9 +734,10 @@ class ReleaseService:
             )
             return
 
-        # 构建成功，进入 auditing 并推进工作流
-        release.status = "auditing"
-        release.save(update_fields=["status", "updated_at"])
+        # 当前流程审批后已直接推 tag，若仍有构建回调则直接标记为 released
+        release.status = "released"
+        release.released_at = release.released_at or timezone.now()
+        release.save(update_fields=["status", "released_at", "updated_at"])
         NotificationService.notify_build_result(build, release)
         OperationLogService.log_release(
             user=release.publisher,
@@ -732,27 +745,12 @@ class ReleaseService:
             action="build_success",
         )
 
-        if release.workflow_instance and release.workflow_instance.status == "running":
-            # 构建后若流程仍在运行，则推进到后续审批节点。
-            current_node_id = release.workflow_instance.current_node_id
-            next_node = WorkflowEngine._find_next_approval_node(
-                release.workflow_instance.graph_data,
-                current_node_id,
-            )
-            if next_node:
-                WorkflowEngine._advance(release.workflow_instance, current_node_id)
-            else:
-                # 没有更多审批节点，直接发布
-                WorkflowEngine._finish_instance(release.workflow_instance, "completed")
-                ReleaseService.handle_workflow_completed(release.workflow_instance)
-        elif release.workflow_instance:
-            # 构建前审批已完成的流程，构建成功后直接进入发布。
-            ReleaseService.handle_workflow_completed(release.workflow_instance)
-
     @classmethod
     def push_tag(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
         """
         推送 tag
+
+        新 Tag 流程允许在 pending（审批完成）状态直接推 tag。
 
         Args:
             release: ReleaseRecord 实例
@@ -761,8 +759,8 @@ class ReleaseService:
         Returns:
             创建的 TagInfo
         """
-        if release.status != "auditing":
-            raise serializers.ValidationError({"status": "只有待发布状态才能推 tag"})
+        if release.status not in ("pending", "auditing"):
+            raise serializers.ValidationError({"status": "只有待审批状态才能推 tag"})
 
         provider = cls._get_provider(release.repository, request_user)
         try:

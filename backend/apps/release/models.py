@@ -39,14 +39,13 @@ class ReleaseRecord(models.Model):
     STATUS_CHOICES = [
         ("draft", "草稿"),
         ("pending", "待审批"),
-        ("building", "构建中"),
-        ("auditing", "待发布"),
         ("released", "已发布"),
         ("rejected", "已驳回"),
     ]
     RELEASE_TYPE_CHOICES = [
         ("formal", "正式"),
-        ("test", "测试"),
+        ("rc", "RC"),
+        ("beta", "Beta"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

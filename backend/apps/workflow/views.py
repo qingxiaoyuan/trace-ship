@@ -22,7 +22,7 @@ from apps.workflow.serializers import (
     WorkflowTaskSerializer,
 )
 from apps.workflow.services import WorkflowEngine
-from utils.permissions import IsProjectDeveloper, IsProjectManager
+from utils.permissions import IsProjectDeveloper, IsProjectLeader
 from utils.response import error_response, success_response
 
 
@@ -60,9 +60,9 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
-        """写操作需项目管理员"""
+        """写操作需项目负责人"""
         if self.action in ["create", "update", "partial_update", "destroy"]:
-            return [IsAuthenticated(), IsProjectManager()]
+            return [IsAuthenticated(), IsProjectLeader()]
         return super().get_permissions()
 
     def perform_create(self, serializer):
@@ -252,3 +252,21 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
             return error_response(40001, str(exc))
         serializer = self.get_serializer(task)
         return success_response(serializer.data, message="转交成功")
+
+    @action(detail=True, methods=["post"], url_path="rollback")
+    def rollback(self, request: Request, pk=None) -> Response:
+        """回退到上一节点"""
+        task = self.get_object()
+        comment = request.data.get("comment", "")
+        rollback_target = request.data.get("rollback_target")
+        try:
+            WorkflowEngine.process_task(
+                task,
+                "rollback",
+                comment,
+                rollback_target=rollback_target,
+            )
+        except Exception as exc:
+            return error_response(40001, str(exc))
+        serializer = self.get_serializer(task)
+        return success_response(serializer.data, message="回退成功")

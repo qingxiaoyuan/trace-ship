@@ -107,6 +107,14 @@ class TestReleaseViews:
             name="发布审批",
             biz_type="release",
             is_active=True,
+            node_config=[
+                {
+                    "node_id": "approval",
+                    "node_name": "审批",
+                    "approvers": [{"type": "leader"}],
+                    "mode": "any",
+                }
+            ],
             graph_data={
                 "nodes": [
                     {"id": "start", "type": "start-node", "x": 100, "y": 200, "text": "开始"},

@@ -22,4 +22,11 @@ export const repositoryApi = {
   syncCommits: (id: string) => post<unknown>(`/repositories/${id}/sync-commits/`, {}),
   getVendors: () => get<{ value: string; label: string }[]>('/repositories/vendors/'),
   getBranches: (id: string) => get<{ name: string; is_default: boolean; last_commit_hash?: string }[]>(`/repositories/${id}/branches/`),
+  getNextVersion: (id: string, releaseType: string) =>
+    get<{
+      latest_tag: string | null;
+      next_version: string;
+      next_tag_name: string;
+      has_existing_tags: boolean;
+    }>(`/repositories/${id}/next-version/`, { params: { release_type: releaseType } }),
 };

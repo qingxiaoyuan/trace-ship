@@ -197,10 +197,24 @@ export interface JenkinsJob {
   updated_at: string;
 }
 
-export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred';
+export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked';
+
+export interface WorkflowApproverConfig {
+  type: 'leader' | 'role' | 'user' | 'self';
+  user_id?: string;
+  role?: string;
+}
+
+export interface WorkflowNodeConfig {
+  node_id: string;
+  node_name: string;
+  approvers: WorkflowApproverConfig[];
+  mode: 'any' | 'all';
+}
 
 export interface WorkflowTask {
   id: string;
+  instance?: string;
   title: string;
   applicant: string;
   project_name: string;
@@ -209,8 +223,18 @@ export interface WorkflowTask {
   remaining_time?: string;
   status: WorkflowTaskStatus;
   version?: string;
-  release_type?: 'formal' | 'test';
+  release_type?: ReleaseType;
   source_branch?: string;
+  mode?: 'any' | 'all';
+  is_rollback?: boolean;
+  rollback_target_node_id?: string;
+  comment?: string;
+  action_time?: string;
+  approver?: string;
+  approver_name?: string;
+  approver_username?: string;
+  transferred_from?: string;
+  transferred_from_name?: string;
 }
 
 export interface DashboardOverview {
@@ -250,6 +274,7 @@ export interface WorkflowDefinition {
   project: string;
   name: string;
   biz_type: string;
+  node_config: WorkflowNodeConfig[];
   graph_data: {
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];

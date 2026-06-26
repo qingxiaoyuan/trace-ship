@@ -40,7 +40,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
 
     def validate_project(self, value: Project) -> Project:
         """
-        校验用户必须是指定项目的管理员（或超管）才能创建/修改发布
+        校验用户必须是指定项目的开发者及以上（或超管）才能创建/修改发布
 
         Args:
             value: 项目实例
@@ -55,8 +55,8 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         if user.is_superuser:
             return value
         member = ProjectMember.objects.filter(project=value, user=user).first()
-        if not member or member.role != "manager":
-            raise serializers.ValidationError("只有项目管理员才能创建/修改发布")
+        if not member or member.role not in ("developer", "tester", "manager", "auditor"):
+            raise serializers.ValidationError("只有项目成员才能创建/修改发布")
         return value
 
     def validate_repository(self, value: Repository) -> Repository:

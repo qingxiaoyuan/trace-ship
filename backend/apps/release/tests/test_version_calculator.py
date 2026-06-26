@@ -45,10 +45,10 @@ class TestVersionCalculator:
         version, tag_name = calculator.calculate(tags, release_type="formal")
         assert version == "VA.1.2.4"
 
-    def test_calculate_test_version_adds_prefix(self, rule):
-        """测试版本自动添加 test 前缀"""
+    def test_calculate_beta_version_adds_prefix(self, rule):
+        """Beta 版本自动添加 beta 前缀"""
         calculator = VersionCalculator(rule)
         tags = [TagInfo(name="VA.1.0.0", commit_hash="a")]
-        version, tag_name = calculator.calculate(tags, release_type="test", test_prefix="test")
+        version, tag_name = calculator.calculate(tags, release_type="beta", prefixes={"beta": "beta"})
         assert version == "VA.1.0.1"
-        assert tag_name == "test-VA.1.0.1"
+        assert tag_name == "beta-VA.1.0.1"

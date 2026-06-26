@@ -21,6 +21,8 @@ from apps.repository.serializers import (
 from apps.repository.services import RepositoryService
 from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectTester
 from utils.response import error_response, success_response
+from apps.release.services import ReleaseService, ReleaseValidator, VersionCalculator
+from utils.provider.exceptions import ProviderError
 
 
 class RepositoryViewSet(StandardModelViewSet):
@@ -185,6 +187,52 @@ class RepositoryViewSet(StandardModelViewSet):
             return success_response(result)
         except Exception as exc:
             return error_response(50000, f"同步失败: {exc}", status_code=500)
+
+    @action(detail=True, methods=["get"], url_path="next-version")
+    def next_version(self, request: Request, pk=None) -> Response:
+        """
+        获取下一个建议版本号与 Tag 名称
+
+        基于仓库现有 Tag 列表和项目 version_rule 自动计算，
+        无匹配 Tag 时返回项目初始版本号。
+
+        Args:
+            request: DRF Request，query 参数 release_type
+            pk: 仓库主键
+
+        Returns:
+            建议版本信息
+        """
+        repo = self.get_object()
+        release_type = request.query_params.get("release_type", "formal")
+        if release_type not in ("formal", "rc", "beta"):
+            return error_response(40001, "无效的发布类型")
+
+        try:
+            provider = ReleaseService._get_provider(repo, request.user)
+            tags = provider.list_tags(repo.external_identity)
+        except ProviderError as exc:
+            return error_response(50000, f"获取 tag 列表失败: {exc}", status_code=500)
+        except Exception as exc:
+            return error_response(50000, f"计算版本号失败: {exc}", status_code=500)
+
+        version_rule = repo.project.version_rule or {}
+        calculator = VersionCalculator(version_rule)
+        release_rule = ReleaseValidator.get_release_rule(repo.project)
+        prefixes = release_rule.get("tag_prefixes") or ReleaseValidator.get_default_tag_prefixes()
+        version, tag_name = calculator.calculate(
+            tags,
+            release_type=release_type,
+            prefixes=prefixes,
+        )
+
+        latest = calculator.find_latest_matching_tag(tags)
+        return success_response({
+            "latest_tag": latest[0].name if latest else None,
+            "next_version": version,
+            "next_tag_name": tag_name,
+            "has_existing_tags": len(tags) > 0,
+        })
 
     @action(detail=False, methods=["get"])
     def vendors(self, request: Request) -> Response:

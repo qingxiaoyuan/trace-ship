@@ -94,13 +94,13 @@ class ReleaseViewSet(StandardModelViewSet):
 
     def get_permissions(self):
         """
-        写操作需项目管理员，生成说明/提交审批/推 tag 需项目开发者
+        写操作需项目成员，生成说明/提交审批/推 tag 需项目开发者
 
         Returns:
             权限实例列表
         """
         if self.action in ["create", "update", "partial_update", "destroy"]:
-            return [IsAuthenticated(), IsProjectManager()]
+            return [IsAuthenticated(), IsProjectMember()]
         if self.action in ["generate_doc", "submit_audit", "push_tag"]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         return super().get_permissions()
@@ -139,6 +139,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 target_branch=data["target_branch"],
                 publisher=request.user,
                 version=data.get("version"),
+                tag_name=data.get("tag_name"),
             )
         except Exception as exc:
             return error_response(40002, str(exc))
@@ -355,9 +356,8 @@ class ReleaseViewSet(StandardModelViewSet):
             "total_releases": total,
             "success_rate": success_rate,
             "pending_audit_count": queryset.filter(status="pending").count(),
-            "building_count": queryset.filter(status="building").count(),
             "rejected_count": queryset.filter(status="rejected").count(),
-            "auditing_count": queryset.filter(status="auditing").count(),
+            "released_count": queryset.filter(status="released").count(),
         }
         return success_response(data)
 

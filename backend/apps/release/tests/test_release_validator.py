@@ -35,15 +35,15 @@ class TestReleaseValidator:
                 "formal", "develop", "VA.1.0.0", rule
             )
 
-    def test_validate_branch_and_prefix_for_test(self):
-        """测试版本 tag 必须带 test 前缀"""
-        rule = {"formal_branch": "main", "test_prefix": "test"}
+    def test_validate_branch_and_prefix_for_beta(self):
+        """Beta 版本 tag 必须带 beta 前缀"""
+        rule = {"formal_branch": "main", "tag_prefixes": {"beta": "beta"}}
         ReleaseValidator.validate_branch_and_prefix(
-            "test", "develop", "test-VA.1.0.0", rule
+            "beta", "develop", "beta-VA.1.0.0", rule
         )
-        with pytest.raises(Exception, match="测试版本 tag 必须以 test 开头"):
+        with pytest.raises(Exception, match="beta 版本 tag 必须以 beta 开头"):
             ReleaseValidator.validate_branch_and_prefix(
-                "test", "develop", "VA.1.0.0", rule
+                "beta", "develop", "VA.1.0.0", rule
             )
 
     def test_validate_release_cycle_rejects_too_frequent(self, project, repository, user):

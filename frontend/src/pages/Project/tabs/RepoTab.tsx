@@ -5,6 +5,7 @@ import { PlusOutlined, EditOutlined } from '@ant-design/icons';
 import { repositoryApi } from '@/api/repository';
 import { StatusTag } from '@/components/StatusTag';
 import { RepositoryModal } from '@/pages/Repository/modals/RepositoryModal';
+import { CreateTagModal } from '@/pages/Project/modals/CreateTagModal';
 import type { Repository } from '@/types';
 
 const vendorMap: Record<string, { label: string; status: 'primary' | 'info' | 'neutral' }> = {
@@ -24,6 +25,8 @@ export function RepoTab({ projectId }: RepoTabProps) {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRepo, setEditingRepo] = useState<Repository | null>(null);
+  const [tagRepo, setTagRepo] = useState<Repository | null>(null);
+  const [tagModalOpen, setTagModalOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['repositories', projectId],
@@ -93,6 +96,17 @@ export function RepoTab({ projectId }: RepoTabProps) {
   const handleAdd = () => {
     setEditingRepo(null);
     setModalOpen(true);
+  };
+
+  const handleCreateTag = (record: Repository) => {
+    setTagRepo(record);
+    setTagModalOpen(true);
+  };
+
+  const handleTagSuccess = () => {
+    setTagModalOpen(false);
+    setTagRepo(null);
+    queryClient.invalidateQueries({ queryKey: ['repositories', projectId] });
   };
 
   const handleSave = (values: Partial<Repository>) => {
@@ -189,6 +203,9 @@ export function RepoTab({ projectId }: RepoTabProps) {
           >
             同步提交
           </Button>
+          <Button type="text" onClick={() => handleCreateTag(record)}>
+            新建 Tag
+          </Button>
           <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
@@ -230,6 +247,15 @@ export function RepoTab({ projectId }: RepoTabProps) {
         onCancel={() => { setModalOpen(false); setEditingRepo(null); }}
         onOk={handleSave}
       />
+      {tagRepo && (
+        <CreateTagModal
+          open={tagModalOpen}
+          projectId={projectId}
+          repository={tagRepo}
+          onCancel={() => { setTagModalOpen(false); setTagRepo(null); }}
+          onSuccess={handleTagSuccess}
+        />
+      )}
     </div>
   );
 }

@@ -1,37 +1,28 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   Table,
   Button,
-  Space,
-  message,
   Input,
   Select,
-  Empty,
 } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CheckOutlined,
   CloseOutlined,
   SwapOutlined,
+  RollbackOutlined,
   NodeIndexOutlined,
-  BranchesOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  ThunderboltOutlined,
-  PlusOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import LogicFlow from '@logicflow/core';
-import '@logicflow/core/lib/style/index.css';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { TsModal } from '@/components/TsModal';
 import { workflowApi } from '@/api/workflow';
-import { projectApi } from '@/api/project';
 import { accountApi } from '@/api/account';
+import { useAppMessage } from '@/hooks/useAppMessage';
 import type { AccountUser } from '@/api/account';
 import { tokens } from '@/styles/theme';
-import type { WorkflowTask, WorkflowDefinition } from '@/types';
+import type { WorkflowTask, WorkflowInstance } from '@/types';
 
 const workflowStatusMap: Record<
   string,
@@ -40,49 +31,14 @@ const workflowStatusMap: Record<
   approved: { status: 'success', text: '已通过' },
   rejected: { status: 'danger', text: '已驳回' },
   transferred: { status: 'info', text: '已转交' },
+  rollbacked: { status: 'warning', text: '已回退' },
 };
 
-type TabKey = 'todo' | 'done' | 'definition';
+type TabKey = 'todo' | 'done';
 
 const tabItems: { key: TabKey; label: string }[] = [
   { key: 'todo', label: '我的待办' },
   { key: 'done', label: '我的已办' },
-  { key: 'definition', label: '流程定义' },
-];
-
-const nodeTools = [
-  {
-    type: 'start-node',
-    label: '开始',
-    bg: tokens.colors.successSoft,
-    color: tokens.colors.success,
-    icon: <CheckCircleOutlined />,
-    shape: 'rounded-full',
-  },
-  {
-    type: 'approval-node',
-    label: '审批节点',
-    bg: tokens.colors.infoSoft,
-    color: tokens.colors.info,
-    icon: <NodeIndexOutlined />,
-    shape: 'rounded-lg',
-  },
-  {
-    type: 'cc-node',
-    label: '抄送节点',
-    bg: '#F3F0FF',
-    color: '#6B4C9A',
-    icon: <BranchesOutlined />,
-    shape: 'rounded-lg',
-  },
-  {
-    type: 'end-node',
-    label: '结束',
-    bg: tokens.colors.neutralSoft,
-    color: tokens.colors.neutral,
-    icon: <CloseCircleOutlined />,
-    shape: 'rounded-full',
-  },
 ];
 
 export default function Workflow() {
@@ -95,7 +51,6 @@ export default function Workflow() {
         <div className="p-5">
           {activeTab === 'todo' && <TodoTab />}
           {activeTab === 'done' && <DoneTab />}
-          {activeTab === 'definition' && <DefinitionTab />}
         </div>
       </TsCard>
     </div>
@@ -147,6 +102,7 @@ function TodoTab() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const queryClient = useQueryClient();
+  const { message } = useAppMessage();
 
   const { data, isLoading } = useQuery({
     queryKey: ['workflow-todo', page, pageSize],
@@ -191,6 +147,23 @@ function TodoTab() {
       queryClient.invalidateQueries({ queryKey: ['workflow-todo'] });
       queryClient.invalidateQueries({ queryKey: ['workflow-done'] });
     },
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: ({ id, comment }: { id: string; comment: string }) =>
+      workflowApi.rollbackTask(id, { comment }),
+    onSuccess: () => {
+      message.success('回退成功');
+      setDetailOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['workflow-todo'] });
+      queryClient.invalidateQueries({ queryKey: ['workflow-done'] });
+    },
+  });
+
+  const { data: instanceData } = useQuery({
+    queryKey: ['workflow-instance-for-task', selected?.instance],
+    queryFn: () => workflowApi.getInstance(selected!.instance!),
+    enabled: !!selected?.instance && detailOpen,
   });
 
   const openDetail = (record: WorkflowTask) => {
@@ -262,6 +235,7 @@ function TodoTab() {
         key={`${selected?.id || 'closed'}-${detailOpen}`}
         open={detailOpen}
         task={selected}
+        instance={instanceData?.data ?? null}
         onClose={() => setDetailOpen(false)}
         onApprove={(comment) =>
           selected && approveMutation.mutate({ id: selected.id, comment })
@@ -272,6 +246,9 @@ function TodoTab() {
         onTransfer={(toUserId, comment) =>
           selected &&
           transferMutation.mutate({ id: selected.id, toUserId, comment })
+        }
+        onRollback={(comment) =>
+          selected && rollbackMutation.mutate({ id: selected.id, comment })
         }
       />
     </>
@@ -338,24 +315,97 @@ function DoneTab() {
   );
 }
 
+function ApprovalHistory({ tasks }: { tasks: WorkflowTask[] }) {
+  const history = (tasks || [])
+    .filter((t) => t.status !== 'pending')
+    .sort(
+      (a, b) =>
+        new Date(b.action_time || b.created_at).getTime() -
+        new Date(a.action_time || a.created_at).getTime(),
+    );
+
+  if (!history.length) return null;
+
+  return (
+    <div className="mt-6">
+      <h4
+        className="text-sm font-bold mb-3"
+        style={{ color: tokens.colors.textPrimary }}
+      >
+        审批历史
+      </h4>
+      <div className="space-y-3">
+        {history.map((item) => {
+          const action = workflowStatusMap[item.status];
+          return (
+            <div
+              key={item.id}
+              className="p-3 rounded-lg border"
+              style={{
+                borderColor: tokens.colors.border,
+                background: tokens.colors.bg,
+              }}
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-sm">{item.current_node}</span>
+                  {action && <StatusTag status={action.status}>{action.text}</StatusTag>}
+                  {item.status === 'rollbacked' && item.rollback_target_node_id && (
+                    <span className="text-xs text-slate-500">
+                      (回退至 {item.rollback_target_node_id})
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-slate-400">
+                  {item.action_time
+                    ? dayjs(item.action_time).format('MM-DD HH:mm')
+                    : '-'}
+                </span>
+              </div>
+              <div className="mt-1 text-sm text-slate-600">
+                审批人：{item.approver_name || item.approver_username || '-'}
+                {item.transferred_from_name && (
+                  <span className="text-slate-400 ml-1">
+                    （由 {item.transferred_from_name} 转交）
+                  </span>
+                )}
+              </div>
+              {item.comment && (
+                <div className="mt-2 text-sm text-slate-500 bg-slate-50 p-2 rounded">
+                  {item.comment}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ApprovalDetailModal({
   open,
   task,
+  instance,
   onClose,
   onApprove,
   onReject,
   onTransfer,
+  onRollback,
 }: {
   open: boolean;
   task: WorkflowTask | null;
+  instance: WorkflowInstance | null;
   onClose: () => void;
   onApprove: (comment: string) => void;
   onReject: (comment: string) => void;
   onTransfer: (toUserId: string, comment: string) => void;
+  onRollback: (comment: string) => void;
 }) {
   const [comment, setComment] = useState('');
   const [toUserId, setToUserId] = useState('');
   const [transferMode, setTransferMode] = useState(false);
+  const [rollbackMode, setRollbackMode] = useState(false);
 
   const { data: usersData } = useQuery({
     queryKey: ['users-for-transfer'],
@@ -370,12 +420,29 @@ function ApprovalDetailModal({
       ? '测试'
       : '-';
 
+  // 只有当前节点不是第一个审批节点时才允许回退
+  const nodeConfig = instance?.definition
+    ? (instance as unknown as { node_config?: { node_id: string }[] }).node_config
+    : undefined;
+  const currentNodeIndex = nodeConfig?.findIndex(
+    (n) => n.node_id === task?.current_node,
+  );
+  const canRollback = (currentNodeIndex ?? 0) > 0;
+
+  const resetModes = () => {
+    setTransferMode(false);
+    setRollbackMode(false);
+  };
+
   return (
     <TsModal
       title={`审批详情：${task?.title ?? ''}`}
       open={open}
-      onCancel={onClose}
-      width={560}
+      onCancel={() => {
+        resetModes();
+        onClose();
+      }}
+      width={600}
       footer={
         <div className="flex justify-end gap-3">
           {transferMode ? (
@@ -393,10 +460,30 @@ function ApprovalDetailModal({
               <Button onClick={() => setTransferMode(false)}>取消</Button>
               <Button
                 icon={<SwapOutlined />}
-                onClick={() => onTransfer(toUserId, comment)}
+                onClick={() => {
+                  onTransfer(toUserId, comment);
+                  resetModes();
+                }}
                 disabled={!toUserId}
               >
                 确认转交
+              </Button>
+            </>
+          ) : rollbackMode ? (
+            <>
+              <Button onClick={() => setRollbackMode(false)}>取消</Button>
+              <Button
+                icon={<RollbackOutlined />}
+                onClick={() => {
+                  onRollback(comment);
+                  resetModes();
+                }}
+                style={{
+                  color: tokens.colors.warning,
+                  borderColor: tokens.colors.warning,
+                }}
+              >
+                确认回退
               </Button>
             </>
           ) : (
@@ -425,6 +512,18 @@ function ApprovalDetailModal({
               >
                 驳回
               </Button>
+              {canRollback && (
+                <Button
+                  onClick={() => setRollbackMode(true)}
+                  icon={<RollbackOutlined />}
+                  style={{
+                    borderColor: tokens.colors.border,
+                    borderRadius: tokens.layout.buttonRadius,
+                  }}
+                >
+                  回退
+                </Button>
+              )}
               <Button
                 onClick={() => setTransferMode(true)}
                 icon={<SwapOutlined />}
@@ -451,16 +550,10 @@ function ApprovalDetailModal({
           <NodeIndexOutlined className="text-xl" />
         </div>
         <div>
-          <h4
-            className="font-bold"
-            style={{ color: tokens.colors.textPrimary }}
-          >
+          <h4 className="font-bold" style={{ color: tokens.colors.textPrimary }}>
             审批详情：{task?.title}
           </h4>
-          <p
-            className="text-sm"
-            style={{ color: tokens.colors.textSecondary }}
-          >
+          <p className="text-sm" style={{ color: tokens.colors.textSecondary }}>
             请核对发布信息并填写审批意见
           </p>
         </div>
@@ -512,303 +605,8 @@ function ApprovalDetailModal({
           style={{ borderRadius: tokens.layout.inputRadius }}
         />
       </div>
+
+      {instance?.tasks && <ApprovalHistory tasks={instance.tasks} />}
     </TsModal>
-  );
-}
-
-function DefinitionTab() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const lfRef = useRef<LogicFlow | null>(null);
-  const [selectedDefinition, setSelectedDefinition] = useState<WorkflowDefinition | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [projectId, setProjectId] = useState('');
-  const queryClient = useQueryClient();
-
-  const { data: definitions } = useQuery({
-    queryKey: ['workflow-definitions'],
-    queryFn: () => workflowApi.getDefinitions({ page_size: 1000 }),
-  });
-
-  const { data: projectsData } = useQuery({
-    queryKey: ['projects-for-workflow'],
-    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (data: Partial<WorkflowDefinition>) => workflowApi.createDefinition(data),
-    onSuccess: () => {
-      message.success('保存成功');
-      setFormOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<WorkflowDefinition> }) =>
-      workflowApi.updateDefinition(id, data),
-    onSuccess: (definition) => {
-      message.success('保存成功');
-      setFormOpen(false);
-      setSelectedDefinition(definition);
-      queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] });
-    },
-  });
-
-  useEffect(() => {
-    if (!containerRef.current || lfRef.current) return;
-
-    const lf = new LogicFlow({
-      container: containerRef.current,
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-      grid: {
-        size: 10,
-        visible: true,
-        type: 'dot',
-      },
-      snapline: true,
-      keyboard: { enabled: true },
-    });
-
-    lf.render({ nodes: [], edges: [] });
-    lfRef.current = lf;
-
-    return () => {
-      lf.destroy();
-      lfRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedDefinition || !lfRef.current) return;
-    lfRef.current.render(selectedDefinition.graph_data as never);
-    setName(selectedDefinition.name);
-    setProjectId(selectedDefinition.project);
-  }, [selectedDefinition]);
-
-  const reset = () => {
-    lfRef.current?.render({ nodes: [], edges: [] });
-    setSelectedDefinition(null);
-    setName('');
-    setProjectId('');
-    message.info('画布已重置');
-  };
-
-  const save = () => {
-    const graphData = lfRef.current?.getGraphData() as WorkflowDefinition['graph_data'];
-    if (!name || !projectId) {
-      message.error('请填写流程名称和所属项目');
-      return;
-    }
-    if (!graphData?.nodes?.length) {
-      message.error('流程图不能为空');
-      return;
-    }
-    const payload = {
-      project: projectId,
-      name,
-      biz_type: 'release',
-      graph_data: graphData,
-      is_active: selectedDefinition?.is_active ?? true,
-    };
-    if (selectedDefinition) {
-      updateMutation.mutate({ id: selectedDefinition.id, data: payload });
-      return;
-    }
-    createMutation.mutate(payload);
-  };
-
-  const columns = [
-    {
-      title: '流程名称',
-      dataIndex: 'name',
-      render: (text: string, record: WorkflowDefinition) => (
-        <span
-          className="font-semibold cursor-pointer"
-          style={{ color: tokens.colors.textPrimary }}
-          onClick={() => setSelectedDefinition(record)}
-        >
-          {text}
-        </span>
-      ),
-    },
-    { title: '业务类型', dataIndex: 'biz_type' },
-    {
-      title: '是否启用',
-      dataIndex: 'is_active',
-      render: (active: boolean) => (
-        <StatusTag status={active ? 'success' : 'neutral'}>
-          {active ? '启用' : '停用'}
-        </StatusTag>
-      ),
-    },
-    {
-      title: '操作',
-      render: (_: unknown, record: WorkflowDefinition) => (
-        <Button type="text" onClick={() => setSelectedDefinition(record)}>编辑</Button>
-      ),
-    },
-  ];
-
-  return (
-    <div className="flex flex-col lg:flex-row gap-5 h-140">
-      <div
-        className="w-full lg:w-72 shrink-0 rounded-xl border p-4 h-full overflow-auto"
-        style={{
-          background: tokens.colors.bg,
-          borderColor: tokens.colors.border,
-        }}
-      >
-        <div className="flex justify-between items-center mb-3">
-          <h4
-            className="text-sm font-bold"
-            style={{ color: tokens.colors.textPrimary }}
-          >
-            流程列表
-          </h4>
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={() => setFormOpen(true)}
-          >
-            新增
-          </Button>
-        </div>
-        <Table
-          rowKey="id"
-          dataSource={definitions?.results || []}
-          columns={columns}
-          pagination={false}
-          size="small"
-          locale={{ emptyText: <Empty description="暂无流程定义" /> }}
-        />
-
-        <TsModal
-          title="新增流程定义"
-          open={formOpen}
-          onCancel={() => setFormOpen(false)}
-          onOk={() => {
-            setFormOpen(false);
-            setSelectedDefinition(null);
-            reset();
-          }}
-          footer={null}
-        >
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">流程名称</label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="请输入流程名称"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">所属项目</label>
-              <Select
-                value={projectId || undefined}
-                onChange={setProjectId}
-                placeholder="选择项目"
-                style={{ width: '100%' }}
-                options={(projectsData?.results || []).map((p: { id: string; name: string }) => ({
-                  value: p.id,
-                  label: p.name,
-                }))}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setFormOpen(false)}>取消</Button>
-              <Button type="primary" onClick={save}>保存</Button>
-            </div>
-          </div>
-        </TsModal>
-      </div>
-
-      <TsCard
-        className="flex-1 flex flex-col overflow-hidden"
-        bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column' }}
-        headStyle={{ padding: '12px 16px' }}
-        title={
-          <span className="font-bold" style={{ color: tokens.colors.textPrimary }}>
-            {selectedDefinition ? `编辑流程：${selectedDefinition.name}` : '发布审批流程设计'}
-          </span>
-        }
-        extra={
-          <Space>
-            <Button
-              size="small"
-              onClick={reset}
-              style={{
-                borderColor: tokens.colors.border,
-                borderRadius: tokens.layout.buttonRadius,
-              }}
-            >
-              重置
-            </Button>
-            <Button
-              type="primary"
-              size="small"
-              icon={<ThunderboltOutlined />}
-              onClick={save}
-              style={{
-                background: tokens.colors.buttonPrimary,
-                borderColor: tokens.colors.buttonPrimary,
-                borderRadius: tokens.layout.buttonRadius,
-              }}
-            >
-              保存流程
-            </Button>
-          </Space>
-        }
-      >
-        <div className="flex flex-1 overflow-hidden">
-          <div
-            className="w-48 shrink-0 border-r p-3 hidden lg:block"
-            style={{ borderColor: tokens.colors.border }}
-          >
-            <h5
-              className="text-xs font-semibold uppercase tracking-wider mb-3"
-              style={{ color: tokens.colors.textSecondary }}
-            >
-              节点工具箱
-            </h5>
-            <div className="space-y-2">
-              {nodeTools.map((node) => (
-                <div
-                  key={node.type}
-                  className={`flex items-center p-2.5 rounded-lg border bg-white cursor-move transition-colors ${node.shape}`}
-                  style={{
-                    borderColor: tokens.colors.border,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = tokens.colors.textSecondary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = tokens.colors.border;
-                  }}
-                >
-                  <div
-                    className="w-7 h-7 flex items-center justify-center mr-2.5 shrink-0"
-                    style={{
-                      background: node.bg,
-                      color: node.color,
-                      borderRadius: node.shape === 'rounded-full' ? 9999 : tokens.layout.buttonRadius,
-                    }}
-                  >
-                    {node.icon}
-                  </div>
-                  <span className="text-sm font-medium" style={{ color: tokens.colors.textBody }}>
-                    {node.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div ref={containerRef} className="flex-1 bg-white min-h-100" />
-        </div>
-      </TsCard>
-    </div>
   );
 }

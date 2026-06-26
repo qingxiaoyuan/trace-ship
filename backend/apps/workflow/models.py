@@ -2,7 +2,7 @@
 工作流数据模型
 
 包含工作流定义（WorkflowDefinition）、工作流实例（WorkflowInstance）和审批任务（WorkflowTask）。
-当前仅支持串行审批。
+支持基于审批链的串行审批、节点或签/会签以及回退。
 """
 import uuid
 from typing import List, Optional
@@ -16,14 +16,15 @@ class WorkflowDefinition(models.Model):
     工作流定义模型
 
     每个项目可配置一个或多个业务流程定义，当前仅支持 release 业务类型。
-    graph_data 存储 LogicFlow 图数据，包含 nodes 和 edges。
+    node_config 存储审批链配置，graph_data 由 node_config 自动生成并用于只读流程图渲染。
 
     Attributes:
         id: UUID 主键
         project: 所属项目
         name: 流程名称
         biz_type: 业务类型
-        graph_data: LogicFlow 图数据
+        node_config: 审批链配置
+        graph_data: 自动生成的 LogicFlow 图数据
         is_active: 是否启用
         created_by: 创建人
         created_at: 创建时间
@@ -48,6 +49,7 @@ class WorkflowDefinition(models.Model):
         default="release",
         verbose_name="业务类型",
     )
+    node_config = models.JSONField(default=list, verbose_name="审批链配置")
     graph_data = models.JSONField(default=dict, verbose_name="流程图数据")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_by = models.ForeignKey(
@@ -158,7 +160,8 @@ class WorkflowTask(models.Model):
     """
     工作流审批任务模型
 
-    每个审批节点生成一个 task，审批人处理后可推进流程。
+    每个审批节点根据审批模式生成一个或多个 task，审批人处理后可推进流程。
+    任务记录同时作为审批历史数据源。
 
     Attributes:
         id: UUID 主键
@@ -166,9 +169,12 @@ class WorkflowTask(models.Model):
         node_id: 节点 ID
         node_name: 节点名称
         approver: 审批人
+        mode: 审批模式（any=或签，all=会签）
         status: 任务状态
         comment: 审批意见
         action_time: 处理时间
+        is_rollback: 是否为回退后重新生成的任务
+        rollback_target_node_id: 回退目标节点 ID
         transferred_from: 转交来源人
         created_at: 创建时间
         updated_at: 更新时间
@@ -179,6 +185,12 @@ class WorkflowTask(models.Model):
         ("approved", "已通过"),
         ("rejected", "已驳回"),
         ("transferred", "已转交"),
+        ("rollbacked", "已回退"),
+    ]
+
+    MODE_CHOICES = [
+        ("any", "或签"),
+        ("all", "会签"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -196,6 +208,12 @@ class WorkflowTask(models.Model):
         related_name="workflow_tasks",
         verbose_name="审批人",
     )
+    mode = models.CharField(
+        max_length=10,
+        choices=MODE_CHOICES,
+        default="any",
+        verbose_name="审批模式",
+    )
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -204,6 +222,13 @@ class WorkflowTask(models.Model):
     )
     comment = models.TextField(blank=True, verbose_name="审批意见")
     action_time = models.DateTimeField(null=True, blank=True, verbose_name="处理时间")
+    is_rollback = models.BooleanField(default=False, verbose_name="回退重建")
+    rollback_target_node_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="回退目标节点",
+    )
     transferred_from = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
