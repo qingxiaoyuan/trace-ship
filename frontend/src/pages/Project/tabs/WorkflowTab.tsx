@@ -288,9 +288,9 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
           <Form.List name="node_config">
             {(fields, { add, remove }) => (
               <div className="space-y-4">
-                {fields.map((field, index) => (
+                {fields.map(({ key, ...field }, index) => (
                   <Card
-                    key={field.key}
+                    key={key}
                     size="small"
                     title={`审批节点 ${index + 1}`}
                     extra={
@@ -329,8 +329,8 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                       <Form.List name={[field.name, 'approvers']}>
                         {(approverFields, { add: addApprover, remove: removeApprover }) => (
                           <div className="space-y-2">
-                            {approverFields.map((approverField) => (
-                              <Space key={approverField.key} align="baseline">
+                            {approverFields.map(({ key, ...approverField }) => (
+                              <Space key={key} align="baseline">
                                 <Form.Item
                                   {...approverField}
                                   name={[approverField.name, 'type']}

@@ -17,6 +17,13 @@ fi
 echo "启动后端 (http://localhost:8000)..."
 cd "$ROOT_DIR/backend"
 export DJANGO_SETTINGS_MODULE=config.settings.dev
+
+# OpenLDAP 配置（与 docker/openldap 容器保持一致）
+export LDAP_SERVER_URI="ldap://localhost:389"
+export LDAP_BIND_DN="cn=admin,dc=example,dc=com"
+export LDAP_BIND_PASSWORD="admin"
+export LDAP_USER_SEARCH_BASE="ou=users,dc=example,dc=com"
+
 nohup python manage.py runserver 0.0.0.0:8000 > "$LOG_DIR/backend.log" 2>&1 &
 echo $! > "$LOG_DIR/backend.pid"
 
