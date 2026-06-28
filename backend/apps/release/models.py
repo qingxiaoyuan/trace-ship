@@ -78,6 +78,10 @@ class ReleaseRecord(models.Model):
         verbose_name="状态",
     )
     release_doc = models.JSONField(default=dict, blank=True, verbose_name="发布说明文档")
+    # 关联变更清单：硬件/软件版本条目列表，由发布向导收集
+    related_changes = models.JSONField(default=list, blank=True, verbose_name="关联变更清单")
+    # 变更条目：A 类 / F 类变更内容
+    updates = models.JSONField(default=list, blank=True, verbose_name="变更条目")
     publisher = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

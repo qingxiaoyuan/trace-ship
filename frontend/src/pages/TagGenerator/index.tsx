@@ -39,7 +39,9 @@ import { StatusTag } from '@/components/StatusTag';
 import { commitApi } from '@/api/commit';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
-import type { CommitRecord } from '@/types';
+import { repositoryApi } from '@/api/repository';
+import { useAuthStore } from '@/stores/authStore';
+import type { CommitRecord, Repository } from '@/types';
 
 interface RelatedChangeItem {
   id: string;
@@ -49,50 +51,6 @@ interface RelatedChangeItem {
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
-
-const repoOptions = [
-  { label: 'core-trade-backend', value: '1' },
-  { label: 'core-trade-frontend', value: '2' },
-  { label: 'trade-configs', value: '3' },
-];
-
-const branchOptions = [
-  { label: 'develop', value: 'develop' },
-  { label: 'feature/pay', value: 'feature/pay' },
-  { label: 'main', value: 'main' },
-];
-
-const tagOptions = [
-  { label: 'v2.4.0', value: 'v2.4.0' },
-  { label: 'v2.3.9', value: 'v2.3.9' },
-  { label: 'v2.3.8', value: 'v2.3.8' },
-];
-
-const defaultRelatedChanges: RelatedChangeItem[] = [
-  { id: '1', softwareName: 'PXX板卡硬件版本', version: '' },
-  { id: '2', softwareName: '信号子模块硬件版本', version: '' },
-  { id: '3', softwareName: '控制子模块硬件版本', version: '' },
-  { id: '4', softwareName: '后台服务程序版本', version: '' },
-  { id: '5', softwareName: '场景管理程序版本', version: '' },
-  { id: '6', softwareName: '数学仿真软件版本', version: '' },
-  { id: '7', softwareName: '轨迹仿真软件版本', version: '' },
-  { id: '8', softwareName: '采集回放仪信号处理软件版本', version: '' },
-  { id: '9', softwareName: '采集回放仪数据管理软件版本', version: '' },
-  { id: '10', softwareName: '采集回放仪通信控制软件版本', version: '' },
-  { id: '11', softwareName: '采集回放仪板载显控软件版本', version: '' },
-  { id: '12', softwareName: '采集回放仪人机显控软件版本', version: '' },
-  { id: '13', softwareName: '导航增强上位机软件版本', version: '' },
-  { id: '14', softwareName: '信号单元后台软件版本', version: '' },
-  { id: '15', softwareName: '基准单元后台软件版本', version: '' },
-  { id: '16', softwareName: '信号单元数学仿真软件版本', version: '' },
-  { id: '17', softwareName: '信号单元硬件程序版本', version: '' },
-  { id: '18', softwareName: '基准单元硬件程序版本', version: '' },
-  { id: '19', softwareName: '阵列天线采集卡软件版本', version: '' },
-  { id: '20', softwareName: '阵列天线时钟加权软件版本', version: '' },
-  { id: '21', softwareName: '阵列天线系统加权软件版本', version: '' },
-  { id: '22', softwareName: '阵列天线信号转发软件版本', version: '' },
-  { id: '23', softwareName: '阵列天线上位机软件版本', version: '' },
-];
 
 const blueColors = {
   canvas: '#FFFFFF',
@@ -111,15 +69,42 @@ export default function TagGenerator() {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedCommits, setSelectedCommits] = useState<string[]>([]);
   const [form] = Form.useForm();
-  const [relatedChanges, setRelatedChanges] = useState<RelatedChangeItem[]>(defaultRelatedChanges);
-  const [updates, setUpdates] = useState<{ id: string; type: string; content: string }[]>([
-    { id: '1', type: 'A', content: '移除干扰用户绑定数据采集(DA)的逻辑' },
-    { id: '2', type: 'F', content: '信号定时开关新增清除指令并优化控制逻辑' },
-  ]);
+  const [relatedChanges, setRelatedChanges] = useState<RelatedChangeItem[]>([]);
+  const [updates, setUpdates] = useState<{ id: string; type: string; content: string }[]>([]);
+  const currentUser = useAuthStore((s) => s.user);
+
+  // 表单受控字段，便于在分支/仓库/类型变化时联动
+  const repositoryId = Form.useWatch('repository', form);
+  const sourceBranch = Form.useWatch('source_branch', form);
+  const releaseType = Form.useWatch('release_type', form);
+  const version = Form.useWatch('version', form);
+  const gitHash = Form.useWatch('git_hash', form);
 
   const { data: projectData } = useQuery({
     queryKey: ['tagger-projects'],
     queryFn: () => projectApi.getProjects({ page_size: 1000 }),
+  });
+
+  // 仓库列表（按所选项目过滤）
+  const projectId = Form.useWatch('project', form);
+  const { data: repoData } = useQuery({
+    queryKey: ['tagger-repositories', projectId],
+    queryFn: () => repositoryApi.getRepositories({ project: projectId, page_size: 1000 }),
+    enabled: !!projectId,
+  });
+
+  // 分支列表（按所选仓库）
+  const { data: branchesData } = useQuery({
+    queryKey: ['tagger-branches', repositoryId],
+    queryFn: () => repositoryApi.getBranches(repositoryId),
+    enabled: !!repositoryId,
+  });
+
+  // 自动算版本号
+  const { data: nextVersionData } = useQuery({
+    queryKey: ['tagger-next-version', repositoryId, releaseType],
+    queryFn: () => repositoryApi.getNextVersion(repositoryId, releaseType || 'formal'),
+    enabled: !!repositoryId && !!releaseType,
   });
 
   const { data: commitData, isLoading: commitsLoading } = useQuery({
@@ -129,24 +114,62 @@ export default function TagGenerator() {
 
   const commits = commitData?.results || [];
   const projectOptions = (projectData?.results || []).map((p) => ({ label: p.name, value: p.id }));
+  const repositoryOptions = (repoData?.results || []).map((r: Repository) => ({ label: r.name, value: r.id }));
+  const branchOptions = (branchesData || []).map((b) => ({ label: b.name, value: b.name }));
+  const tagOptions = useMemo(() => {
+    if (!nextVersionData) return [] as { label: string; value: string }[];
+    const items: { label: string; value: string }[] = [];
+    if (nextVersionData.latest_tag) {
+      items.push({ label: nextVersionData.latest_tag, value: nextVersionData.latest_tag });
+    }
+    if (nextVersionData.next_tag_name) {
+      items.push({ label: `${nextVersionData.next_tag_name}（建议）`, value: nextVersionData.next_tag_name });
+    }
+    return items;
+  }, [nextVersionData]);
 
+  // 初次加载：填充项目、发布人、变更类型等与仓库无关的默认字段
   useEffect(() => {
     form.setFieldsValue({
-      project_id: projectData?.results?.[0]?.id || '1',
-      repository_id: '1',
-      source_branch: 'develop',
-      start_tag: 'v2.4.0',
+      project: projectData?.results?.[0]?.id,
       release_type: 'formal',
-      version: 'VA.4.1.155',
-      tag_name: 'VA.4.1.155',
-      git_hash: '271b688781e11ce76090b0ff1d281ec8d1dcd991',
-      change_type: 'config',
-      config_changes: '[System]\nDeviceType=0',
+      change_type: 'none',
+      config_changes: '',
       test_status: ['self_test'],
-      publisher: '蒋鑫',
+      publisher: currentUser?.nickname || currentUser?.username || '',
       impact_other: false,
     });
-  }, [form, projectData]);
+  }, [form, projectData, currentUser]);
+
+  // 选择仓库后，联动分支、起始 tag、版本号、git_hash
+  useEffect(() => {
+    if (!repositoryId || !branchesData || !nextVersionData) return;
+    const defaultBranch = branchesData.find((b) => b.is_default)?.name || branchesData[0]?.name;
+    const values: Record<string, unknown> = {
+      source_branch: defaultBranch,
+      start_tag: nextVersionData.latest_tag || '',
+      version: nextVersionData.next_version || '',
+      tag_name: nextVersionData.next_tag_name || '',
+    };
+    // 起始分支的最近提交作为 git_hash
+    const branchInfo = branchesData.find((b) => b.name === defaultBranch);
+    if (branchInfo?.last_commit_hash) {
+      values.git_hash = branchInfo.last_commit_hash;
+    }
+    form.setFieldsValue(values);
+  }, [repositoryId, branchesData, nextVersionData, form]);
+
+  // 切换来源分支时，更新 git_hash
+  useEffect(() => {
+    if (!sourceBranch || !branchesData) return;
+    const branchInfo = branchesData.find((b) => b.name === sourceBranch);
+    if (branchInfo?.last_commit_hash) {
+      form.setFieldValue('git_hash', branchInfo.last_commit_hash);
+    }
+  }, [sourceBranch, branchesData, form]);
+
+  // 切换发布类型时，重新拉取 nextVersion
+  // （已在 useQuery 的 queryKey 中依赖 releaseType，自动重拉）
 
   const toggleCommit = (id: string) => {
     setSelectedCommits((prev) =>
@@ -164,13 +187,19 @@ export default function TagGenerator() {
     try {
       const values = await form.validateFields();
       const release = await releaseApi.createRelease({
-        project: values.project_id,
-        repository: values.repository_id,
+        project: values.project,
+        repository: values.repository,
         release_type: values.release_type,
         source_branch: values.source_branch,
         target_branch: values.source_branch,
         version: values.version,
-      });
+        tag_name: values.tag_name,
+        git_hash: values.git_hash,
+        related_changes: relatedChanges.filter((r) => r.softwareName || r.version),
+        updates: updates.filter((u) => u.content),
+      } as never);
+      // submit_audit 要求 release_doc 非空，先调 generate-doc 写一份初稿
+      await releaseApi.generateDoc(release.id);
       await releaseApi.submitAudit(release.id);
       message.success('提交审批成功');
       navigate('/workflows');
@@ -199,7 +228,14 @@ export default function TagGenerator() {
   };
 
   const stepContent = [
-    <Step1Branch key="step1" form={form} projectOptions={projectOptions} />,
+    <Step1Branch
+      key="step1"
+      form={form}
+      projectOptions={projectOptions}
+      repositoryOptions={repositoryOptions}
+      branchOptions={branchOptions}
+      tagOptions={tagOptions}
+    />,
     <Step2Diff
       key="step2"
       commits={commits}
@@ -211,6 +247,8 @@ export default function TagGenerator() {
     <Step3Doc
       key="step3"
       form={form}
+      version={version}
+      gitHash={gitHash}
       updates={updates}
       relatedChanges={relatedChanges}
       onAddUpdate={handleAddUpdate}
@@ -245,11 +283,17 @@ export default function TagGenerator() {
         />
       </TsCard>
 
-      <div
-        key={currentStep}
-        className="min-h-100 animate-ts-fade-in-up"
-      >
-        {stepContent[currentStep]}
+      {/* 所有 Step 常驻渲染,通过 display 控制可见性,避免 Form.Item 卸载导致字段丢失 */}
+      <div className="min-h-100">
+        {stepContent.map((node, i) => (
+          <div
+            key={i}
+            style={{ display: i === currentStep ? 'block' : 'none' }}
+            className={i === currentStep ? 'animate-ts-fade-in-up' : undefined}
+          >
+            {node}
+          </div>
+        ))}
       </div>
 
       <div
@@ -304,7 +348,19 @@ export default function TagGenerator() {
   );
 }
 
-function Step1Branch({ form, projectOptions }: { form: FormInstance; projectOptions: { label: string; value: string }[] }) {
+function Step1Branch({
+  form,
+  projectOptions,
+  repositoryOptions,
+  branchOptions,
+  tagOptions,
+}: {
+  form: FormInstance;
+  projectOptions: { label: string; value: string }[];
+  repositoryOptions: { label: string; value: string }[];
+  branchOptions: { label: string; value: string }[];
+  tagOptions: { label: string; value: string }[];
+}) {
   return (
     <TsCard
       title={
@@ -322,23 +378,44 @@ function Step1Branch({ form, projectOptions }: { form: FormInstance; projectOpti
       <Form form={form} layout="vertical" className="max-w-3xl">
         <Row gutter={[24, 0]}>
           <Col xs={24} md={12}>
-            <Form.Item name="project_id" label="项目" rules={[{ required: true }]}>
+            <Form.Item name="project" label="项目" rules={[{ required: true }]}>
               <Select options={projectOptions} placeholder="选择项目" size="large" />
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
-            <Form.Item name="repository_id" label="仓库" rules={[{ required: true }]}>
-              <Select options={repoOptions} placeholder="选择仓库" size="large" />
+            <Form.Item name="repository" label="仓库" rules={[{ required: true }]}>
+              <Select
+                options={repositoryOptions}
+                placeholder="选择仓库"
+                size="large"
+                loading={repositoryOptions.length === 0}
+                disabled={!projectOptions.find((p) => p.value === form.getFieldValue('project'))}
+                notFoundContent={repositoryOptions.length === 0 ? '请先选择项目' : undefined}
+              />
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
             <Form.Item name="source_branch" label="来源分支" rules={[{ required: true }]}>
-              <Select options={branchOptions} placeholder="选择来源分支" size="large" />
+              <Select
+                options={branchOptions}
+                placeholder="选择来源分支"
+                size="large"
+                loading={branchOptions.length === 0}
+                disabled={!form.getFieldValue('repository')}
+                notFoundContent={branchOptions.length === 0 ? '请先选择仓库' : undefined}
+              />
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
-            <Form.Item name="start_tag" label="起始 Tag" rules={[{ required: true }]}>
-              <Select options={tagOptions} placeholder="选择起始 Tag" size="large" />
+            <Form.Item name="start_tag" label="起始 Tag">
+              <Select
+                options={tagOptions}
+                placeholder="选择起始 Tag"
+                size="large"
+                allowClear
+                disabled={!form.getFieldValue('repository')}
+                notFoundContent={tagOptions.length === 0 ? '尚未发布过任何版本' : undefined}
+              />
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
@@ -542,6 +619,8 @@ function Step2Diff({
 
 function Step3Doc({
   form,
+  version,
+  gitHash,
   updates,
   relatedChanges,
   onAddUpdate,
@@ -550,6 +629,8 @@ function Step3Doc({
   onRelatedChange,
 }: {
   form: FormInstance;
+  version?: string;
+  gitHash?: string;
   updates: { id: string; type: string; content: string }[];
   relatedChanges: RelatedChangeItem[];
   onAddUpdate: () => void;
@@ -601,18 +682,18 @@ function Step3Doc({
               <Row gutter={[24, 0]}>
                 <Col xs={24} md={12}>
                   <Form.Item name="version" label="当前版本号" rules={[{ required: true }]}>
-                    <Input placeholder="VA.4.1.155" size="large" style={{ fontFamily: 'monospace' }} />
+                    <Input placeholder="选择仓库与发布类型后自动生成" size="large" style={{ fontFamily: 'monospace' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item name="tag_name" label="Tag 名称">
-                    <Input placeholder="VA.4.1.155" size="large" style={{ fontFamily: 'monospace' }} />
+                    <Input placeholder="选择仓库与发布类型后自动生成" size="large" style={{ fontFamily: 'monospace' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item name="git_hash" label="Git 提交哈希">
                     <Input
-                      placeholder="271b6887..."
+                      placeholder="选择来源分支后自动填充"
                       disabled
                       size="large"
                       style={{ fontFamily: '"SF Mono", "JetBrains Mono", monospace', background: blueColors.bone, color: blueColors.muted }}
@@ -785,7 +866,7 @@ function Step3Doc({
           title={<span style={{ fontWeight: 600, fontSize: 15, color: blueColors.charcoal }}>实时预览</span>}
           style={{ borderColor: blueColors.border, borderRadius: 12 }}
         >
-          <PreviewPanel updates={updates} relatedChanges={relatedChanges} />
+          <PreviewPanel version={version} gitHash={gitHash} updates={updates} relatedChanges={relatedChanges} />
         </TsCard>
       </Col>
     </Row>
@@ -793,23 +874,29 @@ function Step3Doc({
 }
 
 function PreviewPanel({
+  version,
+  gitHash,
   updates,
   relatedChanges,
 }: {
+  version?: string;
+  gitHash?: string;
   updates: { id: string; type: string; content: string }[];
   relatedChanges: RelatedChangeItem[];
 }) {
   const visibleRelated = relatedChanges.filter((r) => r.version.trim());
+  const versionText = version || '—';
+  const hashText = gitHash ? `${gitHash.slice(0, 8)}...${gitHash.slice(-8)}` : '—';
 
   return (
     <div style={{ color: blueColors.charcoal, lineHeight: 1.7 }}>
       <div style={{ marginBottom: 16 }}>
         <Text style={{ color: blueColors.muted, fontSize: 12 }}>版本</Text>
-        <div style={{ fontWeight: 700, fontSize: 18, fontFamily: 'monospace' }}>VA.4.1.155</div>
+        <div style={{ fontWeight: 700, fontSize: 18, fontFamily: 'monospace' }}>{versionText}</div>
       </div>
       <div style={{ marginBottom: 20 }}>
         <Text style={{ color: blueColors.muted, fontSize: 12 }}>Git 哈希</Text>
-        <div style={{ fontFamily: 'monospace', fontSize: 13 }}>271b6887...d1dcd991</div>
+        <div style={{ fontFamily: 'monospace', fontSize: 13 }}>{hashText}</div>
       </div>
 
       <Divider style={{ borderColor: blueColors.border }} />

@@ -503,6 +503,8 @@ class ReleaseService:
         publisher,
         version: Optional[str] = None,
         tag_name: Optional[str] = None,
+        related_changes: Optional[list] = None,
+        updates: Optional[list] = None,
     ) -> ReleaseRecord:
         """
         创建发布申请
@@ -516,6 +518,8 @@ class ReleaseService:
             publisher: 发布人
             version: 可选的版本号，为空时自动计算
             tag_name: 可选的 tag 名称，为空时根据版本号与发布类型自动计算
+            related_changes: 关联变更清单（硬件/软件版本条目列表）
+            updates: 变更条目（A/F 类变更内容）
 
         Returns:
             新创建的 ReleaseRecord
@@ -568,6 +572,8 @@ class ReleaseService:
             release_type=release_type,
             status="draft",
             publisher=publisher,
+            related_changes=related_changes or [],
+            updates=updates or [],
         )
         OperationLogService.log_release(
             user=publisher,

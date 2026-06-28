@@ -30,7 +30,8 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "id", "project", "project_name", "repository", "repository_name",
             "version", "tag_name", "source_branch", "target_branch", "git_hash",
             "release_type", "release_type_display", "status", "status_display",
-            "release_doc", "publisher", "publisher_name", "jenkins_build",
+            "release_doc", "related_changes", "updates",
+            "publisher", "publisher_name", "jenkins_build",
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [

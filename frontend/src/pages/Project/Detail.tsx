@@ -10,6 +10,7 @@ import { MemberTab } from './tabs/MemberTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
 import { RuleTab } from './tabs/RuleTab';
 import { JenkinsTab } from './tabs/JenkinsTab';
+import { ReleaseTab } from './tabs/ReleaseTab';
 import { projectApi } from '@/api/project';
 
 const { Title, Text } = Typography;
@@ -19,6 +20,7 @@ const tabItems = [
   { key: 'repos', label: '仓库' },
   { key: 'jenkins', label: 'Jenkins' },
   { key: 'members', label: '成员' },
+  { key: 'releases', label: '发布' },
   { key: 'workflows', label: '审批流' },
   { key: 'rules', label: '规则配置' },
 ];
@@ -88,6 +90,7 @@ export default function ProjectDetail() {
           {activeTab === 'repos' && <RepoTab projectId={id || ''} />}
           {activeTab === 'jenkins' && <JenkinsTab projectId={id || ''} />}
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
+          {activeTab === 'releases' && <ReleaseTab projectId={id || ''} />}
           {activeTab === 'workflows' && <WorkflowTab project={project} />}
           {activeTab === 'rules' && <RuleTab project={project} />}
         </div>

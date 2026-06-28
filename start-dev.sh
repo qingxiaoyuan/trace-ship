@@ -24,7 +24,13 @@ export LDAP_BIND_DN="cn=admin,dc=example,dc=com"
 export LDAP_BIND_PASSWORD="admin"
 export LDAP_USER_SEARCH_BASE="ou=users,dc=example,dc=com"
 
-nohup python manage.py runserver 0.0.0.0:8000 > "$LOG_DIR/backend.log" 2>&1 &
+# 优先使用项目自带的 .venv（Python 3.11）
+PYTHON_BIN="$ROOT_DIR/backend/.venv/bin/python"
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="python"
+fi
+
+nohup "$PYTHON_BIN" manage.py runserver 0.0.0.0:8000 > "$LOG_DIR/backend.log" 2>&1 &
 echo $! > "$LOG_DIR/backend.pid"
 
 echo "启动前端 (http://localhost:5173)..."

@@ -27,16 +27,6 @@ function onRefreshed(token: string) {
 
 request.interceptors.request.use(
   async (config) => {
-    if (import.meta.env.DEV) {
-      const { shouldMock, mockRequest } = await import('./mock');
-      const fullUrl = (config.baseURL || '') + (config.url || '');
-      if (shouldMock(fullUrl)) {
-        const mockResponse = await mockRequest(config);
-        if (mockResponse) {
-          config.adapter = async () => mockResponse;
-        }
-      }
-    }
     const token = localStorage.getItem('accessToken');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;

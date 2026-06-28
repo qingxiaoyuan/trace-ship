@@ -140,6 +140,8 @@ class ReleaseViewSet(StandardModelViewSet):
                 publisher=request.user,
                 version=data.get("version"),
                 tag_name=data.get("tag_name"),
+                related_changes=data.get("related_changes"),
+                updates=data.get("updates"),
             )
         except Exception as exc:
             return error_response(40002, str(exc))
