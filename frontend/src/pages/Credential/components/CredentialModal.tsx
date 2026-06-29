@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { TsModal } from '@/components/TsModal';
 import { FormSection } from '@/components/FormSection';
 import { projectApi } from '@/api/project';
+import { credentialTypeOptions, credentialScopeOptions } from '../constants';
 import type { Credential } from '@/types';
 
 interface CredentialModalProps {
@@ -27,8 +28,8 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
   const authMode = Form.useWatch('auth_mode', form);
   const credType = Form.useWatch('cred_type', form);
 
-  // GitLab/Gitea 等 Token 类凭证固定使用 token 认证模式
-  const tokenOnlyTypes = ['gitlab_token', 'gitea_token', 'github_token', 'gitee_token'];
+  // GitLab/Gitea/GitHub/Gitee/AI 等 Token 类凭证固定使用 token 认证模式
+  const tokenOnlyTypes = ['gitlab_token', 'gitea_token', 'github_token', 'gitee_token', 'ai_api_key'];
   const isTokenOnly = tokenOnlyTypes.includes(credType);
 
   const projectOptions =
@@ -65,7 +66,6 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         expires_at: values.expires_at ? values.expires_at.format() : undefined,
       };
 
-      // Token 类凭证强制使用 token 模式
       const effectiveAuthMode = isTokenOnly ? 'token' : values.auth_mode;
       payload.auth_mode = effectiveAuthMode;
 
@@ -99,10 +99,14 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
       width={720}
       footer={
         <div className="flex justify-end gap-3">
-          <Button type="text" className="text-slate-500" onClick={() => {
-            form.resetFields();
-            onCancel();
-          }}>
+          <Button
+            type="text"
+            className="text-slate-500"
+            onClick={() => {
+              form.resetFields();
+              onCancel();
+            }}
+          >
             取消
           </Button>
           <Button type="primary" onClick={handleOk} loading={projectsLoading}>
@@ -115,20 +119,23 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         <FormSection title="基本信息">
           <Row gutter={[24, 16]}>
             <Col span={12}>
-              <Form.Item name="name" label="凭证名称" rules={[{ required: true, message: '请输入凭证名称' }]}>
+              <Form.Item
+                name="name"
+                label="凭证名称"
+                rules={[{ required: true, message: '请输入凭证名称' }]}
+              >
                 <Input placeholder="请输入凭证名称" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="cred_type" label="凭证类型" rules={[{ required: true, message: '请选择凭证类型' }]}>
+              <Form.Item
+                name="cred_type"
+                label="凭证类型"
+                rules={[{ required: true, message: '请选择凭证类型' }]}
+              >
                 <Select
-                  options={[
-                    { label: 'GitLab Token', value: 'gitlab_token' },
-                    { label: 'Gitea Token', value: 'gitea_token' },
-                    { label: 'SVN 密码', value: 'svn_password' },
-                    { label: 'Jenkins Token', value: 'jenkins_token' },
-                    { label: 'LDAP 密码', value: 'ldap_password' },
-                  ]}
+                  options={credentialTypeOptions.map(([value, label]) => ({ value, label }))}
+                  placeholder="请选择凭证类型"
                 />
               </Form.Item>
             </Col>
@@ -139,8 +146,18 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           <Row gutter={[24, 16]}>
             {!isTokenOnly && (
               <Col span={12}>
-                <Form.Item name="auth_mode" label="认证模式" rules={[{ required: true, message: '请选择认证模式' }]}>
-                  <Select options={[{ label: 'Token', value: 'token' }, { label: '用户名密码', value: 'password' }]} />
+                <Form.Item
+                  name="auth_mode"
+                  label="认证模式"
+                  rules={[{ required: true, message: '请选择认证模式' }]}
+                >
+                  <Select
+                    options={[
+                      { label: 'Token', value: 'token' },
+                      { label: '用户名密码', value: 'password' },
+                    ]}
+                    placeholder="请选择认证模式"
+                  />
                 </Form.Item>
               </Col>
             )}
@@ -148,9 +165,22 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
               <Form.Item
                 name="token"
                 label={authMode === 'password' ? '密码' : 'Token'}
-                rules={[{ required: !credential, message: authMode === 'password' ? '请输入密码' : '请输入 Token' }]}
+                rules={[
+                  {
+                    required: !credential,
+                    message: authMode === 'password' ? '请输入密码' : '请输入 Token',
+                  },
+                ]}
               >
-                <Input.Password placeholder={authMode === 'password' ? '请输入密码' : '请输入 Token'} />
+                <Input.Password
+                  placeholder={
+                    credential
+                      ? '留空表示不修改'
+                      : authMode === 'password'
+                      ? '请输入密码'
+                      : '请输入 Token'
+                  }
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -158,14 +188,17 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           <Row gutter={[24, 16]}>
             <Col span={24}>
               <div
-                className={`overflow-hidden transition-all duration-300 ${
-                  authMode === 'password' ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
-                }`}
+                className={[
+                  'overflow-hidden transition-all duration-300',
+                  authMode === 'password' ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0',
+                ].join(' ')}
               >
                 <Form.Item
                   name="username"
                   label="用户名"
-                  rules={[{ required: authMode === 'password', message: '密码模式必须填写用户名' }]}
+                  rules={[
+                    { required: authMode === 'password', message: '密码模式必须填写用户名' },
+                  ]}
                 >
                   <Input placeholder="请输入用户名" />
                 </Form.Item>
@@ -176,7 +209,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           <Row gutter={[24, 16]}>
             <Col span={12}>
               <Form.Item name="expires_at" label="过期时间">
-                <DatePicker showTime className="w-full" />
+                <DatePicker showTime className="w-full" placeholder="请选择过期时间" />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -190,11 +223,15 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         <FormSection title="作用范围">
           <Row gutter={[24, 16]}>
             <Col span={24}>
-              <Form.Item name="scope" label="作用范围" rules={[{ required: true, message: '请选择作用范围' }]}>
+              <Form.Item
+                name="scope"
+                label="作用范围"
+                rules={[{ required: true, message: '请选择作用范围' }]}
+              >
                 <Radio.Group>
-                  <Radio value="personal">个人</Radio>
-                  <Radio value="project">项目</Radio>
-                  <Radio value="global">全局</Radio>
+                  {credentialScopeOptions.map(([value, label]) => (
+                    <Radio key={value} value={value}>{label}</Radio>
+                  ))}
                 </Radio.Group>
               </Form.Item>
             </Col>
@@ -202,9 +239,10 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           <Row gutter={[24, 16]}>
             <Col span={12}>
               <div
-                className={`overflow-hidden transition-all duration-300 ${
-                  scope === 'project' ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
-                }`}
+                className={[
+                  'overflow-hidden transition-all duration-300',
+                  scope === 'project' ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0',
+                ].join(' ')}
               >
                 <Form.Item
                   name="project"

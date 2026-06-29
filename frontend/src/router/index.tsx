@@ -10,7 +10,6 @@ import {
   CommitList,
   CredentialDetail,
   CredentialList,
-  CredentialUsage,
   Dashboard,
   Jenkins,
   JenkinsLogDetail,
@@ -64,7 +63,6 @@ const routes: AppRouteObject[] = [
           { path: 'repositories/:id', element: <PageLoader><RepositoryDetail /></PageLoader>, handle: { title: '仓库详情' } },
           { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader>, handle: { title: '凭证管理' } },
           { path: 'credentials/:id', element: <PageLoader><CredentialDetail /></PageLoader>, handle: { title: '凭证详情' } },
-          { path: 'credentials/:id/usage', element: <PageLoader><CredentialUsage /></PageLoader>, handle: { title: '使用记录' } },
           {
             path: 'commits',
             handle: { title: '提交规范审查' },
