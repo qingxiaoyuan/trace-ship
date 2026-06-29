@@ -101,21 +101,11 @@ const statusDotClass: Record<string, string> = {
   rejected: 'bg-rose-500',
 };
 
-const buildBars = [
-  { day: '周一', success: 18, failed: 1 },
-  { day: '周二', success: 22, failed: 0 },
-  { day: '周三', success: 25, failed: 2 },
-  { day: '周四', success: 20, failed: 0 },
-  { day: '周五', success: 28, failed: 1 },
-  { day: '周六', success: 15, failed: 1 },
-  { day: '周日', success: 14, failed: 0 },
-];
-
-const avatarUrls = [
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=64&h=64&fit=crop&crop=face',
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=64&h=64&fit=crop&crop=face',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=64&h=64&fit=crop&crop=face',
-];
+interface BuildTrendItem {
+  day: string;
+  success: number;
+  failed: number;
+}
 
 function formatDate(value?: string): string {
   return value?.split('T')[0] || '-';
@@ -132,6 +122,73 @@ function formatRelative(value?: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} 小时前`;
   return `${Math.floor(hours / 24)} 天前`;
+}
+
+function getDateKey(date: Date): string {
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function formatTrendDay(date: Date): string {
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function buildSevenDayTrend(builds: BuildRecord[]): BuildTrendItem[] {
+  const today = new Date();
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    const key = getDateKey(date);
+    const matchedBuilds = builds.filter((build) => getDateKey(new Date(build.created_at)) === key);
+
+    return {
+      day: formatTrendDay(date),
+      success: matchedBuilds.filter((build) => build.status === 'success').length,
+      failed: matchedBuilds.filter((build) => build.status === 'failure' || build.status === 'aborted').length,
+    };
+  });
+}
+
+function parseDurationSeconds(duration?: string): number | null {
+  if (!duration) return null;
+
+  const parts = duration.split(':').map(Number);
+  if (parts.length === 3 && parts.every((part) => Number.isFinite(part))) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  const minuteMatch = duration.match(/(\d+)\s*m/i);
+  const secondMatch = duration.match(/(\d+)\s*s/i);
+  const minutes = minuteMatch ? Number(minuteMatch[1]) : 0;
+  const seconds = secondMatch ? Number(secondMatch[1]) : 0;
+  const total = minutes * 60 + seconds;
+
+  return total > 0 ? total : null;
+}
+
+function getBuildDurationSeconds(build: BuildRecord): number | null {
+  const parsed = parseDurationSeconds(build.duration);
+  if (parsed !== null) return parsed;
+
+  if (!build.started_at || !build.finished_at) return null;
+  const startedAt = new Date(build.started_at).getTime();
+  const finishedAt = new Date(build.finished_at).getTime();
+
+  if (!Number.isFinite(startedAt) || !Number.isFinite(finishedAt) || finishedAt <= startedAt) return null;
+  return Math.round((finishedAt - startedAt) / 1000);
+}
+
+function formatDurationSeconds(seconds: number | null): string {
+  if (seconds === null) return '-';
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
 }
 
 function getGreeting(): string {
@@ -296,7 +353,7 @@ function ComplianceChart({
         labels: ['合规', '警告', '不合规'],
         datasets: [
           {
-            data: [passCount || 1, warningCount, illegalCount],
+            data: [passCount, warningCount, illegalCount],
             backgroundColor: ['#10B981', '#F59E0B', '#F43F5E'],
             borderWidth: 0,
             borderRadius: 3,
@@ -314,11 +371,11 @@ function ComplianceChart({
             backgroundColor: '#1E1B4B',
             titleColor: '#F1F5F9',
             bodyColor: '#C7D2FE',
-            borderRadius: 8,
+            cornerRadius: 8,
             padding: 10,
             displayColors: true,
             boxPadding: 4,
-            titleFont: { size: 12, weight: '500', family: tokens.font.sans },
+            titleFont: { size: 12, weight: 500, family: tokens.font.sans },
             bodyFont: { size: 12, family: tokens.font.sans },
           },
         },
@@ -346,7 +403,7 @@ function ComplianceChart({
   );
 }
 
-function BuildTrendChart() {
+function BuildTrendChart({ data }: { data: BuildTrendItem[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
 
@@ -363,11 +420,11 @@ function BuildTrendChart() {
     chartRef.current = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: buildBars.map((b) => b.day),
+        labels: data.map((item) => item.day),
         datasets: [
           {
             label: '成功',
-            data: buildBars.map((b) => b.success),
+            data: data.map((item) => item.success),
             backgroundColor: '#10B981',
             borderRadius: 3,
             barPercentage: 0.6,
@@ -375,7 +432,7 @@ function BuildTrendChart() {
           },
           {
             label: '失败',
-            data: buildBars.map((b) => b.failed),
+            data: data.map((item) => item.failed),
             backgroundColor: '#F43F5E',
             borderRadius: 3,
             barPercentage: 0.6,
@@ -392,9 +449,9 @@ function BuildTrendChart() {
             backgroundColor: '#1E1B4B',
             titleColor: '#F1F5F9',
             bodyColor: '#C7D2FE',
-            borderRadius: 8,
+            cornerRadius: 8,
             padding: 10,
-            titleFont: { size: 12, weight: '500', family: tokens.font.sans },
+            titleFont: { size: 12, weight: 500, family: tokens.font.sans },
             bodyFont: { size: 12, family: tokens.font.sans },
           },
         },
@@ -405,7 +462,7 @@ function BuildTrendChart() {
             ticks: { color: '#94A3B8', font: { size: 10, family: tokens.font.sans } },
           },
           y: {
-            grid: { color: '#F1F5F9', drawBorder: false },
+            grid: { color: '#F1F5F9' },
             border: { display: false },
             ticks: { color: '#94A3B8', font: { size: 10, family: tokens.font.sans }, maxTicksLimit: 4 },
           },
@@ -416,7 +473,7 @@ function BuildTrendChart() {
     return () => {
       chartRef.current?.destroy();
     };
-  }, []);
+  }, [data]);
 
   return (
     <div className="relative h-[160px]">
@@ -454,16 +511,36 @@ export default function Dashboard() {
   const builds = useMemo(() => buildData?.results || [], [buildData?.results]);
   const recentReleases = releases.slice(0, 10);
   const runningBuilds = builds.filter(isBuildRunning);
+  const pendingReleases = releases.filter((r) => normalizeStatus(r) === 'pending');
+  const buildTrendData = useMemo(() => buildSevenDayTrend(builds), [builds]);
 
   const totalReleases = overview?.total_releases || 0;
-  const pendingAuditCount = overview?.pending_audit_count || releases.filter((r) => normalizeStatus(r) === 'pending').length;
+  const pendingAuditCount = overview?.pending_audit_count || pendingReleases.length;
   const rejectedCount = overview?.rejected_count || releases.filter((r) => normalizeStatus(r) === 'rejected').length;
   const successRate = Math.round((overview?.success_rate || 0) * 1000) / 10;
   const passCommits = commits.filter((c) => c.review_status === 'pass').length;
   const warningCommits = commits.filter((c) => c.review_status === 'warning').length;
   const illegalCommits = commits.filter((c) => c.review_status === 'illegal').length;
-  const complianceRate = commits.length ? Math.round((passCommits / commits.length) * 1000) / 10 : 100;
-  const displayName = user?.nickname || user?.username || '张三';
+  const complianceRate = commits.length ? Math.round((passCommits / commits.length) * 1000) / 10 : 0;
+  const displayName = user?.nickname || user?.username || '用户';
+  const warningRate = commits.length ? Math.round((warningCommits / commits.length) * 1000) / 10 : 0;
+  const illegalRate = commits.length ? Math.round((illegalCommits / commits.length) * 1000) / 10 : 0;
+  const pendingPublishers = pendingReleases
+    .map((release) => release.publisher)
+    .filter((publisher): publisher is string => Boolean(publisher));
+  const visiblePendingPublishers = pendingPublishers.slice(0, 3);
+  const hiddenPendingPublisherCount = Math.max(0, pendingPublishers.length - visiblePendingPublishers.length);
+  const latestPendingRelease = pendingReleases[0];
+  const pendingDescription = latestPendingRelease
+    ? `最近提交于 ${formatRelative(latestPendingRelease.created_at)}`
+    : '暂无待审批发布';
+  const completedBuildDurations = builds
+    .filter((build) => build.status === 'success' || build.status === 'failure' || build.status === 'aborted')
+    .map(getBuildDurationSeconds)
+    .filter((duration): duration is number => duration !== null);
+  const averageBuildDuration = completedBuildDurations.length
+    ? Math.round(completedBuildDurations.reduce((sum, duration) => sum + duration, 0) / completedBuildDurations.length)
+    : null;
 
   const pipelineColumns: PipelineColumn[] = [
     {
@@ -491,7 +568,7 @@ export default function Dashboard() {
       tone: 'border-amber-200/70 bg-amber-50/40 text-amber-700',
       dot: 'bg-amber-500 pulse-dot',
       cardBorder: 'border-amber-200 hover:border-amber-400',
-      releases: releases.filter((r) => normalizeStatus(r) === 'pending').slice(0, 2),
+      releases: pendingReleases.slice(0, 2),
     },
     {
       key: 'released',
@@ -604,21 +681,20 @@ export default function Dashboard() {
       title: '待审批数',
       value: <span className="text-[28px] font-semibold tracking-tight text-slate-900">{pendingAuditCount}</span>,
       unit: '个审批',
-      description: `最近提交于 ${formatRelative(releases.find((r) => normalizeStatus(r) === 'pending')?.created_at)}`,
+      description: pendingDescription,
       icon: GitPullRequestArrow,
       iconClass: 'icon-amber',
       action: <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-600">待处理</span>,
       footer: (
         <div className="flex -space-x-1.5">
-          {avatarUrls.map((url, idx) => (
-            <img
-              key={idx}
-              src={url}
-              alt=""
-              className="h-5 w-5 rounded-full object-cover ring-2 ring-white"
-            />
+          {visiblePendingPublishers.map((publisher, index) => (
+            <InitialAvatar key={`${publisher}-${index}`} name={publisher} size={20} />
           ))}
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-50 ring-2 ring-white text-[9px] font-semibold text-indigo-600">+2</div>
+          {hiddenPendingPublisherCount > 0 ? (
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-50 ring-2 ring-white text-[9px] font-semibold text-indigo-600">
+              +{hiddenPendingPublisherCount}
+            </div>
+          ) : null}
         </div>
       ),
     },
@@ -656,15 +732,29 @@ export default function Dashboard() {
       action: <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">合规</span>,
       footer: (
         <div className="flex items-center gap-1">
-          <div className="h-1.5 flex-1 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" />
-          <div className="h-1.5 w-[2%] rounded-full bg-amber-400" />
+          <div
+            className="h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"
+            style={{ flex: Math.max(complianceRate, commits.length ? 1 : 0) }}
+          />
+          {warningCommits > 0 ? (
+            <div
+              className="h-1.5 rounded-full bg-amber-400"
+              style={{ flex: Math.max(warningRate, 1) }}
+            />
+          ) : null}
+          {illegalCommits > 0 ? (
+            <div
+              className="h-1.5 rounded-full bg-rose-400"
+              style={{ flex: Math.max(illegalRate, 1) }}
+            />
+          ) : null}
         </div>
       ),
     },
   ];
 
-  const buildSuccess = builds.filter((build) => build.status === 'success').length || 142;
-  const buildFailed = builds.filter((build) => build.status === 'failure' || build.status === 'aborted').length || 5;
+  const buildSuccess = builds.filter((build) => build.status === 'success').length;
+  const buildFailed = builds.filter((build) => build.status === 'failure' || build.status === 'aborted').length;
 
   return (
     <div className="space-y-5">
@@ -881,7 +971,7 @@ export default function Dashboard() {
             <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">构建趋势</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">最近 7 天</p>
           </div>
-          <BuildTrendChart />
+          <BuildTrendChart data={buildTrendData} />
           <div className="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4">
             <div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -900,7 +990,9 @@ export default function Dashboard() {
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
             <span className="text-[11px] text-slate-400">平均构建时长</span>
-            <span className="font-mono text-[13px] font-medium text-cyan-600">4m 12s</span>
+            <span className="font-mono text-[13px] font-medium text-cyan-600">
+              {formatDurationSeconds(averageBuildDuration)}
+            </span>
           </div>
         </div>
       </div>

@@ -18,7 +18,6 @@ export function MainLayout() {
           className="grid-bg-workspace"
           style={{
             minHeight: `calc(100vh - ${tokens.layout.headerHeight}px)`,
-            background: 'transparent',
           }}
         >
           <div className="page-fade-in mx-auto max-w-[1400px] px-5 py-6 lg:px-7 lg:py-7">
