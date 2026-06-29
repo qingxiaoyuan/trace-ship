@@ -135,7 +135,8 @@ export type CredentialType =
   | 'gitea_token'
   | 'svn_password'
   | 'jenkins_token'
-  | 'ldap_password';
+  | 'ldap_password'
+  | 'ai_api_key';
 
 export type CredentialScope = 'personal' | 'project' | 'global';
 

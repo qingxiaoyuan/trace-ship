@@ -7,7 +7,6 @@ export const RepositoryList = lazy(() => import('@/pages/Repository/List'));
 export const RepositoryDetail = lazy(() => import('@/pages/Repository/Detail'));
 export const CredentialList = lazy(() => import('@/pages/Credential/List'));
 export const CredentialDetail = lazy(() => import('@/pages/Credential/Detail'));
-export const CredentialUsage = lazy(() => import('@/pages/Credential/Usage'));
 export const CommitList = lazy(() => import('@/pages/Commit/List'));
 export const CommitDetail = lazy(() => import('@/pages/Commit/Detail'));
 export const CommitAlertDetail = lazy(() => import('@/pages/Commit/AlertDetail'));
