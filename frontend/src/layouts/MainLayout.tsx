@@ -8,20 +8,22 @@ const { Content } = Layout;
 
 export function MainLayout() {
   return (
-    <Layout className="min-h-screen">
+    <Layout className="relative min-h-screen bg-[#F6F7FB]">
+      <div className="aurora-bg" />
       <Sidebar />
-      <Layout style={{ marginLeft: tokens.layout.sidebarWidth }}>
+      <Layout
+        className="relative z-10 min-h-screen bg-transparent lg:ml-[244px]"
+        style={{ marginLeft: undefined }}
+      >
         <TopHeader />
         <Content
+          className="grid-bg"
           style={{
-            marginTop: tokens.layout.headerHeight,
-            minHeight: 'calc(100vh - 64px)',
-            padding: tokens.layout.pagePadding,
-            background: tokens.colors.bg,
-            overflow: 'auto',
+            minHeight: `calc(100vh - ${tokens.layout.headerHeight}px)`,
+            background: 'transparent',
           }}
         >
-          <div className="page-fade-in">
+          <div className="page-fade-in mx-auto max-w-[1400px] px-5 py-6 lg:px-7 lg:py-7">
             <Outlet />
           </div>
         </Content>

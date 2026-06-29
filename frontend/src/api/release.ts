@@ -15,5 +15,5 @@ export const releaseApi = {
     get<Blob>(`/releases/${id}/export-pdf/`, { responseType: 'blob' }),
   exportWord: (id: string) =>
     get<Blob>(`/releases/${id}/export-word/`, { responseType: 'blob' }),
-  getCatalog: () => get<{ formal: Release[]; test: Release[] }>('/releases/catalog/'),
+  getCatalog: () => get<{ formal: Release[]; rc: Release[]; beta: Release[] }>('/releases/catalog/'),
 };

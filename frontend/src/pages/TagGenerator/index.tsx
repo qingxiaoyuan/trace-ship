@@ -422,7 +422,8 @@ function Step1Branch({
             <Form.Item name="release_type" label="发布类型" rules={[{ required: true }]}>
               <Radio.Group size="large">
                 <Radio value="formal">正式版本</Radio>
-                <Radio value="test">测试版本</Radio>
+                <Radio value="rc">RC 版本</Radio>
+                <Radio value="beta">Beta 版本</Radio>
               </Radio.Group>
             </Form.Item>
           </Col>

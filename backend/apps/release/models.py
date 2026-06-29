@@ -25,7 +25,7 @@ class ReleaseRecord(models.Model):
         source_branch: 来源分支（通常为 develop）
         target_branch: 目标分支（main / test-xxx）
         git_hash: 目标分支当前 commit hash
-        release_type: 发布类型（formal 正式 / test 测试）
+        release_type: 发布类型（formal 正式 / rc 候选 / beta 测试）
         status: 发布状态
         release_doc: 发布说明文档（JSON）
         publisher: 发布人

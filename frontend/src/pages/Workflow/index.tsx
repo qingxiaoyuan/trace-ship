@@ -235,7 +235,7 @@ function TodoTab() {
         key={`${selected?.id || 'closed'}-${detailOpen}`}
         open={detailOpen}
         task={selected}
-        instance={instanceData?.data ?? null}
+        instance={instanceData ?? null}
         onClose={() => setDetailOpen(false)}
         onApprove={(comment) =>
           selected && approveMutation.mutate({ id: selected.id, comment })
@@ -316,13 +316,11 @@ function DoneTab() {
 }
 
 function ApprovalHistory({ tasks }: { tasks: WorkflowTask[] }) {
+  const getTaskTime = (task: WorkflowTask) =>
+    new Date(task.action_time || task.created_at || task.submit_time || 0).getTime();
   const history = (tasks || [])
     .filter((t) => t.status !== 'pending')
-    .sort(
-      (a, b) =>
-        new Date(b.action_time || b.created_at).getTime() -
-        new Date(a.action_time || a.created_at).getTime(),
-    );
+    .sort((a, b) => getTaskTime(b) - getTaskTime(a));
 
   if (!history.length) return null;
 
@@ -416,8 +414,10 @@ function ApprovalDetailModal({
   const releaseTypeText =
     task?.release_type === 'formal'
       ? '正式'
-      : task?.release_type === 'test'
-      ? '测试'
+      : task?.release_type === 'rc'
+      ? 'RC'
+      : task?.release_type === 'beta'
+      ? 'Beta'
       : '-';
 
   // 只有当前节点不是第一个审批节点时才允许回退

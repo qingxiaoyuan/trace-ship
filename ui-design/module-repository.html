@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · 仓库管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.3; }
+.aurora::before{ width:520px; height:520px; top:-140px; right:-100px; background:radial-gradient(circle,#818CF8,transparent 70%); }
+.aurora::after{ width:440px; height:440px; bottom:-120px; left:200px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:48px 48px; }
+.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); transition:border-color .2s,box-shadow .2s,transform .2s; }
+.tech-card-hover:hover{ border-color:rgba(99,102,241,.4); box-shadow:0 0 0 1px rgba(99,102,241,.12),0 16px 40px -10px rgba(79,70,229,.18); transform:translateY(-1px); }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
+.btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
+.text-gradient{ background:linear-gradient(135deg,#4F46E5 0%,#0891B2 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+.icon-indigo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-cyan{ background:linear-gradient(135deg,#ECFEFF,#CFFAFE); color:#0891B2; border:1px solid #A5F3FC; }
+.icon-amber{ background:linear-gradient(135deg,#FFFBEB,#FEF3C7); color:#B45309; border:1px solid #FDE68A; }
+.icon-rose{ background:linear-gradient(135deg,#FFF1F2,#FFE4E6); color:#BE123C; border:1px solid #FECDD3; }
+.icon-violet{ background:linear-gradient(135deg,#F5F3FF,#EDE9FE); color:#6D28D9; border:1px solid #DDD6FE; }
+.icon-emerald{ background:linear-gradient(135deg,#ECFDF5,#D1FAE5); color:#047857; border:1px solid #A7F3D0; }
+.scrollbar-thin::-webkit-scrollbar{ width:5px; height:5px; }
+.scrollbar-thin::-webkit-scrollbar-thumb{ background:#C7D2FE; border-radius:9999px; }
+.scrollbar-thin::-webkit-scrollbar-track{ background:transparent; }
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
+.nav-active{ background:linear-gradient(90deg,rgba(79,70,229,.1),rgba(34,211,238,.05)); border:1px solid rgba(79,70,229,.18); color:#4F46E5; }
+.nav-active i{ color:#4F46E5 !important; }
+.view{ display:none; } .view.active{ display:block; }
+.dt-tab.on{ color:#4F46E5; border-color:#4F46E5; }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
+<div class="aurora"></div>
+<div class="relative z-10 flex min-h-screen">
+  <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
+    <div class="flex h-[60px] items-center gap-2.5 px-5">
+      <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+      <div class="flex flex-col leading-none"><span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span><span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span></div>
+    </div>
+    <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-4">
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">概览</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="layout-dashboard" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>工作台</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="rocket" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>发布看板</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-pull-request-arrow" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>审批中心</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">资源</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="folder-kanban" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>项目</span></a>
+        <a class="nav-active flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium cursor-pointer"><i data-lucide="git-fork" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>仓库</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="key-round" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>凭证</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="hammer" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>Jenkins</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">质量</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="scan-search" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>提交审查</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">系统</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="users" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>用户与角色</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="settings" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>系统配置</span></a>
+      </div></div>
+    </nav>
+  </aside>
+
+  <div class="flex-1 lg:ml-[244px]">
+    <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
+      <div id="crumb" class="hidden items-center gap-1.5 text-[13px] md:flex"><span class="text-slate-400">资源</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">仓库</span></div>
+      <div class="ml-auto hidden md:flex items-center"><button class="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 hover:border-indigo-200 hover:bg-white hover:text-indigo-600 w-[260px]"><i data-lucide="search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>搜索…</span><span class="ml-auto"><kbd class="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘K</kbd></span></button></div>
+      <div class="ml-auto flex items-center gap-1 md:ml-0"><button class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="plus" class="h-4 w-4" style="stroke-width:1.5"></i></button><button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i><span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span></button><div class="mx-1 h-5 w-px bg-indigo-100"></div><img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=64&h=64&fit=crop&crop=face" class="h-8 w-8 rounded-full object-cover ring-1 ring-indigo-200 cursor-pointer" alt="" /></div>
+    </header>
+
+    <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1400px] mx-auto">
+
+      <!-- ============ 列表页 ============ -->
+      <section id="view-list" class="view active space-y-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><h1 class="text-[26px] font-semibold tracking-tight text-slate-900">仓库</h1><p class="mt-1 text-[13px] text-slate-500">管理 Git / SVN 代码仓库，追踪提交与分支</p></div>
+          <div class="flex items-center gap-2"><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="refresh-cw" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>批量同步</button><button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"><i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>关联仓库</button></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo"><i data-lucide="git-fork" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">38</div><div class="text-[11px] text-slate-400">仓库总数</div></div></div>
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-emerald"><i data-lucide="heart-pulse" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">35</div><div class="text-[11px] text-slate-400">健康</div></div></div>
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-amber"><i data-lucide="git-branch" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">142</div><div class="text-[11px] text-slate-400">分支</div></div></div>
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-cyan"><i data-lucide="git-commit-horizontal" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">28.4k</div><div class="text-[11px] text-slate-400">提交总数</div></div></div>
+        </div>
+
+        <div class="tech-card rounded-xl overflow-hidden">
+          <div class="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+            <div class="relative"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input type="text" placeholder="搜索仓库名称/URL" class="w-[240px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></div>
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="filter" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>类型</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button>
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="folder" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>项目</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button>
+            <div class="ml-auto text-[12px] text-slate-400">共 38 条</div>
+          </div>
+          <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid"><div class="col-span-3">仓库名称</div><div class="col-span-2">所属项目</div><div class="col-span-2">类型</div><div class="col-span-2">默认分支</div><div class="col-span-2">健康</div><div class="col-span-1 text-right">同步</div></div>
+          <div class="divide-y divide-indigo-50/50" id="repo-rows">
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo"><i data-lucide="git-branch" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">pay-core-service</div><div class="font-mono text-[10px] text-slate-400">gitlab.com/pay/core</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">支付核心服务</div>
+              <div class="col-span-6 md:col-span-2"><span class="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 font-mono">Git · GitLab</span></div>
+              <div class="col-span-6 md:col-span-2 flex items-center gap-1 font-mono text-[12px] text-slate-600"><i data-lucide="git-branch" class="h-3 w-3 text-indigo-400" style="stroke-width:1.5"></i>main</div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>健康</span></div>
+              <div class="col-span-6 md:col-span-1 text-right text-[11px] text-slate-400">8 分钟前</div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="git-branch" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">pay-gateway</div><div class="font-mono text-[10px] text-slate-400">gitea.com/pay/gw</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">支付核心服务</div>
+              <div class="col-span-6 md:col-span-2"><span class="rounded border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-600 font-mono">Git · Gitea</span></div>
+              <div class="col-span-6 md:col-span-2 flex items-center gap-1 font-mono text-[12px] text-slate-600"><i data-lucide="git-branch" class="h-3 w-3 text-cyan-500" style="stroke-width:1.5"></i>develop</div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>健康</span></div>
+              <div class="col-span-6 md:col-span-1 text-right text-[11px] text-slate-400">1 小时前</div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-amber"><i data-lucide="folder-tree" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">pay-config-svn</div><div class="font-mono text-[10px] text-slate-400">svn://svn.company/pay</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">支付核心服务</div>
+              <div class="col-span-6 md:col-span-2"><span class="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 font-mono">SVN</span></div>
+              <div class="col-span-6 md:col-span-2 flex items-center gap-1 font-mono text-[12px] text-slate-600"><i data-lucide="folder-tree" class="h-3 w-3 text-amber-500" style="stroke-width:1.5"></i>trunk</div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span>同步中</span></div>
+              <div class="col-span-6 md:col-span-1 text-right text-[11px] text-amber-600">进行中</div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-violet"><i data-lucide="git-branch" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">user-center-api</div><div class="font-mono text-[10px] text-slate-400">gitlab.com/user/api</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">用户中心</div>
+              <div class="col-span-6 md:col-span-2"><span class="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 font-mono">Git · GitLab</span></div>
+              <div class="col-span-6 md:col-span-2 flex items-center gap-1 font-mono text-[12px] text-slate-600"><i data-lucide="git-branch" class="h-3 w-3 text-violet-500" style="stroke-width:1.5"></i>main</div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>健康</span></div>
+              <div class="col-span-6 md:col-span-1 text-right text-[11px] text-slate-400">3 小时前</div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-rose"><i data-lucide="git-branch" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">risk-engine</div><div class="font-mono text-[10px] text-slate-400">gitlab.com/risk/eng</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">风控引擎</div>
+              <div class="col-span-6 md:col-span-2"><span class="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 font-mono">Git · GitLab</span></div>
+              <div class="col-span-6 md:col-span-2 flex items-center gap-1 font-mono text-[12px] text-slate-600"><i data-lucide="git-branch" class="h-3 w-3 text-rose-400" style="stroke-width:1.5"></i>master</div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600"><span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>异常</span></div>
+              <div class="col-span-6 md:col-span-1 text-right text-[11px] text-slate-400">2 天前</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 详情页 ============ -->
+      <section id="view-detail" class="view space-y-5">
+        <div class="flex items-center gap-2 text-[13px]"><a id="back-to-list" class="text-slate-400 hover:text-indigo-600 cursor-pointer">仓库</a><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">pay-core-service</span></div>
+
+        <div class="tech-card rounded-xl p-5">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div class="flex items-center gap-3">
+              <div class="flex h-12 w-12 items-center justify-center rounded-xl icon-indigo"><i data-lucide="git-branch" class="h-6 w-6" style="stroke-width:1.5"></i></div>
+              <div>
+                <div class="flex items-center gap-2"><h1 class="text-[22px] font-semibold tracking-tight text-slate-900">pay-core-service</h1><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>健康</span></div>
+                <div class="mt-1 flex items-center gap-2 text-[12px] text-slate-500"><span class="rounded bg-slate-100 px-1 py-0.5 font-mono">Git · GitLab</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>支付核心服务</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><a class="font-mono text-indigo-500 hover:text-indigo-600">gitlab.com/pay/core</a></div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2"><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="refresh-cw" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>立即同步</button><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>打开</button></div>
+          </div>
+          <div class="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
+            <div class="flex items-center gap-2"><i data-lucide="git-branch" class="h-4 w-4 text-indigo-400" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">默认分支</span><span class="font-mono text-[13px] font-semibold text-slate-900">main</span></div>
+            <div class="flex items-center gap-2"><i data-lucide="git-commit-horizontal" class="h-4 w-4 text-cyan-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">提交</span><span class="font-mono text-[13px] font-semibold text-slate-900">3,421</span></div>
+            <div class="flex items-center gap-2"><i data-lucide="git-branch" class="h-4 w-4 text-violet-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">分支</span><span class="font-mono text-[13px] font-semibold text-slate-900">12</span></div>
+            <div class="flex items-center gap-2"><i data-lucide="tag" class="h-4 w-4 text-emerald-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">标签</span><span class="font-mono text-[13px] font-semibold text-slate-900">48</span></div>
+          </div>
+        </div>
+
+        <div class="tech-card rounded-xl overflow-hidden">
+          <div class="flex items-center gap-1 border-b border-indigo-50 px-4 overflow-x-auto scrollbar-thin">
+            <button class="dt-tab on whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2.5 text-[13px] font-medium" data-tab="commits">最近提交</button>
+            <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="branches">分支</button>
+            <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="tags">标签</button>
+            <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="credential">凭证配置</button>
+          </div>
+          <div class="p-5">
+            <div id="dt-commits" class="dt-pane">
+              <div class="flex items-center gap-2 mb-4"><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-indigo-400" style="stroke-width:1.5"></i><span class="font-mono">main</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button><span class="text-[12px] text-slate-400">最近 20 条提交</span></div>
+              <div class="divide-y divide-indigo-50/50">
+                <div class="flex items-start gap-3 py-3"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-7 w-7 rounded-full object-cover mt-0.5" alt="" /><div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="rounded bg-emerald-50 border border-emerald-200 px-1 py-0.5 text-[10px] font-medium text-emerald-700">feat</span><span class="text-[13px] text-slate-800">新增微信支付分账能力</span></div><div class="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono text-indigo-500">a3f2c1d</span><span>李四</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>3 小时前</span></div></div><span class="font-mono text-[10px] text-slate-400">a3f2c1d8e9</span></div>
+                <div class="flex items-start gap-3 py-3"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-7 w-7 rounded-full object-cover mt-0.5" alt="" /><div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[10px] font-medium text-blue-700">fix</span><span class="text-[13px] text-slate-800">修复退款金额计算精度问题</span></div><div class="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono text-indigo-500">b8e9d2a</span><span>王五</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>6 小时前</span></div></div><span class="font-mono text-[10px] text-slate-400">b8e9d2a1f3</span></div>
+                <div class="flex items-start gap-3 py-3"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face" class="h-7 w-7 rounded-full object-cover mt-0.5" alt="" /><div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="rounded bg-amber-50 border border-amber-200 px-1 py-0.5 text-[10px] font-medium text-amber-700">chore</span><span class="text-[13px] text-slate-800">更新依赖版本</span></div><div class="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono text-indigo-500">f1a8b3c</span><span>赵六</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>昨天</span></div></div><span class="font-mono text-[10px] text-slate-400">f1a8b3c2d4</span></div>
+                <div class="flex items-start gap-3 py-3"><img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=40&h=40&fit=crop&crop=face" class="h-7 w-7 rounded-full object-cover mt-0.5" alt="" /><div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="rounded bg-violet-50 border border-violet-200 px-1 py-0.5 text-[10px] font-medium text-violet-700">refactor</span><span class="text-[13px] text-slate-800">重构对账模块，拆分服务</span></div><div class="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono text-indigo-500">d9a1b3c</span><span>钱七</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>昨天</span></div></div><span class="font-mono text-[10px] text-slate-400">d9a1b3c4e5</span></div>
+                <div class="flex items-start gap-3 py-3"><img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&crop=face" class="h-7 w-7 rounded-full object-cover mt-0.5" alt="" /><div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="rounded bg-emerald-50 border border-emerald-200 px-1 py-0.5 text-[10px] font-medium text-emerald-700">feat</span><span class="text-[13px] text-slate-800">银联渠道支持信用卡预授权</span></div><div class="mt-1 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono text-indigo-500">e5f8a9d</span><span>孙八</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>2 天前</span></div></div><span class="font-mono text-[10px] text-slate-400">e5f8a9d6b7</span></div>
+              </div>
+            </div>
+            <div id="dt-branches" class="dt-pane hidden">
+              <div class="divide-y divide-indigo-50/50 border border-indigo-100 rounded-lg">
+                <div class="flex items-center gap-3 px-4 py-3"><i data-lucide="git-branch" class="h-4 w-4 text-indigo-400" style="stroke-width:1.5"></i><span class="font-mono text-[13px] font-medium text-slate-900">main</span><span class="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">默认</span><span class="ml-auto text-[11px] text-slate-400">3,421 提交</span><span class="text-[11px] text-slate-400">8 分钟前</span></div>
+                <div class="flex items-center gap-3 px-4 py-3"><i data-lucide="git-branch" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i><span class="font-mono text-[13px] font-medium text-slate-700">release/v2.5.0</span><span class="ml-auto text-[11px] text-slate-400">18 提交</span><span class="text-[11px] text-slate-400">2 小时前</span></div>
+                <div class="flex items-center gap-3 px-4 py-3"><i data-lucide="git-branch" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i><span class="font-mono text-[13px] font-medium text-slate-700">feature/wx-split</span><span class="ml-auto text-[11px] text-slate-400">6 提交</span><span class="text-[11px] text-slate-400">5 小时前</span></div>
+                <div class="flex items-center gap-3 px-4 py-3"><i data-lucide="git-branch" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i><span class="font-mono text-[13px] font-medium text-slate-700">hotfix/refund-bug</span><span class="ml-auto text-[11px] text-slate-400">2 提交</span><span class="text-[11px] text-slate-400">昨天</span></div>
+              </div>
+            </div>
+            <div id="dt-tags" class="dt-pane hidden">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="tag" class="h-4 w-4" style="stroke-width:1.5"></i></div><div class="flex-1"><div class="font-mono text-[13px] font-medium text-slate-900">v2.4.1</div><div class="text-[11px] text-slate-400">a3f2c1d · 2 天前</div></div><span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">正式</span></div>
+                <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="tag" class="h-4 w-4" style="stroke-width:1.5"></i></div><div class="flex-1"><div class="font-mono text-[13px] font-medium text-slate-900">v2.4.0</div><div class="text-[11px] text-slate-400">b8e9d2a · 1 周前</div></div><span class="rounded border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-600">RC</span></div>
+                <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-amber"><i data-lucide="tag" class="h-4 w-4" style="stroke-width:1.5"></i></div><div class="flex-1"><div class="font-mono text-[13px] font-medium text-slate-900">v2.4.0-beta1</div><div class="text-[11px] text-slate-400">f1a8b3c · 2 周前</div></div><span class="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Beta</span></div>
+                <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="tag" class="h-4 w-4" style="stroke-width:1.5"></i></div><div class="flex-1"><div class="font-mono text-[13px] font-medium text-slate-900">v2.3.4</div><div class="text-[11px] text-slate-400">d9a1b3c · 3 周前</div></div><span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">正式</span></div>
+              </div>
+            </div>
+            <div id="dt-credential" class="dt-pane hidden">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="rounded-lg border border-indigo-100 bg-white p-4">
+                  <div class="flex items-center gap-2 mb-3"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-violet"><i data-lucide="key-round" class="h-4 w-4" style="stroke-width:1.5"></i></div><h4 class="text-[14px] font-semibold text-slate-900">凭证模式</h4></div>
+                  <div class="space-y-2 text-[12px]"><div class="flex justify-between py-1.5 border-b border-indigo-50"><span class="text-slate-500">模式</span><span class="text-slate-700">当前用户（current_user）</span></div><div class="flex justify-between py-1.5 border-b border-indigo-50"><span class="text-slate-500">凭证类型</span><span class="font-mono text-slate-700">gitlab_token</span></div><div class="flex justify-between py-1.5"><span class="text-slate-500">使用用户凭证</span><span class="text-slate-700">张三 / lisi</span></div></div>
+                </div>
+                <div class="rounded-lg border border-indigo-100 bg-white p-4">
+                  <div class="flex items-center gap-2 mb-3"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="shield-check" class="h-4 w-4" style="stroke-width:1.5"></i></div><h4 class="text-[14px] font-semibold text-slate-900">连接状态</h4></div>
+                  <div class="space-y-2 text-[12px]"><div class="flex justify-between py-1.5 border-b border-indigo-50"><span class="text-slate-500">最近验证</span><span class="text-slate-700">8 分钟前</span></div><div class="flex justify-between py-1.5 border-b border-indigo-50"><span class="text-slate-500">状态</span><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>正常</span></div><div class="flex justify-between py-1.5"><span class="text-slate-500">权限范围</span><span class="text-slate-700">read_repository, api</span></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+<script>
+  lucide.createIcons();
+  document.querySelectorAll('#repo-rows > div').forEach(r => r.addEventListener('click', () => show('view-detail')));
+  document.getElementById('back-to-list').addEventListener('click', () => show('view-list'));
+  function show(id){ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo({top:0,behavior:'smooth'}); }
+  document.querySelectorAll('.dt-tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.dt-tab').forEach(x => { x.classList.remove('on','text-indigo-600'); x.classList.add('text-slate-500'); x.style.borderColor='transparent'; });
+    t.classList.add('on','text-indigo-600'); t.classList.remove('text-slate-500'); t.style.borderColor='#4F46E5';
+    document.querySelectorAll('.dt-pane').forEach(p => p.classList.add('hidden'));
+    document.getElementById('dt-'+t.dataset.tab)?.classList.remove('hidden');
+  }));
+</script>
+</body>
+</html>

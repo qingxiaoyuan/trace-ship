@@ -31,7 +31,8 @@ interface RuleFormValues {
   versionRule: string;
   releaseCycle: number;
   formalBranch: string[];
-  testPrefix: string;
+  rcPrefix: string;
+  betaPrefix: string;
   complianceThreshold: number;
 }
 
@@ -54,14 +55,16 @@ export function RuleTab({ project }: RuleTabProps) {
 
   const versionRule = (project.version_rule as Record<string, unknown>) || {};
   const releaseRule = (project.release_rule as Record<string, unknown>) || {};
+  const tagPrefixes = (releaseRule.tag_prefixes as Record<string, string>) || {};
 
   const initialValues: RuleFormValues = {
     versionRule: (versionRule.format as string) || '主版本.次版本.修订号',
     releaseCycle: (releaseRule.release_cycle_days as number) || 3,
     formalBranch: releaseRule.formal_branch
       ? String(releaseRule.formal_branch).split(',')
-      : ['main'],
-    testPrefix: (releaseRule.test_prefix as string) || 'test',
+      : ['main', 'master'],
+    rcPrefix: tagPrefixes.rc || 'rc',
+    betaPrefix: tagPrefixes.beta || 'beta',
     complianceThreshold: (releaseRule.compliance_threshold as number) ?? 90,
   };
 
@@ -74,7 +77,10 @@ export function RuleTab({ project }: RuleTabProps) {
         release_rule: {
           release_cycle_days: values.releaseCycle,
           formal_branch: values.formalBranch.join(','),
-          test_prefix: values.testPrefix,
+          tag_prefixes: {
+            rc: values.rcPrefix,
+            beta: values.betaPrefix,
+          },
           compliance_threshold: values.complianceThreshold,
         },
       };
@@ -129,8 +135,12 @@ export function RuleTab({ project }: RuleTabProps) {
           />
         </Form.Item>
 
-        <Form.Item name="testPrefix" label="测试版本命名前缀">
-          <Input placeholder="test" />
+        <Form.Item name="rcPrefix" label="RC Tag 前缀">
+          <Input placeholder="rc" />
+        </Form.Item>
+
+        <Form.Item name="betaPrefix" label="Beta Tag 前缀">
+          <Input placeholder="beta" />
         </Form.Item>
 
         <Form.Item name="complianceThreshold" label="Commit 合规率阈值（%）">

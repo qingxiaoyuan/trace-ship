@@ -1,23 +1,23 @@
 import { useMemo, useState } from 'react';
 import {
   Layout,
-  Breadcrumb,
   Badge,
   Avatar,
   Dropdown,
   Button,
   Typography,
-  Space,
   List,
   Tabs,
 } from 'antd';
 import {
-  BellOutlined,
-  DownOutlined,
-  LogoutOutlined,
-  UserOutlined,
-  SettingOutlined,
-} from '@ant-design/icons';
+  Bell,
+  ChevronRight,
+  LogOut,
+  Plus,
+  Search,
+  Settings,
+  User,
+} from 'lucide-react';
 import { useLocation, useMatches, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tokens } from '@/styles/theme';
@@ -217,19 +217,19 @@ export function TopHeader() {
   const userMenuItems = [
     {
       key: 'profile',
-      icon: <UserOutlined />,
+      icon: <User className="h-3.5 w-3.5" strokeWidth={1.5} />,
       label: '个人中心',
       onClick: () => navigate('/profile'),
     },
     {
       key: 'settings',
-      icon: <SettingOutlined />,
+      icon: <Settings className="h-3.5 w-3.5" strokeWidth={1.5} />,
       label: '账号设置',
     },
     { type: 'divider' as const },
     {
       key: 'logout',
-      icon: <LogoutOutlined />,
+      icon: <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />,
       label: '退出登录',
       danger: true,
       onClick: logout,
@@ -238,56 +238,96 @@ export function TopHeader() {
 
   return (
     <Header
-      className="flex items-center justify-between px-6 fixed top-0 right-0 z-50"
+      className="sticky top-0 z-30 flex items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7"
       style={{
-        left: tokens.layout.sidebarWidth,
         height: tokens.layout.headerHeight,
-        background: 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(10px)',
-        borderBottom: `1px solid ${tokens.colors.border}`,
+        paddingInline: undefined,
+        lineHeight: undefined,
       }}
     >
-      <Breadcrumb
-        items={breadcrumbItems.map((item, index) => ({
-          title: item.path ? (
-            <a onClick={() => navigate(item.path!)} className="cursor-pointer">
-              {item.title}
-            </a>
-          ) : (
-            <span className="font-semibold text-slate-900">{item.title}</span>
-          ),
-          key: index,
-        }))}
-      />
+      <div className="hidden items-center gap-1.5 text-[13px] md:flex">
+        {breadcrumbItems.map((item, index) => (
+          <div key={`${item.title}-${index}`} className="flex items-center gap-1.5">
+            {index > 0 ? <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} /> : null}
+            {item.path ? (
+              <button
+                type="button"
+                onClick={() => navigate(item.path!)}
+                className="text-slate-400 transition-colors hover:text-indigo-600"
+              >
+                {item.title}
+              </button>
+            ) : (
+              <span className="font-medium text-slate-800">{item.title}</span>
+            )}
+          </div>
+        ))}
+      </div>
 
-      <Space size="middle">
+      <div className="ml-auto hidden items-center md:flex">
+        <button
+          type="button"
+          className="group flex w-[280px] items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 transition-colors hover:border-indigo-200 hover:bg-white hover:text-indigo-600"
+        >
+          <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
+          <span>搜索项目、发布、提交…</span>
+          <span className="ml-auto flex items-center gap-0.5">
+            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
+              ⌘
+            </kbd>
+            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
+              K
+            </kbd>
+          </span>
+        </button>
+      </div>
+
+      <div className="ml-auto flex items-center gap-1 md:ml-0">
+        <button
+          type="button"
+          onClick={() => navigate('/releases/create')}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+          aria-label="新建发布"
+        >
+          <Plus className="h-4 w-4" strokeWidth={1.5} />
+        </button>
+
         <Dropdown
           menu={notificationMenu}
           placement="bottomRight"
           arrow
           onOpenChange={(open) => setBellOpen(open)}
         >
-          <Badge count={unreadCount} size="small" offset={[8, -4]}>
-            <Button type="text" icon={<BellOutlined />} shape="circle" />
+          <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+            <button
+              type="button"
+              className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+              aria-label="通知"
+            >
+              <Bell className="h-4 w-4" strokeWidth={1.5} />
+              {unreadCount > 0 ? (
+                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white" />
+              ) : null}
+            </button>
           </Badge>
         </Dropdown>
 
+        <div className="mx-1 h-5 w-px bg-indigo-100" />
+
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow>
-          <div className="flex items-center gap-2 cursor-pointer">
+          <button type="button" className="flex items-center gap-2 rounded-lg">
             <Avatar
-              style={{ backgroundColor: tokens.colors.userAvatar }}
-              size="small"
+              style={{
+                background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
+                boxShadow: '0 0 0 1px #C7D2FE',
+              }}
+              size={32}
             >
               {(user?.nickname || user?.username)?.charAt(0) || 'U'}
             </Avatar>
-            <div className="hidden md:flex flex-col leading-tight">
-              <Text className="text-sm font-medium">{user?.nickname || user?.username || '未登录'}</Text>
-              <Text className="text-xs text-slate-400">{user?.roles?.[0] || '用户'}</Text>
-            </div>
-            <DownOutlined className="text-xs text-slate-400" />
-          </div>
+          </button>
         </Dropdown>
-      </Space>
+      </div>
     </Header>
   );
 }

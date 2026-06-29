@@ -4,6 +4,7 @@
 提供基于审批链的串行审批流程的创建、推进、审批、驳回、转交、回退、撤销能力。
 支持节点或签（any）与会签（all）模式。
 """
+import uuid
 from typing import Any, Dict, List, Optional
 
 from django.db import transaction
@@ -52,7 +53,7 @@ class WorkflowEngine:
         Raises:
             serializers.ValidationError: 审批链为空或未解析到审批人时抛出
         """
-        node_config = definition.node_config or []
+        node_config = cls._normalize_node_config(definition.node_config or [])
         if not node_config:
             raise serializers.ValidationError({"node_config": "流程定义中未配置审批节点"})
 
@@ -75,6 +76,27 @@ class WorkflowEngine:
 
             cls._create_node_tasks(instance, first_node, graph_data)
             return instance
+
+    @staticmethod
+    def _normalize_node_config(node_config: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        归一化审批链配置，兼容旧数据缺少 node_id 等字段的情况。
+
+        Args:
+            node_config: 原始审批链配置
+
+        Returns:
+            补齐必需字段后的审批链配置
+        """
+        normalized: List[Dict[str, Any]] = []
+        for index, node in enumerate(node_config or []):
+            item = dict(node or {})
+            item.setdefault("node_id", f"approval_{index + 1}_{uuid.uuid4().hex[:8]}")
+            item.setdefault("node_name", f"审批节点 {index + 1}")
+            item.setdefault("mode", "any")
+            item.setdefault("approvers", [{"type": "leader"}])
+            normalized.append(item)
+        return normalized
 
     @classmethod
     def process_task(

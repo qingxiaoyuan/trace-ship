@@ -25,12 +25,15 @@ class TestReleaseValidator:
             ReleaseValidator.validate_project_status(project)
 
     def test_validate_branch_and_prefix_for_formal(self):
-        """正式发布必须指向主分支"""
-        rule = {"formal_branch": "main", "test_prefix": "test"}
+        """正式发布必须指向允许的主分支"""
+        rule = {"formal_branch": "main,master", "test_prefix": "test"}
         ReleaseValidator.validate_branch_and_prefix(
             "formal", "main", "VA.1.0.0", rule
         )
-        with pytest.raises(Exception, match="正式版本只能从 main"):
+        ReleaseValidator.validate_branch_and_prefix(
+            "formal", "master", "VA.1.0.0", rule
+        )
+        with pytest.raises(Exception, match="正式版本只能从 main, master"):
             ReleaseValidator.validate_branch_and_prefix(
                 "formal", "develop", "VA.1.0.0", rule
             )

@@ -161,7 +161,7 @@ class ReleaseValidator:
         """
         rule = project.release_rule or {}
         return {
-            "formal_branch": rule.get("formal_branch", "main"),
+            "formal_branch": rule.get("formal_branch", ["main", "master"]),
             "tag_prefixes": rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes()),
             "release_cycle_days": int(rule.get("release_cycle_days", 3)),
         }
@@ -212,12 +212,14 @@ class ReleaseValidator:
         Raises:
             serializers.ValidationError: 校验失败
         """
-        formal_branch = release_rule.get("formal_branch", "main")
+        formal_branches = ReleaseValidator._normalize_formal_branches(
+            release_rule.get("formal_branch", ["main", "master"])
+        )
         prefixes = release_rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes())
 
-        if release_type == "formal" and target_branch != formal_branch:
+        if release_type == "formal" and target_branch not in formal_branches:
             raise serializers.ValidationError(
-                {"target_branch": f"正式版本只能从 {formal_branch} 分支发布"}
+                {"target_branch": f"正式版本只能从 {', '.join(formal_branches)} 分支发布"}
             )
         if release_type in ("rc", "beta"):
             prefix = (prefixes.get(release_type, "") or "").strip("-")
@@ -225,6 +227,24 @@ class ReleaseValidator:
                 raise serializers.ValidationError(
                     {"tag_name": f"{release_type} 版本 tag 必须以 {prefix} 开头"}
                 )
+
+    @staticmethod
+    def _normalize_formal_branches(value: Any) -> List[str]:
+        """
+        将正式发布分支规则归一化为分支名列表。
+
+        Args:
+            value: 字符串、逗号分隔字符串或列表
+
+        Returns:
+            分支名列表
+        """
+        if isinstance(value, (list, tuple, set)):
+            branches = [str(item).strip() for item in value]
+        else:
+            branches = [item.strip() for item in str(value or "").split(",")]
+        branches = [branch for branch in branches if branch]
+        return branches or ["main", "master"]
 
     @staticmethod
     def validate_release_cycle(project: Project, release_type: str, release_rule: dict) -> None:
@@ -765,7 +785,7 @@ class ReleaseService:
         Returns:
             创建的 TagInfo
         """
-        if release.status not in ("pending", "auditing"):
+        if release.status != "pending":
             raise serializers.ValidationError({"status": "只有待审批状态才能推 tag"})
 
         provider = cls._get_provider(release.repository, request_user)

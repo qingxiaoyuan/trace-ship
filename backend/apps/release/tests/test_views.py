@@ -153,7 +153,7 @@ class TestReleaseViews:
             source_branch="develop",
             target_branch="main",
             release_type="formal",
-            status="auditing",
+            status="pending",
             git_hash="targethead001",
             publisher=api_client.handler._force_user,
         )

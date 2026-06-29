@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · Jenkins 构建</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.3; }
+.aurora::before{ width:520px; height:520px; top:-140px; right:-100px; background:radial-gradient(circle,#818CF8,transparent 70%); }
+.aurora::after{ width:440px; height:440px; bottom:-120px; left:200px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:48px 48px; }
+.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); transition:border-color .2s,box-shadow .2s,transform .2s; }
+.tech-card-hover:hover{ border-color:rgba(99,102,241,.4); box-shadow:0 0 0 1px rgba(99,102,241,.12),0 16px 40px -10px rgba(79,70,229,.18); transform:translateY(-1px); }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
+.btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
+.text-gradient{ background:linear-gradient(135deg,#4F46E5 0%,#0891B2 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+.icon-indigo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-cyan{ background:linear-gradient(135deg,#ECFEFF,#CFFAFE); color:#0891B2; border:1px solid #A5F3FC; }
+.icon-amber{ background:linear-gradient(135deg,#FFFBEB,#FEF3C7); color:#B45309; border:1px solid #FDE68A; }
+.icon-rose{ background:linear-gradient(135deg,#FFF1F2,#FFE4E6); color:#BE123C; border:1px solid #FECDD3; }
+.icon-violet{ background:linear-gradient(135deg,#F5F3FF,#EDE9FE); color:#6D28D9; border:1px solid #DDD6FE; }
+.icon-emerald{ background:linear-gradient(135deg,#ECFDF5,#D1FAE5); color:#047857; border:1px solid #A7F3D0; }
+.scrollbar-thin::-webkit-scrollbar{ width:5px; height:5px; }
+.scrollbar-thin::-webkit-scrollbar-thumb{ background:#C7D2FE; border-radius:9999px; }
+.scrollbar-thin::-webkit-scrollbar-track{ background:transparent; }
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
+@keyframes spin-slow{ to{ transform:rotate(360deg); } }
+.spin-slow{ animation:spin-slow 2.5s linear infinite; transform-origin:center; }
+.nav-active{ background:linear-gradient(90deg,rgba(79,70,229,.1),rgba(34,211,238,.05)); border:1px solid rgba(79,70,229,.18); color:#4F46E5; }
+.nav-active i{ color:#4F46E5 !important; }
+.view{ display:none; } .view.active{ display:block; }
+.dt-tab.on{ color:#4F46E5; border-color:#4F46E5; }
+.terminal{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; background:#0B1020; color:#94A3B8; }
+.terminal .log-info{ color:#60A5FA; } .terminal .log-success{ color:#34D399; } .terminal .log-warn{ color:#FBBF24; } .terminal .log-err{ color:#FB7185; } .terminal .log-dim{ color:#475569; }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
+<div class="aurora"></div>
+<div class="relative z-10 flex min-h-screen">
+  <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
+    <div class="flex h-[60px] items-center gap-2.5 px-5">
+      <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+      <div class="flex flex-col leading-none"><span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span><span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span></div>
+    </div>
+    <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-4">
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">概览</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="layout-dashboard" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>工作台</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="rocket" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>发布看板</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-pull-request-arrow" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>审批中心</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">资源</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="folder-kanban" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>项目</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-fork" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>仓库</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="key-round" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>凭证</span></a>
+        <a class="nav-active flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium cursor-pointer"><i data-lucide="hammer" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>Jenkins</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">质量</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="scan-search" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>提交审查</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">系统</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="users" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>用户与角色</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="settings" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>系统配置</span></a>
+      </div></div>
+    </nav>
+  </aside>
+
+  <div class="flex-1 lg:ml-[244px]">
+    <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
+      <div id="crumb" class="hidden items-center gap-1.5 text-[13px] md:flex"><span class="text-slate-400">资源</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">Jenkins</span></div>
+      <div class="ml-auto hidden md:flex items-center"><button class="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 hover:border-indigo-200 hover:bg-white hover:text-indigo-600 w-[260px]"><i data-lucide="search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>搜索…</span><span class="ml-auto"><kbd class="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘K</kbd></span></button></div>
+      <div class="ml-auto flex items-center gap-1 md:ml-0"><button class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="plus" class="h-4 w-4" style="stroke-width:1.5"></i></button><button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i><span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span></button><div class="mx-1 h-5 w-px bg-indigo-100"></div><img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=64&h=64&fit=crop&crop=face" class="h-8 w-8 rounded-full object-cover ring-1 ring-indigo-200 cursor-pointer" alt="" /></div>
+    </header>
+
+    <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1400px] mx-auto">
+
+      <!-- ============ 列表页 ============ -->
+      <section id="view-list" class="view active space-y-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><h1 class="text-[26px] font-semibold tracking-tight text-slate-900">Jenkins 构建</h1><p class="mt-1 text-[13px] text-slate-500">管理构建任务，监控构建状态，查看实时日志</p></div>
+          <div class="flex items-center gap-2"><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="refresh-cw" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>刷新</button><button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"><i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>添加任务</button></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo"><i data-lucide="hammer" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">14</div><div class="text-[11px] text-slate-400">构建任务</div></div></div>
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-emerald"><i data-lucide="check-circle-2" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">96.4%</div><div class="text-[11px] text-slate-400">成功率</div></div></div>
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-cyan"><i data-lucide="loader" class="h-[18px] w-[18px] spin-slow" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">2</div><div class="text-[11px] text-slate-400">进行中</div></div></div>
+          <div class="tech-card rounded-xl p-4 flex items-center gap-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-violet"><i data-lucide="clock" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[20px] font-semibold tracking-tight text-slate-900">4m12s</div><div class="text-[11px] text-slate-400">平均耗时</div></div></div>
+        </div>
+
+        <div class="tech-card rounded-xl overflow-hidden">
+          <div class="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+            <div class="relative"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input type="text" placeholder="搜索任务名称" class="w-[220px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></div>
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="folder" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>项目</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button>
+            <div class="ml-auto text-[12px] text-slate-400">共 14 条</div>
+          </div>
+          <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid"><div class="col-span-3">任务名称</div><div class="col-span-2">所属项目</div><div class="col-span-2">服务器</div><div class="col-span-2">最近构建</div><div class="col-span-2">状态</div><div class="col-span-1 text-right">操作</div></div>
+          <div class="divide-y divide-indigo-50/50" id="job-rows">
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo"><i data-lucide="hammer" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">pay-core-build</div><div class="font-mono text-[10px] text-slate-400">pay-core-service</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">支付核心服务</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">jenkins:18080</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#142</span><span class="text-[11px] text-slate-400 ml-1.5">8分钟前</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>构建中</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end gap-1"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-violet"><i data-lucide="hammer" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">gateway-build</div><div class="font-mono text-[10px] text-slate-400">gateway-service</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">网关服务</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">jenkins:18080</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#141</span><span class="text-[11px] text-slate-400 ml-1.5">2小时前</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>成功</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end gap-1"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-rose"><i data-lucide="hammer" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">risk-engine-build</div><div class="font-mono text-[10px] text-slate-400">risk-engine</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">风控引擎</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">jenkins:18080</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#140</span><span class="text-[11px] text-slate-400 ml-1.5">5小时前</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600"><span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>失败</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end gap-1"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-amber"><i data-lucide="hammer" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">order-build</div><div class="font-mono text-[10px] text-slate-400">order-service</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">订单管理</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">jenkins:18080</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#139</span><span class="text-[11px] text-slate-400 ml-1.5">8小时前</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>成功</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end gap-1"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="hammer" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">user-center-build</div><div class="font-mono text-[10px] text-slate-400">user-center-api</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">用户中心</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">jenkins:18080</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#98</span><span class="text-[11px] text-slate-400 ml-1.5">昨天</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>构建中</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end gap-1"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 详情页 ============ -->
+      <section id="view-detail" class="view space-y-5">
+        <div class="flex items-center gap-2 text-[13px]"><a id="back-to-list" class="text-slate-400 hover:text-indigo-600 cursor-pointer">Jenkins</a><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">pay-core-build</span></div>
+
+        <div class="tech-card rounded-xl p-5">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div class="flex items-center gap-3">
+              <div class="flex h-12 w-12 items-center justify-center rounded-xl icon-indigo"><i data-lucide="hammer" class="h-6 w-6" style="stroke-width:1.5"></i></div>
+              <div>
+                <div class="flex items-center gap-2"><h1 class="text-[22px] font-semibold tracking-tight text-slate-900">pay-core-build</h1><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>已启用</span></div>
+                <div class="mt-1 flex items-center gap-2 text-[12px] text-slate-500"><span class="font-mono">jenkins:18080</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>支付核心服务</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>关联 pay-core-service</span></div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2"><button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"><i data-lucide="play" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>触发构建</button><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>Jenkins</button></div>
+          </div>
+          <div class="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
+            <div class="flex items-center gap-2"><i data-lucide="hash" class="h-4 w-4 text-indigo-400" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">总构建</span><span class="font-mono text-[13px] font-semibold text-slate-900">142</span></div>
+            <div class="flex items-center gap-2"><i data-lucide="check-circle-2" class="h-4 w-4 text-emerald-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">成功率</span><span class="font-mono text-[13px] font-semibold text-slate-900">95.1%</span></div>
+            <div class="flex items-center gap-2"><i data-lucide="clock" class="h-4 w-4 text-cyan-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">平均耗时</span><span class="font-mono text-[13px] font-semibold text-slate-900">4m21s</span></div>
+            <div class="flex items-center gap-2"><i data-lucide="loader" class="h-4 w-4 text-cyan-500 spin-slow" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">最近构建</span><span class="font-mono text-[13px] font-semibold text-cyan-600">#142 构建中</span></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-5 lg:grid-cols-5">
+          <div class="lg:col-span-3 tech-card rounded-xl overflow-hidden">
+            <div class="flex items-center gap-1 border-b border-indigo-50 px-4 overflow-x-auto scrollbar-thin">
+              <button class="dt-tab on whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2.5 text-[13px] font-medium" data-tab="history">构建历史</button>
+              <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="params">参数模板</button>
+              <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="config">任务配置</button>
+            </div>
+            <div class="p-5">
+              <div id="dt-history" class="dt-pane">
+                <div class="divide-y divide-indigo-50/50">
+                  <div class="flex items-center gap-3 py-3 bg-cyan-50/20 border-l-2 border-cyan-400 px-3 -mx-3 rounded-r">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="loader" class="h-4 w-4 spin-slow" style="stroke-width:2"></i></div>
+                    <div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="font-mono text-[13px] font-medium text-slate-900">#142</span><span class="text-[12px] text-slate-500">张三</span></div><div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono">v3.1.0</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span class="text-cyan-600">3m24s · 65%</span></div></div>
+                    <div class="w-20"><div class="h-1 w-full rounded-full bg-cyan-100"><div class="h-full w-[65%] rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400"></div></div></div>
+                  </div>
+                  <div class="flex items-center gap-3 py-3">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="check" class="h-4 w-4" style="stroke-width:2"></i></div>
+                    <div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="font-mono text-[13px] font-medium text-slate-900">#141</span><span class="text-[12px] text-slate-500">李四</span></div><div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono">v4.2.1</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>2h前 · 4m08s</span></div></div>
+                    <span class="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">成功</span>
+                  </div>
+                  <div class="flex items-center gap-3 py-3">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg icon-rose"><i data-lucide="x" class="h-4 w-4" style="stroke-width:2"></i></div>
+                    <div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="font-mono text-[13px] font-medium text-slate-900">#140</span><span class="text-[12px] text-slate-500">赵六</span></div><div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono">v2.0.0</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span class="text-rose-500">5h前 · 超时</span></div></div>
+                    <span class="rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-600">失败</span>
+                  </div>
+                  <div class="flex items-center gap-3 py-3">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="check" class="h-4 w-4" style="stroke-width:2"></i></div>
+                    <div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="font-mono text-[13px] font-medium text-slate-900">#139</span><span class="text-[12px] text-slate-500">王五</span></div><div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono">v1.8.1</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>8h前 · 3m52s</span></div></div>
+                    <span class="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">成功</span>
+                  </div>
+                  <div class="flex items-center gap-3 py-3">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-400 border border-slate-200"><i data-lucide="square" class="h-3.5 w-3.5" style="stroke-width:2"></i></div>
+                    <div class="flex-1 min-w-0"><div class="flex items-center gap-2"><span class="font-mono text-[13px] font-medium text-slate-900">#138</span><span class="text-[12px] text-slate-500">钱七</span></div><div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400"><span class="font-mono">v2.4.2</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>昨天 · 已中止</span></div></div>
+                    <span class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">中止</span>
+                  </div>
+                </div>
+              </div>
+              <div id="dt-params" class="dt-pane hidden">
+                <div class="rounded-lg border border-indigo-100 bg-slate-50/50 p-3 font-mono text-[12px] text-slate-600 leading-relaxed">
+                  <div class="text-slate-400"># 构建参数模板（发布时渲染）</div>
+                  <div class="mt-1.5">{</div>
+                  <div class="pl-3"><span class="text-indigo-500">"VERSION"</span>: <span class="text-emerald-600">"${version}"</span>,</div>
+                  <div class="pl-3"><span class="text-indigo-500">"BRANCH"</span>: <span class="text-emerald-600">"${source_branch}"</span>,</div>
+                  <div class="pl-3"><span class="text-indigo-500">"DOCKER_TAG"</span>: <span class="text-emerald-600">"${version}"</span>,</div>
+                  <div class="pl-3"><span class="text-indigo-500">"DEPLOY_ENV"</span>: <span class="text-emerald-600">"staging"</span></div>
+                  <div>}</div>
+                </div>
+                <div class="mt-4 space-y-2">
+                  <div class="flex items-center justify-between py-2 border-b border-indigo-50"><span class="text-[13px] text-slate-600"><span class="font-mono text-indigo-500">VERSION</span></span><span class="text-[12px] text-slate-500">发布版本号，自动填充</span></div>
+                  <div class="flex items-center justify-between py-2 border-b border-indigo-50"><span class="text-[13px] text-slate-600"><span class="font-mono text-indigo-500">BRANCH</span></span><span class="text-[12px] text-slate-500">来源分支</span></div>
+                  <div class="flex items-center justify-between py-2 border-b border-indigo-50"><span class="text-[13px] text-slate-600"><span class="font-mono text-indigo-500">DOCKER_TAG</span></span><span class="text-[12px] text-slate-500">Docker 镜像标签</span></div>
+                  <div class="flex items-center justify-between py-2"><span class="text-[13px] text-slate-600"><span class="font-mono text-indigo-500">DEPLOY_ENV</span></span><span class="text-[12px] text-slate-500">部署环境（固定 staging）</span></div>
+                </div>
+              </div>
+              <div id="dt-config" class="dt-pane hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between py-2 border-b border-indigo-50"><span class="text-[13px] text-slate-500">任务名称</span><span class="font-mono text-[13px] text-slate-800">pay-core-build</span></div>
+                    <div class="flex items-center justify-between py-2 border-b border-indigo-50"><span class="text-[13px] text-slate-500">Jenkins Job</span><span class="font-mono text-[13px] text-slate-800">pay-core-build</span></div>
+                    <div class="flex items-center justify-between py-2 border-b border-indigo-50"><span class="text-[13px] text-slate-500">服务器</span><span class="font-mono text-[13px] text-slate-800">http://jenkins:18080</span></div>
+                    <div class="flex items-center justify-between py-2 border-b border-indigo-50"><span class="text-[13px] text-slate-500">关联仓库</span><span class="text-[13px] text-slate-800">pay-core-service</span></div>
+                    <div class="flex items-center justify-between py-2"><span class="text-[13px] text-slate-500">凭证模式</span><span class="text-[13px] text-slate-800">全局（jenkins_token）</span></div>
+                  </div>
+                  <div class="rounded-lg bg-indigo-50/40 border border-indigo-100 p-4">
+                    <div class="flex items-center gap-1.5 text-[12px] font-medium text-indigo-700 mb-2"><i data-lucide="info" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>轮询机制</div>
+                    <p class="text-[12px] text-slate-500 leading-relaxed">触发构建后，Celery 每 10 秒轮询 Jenkins 构建状态。成功则发布进入审批，失败则自动驳回。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 日志面板 -->
+          <div class="lg:col-span-2 tech-card rounded-xl overflow-hidden flex flex-col">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-4 py-3">
+              <div class="flex items-center gap-2"><span class="font-mono text-[13px] font-medium text-slate-900">#142</span><span class="inline-flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>构建中</span></div>
+              <div class="flex items-center gap-1"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="pause" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            </div>
+            <div class="terminal flex-1 p-4 text-[11.5px] leading-relaxed overflow-y-auto scrollbar-thin" style="min-height:380px;max-height:480px;">
+              <div class="log-dim">[2026-06-29 09:21:14] Started by user 张三</div>
+              <div class="log-info">[09:21:15] Building in workspace /var/jenkins/workspace/pay-core-build</div>
+              <div class="log-dim">[09:21:16] Using git information: v3.1.0-rc1</div>
+              <div class="log-info">[09:21:18] &gt; git checkout -f a3f2c1d8e9</div>
+              <div class="log-success">[09:21:20] ✓ Checked out 18 commits</div>
+              <div class="log-info">[09:21:22] [Maven] Building pay-core-service 3.1.0</div>
+              <div class="log-dim">[09:21:25] Downloading dependencies...</div>
+              <div class="log-dim">[09:21:48] Downloaded 247 artifacts</div>
+              <div class="log-info">[09:22:02] [INFO] --- maven-compiler-plugin:3.8.1:compile</div>
+              <div class="log-success">[09:22:34] [INFO] Compiled 412 source files</div>
+              <div class="log-info">[09:22:40] [INFO] --- maven-surefire-plugin:2.22.2:test</div>
+              <div class="log-dim">[09:22:45] Running com.pay.core.PaymentServiceTest</div>
+              <div class="log-success">[09:23:10] Tests run: 86, Failures: 0, Errors: 0</div>
+              <div class="log-warn">[09:23:18] [WARN] Skipped 2 integration tests</div>
+              <div class="log-info">[09:23:25] [INFO] --- maven-jar-plugin:3.1.2:jar</div>
+              <div class="log-success">[09:23:42] [INFO] Building jar: pay-core-3.1.0.jar</div>
+              <div class="log-info">[09:24:01] [Docker] Building image registry/pay-core:3.1.0</div>
+              <div class="log-dim">[09:24:15] Step 1/12 : FROM openjdk:17-slim</div>
+              <div class="log-dim">[09:24:30] Step 2/12 : COPY target/pay-core-3.1.0.jar /app/</div>
+              <div class="log-warn">[09:24:38] [WARN] Image size exceeds 500MB threshold</div>
+              <div class="log-info">[09:24:48] Step 8/12 : EXPOSE 8080</div>
+              <div class="text-cyan-300">[09:24:55] ▸ Pushing image... 65%</div>
+              <div class="flex items-center gap-1.5 mt-1 text-cyan-300"><span class="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot"></span><span>构建进行中</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+<script>
+  lucide.createIcons();
+  document.querySelectorAll('#job-rows > div').forEach(r => r.addEventListener('click', () => show('view-detail')));
+  document.getElementById('back-to-list').addEventListener('click', () => show('view-list'));
+  function show(id){ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo({top:0,behavior:'smooth'}); }
+  document.querySelectorAll('.dt-tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.dt-tab').forEach(x => { x.classList.remove('on','text-indigo-600'); x.classList.add('text-slate-500'); x.style.borderColor='transparent'; });
+    t.classList.add('on','text-indigo-600'); t.classList.remove('text-slate-500'); t.style.borderColor='#4F46E5';
+    document.querySelectorAll('.dt-pane').forEach(p => p.classList.add('hidden'));
+    document.getElementById('dt-'+t.dataset.tab)?.classList.remove('hidden');
+  }));
+</script>
+</body>
+</html>

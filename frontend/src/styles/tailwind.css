@@ -1,35 +1,35 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "SF Pro Display", "Geist Sans", "Helvetica Neue", "Switzer", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
-  --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-sans: "Inter", "Noto Sans SC", "SF Pro Display", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Geist Mono", Consolas, monospace;
 
-  --color-ts-bg: #F7F6F3;
+  --color-ts-bg: #F6F7FB;
   --color-ts-surface: #FFFFFF;
-  --color-ts-border: #EAEAEA;
-  --color-ts-text-primary: #111111;
-  --color-ts-text-body: #2F3437;
-  --color-ts-text-secondary: #787774;
-  --color-ts-text-muted: #9F9F9A;
+  --color-ts-border: #E0E7FF;
+  --color-ts-text-primary: #0F172A;
+  --color-ts-text-body: #334155;
+  --color-ts-text-secondary: #64748B;
+  --color-ts-text-muted: #94A3B8;
 
-  --color-ts-success: #346538;
-  --color-ts-success-soft: #EDF3EC;
-  --color-ts-warning: #956400;
-  --color-ts-warning-soft: #FBF3DB;
-  --color-ts-danger: #9F2F2D;
-  --color-ts-danger-soft: #FDEBEC;
-  --color-ts-info: #1F6C9F;
-  --color-ts-info-soft: #E1F3FE;
-  --color-ts-neutral: #787774;
+  --color-ts-success: #10B981;
+  --color-ts-success-soft: #ECFDF5;
+  --color-ts-warning: #F59E0B;
+  --color-ts-warning-soft: #FFFBEB;
+  --color-ts-danger: #F43F5E;
+  --color-ts-danger-soft: #FFF1F2;
+  --color-ts-info: #3B82F6;
+  --color-ts-info-soft: #EFF6FF;
+  --color-ts-neutral: #64748B;
   --color-ts-neutral-soft: #F1F5F9;
 
   --radius-ts-sm: 4px;
-  --radius-ts-md: 6px;
+  --radius-ts-md: 8px;
   --radius-ts-lg: 12px;
 
-  --shadow-ts-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03);
-  --shadow-ts-card-hover: 0 2px 8px rgba(0, 0, 0, 0.04);
-  --shadow-ts-button-primary: 0 1px 3px rgba(37, 99, 235, 0.2);
+  --shadow-ts-card: 0 0 0 1px rgba(99, 102, 241, 0.12);
+  --shadow-ts-card-hover: 0 0 0 1px rgba(99,102,241,0.12), 0 16px 40px -10px rgba(79, 70, 229, 0.18);
+  --shadow-ts-button-primary: 0 1px 2px rgba(79,70,229,0.3), 0 6px 18px -6px rgba(99, 102, 241, 0.55);
 }
 
 @keyframes ts-fade-in-up {

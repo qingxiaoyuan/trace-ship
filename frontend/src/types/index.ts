@@ -64,12 +64,10 @@ export interface Project {
 export type ReleaseStatus =
   | 'draft'
   | 'pending'
-  | 'building'
-  | 'auditing'
   | 'released'
   | 'rejected';
 
-export type ReleaseType = 'formal' | 'test';
+export type ReleaseType = 'formal' | 'rc' | 'beta';
 
 export interface Release {
   id: string;
@@ -235,14 +233,14 @@ export interface WorkflowTask {
   approver_username?: string;
   transferred_from?: string;
   transferred_from_name?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface DashboardOverview {
   total_releases: number;
   success_rate: number;
   pending_audit_count: number;
-  building_count: number;
-  auditing_count: number;
   rejected_count: number;
 }
 

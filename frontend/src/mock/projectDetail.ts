@@ -17,7 +17,7 @@ export const projectRoleMap: Record<string, string> = {
 
 export const mockProjectWorkflows = [
   { id: '1', name: '正式发布审批流', bizType: 'release', version: 'v1', active: true },
-  { id: '2', name: '测试版本审批流', bizType: 'release', version: 'v1', active: false },
+  { id: '2', name: '预发布审批流', bizType: 'release', version: 'v1', active: false },
 ];
 
 export const mockProjectReleases = [
@@ -29,6 +29,7 @@ export const projectRuleInitialValues = {
   versionRule: 'VA.{major}.{minor}.{patch}',
   releaseCycle: 3,
   formalBranch: 'main',
-  testPrefix: 'test',
+  rcPrefix: 'rc',
+  betaPrefix: 'beta',
   complianceThreshold: 90,
 };

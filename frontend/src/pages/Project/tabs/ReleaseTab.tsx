@@ -7,15 +7,14 @@ import { releaseApi } from '@/api/release';
 const statusDisplay: Record<string, { status: StatusType; text: string }> = {
   draft: { status: 'neutral', text: '草稿' },
   pending: { status: 'warning', text: '待审批' },
-  building: { status: 'warning', text: '构建中' },
-  auditing: { status: 'info', text: '审批中' },
   released: { status: 'success', text: '已发布' },
   rejected: { status: 'danger', text: '已驳回' },
 };
 
 const typeDisplay: Record<string, { status: StatusType; text: string }> = {
   formal: { status: 'primary', text: '正式' },
-  test: { status: 'warning', text: '测试' },
+  rc: { status: 'info', text: 'RC' },
+  beta: { status: 'warning', text: 'Beta' },
 };
 
 export function ReleaseTab({ projectId }: { projectId: string }) {

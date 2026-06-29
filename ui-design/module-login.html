@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 Trace Ship · 登录</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+
+/* 极光背景 */
+.aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.45; }
+.aurora::before{ width:560px; height:560px; top:-160px; right:-120px; background:radial-gradient(circle,#818CF8,transparent 70%); }
+.aurora::after{ width:480px; height:480px; bottom:-140px; left:180px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
+.aurora-3{ position:fixed; width:420px; height:420px; top:30%; left:45%; border-radius:50%; filter:blur(130px); opacity:.25; z-index:0; pointer-events:none; background:radial-gradient(circle,#C4B5FD,transparent 70%); }
+
+/* 网格纹理 */
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.05) 1px,transparent 1px); background-size:48px 48px; }
+
+/* 玻璃卡片 */
+.glass{ background:rgba(255,255,255,.85); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%); border:1px solid rgba(99,102,241,.12); }
+
+/* 主按钮辉光 */
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
+.btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
+
+.text-gradient{ background:linear-gradient(135deg,#4F46E5 0%,#0891B2 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+
+/* 输入框聚焦 */
+.input-field{ transition:border-color .2s,box-shadow .2s; }
+.input-field:focus{ border-color:#6366F1; box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+
+/* Tab 下划线 */
+.login-tab{ position:relative; transition:color .2s; }
+.login-tab::after{ content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:linear-gradient(90deg,#6366F1,#22D3EE); transform:scaleX(0); transition:transform .2s; }
+.login-tab.on{ color:#4F46E5; }
+.login-tab.on::after{ transform:scaleX(1); }
+
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative min-h-screen">
+
+<div class="aurora"></div>
+<div class="aurora-3"></div>
+
+<div class="relative z-10 min-h-screen flex justify-center">
+ <div class="w-full max-w-[1440px] min-h-screen grid lg:grid-cols-2">
+
+  <!-- ============ 左侧品牌展示区 ============ -->
+  <div class="hidden lg:flex flex-col justify-center grid-bg p-10 xl:p-20 relative overflow-hidden">
+    <!-- 顶部 Logo -->
+    <div class="flex items-center gap-2.5 absolute top-10 left-10 xl:top-20 xl:left-20 z-10">
+      <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-9 w-9 rounded-lg object-contain" />
+      <div class="flex flex-col leading-none">
+        <span class="text-[17px] font-semibold tracking-tight text-slate-900">溯舟</span>
+        <span class="mt-0.5 text-[10px] font-medium tracking-[0.14em] text-indigo-400 uppercase">Trace Ship</span>
+      </div>
+    </div>
+
+    <!-- 中部标语 -->
+    <div class="relative z-10 max-w-md xl:max-w-lg -mt-12">
+      <div class="inline-flex items-center gap-1.5 rounded-full border border-indigo-200/60 bg-indigo-50/50 px-2.5 py-1 mb-6">
+        <span class="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot"></span>
+        <span class="text-[11px] font-medium text-indigo-600">软件版本发布管理系统 · v2.4.0</span>
+      </div>
+      <h1 class="text-[40px] xl:text-[44px] leading-[1.15] font-semibold tracking-tight text-slate-900">
+        让每一次<br /><span class="text-gradient">发布可追溯</span>
+      </h1>
+      <p class="mt-4 text-[14px] leading-relaxed text-slate-500">
+        集成 Git / SVN / Jenkins，统一管理项目发布全流程。
+        提交规范审查、自动化构建、多级审批、一键推 Tag，让版本交付安全高效。
+      </p>
+
+      <!-- 特性列表 -->
+      <div class="mt-8 space-y-3">
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg" style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);border:1px solid #C7D2FE;color:#4F46E5;"><i data-lucide="scan-search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+          <span class="text-[13px] text-slate-600">Conventional Commits 提交规范自动审查</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg" style="background:linear-gradient(135deg,#ECFEFF,#CFFAFE);border:1px solid #A5F3FC;color:#0891B2;"><i data-lucide="hammer" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+          <span class="text-[13px] text-slate-600">Jenkins 构建实时监控与日志追踪</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg" style="background:linear-gradient(135deg,#F5F3FF,#EDE9FE);border:1px solid #DDD6FE;color:#6D28D9;"><i data-lucide="git-pull-request-arrow" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+          <span class="text-[13px] text-slate-600">可配置多级审批工作流，支持会签转交</span>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg" style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:1px solid #A7F3D0;color:#047857;"><i data-lucide="tag" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+          <span class="text-[13px] text-slate-600">语义化版本号自动计算，审批后自动推 Tag</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 右侧登录表单区 ============ -->
+  <div class="flex items-center justify-center p-6 sm:p-10 xl:p-20">
+    <div class="glass w-full max-w-[400px] xl:max-w-[420px] rounded-2xl p-7 sm:p-8 xl:p-9" style="box-shadow:0 12px 40px -10px rgba(79,70,229,.15);">
+
+      <!-- 移动端 Logo -->
+      <div class="flex lg:hidden items-center gap-2.5 mb-6">
+        <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+        <div class="flex flex-col leading-none">
+          <span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span>
+          <span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span>
+        </div>
+      </div>
+
+      <!-- 标题 -->
+      <div class="mb-6">
+        <h2 class="text-[22px] font-semibold tracking-tight text-slate-900">欢迎回来</h2>
+        <p class="mt-1 text-[13px] text-slate-500">登录以管理你的发布流程</p>
+      </div>
+
+      <!-- Tab 切换 -->
+      <div class="flex items-center gap-5 border-b border-slate-200 mb-6">
+        <button class="login-tab on pb-2.5 text-[13px] font-medium text-slate-500">域账号登录</button>
+        <button class="login-tab pb-2.5 text-[13px] font-medium text-slate-500">本地账号</button>
+      </div>
+
+      <!-- 表单 -->
+      <form class="space-y-4">
+        <!-- 用户名 -->
+        <div>
+          <label class="block text-[12px] font-medium text-slate-600 mb-1.5">用户名</label>
+          <div class="relative">
+            <i data-lucide="user" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
+            <input type="text" placeholder="请输入域账号 / 用户名" class="input-field w-full rounded-lg border border-slate-200 bg-white/70 pl-9 pr-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none" />
+          </div>
+        </div>
+
+        <!-- 密码 -->
+        <div>
+          <label class="block text-[12px] font-medium text-slate-600 mb-1.5">密码</label>
+          <div class="relative">
+            <i data-lucide="lock" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
+            <input type="password" placeholder="请输入密码" class="input-field w-full rounded-lg border border-slate-200 bg-white/70 pl-9 pr-10 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none" />
+            <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600"><i data-lucide="eye-off" class="h-4 w-4" style="stroke-width:1.5"></i></button>
+          </div>
+        </div>
+
+        <!-- 记住我 / 忘记密码 -->
+        <div class="flex items-center justify-between text-[12px]">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <span class="relative inline-flex h-4 w-4 items-center justify-center rounded border border-slate-300 bg-white transition-colors hover:border-indigo-400">
+              <input type="checkbox" class="peer sr-only" />
+              <i data-lucide="check" class="h-3 w-3 text-indigo-600 opacity-0 peer-checked:opacity-100" style="stroke-width:2.5"></i>
+            </span>
+            <span class="text-slate-600">记住我</span>
+          </label>
+          <a class="font-medium text-indigo-600 hover:text-indigo-500 cursor-pointer">忘记密码？</a>
+        </div>
+
+        <!-- 登录按钮 -->
+        <button type="submit" class="btn-glow w-full rounded-lg py-2.5 text-[14px] font-medium text-white mt-2">登 录</button>
+      </form>
+
+      <!-- 底部提示 -->
+      <div class="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+        <i data-lucide="info" class="h-3 w-3" style="stroke-width:1.5"></i>
+        <span>首次登录将自动同步 LDAP 用户信息</span>
+      </div>
+    </div>
+  </div>
+
+ </div>
+</div>
+
+<script>
+  lucide.createIcons();
+  // Tab 切换
+  document.querySelectorAll('.login-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.login-tab').forEach(x => x.classList.remove('on'));
+      t.classList.add('on');
+    });
+  });
+</script>
+</body>
+</html>

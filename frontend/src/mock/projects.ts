@@ -16,7 +16,7 @@ export const mockProjects: Project[] = [
     release_rule: {
       release_cycle_days: 3,
       formal_branch: 'master,main',
-      test_prefix: '-test',
+      tag_prefixes: { rc: 'rc', beta: 'beta' },
       compliance_threshold: 100,
     },
   },
@@ -35,7 +35,7 @@ export const mockProjects: Project[] = [
     release_rule: {
       release_cycle_days: 7,
       formal_branch: 'main',
-      test_prefix: '-test',
+      tag_prefixes: { rc: 'rc', beta: 'beta' },
       compliance_threshold: 90,
     },
   },
@@ -54,7 +54,7 @@ export const mockProjects: Project[] = [
     release_rule: {
       release_cycle_days: 0,
       formal_branch: 'main',
-      test_prefix: '-rc',
+      tag_prefixes: { rc: 'rc', beta: 'beta' },
       compliance_threshold: 85,
     },
   },

@@ -11,14 +11,12 @@ export const mockDashboardOverview: DashboardOverview = {
   total_releases: 120,
   success_rate: 0.95,
   pending_audit_count: 5,
-  building_count: 2,
-  auditing_count: 3,
   rejected_count: 1,
 };
 
 export const mockRecentReleases: Release[] = [
   { id: '1', project_id: '1', project_name: '核心交易平台', version: 'v2.4.1', tag_name: 'v2.4.1', release_type: 'formal', status: 'released', source_branch: 'develop', target_branch: 'main', git_hash: 'abc123', publisher: '张三', created_at: '2026-06-15T10:00:00+08:00' },
-  { id: '2', project_id: '1', project_name: '核心交易平台', version: 'v2.4.1-test.3', tag_name: 'v2.4.1-test.3', release_type: 'test', status: 'building', source_branch: 'develop', target_branch: 'main', git_hash: 'def456', publisher: '李四', created_at: '2026-06-14T10:00:00+08:00' },
+  { id: '2', project_id: '1', project_name: '核心交易平台', version: 'v2.4.1', tag_name: 'beta-v2.4.1', release_type: 'beta', status: 'pending', source_branch: 'develop', target_branch: 'main', git_hash: 'def456', publisher: '李四', created_at: '2026-06-14T10:00:00+08:00' },
   { id: '3', project_id: '2', project_name: '数据中台', version: 'v2.3.9', tag_name: 'v2.3.9', release_type: 'formal', status: 'released', source_branch: 'develop', target_branch: 'main', git_hash: 'ghi789', publisher: '王五', created_at: '2026-06-10T10:00:00+08:00' },
 ];
 
@@ -175,7 +173,7 @@ Finished: SUCCESS`;
 
 export const mockWorkflowTasks: WorkflowTask[] = [
   { id: '1', title: '审批发布 v2.5.0', applicant: '李四', project_name: '核心交易平台', current_node: '项目负责人审批', submit_time: '2026-06-22T09:50:00+08:00', remaining_time: '2小时', status: 'pending', version: 'v2.5.0', release_type: 'formal', source_branch: 'master' },
-  { id: '2', title: '审批发布 v2.4.2-test.1', applicant: '王五', project_name: '核心交易平台', current_node: '测试负责人审批', submit_time: '2026-06-22T09:00:00+08:00', remaining_time: '5小时', status: 'pending', version: 'v2.4.2-test.1', release_type: 'test', source_branch: 'develop' },
+  { id: '2', title: '审批发布 beta-v2.4.2', applicant: '王五', project_name: '核心交易平台', current_node: '测试负责人审批', submit_time: '2026-06-22T09:00:00+08:00', remaining_time: '5小时', status: 'pending', version: 'v2.4.2', release_type: 'beta', source_branch: 'develop' },
 ];
 
 export const mockDoneTasks: WorkflowTask[] = [
@@ -194,16 +192,16 @@ export const reviewStatusOptions = [
 ];
 
 export const releaseStatusOptions = [
+  { label: '待审批', value: 'pending' },
   { label: '已发布', value: 'released' },
-  { label: '构建中', value: 'building' },
-  { label: '审批中', value: 'auditing' },
   { label: '草稿', value: 'draft' },
   { label: '已驳回', value: 'rejected' },
 ];
 
 export const releaseTypeOptions = [
   { label: '正式', value: 'formal' },
-  { label: '测试', value: 'test' },
+  { label: 'RC', value: 'rc' },
+  { label: 'Beta', value: 'beta' },
 ];
 
 export const buildStatusOptions = [

@@ -14,10 +14,14 @@ import { projectApi } from '@/api/project';
 const statusMap: Record<string, { status: StatusType; text: string }> = {
   draft: { status: 'neutral', text: '草稿' },
   pending: { status: 'warning', text: '待审批' },
-  building: { status: 'warning', text: '构建中' },
-  auditing: { status: 'info', text: '审批中' },
   released: { status: 'success', text: '已发布' },
   rejected: { status: 'danger', text: '已驳回' },
+};
+
+const releaseTypeMap: Record<string, { status: StatusType; text: string }> = {
+  formal: { status: 'primary', text: '正式' },
+  rc: { status: 'info', text: 'RC' },
+  beta: { status: 'warning', text: 'Beta' },
 };
 
 const downloadBlob = (blob: Blob, filename: string) => {
@@ -99,8 +103,8 @@ export default function ReleaseBoard() {
       title: '发布类型',
       dataIndex: 'release_type',
       render: (type: string) => (
-        <StatusTag status={type === 'formal' ? 'primary' : 'warning'}>
-          {type === 'formal' ? '正式' : '测试'}
+        <StatusTag status={releaseTypeMap[type]?.status || 'neutral'}>
+          {releaseTypeMap[type]?.text || type || '-'}
         </StatusTag>
       ),
     },
@@ -231,13 +235,26 @@ export default function ReleaseBoard() {
                       ),
                     },
                     {
-                      key: 'test',
-                      label: '测试版本',
+                      key: 'rc',
+                      label: 'RC 版本',
                       children: (
                         <Table
                           rowKey="id"
                           columns={columns.filter((c) => c.dataIndex !== 'release_type')}
-                          dataSource={catalogData?.test || []}
+                          dataSource={catalogData?.rc || []}
+                          loading={catalogLoading}
+                          pagination={false}
+                        />
+                      ),
+                    },
+                    {
+                      key: 'beta',
+                      label: 'Beta 版本',
+                      children: (
+                        <Table
+                          rowKey="id"
+                          columns={columns.filter((c) => c.dataIndex !== 'release_type')}
+                          dataSource={catalogData?.beta || []}
                           loading={catalogLoading}
                           pagination={false}
                         />

@@ -5,7 +5,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { releaseApi } from '@/api/release';
-import type { Release, Repository } from '@/types';
+import type { Release, ReleaseType, Repository } from '@/types';
 
 interface ReleaseDoc {
   change_type?: string;
@@ -70,7 +70,7 @@ export default function ReleaseCreate() {
       releaseApi.createRelease({
         project: values.project as string,
         repository: values.repository as string,
-        release_type: values.release_type as 'formal' | 'test',
+        release_type: values.release_type as ReleaseType,
         source_branch: values.source_branch as string,
         target_branch: values.target_branch as string,
       }),
@@ -171,7 +171,8 @@ export default function ReleaseCreate() {
             >
               <Radio.Group>
                 <Radio value="formal">正式版本</Radio>
-                <Radio value="test">测试版本</Radio>
+                <Radio value="rc">RC 版本</Radio>
+                <Radio value="beta">Beta 版本</Radio>
               </Radio.Group>
             </Form.Item>
 

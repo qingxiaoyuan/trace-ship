@@ -1,62 +1,66 @@
 export const tokens = {
   colors: {
-    // Minimalist warm monochrome foundation
-    primary: '#111111',
-    primaryLight: '#2F3437',
-    primaryDark: '#000000',
+    // Bright tech foundation from ui-design/trace-ship-light-redesign.html
+    primary: '#4F46E5',
+    primaryLight: '#6366F1',
+    primaryDark: '#3730A3',
+    cyan: '#06B6D4',
+    violet: '#8B5CF6',
 
-    // Muted semantic spot pastels (text / background pairs)
-    success: '#346538',
-    successSoft: '#EDF3EC',
-    warning: '#956400',
-    warningSoft: '#FBF3DB',
-    danger: '#9F2F2D',
-    dangerSoft: '#FDEBEC',
-    info: '#1F6C9F',
-    infoSoft: '#E1F3FE',
-    neutral: '#787774',
+    // Semantic spot colors
+    success: '#10B981',
+    successSoft: '#ECFDF5',
+    warning: '#F59E0B',
+    warningSoft: '#FFFBEB',
+    danger: '#F43F5E',
+    dangerSoft: '#FFF1F2',
+    info: '#3B82F6',
+    infoSoft: '#EFF6FF',
+    neutral: '#64748B',
     neutralSoft: '#F1F5F9',
 
     // Surfaces & structure
-    bg: '#F7F6F3',
+    bg: '#F6F7FB',
     surface: '#FFFFFF',
-    border: '#EAEAEA',
-    borderSubtle: 'rgba(0, 0, 0, 0.06)',
+    surfaceGlass: 'rgba(255, 255, 255, 0.70)',
+    cardGlass: 'rgba(255, 255, 255, 0.85)',
+    border: '#E0E7FF',
+    borderSubtle: 'rgba(99, 102, 241, 0.12)',
 
     // Typography
-    textPrimary: '#111111',
-    textBody: '#2F3437',
-    textSecondary: '#787774',
-    textMuted: '#9F9F9A',
+    textPrimary: '#0F172A',
+    textBody: '#334155',
+    textSecondary: '#64748B',
+    textMuted: '#94A3B8',
 
-    // Primary action: keep the previous blue for buttons
-    buttonPrimary: '#2563EB',
-    buttonPrimaryHover: '#1D4ED8',
-    buttonPrimaryActive: '#1E40AF',
+    // Primary action
+    buttonPrimary: '#4F46E5',
+    buttonPrimaryHover: '#6366F1',
+    buttonPrimaryActive: '#4338CA',
 
-    // User avatars / main user icons use the same brand blue
-    userAvatar: '#2563EB',
+    // User avatars / main user icons use the same brand gradient start
+    userAvatar: '#4F46E5',
 
     // Code / terminal
-    logBg: '#0F172A',
-    logText: '#34D399',
+    logBg: '#0B1020',
+    logText: '#94A3B8',
   },
   layout: {
-    sidebarWidth: 240,
-    headerHeight: 64,
-    pagePadding: 24,
+    sidebarWidth: 244,
+    headerHeight: 60,
+    pagePadding: 28,
     cardRadius: 12,
-    buttonRadius: 6,
-    inputRadius: 6,
+    buttonRadius: 8,
+    inputRadius: 8,
   },
   font: {
-    sans: '"SF Pro Display", "Geist Sans", "Helvetica Neue", "Switzer", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif',
-    mono: '"Geist Mono", "SF Mono", "JetBrains Mono", "Fira Code", Consolas, monospace',
+    sans: '"Inter", "Noto Sans SC", "SF Pro Display", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif',
+    mono: '"JetBrains Mono", "SF Mono", "Geist Mono", Consolas, monospace',
   },
   shadow: {
-    card: '0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03)',
-    cardHover: '0 2px 8px rgba(0, 0, 0, 0.04)',
-    buttonPrimary: '0 1px 3px rgba(37, 99, 235, 0.2)',
+    card: '0 0 0 1px rgba(99, 102, 241, 0.12)',
+    cardHover: '0 0 0 1px rgba(99,102,241,0.12), 0 16px 40px -10px rgba(79, 70, 229, 0.18)',
+    buttonPrimary: '0 1px 2px rgba(79,70,229,0.3), 0 6px 18px -6px rgba(99, 102, 241, 0.55)',
   },
 } as const;
 
@@ -69,6 +73,7 @@ export const antdTheme = {
     colorInfo: tokens.colors.info,
     colorTextBase: tokens.colors.textBody,
     colorBgBase: tokens.colors.surface,
+    colorBorder: tokens.colors.border,
     borderRadius: tokens.layout.buttonRadius,
     borderRadiusSM: 4,
     borderRadiusLG: tokens.layout.cardRadius,
@@ -77,14 +82,14 @@ export const antdTheme = {
   components: {
     Layout: {
       bodyBg: tokens.colors.bg,
-      headerBg: tokens.colors.surface,
-      siderBg: tokens.colors.surface,
+      headerBg: tokens.colors.surfaceGlass,
+      siderBg: tokens.colors.surfaceGlass,
     },
     Menu: {
-      itemSelectedBg: tokens.colors.infoSoft,
-      itemSelectedColor: tokens.colors.info,
-      itemHoverBg: tokens.colors.bg,
-      itemHoverColor: tokens.colors.textBody,
+      itemSelectedBg: 'rgba(79,70,229,0.10)',
+      itemSelectedColor: tokens.colors.primary,
+      itemHoverBg: 'rgba(238,242,255,0.60)',
+      itemHoverColor: tokens.colors.primary,
       activeBarWidth: 0,
     },
     Card: {
@@ -125,7 +130,7 @@ export const antdTheme = {
     Table: {
       headerBg: '#F9F9F8',
       headerColor: tokens.colors.textSecondary,
-      rowHoverBg: tokens.colors.bg,
+      rowHoverBg: 'rgba(238,242,255,0.40)',
       borderColor: tokens.colors.border,
     },
     Tag: {

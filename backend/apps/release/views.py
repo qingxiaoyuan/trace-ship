@@ -178,12 +178,13 @@ class ReleaseViewSet(StandardModelViewSet):
             except Exception as exc:
                 return error_response(40002, str(exc))
 
-        # 若版本号变化则重新计算 tag_name
+        # 若版本号变化则按新 Tag 流程重新计算 tag_name
         if "version" in data:
             rule = ReleaseValidator.get_release_rule(instance.project)
+            prefixes = rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes())
             instance.tag_name = instance.version
-            if instance.release_type == "test":
-                prefix = rule.get("test_prefix", "test").strip("-")
+            if instance.release_type in ("rc", "beta"):
+                prefix = (prefixes.get(instance.release_type, "") or "").strip("-")
                 if not instance.tag_name.startswith(prefix):
                     instance.tag_name = f"{prefix}-{instance.tag_name}"
 
@@ -436,16 +437,18 @@ class ReleaseViewSet(StandardModelViewSet):
     @action(detail=False, methods=["get"], url_path="catalog")
     def catalog(self, request: Request) -> Response:
         """
-        正式/测试版本目录
+        正式/RC/Beta 版本目录
 
         Returns:
-            {formal: Release[], test: Release[]}
+            {formal: Release[], rc: Release[], beta: Release[]}
         """
         queryset = self.get_queryset().filter(status="released").order_by("-version")
         formal = queryset.filter(release_type="formal")
-        test = queryset.filter(release_type="test")
+        rc = queryset.filter(release_type="rc")
+        beta = queryset.filter(release_type="beta")
         serializer = ReleaseListSerializer
         return success_response({
             "formal": serializer(formal, many=True, context={"request": request}).data,
-            "test": serializer(test, many=True, context={"request": request}).data,
+            "rc": serializer(rc, many=True, context={"request": request}).data,
+            "beta": serializer(beta, many=True, context={"request": request}).data,
         })

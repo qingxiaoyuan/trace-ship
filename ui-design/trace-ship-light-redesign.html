@@ -1,480 +1,1049 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TraceShip - Light Redesign</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>溯舟 Trace Ship — 亮色科技风设计图</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-</head>
-<body class="min-h-screen bg-[#f6f7f9] text-[#121417] antialiased" style="font-family: Inter, 'SF Pro Display', 'SF Pro Text', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;">
-  <div class="min-h-screen">
-    <aside class="fixed inset-y-0 left-0 z-30 hidden w-[76px] border-r border-[#e5e7eb] bg-white lg:flex lg:flex-col lg:items-center">
-      <div class="mt-5 flex h-11 w-11 items-center justify-center rounded-[10px] bg-[#111827] text-[13px] font-semibold tracking-tight text-white">TS</div>
-      <nav class="mt-8 flex flex-1 flex-col items-center gap-2">
-        <button class="flex h-11 w-11 items-center justify-center rounded-[10px] bg-[#111827] text-white shadow-sm shadow-slate-900/15">
-          <i data-lucide="radar" class="h-[19px] w-[19px]"></i>
-        </button>
-        <button class="flex h-11 w-11 items-center justify-center rounded-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-950">
-          <i data-lucide="folder-kanban" class="h-[19px] w-[19px]"></i>
-        </button>
-        <button class="flex h-11 w-11 items-center justify-center rounded-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-950">
-          <i data-lucide="git-branch" class="h-[19px] w-[19px]"></i>
-        </button>
-        <button class="flex h-11 w-11 items-center justify-center rounded-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-950">
-          <i data-lucide="scan-search" class="h-[19px] w-[19px]"></i>
-        </button>
-        <button class="flex h-11 w-11 items-center justify-center rounded-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-950">
-          <i data-lucide="tag" class="h-[19px] w-[19px]"></i>
-        </button>
-        <button class="relative flex h-11 w-11 items-center justify-center rounded-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-950">
-          <i data-lucide="inbox" class="h-[19px] w-[19px]"></i>
-          <span class="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#ef4444] ring-2 ring-white"></span>
-        </button>
-      </nav>
-      <div class="mb-5 flex h-10 w-10 items-center justify-center rounded-full bg-[#dbeafe] text-sm font-medium text-[#1d4ed8]">张</div>
-    </aside>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body {
+      font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-feature-settings: 'cv02','cv03','cv04','cv11';
+    }
+    .font-mono { font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; }
 
-    <div class="lg:pl-[76px]">
-      <header class="sticky top-0 z-20 border-b border-[#e5e7eb] bg-white/90 backdrop-blur">
-        <div class="flex h-[72px] items-center justify-between gap-4 px-4 sm:px-6 xl:px-8">
-          <div class="flex min-w-0 items-center gap-4">
-            <button class="flex h-10 w-10 items-center justify-center rounded-[10px] border border-slate-200 bg-white text-slate-600 lg:hidden">
-              <i data-lucide="menu" class="h-[19px] w-[19px]"></i>
-            </button>
-            <div class="hidden h-9 items-center gap-2 rounded-full border border-slate-200 bg-[#fafafa] px-3 text-xs font-medium text-slate-500 sm:flex">
-              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-              生产发布窗口开放中
-            </div>
-            <div class="min-w-0">
-              <div class="truncate text-sm font-medium text-slate-950">核心交易平台</div>
-              <div class="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
-                <span>develop</span>
-                <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
-                <span>release/v2.5.0</span>
-                <span class="hidden sm:inline">· 46 commits synced</span>
-              </div>
-            </div>
+    /* 极光背景光晕 - 亮色科技感 */
+    .aurora { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .aurora::before, .aurora::after {
+      content: ''; position: absolute; border-radius: 50%; filter: blur(110px); opacity: 0.35;
+    }
+    .aurora::before {
+      width: 520px; height: 520px; top: -140px; right: -100px;
+      background: radial-gradient(circle, #818CF8, transparent 70%);
+    }
+    .aurora::after {
+      width: 440px; height: 440px; bottom: -120px; left: 200px;
+      background: radial-gradient(circle, #22D3EE, transparent 70%);
+    }
+    .aurora-3 {
+      position: fixed; width: 380px; height: 380px; top: 35%; left: 45%;
+      border-radius: 50%; filter: blur(130px); opacity: 0.22; z-index: 0; pointer-events: none;
+      background: radial-gradient(circle, #C4B5FD, transparent 70%);
+    }
+
+    /* 网格纹理 */
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(79,70,229,0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(79,70,229,0.045) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* 科技卡片 */
+    .tech-card {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px) saturate(160%);
+      -webkit-backdrop-filter: blur(12px) saturate(160%);
+      border: 1px solid rgba(99, 102, 241, 0.12);
+      transition: border-color .2s, box-shadow .2s, transform .2s;
+    }
+    .tech-card-hover:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+      box-shadow: 0 0 0 1px rgba(99,102,241,0.12), 0 16px 40px -10px rgba(79, 70, 229, 0.18);
+      transform: translateY(-1px);
+    }
+
+    /* 主色按钮 - 渐变辉光 */
+    .btn-glow {
+      background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+      box-shadow: 0 1px 2px rgba(79,70,229,0.3), 0 6px 18px -6px rgba(99, 102, 241, 0.55);
+      transition: all .2s;
+    }
+    .btn-glow:hover {
+      background: linear-gradient(135deg, #818CF8 0%, #6366F1 100%);
+      box-shadow: 0 1px 2px rgba(79,70,229,0.35), 0 8px 24px -6px rgba(99, 102, 241, 0.7);
+    }
+
+    /* 文字渐变 */
+    .text-gradient {
+      background: linear-gradient(135deg, #4F46E5 0%, #0891B2 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* 图标渐变容器 */
+    .icon-indigo { background: linear-gradient(135deg, #EEF2FF, #E0E7FF); color: #4F46E5; border: 1px solid #C7D2FE; }
+    .icon-cyan { background: linear-gradient(135deg, #ECFEFF, #CFFAFE); color: #0891B2; border: 1px solid #A5F3FC; }
+    .icon-amber { background: linear-gradient(135deg, #FFFBEB, #FEF3C7); color: #B45309; border: 1px solid #FDE68A; }
+    .icon-rose { background: linear-gradient(135deg, #FFF1F2, #FFE4E6); color: #BE123C; border: 1px solid #FECDD3; }
+    .icon-violet { background: linear-gradient(135deg, #F5F3FF, #EDE9FE); color: #6D28D9; border: 1px solid #DDD6FE; }
+    .icon-emerald { background: linear-gradient(135deg, #ECFDF5, #D1FAE5); color: #047857; border: 1px solid #A7F3D0; }
+
+    .scrollbar-thin::-webkit-scrollbar { width: 5px; height: 5px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #C7D2FE; border-radius: 9999px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+    @keyframes pulse-dot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+    .pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+    @keyframes spin-slow { to { transform: rotate(360deg); } }
+    .spin-slow { animation: spin-slow 2.5s linear infinite; transform-origin: center; }
+
+    .nav-active {
+      background: linear-gradient(90deg, rgba(79,70,229,0.1), rgba(34,211,238,0.05));
+      border: 1px solid rgba(79,70,229,0.18);
+      color: #4F46E5;
+    }
+    .nav-active i { color: #4F46E5 !important; }
+  </style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
+
+  <!-- 背景光晕 -->
+  <div class="aurora"></div>
+  <div class="aurora-3"></div>
+
+  <!-- ==================== 页面容器 ==================== -->
+  <div class="relative z-10 flex min-h-screen">
+
+    <!-- ==================== 侧边栏 ==================== -->
+    <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
+      <!-- Logo -->
+      <div class="flex h-[60px] items-center gap-2.5 px-5">
+        <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+        <div class="flex flex-col leading-none">
+          <span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span>
+          <span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span>
+        </div>
+      </div>
+
+      <!-- 工作区切换 -->
+      <div class="px-3 pt-3 pb-1">
+        <button class="flex w-full items-center gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50/40 px-2.5 py-2 text-left transition-colors hover:bg-indigo-50 hover:border-indigo-200">
+          <div class="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-cyan-400 text-[11px] font-semibold text-white">PD</div>
+          <div class="flex-1 min-w-0">
+            <div class="truncate text-[13px] font-medium text-slate-800">平台研发部</div>
+            <div class="truncate text-[10px] text-slate-400">12 个项目</div>
           </div>
-          <div class="flex items-center gap-2">
-            <button class="hidden h-10 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-950 md:flex">
-              <i data-lucide="search" class="h-[17px] w-[17px]"></i>
-              搜索发布、仓库、提交
-              <span class="ml-8 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-400">⌘K</span>
-            </button>
-            <button class="flex h-10 w-10 items-center justify-center rounded-[10px] border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-950">
-              <i data-lucide="bell" class="h-[18px] w-[18px]"></i>
-            </button>
-            <button class="flex h-10 items-center gap-2 rounded-[10px] bg-[#111827] px-3 text-sm font-medium text-white transition hover:bg-[#1f2937]">
-              <i data-lucide="rocket" class="h-[17px] w-[17px]"></i>
-              <span class="hidden sm:inline">新建发布</span>
-            </button>
+          <i data-lucide="chevrons-up-down" class="h-3.5 w-3.5 text-slate-400"></i>
+        </button>
+      </div>
+
+      <!-- 导航 -->
+      <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-2 space-y-5">
+
+        <div>
+          <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">概览</div>
+          <div class="space-y-0.5">
+            <a class="nav-active flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium">
+              <i data-lucide="layout-dashboard" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>工作台</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="rocket" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>发布看板</span>
+              <span class="ml-auto rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600">3</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="git-pull-request-arrow" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>审批中心</span>
+              <span class="ml-auto rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">5</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="bell" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>通知</span>
+            </a>
           </div>
+        </div>
+
+        <div>
+          <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">资源</div>
+          <div class="space-y-0.5">
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="folder-kanban" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>项目</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="git-fork" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>仓库</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="key-round" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>凭证</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="hammer" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>Jenkins</span>
+            </a>
+          </div>
+        </div>
+
+        <div>
+          <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">质量</div>
+          <div class="space-y-0.5">
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="scan-search" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>提交审查</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="tag" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>Tag 生成</span>
+            </a>
+          </div>
+        </div>
+
+        <div>
+          <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">系统</div>
+          <div class="space-y-0.5">
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="users" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>用户与角色</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="settings" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>系统配置</span>
+            </a>
+            <a class="group flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600">
+              <i data-lucide="scroll-text" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i>
+              <span>操作日志</span>
+            </a>
+          </div>
+        </div>
+      </nav>
+
+      <!-- 底部用户区 -->
+  </aside>
+
+    <!-- ==================== 主区域 ==================== -->
+    <div class="flex-1 lg:ml-[244px]">
+
+      <!-- 顶部栏 -->
+      <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
+        <div class="hidden items-center gap-1.5 text-[13px] md:flex">
+          <span class="text-slate-400">概览</span>
+          <i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i>
+          <span class="font-medium text-slate-800">工作台</span>
+        </div>
+
+        <div class="ml-auto hidden md:flex items-center">
+          <button class="group flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 transition-colors hover:border-indigo-200 hover:bg-white hover:text-indigo-600 w-[280px]">
+            <i data-lucide="search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+            <span>搜索项目、发布、提交…</span>
+            <span class="ml-auto flex items-center gap-0.5">
+              <kbd class="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘</kbd>
+              <kbd class="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">K</kbd>
+            </span>
+          </button>
+        </div>
+
+        <div class="ml-auto flex items-center gap-1 md:ml-0">
+          <button class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600">
+            <i data-lucide="plus" class="h-4 w-4" style="stroke-width:1.5"></i>
+          </button>
+          <button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600">
+            <i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i>
+            <span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span>
+          </button>
+          <div class="mx-1 h-5 w-px bg-indigo-100"></div>
+          <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=64&h=64&fit=crop&crop=face" class="h-8 w-8 rounded-full object-cover ring-1 ring-indigo-200 cursor-pointer" alt="avatar" />
         </div>
       </header>
 
-      <main class="px-4 py-6 sm:px-6 xl:px-8">
-        <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div class="overflow-hidden rounded-[16px] border border-[#e5e7eb] bg-white shadow-sm shadow-slate-900/[0.03]">
-            <div class="border-b border-[#e5e7eb] px-5 py-5 sm:px-6">
-              <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="rounded-full bg-[#ecfdf5] px-2.5 py-1 text-xs font-medium text-[#047857] ring-1 ring-[#bbf7d0]">Ready for review</span>
-                    <span class="rounded-full bg-[#fff7ed] px-2.5 py-1 text-xs font-medium text-[#c2410c] ring-1 ring-[#fed7aa]">2 risks</span>
-                    <span class="rounded-full bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1d4ed8] ring-1 ring-[#bfdbfe]">Jenkins #1842 passed</span>
-                  </div>
-                  <h1 class="mt-4 max-w-3xl text-[30px] font-semibold leading-[1.08] tracking-tight text-[#111827] sm:text-[42px]">发布不是一张表，是一条能被审计的路径。</h1>
-                  <p class="mt-3 max-w-2xl text-[15px] leading-6 text-slate-500">TraceShip 将提交差异、规范审查、构建产物、审批流和 Tag 推送压进同一张可操作画布，让发布工程师一眼看到“现在卡在哪里”。</p>
+      <!-- ==================== 内容区 ==================== -->
+      <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1400px] mx-auto">
+
+        <!-- 页面标题 -->
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 class="text-[26px] font-semibold tracking-tight text-slate-900">工作台</h1>
+            <p class="mt-1 text-[13px] text-slate-500">早上好，张三。今天有 <span class="text-indigo-600 font-medium">3</span> 个发布待审批，<span class="text-cyan-600 font-medium">2</span> 个构建进行中。</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600">
+              <i data-lucide="download" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+              <span>导出周报</span>
+            </button>
+            <button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white">
+              <i data-lucide="rocket" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+              <span>新建发布</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ==================== KPI 卡片 ==================== -->
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+          <!-- KPI 1 -->
+          <div class="tech-card tech-card-hover rounded-xl p-5">
+            <div class="flex items-start justify-between">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo">
+                <i data-lucide="rocket" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i>
+              </div>
+              <div class="flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                <i data-lucide="trending-up" class="h-3 w-3" style="stroke-width:1.5"></i>
+                <span>12.5%</span>
+              </div>
+            </div>
+            <div class="mt-4">
+              <div class="flex items-baseline gap-1.5">
+                <span class="text-[28px] font-semibold tracking-tight text-slate-900">128</span>
+                <span class="text-[13px] text-slate-400">次发布</span>
+              </div>
+              <div class="mt-1 flex items-center gap-2 text-[12px] text-slate-500">
+                <span>成功率 96.8%</span>
+                <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+                <span>本月 +16</span>
+              </div>
+            </div>
+            <div class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div class="h-full w-[97%] rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400"></div>
+            </div>
+          </div>
+
+          <!-- KPI 2 -->
+          <div class="tech-card tech-card-hover rounded-xl p-5">
+            <div class="flex items-start justify-between">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg icon-amber">
+                <i data-lucide="git-pull-request-arrow" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i>
+              </div>
+              <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-600">待处理</span>
+            </div>
+            <div class="mt-4">
+              <div class="flex items-baseline gap-1.5">
+                <span class="text-[28px] font-semibold tracking-tight text-slate-900">3</span>
+                <span class="text-[13px] text-slate-400">个审批</span>
+              </div>
+              <div class="mt-1 text-[12px] text-slate-500">最近提交于 12 分钟前</div>
+            </div>
+            <div class="mt-3 flex -space-x-1.5">
+              <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=64&h=64&fit=crop&crop=face" class="h-5 w-5 rounded-full ring-2 ring-white object-cover" alt="" />
+              <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=64&h=64&fit=crop&crop=face" class="h-5 w-5 rounded-full ring-2 ring-white object-cover" alt="" />
+              <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=64&h=64&fit=crop&crop=face" class="h-5 w-5 rounded-full ring-2 ring-white object-cover" alt="" />
+              <div class="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-50 ring-2 ring-white text-[9px] font-semibold text-indigo-600">+2</div>
+            </div>
+          </div>
+
+          <!-- KPI 3 -->
+          <div class="tech-card tech-card-hover rounded-xl p-5">
+            <div class="flex items-start justify-between">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg icon-rose">
+                <i data-lucide="triangle-alert" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i>
+              </div>
+              <div class="flex items-center gap-1 text-[11px] font-medium text-rose-500">
+                <i data-lucide="arrow-down-right" class="h-3 w-3" style="stroke-width:1.5"></i>
+                <span>3</span>
+              </div>
+            </div>
+            <div class="mt-4">
+              <div class="flex items-baseline gap-1.5">
+                <span class="text-[28px] font-semibold tracking-tight text-slate-900">5</span>
+                <span class="text-[13px] text-slate-400">个驳回</span>
+              </div>
+              <div class="mt-1 text-[12px] text-slate-500">需关注异常构建</div>
+            </div>
+            <button class="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500">
+              <span>查看详情</span>
+              <i data-lucide="arrow-right" class="h-3 w-3" style="stroke-width:1.5"></i>
+            </button>
+          </div>
+
+          <!-- KPI 4 -->
+          <div class="tech-card tech-card-hover rounded-xl p-5">
+            <div class="flex items-start justify-between">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg icon-violet">
+                <i data-lucide="scan-search" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i>
+              </div>
+              <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">合规</span>
+            </div>
+            <div class="mt-4">
+              <div class="flex items-baseline gap-1.5">
+                <span class="text-[28px] font-semibold tracking-tight text-gradient">98.4<span class="text-[18px] text-slate-400">%</span></span>
+              </div>
+              <div class="mt-1 text-[12px] text-slate-500">本周 842 条提交，13 条不合规</div>
+            </div>
+            <div class="mt-3 flex items-center gap-1">
+              <div class="h-1.5 flex-1 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"></div>
+              <div class="h-1.5 w-[2%] rounded-full bg-amber-400"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 发布流水线 ==================== -->
+        <div class="tech-card rounded-xl p-5 lg:p-6">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h2 class="text-[16px] font-semibold tracking-tight text-slate-900">发布流水线</h2>
+              <p class="mt-0.5 text-[12px] text-slate-500">实时跟踪所有发布的状态流转</p>
+            </div>
+            <div class="flex items-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50/40 p-0.5">
+              <button class="rounded-md bg-white px-2.5 py-1 text-[12px] font-medium text-indigo-600 shadow-sm">全部</button>
+              <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700">今日</button>
+              <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700">本周</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
+
+            <!-- 草稿 -->
+            <div class="rounded-lg border border-slate-200/70 bg-slate-50/50 p-3">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+                  <span class="text-[12px] font-medium text-slate-500">草稿</span>
                 </div>
-                <div class="flex gap-2">
-                  <button class="flex h-10 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950">
-                    <i data-lucide="file-down" class="h-[17px] w-[17px]"></i>
-                    导出发布单
-                  </button>
-                  <button class="flex h-10 items-center gap-2 rounded-[10px] bg-[#111827] px-3 text-sm font-medium text-white transition hover:bg-[#1f2937]">
-                    <i data-lucide="send" class="h-[17px] w-[17px]"></i>
-                    提交审批
-                  </button>
+                <span class="text-[11px] font-medium text-slate-400">2</span>
+              </div>
+              <div class="space-y-2">
+                <div class="rounded-lg border border-slate-200 bg-white p-2.5 transition-colors hover:border-indigo-300 hover:shadow-sm cursor-pointer">
+                  <div class="flex items-center justify-between">
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v2.5.0</span>
+                    <span class="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-medium text-amber-600">BETA</span>
+                  </div>
+                  <div class="mt-1.5 text-[11px] text-slate-500">支付核心服务</div>
+                  <div class="mt-2 flex items-center gap-1.5">
+                    <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
+                    <span class="text-[10px] text-slate-400">李四 · 2h前</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div class="relative min-h-[470px] overflow-hidden bg-[#fbfbfc] p-5 sm:p-6">
-              <div class="absolute inset-0 opacity-70" style="background-image: linear-gradient(#e5e7eb 1px, transparent 1px), linear-gradient(90deg, #e5e7eb 1px, transparent 1px); background-size: 32px 32px;"></div>
-              <div class="relative grid gap-4 lg:grid-cols-4">
-                <div class="rounded-[14px] border border-[#dbeafe] bg-white p-4 shadow-sm shadow-blue-950/[0.04]">
-                  <div class="flex items-center justify-between">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#eff6ff] text-[#2563eb]">
-                      <i data-lucide="git-compare-arrows" class="h-[18px] w-[18px]"></i>
-                    </div>
-                    <span class="text-xs font-medium text-emerald-600">complete</span>
-                  </div>
-                  <div class="mt-5 text-sm font-semibold text-slate-950">差异提取</div>
-                  <div class="mt-1 text-xs leading-5 text-slate-500">v2.4.1 至 HEAD</div>
-                  <div class="mt-4 flex items-end justify-between">
-                    <div class="text-3xl font-semibold tracking-tight text-slate-950">46</div>
-                    <div class="text-xs text-slate-400">commits</div>
-                  </div>
+            <!-- 构建中 -->
+            <div class="rounded-lg border border-cyan-200/70 bg-cyan-50/40 p-3">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>
+                  <span class="text-[12px] font-medium text-cyan-700">构建中</span>
                 </div>
-
-                <div class="rounded-[14px] border border-[#fde68a] bg-white p-4 shadow-sm shadow-amber-950/[0.04]">
+                <span class="text-[11px] font-medium text-cyan-600">2</span>
+              </div>
+              <div class="space-y-2">
+                <div class="rounded-lg border border-cyan-200 bg-white p-2.5 transition-colors hover:border-cyan-400 hover:shadow-sm cursor-pointer">
                   <div class="flex items-center justify-between">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#fffbeb] text-[#d97706]">
-                      <i data-lucide="scan-search" class="h-[18px] w-[18px]"></i>
-                    </div>
-                    <span class="text-xs font-medium text-amber-600">review</span>
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v3.1.0</span>
+                    <span class="rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-medium text-blue-600">RC</span>
                   </div>
-                  <div class="mt-5 text-sm font-semibold text-slate-950">规范审查</div>
-                  <div class="mt-1 text-xs leading-5 text-slate-500">关联性改动缺失</div>
-                  <div class="mt-4 flex items-end justify-between">
-                    <div class="text-3xl font-semibold tracking-tight text-slate-950">2</div>
-                    <div class="text-xs text-slate-400">risks</div>
+                  <div class="mt-1.5 text-[11px] text-slate-500">用户中心</div>
+                  <div class="mt-2 flex items-center gap-1.5">
+                    <i data-lucide="loader" class="h-3 w-3 text-cyan-500 spin-slow" style="stroke-width:2"></i>
+                    <span class="text-[10px] text-cyan-600">Build #142 · 3m24s</span>
                   </div>
-                </div>
-
-                <div class="rounded-[14px] border border-[#bbf7d0] bg-white p-4 shadow-sm shadow-emerald-950/[0.04]">
-                  <div class="flex items-center justify-between">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#ecfdf5] text-[#059669]">
-                      <i data-lucide="hammer" class="h-[18px] w-[18px]"></i>
-                    </div>
-                    <span class="text-xs font-medium text-emerald-600">passed</span>
-                  </div>
-                  <div class="mt-5 text-sm font-semibold text-slate-950">构建产物</div>
-                  <div class="mt-1 text-xs leading-5 text-slate-500">core-trade-package</div>
-                  <div class="mt-4 flex items-end justify-between">
-                    <div class="text-3xl font-semibold tracking-tight text-slate-950">6m</div>
-                    <div class="text-xs text-slate-400">18s</div>
-                  </div>
-                </div>
-
-                <div class="rounded-[14px] border border-[#ddd6fe] bg-white p-4 shadow-sm shadow-violet-950/[0.04]">
-                  <div class="flex items-center justify-between">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#f5f3ff] text-[#7c3aed]">
-                      <i data-lucide="stamp" class="h-[18px] w-[18px]"></i>
-                    </div>
-                    <span class="text-xs font-medium text-violet-600">next</span>
-                  </div>
-                  <div class="mt-5 text-sm font-semibold text-slate-950">发布审批</div>
-                  <div class="mt-1 text-xs leading-5 text-slate-500">测试负责人 → 项目负责人</div>
-                  <div class="mt-4 flex items-end justify-between">
-                    <div class="text-3xl font-semibold tracking-tight text-slate-950">3</div>
-                    <div class="text-xs text-slate-400">nodes</div>
+                  <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-cyan-100">
+                    <div class="h-full w-[65%] rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400"></div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div class="relative mt-5 grid gap-4 lg:grid-cols-[1fr_280px]">
-                <div class="rounded-[14px] border border-[#e5e7eb] bg-white/95 p-5 shadow-sm shadow-slate-900/[0.04]">
-                  <div class="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 class="text-base font-semibold text-slate-950">发布说明草稿</h2>
-                      <p class="mt-1 text-xs text-slate-500">AI 已按提交类型合并为 8 个条目，等待人工确认。</p>
-                    </div>
-                    <button class="flex h-8 items-center gap-1.5 rounded-[8px] border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition hover:text-slate-950">
-                      <i data-lucide="sparkles" class="h-4 w-4 text-violet-600"></i>
-                      重新生成
-                    </button>
+            <!-- 待审批 -->
+            <div class="rounded-lg border border-amber-200/70 bg-amber-50/40 p-3">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span>
+                  <span class="text-[12px] font-medium text-amber-700">待审批</span>
+                </div>
+                <span class="text-[11px] font-medium text-amber-600">3</span>
+              </div>
+              <div class="space-y-2">
+                <div class="rounded-lg border border-amber-200 bg-white p-2.5 transition-colors hover:border-amber-400 hover:shadow-sm cursor-pointer">
+                  <div class="flex items-center justify-between">
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v1.8.2</span>
+                    <span class="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-medium text-emerald-600">正式</span>
                   </div>
-                  <div class="mt-5 grid gap-3 md:grid-cols-2">
-                    <div class="rounded-[12px] border border-slate-200 bg-[#fafafa] p-4">
-                      <div class="flex items-center gap-2 text-xs font-medium text-slate-500">
-                        <span class="rounded bg-slate-900 px-1.5 py-0.5 text-white">A</span>
-                        业务更新
-                      </div>
-                      <p class="mt-3 text-sm leading-6 text-slate-700">新增支付回调重试策略，优化订单状态同步延迟，补充异常交易补偿入口。</p>
+                  <div class="mt-1.5 text-[11px] text-slate-500">订单管理</div>
+                  <div class="mt-2 flex items-center justify-between">
+                    <div class="flex items-center gap-1.5">
+                      <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
+                      <span class="text-[10px] text-slate-400">王五</span>
                     </div>
-                    <div class="rounded-[12px] border border-slate-200 bg-[#fafafa] p-4">
-                      <div class="flex items-center gap-2 text-xs font-medium text-slate-500">
-                        <span class="rounded bg-slate-900 px-1.5 py-0.5 text-white">F</span>
-                        配置与依赖
-                      </div>
-                      <p class="mt-3 text-sm leading-6 text-slate-700">更新清结算队列超时配置，新增 payment.retry.maxAttempts 参数。</p>
-                    </div>
-                  </div>
-                  <div class="mt-4 rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3">
-                    <div class="flex gap-3">
-                      <i data-lucide="triangle-alert" class="mt-0.5 h-[18px] w-[18px] shrink-0 text-amber-600"></i>
-                      <div>
-                        <div class="text-sm font-medium text-slate-950">需要补充关联影响</div>
-                        <p class="mt-1 text-sm leading-5 text-slate-600">支付回调重试会影响清结算确认时序，建议发布单中明确回归范围与灰度监控指标。</p>
-                      </div>
-                    </div>
+                    <span class="text-[10px] font-medium text-amber-600">待 2 人审</span>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                <div class="rounded-[14px] border border-[#e5e7eb] bg-white/95 p-5 shadow-sm shadow-slate-900/[0.04]">
+            <!-- 已发布 -->
+            <div class="rounded-lg border border-emerald-200/70 bg-emerald-50/40 p-3">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                  <span class="text-[12px] font-medium text-emerald-700">已发布</span>
+                </div>
+                <span class="text-[11px] font-medium text-emerald-600">48</span>
+              </div>
+              <div class="space-y-2">
+                <div class="rounded-lg border border-emerald-200 bg-white p-2.5 transition-colors hover:border-emerald-400 hover:shadow-sm cursor-pointer">
                   <div class="flex items-center justify-between">
-                    <h2 class="text-base font-semibold text-slate-950">健康评分</h2>
-                    <span class="rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">可发布</span>
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v4.2.1</span>
+                    <span class="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-medium text-emerald-600">正式</span>
                   </div>
-                  <div class="mt-6 flex items-center justify-center">
-                    <div class="relative flex h-36 w-36 items-center justify-center rounded-full bg-[conic-gradient(#10b981_0_76%,#f59e0b_76%_90%,#e5e7eb_90%_100%)]">
-                      <div class="flex h-[112px] w-[112px] flex-col items-center justify-center rounded-full bg-white">
-                        <div class="text-4xl font-semibold tracking-tight text-slate-950">86</div>
-                        <div class="text-xs font-medium text-slate-400">score</div>
-                      </div>
-                    </div>
+                  <div class="mt-1.5 text-[11px] text-slate-500">网关服务</div>
+                  <div class="mt-2 flex items-center gap-1.5">
+                    <i data-lucide="check-circle-2" class="h-3 w-3 text-emerald-500" style="stroke-width:1.5"></i>
+                    <span class="text-[10px] text-slate-400">2h前 · tag 已推送</span>
                   </div>
-                  <div class="mt-6 space-y-3 text-sm">
-                    <div class="flex items-center justify-between">
-                      <span class="text-slate-500">合规率</span>
-                      <span class="font-medium text-slate-950">92.5%</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                      <span class="text-slate-500">构建</span>
-                      <span class="font-medium text-emerald-600">通过</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                      <span class="text-slate-500">审批 SLA</span>
-                      <span class="font-medium text-amber-600">3h left</span>
-                    </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 已驳回 -->
+            <div class="rounded-lg border border-rose-200/70 bg-rose-50/40 p-3">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                  <span class="text-[12px] font-medium text-rose-700">已驳回</span>
+                </div>
+                <span class="text-[11px] font-medium text-rose-500">5</span>
+              </div>
+              <div class="space-y-2">
+                <div class="rounded-lg border border-rose-200 bg-white p-2.5 transition-colors hover:border-rose-400 hover:shadow-sm cursor-pointer">
+                  <div class="flex items-center justify-between">
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v2.0.0</span>
+                    <span class="rounded border border-rose-200 bg-rose-50 px-1 py-0.5 text-[9px] font-medium text-rose-500">驳回</span>
+                  </div>
+                  <div class="mt-1.5 text-[11px] text-slate-500">风控引擎</div>
+                  <div class="mt-2 flex items-center gap-1.5">
+                    <i data-lucide="x-circle" class="h-3 w-3 text-rose-400" style="stroke-width:1.5"></i>
+                    <span class="text-[10px] text-slate-400">构建失败 · 超时</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          <aside class="space-y-5">
-            <div class="rounded-[16px] border border-[#e5e7eb] bg-white p-5 shadow-sm shadow-slate-900/[0.03]">
-              <div class="flex items-center justify-between">
-                <div>
-                  <h2 class="text-base font-semibold text-slate-950">当前检查器</h2>
-                  <p class="mt-1 text-xs text-slate-500">v2.5.0 正式发布</p>
-                </div>
-                <button class="flex h-9 w-9 items-center justify-center rounded-[9px] border border-slate-200 text-slate-500 transition hover:text-slate-950">
-                  <i data-lucide="more-horizontal" class="h-[18px] w-[18px]"></i>
-                </button>
-              </div>
+        <!-- ==================== 中间区域：最近发布 + 提交合规 ==================== -->
+        <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
 
-              <div class="mt-5 rounded-[14px] border border-slate-200 bg-[#fafafa] p-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Release</span>
-                  <span class="rounded-md bg-white px-2 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">formal</span>
-                </div>
-                <div class="mt-4 text-2xl font-semibold tracking-tight text-slate-950">v2.5.0</div>
-                <div class="mt-2 text-sm leading-5 text-slate-500">核心交易平台 · 订单、支付、清结算模块联动发布。</div>
-              </div>
-
-              <div class="mt-5 space-y-3">
-                <div class="flex items-start gap-3">
-                  <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                    <i data-lucide="check" class="h-4 w-4"></i>
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-slate-950">正式分支规则通过</div>
-                    <div class="mt-0.5 text-xs text-slate-500">release/v2.5.0 可合并至 main</div>
-                  </div>
-                </div>
-                <div class="flex items-start gap-3">
-                  <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                    <i data-lucide="check" class="h-4 w-4"></i>
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-slate-950">Jenkins 构建通过</div>
-                    <div class="mt-0.5 text-xs text-slate-500">core-trade-package #1842</div>
-                  </div>
-                </div>
-                <div class="flex items-start gap-3">
-                  <div class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-amber-50 text-amber-600">
-                    <i data-lucide="alert-triangle" class="h-4 w-4"></i>
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-slate-950">2 条提交待复核</div>
-                    <div class="mt-0.5 text-xs text-slate-500">缺少配置项和关联性改动说明</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="rounded-[16px] border border-[#e5e7eb] bg-white shadow-sm shadow-slate-900/[0.03]">
-              <div class="border-b border-slate-200 px-5 py-4">
-                <h2 class="text-base font-semibold text-slate-950">待办队列</h2>
-              </div>
-              <div class="divide-y divide-slate-200">
-                <div class="p-4 transition hover:bg-slate-50">
-                  <div class="flex items-start gap-3">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[10px] bg-amber-50 text-amber-600">
-                      <i data-lucide="stamp" class="h-[17px] w-[17px]"></i>
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="text-sm font-medium text-slate-950">审批发布 v2.5.0</div>
-                      <div class="mt-1 text-xs text-slate-500">李四提交 · 10 分钟前</div>
-                    </div>
-                    <button class="text-xs font-medium text-slate-950">处理</button>
-                  </div>
-                </div>
-                <div class="p-4 transition hover:bg-slate-50">
-                  <div class="flex items-start gap-3">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[10px] bg-sky-50 text-sky-600">
-                      <i data-lucide="message-square-warning" class="h-[17px] w-[17px]"></i>
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="text-sm font-medium text-slate-950">复核 commit b83a91f2</div>
-                      <div class="mt-1 text-xs text-slate-500">核心交易平台 · 35 分钟前</div>
-                    </div>
-                    <button class="text-xs font-medium text-slate-950">查看</button>
-                  </div>
-                </div>
-                <div class="p-4 transition hover:bg-slate-50">
-                  <div class="flex items-start gap-3">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[10px] bg-rose-50 text-rose-600">
-                      <i data-lucide="terminal" class="h-[17px] w-[17px]"></i>
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="text-sm font-medium text-slate-950">运维门户构建失败</div>
-                      <div class="mt-1 text-xs text-slate-500">Jenkins #118 · 1 小时前</div>
-                    </div>
-                    <button class="text-xs font-medium text-slate-950">日志</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="rounded-[16px] border border-[#e5e7eb] bg-[#111827] p-5 text-white shadow-sm shadow-slate-900/[0.08]">
-              <div class="flex items-center justify-between">
-                <h2 class="text-base font-semibold">快速生成 Tag</h2>
-                <i data-lucide="tag" class="h-[18px] w-[18px] text-slate-300"></i>
-              </div>
-              <p class="mt-2 text-sm leading-5 text-slate-300">从项目、仓库、起始 Tag 到发布说明生成，保留为一个连续动作。</p>
-              <div class="mt-5 space-y-3">
-                <div class="rounded-[10px] bg-white/8 p-3 ring-1 ring-white/10">
-                  <div class="text-xs text-slate-400">Project</div>
-                  <div class="mt-1 flex items-center justify-between text-sm font-medium">
-                    核心交易平台
-                    <i data-lucide="chevron-down" class="h-4 w-4 text-slate-400"></i>
-                  </div>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                  <div class="rounded-[10px] bg-white/8 p-3 ring-1 ring-white/10">
-                    <div class="text-xs text-slate-400">From</div>
-                    <div class="mt-1 text-sm font-medium">v2.4.1</div>
-                  </div>
-                  <div class="rounded-[10px] bg-white/8 p-3 ring-1 ring-white/10">
-                    <div class="text-xs text-slate-400">Branch</div>
-                    <div class="mt-1 text-sm font-medium">develop</div>
-                  </div>
-                </div>
-                <button class="flex h-10 w-full items-center justify-center gap-2 rounded-[10px] bg-white text-sm font-medium text-slate-950 transition hover:bg-slate-100">
-                  <i data-lucide="wand-sparkles" class="h-[17px] w-[17px]"></i>
-                  提取差异
-                </button>
-              </div>
-            </div>
-          </aside>
-        </section>
-
-        <section class="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <div class="overflow-hidden rounded-[16px] border border-[#e5e7eb] bg-white shadow-sm shadow-slate-900/[0.03]">
-            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <!-- 最近发布 -->
+          <div class="lg:col-span-2 tech-card rounded-xl">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
               <div>
-                <h2 class="text-base font-semibold text-slate-950">发布记录</h2>
-                <p class="mt-1 text-xs text-slate-500">按版本、项目、构建与审批状态追踪。</p>
+                <h2 class="text-[15px] font-semibold tracking-tight text-slate-900">最近发布</h2>
+                <p class="mt-0.5 text-[12px] text-slate-500">最近 10 条发布记录</p>
               </div>
-              <div class="flex gap-2">
-                <button class="flex h-9 items-center gap-2 rounded-[9px] border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition hover:text-slate-950">
-                  <i data-lucide="sliders-horizontal" class="h-[17px] w-[17px]"></i>
-                  筛选
-                </button>
-                <button class="flex h-9 items-center gap-2 rounded-[9px] border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition hover:text-slate-950">
-                  查看全部
-                </button>
-              </div>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full min-w-[760px] text-left text-sm">
-                <thead class="border-b border-slate-200 bg-[#fafafa] text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
-                  <tr>
-                    <th class="px-5 py-3">版本</th>
-                    <th class="px-5 py-3">项目</th>
-                    <th class="px-5 py-3">类型</th>
-                    <th class="px-5 py-3">构建</th>
-                    <th class="px-5 py-3">审批</th>
-                    <th class="px-5 py-3">发布时间</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200">
-                  <tr class="transition hover:bg-slate-50">
-                    <td class="px-5 py-4 font-medium text-slate-950">v2.5.0</td>
-                    <td class="px-5 py-4 text-slate-600">核心交易平台</td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 ring-1 ring-sky-200">正式</span></td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">成功</span></td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200">待审批</span></td>
-                    <td class="px-5 py-4 text-slate-500">2026-06-26 10:32</td>
-                  </tr>
-                  <tr class="transition hover:bg-slate-50">
-                    <td class="px-5 py-4 font-medium text-slate-950">v2.4.2-test.3</td>
-                    <td class="px-5 py-4 text-slate-600">数据中台</td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-violet-50 px-2 py-1 text-xs font-medium text-violet-700 ring-1 ring-violet-200">测试</span></td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">成功</span></td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">已通过</span></td>
-                    <td class="px-5 py-4 text-slate-500">2026-06-25 17:48</td>
-                  </tr>
-                  <tr class="transition hover:bg-slate-50">
-                    <td class="px-5 py-4 font-medium text-slate-950">v1.9.8</td>
-                    <td class="px-5 py-4 text-slate-600">运维门户</td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 ring-1 ring-sky-200">正式</span></td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200">失败</span></td>
-                    <td class="px-5 py-4"><span class="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">未提交</span></td>
-                    <td class="px-5 py-4 text-slate-500">2026-06-24 11:16</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="rounded-[16px] border border-[#e5e7eb] bg-white p-5 shadow-sm shadow-slate-900/[0.03]">
-            <div class="flex items-center justify-between">
-              <div>
-                <h2 class="text-base font-semibold text-slate-950">接入资产</h2>
-                <p class="mt-1 text-xs text-slate-500">仓库、凭证、Jenkins、SVN 健康状态。</p>
-              </div>
-              <button class="flex h-9 w-9 items-center justify-center rounded-[9px] border border-slate-200 text-slate-500 transition hover:text-slate-950">
-                <i data-lucide="plus" class="h-[18px] w-[18px]"></i>
+              <button class="inline-flex items-center gap-1 text-[13px] font-medium text-indigo-600 transition-colors hover:text-indigo-500">
+                <span>查看全部</span>
+                <i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
               </button>
             </div>
-            <div class="mt-5 grid grid-cols-2 gap-3">
-              <div class="rounded-[13px] border border-slate-200 bg-[#fafafa] p-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-medium text-slate-500">Git 仓库</span>
-                  <i data-lucide="gitlab" class="h-[17px] w-[17px] text-orange-600"></i>
+
+            <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+              <div class="col-span-3">版本</div>
+              <div class="col-span-3">项目</div>
+              <div class="col-span-2">类型</div>
+              <div class="col-span-2">发布人</div>
+              <div class="col-span-2 text-right">状态</div>
+            </div>
+
+            <div class="divide-y divide-indigo-50/50">
+
+              <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30 cursor-pointer">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2">
+                  <span class="font-mono text-[13px] font-medium text-slate-900">v4.2.1</span>
                 </div>
-                <div class="mt-4 text-3xl font-semibold tracking-tight text-slate-950">18</div>
-                <div class="mt-1 text-xs text-emerald-600">17 healthy</div>
+                <div class="col-span-6 md:col-span-3 text-[13px] text-slate-600">网关服务</div>
+                <div class="col-span-6 md:col-span-2">
+                  <span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5">
+                  <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
+                  <span class="text-[12px] text-slate-600">李四</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                  <span class="text-[12px] font-medium text-emerald-700">已发布</span>
+                </div>
               </div>
-              <div class="rounded-[13px] border border-slate-200 bg-[#fafafa] p-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-medium text-slate-500">SVN 仓库</span>
-                  <i data-lucide="database" class="h-[17px] w-[17px] text-sky-600"></i>
+
+              <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30 cursor-pointer">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2">
+                  <span class="font-mono text-[13px] font-medium text-slate-900">v3.1.0</span>
                 </div>
-                <div class="mt-4 text-3xl font-semibold tracking-tight text-slate-950">4</div>
-                <div class="mt-1 text-xs text-emerald-600">all healthy</div>
+                <div class="col-span-6 md:col-span-3 text-[13px] text-slate-600">用户中心</div>
+                <div class="col-span-6 md:col-span-2">
+                  <span class="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700">RC</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5">
+                  <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
+                  <span class="text-[12px] text-slate-600">王五</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>
+                  <span class="text-[12px] font-medium text-cyan-700">构建中</span>
+                </div>
               </div>
-              <div class="rounded-[13px] border border-slate-200 bg-[#fafafa] p-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-medium text-slate-500">凭证</span>
-                  <i data-lucide="key-round" class="h-[17px] w-[17px] text-violet-600"></i>
+
+              <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30 cursor-pointer">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2">
+                  <span class="font-mono text-[13px] font-medium text-slate-900">v1.8.2</span>
                 </div>
-                <div class="mt-4 text-3xl font-semibold tracking-tight text-slate-950">27</div>
-                <div class="mt-1 text-xs text-amber-600">3 expiring</div>
+                <div class="col-span-6 md:col-span-3 text-[13px] text-slate-600">订单管理</div>
+                <div class="col-span-6 md:col-span-2">
+                  <span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5">
+                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
+                  <span class="text-[12px] text-slate-600">赵六</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span>
+                  <span class="text-[12px] font-medium text-amber-700">待审批</span>
+                </div>
               </div>
-              <div class="rounded-[13px] border border-slate-200 bg-[#fafafa] p-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-medium text-slate-500">Jenkins Job</span>
-                  <i data-lucide="workflow" class="h-[17px] w-[17px] text-emerald-600"></i>
+
+              <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30 cursor-pointer">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2">
+                  <span class="font-mono text-[13px] font-medium text-slate-900">v2.5.0</span>
                 </div>
-                <div class="mt-4 text-3xl font-semibold tracking-tight text-slate-950">11</div>
-                <div class="mt-1 text-xs text-rose-600">1 failing</div>
+                <div class="col-span-6 md:col-span-3 text-[13px] text-slate-600">支付核心</div>
+                <div class="col-span-6 md:col-span-2">
+                  <span class="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">Beta</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5">
+                  <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
+                  <span class="text-[12px] text-slate-600">钱七</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+                  <span class="text-[12px] font-medium text-slate-500">草稿</span>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30 cursor-pointer">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2">
+                  <span class="font-mono text-[13px] font-medium text-slate-900">v2.0.0</span>
+                </div>
+                <div class="col-span-6 md:col-span-3 text-[13px] text-slate-600">风控引擎</div>
+                <div class="col-span-6 md:col-span-2">
+                  <span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5">
+                  <img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
+                  <span class="text-[12px] text-slate-600">孙八</span>
+                </div>
+                <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                  <span class="text-[12px] font-medium text-rose-600">已驳回</span>
+                </div>
               </div>
             </div>
           </div>
-        </section>
+
+          <!-- 提交合规 -->
+          <div class="tech-card rounded-xl p-5">
+            <div class="mb-2">
+              <h2 class="text-[15px] font-semibold tracking-tight text-slate-900">提交合规率</h2>
+              <p class="mt-0.5 text-[12px] text-slate-500">本周提交规范审查</p>
+            </div>
+            <div class="relative flex items-center justify-center py-3">
+              <div style="width:180px;height:180px;">
+                <canvas id="complianceChart"></canvas>
+              </div>
+              <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span class="text-[28px] font-semibold tracking-tight text-gradient">98.4<span class="text-[16px] text-slate-400">%</span></span>
+                <span class="text-[11px] text-slate-400 mt-0.5">合规率</span>
+              </div>
+            </div>
+            <div class="mt-4 space-y-2.5 border-t border-indigo-50 pt-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="h-2 w-2 rounded-sm bg-emerald-400"></span>
+                  <span class="text-[12px] text-slate-600">合规</span>
+                </div>
+                <span class="font-mono text-[12px] font-medium text-slate-800">829</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="h-2 w-2 rounded-sm bg-amber-400"></span>
+                  <span class="text-[12px] text-slate-600">警告</span>
+                </div>
+                <span class="font-mono text-[12px] font-medium text-slate-800">11</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="h-2 w-2 rounded-sm bg-rose-400"></span>
+                  <span class="text-[12px] text-slate-600">不合规</span>
+                </div>
+                <span class="font-mono text-[12px] font-medium text-slate-800">2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 底部区域：待办 + 构建趋势 ==================== -->
+        <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+
+          <!-- 我的待办 -->
+          <div class="lg:col-span-2 tech-card rounded-xl">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
+              <div class="flex items-center gap-2">
+                <h2 class="text-[15px] font-semibold tracking-tight text-slate-900">我的待办</h2>
+                <span class="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">5</span>
+              </div>
+              <div class="flex items-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50/40 p-0.5">
+                <button class="rounded-md bg-white px-2.5 py-1 text-[12px] font-medium text-indigo-600 shadow-sm">全部</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700">审批</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700">构建</button>
+              </div>
+            </div>
+            <div class="divide-y divide-indigo-50/50">
+
+              <div class="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-amber">
+                  <i data-lucide="git-pull-request-arrow" class="h-4 w-4" style="stroke-width:1.5"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[13px] font-medium text-slate-900">审批发布 v1.8.2</span>
+                    <span class="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500">订单管理</span>
+                  </div>
+                  <div class="mt-0.5 text-[11px] text-slate-400">王五 提交 · 12 分钟前 · 需 2 人审批</div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600">驳回</button>
+                  <button class="btn-glow rounded-lg px-3 py-1.5 text-[12px] font-medium text-white">通过</button>
+                </div>
+              </div>
+
+              <div class="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-cyan">
+                  <i data-lucide="hammer" class="h-4 w-4" style="stroke-width:1.5"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[13px] font-medium text-slate-900">构建 #142 进行中</span>
+                    <span class="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500">用户中心</span>
+                  </div>
+                  <div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400">
+                    <span>v3.1.0 · 已运行 3m24s</span>
+                    <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+                    <span class="text-cyan-600">65% 完成</span>
+                  </div>
+                </div>
+                <button class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600">查看日志</button>
+              </div>
+
+              <div class="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-rose">
+                  <i data-lucide="triangle-alert" class="h-4 w-4" style="stroke-width:1.5"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[13px] font-medium text-slate-900">2 条不合规提交需处理</span>
+                    <span class="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500">风控引擎</span>
+                  </div>
+                  <div class="mt-0.5 text-[11px] text-slate-400">提交信息不符合 Conventional Commits 规范</div>
+                </div>
+                <button class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600">查看</button>
+              </div>
+
+              <div class="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-violet">
+                  <i data-lucide="git-pull-request-arrow" class="h-4 w-4" style="stroke-width:1.5"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[13px] font-medium text-slate-900">审批发布 v2.5.0</span>
+                    <span class="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500">支付核心</span>
+                  </div>
+                  <div class="mt-0.5 text-[11px] text-slate-400">李四 提交 · 2 小时前 · 需 1 人审批</div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600">驳回</button>
+                  <button class="btn-glow rounded-lg px-3 py-1.5 text-[12px] font-medium text-white">通过</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 构建活动趋势 -->
+          <div class="tech-card rounded-xl p-5">
+            <div class="mb-4">
+              <h2 class="text-[15px] font-semibold tracking-tight text-slate-900">构建趋势</h2>
+              <p class="mt-0.5 text-[12px] text-slate-500">最近 7 天</p>
+            </div>
+            <div class="relative">
+              <div style="height:160px;">
+                <canvas id="buildChart"></canvas>
+              </div>
+            </div>
+            <div class="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4">
+              <div>
+                <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <span class="h-2 w-2 rounded-sm bg-emerald-400"></span>
+                  <span>成功</span>
+                </div>
+                <div class="mt-1 font-mono text-[18px] font-semibold tracking-tight text-slate-900">142</div>
+              </div>
+              <div>
+                <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <span class="h-2 w-2 rounded-sm bg-rose-400"></span>
+                  <span>失败</span>
+                </div>
+                <div class="mt-1 font-mono text-[18px] font-semibold tracking-tight text-slate-900">5</div>
+              </div>
+            </div>
+            <div class="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+              <span class="text-[11px] text-slate-400">平均构建时长</span>
+              <span class="font-mono text-[13px] font-medium text-cyan-600">4m 12s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 设计系统说明 ==================== -->
+        <div class="tech-card rounded-xl p-5 lg:p-6">
+          <div class="mb-5">
+            <h2 class="text-[15px] font-semibold tracking-tight text-slate-900">设计系统</h2>
+            <p class="mt-0.5 text-[12px] text-slate-500">溯舟 Trace Ship 统一设计语言规范 · 亮色科技风</p>
+          </div>
+
+          <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
+
+            <!-- 品牌主色 -->
+            <div>
+              <div class="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">品牌主色</div>
+              <div class="space-y-2">
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-md shadow-indigo-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">靛蓝 Indigo</div>
+                    <div class="font-mono text-[10px] text-slate-400">#4F46E5</div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-gradient-to-br from-cyan-400 to-cyan-500 shadow-md shadow-cyan-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">青色 Cyan</div>
+                    <div class="font-mono text-[10px] text-slate-400">#06B6D4</div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-gradient-to-br from-violet-500 to-purple-500 shadow-md shadow-violet-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">紫色 Violet</div>
+                    <div class="font-mono text-[10px] text-slate-400">#8B5CF6</div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-gradient-to-br from-indigo-500 to-cyan-400 shadow-md shadow-indigo-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">渐变 Gradient</div>
+                    <div class="font-mono text-[10px] text-slate-400">Indigo → Cyan</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 语义色 -->
+            <div>
+              <div class="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">语义色</div>
+              <div class="space-y-2">
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-emerald-500 shadow-sm shadow-emerald-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">成功</div>
+                    <div class="font-mono text-[10px] text-slate-400">#10B981</div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-amber-500 shadow-sm shadow-amber-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">警告</div>
+                    <div class="font-mono text-[10px] text-slate-400">#F59E0B</div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-rose-500 shadow-sm shadow-rose-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">危险</div>
+                    <div class="font-mono text-[10px] text-slate-400">#F43F5E</div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <div class="h-7 w-7 rounded-md bg-blue-500 shadow-sm shadow-blue-500/30"></div>
+                  <div>
+                    <div class="text-[12px] font-medium text-slate-800">信息</div>
+                    <div class="font-mono text-[10px] text-slate-400">#3B82F6</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 字体 -->
+            <div>
+              <div class="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">字体层级</div>
+              <div class="space-y-3">
+                <div class="border-b border-indigo-50 pb-2">
+                  <div class="text-[22px] font-semibold tracking-tight text-slate-900">页面标题</div>
+                  <div class="mt-0.5 font-mono text-[10px] text-slate-400">22px / Semibold / tracking-tight</div>
+                </div>
+                <div class="border-b border-indigo-50 pb-2">
+                  <div class="text-[16px] font-semibold tracking-tight text-slate-900">区块标题</div>
+                  <div class="mt-0.5 font-mono text-[10px] text-slate-400">16px / Semibold / tracking-tight</div>
+                </div>
+                <div class="border-b border-indigo-50 pb-2">
+                  <div class="text-[14px] font-medium text-slate-700">卡片正文</div>
+                  <div class="mt-0.5 font-mono text-[10px] text-slate-400">14px / Medium</div>
+                </div>
+                <div>
+                  <div class="text-[12px] text-slate-500">辅助说明文字</div>
+                  <div class="mt-0.5 font-mono text-[10px] text-slate-400">12px / Regular</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 组件 -->
+            <div>
+              <div class="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">组件</div>
+              <div class="space-y-3">
+                <div>
+                  <div class="mb-1.5 text-[10px] text-slate-400">按钮</div>
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <button class="btn-glow rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-white">主要</button>
+                    <button class="rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600">次要</button>
+                    <button class="rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600">文字</button>
+                  </div>
+                </div>
+                <div>
+                  <div class="mb-1.5 text-[10px] text-slate-400">标签</div>
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span>
+                    <span class="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700">RC</span>
+                    <span class="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">Beta</span>
+                    <span class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">驳回</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="mb-1.5 text-[10px] text-slate-400">图标容器</div>
+                  <div class="flex items-center gap-1.5">
+                    <div class="flex h-7 w-7 items-center justify-center rounded-md icon-indigo"><i data-lucide="rocket" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+                    <div class="flex h-7 w-7 items-center justify-center rounded-md icon-cyan"><i data-lucide="hammer" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+                    <div class="flex h-7 w-7 items-center justify-center rounded-md icon-violet"><i data-lucide="scan-search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+                    <div class="flex h-7 w-7 items-center justify-center rounded-md icon-emerald"><i data-lucide="check-circle-2" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="flex items-center justify-between pt-2 pb-4 text-[12px] text-slate-400">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-slate-500">溯舟 Trace Ship</span>
+            <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+            <span>v2.4.0</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <span>亮色科技风 v1.0</span>
+            <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+            <span>© 2026</span>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
 
   <script>
-    lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    lucide.createIcons();
+
+    // 提交合规率 - 环形图
+    const complianceCtx = document.getElementById('complianceChart').getContext('2d');
+    new Chart(complianceCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['合规', '警告', '不合规'],
+        datasets: [{
+          data: [829, 11, 2],
+          backgroundColor: ['#10B981', '#F59E0B', '#F43F5E'],
+          borderWidth: 0,
+          borderRadius: 3,
+          spacing: 2,
+        }]
+      },
+      options: {
+        cutout: '75%',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1E1B4B',
+            titleColor: '#F1F5F9',
+            bodyColor: '#C7D2FE',
+            borderRadius: 8,
+            padding: 10,
+            displayColors: true,
+            boxPadding: 4,
+            titleFont: { size: 12, weight: '500', family: 'Inter' },
+            bodyFont: { size: 12, family: 'Inter' },
+          }
+        }
+      }
+    });
+
+    // 构建趋势 - 柱状图
+    const buildCtx = document.getElementById('buildChart').getContext('2d');
+    new Chart(buildCtx, {
+      type: 'bar',
+      data: {
+        labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+        datasets: [
+          {
+            label: '成功',
+            data: [18, 22, 25, 20, 28, 15, 14],
+            backgroundColor: '#10B981',
+            borderRadius: 3,
+            barPercentage: 0.6,
+            categoryPercentage: 0.7,
+          },
+          {
+            label: '失败',
+            data: [1, 0, 2, 0, 1, 1, 0],
+            backgroundColor: '#F43F5E',
+            borderRadius: 3,
+            barPercentage: 0.6,
+            categoryPercentage: 0.7,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1E1B4B',
+            titleColor: '#F1F5F9',
+            bodyColor: '#C7D2FE',
+            borderRadius: 8,
+            padding: 10,
+            titleFont: { size: 12, weight: '500', family: 'Inter' },
+            bodyFont: { size: 12, family: 'Inter' },
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { color: '#94A3B8', font: { size: 10, family: 'Inter' } }
+          },
+          y: {
+            grid: { color: '#F1F5F9', drawBorder: false },
+            border: { display: false },
+            ticks: { color: '#94A3B8', font: { size: 10, family: 'Inter' }, maxTicksLimit: 4 }
+          }
+        }
+      }
+    });
   </script>
 </body>
 </html>
