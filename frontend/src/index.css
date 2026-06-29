@@ -432,3 +432,58 @@ body {
 .font-mono-ui {
   font-family: "JetBrains Mono", "SF Mono", "Geist Mono", Consolas, monospace;
 }
+
+/* Workspace aurora - matches trace-ship-light-redesign.html */
+.aurora-workspace {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.aurora-workspace::before,
+.aurora-workspace::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.35;
+}
+
+.aurora-workspace::before {
+  width: 520px;
+  height: 520px;
+  top: -140px;
+  right: -100px;
+  background: radial-gradient(circle, #818CF8, transparent 70%);
+}
+
+.aurora-workspace::after {
+  width: 440px;
+  height: 440px;
+  bottom: -120px;
+  left: 200px;
+  background: radial-gradient(circle, #22D3EE, transparent 70%);
+}
+
+.aurora-workspace-3 {
+  position: fixed;
+  width: 380px;
+  height: 380px;
+  top: 35%;
+  left: 45%;
+  border-radius: 50%;
+  filter: blur(130px);
+  opacity: 0.22;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, #C4B5FD, transparent 70%);
+}
+
+.grid-bg-workspace {
+  background-image:
+    linear-gradient(rgba(79, 70, 229, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 70, 229, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+}

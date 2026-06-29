@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -16,12 +16,16 @@ import {
   TriangleAlert,
   XCircle,
 } from 'lucide-react';
+import { Chart, registerables } from 'chart.js';
 import { dashboardApi } from '@/api/dashboard';
 import { releaseApi } from '@/api/release';
 import { commitApi } from '@/api/commit';
 import { jenkinsApi } from '@/api/jenkins';
 import { useAuthStore } from '@/stores/authStore';
+import { tokens } from '@/styles/theme';
 import type { BuildRecord, Release, ReleaseType } from '@/types';
+
+Chart.register(...registerables);
 
 type LucideIcon = ComponentType<{ className?: string; strokeWidth?: number }>;
 
@@ -35,6 +39,7 @@ interface KpiCard {
   icon: LucideIcon;
   iconClass: string;
   action?: ReactNode;
+  footer?: ReactNode;
 }
 
 interface PipelineColumn {
@@ -43,6 +48,7 @@ interface PipelineColumn {
   count: number;
   tone: string;
   dot: string;
+  cardBorder: string;
   releases: Release[];
 }
 
@@ -95,15 +101,11 @@ const statusDotClass: Record<string, string> = {
   rejected: 'bg-rose-500',
 };
 
-const buildBars = [
-  { day: '周一', success: 18, failed: 1 },
-  { day: '周二', success: 22, failed: 0 },
-  { day: '周三', success: 25, failed: 2 },
-  { day: '周四', success: 20, failed: 0 },
-  { day: '周五', success: 28, failed: 1 },
-  { day: '周六', success: 15, failed: 1 },
-  { day: '周日', success: 14, failed: 0 },
-];
+interface BuildTrendItem {
+  day: string;
+  success: number;
+  failed: number;
+}
 
 function formatDate(value?: string): string {
   return value?.split('T')[0] || '-';
@@ -120,6 +122,73 @@ function formatRelative(value?: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} 小时前`;
   return `${Math.floor(hours / 24)} 天前`;
+}
+
+function getDateKey(date: Date): string {
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function formatTrendDay(date: Date): string {
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function buildSevenDayTrend(builds: BuildRecord[]): BuildTrendItem[] {
+  const today = new Date();
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    const key = getDateKey(date);
+    const matchedBuilds = builds.filter((build) => getDateKey(new Date(build.created_at)) === key);
+
+    return {
+      day: formatTrendDay(date),
+      success: matchedBuilds.filter((build) => build.status === 'success').length,
+      failed: matchedBuilds.filter((build) => build.status === 'failure' || build.status === 'aborted').length,
+    };
+  });
+}
+
+function parseDurationSeconds(duration?: string): number | null {
+  if (!duration) return null;
+
+  const parts = duration.split(':').map(Number);
+  if (parts.length === 3 && parts.every((part) => Number.isFinite(part))) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  const minuteMatch = duration.match(/(\d+)\s*m/i);
+  const secondMatch = duration.match(/(\d+)\s*s/i);
+  const minutes = minuteMatch ? Number(minuteMatch[1]) : 0;
+  const seconds = secondMatch ? Number(secondMatch[1]) : 0;
+  const total = minutes * 60 + seconds;
+
+  return total > 0 ? total : null;
+}
+
+function getBuildDurationSeconds(build: BuildRecord): number | null {
+  const parsed = parseDurationSeconds(build.duration);
+  if (parsed !== null) return parsed;
+
+  if (!build.started_at || !build.finished_at) return null;
+  const startedAt = new Date(build.started_at).getTime();
+  const finishedAt = new Date(build.finished_at).getTime();
+
+  if (!Number.isFinite(startedAt) || !Number.isFinite(finishedAt) || finishedAt <= startedAt) return null;
+  return Math.round((finishedAt - startedAt) / 1000);
+}
+
+function formatDurationSeconds(seconds: number | null): string {
+  if (seconds === null) return '-';
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
 }
 
 function getGreeting(): string {
@@ -160,6 +229,29 @@ function IconBox({ icon: Icon, className }: { icon: LucideIcon; className: strin
   );
 }
 
+/** 首字母头像：取用户名首个字符，渐变背景 */
+function InitialAvatar({
+  name,
+  size = 20,
+  ring = true,
+}: {
+  name?: string;
+  size?: number;
+  ring?: boolean;
+}) {
+  const initial = (name || '系').trim().charAt(0).toUpperCase();
+  return (
+    <span
+      className={`flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 font-semibold text-white ${
+        ring ? 'ring-2 ring-white' : ''
+      }`}
+      style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.45)) }}
+    >
+      {initial}
+    </span>
+  );
+}
+
 function KpiCardView({ card }: { card: KpiCard }) {
   return (
     <div className="tech-card tech-card-hover rounded-xl p-5">
@@ -174,17 +266,26 @@ function KpiCardView({ card }: { card: KpiCard }) {
         </div>
         <div className="mt-1 flex items-center gap-2 text-[12px] text-slate-500">{card.description}</div>
       </div>
+      {card.footer ? <div className="mt-3">{card.footer}</div> : null}
     </div>
   );
 }
 
-function PipelineCard({ release, status }: { release: Release; status: PipelineStatus }) {
+function PipelineCard({
+  release,
+  status,
+  cardBorder,
+}: {
+  release: Release;
+  status: PipelineStatus;
+  cardBorder: string;
+}) {
   const statusLabel = releaseStatusText[release.status as string] || releaseStatusText[status];
 
   return (
     <button
       type="button"
-      className="w-full rounded-lg border border-white/70 bg-white p-2.5 text-left transition-colors hover:border-indigo-300 hover:shadow-sm"
+      className={`w-full rounded-lg border bg-white p-2.5 text-left transition-colors hover:shadow-sm ${cardBorder}`}
     >
       <div className="flex items-center justify-between">
         <span className="font-mono text-[12px] font-medium text-slate-800">{release.version}</span>
@@ -222,25 +323,161 @@ function EmptyPipelineCard() {
   );
 }
 
-function ComplianceRing({ rate }: { rate: number }) {
+function ComplianceChart({
+  rate,
+  passCount,
+  warningCount,
+  illegalCount,
+}: {
+  rate: number;
+  passCount: number;
+  warningCount: number;
+  illegalCount: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartRef = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    if (chartRef.current) {
+      chartRef.current.destroy();
+    }
+
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    chartRef.current = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['合规', '警告', '不合规'],
+        datasets: [
+          {
+            data: [passCount, warningCount, illegalCount],
+            backgroundColor: ['#10B981', '#F59E0B', '#F43F5E'],
+            borderWidth: 0,
+            borderRadius: 3,
+            spacing: 2,
+          },
+        ],
+      },
+      options: {
+        cutout: '75%',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1E1B4B',
+            titleColor: '#F1F5F9',
+            bodyColor: '#C7D2FE',
+            cornerRadius: 8,
+            padding: 10,
+            displayColors: true,
+            boxPadding: 4,
+            titleFont: { size: 12, weight: 500, family: tokens.font.sans },
+            bodyFont: { size: 12, family: tokens.font.sans },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+    };
+  }, [passCount, warningCount, illegalCount]);
+
   return (
     <div className="relative flex items-center justify-center py-3">
-      <div
-        className="h-[180px] w-[180px] rounded-full"
-        style={{
-          background: `conic-gradient(#10B981 0 ${rate}%, #F59E0B ${rate}% ${Math.min(100, rate + 1.5)}%, #F43F5E ${Math.min(100, rate + 1.5)}% 100%)`,
-        }}
-      >
-        <div className="m-[18px] flex h-[144px] w-[144px] items-center justify-center rounded-full bg-white shadow-inner">
-          <div className="text-center">
-            <div className="text-gradient text-[28px] font-semibold tracking-tight">
-              {rate}
-              <span className="text-[16px] text-slate-400">%</span>
-            </div>
-            <div className="mt-0.5 text-[11px] text-slate-400">合规率</div>
-          </div>
-        </div>
+      <div className="h-[180px] w-[180px]">
+        <canvas ref={canvasRef} />
       </div>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[28px] font-semibold tracking-tight text-gradient">
+          {rate}
+          <span className="text-[16px] text-slate-400">%</span>
+        </span>
+        <span className="mt-0.5 text-[11px] text-slate-400">合规率</span>
+      </div>
+    </div>
+  );
+}
+
+function BuildTrendChart({ data }: { data: BuildTrendItem[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartRef = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    if (chartRef.current) {
+      chartRef.current.destroy();
+    }
+
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    chartRef.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.map((item) => item.day),
+        datasets: [
+          {
+            label: '成功',
+            data: data.map((item) => item.success),
+            backgroundColor: '#10B981',
+            borderRadius: 3,
+            barPercentage: 0.6,
+            categoryPercentage: 0.7,
+          },
+          {
+            label: '失败',
+            data: data.map((item) => item.failed),
+            backgroundColor: '#F43F5E',
+            borderRadius: 3,
+            barPercentage: 0.6,
+            categoryPercentage: 0.7,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1E1B4B',
+            titleColor: '#F1F5F9',
+            bodyColor: '#C7D2FE',
+            cornerRadius: 8,
+            padding: 10,
+            titleFont: { size: 12, weight: 500, family: tokens.font.sans },
+            bodyFont: { size: 12, family: tokens.font.sans },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { color: '#94A3B8', font: { size: 10, family: tokens.font.sans } },
+          },
+          y: {
+            grid: { color: '#F1F5F9' },
+            border: { display: false },
+            ticks: { color: '#94A3B8', font: { size: 10, family: tokens.font.sans }, maxTicksLimit: 4 },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+    };
+  }, [data]);
+
+  return (
+    <div className="relative h-[160px]">
+      <canvas ref={canvasRef} />
     </div>
   );
 }
@@ -274,16 +511,36 @@ export default function Dashboard() {
   const builds = useMemo(() => buildData?.results || [], [buildData?.results]);
   const recentReleases = releases.slice(0, 10);
   const runningBuilds = builds.filter(isBuildRunning);
+  const pendingReleases = releases.filter((r) => normalizeStatus(r) === 'pending');
+  const buildTrendData = useMemo(() => buildSevenDayTrend(builds), [builds]);
 
   const totalReleases = overview?.total_releases || 0;
-  const pendingAuditCount = overview?.pending_audit_count || releases.filter((r) => normalizeStatus(r) === 'pending').length;
+  const pendingAuditCount = overview?.pending_audit_count || pendingReleases.length;
   const rejectedCount = overview?.rejected_count || releases.filter((r) => normalizeStatus(r) === 'rejected').length;
   const successRate = Math.round((overview?.success_rate || 0) * 1000) / 10;
   const passCommits = commits.filter((c) => c.review_status === 'pass').length;
   const warningCommits = commits.filter((c) => c.review_status === 'warning').length;
   const illegalCommits = commits.filter((c) => c.review_status === 'illegal').length;
-  const complianceRate = commits.length ? Math.round((passCommits / commits.length) * 1000) / 10 : 100;
-  const displayName = user?.nickname || user?.username || '张三';
+  const complianceRate = commits.length ? Math.round((passCommits / commits.length) * 1000) / 10 : 0;
+  const displayName = user?.nickname || user?.username || '用户';
+  const warningRate = commits.length ? Math.round((warningCommits / commits.length) * 1000) / 10 : 0;
+  const illegalRate = commits.length ? Math.round((illegalCommits / commits.length) * 1000) / 10 : 0;
+  const pendingPublishers = pendingReleases
+    .map((release) => release.publisher)
+    .filter((publisher): publisher is string => Boolean(publisher));
+  const visiblePendingPublishers = pendingPublishers.slice(0, 3);
+  const hiddenPendingPublisherCount = Math.max(0, pendingPublishers.length - visiblePendingPublishers.length);
+  const latestPendingRelease = pendingReleases[0];
+  const pendingDescription = latestPendingRelease
+    ? `最近提交于 ${formatRelative(latestPendingRelease.created_at)}`
+    : '暂无待审批发布';
+  const completedBuildDurations = builds
+    .filter((build) => build.status === 'success' || build.status === 'failure' || build.status === 'aborted')
+    .map(getBuildDurationSeconds)
+    .filter((duration): duration is number => duration !== null);
+  const averageBuildDuration = completedBuildDurations.length
+    ? Math.round(completedBuildDurations.reduce((sum, duration) => sum + duration, 0) / completedBuildDurations.length)
+    : null;
 
   const pipelineColumns: PipelineColumn[] = [
     {
@@ -292,6 +549,7 @@ export default function Dashboard() {
       count: releases.filter((r) => normalizeStatus(r) === 'draft').length,
       tone: 'border-slate-200/70 bg-slate-50/50 text-slate-500',
       dot: 'bg-slate-400',
+      cardBorder: 'border-slate-200 hover:border-slate-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'draft').slice(0, 2),
     },
     {
@@ -300,6 +558,7 @@ export default function Dashboard() {
       count: runningBuilds.length + releases.filter((r) => normalizeStatus(r) === 'building').length,
       tone: 'border-cyan-200/70 bg-cyan-50/40 text-cyan-700',
       dot: 'bg-cyan-500 pulse-dot',
+      cardBorder: 'border-cyan-200 hover:border-cyan-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'building').slice(0, 2),
     },
     {
@@ -308,7 +567,8 @@ export default function Dashboard() {
       count: pendingAuditCount,
       tone: 'border-amber-200/70 bg-amber-50/40 text-amber-700',
       dot: 'bg-amber-500 pulse-dot',
-      releases: releases.filter((r) => normalizeStatus(r) === 'pending').slice(0, 2),
+      cardBorder: 'border-amber-200 hover:border-amber-400',
+      releases: pendingReleases.slice(0, 2),
     },
     {
       key: 'released',
@@ -316,6 +576,7 @@ export default function Dashboard() {
       count: releases.filter((r) => normalizeStatus(r) === 'released').length,
       tone: 'border-emerald-200/70 bg-emerald-50/40 text-emerald-700',
       dot: 'bg-emerald-500',
+      cardBorder: 'border-emerald-200 hover:border-emerald-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'released').slice(0, 2),
     },
     {
@@ -324,6 +585,7 @@ export default function Dashboard() {
       count: rejectedCount,
       tone: 'border-rose-200/70 bg-rose-50/40 text-rose-700',
       dot: 'bg-rose-500',
+      cardBorder: 'border-rose-200 hover:border-rose-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'rejected').slice(0, 2),
     },
   ];
@@ -406,15 +668,35 @@ export default function Dashboard() {
           <span>{successRate}%</span>
         </div>
       ),
+      footer: (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400"
+            style={{ width: `${Math.min(100, successRate)}%` }}
+          />
+        </div>
+      ),
     },
     {
       title: '待审批数',
       value: <span className="text-[28px] font-semibold tracking-tight text-slate-900">{pendingAuditCount}</span>,
       unit: '个审批',
-      description: `最近提交于 ${formatRelative(releases.find((r) => normalizeStatus(r) === 'pending')?.created_at)}`,
+      description: pendingDescription,
       icon: GitPullRequestArrow,
       iconClass: 'icon-amber',
       action: <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-600">待处理</span>,
+      footer: (
+        <div className="flex -space-x-1.5">
+          {visiblePendingPublishers.map((publisher, index) => (
+            <InitialAvatar key={`${publisher}-${index}`} name={publisher} size={20} />
+          ))}
+          {hiddenPendingPublisherCount > 0 ? (
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-50 ring-2 ring-white text-[9px] font-semibold text-indigo-600">
+              +{hiddenPendingPublisherCount}
+            </div>
+          ) : null}
+        </div>
+      ),
     },
     {
       title: '已驳回',
@@ -429,6 +711,12 @@ export default function Dashboard() {
           <span>{rejectedCount}</span>
         </div>
       ),
+      footer: (
+        <button className="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500">
+          <span>查看详情</span>
+          <ArrowRight className="h-3 w-3" strokeWidth={1.5} />
+        </button>
+      ),
     },
     {
       title: 'Commit 合规率',
@@ -442,11 +730,31 @@ export default function Dashboard() {
       icon: ScanSearch,
       iconClass: 'icon-violet',
       action: <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">合规</span>,
+      footer: (
+        <div className="flex items-center gap-1">
+          <div
+            className="h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"
+            style={{ flex: Math.max(complianceRate, commits.length ? 1 : 0) }}
+          />
+          {warningCommits > 0 ? (
+            <div
+              className="h-1.5 rounded-full bg-amber-400"
+              style={{ flex: Math.max(warningRate, 1) }}
+            />
+          ) : null}
+          {illegalCommits > 0 ? (
+            <div
+              className="h-1.5 rounded-full bg-rose-400"
+              style={{ flex: Math.max(illegalRate, 1) }}
+            />
+          ) : null}
+        </div>
+      ),
     },
   ];
 
-  const buildSuccess = builds.filter((build) => build.status === 'success').length || 142;
-  const buildFailed = builds.filter((build) => build.status === 'failure' || build.status === 'aborted').length || 5;
+  const buildSuccess = builds.filter((build) => build.status === 'success').length;
+  const buildFailed = builds.filter((build) => build.status === 'failure' || build.status === 'aborted').length;
 
   return (
     <div className="space-y-5">
@@ -509,7 +817,14 @@ export default function Dashboard() {
               </div>
               <div className="space-y-2">
                 {column.releases.length > 0 ? (
-                  column.releases.map((release) => <PipelineCard key={release.id} release={release} status={column.key} />)
+                  column.releases.map((release) => (
+                    <PipelineCard
+                      key={release.id}
+                      release={release}
+                      status={column.key}
+                      cardBorder={column.cardBorder}
+                    />
+                  ))
                 ) : (
                   <EmptyPipelineCard />
                 )}
@@ -561,9 +876,7 @@ export default function Dashboard() {
                       <SmallTag className={releaseTypeClass[release.release_type]}>{releaseTypeText[release.release_type]}</SmallTag>
                     </div>
                     <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 text-[9px] font-semibold text-white">
-                        {(release.publisher || '系').charAt(0)}
-                      </span>
+                      <InitialAvatar name={release.publisher} size={16} />
                       <span className="text-[12px] text-slate-600">{release.publisher || '系统'}</span>
                     </div>
                     <div className="col-span-6 flex items-center justify-end gap-1.5 md:col-span-2">
@@ -586,7 +899,12 @@ export default function Dashboard() {
             <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">提交合规率</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">本周提交规范审查</p>
           </div>
-          <ComplianceRing rate={complianceRate} />
+          <ComplianceChart
+            rate={complianceRate}
+            passCount={passCommits}
+            warningCount={warningCommits}
+            illegalCount={illegalCommits}
+          />
           <div className="mt-4 space-y-2.5 border-t border-indigo-50 pt-4">
             {[
               ['合规', passCommits, 'bg-emerald-400'],
@@ -653,22 +971,7 @@ export default function Dashboard() {
             <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">构建趋势</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">最近 7 天</p>
           </div>
-          <div className="flex h-[160px] items-end gap-2">
-            {buildBars.map((bar) => {
-              const max = Math.max(...buildBars.map((item) => item.success + item.failed));
-              const successHeight = Math.max(12, Math.round((bar.success / max) * 130));
-              const failedHeight = Math.max(4, Math.round((bar.failed / max) * 130));
-              return (
-                <div key={bar.day} className="flex flex-1 flex-col items-center gap-2">
-                  <div className="flex h-[132px] w-full items-end justify-center gap-1">
-                    <div className="w-2 rounded-t bg-emerald-400" style={{ height: successHeight }} />
-                    <div className="w-2 rounded-t bg-rose-400" style={{ height: failedHeight }} />
-                  </div>
-                  <span className="text-[10px] text-slate-400">{bar.day.slice(1)}</span>
-                </div>
-              );
-            })}
-          </div>
+          <BuildTrendChart data={buildTrendData} />
           <div className="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4">
             <div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -687,7 +990,9 @@ export default function Dashboard() {
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
             <span className="text-[11px] text-slate-400">平均构建时长</span>
-            <span className="font-mono text-[13px] font-medium text-cyan-600">4m 12s</span>
+            <span className="font-mono text-[13px] font-medium text-cyan-600">
+              {formatDurationSeconds(averageBuildDuration)}
+            </span>
           </div>
         </div>
       </div>
