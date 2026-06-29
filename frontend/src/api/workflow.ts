@@ -3,6 +3,7 @@ import type {
   PaginatedData,
   WorkflowDefinition,
   WorkflowInstance,
+  WorkflowInstanceListItem,
   WorkflowTask,
 } from '@/types';
 
@@ -19,6 +20,9 @@ export const workflowApi = {
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
   revokeInstance: (id: string, data?: { comment?: string }) =>
     post<WorkflowInstance>(`/workflow/instances/${id}/revoke/`, data || {}),
+  /** 我发起的流程实例列表，支持 status 过滤 */
+  getInitiatedInstances: (params?: Record<string, unknown>) =>
+    get<PaginatedData<WorkflowInstanceListItem>>('/workflow/instances/initiated/', { params }),
   getTodoTasks: (params?: Record<string, unknown>) =>
     get<PaginatedData<WorkflowTask>>('/workflow/tasks/todo/', { params }),
   getDoneTasks: (params?: Record<string, unknown>) =>

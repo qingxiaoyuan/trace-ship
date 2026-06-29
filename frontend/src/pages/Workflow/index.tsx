@@ -1,22 +1,34 @@
 import { useState } from 'react';
-import { TsCard } from '@/components/TsCard';
-import { TabHeader } from './components/TabHeader';
-import { TodoTab } from './components/TodoTab';
-import { DoneTab } from './components/DoneTab';
-import type { TabKey } from './constants';
+import { StatCards } from './components/StatCards';
+import { ApprovalListView } from './components/ApprovalListView';
+import { ApprovalDetailView } from './components/ApprovalDetailView';
+import type { DetailSource, ViewMode } from './types';
 
 export default function Workflow() {
-  const [activeTab, setActiveTab] = useState<TabKey>('todo');
+  const [view, setView] = useState<ViewMode>('list');
+  const [detail, setDetail] = useState<DetailSource | null>(null);
+
+  const openDetail = (src: DetailSource) => {
+    setDetail(src);
+    setView('detail');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const backToList = () => {
+    setView('list');
+    setDetail(null);
+  };
 
   return (
     <div className="space-y-5 ts-fade-in-up">
-      <TsCard bodyStyle={{ padding: 0 }}>
-        <TabHeader active={activeTab} onChange={setActiveTab} />
-        <div className="p-5">
-          {activeTab === 'todo' && <TodoTab />}
-          {activeTab === 'done' && <DoneTab />}
-        </div>
-      </TsCard>
+      {view === 'list' ? (
+        <>
+          <StatCards />
+          <ApprovalListView onOpenDetail={openDetail} />
+        </>
+      ) : (
+        detail && <ApprovalDetailView source={detail} onBack={backToList} />
+      )}
     </div>
   );
 }

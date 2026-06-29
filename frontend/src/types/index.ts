@@ -214,6 +214,8 @@ export interface WorkflowNodeConfig {
 export interface WorkflowTask {
   id: string;
   instance?: string;
+  node_id?: string;
+  node_name?: string;
   title: string;
   applicant: string;
   project_name: string;
@@ -224,6 +226,8 @@ export interface WorkflowTask {
   version?: string;
   release_type?: ReleaseType;
   source_branch?: string;
+  target_branch?: string;
+  build_number?: string | number;
   mode?: 'any' | 'all';
   is_rollback?: boolean;
   rollback_target_node_id?: string;
@@ -297,6 +301,33 @@ export interface WorkflowInstance {
   created_by: string;
   created_at: string;
   completed_at?: string;
+}
+
+/**
+ * 工作流实例列表项（轻量）
+ *
+ * 「我发起的」接口返回，字段与审批任务列表兼容，便于在列表中统一渲染。
+ */
+export interface WorkflowInstanceListItem {
+  id: string;
+  definition: string;
+  biz_type: string;
+  biz_id: string;
+  status: 'running' | 'completed' | 'rejected' | 'revoked';
+  current_node_id: string;
+  created_by: string;
+  created_at: string;
+  completed_at?: string;
+  title: string;
+  applicant: string;
+  project_name: string;
+  current_node: string;
+  submit_time: string;
+  version?: string;
+  release_type?: ReleaseType;
+  source_branch?: string;
+  target_branch?: string;
+  build_number?: string | number;
 }
 
 export interface Notification {

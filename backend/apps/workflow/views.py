@@ -18,6 +18,7 @@ from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowT
 from apps.workflow.serializers import (
     WorkflowDefinitionListSerializer,
     WorkflowDefinitionSerializer,
+    WorkflowInstanceListSerializer,
     WorkflowInstanceSerializer,
     WorkflowTaskSerializer,
 )
@@ -108,6 +109,12 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
     ordering = ["-created_at"]
     http_method_names = ["get", "post", "head", "options"]
 
+    def get_serializer_class(self):
+        """列表与「我发起的」使用轻量序列化器，详情使用完整序列化器。"""
+        if self.action in ("list", "initiated"):
+            return WorkflowInstanceListSerializer
+        return WorkflowInstanceSerializer
+
     def get_queryset(self):
         """根据用户身份返回可见实例"""
         if getattr(self, "swagger_fake_view", False):
@@ -153,6 +160,17 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
         return success_response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="initiated")
+    def initiated(self, request: Request) -> Response:
+        """我发起的：返回当前用户创建的流程实例列表，支持 status 过滤。"""
+        queryset = self.get_queryset().filter(created_by=request.user)
+        status = request.query_params.get("status")
+        if status:
+            queryset = queryset.filter(status=status)
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="revoke")
     def revoke(self, request: Request, pk=None) -> Response:
