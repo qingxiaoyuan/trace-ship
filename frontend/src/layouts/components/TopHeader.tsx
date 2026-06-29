@@ -1,14 +1,4 @@
-import { useMemo, useState } from 'react';
-import {
-  Layout,
-  Badge,
-  Avatar,
-  Dropdown,
-  Button,
-  Typography,
-  List,
-  Tabs,
-} from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   ChevronRight,
@@ -26,9 +16,6 @@ import { notificationApi } from '@/api/notification';
 import { mockProjects } from '@/mock/projects';
 import { mockBuildRecords } from '@/mock/dashboard';
 
-const { Header } = Layout;
-const { Text } = Typography;
-
 const typeMap: Record<string, string> = {
   audit: '审批',
   build: '构建',
@@ -43,6 +30,11 @@ export function TopHeader() {
   const { user, logout } = useAuthStore();
   const queryClient = useQueryClient();
   const [bellOpen, setBellOpen] = useState(false);
+  const [userOpen, setUserOpen] = useState(false);
+  const bellRef = useRef<HTMLButtonElement>(null);
+  const bellPanelRef = useRef<HTMLDivElement>(null);
+  const userRef = useRef<HTMLButtonElement>(null);
+  const userPanelRef = useRef<HTMLDivElement>(null);
 
   const { data: unreadCountData } = useQuery({
     queryKey: ['notification-unread-count'],
@@ -66,89 +58,33 @@ export function TopHeader() {
   const unreadCount = unreadCountData?.count || 0;
   const notifications = notificationData?.results || [];
 
-  const notificationMenu = {
-    items: [
-      {
-        key: 'list',
-        label: (
-          <div style={{ width: 320 }}>
-            <Tabs
-              centered
-              items={[
-                {
-                  key: 'unread',
-                  label: `未读 (${unreadCount})`,
-                  children: (
-                    <List
-                      size="small"
-                      dataSource={notifications.filter((n) => !n.is_read)}
-                      locale={{ emptyText: '暂无未读通知' }}
-                      renderItem={(item) => (
-                        <List.Item
-                          actions={[
-                            <Button
-                              type="link"
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                markReadMutation.mutate(item.id);
-                              }}
-                            >
-                              标记已读
-                            </Button>,
-                          ]}
-                        >
-                          <div className="cursor-pointer" onClick={() => navigate('/notifications')}>
-                            <Text strong>[{typeMap[item.notification_type] || item.notification_type}] {item.title}</Text>
-                            <div>
-                              <Text type="secondary" ellipsis style={{ maxWidth: 240 }}>
-                                {item.content}
-                              </Text>
-                            </div>
-                          </div>
-                        </List.Item>
-                      )}
-                    />
-                  ),
-                },
-                {
-                  key: 'recent',
-                  label: '最近',
-                  children: (
-                    <List
-                      size="small"
-                      dataSource={notifications}
-                      locale={{ emptyText: '暂无通知' }}
-                      renderItem={(item) => (
-                        <List.Item>
-                          <div className="cursor-pointer" onClick={() => navigate('/notifications')}>
-                            <Text type={item.is_read ? 'secondary' : undefined}>
-                              [{typeMap[item.notification_type] || item.notification_type}] {item.title}
-                            </Text>
-                            <div>
-                              <Text type="secondary" ellipsis style={{ maxWidth: 240 }}>
-                                {item.content}
-                              </Text>
-                            </div>
-                          </div>
-                        </List.Item>
-                      )}
-                    />
-                  ),
-                },
-              ]}
-            />
-            <div className="text-center pb-2">
-              <Button type="link" onClick={() => navigate('/notifications')}>查看全部通知</Button>
-            </div>
-          </div>
-        ),
-      },
-    ],
-  };
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        bellOpen &&
+        bellRef.current &&
+        bellPanelRef.current &&
+        !bellRef.current.contains(target) &&
+        !bellPanelRef.current.contains(target)
+      ) {
+        setBellOpen(false);
+      }
+      if (
+        userOpen &&
+        userRef.current &&
+        userPanelRef.current &&
+        !userRef.current.contains(target) &&
+        !userPanelRef.current.contains(target)
+      ) {
+        setUserOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [bellOpen, userOpen]);
 
   const breadcrumbItems = useMemo<{ title: string; path?: string }[]>(() => {
-    // 项目详情动态面包屑：项目管理 / 项目名称
     const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
     if (projectMatch) {
       const project = mockProjects.find((p) => p.id === projectMatch[1]);
@@ -158,7 +94,6 @@ export function TopHeader() {
       ];
     }
 
-    // 仓库详情动态面包屑：仓库管理 / 仓库详情
     const repoMatch = location.pathname.match(/^\/repositories\/([^/]+)/);
     if (repoMatch) {
       return [
@@ -167,7 +102,6 @@ export function TopHeader() {
       ];
     }
 
-    // 凭证详情动态面包屑：凭证管理 / 凭证详情
     const credentialMatch = location.pathname.match(/^\/credentials\/([^/]+)/);
     if (credentialMatch) {
       return [
@@ -176,7 +110,6 @@ export function TopHeader() {
       ];
     }
 
-    // 凭证使用记录动态面包屑：凭证管理 / 凭证详情 / 使用记录
     const credentialUsageMatch = location.pathname.match(/^\/credentials\/([^/]+)\/usage/);
     if (credentialUsageMatch) {
       return [
@@ -186,7 +119,6 @@ export function TopHeader() {
       ];
     }
 
-    // Jenkins 构建日志动态面包屑：Jenkins 构建 / 构建日志 #128
     const jenkinsLogMatch = location.pathname.match(/^\/jenkins\/logs\/([^/]+)/);
     if (jenkinsLogMatch) {
       const build = mockBuildRecords.find((b) => b.id === jenkinsLogMatch[1]);
@@ -196,7 +128,6 @@ export function TopHeader() {
       ];
     }
 
-    // 通过路由 handle.title 生成面包屑
     const items: { title: string; path?: string }[] = [];
     matches.forEach((match, index) => {
       const title = (match.handle as { title?: string } | undefined)?.title;
@@ -214,35 +145,13 @@ export function TopHeader() {
     return items;
   }, [location.pathname, matches]);
 
-  const userMenuItems = [
-    {
-      key: 'profile',
-      icon: <User className="h-3.5 w-3.5" strokeWidth={1.5} />,
-      label: '个人中心',
-      onClick: () => navigate('/profile'),
-    },
-    {
-      key: 'settings',
-      icon: <Settings className="h-3.5 w-3.5" strokeWidth={1.5} />,
-      label: '账号设置',
-    },
-    { type: 'divider' as const },
-    {
-      key: 'logout',
-      icon: <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />,
-      label: '退出登录',
-      danger: true,
-      onClick: logout,
-    },
-  ];
+  const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || 'U';
 
   return (
-    <Header
-      className="sticky top-0 z-30 flex items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7"
+    <header
+      className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7"
       style={{
         height: tokens.layout.headerHeight,
-        paddingInline: undefined,
-        lineHeight: undefined,
       }}
     >
       <div className="hidden items-center gap-1.5 text-[13px] md:flex">
@@ -272,12 +181,8 @@ export function TopHeader() {
           <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span>搜索项目、发布、提交…</span>
           <span className="ml-auto flex items-center gap-0.5">
-            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
-              ⌘
-            </kbd>
-            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
-              K
-            </kbd>
+            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘</kbd>
+            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">K</kbd>
           </span>
         </button>
       </div>
@@ -292,42 +197,133 @@ export function TopHeader() {
           <Plus className="h-4 w-4" strokeWidth={1.5} />
         </button>
 
-        <Dropdown
-          menu={notificationMenu}
-          placement="bottomRight"
-          arrow
-          onOpenChange={(open) => setBellOpen(open)}
-        >
-          <Badge count={unreadCount} size="small" offset={[-2, 4]}>
-            <button
-              type="button"
-              className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-              aria-label="通知"
+        <div className="relative">
+          <button
+            ref={bellRef}
+            type="button"
+            onClick={() => setBellOpen((v) => !v)}
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+            aria-label="通知"
+          >
+            <Bell className="h-4 w-4" strokeWidth={1.5} />
+            {unreadCount > 0 ? (
+              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white" />
+            ) : null}
+          </button>
+
+          {bellOpen ? (
+            <div
+              ref={bellPanelRef}
+              className="tech-card absolute right-0 top-full mt-2 w-[320px] rounded-xl py-2 shadow-lg"
+              style={{ boxShadow: '0 12px 40px -10px rgba(79,70,229,.15)' }}
             >
-              <Bell className="h-4 w-4" strokeWidth={1.5} />
-              {unreadCount > 0 ? (
-                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white" />
-              ) : null}
-            </button>
-          </Badge>
-        </Dropdown>
+              <div className="flex items-center justify-between border-b border-indigo-50 px-4 pb-2">
+                <span className="text-[13px] font-medium text-slate-800">通知</span>
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">
+                  {unreadCount} 未读
+                </span>
+              </div>
+              <div className="max-h-[280px] overflow-y-auto py-1">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-[13px] text-slate-400">暂无通知</div>
+                ) : (
+                  notifications.map((item) => (
+                    <div
+                      key={item.id}
+                      className="group cursor-pointer px-4 py-2.5 transition-colors hover:bg-indigo-50/50"
+                      onClick={() => navigate('/notifications')}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className={`text-[12px] font-medium ${item.is_read ? 'text-slate-500' : 'text-slate-900'}`}>
+                          [{typeMap[item.notification_type] || item.notification_type}] {item.title}
+                        </div>
+                        {!item.is_read ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              markReadMutation.mutate(item.id);
+                            }}
+                            className="shrink-0 text-[11px] text-indigo-600 hover:text-indigo-500"
+                          >
+                            标为已读
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="mt-0.5 line-clamp-1 text-[11px] text-slate-400">{item.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="border-t border-indigo-50 px-4 pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => navigate('/notifications')}
+                  className="text-[12px] text-indigo-600 hover:text-indigo-500"
+                >
+                  查看全部通知
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         <div className="mx-1 h-5 w-px bg-indigo-100" />
 
-        <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow>
-          <button type="button" className="flex items-center gap-2 rounded-lg">
-            <Avatar
-              style={{
-                background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
-                boxShadow: '0 0 0 1px #C7D2FE',
-              }}
-              size={32}
-            >
-              {(user?.nickname || user?.username)?.charAt(0) || 'U'}
-            </Avatar>
+        <div className="relative">
+          <button
+            ref={userRef}
+            type="button"
+            onClick={() => setUserOpen((v) => !v)}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-semibold text-white ring-1 ring-indigo-200"
+            style={{
+              background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
+            }}
+          >
+            {avatarLetter}
           </button>
-        </Dropdown>
+
+          {userOpen ? (
+            <div
+              ref={userPanelRef}
+              className="tech-card absolute right-0 top-full mt-2 w-[160px] rounded-xl py-1 shadow-lg"
+              style={{ boxShadow: '0 12px 40px -10px rgba(79,70,229,.15)' }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setUserOpen(false);
+                  navigate('/profile');
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-slate-600 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600"
+              >
+                <User className="h-3.5 w-3.5" strokeWidth={1.5} />
+                <span>个人中心</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setUserOpen(false)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-slate-600 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600"
+              >
+                <Settings className="h-3.5 w-3.5" strokeWidth={1.5} />
+                <span>账号设置</span>
+              </button>
+              <div className="my-1 h-px bg-indigo-50" />
+              <button
+                type="button"
+                onClick={() => {
+                  setUserOpen(false);
+                  logout();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-600 transition-colors hover:bg-rose-50"
+              >
+                <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
+                <span>退出登录</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
-    </Header>
+    </header>
   );
 }

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -16,12 +16,16 @@ import {
   TriangleAlert,
   XCircle,
 } from 'lucide-react';
+import { Chart, registerables } from 'chart.js';
 import { dashboardApi } from '@/api/dashboard';
 import { releaseApi } from '@/api/release';
 import { commitApi } from '@/api/commit';
 import { jenkinsApi } from '@/api/jenkins';
 import { useAuthStore } from '@/stores/authStore';
+import { tokens } from '@/styles/theme';
 import type { BuildRecord, Release, ReleaseType } from '@/types';
+
+Chart.register(...registerables);
 
 type LucideIcon = ComponentType<{ className?: string; strokeWidth?: number }>;
 
@@ -35,6 +39,7 @@ interface KpiCard {
   icon: LucideIcon;
   iconClass: string;
   action?: ReactNode;
+  footer?: ReactNode;
 }
 
 interface PipelineColumn {
@@ -43,6 +48,7 @@ interface PipelineColumn {
   count: number;
   tone: string;
   dot: string;
+  cardBorder: string;
   releases: Release[];
 }
 
@@ -105,6 +111,12 @@ const buildBars = [
   { day: '周日', success: 14, failed: 0 },
 ];
 
+const avatarUrls = [
+  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=64&h=64&fit=crop&crop=face',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=64&h=64&fit=crop&crop=face',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=64&h=64&fit=crop&crop=face',
+];
+
 function formatDate(value?: string): string {
   return value?.split('T')[0] || '-';
 }
@@ -160,6 +172,29 @@ function IconBox({ icon: Icon, className }: { icon: LucideIcon; className: strin
   );
 }
 
+/** 首字母头像：取用户名首个字符，渐变背景 */
+function InitialAvatar({
+  name,
+  size = 20,
+  ring = true,
+}: {
+  name?: string;
+  size?: number;
+  ring?: boolean;
+}) {
+  const initial = (name || '系').trim().charAt(0).toUpperCase();
+  return (
+    <span
+      className={`flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 font-semibold text-white ${
+        ring ? 'ring-2 ring-white' : ''
+      }`}
+      style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.45)) }}
+    >
+      {initial}
+    </span>
+  );
+}
+
 function KpiCardView({ card }: { card: KpiCard }) {
   return (
     <div className="tech-card tech-card-hover rounded-xl p-5">
@@ -174,17 +209,26 @@ function KpiCardView({ card }: { card: KpiCard }) {
         </div>
         <div className="mt-1 flex items-center gap-2 text-[12px] text-slate-500">{card.description}</div>
       </div>
+      {card.footer ? <div className="mt-3">{card.footer}</div> : null}
     </div>
   );
 }
 
-function PipelineCard({ release, status }: { release: Release; status: PipelineStatus }) {
+function PipelineCard({
+  release,
+  status,
+  cardBorder,
+}: {
+  release: Release;
+  status: PipelineStatus;
+  cardBorder: string;
+}) {
   const statusLabel = releaseStatusText[release.status as string] || releaseStatusText[status];
 
   return (
     <button
       type="button"
-      className="w-full rounded-lg border border-white/70 bg-white p-2.5 text-left transition-colors hover:border-indigo-300 hover:shadow-sm"
+      className={`w-full rounded-lg border bg-white p-2.5 text-left transition-colors hover:shadow-sm ${cardBorder}`}
     >
       <div className="flex items-center justify-between">
         <span className="font-mono text-[12px] font-medium text-slate-800">{release.version}</span>
@@ -222,25 +266,161 @@ function EmptyPipelineCard() {
   );
 }
 
-function ComplianceRing({ rate }: { rate: number }) {
+function ComplianceChart({
+  rate,
+  passCount,
+  warningCount,
+  illegalCount,
+}: {
+  rate: number;
+  passCount: number;
+  warningCount: number;
+  illegalCount: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartRef = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    if (chartRef.current) {
+      chartRef.current.destroy();
+    }
+
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    chartRef.current = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['合规', '警告', '不合规'],
+        datasets: [
+          {
+            data: [passCount || 1, warningCount, illegalCount],
+            backgroundColor: ['#10B981', '#F59E0B', '#F43F5E'],
+            borderWidth: 0,
+            borderRadius: 3,
+            spacing: 2,
+          },
+        ],
+      },
+      options: {
+        cutout: '75%',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1E1B4B',
+            titleColor: '#F1F5F9',
+            bodyColor: '#C7D2FE',
+            borderRadius: 8,
+            padding: 10,
+            displayColors: true,
+            boxPadding: 4,
+            titleFont: { size: 12, weight: '500', family: tokens.font.sans },
+            bodyFont: { size: 12, family: tokens.font.sans },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+    };
+  }, [passCount, warningCount, illegalCount]);
+
   return (
     <div className="relative flex items-center justify-center py-3">
-      <div
-        className="h-[180px] w-[180px] rounded-full"
-        style={{
-          background: `conic-gradient(#10B981 0 ${rate}%, #F59E0B ${rate}% ${Math.min(100, rate + 1.5)}%, #F43F5E ${Math.min(100, rate + 1.5)}% 100%)`,
-        }}
-      >
-        <div className="m-[18px] flex h-[144px] w-[144px] items-center justify-center rounded-full bg-white shadow-inner">
-          <div className="text-center">
-            <div className="text-gradient text-[28px] font-semibold tracking-tight">
-              {rate}
-              <span className="text-[16px] text-slate-400">%</span>
-            </div>
-            <div className="mt-0.5 text-[11px] text-slate-400">合规率</div>
-          </div>
-        </div>
+      <div className="h-[180px] w-[180px]">
+        <canvas ref={canvasRef} />
       </div>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[28px] font-semibold tracking-tight text-gradient">
+          {rate}
+          <span className="text-[16px] text-slate-400">%</span>
+        </span>
+        <span className="mt-0.5 text-[11px] text-slate-400">合规率</span>
+      </div>
+    </div>
+  );
+}
+
+function BuildTrendChart() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartRef = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    if (chartRef.current) {
+      chartRef.current.destroy();
+    }
+
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    chartRef.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: buildBars.map((b) => b.day),
+        datasets: [
+          {
+            label: '成功',
+            data: buildBars.map((b) => b.success),
+            backgroundColor: '#10B981',
+            borderRadius: 3,
+            barPercentage: 0.6,
+            categoryPercentage: 0.7,
+          },
+          {
+            label: '失败',
+            data: buildBars.map((b) => b.failed),
+            backgroundColor: '#F43F5E',
+            borderRadius: 3,
+            barPercentage: 0.6,
+            categoryPercentage: 0.7,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1E1B4B',
+            titleColor: '#F1F5F9',
+            bodyColor: '#C7D2FE',
+            borderRadius: 8,
+            padding: 10,
+            titleFont: { size: 12, weight: '500', family: tokens.font.sans },
+            bodyFont: { size: 12, family: tokens.font.sans },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { color: '#94A3B8', font: { size: 10, family: tokens.font.sans } },
+          },
+          y: {
+            grid: { color: '#F1F5F9', drawBorder: false },
+            border: { display: false },
+            ticks: { color: '#94A3B8', font: { size: 10, family: tokens.font.sans }, maxTicksLimit: 4 },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+    };
+  }, []);
+
+  return (
+    <div className="relative h-[160px]">
+      <canvas ref={canvasRef} />
     </div>
   );
 }
@@ -292,6 +472,7 @@ export default function Dashboard() {
       count: releases.filter((r) => normalizeStatus(r) === 'draft').length,
       tone: 'border-slate-200/70 bg-slate-50/50 text-slate-500',
       dot: 'bg-slate-400',
+      cardBorder: 'border-slate-200 hover:border-slate-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'draft').slice(0, 2),
     },
     {
@@ -300,6 +481,7 @@ export default function Dashboard() {
       count: runningBuilds.length + releases.filter((r) => normalizeStatus(r) === 'building').length,
       tone: 'border-cyan-200/70 bg-cyan-50/40 text-cyan-700',
       dot: 'bg-cyan-500 pulse-dot',
+      cardBorder: 'border-cyan-200 hover:border-cyan-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'building').slice(0, 2),
     },
     {
@@ -308,6 +490,7 @@ export default function Dashboard() {
       count: pendingAuditCount,
       tone: 'border-amber-200/70 bg-amber-50/40 text-amber-700',
       dot: 'bg-amber-500 pulse-dot',
+      cardBorder: 'border-amber-200 hover:border-amber-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'pending').slice(0, 2),
     },
     {
@@ -316,6 +499,7 @@ export default function Dashboard() {
       count: releases.filter((r) => normalizeStatus(r) === 'released').length,
       tone: 'border-emerald-200/70 bg-emerald-50/40 text-emerald-700',
       dot: 'bg-emerald-500',
+      cardBorder: 'border-emerald-200 hover:border-emerald-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'released').slice(0, 2),
     },
     {
@@ -324,6 +508,7 @@ export default function Dashboard() {
       count: rejectedCount,
       tone: 'border-rose-200/70 bg-rose-50/40 text-rose-700',
       dot: 'bg-rose-500',
+      cardBorder: 'border-rose-200 hover:border-rose-400',
       releases: releases.filter((r) => normalizeStatus(r) === 'rejected').slice(0, 2),
     },
   ];
@@ -406,6 +591,14 @@ export default function Dashboard() {
           <span>{successRate}%</span>
         </div>
       ),
+      footer: (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400"
+            style={{ width: `${Math.min(100, successRate)}%` }}
+          />
+        </div>
+      ),
     },
     {
       title: '待审批数',
@@ -415,6 +608,19 @@ export default function Dashboard() {
       icon: GitPullRequestArrow,
       iconClass: 'icon-amber',
       action: <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-600">待处理</span>,
+      footer: (
+        <div className="flex -space-x-1.5">
+          {avatarUrls.map((url, idx) => (
+            <img
+              key={idx}
+              src={url}
+              alt=""
+              className="h-5 w-5 rounded-full object-cover ring-2 ring-white"
+            />
+          ))}
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-50 ring-2 ring-white text-[9px] font-semibold text-indigo-600">+2</div>
+        </div>
+      ),
     },
     {
       title: '已驳回',
@@ -429,6 +635,12 @@ export default function Dashboard() {
           <span>{rejectedCount}</span>
         </div>
       ),
+      footer: (
+        <button className="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500">
+          <span>查看详情</span>
+          <ArrowRight className="h-3 w-3" strokeWidth={1.5} />
+        </button>
+      ),
     },
     {
       title: 'Commit 合规率',
@@ -442,6 +654,12 @@ export default function Dashboard() {
       icon: ScanSearch,
       iconClass: 'icon-violet',
       action: <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">合规</span>,
+      footer: (
+        <div className="flex items-center gap-1">
+          <div className="h-1.5 flex-1 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" />
+          <div className="h-1.5 w-[2%] rounded-full bg-amber-400" />
+        </div>
+      ),
     },
   ];
 
@@ -509,7 +727,14 @@ export default function Dashboard() {
               </div>
               <div className="space-y-2">
                 {column.releases.length > 0 ? (
-                  column.releases.map((release) => <PipelineCard key={release.id} release={release} status={column.key} />)
+                  column.releases.map((release) => (
+                    <PipelineCard
+                      key={release.id}
+                      release={release}
+                      status={column.key}
+                      cardBorder={column.cardBorder}
+                    />
+                  ))
                 ) : (
                   <EmptyPipelineCard />
                 )}
@@ -561,9 +786,7 @@ export default function Dashboard() {
                       <SmallTag className={releaseTypeClass[release.release_type]}>{releaseTypeText[release.release_type]}</SmallTag>
                     </div>
                     <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 text-[9px] font-semibold text-white">
-                        {(release.publisher || '系').charAt(0)}
-                      </span>
+                      <InitialAvatar name={release.publisher} size={16} />
                       <span className="text-[12px] text-slate-600">{release.publisher || '系统'}</span>
                     </div>
                     <div className="col-span-6 flex items-center justify-end gap-1.5 md:col-span-2">
@@ -586,7 +809,12 @@ export default function Dashboard() {
             <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">提交合规率</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">本周提交规范审查</p>
           </div>
-          <ComplianceRing rate={complianceRate} />
+          <ComplianceChart
+            rate={complianceRate}
+            passCount={passCommits}
+            warningCount={warningCommits}
+            illegalCount={illegalCommits}
+          />
           <div className="mt-4 space-y-2.5 border-t border-indigo-50 pt-4">
             {[
               ['合规', passCommits, 'bg-emerald-400'],
@@ -653,22 +881,7 @@ export default function Dashboard() {
             <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">构建趋势</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">最近 7 天</p>
           </div>
-          <div className="flex h-[160px] items-end gap-2">
-            {buildBars.map((bar) => {
-              const max = Math.max(...buildBars.map((item) => item.success + item.failed));
-              const successHeight = Math.max(12, Math.round((bar.success / max) * 130));
-              const failedHeight = Math.max(4, Math.round((bar.failed / max) * 130));
-              return (
-                <div key={bar.day} className="flex flex-1 flex-col items-center gap-2">
-                  <div className="flex h-[132px] w-full items-end justify-center gap-1">
-                    <div className="w-2 rounded-t bg-emerald-400" style={{ height: successHeight }} />
-                    <div className="w-2 rounded-t bg-rose-400" style={{ height: failedHeight }} />
-                  </div>
-                  <span className="text-[10px] text-slate-400">{bar.day.slice(1)}</span>
-                </div>
-              );
-            })}
-          </div>
+          <BuildTrendChart />
           <div className="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4">
             <div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
