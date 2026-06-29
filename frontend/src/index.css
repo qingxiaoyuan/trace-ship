@@ -86,6 +86,54 @@ body {
   background: linear-gradient(135deg, #F0F9FF 0%, #EFF6FF 50%, #F5F3FF 100%);
 }
 
+/* Aurora background for login page */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.45;
+}
+
+.aurora::before {
+  width: 560px;
+  height: 560px;
+  top: -160px;
+  right: -120px;
+  background: radial-gradient(circle, #818CF8, transparent 70%);
+}
+
+.aurora::after {
+  width: 480px;
+  height: 480px;
+  bottom: -140px;
+  left: 180px;
+  background: radial-gradient(circle, #22D3EE, transparent 70%);
+}
+
+.aurora-3 {
+  position: fixed;
+  width: 420px;
+  height: 420px;
+  top: 30%;
+  left: 45%;
+  border-radius: 50%;
+  filter: blur(130px);
+  opacity: 0.25;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, #C4B5FD, transparent 70%);
+}
+
 .aurora-bg {
   position: fixed;
   inset: 0;
@@ -121,9 +169,53 @@ body {
 
 .grid-bg {
   background-image:
-    linear-gradient(rgba(79, 70, 229, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(79, 70, 229, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(79, 70, 229, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 70, 229, 0.05) 1px, transparent 1px);
   background-size: 48px 48px;
+}
+
+/* Glass card used by login form */
+.glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+/* Custom input field with indigo focus ring */
+.input-field {
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-field:focus {
+  border-color: #6366F1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+/* Login tab underline animation */
+.login-tab {
+  position: relative;
+  transition: color 0.2s;
+}
+
+.login-tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, #6366F1, #22D3EE);
+  transform: scaleX(0);
+  transition: transform 0.2s;
+}
+
+.login-tab.on {
+  color: #4F46E5;
+}
+
+.login-tab.on::after {
+  transform: scaleX(1);
 }
 
 .tech-card {
