@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { message, Popconfirm } from "antd";
 import {
   ChevronRight,
-  RefreshCw,
   Pencil,
   Layers,
   Calendar,
@@ -78,10 +77,6 @@ export default function CredentialDetail() {
     queryFn: () => credentialApi.getUsage(id || "", { page_size: 1000 }),
     enabled: !!id && activeTab === "usage",
   });
-
-  const handleRotate = () => {
-    message.info("凭证轮换功能开发中，请先使用编辑更新 Token");
-  };
 
   const handleSave = async (values: Partial<Credential>) => {
     try {

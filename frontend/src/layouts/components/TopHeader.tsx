@@ -149,7 +149,7 @@ export function TopHeader() {
 
   return (
     <header
-      className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7"
+      className="ts-header-glass sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/40 px-5 lg:px-7"
       style={{
         height: tokens.layout.headerHeight,
       }}
@@ -275,7 +275,7 @@ export function TopHeader() {
             ref={userRef}
             type="button"
             onClick={() => setUserOpen((v) => !v)}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-semibold text-white ring-1 ring-indigo-200"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-semibold text-white ring-1 ring-indigo-200 transition-transform hover:scale-105 hover:ring-indigo-400"
             style={{
               background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
             }}
