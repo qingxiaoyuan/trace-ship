@@ -1,5 +1,5 @@
 import { get, post, put, patch, del } from './request';
-import type { PaginatedData, Project, ProjectStatus } from '@/types';
+import type { PaginatedData, Project, ProjectStats, ProjectStatus } from '@/types';
 
 export interface ProjectListParams {
   keyword?: string;
@@ -12,6 +12,7 @@ export const projectApi = {
   getProjects: (params?: ProjectListParams) =>
     get<PaginatedData<Project>>('/projects/', { params }),
   getProject: (id: string) => get<Project>(`/projects/${id}/`),
+  getProjectStats: () => get<ProjectStats>('/projects/stats/'),
   createProject: (data: Partial<Project>) => post<Project>('/projects/', data),
   updateProject: (id: string, data: Partial<Project>) =>
     put<Project>(`/projects/${id}/`, data),

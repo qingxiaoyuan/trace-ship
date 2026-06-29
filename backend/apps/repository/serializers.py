@@ -50,16 +50,42 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     project_name = serializers.CharField(source="project.name", read_only=True)
     credential_id = serializers.UUIDField(source="credential.id", read_only=True)
+    credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
+    credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
+    credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
+    specified_user_name = serializers.CharField(source="specified_user.nickname", read_only=True, default="")
+    clone_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Repository
         fields = [
             "id", "project", "project_name",
-            "repo_type", "vendor", "name", "url", "external_identity",
+            "repo_type", "vendor", "name", "url", "clone_url", "external_identity",
             "default_branch", "credential", "credential_id", "credential_mode",
-            "specified_user", "health_status", "last_sync_at", "created_at", "updated_at",
+            "credential_mode_display", "credential_name", "credential_owner_name",
+            "specified_user", "specified_user_name",
+            "health_status", "last_sync_at", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "health_status", "last_sync_at", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "health_status", "last_sync_at", "created_at", "updated_at",
+            "credential_name", "credential_owner_name", "credential_mode_display",
+            "specified_user_name", "clone_url",
+        ]
+
+    def get_clone_url(self, obj: Repository) -> str:
+        """
+        返回仓库克隆地址
+
+        如果 url 字段本身已是克隆地址则直接返回；
+        否则根据服务器地址和外部标识拼出 http(s)://host/owner/repo.git。
+        """
+        url = obj.url or ""
+        if url.endswith(".git") or (obj.external_identity and obj.external_identity in url):
+            return url
+        if obj.repo_type == "svn" or not obj.external_identity:
+            return url
+        base = url.rstrip("/")
+        return f"{base}/{obj.external_identity}.git"
 
     def validate_project(self, value):
         """

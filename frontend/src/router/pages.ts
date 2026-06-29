@@ -16,6 +16,7 @@ export const JenkinsLogDetail = lazy(() => import('@/pages/Jenkins/LogDetail'));
 export const Workflow = lazy(() => import('@/pages/Workflow'));
 export const ReleaseBoard = lazy(() => import('@/pages/Release/Board'));
 export const ReleaseCreate = lazy(() => import('@/pages/Release/Create'));
+export const ReleaseDetail = lazy(() => import('@/pages/Release/Detail'));
 export const SystemUserList = lazy(() => import('@/pages/System/UserList'));
 export const SystemRoleList = lazy(() => import('@/pages/System/RoleList'));
 export const SystemConfig = lazy(() => import('@/pages/System/Config'));

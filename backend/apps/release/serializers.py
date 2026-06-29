@@ -15,6 +15,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     发布记录序列化器
 
     读取时展开项目/仓库/发布人信息，写入时校验项目归属与仓库一致性。
+    详情场景下附带关联 Jenkins 构建的概要信息（build_detail）。
     """
 
     project_name = serializers.CharField(source="project.name", read_only=True)
@@ -23,6 +24,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     release_type_display = serializers.CharField(source="get_release_type_display", read_only=True)
     version = serializers.CharField(required=False, allow_blank=True)
+    build_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = ReleaseRecord
@@ -32,12 +34,28 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "release_type", "release_type_display", "status", "status_display",
             "release_doc", "related_changes", "updates",
             "publisher", "publisher_name", "jenkins_build",
+            "build_detail",
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "tag_name", "git_hash", "status", "release_doc",
-            "jenkins_build", "rejected_reason", "released_at", "created_at", "updated_at",
+            "jenkins_build", "build_detail", "rejected_reason",
+            "released_at", "created_at", "updated_at",
         ]
+
+    def get_build_detail(self, obj: ReleaseRecord) -> dict | None:
+        """返回关联 Jenkins 构建的概要信息，未关联时为 None。"""
+        build = obj.jenkins_build
+        if not build:
+            return None
+        return {
+            "id": str(build.id),
+            "build_number": build.build_number,
+            "status": build.status,
+            "job_name": build.job.job_name if build.job_id else "",
+            "started_at": build.started_at,
+            "finished_at": build.finished_at,
+        }
 
     def validate_project(self, value: Project) -> Project:
         """

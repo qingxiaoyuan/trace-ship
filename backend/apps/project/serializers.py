@@ -58,6 +58,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     项目序列化器
 
     读取时展开负责人名称，状态字段支持字符串/数字双格式。
+    详情场景下附带仓库 / Jenkins / 成员 / 累计发布数量（由视图 annotate 注入）。
     """
 
     leader_id = serializers.PrimaryKeyRelatedField(
@@ -65,14 +66,39 @@ class ProjectSerializer(serializers.ModelSerializer):
     )
     leader_name = serializers.CharField(source="leader.nickname", read_only=True)
     status = ProjectStatusField()
+    repo_count = serializers.SerializerMethodField()
+    member_count = serializers.SerializerMethodField()
+    jenkins_count = serializers.SerializerMethodField()
+    release_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
         fields = [
             "id", "code", "name", "leader_id", "leader_name", "description",
             "version_rule", "release_rule", "status", "created_at", "updated_at",
+            "repo_count", "member_count", "jenkins_count", "release_count",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def _count(self, obj: Project, attr: str) -> int:
+        """读取视图 annotate 注入的计数字段，未注入时回退为 0。"""
+        return getattr(obj, attr, 0) or 0
+
+    def get_repo_count(self, obj: Project) -> int:
+        """关联仓库数"""
+        return self._count(obj, "repo_count")
+
+    def get_member_count(self, obj: Project) -> int:
+        """项目成员数"""
+        return self._count(obj, "member_count")
+
+    def get_jenkins_count(self, obj: Project) -> int:
+        """关联 Jenkins 任务数"""
+        return self._count(obj, "jenkins_count")
+
+    def get_release_count(self, obj: Project) -> int:
+        """累计发布数"""
+        return self._count(obj, "release_count")
 
     def create(self, validated_data: dict) -> Project:
         """
@@ -111,15 +137,30 @@ class ProjectListSerializer(serializers.ModelSerializer):
     """
     项目列表序列化器
 
-    字段精简，适合列表展示。
+    字段精简，适合列表展示；附带仓库 / 成员数量（由视图 annotate 注入）。
     """
 
     leader_name = serializers.CharField(source="leader.nickname", read_only=True)
     status = ProjectStatusField()
+    repo_count = serializers.SerializerMethodField()
+    member_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
-        fields = ["id", "code", "name", "leader_name", "status", "created_at"]
+        fields = ["id", "code", "name", "leader_name", "status", "created_at",
+                  "repo_count", "member_count"]
+
+    def _count(self, obj: Project, attr: str) -> int:
+        """读取视图 annotate 注入的计数字段，未注入时回退为 0。"""
+        return getattr(obj, attr, 0) or 0
+
+    def get_repo_count(self, obj: Project) -> int:
+        """关联仓库数"""
+        return self._count(obj, "repo_count")
+
+    def get_member_count(self, obj: Project) -> int:
+        """项目成员数"""
+        return self._count(obj, "member_count")
 
 
 class ProjectMemberSerializer(serializers.ModelSerializer):

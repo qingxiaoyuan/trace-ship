@@ -99,6 +99,34 @@ class RepositoryService:
         ]
 
     @staticmethod
+    def list_tags(repo: Repository, request_user=None) -> List[dict]:
+        """
+        获取仓库标签列表
+
+        仅 Git 类仓库支持；SVN 仓库返回空列表。
+
+        Args:
+            repo: Repository 实例
+            request_user: 当前请求用户
+
+        Returns:
+            标签信息字典列表
+        """
+        if repo.repo_type != "git":
+            return []
+        cred_data = resolve_credential(repo, request_user)
+        provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
+        tags = provider.list_tags(repo.external_identity)
+        return [
+            {
+                "name": t.name,
+                "commit_hash": t.commit_hash,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in tags
+        ]
+
+    @staticmethod
     def list_commits(
         repo: Repository,
         branch: Optional[str] = None,

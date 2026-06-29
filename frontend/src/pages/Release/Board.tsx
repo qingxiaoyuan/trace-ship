@@ -1,272 +1,225 @@
 import { useState } from 'react';
-import { Table, Button, Space, message, Tabs } from 'antd';
-import type { Dayjs } from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
-import { EyeOutlined, FilePdfOutlined, FileWordOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { TsCard } from '@/components/TsCard';
-import { StatusTag, type StatusType } from '@/components/StatusTag';
-import { SearchFilterBar } from '@/components/SearchFilterBar';
-import { releaseStatusOptions, releaseTypeOptions } from '@/mock/dashboard';
+import { CheckCircle2, Loader, Plus, XCircle } from 'lucide-react';
+import dayjs from 'dayjs';
 import { releaseApi } from '@/api/release';
-import { projectApi } from '@/api/project';
+import { getAvatarColor } from '@/utils/avatar';
+import { boardColumns, releaseTypeText, releaseTypeBadge } from './constants';
+import type { Release, ReleaseType } from '@/types';
 
-const statusMap: Record<string, { status: StatusType; text: string }> = {
-  draft: { status: 'neutral', text: '草稿' },
-  pending: { status: 'warning', text: '待审批' },
-  released: { status: 'success', text: '已发布' },
-  rejected: { status: 'danger', text: '已驳回' },
-};
-
-const releaseTypeMap: Record<string, { status: StatusType; text: string }> = {
-  formal: { status: 'primary', text: '正式' },
-  rc: { status: 'info', text: 'RC' },
-  beta: { status: 'warning', text: 'Beta' },
-};
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
-};
-
-export default function ReleaseBoard() {
-  const navigate = useNavigate();
-  const [filters, setFilters] = useState({
-    project_id: undefined as string | undefined,
-    version: '',
-    release_type: undefined as string | undefined,
-    status: undefined as string | undefined,
-    created_at__gte: undefined as Dayjs | undefined,
-    created_at__lte: undefined as Dayjs | undefined,
-  });
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  const [activeTab, setActiveTab] = useState('list');
-
-  const { data: projectData } = useQuery({
-    queryKey: ['release-board-projects'],
-    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
-  });
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['releases', filters, pagination.current, pagination.pageSize],
-    queryFn: () =>
-      releaseApi.getReleases({
-        page: pagination.current,
-        page_size: pagination.pageSize,
-        project_id: filters.project_id || undefined,
-        version: filters.version || undefined,
-        release_type: filters.release_type || undefined,
-        status: filters.status || undefined,
-        created_at__gte: filters.created_at__gte?.format('YYYY-MM-DD 00:00:00') || undefined,
-        created_at__lte: filters.created_at__lte?.format('YYYY-MM-DD 23:59:59') || undefined,
-      }),
-  });
-
-  const { data: catalogData, isLoading: catalogLoading } = useQuery({
-    queryKey: ['release-catalog'],
-    queryFn: () => releaseApi.getCatalog(),
-    enabled: activeTab === 'catalog',
-  });
-
-  const projectOptions = (projectData?.results || []).map((p) => ({ label: p.name, value: p.id }));
-
-  const handleExportPdf = async (id: string, version: string) => {
-    try {
-      const blob = await releaseApi.exportPdf(id);
-      downloadBlob(blob, `${version}_发布单.pdf`);
-      message.success('PDF 导出成功');
-    } catch {
-      message.error('PDF 导出失败');
-    }
-  };
-
-  const handleExportWord = async (id: string, version: string) => {
-    try {
-      const blob = await releaseApi.exportWord(id);
-      downloadBlob(blob, `${version}_发布单.docx`);
-      message.success('Word 导出成功');
-    } catch {
-      message.error('Word 导出失败');
-    }
-  };
-
-  const columns = [
-    { title: '版本号', dataIndex: 'version' },
-    { title: '项目', dataIndex: 'project_name' },
-    {
-      title: '发布类型',
-      dataIndex: 'release_type',
-      render: (type: string) => (
-        <StatusTag status={releaseTypeMap[type]?.status || 'neutral'}>
-          {releaseTypeMap[type]?.text || type || '-'}
-        </StatusTag>
-      ),
-    },
-    { title: '来源分支', dataIndex: 'source_branch' },
-    { title: '发布人', dataIndex: 'publisher' },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      render: (text: string) => text?.replace('T', ' ').slice(0, 16),
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      render: (status: string) => {
-        const item = statusMap[status];
-        return <StatusTag status={item.status}>{item.text}</StatusTag>;
-      },
-    },
-    {
-      title: '操作',
-      width: 220,
-      render: (_: unknown, record: { id: string; version: string }) => (
-        <Space size="small">
-          <Button type="text" icon={<EyeOutlined />}>详情</Button>
-          <Button type="text" icon={<FilePdfOutlined />} onClick={() => handleExportPdf(record.id, record.version)}>PDF</Button>
-          <Button type="text" icon={<FileWordOutlined />} onClick={() => handleExportWord(record.id, record.version)}>Word</Button>
-        </Space>
-      ),
-    },
-  ];
-
+/** 看板卡片 */
+function ReleaseCard({ release, onClick }: { release: Release; onClick: () => void }) {
+  const type = release.release_type as ReleaseType;
   return (
-    <div className="space-y-4">
-      <TsCard
-        title="发布记录"
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/releases/create')}>
-            新建发布
-          </Button>
-        }
-        bodyStyle={{ padding: 0 }}
-      >
-        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
-          <SearchFilterBar
-            filters={[
-              {
-                key: 'project_id',
-                type: 'select',
-                placeholder: '选择项目',
-                width: 176,
-                options: projectOptions,
-              },
-              { key: 'version', type: 'input', placeholder: '版本号', width: 160 },
-              {
-                key: 'release_type',
-                type: 'select',
-                placeholder: '发布类型',
-                width: 128,
-                options: releaseTypeOptions,
-              },
-              {
-                key: 'status',
-                type: 'select',
-                placeholder: '状态',
-                width: 128,
-                options: releaseStatusOptions,
-              },
-              { key: 'created_at__gte', type: 'date', placeholder: '开始日期', width: 160 },
-              { key: 'created_at__lte', type: 'date', placeholder: '结束日期', width: 160 },
-            ]}
-            values={filters}
-            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-            onSearch={() => setPagination((prev) => ({ ...prev, current: 1 }))}
-            onReset={() => {
-              setFilters({
-                project_id: undefined,
-                version: '',
-                release_type: undefined,
-                status: undefined,
-                created_at__gte: undefined,
-                created_at__lte: undefined,
-              });
-              setPagination((prev) => ({ ...prev, current: 1 }));
-            }}
-          />
-        </div>
-
-        <div className="p-5">
-          <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
-            {
-              key: 'list',
-              label: '发布记录',
-              children: (
-                <Table
-                  rowKey="id"
-                  columns={columns}
-                  dataSource={data?.results || []}
-                  loading={isLoading}
-                  pagination={{
-                    current: pagination.current,
-                    pageSize: pagination.pageSize,
-                    total: data?.total || 0,
-                    showSizeChanger: true,
-                  }}
-                  onChange={(p) => {
-                    setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-                  }}
-                />
-              ),
-            },
-            {
-              key: 'catalog',
-              label: '版本目录',
-              children: (
-                <Tabs
-                  items={[
-                    {
-                      key: 'formal',
-                      label: '正式版本',
-                      children: (
-                        <Table
-                          rowKey="id"
-                          columns={columns.filter((c) => c.dataIndex !== 'release_type')}
-                          dataSource={catalogData?.formal || []}
-                          loading={catalogLoading}
-                          pagination={false}
-                        />
-                      ),
-                    },
-                    {
-                      key: 'rc',
-                      label: 'RC 版本',
-                      children: (
-                        <Table
-                          rowKey="id"
-                          columns={columns.filter((c) => c.dataIndex !== 'release_type')}
-                          dataSource={catalogData?.rc || []}
-                          loading={catalogLoading}
-                          pagination={false}
-                        />
-                      ),
-                    },
-                    {
-                      key: 'beta',
-                      label: 'Beta 版本',
-                      children: (
-                        <Table
-                          rowKey="id"
-                          columns={columns.filter((c) => c.dataIndex !== 'release_type')}
-                          dataSource={catalogData?.beta || []}
-                          loading={catalogLoading}
-                          pagination={false}
-                        />
-                      ),
-                    },
-                  ]}
-                />
-              ),
-            },
-          ]} />
-        </div>
-      </TsCard>
+    <div
+      onClick={onClick}
+      className="cursor-pointer rounded-lg border border-slate-200 bg-white p-2.5 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-[12px] font-medium text-slate-800">{release.version}</span>
+        {type ? (
+          <span className={`rounded border px-1 py-0.5 text-[9px] font-medium ${releaseTypeBadge[type]}`}>
+            {releaseTypeText[type]}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-1.5 truncate text-[11px] text-slate-500">{release.project_name || '-'}</div>
+      <div className="mt-2 flex items-center gap-1.5">
+        <span
+          className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-semibold text-white"
+          style={{ background: getAvatarColor(release.publisher_name || release.publisher) }}
+        >
+          {(release.publisher_name || release.publisher || 'U').charAt(0)}
+        </span>
+        <span className="text-[10px] text-slate-400">
+          {release.publisher_name || release.publisher || '-'} · {dayjs(release.created_at).format('MM-DD HH:mm')}
+        </span>
+      </div>
     </div>
   );
 }
+
+/** 发布看板（看板视图） */
+export function ReleaseBoard() {
+  const navigate = useNavigate();
+
+  // 拉取足够多的发布用于看板分列（每列最多展示若干条）
+  const { data, isLoading } = useQuery({
+    queryKey: ['release-board', 'kanban'],
+    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 100 }),
+  });
+
+  const releases = data?.results || [];
+
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      {boardColumns.map((col) => {
+        const items = releases.filter((r) => r.status === col.key).slice(0, 8);
+        return (
+          <div key={col.key} className={`rounded-lg border p-3 ${col.tone}`}>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${col.dot}`} />
+                <span className="text-[12px] font-medium text-slate-600">{col.label}</span>
+              </div>
+              <span className={`text-[11px] font-medium ${col.countText}`}>
+                {releases.filter((r) => r.status === col.key).length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {isLoading ? (
+                <div className="py-4 text-center text-[11px] text-slate-400">加载中…</div>
+              ) : items.length === 0 ? (
+                <div className="py-4 text-center text-[11px] text-slate-300">暂无</div>
+              ) : (
+                items.map((release) => (
+                  <ReleaseCard
+                    key={release.id}
+                    release={release}
+                    onClick={() => navigate(`/releases/${release.id}`)}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 发布列表视图 */
+export function ReleaseList() {
+  const navigate = useNavigate();
+  const { data, isLoading } = useQuery({
+    queryKey: ['release-board', 'list'],
+    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 50 }),
+  });
+
+  const releases = data?.results || [];
+
+  return (
+    <div className="tech-card overflow-hidden rounded-xl">
+      <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+        <div className="col-span-2">版本</div>
+        <div className="col-span-3">项目</div>
+        <div className="col-span-2">类型</div>
+        <div className="col-span-2">发布人</div>
+        <div className="col-span-2">状态</div>
+        <div className="col-span-1 text-right">时间</div>
+      </div>
+      <div className="divide-y divide-indigo-50/50">
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-slate-400">加载中…</div>
+        ) : releases.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-slate-400">暂无发布</div>
+        ) : (
+          releases.map((release) => {
+            const type = release.release_type as ReleaseType;
+            const statusIcon =
+              release.status === 'released' ? (
+                <CheckCircle2 className="h-3 w-3 text-emerald-500" strokeWidth={1.5} />
+              ) : release.status === 'rejected' ? (
+                <XCircle className="h-3 w-3 text-rose-400" strokeWidth={1.5} />
+              ) : release.status === 'pending' ? (
+                <Loader className="h-3 w-3 text-amber-500" strokeWidth={1.5} />
+              ) : null;
+            return (
+              <div
+                key={release.id}
+                onClick={() => navigate(`/releases/${release.id}`)}
+                className="grid cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30"
+              >
+                <div className="col-span-12 font-mono text-[13px] font-medium text-slate-900 md:col-span-2">
+                  {release.version}
+                </div>
+                <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-3">
+                  {release.project_name || '-'}
+                </div>
+                <div className="col-span-6 md:col-span-2">
+                  {type ? (
+                    <span className={`rounded border px-1 py-0.5 text-[10px] font-medium ${releaseTypeBadge[type]}`}>
+                      {releaseTypeText[type]}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
+                </div>
+                <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
+                  <span
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-semibold text-white"
+                    style={{ background: getAvatarColor(release.publisher_name || release.publisher) }}
+                  >
+                    {(release.publisher_name || release.publisher || 'U').charAt(0)}
+                  </span>
+                  <span className="text-[12px] text-slate-600">
+                    {release.publisher_name || release.publisher || '-'}
+                  </span>
+                </div>
+                <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
+                  {statusIcon}
+                  <span className="text-[12px] text-slate-600">
+                    {release.status === 'released' ? '已发布' : release.status === 'rejected' ? '已驳回' : release.status === 'pending' ? '待审批' : '草稿'}
+                  </span>
+                </div>
+                <div className="col-span-6 text-right text-[11px] text-slate-400 md:col-span-1">
+                  {dayjs(release.created_at).format('MM-DD')}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 发布看板页：看板 / 列表 视图切换 + 新建发布 */
+export function ReleaseBoardPage() {
+  const navigate = useNavigate();
+  const [view, setView] = useState<'board' | 'list'>('board');
+
+  return (
+    <div className="space-y-5 ts-fade-in-up">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">发布看板</h1>
+          <p className="mt-1 text-[13px] text-slate-500">跟踪发布全生命周期：草稿 → 审批 → 发布</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50/40 p-0.5">
+            {([
+              { key: 'board', label: '看板' },
+              { key: 'list', label: '列表' },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setView(opt.key)}
+                className={
+                  view === opt.key
+                    ? 'rounded-md bg-white px-2.5 py-1 text-[12px] font-medium text-indigo-600 shadow-sm'
+                    : 'rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700'
+                }
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/releases/create')}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            新建发布
+          </button>
+        </div>
+      </div>
+      {view === 'board' ? <ReleaseBoard /> : <ReleaseList />}
+    </div>
+  );
+}
+
+export default ReleaseBoardPage;

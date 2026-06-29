@@ -4,6 +4,7 @@
 提供项目 CRUD、项目成员管理接口。
 """
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, status
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
@@ -52,20 +53,41 @@ class ProjectViewSet(StandardModelViewSet):
 
     def get_queryset(self):
         """
-        根据用户身份返回可见项目
-
-        Returns:
-            Project QuerySet
+        根据用户身份返回可见项目，并 annotate 仓库 / Jenkins / 成员 / 发布数量，
+        供列表与详情序列化器直接读取，避免 N+1 查询。
         """
         if getattr(self, "swagger_fake_view", False):
             return Project.objects.none()
         user = self.request.user
         if not user or not user.is_authenticated:
             return Project.objects.none()
+        queryset = Project.objects.select_related("leader").annotate(
+            repo_count=Count("repositories", distinct=True),
+            member_count=Count("members", distinct=True),
+            jenkins_count=Count("jenkins_jobs", distinct=True),
+            release_count=Count("releases", distinct=True),
+        )
         if user.is_superuser:
-            return Project.objects.select_related("leader").all()
+            return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
-        return Project.objects.select_related("leader").filter(id__in=project_ids)
+        return queryset.filter(id__in=project_ids)
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request: Request) -> Response:
+        """项目统计：项目总数、启用中、关联仓库总数、项目成员总数。"""
+        queryset = self.get_queryset()
+        aggregate = queryset.aggregate(
+            total=Count("id", distinct=True),
+            active_count=Count("id", distinct=True, filter=Q(status=1)),
+            repo_total=Count("repositories", distinct=True),
+            member_total=Count("members", distinct=True),
+        )
+        return success_response({
+            "total": aggregate["total"] or 0,
+            "active_count": aggregate["active_count"] or 0,
+            "repo_total": aggregate["repo_total"] or 0,
+            "member_total": aggregate["member_total"] or 0,
+        })
 
     def get_permissions(self):
         """

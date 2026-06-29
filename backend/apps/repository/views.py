@@ -4,6 +4,7 @@
 提供仓库 CRUD、连通性测试、分支/commit 查询、手动同步以及提交记录审查接口。
 """
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Count, Q
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -147,6 +148,25 @@ class RepositoryViewSet(StandardModelViewSet):
             return error_response(50000, f"获取分支失败: {exc}", status_code=500)
 
     @action(detail=True, methods=["get"])
+    def tags(self, request: Request, pk=None) -> Response:
+        """
+        获取仓库标签列表
+
+        Args:
+            request: DRF Request
+            pk: 仓库主键
+
+        Returns:
+            标签信息列表（SVN 仓库返回空列表）
+        """
+        repo = self.get_object()
+        try:
+            tags = RepositoryService.list_tags(repo, request.user)
+            return success_response(tags)
+        except Exception as exc:
+            return error_response(50000, f"获取标签失败: {exc}", status_code=500)
+
+    @action(detail=True, methods=["get"])
     def commits(self, request: Request, pk=None) -> Response:
         """
         获取该仓库已同步的 commit 列表
@@ -232,6 +252,23 @@ class RepositoryViewSet(StandardModelViewSet):
             "next_version": version,
             "next_tag_name": tag_name,
             "has_existing_tags": len(tags) > 0,
+        })
+
+    @action(detail=False, methods=["get"])
+    def stats(self, request: Request) -> Response:
+        """仓库统计：仓库总数 / 健康数 / Git 仓库数 / SVN 仓库数。"""
+        queryset = self.get_queryset()
+        aggregate = queryset.aggregate(
+            total=Count("id"),
+            healthy_count=Count("id", filter=Q(health_status="healthy")),
+            git_count=Count("id", filter=Q(repo_type="git")),
+            svn_count=Count("id", filter=Q(repo_type="svn")),
+        )
+        return success_response({
+            "total": aggregate["total"] or 0,
+            "healthy_count": aggregate["healthy_count"] or 0,
+            "git_count": aggregate["git_count"] or 0,
+            "svn_count": aggregate["svn_count"] or 0,
         })
 
     @action(detail=False, methods=["get"])

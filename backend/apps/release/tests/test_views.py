@@ -179,3 +179,56 @@ class TestReleaseViews:
         response = api_client.get("/api/releases/")
         assert response.status_code == 200
         assert response.data["data"]["total"] == 1
+
+    def test_retrieve_returns_build_detail(self, api_client, project, repository):
+        """详情接口展开关联 Jenkins 构建概要"""
+        from apps.jenkins.models import JenkinsBuild, JenkinsJob
+
+        job = JenkinsJob.objects.create(
+            project=project,
+            repository=repository,
+            name="打包任务",
+            server_url="https://jenkins.example.com",
+            job_name="backend-build",
+            credential_mode="global",
+            params_template={},
+        )
+        build = JenkinsBuild.objects.create(
+            job=job,
+            build_number=139,
+            status="success",
+        )
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            source_branch="develop",
+            target_branch="main",
+            release_type="formal",
+            publisher=api_client.handler._force_user,
+            jenkins_build=build,
+        )
+        response = api_client.get(f"/api/releases/{release.id}/")
+        assert response.status_code == 200
+        build_detail = response.data["data"]["build_detail"]
+        assert build_detail is not None
+        assert build_detail["build_number"] == 139
+        assert build_detail["status"] == "success"
+        assert build_detail["job_name"] == "backend-build"
+
+    def test_retrieve_build_detail_none_when_no_build(self, api_client, project, repository):
+        """未关联构建时 build_detail 为 None"""
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            source_branch="develop",
+            target_branch="main",
+            release_type="formal",
+            publisher=api_client.handler._force_user,
+        )
+        response = api_client.get(f"/api/releases/{release.id}/")
+        assert response.status_code == 200
+        assert response.data["data"]["build_detail"] is None

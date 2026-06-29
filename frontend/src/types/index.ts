@@ -56,9 +56,19 @@ export interface Project {
   status: ProjectStatus;
   repo_count?: number;
   member_count?: number;
+  jenkins_count?: number;
+  release_count?: number;
   created_at: string;
   version_rule?: unknown;
   release_rule?: unknown;
+}
+
+/** 项目统计聚合数据（/projects/stats/） */
+export interface ProjectStats {
+  total: number;
+  active_count: number;
+  repo_total: number;
+  member_total: number;
 }
 
 export type ReleaseStatus =
@@ -81,7 +91,38 @@ export interface Release {
   target_branch: string;
   git_hash: string;
   publisher: string;
+  publisher_name?: string;
+  release_doc?: string;
+  related_changes?: unknown;
+  updates?: unknown;
+  jenkins_build?: string | null;
+  build_detail?: ReleaseBuildDetail | null;
+  rejected_reason?: string;
+  released_at?: string;
   created_at: string;
+}
+
+/** 发布关联的 Jenkins 构建概要（release 详情 build_detail） */
+export interface ReleaseBuildDetail {
+  id: string;
+  build_number: number | null;
+  status: 'queue' | 'running' | 'success' | 'failure' | 'aborted';
+  job_name: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
+/** 发布关联提交（ReleaseCommit） */
+export interface ReleaseCommit {
+  id: string;
+  commit_id?: string;
+  commit_hash: string;
+  author: string;
+  message: string;
+  review_status: ReviewStatus;
+  committed_at: string;
+  is_included?: boolean;
+  edited_content?: string;
 }
 
 export type ReviewStatus = 'pass' | 'warning' | 'illegal';
@@ -172,9 +213,33 @@ export interface Repository {
   credential_mode_display?: string;
   credential_name?: string;
   credential_owner_name?: string;
+  specified_user_id?: string;
+  specified_user_name?: string;
   health_status: 'healthy' | 'unhealthy' | 'unknown';
   last_sync_at?: string;
   created_at: string;
+}
+
+/** 仓库统计聚合数据（/repositories/stats/） */
+export interface RepositoryStats {
+  total: number;
+  healthy_count: number;
+  git_count: number;
+  svn_count: number;
+}
+
+/** 仓库分支信息 */
+export interface RepositoryBranch {
+  name: string;
+  is_default: boolean;
+  last_commit_hash?: string;
+}
+
+/** 仓库标签信息 */
+export interface RepositoryTag {
+  name: string;
+  commit_hash?: string | null;
+  created_at?: string | null;
 }
 
 export interface JenkinsJob {

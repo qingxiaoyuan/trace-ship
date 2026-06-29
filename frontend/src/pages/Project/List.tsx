@@ -1,44 +1,85 @@
 import { useState } from 'react';
-import { Table, Button, Space, Avatar, App } from 'antd';
+import { Select, App } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { TsCard } from '@/components/TsCard';
-import { StatusTag } from '@/components/StatusTag';
-import { SearchFilterBar } from '@/components/SearchFilterBar';
+import {
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleDot,
+  FolderKanban,
+  GitFork,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { ProjectModal } from './modals/ProjectModal';
-import { projectStatusOptions } from '@/mock/projects';
 import { projectApi } from '@/api/project';
 import { getAvatarColor } from '@/utils/avatar';
-import type { Project } from '@/types';
+import { projectStatusOptions } from '@/mock/projects';
+import type { Project, ProjectStatus } from '@/types';
+
+/** 统计卡配置 */
+const statCards = [
+  { key: 'total', label: '项目总数', icon: FolderKanban, iconClass: 'icon-indigo' },
+  { key: 'active_count', label: '启用中', icon: CircleDot, iconClass: 'icon-emerald' },
+  { key: 'repo_total', label: '关联仓库', icon: GitFork, iconClass: 'icon-cyan' },
+  { key: 'member_total', label: '项目成员', icon: Users, iconClass: 'icon-violet' },
+] as const;
+
+/** 项目状态徽标 */
+function StatusBadge({ status }: { status: ProjectStatus }) {
+  const active = status === 1 || status === 'active';
+  return (
+    <span
+      className={
+        active
+          ? 'inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700'
+          : 'inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500'
+      }
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+      {active ? '启用' : '停用'}
+    </span>
+  );
+}
 
 export default function ProjectList() {
   const navigate = useNavigate();
   const { message, modal } = App.useApp();
-  const [filters, setFilters] = useState({ keyword: '', status: undefined });
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const [keyword, setKeyword] = useState('');
+  const [status, setStatus] = useState<ProjectStatus | undefined>(undefined);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const [modalOpen, setModalOpen] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['projects', filters, pagination.current, pagination.pageSize],
+    queryKey: ['projects', keyword, status, page],
     queryFn: () =>
       projectApi.getProjects({
-        page: pagination.current,
-        page_size: pagination.pageSize,
-        keyword: filters.keyword || undefined,
-        status: filters.status || undefined,
+        page,
+        page_size: pageSize,
+        keyword: keyword || undefined,
+        status,
       }),
   });
+  const { data: stats } = useQuery({
+    queryKey: ['project-stats'],
+    queryFn: () => projectApi.getProjectStats(),
+  });
 
-  const handleAdd = () => {
-    setModalOpen(true);
-  };
+  const results = data?.results || [];
+  const total = data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const handleSave = async (values: Partial<Project>) => {
+  const handleAdd = async (values: Partial<Project>) => {
     try {
       await projectApi.createProject(values);
       message.success('新增成功');
       setModalOpen(false);
-      setPagination((prev) => ({ ...prev, current: 1 }));
+      setPage(1);
       refetch();
     } catch (error) {
       message.error('新增失败');
@@ -66,149 +107,205 @@ export default function ProjectList() {
     });
   };
 
-  const columns = [
-    {
-      title: '项目编码',
-      dataIndex: 'code',
-      key: 'code',
-      render: (text: string) => (
-        <span className="font-mono text-xs text-slate-600">{text}</span>
-      ),
-    },
-    {
-      title: '项目名称',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string) => (
-        <span className="font-semibold text-slate-900">{text}</span>
-      ),
-    },
-    {
-      title: '负责人',
-      dataIndex: 'leader_name',
-      key: 'leader_name',
-      render: (text?: string) => (
-        text ? (
-          <Space>
-            <Avatar
-              size="small"
-              style={{ backgroundColor: getAvatarColor(text), color: '#fff' }}
-            >
-              {text?.charAt(0)}
-            </Avatar>
-            {text}
-          </Space>
-        ) : (
-          '-'
-        )
-      ),
-    },
-    { title: '仓库数', dataIndex: 'repo_count', key: 'repo_count' },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: number | string) => {
-        const isActive = status === 1 || status === 'active';
-        return (
-          <StatusTag status={isActive ? 'success' : 'neutral'}>
-            {isActive ? '启用' : '停用'}
-          </StatusTag>
-        );
-      },
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (text: string) => text?.split('T')[0],
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (_: unknown, record: Project) => (
-        <Space size="small">
-          <Button
-            type="link"
-            className="px-0! text-sm font-medium"
-            onClick={() => navigate(`/projects/${record.id}`)}
-          >
-            编辑
-          </Button>
-          <Button
-            type="link"
-            danger
-            className="px-0! text-sm font-medium"
-            onClick={() => handleDelete(record)}
-          >
-            删除
-          </Button>
-        </Space>
-      ),
-    },
-  ];
-
   return (
-    <div className="space-y-4">
-      <TsCard
-        title="项目列表"
-        extra={
-          <Button type="primary" onClick={handleAdd}>
-            新增项目
-          </Button>
-        }
-        bodyStyle={{ padding: 0 }}
-      >
-        <div className="px-5 py-4 bg-[#F7F6F3] border-b border-[#EAEAEA]">
-          <SearchFilterBar
-            filters={[
-              { key: 'keyword', type: 'input', placeholder: '搜索项目编码/名称', width: 256 },
-              {
-                key: 'status',
-                type: 'select',
-                placeholder: '全部状态',
-                width: 144,
-                options: projectStatusOptions,
-              },
-            ]}
-            values={filters}
-            onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-            onSearch={() => {
-              setPagination((prev) => ({ ...prev, current: 1 }));
-              refetch();
+    <div className="space-y-5 ts-fade-in-up">
+      {/* 标题区 */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">项目</h1>
+          <p className="mt-1 text-[13px] text-slate-500">管理所有发布项目及其仓库、成员与规则配置</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <span>排序</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <span>新增项目</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 统计卡 */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {statCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.key} className="tech-card flex items-center gap-3 rounded-xl p-4">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${card.iconClass}`}>
+                <Icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+              </div>
+              <div>
+                <div className="font-mono text-[20px] font-semibold tracking-tight text-slate-900">
+                  {stats?.[card.key] ?? 0}
+                </div>
+                <div className="text-[11px] text-slate-400">{card.label}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 列表卡片 */}
+      <div className="tech-card overflow-hidden rounded-xl">
+        {/* 搜索过滤栏 */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
+            <input
+              type="text"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
+              placeholder="搜索项目编码/名称"
+              className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+          <Select
+            allowClear
+            placeholder="全部状态"
+            style={{ width: 144 }}
+            value={status}
+            onChange={(v: ProjectStatus | undefined) => {
+              setStatus(v);
+              setPage(1);
             }}
-            onReset={() => {
-              setFilters({ keyword: '', status: undefined });
-              setPagination((prev) => ({ ...prev, current: 1 }));
-            }}
+            options={projectStatusOptions}
           />
+          <div className="ml-auto text-[12px] text-slate-400">共 {total} 条</div>
         </div>
 
-        <div className="p-5">
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={data?.results || []}
-            loading={isLoading}
-            pagination={{
-              current: pagination.current,
-              pageSize: pagination.pageSize,
-              total: data?.total || 0,
-              showSizeChanger: true,
-            }}
-            onChange={(p) => {
-              setPagination({ current: p.current || 1, pageSize: p.pageSize || 10 });
-            }}
-          />
+        {/* 表头 */}
+        <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+          <div className="col-span-2">编码</div>
+          <div className="col-span-3">项目名称</div>
+          <div className="col-span-2">负责人</div>
+          <div className="col-span-1 text-center">仓库</div>
+          <div className="col-span-2">状态</div>
+          <div className="col-span-2 text-right">操作</div>
         </div>
-      </TsCard>
 
-      <ProjectModal
-        open={modalOpen}
-        project={null}
-        onCancel={() => setModalOpen(false)}
-        onOk={handleSave}
-      />
+        {/* 行 */}
+        <div className="divide-y divide-indigo-50/50">
+          {isLoading ? (
+            <div className="px-5 py-10 text-center text-[13px] text-slate-400">加载中…</div>
+          ) : results.length === 0 ? (
+            <div className="px-5 py-10 text-center text-[13px] text-slate-400">暂无项目</div>
+          ) : (
+            results.map((record) => (
+              <div
+                key={record.id}
+                onClick={() => navigate(`/projects/${record.id}`)}
+                className="grid cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30"
+              >
+                <div className="col-span-12 font-mono text-[12px] text-slate-500 md:col-span-2">
+                  {record.code || '-'}
+                </div>
+                <div className="col-span-6 flex items-center gap-2 md:col-span-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md icon-indigo text-[11px] font-semibold text-indigo-600">
+                    {(record.name || 'P').slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="text-[13px] font-medium text-slate-900">{record.name}</span>
+                </div>
+                <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
+                  <span
+                    className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                    style={{ background: getAvatarColor(record.leader_name) }}
+                  >
+                    {(record.leader_name || 'U').charAt(0)}
+                  </span>
+                  <span className="text-[12px] text-slate-600">{record.leader_name || '-'}</span>
+                </div>
+                <div className="col-span-3 text-center font-mono text-[13px] text-slate-700 md:col-span-1">
+                  {record.repo_count ?? 0}
+                </div>
+                <div className="col-span-6 md:col-span-2">
+                  <StatusBadge status={record.status} />
+                </div>
+                <div className="col-span-3 flex items-center justify-end gap-1 md:col-span-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/projects/${record.id}`);
+                    }}
+                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                  >
+                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(record);
+                    }}
+                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* 分页 */}
+        {total > 0 ? (
+          <div className="flex items-center justify-between border-t border-indigo-50 px-5 py-3">
+            <div className="text-[12px] text-slate-400">
+              第 {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} 条 / 共 {total} 条
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => Math.abs(p - page) <= 1 || p === 1 || p === totalPages)
+                .map((p, idx, arr) => (
+                  <span key={p} className="flex items-center">
+                    {idx > 0 && arr[idx - 1] !== p - 1 ? (
+                      <span className="px-1 text-slate-400">…</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setPage(p)}
+                      className={
+                        p === page
+                          ? 'flex h-7 w-7 items-center justify-center rounded-md bg-indigo-500 text-[12px] font-medium text-white'
+                          : 'flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50'
+                      }
+                    >
+                      {p}
+                    </button>
+                  </span>
+                ))}
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <ProjectModal open={modalOpen} project={null} onCancel={() => setModalOpen(false)} onOk={handleAdd} />
     </div>
   );
 }

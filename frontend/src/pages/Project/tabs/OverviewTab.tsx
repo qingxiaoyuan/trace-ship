@@ -1,49 +1,72 @@
+import { FileText } from 'lucide-react';
 import type { Project } from '@/types';
 
 interface OverviewTabProps {
   project: Project;
 }
 
-function formatFieldValue(value: unknown): string {
-  if (value === undefined || value === null) return '-';
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
+/** 读取版本规则格式串 */
+function versionRuleFormat(rule: unknown): string {
+  if (rule && typeof rule === 'object') {
+    const fmt = (rule as Record<string, unknown>).format;
+    if (typeof fmt === 'string') return fmt;
   }
-  return String(value);
+  return '-';
 }
 
+/** 读取测试版前缀 */
+function testPrefix(rule: unknown): string {
+  if (rule && typeof rule === 'object') {
+    const r = rule as Record<string, unknown>;
+    const prefixes = r.tag_prefixes as Record<string, string> | undefined;
+    if (prefixes?.beta) return prefixes.beta;
+    if (typeof r.test_prefix === 'string') return r.test_prefix;
+  }
+  return '-';
+}
+
+/** 项目基本信息 Tab：左侧字段 + 右侧描述卡 */
 export function OverviewTab({ project }: OverviewTabProps) {
-  const items = [
-    { label: '项目编码', value: formatFieldValue(project.code), mono: true },
-    { label: '项目负责人', value: formatFieldValue(project.leader_name) },
-    { label: '版本号规则', value: formatFieldValue(project.version_rule) },
-    { label: '发布规则', value: formatFieldValue(project.release_rule) },
+  const rows = [
+    { label: '项目编码', value: project.code || '-', mono: true },
+    { label: '版本规则', value: versionRuleFormat(project.version_rule) },
+    { label: '发布类型', value: '正式 / RC / Beta' },
+    { label: '测试版前缀', value: testPrefix(project.release_rule), mono: true },
+    { label: '创建时间', value: project.created_at?.split('T')[0] || '-' },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="p-4 rounded-xl bg-slate-50/60 border border-slate-100 hover:border-slate-200 transition-colors"
-        >
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            {item.label}
-          </label>
-          <p
-            className={`text-sm font-semibold text-slate-900 mt-1.5 ${
-              item.mono ? 'font-mono' : ''
-            }`}
+    <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+      {/* 左侧字段 */}
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex items-center justify-between border-b border-indigo-50 py-2"
           >
-            {item.value}
-          </p>
+            <span className="text-[13px] text-slate-500">{row.label}</span>
+            <span className={`text-[13px] text-slate-800 ${row.mono ? 'font-mono' : ''}`}>
+              {row.value}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* 右侧描述 + 版本规则示例 */}
+      <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
+        <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-indigo-700">
+          <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
+          项目描述
         </div>
-      ))}
-      <div className="col-span-2 p-4 rounded-xl bg-slate-50/60 border border-slate-100 hover:border-slate-200 transition-colors">
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          描述
-        </label>
-        <p className="text-sm text-slate-700 mt-1.5 leading-relaxed">{formatFieldValue(project.description)}</p>
+        <p className="text-[13px] leading-relaxed text-slate-600">
+          {project.description || '暂无描述'}
+        </p>
+        <div className="mt-4 border-t border-indigo-100 pt-3">
+          <div className="mb-2 text-[11px] font-medium text-indigo-700">版本规则示例</div>
+          <div className="rounded border border-indigo-100 bg-white p-2.5 font-mono text-[11px] text-slate-600">
+            {JSON.stringify(project.version_rule || {})}
+          </div>
+        </div>
       </div>
     </div>
   );

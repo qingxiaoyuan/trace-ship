@@ -1,85 +1,69 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import {
-  Tabs,
-  Typography,
-  Button,
-  Space,
-  Descriptions,
-  Table,
-  message,
-  Popconfirm,
-  Empty,
-} from 'antd';
-import {
-  EditOutlined,
-  DeleteOutlined,
-  SyncOutlined,
-  ApiOutlined,
-  ArrowLeftOutlined,
-  LinkOutlined,
-} from '@ant-design/icons';
-import { StatusTag } from '@/components/StatusTag';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Empty, Button, App } from 'antd';
+import { ChevronRight, GitBranch, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { TsCard } from '@/components/TsCard';
 import { RepositoryModal } from './modals/RepositoryModal';
 import { repositoryApi } from '@/api/repository';
+import { useAppMessage } from '@/hooks/useAppMessage';
+import { repoTypeBadge, healthDisplay } from './constants';
+import { CommitsTab } from './tabs/CommitsTab';
+import { BranchesTab } from './tabs/BranchesTab';
+import { TagsTab } from './tabs/TagsTab';
+import { CredentialTab } from './tabs/CredentialTab';
 import type { Repository } from '@/types';
 
-const { Title, Text } = Typography;
+/** 详情 Tab */
+const tabs = [
+  { key: 'commits', label: '最近提交' },
+  { key: 'branches', label: '分支' },
+  { key: 'tags', label: '标签' },
+  { key: 'credential', label: '凭证配置' },
+] as const;
 
 export default function RepositoryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('overview');
+  const queryClient = useQueryClient();
+  const { message } = useAppMessage();
+  const { modal } = App.useApp();
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('commits');
   const [modalOpen, setModalOpen] = useState(false);
 
-  const { data: repo, isLoading, refetch } = useQuery({
+  const { data: repo, isLoading } = useQuery({
     queryKey: ['repository', id],
     queryFn: () => repositoryApi.getRepository(id || ''),
     enabled: !!id,
   });
 
-  const { data: branches, isLoading: branchesLoading } = useQuery({
-    queryKey: ['repository-branches', id],
-    queryFn: () => repositoryApi.getBranches(id || ''),
-    enabled: !!id && activeTab === 'branches',
+  const syncMutation = useMutation({
+    mutationFn: () => repositoryApi.syncCommits(id || ''),
+    onSuccess: () => {
+      message.success('同步成功');
+      queryClient.invalidateQueries({ queryKey: ['repository', id] });
+      queryClient.invalidateQueries({ queryKey: ['repository-commits', id] });
+    },
+    onError: () => message.error('同步失败'),
   });
 
-  const handleTest = async () => {
-    message.loading({ content: '连通性测试中...', key: 'test' });
-    try {
-      const res = await repositoryApi.testRepository(id || '');
-      if (res.connected) {
-        message.success({ content: '连接成功', key: 'test' });
-      } else {
-        message.error({ content: res.detail || '连接失败', key: 'test' });
-      }
-    } catch (error) {
-      message.error({ content: '测试失败', key: 'test' });
-      console.error(error);
-    }
-  };
-
-  const handleSync = async () => {
-    message.loading({ content: '同步提交中...', key: 'sync' });
-    try {
-      await repositoryApi.syncCommits(id || '');
-      message.success({ content: '同步成功', key: 'sync' });
-    } catch (error) {
-      message.error({ content: '同步失败', key: 'sync' });
-      console.error(error);
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      await repositoryApi.deleteRepository(id || '');
-      message.success('删除成功');
-      navigate('/repositories');
-    } catch (error) {
-      message.error('删除失败');
-      console.error(error);
-    }
+  const handleDelete = () => {
+    modal.confirm({
+      title: '确认删除仓库',
+      content: `确定要删除「${repo?.name}」吗？`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          await repositoryApi.deleteRepository(id || '');
+          message.success('删除成功');
+          navigate('/repositories');
+        } catch {
+          message.error('删除失败');
+        }
+      },
+    });
   };
 
   const handleSave = async (values: Partial<Repository>) => {
@@ -87,15 +71,14 @@ export default function RepositoryDetail() {
       await repositoryApi.updateRepository(id || '', values);
       message.success('保存成功');
       setModalOpen(false);
-      refetch();
-    } catch (error) {
+      queryClient.invalidateQueries({ queryKey: ['repository', id] });
+    } catch {
       message.error('保存失败');
-      console.error(error);
     }
   };
 
   if (isLoading) {
-    return <div className="p-6 text-center">加载中...</div>;
+    return <div className="p-6 text-center text-[13px] text-slate-400">加载中…</div>;
   }
 
   if (!repo) {
@@ -109,110 +92,113 @@ export default function RepositoryDetail() {
     );
   }
 
-  const isHealthy = repo.health_status === 'healthy';
-  const repoUrl = repo.clone_url || repo.url;
-
-  const overviewItems = [
-    { label: '仓库类型', value: repo.repo_type?.toUpperCase() || '-' },
-    { label: '平台', value: repo.vendor?.toUpperCase() || '-' },
-    { label: '默认分支', value: repo.default_branch || '-' },
-    { label: 'External Identity', value: repo.external_identity || '-' },
-    { label: '凭证模式', value: repo.credential_mode_display || repo.credential_mode || '-' },
-    { label: '凭证名称', value: repo.credential_name || '-' },
-    { label: '创建时间', value: repo.created_at?.replace('T', ' ').slice(0, 16) || '-' },
-    { label: '最后同步时间', value: repo.last_sync_at?.replace('T', ' ').slice(0, 16) || '-' },
-  ];
+  const badge = repoTypeBadge(repo);
+  const health = healthDisplay(repo.health_status);
 
   return (
-    <div className="space-y-4">
-      {/* 头部信息区 */}
-      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-        <div className="px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <Button
-                type="text"
-                icon={<ArrowLeftOutlined />}
-                onClick={() => navigate('/repositories')}
-                className="px-2! -ml-2"
-              />
-              <Title level={4} className="m-0! text-slate-900!">{repo.name}</Title>
+    <div className="space-y-5 ts-fade-in-up">
+      {/* 面包屑 */}
+      <div className="flex items-center gap-2 text-[13px]">
+        <button
+          type="button"
+          onClick={() => navigate('/repositories')}
+          className="text-slate-400 transition-colors hover:text-indigo-600"
+        >
+          仓库
+        </button>
+        <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
+        <span className="font-medium text-slate-800">{repo.name}</span>
+      </div>
+
+      {/* 详情头 */}
+      <div className="tech-card rounded-xl p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl icon-indigo">
+              <GitBranch className="h-6 w-6" strokeWidth={1.5} />
             </div>
-            <div className="mt-1.5 flex items-center gap-3 text-sm text-slate-500">
-              <span>关联项目：{repo.project_name || '-'}</span>
-              <a
-                href={repoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
-              >
-                {repoUrl} <LinkOutlined />
-              </a>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">{repo.name}</h1>
+                <span className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${health.cls}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${health.dot}`} />
+                  {health.text}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+                <span className={`rounded border px-1 py-0.5 font-mono ${badge.cls}`}>{badge.text}</span>
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                <span>{repo.project_name || '-'}</span>
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                <a
+                  href={repo.clone_url || repo.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-indigo-500 hover:text-indigo-600"
+                >
+                  {repo.clone_url || repo.url}
+                </a>
+              </div>
             </div>
           </div>
-
-          <div className="flex items-center gap-3">
-            <StatusTag status={isHealthy ? 'success' : 'danger'}>
-              {isHealthy ? '正常' : '异常'}
-            </StatusTag>
-            <Space>
-              <Button icon={<EditOutlined />} onClick={() => setModalOpen(true)}>编辑</Button>
-              <Button icon={<ApiOutlined />} onClick={handleTest}>测试连通性</Button>
-              <Button icon={<SyncOutlined />} onClick={handleSync}>同步提交</Button>
-              <Popconfirm title="确定删除该仓库？" onConfirm={handleDelete}>
-                <Button danger icon={<DeleteOutlined />}>删除</Button>
-              </Popconfirm>
-            </Space>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+              立即同步
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+              编辑
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[13px] font-medium text-rose-600 transition-colors hover:bg-rose-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+              删除
+            </button>
           </div>
         </div>
-
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={[
-            { key: 'overview', label: '基本信息' },
-            { key: 'branches', label: '分支列表' },
-          ]}
-          tabBarStyle={{ padding: '0 16px', marginBottom: 0, background: 'rgba(248, 250, 252, 0.5)' }}
-        />
       </div>
 
-      {/* Tab 内容 */}
-      <div className="bg-white rounded-xl border border-slate-100 p-6">
-        {activeTab === 'overview' && (
-          <Descriptions bordered column={2} labelStyle={{ width: 160, background: '#F9F9F8' }}>
-            {overviewItems.map((item) => (
-              <Descriptions.Item key={item.label} label={item.label}>
-                {item.value}
-              </Descriptions.Item>
-            ))}
-          </Descriptions>
-        )}
-
-        {activeTab === 'branches' && (
-          <Table
-            rowKey="name"
-            loading={branchesLoading}
-            dataSource={branches || []}
-            pagination={false}
-            columns={[
-              { title: '分支名称', dataIndex: 'name' },
-              {
-                title: '是否默认',
-                dataIndex: 'is_default',
-                render: (isDefault: boolean) =>
-                  isDefault ? <StatusTag status="primary">默认</StatusTag> : <Text type="secondary">-</Text>,
-              },
-              {
-                title: '最后提交',
-                dataIndex: 'last_commit_hash',
-                render: (hash?: string) =>
-                  hash ? <span className="font-mono text-xs text-slate-500">{hash.slice(0, 8)}</span> : '-',
-              },
-            ]}
-          />
-        )}
-      </div>
+      {/* Tab 区 */}
+      <TsCard bodyStyle={{ padding: 0 }}>
+        <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto border-b border-indigo-50 px-4">
+          {tabs.map((tab) => {
+            const active = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={
+                  active
+                    ? 'whitespace-nowrap rounded-t-lg border-b-2 border-indigo-600 px-3 py-2.5 text-[13px] font-medium text-indigo-600'
+                    : 'whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 transition-colors hover:text-indigo-600'
+                }
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="p-5">
+          {activeTab === 'commits' && <CommitsTab repoId={repo.id} />}
+          {activeTab === 'branches' && <BranchesTab repoId={repo.id} />}
+          {activeTab === 'tags' && <TagsTab repoId={repo.id} repoType={repo.repo_type} />}
+          {activeTab === 'credential' && <CredentialTab repo={repo} />}
+        </div>
+      </TsCard>
 
       <RepositoryModal
         open={modalOpen}
