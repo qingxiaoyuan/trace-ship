@@ -1,8 +1,7 @@
 import axios from 'axios';
 import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '@/types';
-import { useAuthStore } from '@/stores/authStore';
-import { authApi } from './auth';
+import { refreshAccessToken } from './authRefresh';
 
 const request: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -16,13 +15,41 @@ const request: AxiosInstance = axios.create({
 let isRefreshing = false;
 let refreshSubscribers: Array<(token: string) => void> = [];
 
-function isAuthRequest(url?: string) {
-  return url?.includes('/auth/token/refresh') || url?.includes('/auth/login');
+export interface AuthHandlers {
+  getRefreshToken: () => string | null;
+  onRefreshSuccess: (accessToken: string, refreshToken?: string) => void;
+  onRefreshFailed: () => void;
+}
+
+let authHandlers: AuthHandlers | null = null;
+
+/**
+ * 注册认证相关的回调处理器。
+ *
+ * 由应用启动时设置，避免 request.ts 直接依赖 authStore / authApi，
+ * 从而打破模块间的循环依赖。
+ */
+export function registerAuthHandlers(handlers: AuthHandlers) {
+  authHandlers = handlers;
+}
+
+function getRefreshToken(): string | null {
+  return authHandlers?.getRefreshToken() ?? localStorage.getItem('refreshToken');
+}
+
+function clearAuthAndRedirect() {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  authHandlers?.onRefreshFailed();
 }
 
 function onRefreshed(token: string) {
   refreshSubscribers.forEach((callback) => callback(token));
   refreshSubscribers = [];
+}
+
+function isAuthRequest(url?: string) {
+  return url?.includes('/auth/token/refresh') || url?.includes('/auth/login');
 }
 
 request.interceptors.request.use(
@@ -73,22 +100,20 @@ request.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = localStorage.getItem('refreshToken');
+      const refreshToken = getRefreshToken();
       if (!refreshToken) {
-        useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
+        clearAuthAndRedirect();
         return Promise.reject(data || error);
       }
 
       return new Promise((resolve, reject) => {
-        authApi
-          .refresh(refreshToken)
+        refreshAccessToken(refreshToken)
           .then((res) => {
             const newAccessToken = res.access;
             const newRefreshToken = res.refresh || refreshToken;
             localStorage.setItem('accessToken', newAccessToken);
             localStorage.setItem('refreshToken', newRefreshToken);
-            useAuthStore.getState().setTokens(newAccessToken, newRefreshToken);
+            authHandlers?.onRefreshSuccess(newAccessToken, newRefreshToken);
             request.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
             onRefreshed(newAccessToken);
             originalRequest.headers = originalRequest.headers || {};
@@ -96,8 +121,7 @@ request.interceptors.response.use(
             resolve(request(originalRequest));
           })
           .catch((refreshError) => {
-            useAuthStore.getState().clearAuth();
-            window.location.href = '/login';
+            clearAuthAndRedirect();
             reject(refreshError);
           })
           .finally(() => {
