@@ -1,7 +1,7 @@
 import { credentialTypeIconMap } from '../constants';
 import type { CredentialType } from '@/types';
 
-type Variant = 'indigo' | 'cyan' | 'amber' | 'rose' | 'violet' | 'emerald';
+type Variant = 'indigo' | 'cyan' | 'amber' | 'rose' | 'violet' | 'emerald' | 'slate';
 
 interface CredentialIconProps {
   type: CredentialType;
@@ -22,11 +22,13 @@ const variantClasses: Record<Variant, string> = {
   rose: 'icon-rose',
   violet: 'icon-violet',
   emerald: 'icon-emerald',
+  slate: 'icon-slate',
 };
 
 const typeVariantMap: Record<CredentialType, Variant> = {
   gitlab_token: 'indigo',
   gitea_token: 'cyan',
+  github_token: 'slate',
   svn_password: 'amber',
   jenkins_token: 'violet',
   ldap_password: 'rose',

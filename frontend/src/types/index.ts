@@ -211,6 +211,7 @@ export interface BuildRecord {
 export type CredentialType =
   | 'gitlab_token'
   | 'gitea_token'
+  | 'github_token'
   | 'svn_password'
   | 'jenkins_token'
   | 'ldap_password'

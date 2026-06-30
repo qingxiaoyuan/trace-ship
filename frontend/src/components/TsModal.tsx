@@ -73,9 +73,7 @@ export function TsModal({
       }}
       styles={{
         container: {
-          background: 'rgba(255, 255, 255, 0.85)',
-          backdropFilter: 'blur(12px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(12px) saturate(160%)',
+          background: '#ffffff',
           borderRadius: '16px',
           border: '1px solid rgba(99, 102, 241, 0.12)',
           boxShadow: '0 24px 70px -12px rgba(30, 27, 75, 0.55)',
@@ -100,7 +98,7 @@ export function TsModal({
           ...footerStyle,
         },
         mask: {
-          backdropFilter: 'blur(2px)',
+          backgroundColor: 'rgba(15, 23, 42, 0.45)',
         },
       }}
     >

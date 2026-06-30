@@ -15,6 +15,7 @@ type LucideIcon = ComponentType<{ className?: string; strokeWidth?: number }>;
 export const credentialTypeMap: Record<CredentialType, string> = {
   gitlab_token: 'GitLab Token',
   gitea_token: 'Gitea Token',
+  github_token: 'GitHub Token',
   svn_password: 'SVN',
   jenkins_token: 'Jenkins',
   ldap_password: 'LDAP',
@@ -29,6 +30,7 @@ export const credentialScopeMap: Record<CredentialScope, string> = {
 export const credentialTypeIconMap: Record<CredentialType, LucideIcon> = {
   gitlab_token: GitBranch,
   gitea_token: GitBranch,
+  github_token: GitBranch,
   svn_password: FolderTree,
   jenkins_token: Hammer,
   ldap_password: Shield,
@@ -41,6 +43,7 @@ export const credentialTypeColorMap: Record<
 > = {
   gitlab_token: { border: 'border-indigo-200', bg: 'bg-indigo-50', text: 'text-indigo-600' },
   gitea_token: { border: 'border-cyan-200', bg: 'bg-cyan-50', text: 'text-cyan-600' },
+  github_token: { border: 'border-slate-200', bg: 'bg-slate-50', text: 'text-slate-600' },
   svn_password: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-600' },
   jenkins_token: { border: 'border-violet-200', bg: 'bg-violet-50', text: 'text-violet-600' },
   ldap_password: { border: 'border-rose-200', bg: 'bg-rose-50', text: 'text-rose-500' },

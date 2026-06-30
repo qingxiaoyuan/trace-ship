@@ -5,7 +5,7 @@ import { TsModal } from "@/components/TsModal";
 import { FormSection } from "@/components/FormSection";
 import { projectApi } from "@/api/project";
 import { credentialApi } from "@/api/credential";
-import type { Repository } from "@/types";
+import type { Repository, CredentialType } from "@/types";
 
 interface RepositoryModalProps {
   open: boolean;
@@ -21,11 +21,11 @@ const credentialModeOptions = [
 ];
 
 // 仓库平台与凭证类型的对应关系，与后端 VENDOR_TO_CRED_TYPE 保持一致
-const VENDOR_TO_CRED_TYPE: Record<string, string> = {
+const VENDOR_TO_CRED_TYPE: Record<string, CredentialType> = {
   gitlab: "gitlab_token",
   gitea: "gitea_token",
   github: "github_token",
-  gitee: "gitee_token",
+  gitee: "gitea_token",
   svn: "svn_password",
 };
 
@@ -49,7 +49,7 @@ export function RepositoryModal({
   const watchedProjectId = (Form.useWatch("project_id", form) || projectId) as
     | string
     | undefined;
-  const expectedCredType = VENDOR_TO_CRED_TYPE[vendor || ""] || "";
+  const expectedCredType = VENDOR_TO_CRED_TYPE[vendor || ""] || undefined;
 
   // 按凭证来源拉取可选凭证：个人来源取自己的个人凭证，项目来源取挂靠在当前项目下的项目凭证
   const { data: credentialData, isLoading: credentialsLoading } = useQuery({
