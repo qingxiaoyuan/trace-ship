@@ -10,7 +10,6 @@ export const CredentialDetail = lazy(() => import('@/pages/Credential/Detail'));
 export const CommitList = lazy(() => import('@/pages/Commit/Review'));
 export const CommitDetail = lazy(() => import('@/pages/Commit/Detail'));
 export const CommitAlertDetail = lazy(() => import('@/pages/Commit/AlertDetail'));
-export const TagGenerator = lazy(() => import('@/pages/TagGenerator'));
 export const Jenkins = lazy(() => import('@/pages/Jenkins'));
 export const JenkinsLogDetail = lazy(() => import('@/pages/Jenkins/LogDetail'));
 export const Workflow = lazy(() => import('@/pages/Workflow'));

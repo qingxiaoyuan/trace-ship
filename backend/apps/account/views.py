@@ -236,7 +236,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         """
         获取当前用户侧边栏菜单
 
-        当前为固定菜单，后续可根据角色权限动态生成。
+        根据用户角色拥有的权限模块动态过滤菜单项。超管返回全部菜单。
 
         Args:
             request: 已认证的 DRF Request
@@ -244,32 +244,75 @@ class AuthViewSet(viewsets.GenericViewSet):
         Returns:
             菜单结构列表
         """
-        # 简化菜单，后续可根据角色权限动态生成
-        menus = [
-            {"id": "dashboard", "name": "工作台", "path": "/dashboard", "icon": "AppstoreOutlined"},
-            {"id": "projects", "name": "项目管理", "path": "/projects", "icon": "FolderOutlined"},
-            {"id": "repositories", "name": "仓库管理", "path": "/repositories", "icon": "DatabaseOutlined"},
-            {"id": "credentials", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined"},
-            {"id": "commits", "name": "提交规范审查", "path": "/commits", "icon": "FileTextOutlined"},
-            {"id": "tags", "name": "Tag 生成与发布", "path": "/tags", "icon": "TagsOutlined"},
-            {"id": "jenkins", "name": "打包任务", "path": "/jenkins", "icon": "PlayCircleOutlined"},
-            {"id": "workflows", "name": "工作流审批", "path": "/workflows", "icon": "ProfileOutlined"},
+        # 全量菜单定义：每项关联所需权限模块
+        all_menus = [
+            {"id": "dashboard", "name": "工作台", "path": "/dashboard", "icon": "AppstoreOutlined", "modules": []},
+            {"id": "releases", "name": "发布看板", "path": "/releases", "icon": "RocketOutlined", "modules": ["release"]},
+            {"id": "workflows", "name": "工作流审批", "path": "/workflows", "icon": "ProfileOutlined", "modules": ["workflow"]},
+            {"id": "notifications", "name": "通知中心", "path": "/notifications", "icon": "BellOutlined", "modules": []},
+            {"id": "projects", "name": "项目管理", "path": "/projects", "icon": "FolderOutlined", "modules": ["project"]},
+            {"id": "repositories", "name": "仓库管理", "path": "/repositories", "icon": "DatabaseOutlined", "modules": ["repository"]},
+            {"id": "credentials", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined", "modules": ["credential"]},
+            {"id": "jenkins", "name": "打包任务", "path": "/jenkins", "icon": "PlayCircleOutlined", "modules": ["jenkins"]},
+            {"id": "commits", "name": "提交规范审查", "path": "/commits", "icon": "FileTextOutlined", "modules": ["commit"]},
+            {"id": "tags", "name": "新建发布", "path": "/releases/create", "icon": "TagsOutlined", "modules": ["release"]},
             {
                 "id": "system",
                 "name": "系统管理",
                 "path": "/system",
                 "icon": "SettingOutlined",
+                "modules": ["system"],
                 "children": [
-                    {"id": "system_users", "name": "用户管理", "path": "/system/users", "icon": "TeamOutlined"},
-                    {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined"},
-                    {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined"},
-                    {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined"},
+                    {"id": "system_users", "name": "用户管理", "path": "/system/users", "icon": "TeamOutlined", "modules": ["system"]},
+                    {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined", "modules": ["system"]},
+                    {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined", "modules": ["system"]},
+                    {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined", "modules": ["system"]},
                 ],
             },
         ]
-        # if request.user.is_superuser:
-        #     menus.append({"id": "account", "name": "账号管理", "path": "/account", "icon": "UserOutlined"})
-        return success_response(menus)
+
+        user = request.user
+
+        # 超管返回全部菜单
+        if user.is_superuser:
+            return success_response(all_menus)
+
+        # 收集当前用户所有角色关联的权限模块
+        user_modules = set(
+            user.user_roles.values_list("role__permissions__module", flat=True)
+        )
+
+        # 按模块过滤菜单
+        def filter_menu(menu: dict) -> dict | None:
+            """过滤单个菜单项，无权限返回 None"""
+            required = menu.get("modules", [])
+            # modules 为空表示无需权限（如工作台）
+            if not required:
+                result = dict(menu)
+                result.pop("modules", None)
+                if "children" in menu:
+                    result["children"] = [
+                        c for c in (filter_menu(child) for child in menu["children"])
+                        if c is not None
+                    ]
+                return result
+            if not any(m in user_modules for m in required):
+                return None
+            result = dict(menu)
+            result.pop("modules", None)
+            if "children" in menu:
+                filtered_children = [
+                    c for c in (filter_menu(child) for child in menu["children"])
+                    if c is not None
+                ]
+                # 子菜单全被过滤掉则隐藏父菜单
+                if not filtered_children:
+                    return None
+                result["children"] = filtered_children
+            return result
+
+        filtered = [m for m in (filter_menu(menu) for menu in all_menus) if m is not None]
+        return success_response(filtered)
 
     @staticmethod
     def get_client_ip(request: Request) -> str:
