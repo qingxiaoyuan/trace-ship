@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   ChevronRight,
@@ -7,20 +7,20 @@ import {
   Search,
   Settings,
   User,
-} from 'lucide-react';
-import { useLocation, useMatches, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { tokens } from '@/styles/theme';
-import { useAuthStore } from '@/stores/authStore';
-import { notificationApi } from '@/api/notification';
-import { mockProjects } from '@/mock/projects';
-import { mockBuildRecords } from '@/mock/dashboard';
+} from "lucide-react";
+import { useLocation, useMatches, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { tokens } from "@/styles/theme";
+import { useAuthStore } from "@/stores/authStore";
+import { notificationApi } from "@/api/notification";
+import { mockProjects } from "@/mock/projects";
+import { mockBuildRecords } from "@/mock/dashboard";
 
 const typeMap: Record<string, string> = {
-  audit: '审批',
-  build: '构建',
-  release: '发布',
-  system: '系统',
+  audit: "审批",
+  build: "构建",
+  release: "发布",
+  system: "系统",
 };
 
 export function TopHeader() {
@@ -37,12 +37,12 @@ export function TopHeader() {
   const userPanelRef = useRef<HTMLDivElement>(null);
 
   const { data: unreadCountData } = useQuery({
-    queryKey: ['notification-unread-count'],
+    queryKey: ["notification-unread-count"],
     queryFn: () => notificationApi.getUnreadCount(),
   });
 
   const { data: notificationData } = useQuery({
-    queryKey: ['header-notifications'],
+    queryKey: ["header-notifications"],
     queryFn: () => notificationApi.getNotifications({ page_size: 5 }),
     enabled: bellOpen,
   });
@@ -50,8 +50,10 @@ export function TopHeader() {
   const markReadMutation = useMutation({
     mutationFn: (id: string) => notificationApi.markRead(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
-      queryClient.invalidateQueries({ queryKey: ['header-notifications'] });
+      queryClient.invalidateQueries({
+        queryKey: ["notification-unread-count"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
     },
   });
 
@@ -80,8 +82,8 @@ export function TopHeader() {
         setUserOpen(false);
       }
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   }, [bellOpen, userOpen]);
 
   const breadcrumbItems = useMemo<{ title: string; path?: string }[]>(() => {
@@ -89,42 +91,46 @@ export function TopHeader() {
     if (projectMatch) {
       const project = mockProjects.find((p) => p.id === projectMatch[1]);
       return [
-        { title: '项目管理', path: '/projects' },
-        { title: project?.name || '项目详情' },
+        { title: "项目管理", path: "/projects" },
+        { title: project?.name || "项目详情" },
       ];
     }
 
     const repoMatch = location.pathname.match(/^\/repositories\/([^/]+)/);
     if (repoMatch) {
       return [
-        { title: '仓库管理', path: '/repositories' },
-        { title: '仓库详情' },
+        { title: "仓库管理", path: "/repositories" },
+        { title: "仓库详情" },
       ];
     }
 
     const credentialMatch = location.pathname.match(/^\/credentials\/([^/]+)/);
     if (credentialMatch) {
       return [
-        { title: '凭证管理', path: '/credentials' },
-        { title: '凭证详情' },
+        { title: "凭证管理", path: "/credentials" },
+        { title: "凭证详情" },
       ];
     }
 
-    const credentialUsageMatch = location.pathname.match(/^\/credentials\/([^/]+)\/usage/);
+    const credentialUsageMatch = location.pathname.match(
+      /^\/credentials\/([^/]+)\/usage/,
+    );
     if (credentialUsageMatch) {
       return [
-        { title: '凭证管理', path: '/credentials' },
-        { title: '凭证详情', path: `/credentials/${credentialUsageMatch[1]}` },
-        { title: '使用记录' },
+        { title: "凭证管理", path: "/credentials" },
+        { title: "凭证详情", path: `/credentials/${credentialUsageMatch[1]}` },
+        { title: "使用记录" },
       ];
     }
 
-    const jenkinsLogMatch = location.pathname.match(/^\/jenkins\/logs\/([^/]+)/);
+    const jenkinsLogMatch = location.pathname.match(
+      /^\/jenkins\/logs\/([^/]+)/,
+    );
     if (jenkinsLogMatch) {
       const build = mockBuildRecords.find((b) => b.id === jenkinsLogMatch[1]);
       return [
-        { title: 'Jenkins 构建', path: '/jenkins' },
-        { title: build ? `构建日志 #${build.build_number}` : '构建日志' },
+        { title: "Jenkins 构建", path: "/jenkins" },
+        { title: build ? `构建日志 #${build.build_number}` : "构建日志" },
       ];
     }
 
@@ -140,12 +146,27 @@ export function TopHeader() {
     });
 
     if (items.length === 0) {
-      items.push({ title: '工作台' });
+      items.push({ title: "工作台" });
     }
     return items;
   }, [location.pathname, matches]);
 
-  const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || 'U';
+  const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || "U";
+
+  const displayName = user?.nickname || user?.username || "未登录";
+
+  const roleMap: Record<string, string> = {
+    super_admin: "超级管理员",
+    project_manager: "项目管理员",
+    developer: "开发人员",
+    tester: "测试人员",
+    auditor: "审核人",
+    viewer: "只读人员",
+  };
+
+  const roleLabel = user?.is_superuser
+    ? "超级管理员"
+    : roleMap[user?.roles?.[0] || ""] || user?.roles?.[0] || "用户";
 
   return (
     <header
@@ -156,8 +177,16 @@ export function TopHeader() {
     >
       <div className="hidden items-center gap-1.5 text-[13px] md:flex">
         {breadcrumbItems.map((item, index) => (
-          <div key={`${item.title}-${index}`} className="flex items-center gap-1.5">
-            {index > 0 ? <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} /> : null}
+          <div
+            key={`${item.title}-${index}`}
+            className="flex items-center gap-1.5"
+          >
+            {index > 0 ? (
+              <ChevronRight
+                className="h-3.5 w-3.5 text-slate-300"
+                strokeWidth={1.5}
+              />
+            ) : null}
             {item.path ? (
               <button
                 type="button"
@@ -181,8 +210,12 @@ export function TopHeader() {
           <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
           <span>搜索项目、发布、提交…</span>
           <span className="ml-auto flex items-center gap-0.5">
-            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘</kbd>
-            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">K</kbd>
+            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
+              ⌘
+            </kbd>
+            <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
+              K
+            </kbd>
           </span>
         </button>
       </div>
@@ -190,7 +223,7 @@ export function TopHeader() {
       <div className="ml-auto flex items-center gap-1 md:ml-0">
         <button
           type="button"
-          onClick={() => navigate('/releases/create')}
+          onClick={() => navigate("/releases/create")}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
           aria-label="新建发布"
         >
@@ -215,27 +248,36 @@ export function TopHeader() {
             <div
               ref={bellPanelRef}
               className="tech-card absolute right-0 top-full mt-2 w-[320px] rounded-xl py-2 shadow-lg"
-              style={{ boxShadow: '0 12px 40px -10px rgba(79,70,229,.15)' }}
+              style={{ boxShadow: "0 12px 40px -10px rgba(79,70,229,.15)" }}
             >
               <div className="flex items-center justify-between border-b border-indigo-50 px-4 pb-2">
-                <span className="text-[13px] font-medium text-slate-800">通知</span>
+                <span className="text-[13px] font-medium text-slate-800">
+                  通知
+                </span>
                 <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">
                   {unreadCount} 未读
                 </span>
               </div>
               <div className="max-h-[280px] overflow-y-auto py-1">
                 {notifications.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-[13px] text-slate-400">暂无通知</div>
+                  <div className="px-4 py-6 text-center text-[13px] text-slate-400">
+                    暂无通知
+                  </div>
                 ) : (
                   notifications.map((item) => (
                     <div
                       key={item.id}
                       className="group cursor-pointer px-4 py-2.5 transition-colors hover:bg-indigo-50/50"
-                      onClick={() => navigate('/notifications')}
+                      onClick={() => navigate("/notifications")}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className={`text-[12px] font-medium ${item.is_read ? 'text-slate-500' : 'text-slate-900'}`}>
-                          [{typeMap[item.notification_type] || item.notification_type}] {item.title}
+                        <div
+                          className={`text-[12px] font-medium ${item.is_read ? "text-slate-500" : "text-slate-900"}`}
+                        >
+                          [
+                          {typeMap[item.notification_type] ||
+                            item.notification_type}
+                          ] {item.title}
                         </div>
                         {!item.is_read ? (
                           <button
@@ -250,7 +292,9 @@ export function TopHeader() {
                           </button>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 line-clamp-1 text-[11px] text-slate-400">{item.content}</div>
+                      <div className="mt-0.5 line-clamp-1 text-[11px] text-slate-400">
+                        {item.content}
+                      </div>
                     </div>
                   ))
                 )}
@@ -258,7 +302,7 @@ export function TopHeader() {
               <div className="border-t border-indigo-50 px-4 pt-2 text-center">
                 <button
                   type="button"
-                  onClick={() => navigate('/notifications')}
+                  onClick={() => navigate("/notifications")}
                   className="text-[12px] text-indigo-600 hover:text-indigo-500"
                 >
                   查看全部通知
@@ -275,39 +319,68 @@ export function TopHeader() {
             ref={userRef}
             type="button"
             onClick={() => setUserOpen((v) => !v)}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-semibold text-white ring-1 ring-indigo-200 transition-transform hover:scale-105 hover:ring-indigo-400"
-            style={{
-              background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
-            }}
+            className="group flex h-9 items-center gap-2 rounded-lg bg-white pl-2 pr-2.5 shadow-[0_0_0_1px_rgba(99,102,241,0.12)] transition-all hover:shadow-[0_0_0_1px_rgba(99,102,241,0.12),0_16px_40px_-10px_rgba(79,70,229,0.18)] active:scale-[0.98]"
+            style={{ border: "1px solid rgba(99, 102, 241, 0.15)" }}
+            aria-label="用户信息"
           >
-            {avatarLetter}
+            <span
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-semibold text-white"
+              style={{
+                background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
+              }}
+            >
+              {avatarLetter}
+            </span>
+
+            <span className="flex flex-col items-start leading-none">
+              <span className="max-w-[80px] truncate text-[12px] font-semibold text-slate-800 transition-colors group-hover:text-indigo-600">
+                {displayName}
+              </span>
+              <span className="mt-0.5 text-[10px] text-slate-500 transition-colors group-hover:text-indigo-500">
+                {roleLabel}
+              </span>
+            </span>
+
+            <svg
+              className={`ml-0.5 h-3 w-3 shrink-0 text-slate-400 transition-transform group-hover:text-indigo-500 ${userOpen ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="m19.5 8.25-7.5 7.5-7.5-7.5"
+              />
+            </svg>
           </button>
 
           {userOpen ? (
             <div
               ref={userPanelRef}
               className="tech-card absolute right-0 top-full mt-2 w-[160px] rounded-xl py-1 shadow-lg"
-              style={{ boxShadow: '0 12px 40px -10px rgba(79,70,229,.15)' }}
+              style={{ boxShadow: "0 12px 40px -10px rgba(79,70,229,.15)" }}
             >
               <button
                 type="button"
                 onClick={() => {
                   setUserOpen(false);
-                  navigate('/profile');
+                  navigate("/profile");
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-slate-600 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600"
               >
                 <User className="h-3.5 w-3.5" strokeWidth={1.5} />
                 <span>个人中心</span>
               </button>
-              <button
+              {/* <button
                 type="button"
                 onClick={() => setUserOpen(false)}
                 className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-slate-600 transition-colors hover:bg-indigo-50/60 hover:text-indigo-600"
               >
                 <Settings className="h-3.5 w-3.5" strokeWidth={1.5} />
                 <span>账号设置</span>
-              </button>
+              </button> */}
               <div className="my-1 h-px bg-indigo-50" />
               <button
                 type="button"
