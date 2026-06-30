@@ -39,7 +39,7 @@ def test_create_repository(api_client, project, credential):
         "external_identity": "test/frontend",
         "default_branch": "main",
         "credential": str(credential.id),
-        "credential_mode": "fixed",
+        "credential_mode": "project",
     }
     response = api_client.post("/api/repositories/", payload, format="json")
     assert response.status_code == 201
@@ -59,7 +59,7 @@ def test_create_repository_rejects_invalid_vendor(api_client, project, credentia
         "external_identity": "test/wrong",
         "default_branch": "main",
         "credential": str(credential.id),
-        "credential_mode": "fixed",
+        "credential_mode": "project",
     }
 
     response = api_client.post("/api/repositories/", payload, format="json")

@@ -157,6 +157,7 @@ class JenkinsProvider:
             "status": status,
             "url": info.get("url", ""),
             "duration": info.get("duration", 0),
+            "estimated_duration": info.get("estimatedDuration", 0),
             "artifacts": artifacts,
         }
 

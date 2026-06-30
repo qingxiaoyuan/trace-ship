@@ -77,18 +77,12 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                 </div>
               </div>
             </div>
-            {/* 来源 / 目标 / 构建号 小信息栏 */}
+            {/* 分支 / 构建号 小信息栏 */}
             <div className="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-3">
               <div className="flex items-center gap-2">
-                <span className="text-[12px] text-slate-500">来源</span>
+                <span className="text-[12px] text-slate-500">分支</span>
                 <span className="font-mono text-[12px] font-semibold text-slate-900">
-                  {source.sourceBranch || '-'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] text-slate-500">目标</span>
-                <span className="font-mono text-[12px] font-semibold text-slate-900">
-                  {source.targetBranch || '-'}
+                  {source.branch || '-'}
                 </span>
               </div>
               <div className="flex items-center gap-2">

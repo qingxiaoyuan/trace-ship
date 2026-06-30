@@ -87,8 +87,8 @@ export interface Release {
   tag_name: string;
   release_type: ReleaseType;
   status: ReleaseStatus;
-  source_branch: string;
-  target_branch: string;
+  branch: string;
+
   git_hash: string;
   publisher: string;
   publisher_name?: string;
@@ -100,6 +100,11 @@ export interface Release {
   rejected_reason?: string;
   released_at?: string;
   created_at: string;
+  /** 提交审查聚合计数（列表接口返回） */
+  commit_total?: number;
+  pass_count?: number;
+  warning_count?: number;
+  illegal_count?: number;
 }
 
 /** 发布关联的 Jenkins 构建概要（release 详情 build_detail） */
@@ -120,12 +125,30 @@ export interface ReleaseCommit {
   author: string;
   message: string;
   review_status: ReviewStatus;
+  review_reason?: string;
+  parsed_result?: Record<string, unknown>;
   committed_at: string;
   is_included?: boolean;
   edited_content?: string;
 }
 
-export type ReviewStatus = 'pass' | 'warning' | 'illegal';
+export type ReviewStatus = 'unreviewed' | 'pass' | 'warning' | 'illegal';
+
+/** 提交解析结果中的单条更新内容 */
+export interface ParsedUpdate {
+  type?: string;
+  content?: string;
+}
+
+/** 提交信息解析结果（CommitParser 输出） */
+export interface ParsedCommit {
+  change_type?: string | null;
+  updates?: ParsedUpdate[];
+  config_changes?: Record<string, Record<string, string>>;
+  related_changes?: Record<string, string>;
+  is_valid?: boolean;
+  errors?: string[];
+}
 
 export interface CommitRecord {
   id: string;
@@ -134,9 +157,11 @@ export interface CommitRecord {
   message: string;
   committed_at: string;
   branch: string;
+
   change_type: string;
   review_status: ReviewStatus;
   review_reason?: string;
+  parsed_result?: ParsedCommit;
   project_name?: string;
   repo_name?: string;
 }
@@ -150,6 +175,14 @@ export interface CommitAlertRecord extends CommitRecord {
 
 export type BuildStatus = 'queue' | 'running' | 'success' | 'failure' | 'aborted';
 
+export interface JenkinsBuildLatest {
+  id: string;
+  build_number: number | null;
+  status: BuildStatus;
+  started_at?: string | null;
+  created_at?: string | null;
+}
+
 export interface BuildRecord {
   id: string;
   job_id: string;
@@ -161,12 +194,16 @@ export interface BuildRecord {
   version?: string;
   status: BuildStatus;
   status_display?: string;
+  triggered_by?: string | null;
+  triggered_by_name?: string;
   params?: unknown;
   log_url?: string;
   artifact_info?: unknown[];
-  started_at?: string;
-  finished_at?: string;
-  duration?: string;
+  duration?: number | null;
+  estimated_duration?: number | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_display?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -179,7 +216,7 @@ export type CredentialType =
   | 'ldap_password'
   | 'ai_api_key';
 
-export type CredentialScope = 'personal' | 'project' | 'global';
+export type CredentialScope = 'personal' | 'project';
 
 export interface Credential {
   id: string;
@@ -213,8 +250,6 @@ export interface Repository {
   credential_mode_display?: string;
   credential_name?: string;
   credential_owner_name?: string;
-  specified_user_id?: string;
-  specified_user_name?: string;
   health_status: 'healthy' | 'unhealthy' | 'unknown';
   last_sync_at?: string;
   created_at: string;
@@ -227,6 +262,25 @@ export interface RepositoryStats {
   git_count: number;
   svn_count: number;
 }
+
+/** 仓库合规扫描统计（/repositories/compliance-stats/）单行 */
+export interface RepoComplianceStat {
+  id: string;
+  name: string;
+  project_id: string;
+  project_name: string;
+  repo_type: 'git' | 'svn';
+  vendor: string;
+  default_branch: string;
+  health_status: 'healthy' | 'unhealthy' | 'unknown';
+  last_sync_at?: string | null;
+  commit_total: number;
+  pass_count: number;
+  warning_count: number;
+  illegal_count: number;
+  unreviewed_count: number;
+}
+
 
 /** 仓库分支信息 */
 export interface RepositoryBranch {
@@ -253,10 +307,9 @@ export interface JenkinsJob {
   job_name: string;
   credential_id?: string;
   credential_mode?: string;
-  specified_user_id?: string;
-  specified_user_name?: string;
   params_template?: unknown;
   is_active: boolean;
+  latest_build?: JenkinsBuildLatest | null;
   created_at: string;
   updated_at: string;
 }
@@ -290,8 +343,8 @@ export interface WorkflowTask {
   status: WorkflowTaskStatus;
   version?: string;
   release_type?: ReleaseType;
-  source_branch?: string;
-  target_branch?: string;
+  branch?: string;
+
   build_number?: string | number;
   mode?: 'any' | 'all';
   is_rollback?: boolean;
@@ -390,8 +443,8 @@ export interface WorkflowInstanceListItem {
   submit_time: string;
   version?: string;
   release_type?: ReleaseType;
-  source_branch?: string;
-  target_branch?: string;
+  branch?: string;
+
   build_number?: string | number;
 }
 

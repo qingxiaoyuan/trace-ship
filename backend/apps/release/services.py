@@ -196,7 +196,7 @@ class ReleaseValidator:
     @staticmethod
     def validate_branch_and_prefix(
         release_type: str,
-        target_branch: str,
+        branch: str,
         tag_name: str,
         release_rule: dict,
     ) -> None:
@@ -205,7 +205,7 @@ class ReleaseValidator:
 
         Args:
             release_type: 发布类型
-            target_branch: 目标分支
+            branch: 发布分支
             tag_name: tag 名称
             release_rule: 发布规则
 
@@ -217,9 +217,9 @@ class ReleaseValidator:
         )
         prefixes = release_rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes())
 
-        if release_type == "formal" and target_branch not in formal_branches:
+        if release_type == "formal" and branch not in formal_branches:
             raise serializers.ValidationError(
-                {"target_branch": f"正式版本只能从 {', '.join(formal_branches)} 分支发布"}
+                {"branch": f"正式版本只能从 {', '.join(formal_branches)} 分支发布"}
             )
         if release_type in ("rc", "beta"):
             prefix = (prefixes.get(release_type, "") or "").strip("-")
@@ -283,7 +283,7 @@ class ReleaseDocGenerator:
     """
     发布说明生成器
 
-    聚合 source_branch 到上一个 tag 之间的 commits，生成统一格式的发布说明文档。
+    聚合发布分支到上一个 tag 之间的 commits，生成统一格式的发布说明文档。
     """
 
     def __init__(self, release: ReleaseRecord, provider: GitProvider):
@@ -316,7 +316,7 @@ class ReleaseDocGenerator:
         """
         拉取用于生成发布说明的 commits
 
-        优先比较上一个 tag 到 source_branch；无 tag 时拉取 source_branch 全部 commits。
+        优先比较上一个 tag 到发布分支；无 tag 时拉取发布分支全部 commits。
 
         Returns:
             CommitInfo 列表
@@ -325,10 +325,10 @@ class ReleaseDocGenerator:
         last_tag = self._get_last_tag()
         if last_tag:
             try:
-                return self.provider.compare_commits(repo_identity, base=last_tag, head=self.release.source_branch)
+                return self.provider.compare_commits(repo_identity, base=last_tag, head=self.release.branch)
             except ProviderError:
                 pass
-        return self.provider.list_commits(repo_identity, self.release.source_branch)
+        return self.provider.list_commits(repo_identity, self.release.branch)
 
     @staticmethod
     def _filter_commits(commits: List[CommitInfo], commit_ids: Optional[List[str]] = None) -> List[CommitInfo]:
@@ -439,7 +439,7 @@ class ReleaseDocGenerator:
                     "author_email": commit.author_email or "",
                     "message": commit.message,
                     "committed_at": commit.committed_at or timezone.now(),
-                    "branch": self.release.source_branch,
+                    "branch": self.release.branch,
                 },
             )
             if commit_record.id in existing_records:
@@ -518,8 +518,7 @@ class ReleaseService:
         project: Project,
         repository: Repository,
         release_type: str,
-        source_branch: str,
-        target_branch: str,
+        branch: str,
         publisher,
         version: Optional[str] = None,
         tag_name: Optional[str] = None,
@@ -533,8 +532,7 @@ class ReleaseService:
             project: 项目实例
             repository: 目标仓库实例
             release_type: 发布类型
-            source_branch: 来源分支
-            target_branch: 目标分支
+            branch: 发布分支
             publisher: 发布人
             version: 可选的版本号，为空时自动计算
             tag_name: 可选的 tag 名称，为空时根据版本号与发布类型自动计算
@@ -575,19 +573,18 @@ class ReleaseService:
         tag_name = tag_name or auto_tag_name
 
         ReleaseValidator.validate_branch_and_prefix(
-            release_type, target_branch, tag_name, release_rule
+            release_type, branch, tag_name, release_rule
         )
         ReleaseValidator.validate_release_cycle(project, release_type, release_rule)
 
-        git_hash = cls._resolve_branch_head_hash(repository, target_branch, publisher)
+        git_hash = cls._resolve_branch_head_hash(repository, branch, publisher)
 
         release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
             version=version,
             tag_name=tag_name,
-            source_branch=source_branch,
-            target_branch=target_branch,
+            branch=branch,
             git_hash=git_hash,
             release_type=release_type,
             status="draft",

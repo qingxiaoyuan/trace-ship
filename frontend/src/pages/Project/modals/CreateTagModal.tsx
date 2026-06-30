@@ -62,7 +62,7 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
     if (open) {
       form.setFieldsValue({
         release_type: 'formal',
-        target_branch: repository.default_branch,
+        branch: repository.default_branch,
       });
     }
   }, [open, repository.id, repository.default_branch, form]);
@@ -90,8 +90,7 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
         project: projectId,
         repository: repository.id,
         release_type: values.release_type as ReleaseType,
-        source_branch: values.source_branch as string,
-        target_branch: values.target_branch as string,
+        branch: values.branch as string,
         version: values.version as string,
         tag_name: values.tag_name as string,
       }),
@@ -192,28 +191,13 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
           </Form.Item>
 
           <Form.Item
-            name="source_branch"
-            label="来源分支"
-            rules={[{ required: true, message: '请选择来源分支' }]}
+            name="branch"
+            label="分支"
+            rules={[{ required: true, message: '请选择分支' }]}
           >
             <Select
               showSearch
-              placeholder="选择来源分支"
-              loading={branchesLoading}
-              options={branchOptions}
-              optionFilterProp="label"
-              allowClear
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="target_branch"
-            label="目标分支"
-            rules={[{ required: true, message: '请选择目标分支' }]}
-          >
-            <Select
-              showSearch
-              placeholder="选择目标分支"
+              placeholder="选择分支"
               loading={branchesLoading}
               options={branchOptions}
               optionFilterProp="label"
@@ -263,8 +247,7 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
               <p>版本号：{createdRelease.version || '-'}</p>
               <p>Tag：{createdRelease.tag_name || '-'}</p>
               <p>发布类型：{releaseTypeOptions.find((o) => o.value === createdRelease.release_type)?.label || createdRelease.release_type}</p>
-              <p>来源分支：{createdRelease.source_branch}</p>
-              <p>目标分支：{createdRelease.target_branch}</p>
+              <p>分支：{createdRelease.branch}</p>
               <p>Git Hash：{createdRelease.git_hash}</p>
             </Card>
             <Card size="small" title="发布说明">

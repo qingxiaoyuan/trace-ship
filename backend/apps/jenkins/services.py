@@ -101,7 +101,7 @@ class JenkinsService:
 
         context = {
             "version": release.version,
-            "branch": release.target_branch,
+            "branch": release.branch,
             "git_hash": release.git_hash,
         }
         actual_params = cls._render_params(job.params_template or {}, context)
@@ -113,6 +113,7 @@ class JenkinsService:
 
         build = JenkinsBuild.objects.create(
             job=job,
+            triggered_by=request_user,
             queue_id=str(result.get("queue_id", "")),
             status="queue",
             params=actual_params,
@@ -162,9 +163,16 @@ class JenkinsService:
             build.status = info.get("status", build.status)
             build.log_url = info.get("url", "")
             build.artifact_info = info.get("artifacts", [])
+            # 记录构建耗时与预估耗时（毫秒）；Jenkins 运行中 duration 为已耗时
+            duration = info.get("duration") or 0
+            estimated = info.get("estimated_duration") or 0
+            if duration:
+                build.duration = duration
+            if estimated:
+                build.estimated_duration = estimated
             if build.status in ("success", "failure", "aborted"):
                 build.finished_at = build.finished_at or timezone.now()
-            build.save(update_fields=["status", "log_url", "artifact_info", "finished_at", "updated_at"])
+            build.save(update_fields=["status", "log_url", "artifact_info", "duration", "estimated_duration", "finished_at", "updated_at"])
             cls._update_release_status(build)
 
         return build

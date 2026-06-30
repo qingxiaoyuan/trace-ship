@@ -47,7 +47,7 @@ const fallbackMenus: MenuItem[] = [
   { id: 'projects', name: '项目管理', path: '/projects', icon: 'FolderOutlined' },
   { id: 'repositories', name: '仓库管理', path: '/repositories', icon: 'DatabaseOutlined' },
   { id: 'credentials', name: '凭证管理', path: '/credentials', icon: 'KeyOutlined' },
-  { id: 'jenkins', name: 'Jenkins构建', path: '/jenkins', icon: 'PlayCircleOutlined' },
+  { id: 'jenkins', name: '打包任务', path: '/jenkins', icon: 'PlayCircleOutlined' },
   { id: 'commits', name: '提交规范审查', path: '/commits', icon: 'FileTextOutlined' },
   { id: 'tags', name: 'Tag 生成与发布', path: '/tags', icon: 'TagsOutlined' },
   {
@@ -92,7 +92,7 @@ const labelMap: Record<string, string> = {
   '/projects': '项目',
   '/repositories': '仓库',
   '/credentials': '凭证',
-  '/jenkins': 'Jenkins',
+  '/jenkins': '打包任务',
   '/commits': '提交审查',
   '/tags': 'Tag 生成',
   '/workflows': '审批中心',

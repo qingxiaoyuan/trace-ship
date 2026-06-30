@@ -119,7 +119,7 @@ def test_delete_repository_bound_credential_is_rejected(api_client, credential, 
         url="https://gitlab.example.com/test/bound.git",
         external_identity="test/bound",
         credential=credential,
-        credential_mode="fixed",
+        credential_mode="project",
     )
 
     response = api_client.delete(f"/api/credentials/{credential.id}/")

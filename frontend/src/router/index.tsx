@@ -76,7 +76,7 @@ const routes: AppRouteObject[] = [
           { path: 'tags', element: <PageLoader><TagGenerator /></PageLoader>, handle: { title: 'Tag 生成与发布' } },
           {
             path: 'jenkins',
-            handle: { title: 'Jenkins 构建' },
+            handle: { title: '打包任务' },
             children: [
               { index: true, element: <PageLoader><Jenkins /></PageLoader> },
               { path: 'logs/:buildId', element: <PageLoader><JenkinsLogDetail /></PageLoader>, handle: { title: '构建日志' } },

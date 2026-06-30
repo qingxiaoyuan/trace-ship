@@ -65,7 +65,7 @@ class RepositoryViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return Repository.objects.none()
         user = self.request.user
-        queryset = Repository.objects.select_related("project", "credential", "specified_user")
+        queryset = Repository.objects.select_related("project", "credential")
         if user.is_superuser:
             return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
@@ -270,6 +270,50 @@ class RepositoryViewSet(StandardModelViewSet):
             "git_count": aggregate["git_count"] or 0,
             "svn_count": aggregate["svn_count"] or 0,
         })
+
+    @action(detail=False, methods=["get"], url_path="compliance-stats")
+    def compliance_stats(self, request: Request) -> Response:
+        """
+        按仓库聚合提交审查结果计数，用于「仓库合规扫描」列表。
+
+        单次分组查询统计每个仓库的通过 / 警告 / 非法 / 未审查提交数，
+        再与仓库基本信息合并返回。
+        """
+        queryset = self.get_queryset()
+        # 单次分组聚合：按 repository_id 统计各审查状态计数
+        stats_qs = (
+            CommitRecord.objects.filter(repository__in=queryset)
+            .values("repository_id")
+            .annotate(
+                commit_total=Count("id"),
+                pass_count=Count("id", filter=Q(review_status="pass")),
+                warning_count=Count("id", filter=Q(review_status="warning")),
+                illegal_count=Count("id", filter=Q(review_status="illegal")),
+                unreviewed_count=Count("id", filter=Q(review_status="unreviewed")),
+            )
+        )
+        stat_map = {item["repository_id"]: item for item in stats_qs}
+
+        result = []
+        for repo in queryset:
+            stat = stat_map.get(repo.id, {})
+            result.append({
+                "id": str(repo.id),
+                "name": repo.name,
+                "project_id": str(repo.project_id) if repo.project_id else "",
+                "project_name": repo.project.name if repo.project else "",
+                "repo_type": repo.repo_type,
+                "vendor": repo.vendor,
+                "default_branch": repo.default_branch,
+                "health_status": repo.health_status,
+                "last_sync_at": repo.last_sync_at,
+                "commit_total": stat.get("commit_total", 0),
+                "pass_count": stat.get("pass_count", 0),
+                "warning_count": stat.get("warning_count", 0),
+                "illegal_count": stat.get("illegal_count", 0),
+                "unreviewed_count": stat.get("unreviewed_count", 0),
+            })
+        return success_response(result)
 
     @action(detail=False, methods=["get"])
     def vendors(self, request: Request) -> Response:

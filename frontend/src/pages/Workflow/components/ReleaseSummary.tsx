@@ -49,12 +49,8 @@ export function ReleaseSummary({ source, instance }: ReleaseSummaryProps) {
             )}
           </div>
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">来源分支</span>
-            <span className="font-mono text-[12px] text-slate-800">{source.sourceBranch || '-'}</span>
-          </div>
-          <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">目标分支</span>
-            <span className="font-mono text-[12px] text-slate-800">{source.targetBranch || '-'}</span>
+            <span className="text-[12px] text-slate-500">分支</span>
+            <span className="font-mono text-[12px] text-slate-800">{source.branch || '-'}</span>
           </div>
           <div className="flex items-center justify-between py-1.5">
             <span className="text-[12px] text-slate-500">构建号</span>

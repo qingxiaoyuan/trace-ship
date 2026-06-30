@@ -40,15 +40,13 @@ def release_fields(release) -> dict:
         return {
             "version": "",
             "release_type": "",
-            "source_branch": "",
-            "target_branch": "",
+            "branch": "",
             "build_number": None,
         }
     return {
         "version": release.version,
         "release_type": release.release_type,
-        "source_branch": release.source_branch,
-        "target_branch": release.target_branch,
+        "branch": release.branch,
         "build_number": release.jenkins_build.build_number if release.jenkins_build_id else None,
     }
 
@@ -149,8 +147,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
     submit_time = serializers.DateTimeField(source="created_at", read_only=True)
     version = serializers.SerializerMethodField()
     release_type = serializers.SerializerMethodField()
-    source_branch = serializers.SerializerMethodField()
-    target_branch = serializers.SerializerMethodField()
+    branch = serializers.SerializerMethodField()
     build_number = serializers.SerializerMethodField()
 
     class Meta:
@@ -164,7 +161,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
             "title", "applicant", "project_name", "current_node",
             "submit_time", "version", "release_type",
-            "source_branch", "target_branch", "build_number",
+            "branch", "build_number",
         ]
         read_only_fields = [
             "id", "instance", "created_at", "updated_at",
@@ -194,13 +191,9 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
         """返回发布类型。"""
         return release_fields(resolve_release(obj.instance))["release_type"]
 
-    def get_source_branch(self, obj: WorkflowTask) -> str:
-        """返回来源分支。"""
-        return release_fields(resolve_release(obj.instance))["source_branch"]
-
-    def get_target_branch(self, obj: WorkflowTask) -> str:
-        """返回目标分支。"""
-        return release_fields(resolve_release(obj.instance))["target_branch"]
+    def get_branch(self, obj: WorkflowTask) -> str:
+        """返回发布分支。"""
+        return release_fields(resolve_release(obj.instance))["branch"]
 
     def get_build_number(self, obj: WorkflowTask):
         """返回关联 Jenkins 构建号。"""
@@ -250,8 +243,7 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
     submit_time = serializers.DateTimeField(source="created_at", read_only=True)
     version = serializers.SerializerMethodField()
     release_type = serializers.SerializerMethodField()
-    source_branch = serializers.SerializerMethodField()
-    target_branch = serializers.SerializerMethodField()
+    branch = serializers.SerializerMethodField()
     build_number = serializers.SerializerMethodField()
 
     class Meta:
@@ -261,7 +253,7 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
             "current_node_id", "created_by", "created_at", "completed_at",
             "title", "applicant", "project_name", "current_node", "submit_time",
             "version", "release_type",
-            "source_branch", "target_branch", "build_number",
+            "branch", "build_number",
         ]
         read_only_fields = fields
 
@@ -295,13 +287,9 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
         """返回发布类型。"""
         return release_fields(resolve_release(obj))["release_type"]
 
-    def get_source_branch(self, obj: WorkflowInstance) -> str:
-        """返回来源分支。"""
-        return release_fields(resolve_release(obj))["source_branch"]
-
-    def get_target_branch(self, obj: WorkflowInstance) -> str:
-        """返回目标分支。"""
-        return release_fields(resolve_release(obj))["target_branch"]
+    def get_branch(self, obj: WorkflowInstance) -> str:
+        """返回发布分支。"""
+        return release_fields(resolve_release(obj))["branch"]
 
     def get_build_number(self, obj: WorkflowInstance):
         """返回关联 Jenkins 构建号。"""

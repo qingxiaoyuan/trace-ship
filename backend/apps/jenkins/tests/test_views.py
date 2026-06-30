@@ -41,7 +41,7 @@ def patched_jenkins_views(monkeypatch, mock_jenkins_provider):
 class TestJenkinsViews:
     """Jenkins API 测试类"""
 
-    def test_create_job(self, api_client, project):
+    def test_create_job(self, api_client, project, jenkins_credential):
         """创建 Jenkins 任务"""
         response = api_client.post(
             "/api/jenkins/jobs/",
@@ -50,7 +50,8 @@ class TestJenkinsViews:
                 "name": "后端打包",
                 "server_url": "https://jenkins.example.com",
                 "job_name": "backend-build",
-                "credential_mode": "global",
+                "credential": str(jenkins_credential.id),
+                "credential_mode": "project",
                 "params_template": {"VERSION": "{version}"},
             },
             format="json",
@@ -77,7 +78,7 @@ class TestJenkinsViews:
                 "name": "后端打包",
                 "server_url": "https://jenkins.example.com",
                 "job_name": "backend-build",
-                "credential_mode": "global",
+                "credential_mode": "project",
                 "params_template": {"VERSION": "{version}"},
             },
             format="json",

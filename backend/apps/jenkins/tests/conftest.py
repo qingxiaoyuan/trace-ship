@@ -4,6 +4,7 @@ Jenkins 集成测试夹具
 import pytest
 
 from apps.account.models import User
+from apps.credential.models import Credential
 from apps.jenkins.models import JenkinsBuild, JenkinsJob
 from apps.project.models import Project, ProjectMember
 from apps.repository.models import Repository
@@ -33,7 +34,23 @@ def project(user):
 
 
 @pytest.fixture
-def repository(project):
+def jenkins_credential(user, project):
+    """测试 Jenkins 凭证（项目级）"""
+    cred = Credential.objects.create(
+        name="Jenkins Token",
+        cred_type="jenkins_token",
+        auth_mode="token",
+        owner=user,
+        scope="project",
+        project=project,
+    )
+    cred.set_data({"token": "jenkins-token-test"})
+    cred.save()
+    return cred
+
+
+@pytest.fixture
+def repository(project, jenkins_credential):
     """测试仓库"""
     return Repository.objects.create(
         project=project,
@@ -43,12 +60,13 @@ def repository(project):
         url="https://gitlab.example.com/jenkins/backend.git",
         external_identity="jenkins/backend",
         default_branch="develop",
-        credential_mode="global",
+        credential=jenkins_credential,
+        credential_mode="project",
     )
 
 
 @pytest.fixture
-def jenkins_job(project, repository):
+def jenkins_job(project, repository, jenkins_credential):
     """测试 Jenkins 任务"""
     return JenkinsJob.objects.create(
         project=project,
@@ -56,7 +74,8 @@ def jenkins_job(project, repository):
         name="后端打包",
         server_url="https://jenkins.example.com",
         job_name="backend-build",
-        credential_mode="global",
+        credential=jenkins_credential,
+        credential_mode="project",
         params_template={"VERSION": "{version}", "BRANCH": "{branch}"},
     )
 

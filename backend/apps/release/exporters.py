@@ -35,8 +35,7 @@ class ReleaseDocExporter:
             "tag_name": release.tag_name,
             "release_type": release.get_release_type_display(),
             "status": release.get_status_display(),
-            "source_branch": release.source_branch,
-            "target_branch": release.target_branch,
+            "branch": release.branch,
             "git_hash": release.git_hash,
             "publisher": release.publisher.nickname or release.publisher.username if release.publisher else "",
             "created_at": release.created_at.strftime("%Y-%m-%d %H:%M") if release.created_at else "",
@@ -98,7 +97,7 @@ class ReleaseDocExporter:
         base_data = [
             ["项目", ctx["project_name"], "版本号", ctx["version"]],
             ["Tag", ctx["tag_name"], "发布类型", ctx["release_type"]],
-            ["来源分支", ctx["source_branch"], "目标分支", ctx["target_branch"]],
+            ["分支", ctx["branch"], "", ""],
             ["Git Hash", ctx["git_hash"], "发布人", ctx["publisher"]],
             ["创建时间", ctx["created_at"], "发布时间", ctx["released_at"]],
         ]
@@ -182,7 +181,9 @@ class ReleaseDocExporter:
         cells = [
             ("项目", ctx["project_name"], "版本号", ctx["version"]),
             ("Tag", ctx["tag_name"], "发布类型", ctx["release_type"]),
-            ("来源分支", ctx["source_branch"], "目标分支", ctx["target_branch"]),
+            ("Tag", ctx["tag_name"], "发布类型", ctx["release_type"]),
+            ("分支", ctx["branch"], "", ""),
+            ("Git Hash", ctx["git_hash"], "发布人", ctx["publisher"]),
             ("Git Hash", ctx["git_hash"], "发布人", ctx["publisher"]),
             ("创建时间", ctx["created_at"], "发布时间", ctx["released_at"]),
         ]

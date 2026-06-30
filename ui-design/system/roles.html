@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · 角色管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.3; }
+.aurora::before{ width:520px; height:520px; top:-140px; right:-100px; background:radial-gradient(circle,#818CF8,transparent 70%); }
+.aurora::after{ width:440px; height:440px; bottom:-120px; left:200px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:48px 48px; }
+.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
+.btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
+.icon-indigo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-violet{ background:linear-gradient(135deg,#F5F3FF,#EDE9FE); color:#6D28D9; border:1px solid #DDD6FE; }
+.icon-emerald{ background:linear-gradient(135deg,#ECFDF5,#D1FAE5); color:#047857; border:1px solid #A7F3D0; }
+.scrollbar-thin::-webkit-scrollbar{ width:5px; height:5px; }
+.scrollbar-thin::-webkit-scrollbar-thumb{ background:#C7D2FE; border-radius:9999px; }
+.nav-active{ background:linear-gradient(90deg,rgba(79,70,229,.1),rgba(34,211,238,.05)); border:1px solid rgba(79,70,229,.18); color:#4F46E5; }
+.nav-active i{ color:#4F46E5 !important; }
+.input-field{ transition:border-color .2s,box-shadow .2s; }
+.input-field:focus{ border-color:#6366F1; box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+.view{ display:none; } .view.active{ display:block; }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
+<div class="aurora"></div>
+<div class="relative z-10 flex min-h-screen">
+  <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
+    <div class="flex h-[60px] items-center gap-2.5 px-5"><img src="../../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" /><div class="flex flex-col leading-none"><span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span><span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span></div></div>
+    <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-4">
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">概览</div><div class="space-y-0.5"><a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="layout-dashboard" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>工作台</span></a><a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="tag" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>Tag 生成与发布</span></a></div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">资源</div><div class="space-y-0.5"><a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="folder-kanban" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>项目</span></a><a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-fork" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>仓库</span></a></div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">系统</div><div class="space-y-0.5"><a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="users" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>用户管理</span></a><a class="nav-active flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium cursor-pointer"><i data-lucide="shield-check" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>角色管理</span></a><a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="settings" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>系统配置</span></a><a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="file-text" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>操作日志</span></a></div></div>
+    </nav>
+  </aside>
+  <div class="flex-1 lg:ml-[244px]">
+    <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
+      <div class="hidden items-center gap-1.5 text-[13px] md:flex"><span class="text-slate-400">系统</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">角色管理</span></div>
+      <div class="ml-auto flex items-center gap-1"><button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i></button><div class="mx-1 h-5 w-px bg-indigo-100"></div><div class="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-[12px] font-semibold text-white ring-1 ring-indigo-200 cursor-pointer">张</div></div>
+    </header>
+
+    <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1280px] mx-auto">
+
+      <!-- 列表页 -->
+      <section id="view-list" class="view active space-y-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><h1 class="text-[26px] font-semibold tracking-tight text-slate-900">角色管理</h1><p class="mt-1 text-[13px] text-slate-500">管理系统角色与权限分配，角色是一组权限的集合</p></div>
+          <button id="btn-create" class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"><i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>新增角色</button>
+        </div>
+        <div class="tech-card rounded-xl overflow-hidden">
+          <div class="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3"><div class="relative"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input type="text" placeholder="搜索角色名 / 编码" class="w-[200px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></div><div class="ml-auto text-[12px] text-slate-400">共 5 个角色</div></div>
+          <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid"><div class="col-span-3">角色名称</div><div class="col-span-2">编码</div><div class="col-span-3">描述</div><div class="col-span-1 text-center">权限数</div><div class="col-span-1 text-center">用户数</div><div class="col-span-2 text-right">操作</div></div>
+          <div class="divide-y divide-indigo-50/50">
+            <div class="r-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-violet"><i data-lucide="shield-check" class="h-4 w-4" style="stroke-width:1.5"></i></div><span class="text-[13px] font-medium text-slate-900">系统管理员</span></div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">admin</div>
+              <div class="col-span-12 md:col-span-3 text-[12px] text-slate-500">拥有系统全部权限</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">全部</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">1</div>
+              <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1"><button class="r-edit rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="pencil" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+            </div>
+            <div class="r-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo"><i data-lucide="folder-kanban" class="h-4 w-4" style="stroke-width:1.5"></i></div><span class="text-[13px] font-medium text-slate-900">项目经理</span></div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">project_manager</div>
+              <div class="col-span-12 md:col-span-3 text-[12px] text-slate-500">管理项目、发布与审批</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">12</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">3</div>
+              <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1"><button class="r-edit rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="pencil" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+            </div>
+            <div class="r-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="code-2" class="h-4 w-4" style="stroke-width:1.5"></i></div><span class="text-[13px] font-medium text-slate-900">开发工程师</span></div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">developer</div>
+              <div class="col-span-12 md:col-span-3 text-[12px] text-slate-500">创建发布、推送 Tag</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">8</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">5</div>
+              <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1"><button class="r-edit rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="pencil" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+            </div>
+            <div class="r-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer">
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2"><div class="flex h-8 w-8 items-center justify-center rounded-lg" style="background:linear-gradient(135deg,#FFFBEB,#FEF3C7);color:#B45309;border:1px solid #FDE68A;"><i data-lucide="bug" class="h-4 w-4" style="stroke-width:1.5"></i></div><span class="text-[13px] font-medium text-slate-900">测试工程师</span></div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">tester</div>
+              <div class="col-span-12 md:col-span-3 text-[12px] text-slate-500">审查提交、审批发布</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">6</div>
+              <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">2</div>
+              <div class="col-span-6 md:col-span-2 flex items-center justify-end gap-1"><button class="r-edit rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="pencil" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 新增/编辑页 -->
+      <section id="view-form" class="view space-y-5">
+        <div class="flex items-center gap-2 text-[13px]"><a id="form-back" class="inline-flex items-center gap-1 text-slate-400 hover:text-indigo-600 cursor-pointer"><i data-lucide="arrow-left" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>角色管理</a></div>
+        <div><h1 id="form-title" class="text-[22px] font-semibold tracking-tight text-slate-900">新增角色</h1></div>
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5">
+          <div class="space-y-5">
+            <div class="tech-card rounded-xl p-5 space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label class="block text-[12px] font-medium text-slate-600 mb-1.5">角色名称 <span class="text-rose-500">*</span></label><input type="text" placeholder="如：项目经理" class="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none" /></div>
+                <div><label class="block text-[12px] font-medium text-slate-600 mb-1.5">角色编码 <span class="text-rose-500">*</span></label><input type="text" placeholder="如：project_manager" class="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-mono text-slate-700 placeholder-slate-400 outline-none" /></div>
+              </div>
+              <div><label class="block text-[12px] font-medium text-slate-600 mb-1.5">描述</label><textarea rows="2" placeholder="角色职责说明" class="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none resize-none"></textarea></div>
+            </div>
+            <div class="tech-card rounded-xl p-5">
+              <div class="flex items-center justify-between mb-4"><div class="flex items-center gap-2"><div class="flex h-7 w-7 items-center justify-center rounded-lg icon-emerald"><i data-lucide="key-round" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div><h3 class="text-[14px] font-semibold text-slate-900">权限分配</h3></div><div class="flex items-center gap-2"><button class="text-[11px] font-medium text-indigo-600 hover:text-indigo-500">全选</button><span class="text-slate-300">|</span><button class="text-[11px] font-medium text-slate-500 hover:text-indigo-600">清空</button></div></div>
+              <div class="space-y-4">
+                <div><div class="flex items-center justify-between mb-2"><span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">项目管理</span><button class="text-[10px] font-medium text-slate-400 hover:text-indigo-600">全选本组</button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-2"><label class="flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/40 px-2.5 py-1.5 cursor-pointer"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-indigo-500 bg-indigo-500"><i data-lucide="check" class="h-2.5 w-2.5 text-white" style="stroke-width:3"></i></span><span class="text-[12px] text-slate-700">查看项目</span><span class="ml-auto font-mono text-[10px] text-slate-400">project:view</span></label><label class="flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/40 px-2.5 py-1.5 cursor-pointer"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-indigo-500 bg-indigo-500"><i data-lucide="check" class="h-2.5 w-2.5 text-white" style="stroke-width:3"></i></span><span class="text-[12px] text-slate-700">创建项目</span><span class="ml-auto font-mono text-[10px] text-slate-400">project:create</span></label><label class="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 cursor-pointer hover:border-indigo-300"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-slate-300"></span><span class="text-[12px] text-slate-700">编辑项目</span><span class="ml-auto font-mono text-[10px] text-slate-400">project:edit</span></label><label class="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 cursor-pointer hover:border-indigo-300"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-slate-300"></span><span class="text-[12px] text-slate-700">删除项目</span><span class="ml-auto font-mono text-[10px] text-slate-400">project:delete</span></label></div></div>
+                <div class="border-t border-indigo-50 pt-3"><div class="flex items-center justify-between mb-2"><span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">发布管理</span><button class="text-[10px] font-medium text-slate-400 hover:text-indigo-600">全选本组</button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-2"><label class="flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/40 px-2.5 py-1.5 cursor-pointer"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-indigo-500 bg-indigo-500"><i data-lucide="check" class="h-2.5 w-2.5 text-white" style="stroke-width:3"></i></span><span class="text-[12px] text-slate-700">查看发布</span><span class="ml-auto font-mono text-[10px] text-slate-400">release:view</span></label><label class="flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/40 px-2.5 py-1.5 cursor-pointer"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-indigo-500 bg-indigo-500"><i data-lucide="check" class="h-2.5 w-2.5 text-white" style="stroke-width:3"></i></span><span class="text-[12px] text-slate-700">创建发布</span><span class="ml-auto font-mono text-[10px] text-slate-400">release:create</span></label><label class="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 cursor-pointer hover:border-indigo-300"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-slate-300"></span><span class="text-[12px] text-slate-700">推送 Tag</span><span class="ml-auto font-mono text-[10px] text-slate-400">release:push_tag</span></label><label class="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 cursor-pointer hover:border-indigo-300"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-slate-300"></span><span class="text-[12px] text-slate-700">审批发布</span><span class="ml-auto font-mono text-[10px] text-slate-400">release:audit</span></label></div></div>
+                <div class="border-t border-indigo-50 pt-3"><div class="flex items-center justify-between mb-2"><span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">仓库管理</span><button class="text-[10px] font-medium text-slate-400 hover:text-indigo-600">全选本组</button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-2"><label class="flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/40 px-2.5 py-1.5 cursor-pointer"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-indigo-500 bg-indigo-500"><i data-lucide="check" class="h-2.5 w-2.5 text-white" style="stroke-width:3"></i></span><span class="text-[12px] text-slate-700">查看仓库</span><span class="ml-auto font-mono text-[10px] text-slate-400">repo:view</span></label><label class="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 cursor-pointer hover:border-indigo-300"><span class="relative inline-flex h-4 w-4 items-center justify-center rounded border-2 border-slate-300"></span><span class="text-[12px] text-slate-700">同步提交</span><span class="ml-auto font-mono text-[10px] text-slate-400">repo:sync</span></label></div></div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2"><button type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600">取消</button><button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white"><i data-lucide="save" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>保存</button></div>
+          </div>
+          <div class="tech-card rounded-xl p-5 h-fit sticky top-20">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">已选权限</div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2 text-[12px]"><i data-lucide="check" class="h-3 w-3 text-emerald-500" style="stroke-width:2"></i><span class="text-slate-700">查看项目</span><span class="ml-auto font-mono text-[10px] text-slate-400">project:view</span></div>
+              <div class="flex items-center gap-2 text-[12px]"><i data-lucide="check" class="h-3 w-3 text-emerald-500" style="stroke-width:2"></i><span class="text-slate-700">创建项目</span><span class="ml-auto font-mono text-[10px] text-slate-400">project:create</span></div>
+              <div class="flex items-center gap-2 text-[12px]"><i data-lucide="check" class="h-3 w-3 text-emerald-500" style="stroke-width:2"></i><span class="text-slate-700">查看发布</span><span class="ml-auto font-mono text-[10px] text-slate-400">release:view</span></div>
+              <div class="flex items-center gap-2 text-[12px]"><i data-lucide="check" class="h-3 w-3 text-emerald-500" style="stroke-width:2"></i><span class="text-slate-700">创建发布</span><span class="ml-auto font-mono text-[10px] text-slate-400">release:create</span></div>
+              <div class="flex items-center gap-2 text-[12px]"><i data-lucide="check" class="h-3 w-3 text-emerald-500" style="stroke-width:2"></i><span class="text-slate-700">查看仓库</span><span class="ml-auto font-mono text-[10px] text-slate-400">repo:view</span></div>
+            </div>
+            <div class="mt-4 pt-3 border-t border-indigo-50 text-[12px] text-slate-400">已选 <span class="font-mono font-semibold text-indigo-600">5</span> 项权限</div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+<script>
+  lucide.createIcons();
+  document.querySelectorAll('.r-row').forEach(r => r.addEventListener('click', () => { document.getElementById('form-title').textContent='编辑角色'; show('view-form'); }));
+  document.querySelectorAll('.r-edit').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); document.getElementById('form-title').textContent='编辑角色'; show('view-form'); }));
+  document.getElementById('btn-create').addEventListener('click', () => { document.getElementById('form-title').textContent='新增角色'; show('view-form'); });
+  document.getElementById('form-back').addEventListener('click', () => show('view-list'));
+  function show(id){ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo({top:0,behavior:'smooth'}); }
+</script>
+</body>
+</html>

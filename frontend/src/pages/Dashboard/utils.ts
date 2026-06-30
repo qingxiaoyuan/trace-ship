@@ -69,8 +69,13 @@ export function parseDurationSeconds(duration?: string): number | null {
 
 /** 取构建记录的实际耗时（秒），优先用 duration，回退到起止时间差 */
 export function getBuildDurationSeconds(build: BuildRecord): number | null {
-  const parsed = parseDurationSeconds(build.duration);
-  if (parsed !== null) return parsed;
+  if (typeof build.duration === 'number' && build.duration > 0) {
+    return Math.round(build.duration / 1000);
+  }
+  if (typeof build.duration === 'string') {
+    const parsed = parseDurationSeconds(build.duration);
+    if (parsed !== null) return parsed;
+  }
 
   if (!build.started_at || !build.finished_at) return null;
   const startedAt = new Date(build.started_at).getTime();

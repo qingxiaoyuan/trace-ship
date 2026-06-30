@@ -38,8 +38,7 @@ class TestReleaseDocGenerator:
             repository=repository,
             version="VA.1.0.0",
             tag_name="VA.1.0.0",
-            source_branch="develop",
-            target_branch="main",
+            branch="main",
             release_type="formal",
             publisher=user,
         )

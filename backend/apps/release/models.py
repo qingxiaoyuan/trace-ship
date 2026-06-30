@@ -22,9 +22,8 @@ class ReleaseRecord(models.Model):
         repository: 目标仓库（第三阶段新增，明确推 tag 的对象）
         version: 版本号
         tag_name: 要推送的 tag 名称
-        source_branch: 来源分支（通常为 develop）
-        target_branch: 目标分支（main / test-xxx）
-        git_hash: 目标分支当前 commit hash
+        branch: 发布分支（main / test-xxx）
+        git_hash: 分支当前 commit hash
         release_type: 发布类型（formal 正式 / rc 候选 / beta 测试）
         status: 发布状态
         release_doc: 发布说明文档（JSON）
@@ -63,8 +62,7 @@ class ReleaseRecord(models.Model):
     )
     version = models.CharField(max_length=100, verbose_name="版本号")
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
-    source_branch = models.CharField(max_length=200, verbose_name="来源分支")
-    target_branch = models.CharField(max_length=200, verbose_name="目标分支")
+    branch = models.CharField(max_length=200, verbose_name="发布分支")
     git_hash = models.CharField(max_length=100, blank=True, verbose_name="Git 哈希")
     release_type = models.CharField(
         max_length=20,

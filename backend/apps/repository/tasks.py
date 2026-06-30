@@ -14,7 +14,7 @@ def sync_repository_commits(self, repository_id: str, branch: str = None) -> dic
     """
     异步同步指定仓库的 commits
 
-    仅支持 credential_mode 为 fixed / global 的仓库（无需当前登录用户上下文）。
+    仅支持已绑定凭证的仓库（无需当前登录用户上下文，直接使用绑定的凭证）。
     失败时会更新仓库健康状态为 unhealthy，并按指数退避重试 3 次。
 
     Args:

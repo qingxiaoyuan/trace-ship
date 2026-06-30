@@ -1,12 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Steps, Form, Select, Button, Card, App, Radio } from 'antd';
+import { Form, Select } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import {
+  ArrowLeft,
+  ChevronDown,
+  FolderKanban,
+  GitBranch,
+  Settings2,
+  Tag,
+  Link as LinkIcon,
+  ListChecks,
+  Plus,
+  X,
+  Sparkles,
+  Lock,
+  Info,
+  Rocket,
+  Package,
+  Cpu,
+  Check,
+} from 'lucide-react';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { releaseApi } from '@/api/release';
+import { useAppMessage } from '@/hooks/useAppMessage';
+import { releaseTypeText } from '@/pages/Release/constants';
 import type { Release, ReleaseType, Repository } from '@/types';
 
+/** 发布说明文档（generate-doc 返回结构） */
 interface ReleaseDoc {
   change_type?: string;
   updates?: { type?: string; content?: string }[];
@@ -15,18 +37,72 @@ interface ReleaseDoc {
   publisher?: string;
 }
 
+/** 关联变更清单条目 */
+interface RelatedChange {
+  key: string;
+  value: string;
+}
+
+/** 变更条目（A/F 类） */
+interface UpdateItem {
+  type: 'A' | 'F';
+  content: string;
+}
+
+/** 版本规则 */
+interface VersionRule {
+  format?: string;
+  initial?: string;
+}
+
+/** 发布类型卡片配置 */
+const RELEASE_TYPES: { value: ReleaseType; title: string; desc: string }[] = [
+  { value: 'formal', title: '正式', desc: '目标分支须为 main / master' },
+  { value: 'rc', title: 'RC', desc: 'Tag 自动加 rc- 前缀' },
+  { value: 'beta', title: 'Beta', desc: 'Tag 自动加 beta- 前缀' },
+];
+
+/** 默认 tag 前缀（与后端 ReleaseValidator.get_default_tag_prefixes 一致） */
+const DEFAULT_TAG_PREFIXES: Record<string, string> = { rc: 'rc', beta: 'beta' };
+
+/** 变更条目类型说明 */
+const UPDATE_TYPE_LABEL: Record<string, string> = { A: '功能增加', F: 'BUG 修复' };
+
+/** 从版本规则 format 中解析占位符字段名列表 */
+function parseFormatFields(format?: string): string[] {
+  if (!format) return [];
+  const matched = format.match(/\{(\w+)\}/g);
+  return matched ? matched.map((m) => m.slice(1, -1)) : [];
+}
+
+/** 根据发布类型与前缀配置推导 Tag 名 */
+function deriveTagName(version: string, releaseType: ReleaseType, prefixes?: Record<string, string>): string {
+  if (releaseType === 'formal') return version;
+  const prefix = (prefixes?.[releaseType] ?? DEFAULT_TAG_PREFIXES[releaseType] ?? '').replace(/^-+|-+$/g, '');
+  if (!prefix) return version;
+  return version.startsWith(`${prefix}-`) ? version : `${prefix}-${version}`;
+}
+
 export default function ReleaseCreate() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const projectIdFromQuery = searchParams.get('project_id') || undefined;
-  const { message } = App.useApp();
+  const { message } = useAppMessage();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [createdRelease, setCreatedRelease] = useState<Release | null>(null);
   const [releaseDoc, setReleaseDoc] = useState<ReleaseDoc | null>(null);
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(projectIdFromQuery);
-  const [selectedRepoId, setSelectedRepoId] = useState<string | undefined>();
+  // 关联变更清单 / 变更条目为可选本地态（不在 antd Form 内管理）
+  const [relatedChanges, setRelatedChanges] = useState<RelatedChange[]>([]);
+  const [updates, setUpdates] = useState<UpdateItem[]>([]);
+
+  // 响应式跟踪关键字段
+  const watchProject = Form.useWatch('project', form) as string | undefined;
+  const watchRepository = Form.useWatch('repository', form) as string | undefined;
+  const watchReleaseType = (Form.useWatch('release_type', form) as ReleaseType) || 'formal';
+  const watchBranch = Form.useWatch('branch', form) as string | undefined;
+  const watchVersion = Form.useWatch('version', form) as string | undefined;
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-all'],
@@ -35,15 +111,32 @@ export default function ReleaseCreate() {
   });
 
   const { data: repoData, isLoading: reposLoading } = useQuery({
-    queryKey: ['repositories', selectedProjectId],
-    queryFn: () => repositoryApi.getRepositories({ project: selectedProjectId, page_size: 1000 }),
-    enabled: !!selectedProjectId,
+    queryKey: ['repositories', watchProject],
+    queryFn: () => repositoryApi.getRepositories({ project: watchProject, page_size: 1000 }),
+    enabled: !!watchProject,
   });
 
-  const { data: branches, isLoading: branchesLoading } = useQuery({
-    queryKey: ['repository-branches', selectedRepoId],
-    queryFn: () => repositoryApi.getBranches(selectedRepoId || ''),
-    enabled: !!selectedRepoId,
+  const {
+    data: branches,
+    isLoading: branchesLoading,
+    error: branchesError,
+  } = useQuery({
+    queryKey: ['repository-branches', watchRepository],
+    queryFn: () => repositoryApi.getBranches(watchRepository || ''),
+    enabled: !!watchRepository,
+    retry: false,
+  });
+
+  // 分支拉取失败的错误信息（凭证失效 / 仓库无法连接等）
+  const branchesErrorMsg = branchesError
+    ? (branchesError as { message?: string })?.message || '获取分支失败，请检查仓库凭证与连通性'
+    : undefined;
+
+  // 自动版本号预览
+  const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
+    queryKey: ['repository-next-version', watchRepository, watchReleaseType],
+    queryFn: () => repositoryApi.getNextVersion(watchRepository || '', watchReleaseType),
+    enabled: !!watchRepository,
   });
 
   const projectOptions = useMemo(
@@ -59,6 +152,31 @@ export default function ReleaseCreate() {
     [branches]
   );
 
+  // 当前选中项目的版本规则与发布规则
+  const selectedProject = useMemo(
+    () => (projectData?.results || []).find((p) => p.id === watchProject),
+    [projectData, watchProject]
+  );
+  const versionRule = (selectedProject?.version_rule as VersionRule | undefined) || {};
+  const releaseRule = (selectedProject?.release_rule as Record<string, unknown> | undefined) || {};
+  const tagPrefixes = (releaseRule.tag_prefixes as Record<string, string> | undefined) || DEFAULT_TAG_PREFIXES;
+  const formatFields = parseFormatFields(versionRule.format);
+  const incrementField = formatFields[formatFields.length - 1];
+
+  // 分支 HEAD
+  const branchHead = useMemo(() => {
+    if (!watchBranch) return undefined;
+    return (branches || []).find((b) => b.name === watchBranch)?.last_commit_hash;
+  }, [branches, watchBranch]);
+
+  // 预览：手动版本号优先，否则取自动计算
+  const manualVersion = watchVersion?.trim();
+  const previewVersion = manualVersion || nextVersionData?.next_version || '—';
+  const previewTag = manualVersion
+    ? deriveTagName(manualVersion, watchReleaseType, tagPrefixes)
+    : nextVersionData?.next_tag_name || '—';
+  const latestTag = nextVersionData?.latest_tag || '无';
+
   useEffect(() => {
     if (projectIdFromQuery) {
       form.setFieldsValue({ project: projectIdFromQuery });
@@ -71,9 +189,11 @@ export default function ReleaseCreate() {
         project: values.project as string,
         repository: values.repository as string,
         release_type: values.release_type as ReleaseType,
-        source_branch: values.source_branch as string,
-        target_branch: values.target_branch as string,
-      }),
+        branch: values.branch as string,
+        version: (values.version as string)?.trim() || undefined,
+        related_changes: relatedChanges.filter((r) => r.key.trim()),
+        updates: updates.filter((u) => u.content.trim()),
+      } as never),
     onSuccess: (release) => {
       setCreatedRelease(release);
       message.success('发布草稿创建成功');
@@ -98,163 +218,611 @@ export default function ReleaseCreate() {
     onError: (err: { message?: string }) => message.error(err?.message || '提交审批失败'),
   });
 
-  const handleProjectChange = (value: string) => {
-    setSelectedProjectId(value);
-    form.setFieldsValue({ repository: undefined, source_branch: undefined, target_branch: undefined });
-    setSelectedRepoId(undefined);
+  const handleProjectChange = () => {
+    form.setFieldsValue({ repository: undefined, branch: undefined });
   };
-
-  const handleRepoChange = (value: string) => {
-    setSelectedRepoId(value);
-    form.setFieldsValue({ source_branch: undefined, target_branch: undefined });
-  };
-
-  const handleCreate = (values: Record<string, unknown>) => {
-    createMutation.mutate(values);
+  const handleRepoChange = () => {
+    form.setFieldsValue({ branch: undefined });
   };
 
   const handleSubmitAudit = () => {
-    if (createdRelease?.id) {
-      submitMutation.mutate(createdRelease.id);
-    }
+    if (createdRelease?.id) submitMutation.mutate(createdRelease.id);
   };
 
   const steps = [
-    { title: '填写发布信息', key: 'basic' },
-    { title: '预览发布说明', key: 'doc' },
-    { title: '提交审批', key: 'submit' },
+    { title: '创建发布' },
+    { title: '生成说明' },
+    { title: '提交审批' },
   ];
 
   return (
-    <div className="space-y-4">
-      <Card title="新建发布">
-        <Steps current={currentStep} items={steps} className="mb-8" />
+    <div className="mx-auto max-w-[960px] space-y-5 page-fade-in">
+      {/* 返回 + 标题 */}
+      <div>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="mb-2 inline-flex items-center gap-1 text-[13px] text-slate-400 hover:text-indigo-600"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+          <span>返回</span>
+        </button>
+        <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">创建发布</h1>
+        <p className="mt-1 text-[13px] text-slate-500">
+          选择项目与仓库，配置发布类型与分支，系统将自动计算版本号与 Tag 名
+        </p>
+      </div>
 
-        {currentStep === 0 && (
-          <Form form={form} layout="vertical" onFinish={handleCreate}>
-            <Form.Item
-              name="project"
-              label="项目"
-              rules={[{ required: true, message: '请选择项目' }]}
-            >
-              <Select
-                showSearch
-                placeholder="选择项目"
-                loading={projectsLoading}
-                options={projectOptions}
-                optionFilterProp="label"
-                onChange={handleProjectChange}
-                disabled={!!projectIdFromQuery}
-              />
-            </Form.Item>
+      {/* 步骤条 */}
+      <div className="tech-card rounded-xl p-4">
+        <div className="flex items-center">
+          {steps.map((s, idx) => {
+            const done = idx < currentStep;
+            const current = idx === currentStep;
+            return (
+              <div key={s.title} className="flex flex-1 items-center last:flex-none">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-[12px] font-semibold ${
+                      done
+                        ? 'border-indigo-600 bg-indigo-600 text-white'
+                        : current
+                        ? 'border-indigo-600 bg-white text-indigo-600'
+                        : 'border-slate-200 bg-white text-slate-400'
+                    }`}
+                  >
+                    {done ? <Check className="h-3.5 w-3.5" style={{ strokeWidth: 2.5 }} /> : idx + 1}
+                  </div>
+                  <span
+                    className={`text-[12px] font-medium ${
+                      done || current ? 'text-indigo-600' : 'text-slate-400'
+                    }`}
+                  >
+                    {s.title}
+                  </span>
+                </div>
+                {idx < steps.length - 1 && (
+                  <div
+                    className={`mx-3 h-0.5 flex-1 ${idx < currentStep ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-            <Form.Item
-              name="repository"
-              label="仓库"
-              rules={[{ required: true, message: '请选择仓库' }]}
-            >
-              <Select
-                showSearch
-                placeholder="选择仓库"
-                loading={reposLoading}
-                options={repoOptions}
-                optionFilterProp="label"
-                onChange={handleRepoChange}
-              />
-            </Form.Item>
+      {currentStep === 0 && (
+        <Form form={form} layout="vertical" onFinish={(v) => createMutation.mutate(v)} requiredMark={false}>
+          {/* 1. 基础配置 */}
+          <section className="tech-card mb-5 rounded-xl p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-indigo">
+                <Settings2 className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+              </div>
+              <h3 className="text-[14px] font-semibold text-slate-900">基础配置</h3>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Form.Item name="project" label="项目" rules={[{ required: true, message: '请选择项目' }]}>
+                <SelectField
+                  icon={<FolderKanban className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
+                  placeholder="选择项目"
+                  loading={projectsLoading}
+                  options={projectOptions}
+                  onChange={handleProjectChange}
+                  disabled={!!projectIdFromQuery}
+                  hint="只有你参与的项目才会显示"
+                />
+              </Form.Item>
+
+              <Form.Item name="repository" label="目标仓库" rules={[{ required: true, message: '请选择仓库' }]}>
+                <SelectField
+                  icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
+                  placeholder="选择仓库"
+                  loading={reposLoading}
+                  options={repoOptions}
+                  onChange={handleRepoChange}
+                  hint="Tag 将推送至此仓库"
+                />
+              </Form.Item>
+            </div>
 
             <Form.Item
               name="release_type"
               label="发布类型"
-              rules={[{ required: true, message: '请选择发布类型' }]}
               initialValue="formal"
+              rules={[{ required: true, message: '请选择发布类型' }]}
+              className="mb-0 mt-1"
             >
-              <Radio.Group>
-                <Radio value="formal">正式版本</Radio>
-                <Radio value="rc">RC 版本</Radio>
-                <Radio value="beta">Beta 版本</Radio>
-              </Radio.Group>
+              <ReleaseTypeCards />
             </Form.Item>
+          </section>
 
-            <Form.Item
-              name="source_branch"
-              label="来源分支"
-              rules={[{ required: true, message: '请输入来源分支' }]}
-            >
-              <Select
-                showSearch
-                placeholder="选择来源分支"
-                loading={branchesLoading}
-                options={branchOptions}
-                optionFilterProp="label"
-                allowClear
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="target_branch"
-              label="目标分支"
-              rules={[{ required: true, message: '请输入目标分支' }]}
-            >
-              <Select
-                showSearch
-                placeholder="选择目标分支"
-                loading={branchesLoading}
-                options={branchOptions}
-                optionFilterProp="label"
-                allowClear
-              />
-            </Form.Item>
-
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={createMutation.isPending}>
-                创建草稿并生成发布说明
-              </Button>
-            </Form.Item>
-          </Form>
-        )}
-
-        {currentStep >= 1 && createdRelease && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <Card size="small" title="版本信息">
-                <p>版本号：{createdRelease.version || '-'}</p>
-                <p>Tag：{createdRelease.tag_name || '-'}</p>
-                <p>目标分支：{createdRelease.target_branch}</p>
-                <p>Git Hash：{createdRelease.git_hash}</p>
-              </Card>
-              <Card size="small" title="发布说明">
-                {generateDocMutation.isPending && <p>生成中...</p>}
-                {releaseDoc && (
-                  <div className="space-y-2">
-                    <p>变更类型：{releaseDoc.change_type || '-'}</p>
-                    <div>
-                      <p className="font-medium">更新内容：</p>
-                      <ul className="list-disc pl-5">
-                        {(releaseDoc.updates || []).map((u, idx) => (
-                          <li key={idx}>[{u.type || '-'}] {u.content || '-'}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-              </Card>
+          {/* 2. 分支配置 */}
+          <section className="tech-card mb-5 rounded-xl p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-cyan">
+                <GitBranch className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+              </div>
+              <h3 className="text-[14px] font-semibold text-slate-900">分支配置</h3>
             </div>
 
-            <div className="flex gap-3">
-              <Button
-                type="primary"
-                loading={submitMutation.isPending}
-                onClick={handleSubmitAudit}
-                disabled={currentStep === 2}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-1">
+              <Form.Item name="branch" label="分支" rules={[{ required: true, message: '请选择分支' }]}>
+                <SelectField
+                  icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
+                  placeholder="选择分支"
+                  loading={branchesLoading}
+                  options={branchOptions}
+                  hint={
+                    branchesErrorMsg
+                      ? branchesErrorMsg
+                      : '发布说明将拉取此分支的提交，Tag 将推送到此分支；正式版本只能从 main / master 发布'
+                  }
+                  error={!!branchesErrorMsg}
+                />
+              </Form.Item>
+            </div>
+
+            {branchHead && (
+              <div className="mt-1 flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/30 p-3">
+                <Info className="h-3.5 w-3.5 shrink-0 text-indigo-500" style={{ strokeWidth: 1.5 }} />
+                <span className="text-[12px] text-slate-600">
+                  分支当前 HEAD：
+                  <span className="font-mono text-indigo-600">{branchHead.slice(0, 12)}</span>
+                </span>
+              </div>
+            )}
+          </section>
+
+          {/* 3. 版本号配置 */}
+          <section className="tech-card mb-5 rounded-xl p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-violet">
+                  <Tag className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                </div>
+                <h3 className="text-[14px] font-semibold text-slate-900">版本号配置</h3>
+              </div>
+              <span className="text-[11px] text-slate-400">不填则自动计算</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Form.Item name="version" label="版本号（可选）" className="mb-0">
+                <input
+                  placeholder="留空自动计算"
+                  className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[13px] text-slate-700 placeholder-slate-400 outline-none"
+                />
+              </Form.Item>
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium text-slate-600">Tag 名（自动生成）</label>
+                <div className="relative">
+                  <input
+                    readOnly
+                    value={previewTag === '—' ? '' : previewTag}
+                    placeholder="留空自动生成"
+                    className="input-field w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5 pr-9 font-mono text-[13px] text-slate-500 placeholder-slate-400 outline-none"
+                  />
+                  <Lock
+                    className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300"
+                    style={{ strokeWidth: 1.5 }}
+                    aria-label="只读，自动计算"
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">正式无前缀 / RC 加 rc- / Beta 加 beta-</p>
+              </div>
+            </div>
+
+            {/* 自动计算预览 */}
+            <div className="mt-4 rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-cyan-50/30 p-4">
+              <div className="mb-3 flex items-center gap-1.5 text-[11px] font-medium text-indigo-600">
+                <Sparkles className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                自动计算预览
+                {nextVersionLoading && <span className="text-slate-400">（计算中…）</span>}
+              </div>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <PreviewItem label="上一个 Tag" value={latestTag} />
+                <PreviewItem
+                  label="递增字段"
+                  value={incrementField ? `${incrementField} +1` : '—'}
+                  mono
+                />
+                <PreviewItem label="计算版本号" value={previewVersion} highlight mono />
+                <PreviewItem label="生成 Tag 名" value={previewTag} highlight cyan mono />
+              </div>
+              {versionRule.format && (
+                <div className="mt-3 border-t border-indigo-100 pt-3">
+                  <div className="mb-1 text-[10px] text-slate-400">版本规则</div>
+                  <code className="inline-block rounded border border-indigo-100 bg-white px-2.5 py-1.5 font-mono text-[10px] text-slate-500">
+                    {JSON.stringify({ format: versionRule.format, initial: versionRule.initial })}
+                  </code>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 4. 关联变更清单（可选） */}
+          <section className="tech-card mb-5 rounded-xl p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-amber">
+                  <LinkIcon className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                </div>
+                <h3 className="text-[14px] font-semibold text-slate-900">关联变更清单</h3>
+                <span className="text-[10px] text-slate-400">可选</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRelatedChanges((prev) => [...prev, { key: '', value: '' }])}
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"
               >
-                提交审批
-              </Button>
-              <Button onClick={() => navigate('/releases')}>返回发布看板</Button>
+                <Plus className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
+                添加条目
+              </button>
+            </div>
+
+            {relatedChanges.length === 0 ? (
+                <p className="text-[12px] text-slate-400">暂无条目，点击右上角添加</p>
+            ) : (
+              <div className="space-y-2">
+                {relatedChanges.map((item, idx) => {
+                  const Icon = idx % 2 === 0 ? Package : Cpu;
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0 text-amber-500" style={{ strokeWidth: 1.5 }} />
+                      <input
+                        value={item.key}
+                        onChange={(e) =>
+                          setRelatedChanges((prev) =>
+                            prev.map((r, i) => (i === idx ? { ...r, key: e.target.value } : r))
+                          )
+                        }
+                        placeholder="条目名（如：固件版本）"
+                        className="input-field flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
+                      />
+                      <span className="text-[11px] text-slate-300">:</span>
+                      <input
+                        value={item.value}
+                        onChange={(e) =>
+                          setRelatedChanges((prev) =>
+                            prev.map((r, i) => (i === idx ? { ...r, value: e.target.value } : r))
+                          )
+                        }
+                        placeholder="取值"
+                        className="input-field w-28 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] font-mono text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setRelatedChanges((prev) => prev.filter((_, i) => i !== idx))}
+                        className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                      >
+                        <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-slate-400">记录硬件版本、依赖模块等关联变更信息，将写入发布说明</p>
+          </section>
+
+          {/* 5. 变更条目（可选） */}
+          <section className="tech-card mb-5 rounded-xl p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-emerald">
+                  <ListChecks className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                </div>
+                <h3 className="text-[14px] font-semibold text-slate-900">变更条目</h3>
+                <span className="text-[10px] text-slate-400">可选</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUpdates((prev) => [...prev, { type: 'A', content: '' }])}
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"
+              >
+                <Plus className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
+                添加条目
+              </button>
+            </div>
+
+            {updates.length === 0 ? (
+                <p className="text-[12px] text-slate-400">暂无条目，点击右上角添加</p>
+            ) : (
+              <div className="space-y-2">
+                {updates.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
+                  >
+                    <select
+                      value={item.type}
+                      onChange={(e) =>
+                        setUpdates((prev) =>
+                          prev.map((u, i) =>
+                            i === idx ? { ...u, type: e.target.value as 'A' | 'F' } : u
+                          )
+                        )
+                      }
+                      className={`rounded-md border bg-white px-2 py-1 text-[11px] font-mono font-medium outline-none ${
+                        item.type === 'A'
+                          ? 'border-emerald-200 text-emerald-700'
+                          : 'border-amber-200 text-amber-700'
+                      }`}
+                    >
+                      <option value="A">A</option>
+                      <option value="F">F</option>
+                    </select>
+                    <input
+                      value={item.content}
+                      onChange={(e) =>
+                        setUpdates((prev) =>
+                          prev.map((u, i) => (i === idx ? { ...u, content: e.target.value } : u))
+                        )
+                      }
+                      placeholder="变更内容描述"
+                      className="input-field flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setUpdates((prev) => prev.filter((_, i) => i !== idx))}
+                      className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                    >
+                      <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-400">
+              {(Object.keys(UPDATE_TYPE_LABEL) as (keyof typeof UPDATE_TYPE_LABEL)[]).map((t) => (
+                <span key={t} className="inline-flex items-center gap-1">
+                  <span
+                    className={`inline-flex w-4 justify-center rounded border py-0.5 font-mono font-medium ${
+                      t === 'A'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {t}
+                  </span>
+                  {UPDATE_TYPE_LABEL[t]}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          {/* 底部操作 */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+              <Info className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
+              <span>创建后状态为草稿，可编辑分支与版本号，随后生成发布说明</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-4 py-2.5 text-[13px] font-medium text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                disabled={createMutation.isPending}
+                className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
+              >
+                <Rocket className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                {createMutation.isPending ? '创建中…' : '创建发布'}
+              </button>
             </div>
           </div>
-        )}
-      </Card>
+        </Form>
+      )}
+
+      {/* 步骤 2/3：预览发布说明 + 提交审批 */}
+      {currentStep >= 1 && createdRelease && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <section className="tech-card rounded-xl p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-violet">
+                  <Tag className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                </div>
+                <h3 className="text-[14px] font-semibold text-slate-900">版本信息</h3>
+              </div>
+              <dl className="space-y-2.5 text-[13px]">
+                <InfoRow label="版本号" value={createdRelease.version || '-'} mono />
+                <InfoRow label="Tag 名" value={createdRelease.tag_name || '-'} mono />
+                <InfoRow label="发布类型" value={releaseTypeText[createdRelease.release_type]} />
+                <InfoRow label="分支" value={createdRelease.branch} mono />
+                <InfoRow label="Git Hash" value={createdRelease.git_hash?.slice(0, 12) || '-'} mono />
+              </dl>
+            </section>
+
+            <section className="tech-card rounded-xl p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-emerald">
+                  <ListChecks className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                </div>
+                <h3 className="text-[14px] font-semibold text-slate-900">发布说明</h3>
+              </div>
+              {generateDocMutation.isPending && (
+                <p className="text-[13px] text-slate-400">生成中…</p>
+              )}
+              {releaseDoc && (
+                <div className="space-y-3 text-[13px]">
+                  <div>
+                    <span className="text-slate-400">变更类型：</span>
+                    <span className="text-slate-700">{releaseDoc.change_type || '-'}</span>
+                  </div>
+                  <div>
+                    <p className="mb-1 font-medium text-slate-600">更新内容：</p>
+                    {(releaseDoc.updates || []).length === 0 ? (
+                      <p className="text-slate-400">无</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {(releaseDoc.updates || []).map((u, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-slate-700">
+                            <span
+                              className={`mt-0.5 inline-flex w-4 shrink-0 justify-center rounded border py-0.5 font-mono text-[10px] font-medium ${
+                                u.type === 'A'
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                  : 'border-amber-200 bg-amber-50 text-amber-700'
+                              }`}
+                            >
+                              {u.type || '-'}
+                            </span>
+                            <span>{u.content || '-'}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/releases')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-4 py-2.5 text-[13px] font-medium text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              返回发布看板
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmitAudit}
+              disabled={currentStep === 2 || submitMutation.isPending}
+              className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
+            >
+              {currentStep === 2 ? '已提交审批' : submitMutation.isPending ? '提交中…' : '提交审批'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- 子组件 ---------------- */
+
+/** 带左侧图标的 antd Select 封装 */
+function SelectField({
+  icon,
+  hint,
+  loading,
+  options,
+  placeholder,
+  disabled,
+  onChange,
+  error,
+}: {
+  icon: React.ReactNode;
+  hint?: string;
+  loading?: boolean;
+  options: { label: string; value: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  onChange?: (value: string) => void;
+  error?: boolean;
+}) {
+  return (
+    <div>
+      <Select
+        showSearch
+        placeholder={placeholder}
+        loading={loading}
+        options={options}
+        optionFilterProp="label"
+        allowClear
+        disabled={disabled}
+        onChange={onChange}
+        prefix={icon}
+        suffixIcon={<ChevronDown className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
+        className="w-full"
+      />
+      {hint && (
+        <p className={`mt-1 text-[11px] ${error ? 'text-rose-500' : 'text-slate-400'}`}>{hint}</p>
+      )}
+    </div>
+  );
+}
+
+/** 发布类型卡片单选 */
+function ReleaseTypeCards({ value, onChange }: { value?: ReleaseType; onChange?: (v: ReleaseType) => void }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      {RELEASE_TYPES.map((t) => {
+        const on = value === t.value;
+        return (
+          <button
+            type="button"
+            key={t.value}
+            onClick={() => onChange?.(t.value)}
+            className={`flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${
+              on
+                ? 'border-indigo-500 bg-indigo-50 shadow-[0_0_0_1px_#6366F1]'
+                : 'border-slate-200 bg-white hover:border-indigo-300'
+            }`}
+          >
+            <span
+              className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+                on ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+              }`}
+            >
+              {on && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+            </span>
+            <div>
+              <div className="text-[13px] font-medium text-slate-900">{t.title}</div>
+              <div className="text-[11px] text-slate-400">{t.desc}</div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 自动计算预览单元 */
+function PreviewItem({
+  label,
+  value,
+  highlight,
+  cyan,
+  mono,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  cyan?: boolean;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] text-slate-400">{label}</div>
+      <div
+        className={`${mono ? 'font-mono' : ''} ${
+          highlight ? (cyan ? 'text-[15px] font-semibold text-cyan-600' : 'text-[15px] font-semibold text-indigo-600') : 'text-[13px] text-slate-700'
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/** 信息行 */
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-slate-400">{label}</dt>
+      <dd className={`text-slate-700 ${mono ? 'font-mono' : ''}`}>{value}</dd>
     </div>
   );
 }

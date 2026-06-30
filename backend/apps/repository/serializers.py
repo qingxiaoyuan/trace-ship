@@ -10,6 +10,7 @@ from rest_framework import serializers
 
 from apps.project.models import ProjectMember
 from apps.repository.models import CommitRecord, Repository
+from utils.provider.credential_resolver import VENDOR_TO_CRED_TYPE
 
 
 def _parse_owner_repo_from_url(url: str) -> str | None:
@@ -53,7 +54,6 @@ class RepositorySerializer(serializers.ModelSerializer):
     credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
     credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
     credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
-    specified_user_name = serializers.CharField(source="specified_user.nickname", read_only=True, default="")
     clone_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -63,13 +63,12 @@ class RepositorySerializer(serializers.ModelSerializer):
             "repo_type", "vendor", "name", "url", "clone_url", "external_identity",
             "default_branch", "credential", "credential_id", "credential_mode",
             "credential_mode_display", "credential_name", "credential_owner_name",
-            "specified_user", "specified_user_name",
             "health_status", "last_sync_at", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "health_status", "last_sync_at", "created_at", "updated_at",
             "credential_name", "credential_owner_name", "credential_mode_display",
-            "specified_user_name", "clone_url",
+            "clone_url",
         ]
 
     def get_clone_url(self, obj: Repository) -> str:
@@ -109,7 +108,7 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """
-        校验仓库类型与 vendor、凭证模式的一致性，并规范化 Git 仓库地址。
+        校验仓库类型与 vendor、凭证来源与绑定凭证的一致性，并规范化 Git 仓库地址。
 
         Args:
             attrs: 待校验属性
@@ -119,22 +118,37 @@ class RepositorySerializer(serializers.ModelSerializer):
         """
         repo_type = attrs.get("repo_type", getattr(self.instance, "repo_type", None))
         vendor = attrs.get("vendor", getattr(self.instance, "vendor", None))
-        credential_mode = attrs.get("credential_mode", getattr(self.instance, "credential_mode", "fixed"))
+        credential_mode = attrs.get("credential_mode", getattr(self.instance, "credential_mode", "project"))
         credential = attrs.get("credential", getattr(self.instance, "credential", None))
-        specified_user = attrs.get("specified_user", getattr(self.instance, "specified_user", None))
 
         if repo_type == "svn" and vendor != "svn":
             raise serializers.ValidationError({"vendor": "SVN 仓库的 vendor 必须为 svn"})
         if repo_type == "git" and vendor == "svn":
             raise serializers.ValidationError({"vendor": "Git 仓库不能使用 svn vendor"})
-        if credential_mode == "fixed" and credential is None:
-            raise serializers.ValidationError({"credential": "fixed 凭证模式必须选择凭证"})
-        if credential_mode != "fixed" and credential is not None:
-            raise serializers.ValidationError({"credential": "非 fixed 凭证模式不能直接绑定凭证"})
-        if credential_mode == "specified_user" and specified_user is None:
-            raise serializers.ValidationError({"specified_user": "specified_user 凭证模式必须指定用户"})
-        if credential_mode != "specified_user" and specified_user is not None:
-            raise serializers.ValidationError({"specified_user": "仅 specified_user 凭证模式可以指定用户"})
+
+        # 凭证必须显式绑定，并按来源校验 scope / owner / project 与 cred_type
+        if credential is None:
+            raise serializers.ValidationError({"credential": "必须选择凭证"})
+        if credential_mode not in ("personal", "project"):
+            raise serializers.ValidationError({"credential_mode": "凭证来源只能为 personal 或 project"})
+
+        if credential_mode == "personal":
+            if credential.scope != "personal":
+                raise serializers.ValidationError({"credential": "个人来源必须选择个人凭证"})
+            if credential.owner_id != self.context["request"].user.id:
+                raise serializers.ValidationError({"credential": "个人来源只能选择自己的凭证"})
+        else:  # project
+            project = attrs.get("project", getattr(self.instance, "project", None))
+            project_id = project.id if project else None
+            if credential.scope != "project":
+                raise serializers.ValidationError({"credential": "项目来源必须选择项目凭证"})
+            if credential.project_id != project_id:
+                raise serializers.ValidationError({"credential": "项目来源只能选择挂靠在当前项目下的凭证"})
+
+        # 校验凭证类型与仓库平台一致
+        expected_cred_type = VENDOR_TO_CRED_TYPE.get(vendor)
+        if expected_cred_type and credential.cred_type != expected_cred_type:
+            raise serializers.ValidationError({"credential": f"凭证类型与仓库平台不匹配，应为 {expected_cred_type}"})
 
         # Git 仓库地址规范化：把克隆地址统一解析为服务器根地址 + owner/repo
         url = attrs.get("url")

@@ -2,6 +2,7 @@ import { get, post, put, del } from './request';
 import type {
   CommitRecord,
   PaginatedData,
+  RepoComplianceStat,
   Repository,
   RepositoryBranch,
   RepositoryStats,
@@ -21,6 +22,7 @@ export const repositoryApi = {
     get<PaginatedData<Repository>>('/repositories/', { params }),
   getRepository: (id: string) => get<Repository>(`/repositories/${id}/`),
   getRepositoryStats: () => get<RepositoryStats>('/repositories/stats/'),
+  getComplianceStats: () => get<RepoComplianceStat[]>('/repositories/compliance-stats/'),
   createRepository: (data: Partial<Repository>) => post<Repository>('/repositories/', data),
   updateRepository: (id: string, data: Partial<Repository>) =>
     put<Repository>(`/repositories/${id}/`, data),

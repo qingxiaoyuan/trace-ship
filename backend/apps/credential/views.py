@@ -28,7 +28,7 @@ class CredentialViewSet(StandardModelViewSet):
     serializer_class = CredentialSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["cred_type", "scope", "is_active"]
+    filterset_fields = ["cred_type", "scope", "is_active", "project"]
     search_fields = ["name", "username"]
     ordering_fields = ["created_at", "last_used_at"]
     ordering = ["-created_at"]
@@ -150,6 +150,5 @@ class CredentialViewSet(StandardModelViewSet):
             "scopes": [
                 {"value": "personal", "label": "个人"},
                 {"value": "project", "label": "项目"},
-                {"value": "global", "label": "全局"},
             ],
         })

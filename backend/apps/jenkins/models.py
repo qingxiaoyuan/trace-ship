@@ -25,8 +25,7 @@ class JenkinsJob(models.Model):
         server_url: Jenkins 服务器地址
         job_name: Jenkins Job 名
         credential: 关联凭证
-        credential_mode: 凭证使用模式
-        specified_user: 指定用户
+        credential_mode: 凭证来源（个人 / 项目）
         params_template: 参数模板（JSON）
         is_active: 是否启用
         created_at: 创建时间
@@ -34,10 +33,8 @@ class JenkinsJob(models.Model):
     """
 
     CREDENTIAL_MODE_CHOICES = [
-        ("current_user", "当前用户"),
-        ("specified_user", "指定用户"),
-        ("fixed", "项目固定凭证"),
-        ("global", "系统全局凭证"),
+        ("personal", "个人"),
+        ("project", "项目"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -69,16 +66,8 @@ class JenkinsJob(models.Model):
     credential_mode = models.CharField(
         max_length=20,
         choices=CREDENTIAL_MODE_CHOICES,
-        default="fixed",
-        verbose_name="凭证使用模式",
-    )
-    specified_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="specified_jenkins_jobs",
-        verbose_name="指定用户",
+        default="project",
+        verbose_name="凭证来源",
     )
     params_template = models.JSONField(default=dict, blank=True, verbose_name="参数模板")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
@@ -110,12 +99,15 @@ class JenkinsBuild(models.Model):
     Attributes:
         id: UUID 主键
         job: 关联 Jenkins 任务
+        triggered_by: 触发人
         queue_id: Jenkins 队列号
         build_number: Jenkins 构建号
         status: 构建状态
         params: 实际传入参数
         log_url: 日志地址
         artifact_info: 产物信息（JSON 列表）
+        duration: 构建耗时（毫秒）
+        estimated_duration: 预估耗时（毫秒）
         started_at: 开始时间
         finished_at: 结束时间
         created_at: 创建时间
@@ -137,6 +129,14 @@ class JenkinsBuild(models.Model):
         related_name="builds",
         verbose_name="Jenkins 任务",
     )
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="triggered_jenkins_builds",
+        verbose_name="触发人",
+    )
     queue_id = models.CharField(max_length=100, blank=True, verbose_name="队列号")
     build_number = models.IntegerField(null=True, blank=True, verbose_name="构建号")
     status = models.CharField(
@@ -148,6 +148,8 @@ class JenkinsBuild(models.Model):
     params = models.JSONField(default=dict, blank=True, verbose_name="构建参数")
     log_url = models.CharField(max_length=500, blank=True, verbose_name="日志地址")
     artifact_info = models.JSONField(default=list, blank=True, verbose_name="产物信息")
+    duration = models.IntegerField(null=True, blank=True, verbose_name="构建耗时(ms)")
+    estimated_duration = models.IntegerField(null=True, blank=True, verbose_name="预估耗时(ms)")
     started_at = models.DateTimeField(null=True, blank=True, verbose_name="开始时间")
     finished_at = models.DateTimeField(null=True, blank=True, verbose_name="结束时间")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")

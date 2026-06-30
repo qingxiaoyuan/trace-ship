@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Empty, Button } from 'antd';
-import { ChevronRight, GitBranch, GitCommitHorizontal, Rocket, Tag } from 'lucide-react';
+import { ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, Rocket, Tag } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { releaseApi } from '@/api/release';
@@ -102,16 +102,9 @@ export default function ReleaseDetail() {
         <div className="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
           <div className="flex items-center gap-2">
             <GitBranch className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
-            <span className="text-[12px] text-slate-500">来源</span>
+            <span className="text-[12px] text-slate-500">分支</span>
             <span className="truncate font-mono text-[13px] font-semibold text-slate-900">
-              {release.source_branch || '-'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4 text-cyan-500" strokeWidth={1.5} />
-            <span className="text-[12px] text-slate-500">目标</span>
-            <span className="truncate font-mono text-[13px] font-semibold text-slate-900">
-              {release.target_branch || '-'}
+              {release.branch || '-'}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -126,6 +119,13 @@ export default function ReleaseDetail() {
             <span className="text-[12px] text-slate-500">类型</span>
             <span className="text-[13px] font-semibold text-slate-900">
               {type ? releaseTypeText[type] : '-'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <GitMerge className="h-4 w-4 text-cyan-500" strokeWidth={1.5} />
+            <span className="text-[12px] text-slate-500">Git Hash</span>
+            <span className="truncate font-mono text-[13px] font-semibold text-slate-900">
+              {release.git_hash ? release.git_hash.slice(0, 12) : '-'}
             </span>
           </div>
         </div>

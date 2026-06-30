@@ -131,9 +131,7 @@ export default function CredentialDetail() {
   const subText =
     credential.scope === "project"
       ? `${credentialScopeMap[credential.scope]}凭证 · ${credential.project_name || "-"}`
-      : credential.scope === "personal"
-        ? `${credentialScopeMap[credential.scope]}凭证 · ${credential.username || "-"}`
-        : `${credentialScopeMap[credential.scope]}凭证`;
+      : `${credentialScopeMap[credential.scope]}凭证 · ${credential.username || "-"}`;
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "info", label: "凭证信息" },
@@ -443,9 +441,7 @@ export default function CredentialDetail() {
                 </div>
               ) : (
                 <div className="col-span-full text-center text-[13px] text-slate-400 py-8">
-                  {credential.scope === "global"
-                    ? "全局凭证暂未绑定具体项目资源"
-                    : "个人凭证暂未绑定具体项目资源"}
+                  个人凭证暂未绑定具体项目资源
                 </div>
               )}
             </div>

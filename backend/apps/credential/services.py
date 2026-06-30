@@ -24,7 +24,7 @@ class CredentialService:
         规则：
         - 未登录：无数据
         - 超管：全部
-        - 普通用户：自己拥有的、全局的、或所在项目的项目级凭证
+        - 普通用户：自己拥有的、或所在项目的项目级凭证
 
         Args:
             user: 当前请求用户
@@ -39,14 +39,13 @@ class CredentialService:
             return queryset.all()
         return queryset.filter(
             models.Q(owner=user)
-            | models.Q(is_global=True)
             | models.Q(scope="project", project__members__user=user)
         ).distinct()
 
     @staticmethod
     def validate_scope(data: dict, instance: Credential = None) -> dict:
         """
-        校验凭证作用范围与项目、全局标志的一致性
+        校验凭证作用范围与项目的一致性
 
         Args:
             data: 待校验的数据字典
@@ -56,20 +55,17 @@ class CredentialService:
             校验通过的数据字典
 
         Raises:
-            ValidationError: 作用范围与项目/全局标志冲突时抛出
+            ValidationError: 作用范围与项目冲突时抛出
         """
         scope = data.get("scope", getattr(instance, "scope", "personal"))
         project = data.get("project", getattr(instance, "project", None))
-        is_global = data.get("is_global", getattr(instance, "is_global", False))
 
         if scope == "project" and project is None:
             raise serializers.ValidationError({"project": "项目级凭证必须关联项目"})
         if scope != "project" and project is not None:
             raise serializers.ValidationError({"project": "非项目级凭证不能关联项目"})
-        if scope == "global" and not is_global:
-            data["is_global"] = True
-        if is_global and scope != "global":
-            raise serializers.ValidationError({"is_global": "全局凭证的 scope 必须为 global"})
+        # global 作用域已退役，强制 is_global 保持 False
+        data["is_global"] = False
         return data
 
     @staticmethod

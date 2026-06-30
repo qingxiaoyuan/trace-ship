@@ -5,7 +5,6 @@ import { TsModal } from "@/components/TsModal";
 import { FormSection } from "@/components/FormSection";
 import { projectApi } from "@/api/project";
 import { credentialApi } from "@/api/credential";
-import { accountApi } from "@/api/account";
 import type { Repository } from "@/types";
 
 interface RepositoryModalProps {
@@ -17,10 +16,8 @@ interface RepositoryModalProps {
 }
 
 const credentialModeOptions = [
-  { label: "项目固定凭证", value: "fixed" },
-  { label: "当前用户", value: "current_user" },
-  { label: "指定用户", value: "specified_user" },
-  { label: "系统全局凭证", value: "global" },
+  { label: "项目凭证", value: "project" },
+  { label: "个人凭证", value: "personal" },
 ];
 
 // 仓库平台与凭证类型的对应关系，与后端 VENDOR_TO_CRED_TYPE 保持一致
@@ -47,16 +44,28 @@ export function RepositoryModal({
     enabled: open,
   });
 
-  const { data: credentialData, isLoading: credentialsLoading } = useQuery({
-    queryKey: ["credentials-all"],
-    queryFn: () => credentialApi.getCredentials({ page_size: 1000 }),
-    enabled: open,
-  });
+  const credentialMode = (Form.useWatch("credential_mode", form) || "project") as string;
+  const vendor = Form.useWatch("vendor", form) as string;
+  const watchedProjectId = (Form.useWatch("project_id", form) || projectId) as
+    | string
+    | undefined;
+  const expectedCredType = VENDOR_TO_CRED_TYPE[vendor || ""] || "";
 
-  const { data: usersData, isLoading: usersLoading } = useQuery({
-    queryKey: ["account-users-all"],
-    queryFn: () => accountApi.getUsers({ page_size: 1000 }),
-    enabled: open,
+  // 按凭证来源拉取可选凭证：个人来源取自己的个人凭证，项目来源取挂靠在当前项目下的项目凭证
+  const { data: credentialData, isLoading: credentialsLoading } = useQuery({
+    queryKey: ["repo-credentials", credentialMode, watchedProjectId, expectedCredType],
+    queryFn: () =>
+      credentialApi.getCredentials({
+        page_size: 1000,
+        scope: credentialMode,
+        cred_type: expectedCredType || undefined,
+        project: credentialMode === "project" ? watchedProjectId : undefined,
+      }),
+    enabled:
+      open &&
+      !!credentialMode &&
+      (credentialMode === "personal" || !!watchedProjectId) &&
+      !!expectedCredType,
   });
 
   const projectOptions =
@@ -70,31 +79,14 @@ export function RepositoryModal({
       })) || [],
     [credentialData],
   );
-  const userOptions =
-    usersData?.results.map((u) => ({
-      label: `${u.nickname || u.username} (${u.username})`,
-      value: u.id,
-    })) || [];
 
-  const credentialMode = Form.useWatch("credential_mode", form);
-  const vendor = Form.useWatch("vendor", form);
-  const expectedCredType = VENDOR_TO_CRED_TYPE[vendor] || "";
-
-  // 按平台过滤凭证选项，避免选错类型
-  const filteredCredentialOptions = credentialOptions.filter(
-    (c) => c.cred_type === expectedCredType,
-  );
-
-  // 平台切换时，如果已选凭证类型不匹配则清空
+  // 可选凭证变化后，若已选凭证不在新列表中则清空（切换来源/平台/项目或编辑回填不匹配时）
   useEffect(() => {
-    const currentCredentialId = form.getFieldValue("credential_id");
-    const currentCredential = credentialOptions.find(
-      (c) => c.value === currentCredentialId,
-    );
-    if (currentCredential && currentCredential.cred_type !== expectedCredType) {
+    const currentId = form.getFieldValue("credential_id");
+    if (currentId && !credentialOptions.some((c) => c.value === currentId)) {
       form.setFieldsValue({ credential_id: undefined });
     }
-  }, [vendor, credentialOptions, expectedCredType, form]);
+  }, [credentialOptions, form]);
 
   useEffect(() => {
     if (open) {
@@ -106,7 +98,7 @@ export function RepositoryModal({
           name: repo.name,
           url: repo.url,
           default_branch: repo.default_branch,
-          credential_mode: repo.credential_mode || "fixed",
+          credential_mode: repo.credential_mode || "project",
           credential_id: repo.credential_id,
         });
       } else {
@@ -116,7 +108,7 @@ export function RepositoryModal({
           repo_type: "git",
           vendor: "gitlab",
           default_branch: "main",
-          credential_mode: "fixed",
+          credential_mode: "project",
         });
       }
     }
@@ -127,29 +119,20 @@ export function RepositoryModal({
       const payload: Partial<Repository> & {
         project?: string;
         credential?: string;
-        specified_user?: string;
       } = {
         ...values,
         project: projectId || values.project_id,
-        credential:
-          values.credential_mode === "fixed" ? values.credential_id : undefined,
-        specified_user:
-          values.credential_mode === "specified_user"
-            ? values.specified_user_id
-            : undefined,
+        credential: values.credential_id,
       };
       // 删除前端字段，避免污染后端
       delete (payload as Record<string, unknown>).project_id;
       delete (payload as Record<string, unknown>).credential_id;
-      delete (payload as Record<string, unknown>).specified_user_id;
       onOk(payload);
       form.resetFields();
     });
   };
 
-  const isFixed = credentialMode === "fixed";
-  const isSpecifiedUser = credentialMode === "specified_user";
-  const confirmLoading = projectsLoading || credentialsLoading || usersLoading;
+  const confirmLoading = projectsLoading || credentialsLoading;
 
   return (
     <TsModal
@@ -285,57 +268,31 @@ export function RepositoryModal({
               <Col span={12}>
                 <Form.Item
                   name="credential_mode"
-                  label="凭证模式"
-                  rules={[{ required: true, message: "请选择凭证模式" }]}
+                  label="凭证来源"
+                  rules={[{ required: true, message: "请选择凭证来源" }]}
                 >
                   <Select options={credentialModeOptions} />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <div
-                  className={`overflow-hidden transition-all duration-300 ${
-                    isFixed ? "max-h-40 opacity-100" : "max-h-0 opacity-0"
-                  }`}
+                <Form.Item
+                  name="credential_id"
+                  label="凭证"
+                  rules={[{ required: true, message: "请选择凭证" }]}
                 >
-                  <Form.Item
-                    name="credential_id"
-                    label="凭证"
-                    rules={[{ required: isFixed, message: "请选择凭证" }]}
-                  >
-                    <Select
-                      showSearch
-                      placeholder="选择凭证"
-                      loading={credentialsLoading}
-                      options={filteredCredentialOptions}
-                      optionFilterProp="label"
-                    />
-                  </Form.Item>
-                </div>
-              </Col>
-              <Col span={12}>
-                <div
-                  className={`overflow-hidden transition-all duration-300 ${
-                    isSpecifiedUser
-                      ? "max-h-40 opacity-100"
-                      : "max-h-0 opacity-0"
-                  }`}
-                >
-                  <Form.Item
-                    name="specified_user_id"
-                    label="指定用户"
-                    rules={[
-                      { required: isSpecifiedUser, message: "请选择指定用户" },
-                    ]}
-                  >
-                    <Select
-                      showSearch
-                      placeholder="选择用户"
-                      loading={usersLoading}
-                      options={userOptions}
-                      optionFilterProp="label"
-                    />
-                  </Form.Item>
-                </div>
+                  <Select
+                    showSearch
+                    placeholder="选择凭证"
+                    loading={credentialsLoading}
+                    options={credentialOptions}
+                    optionFilterProp="label"
+                    notFoundContent={
+                      credentialMode === "personal"
+                        ? "暂无可用的个人凭证"
+                        : "暂无可用的项目凭证"
+                    }
+                  />
+                </Form.Item>
               </Col>
             </Row>
           </FormSection>

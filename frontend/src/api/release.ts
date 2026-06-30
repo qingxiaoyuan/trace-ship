@@ -5,7 +5,7 @@ export const releaseApi = {
   getReleases: (params?: Record<string, unknown>) =>
     get<PaginatedData<Release>>('/releases/', { params }),
   getRelease: (id: string) => get<Release>(`/releases/${id}/`),
-  createRelease: (data: Partial<Release> & { project: string; repository: string; release_type: string; source_branch: string; target_branch: string }) =>
+  createRelease: (data: Partial<Release> & { project: string; repository: string; release_type: string; branch: string }) =>
     post<Release>('/releases/', data),
   generateDoc: (id: string, data?: { commit_ids?: string[]; merge_similar?: boolean }) =>
     post<unknown>(`/releases/${id}/generate-doc/`, data || {}),

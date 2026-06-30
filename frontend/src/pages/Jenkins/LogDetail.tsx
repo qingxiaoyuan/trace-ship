@@ -62,7 +62,7 @@ export default function JenkinsLogDetail() {
             onClick={() => navigate('/jenkins')}
             style={{ color: tokens.colors.textSecondary, padding: 0, marginBottom: 8 }}
           >
-            返回 Jenkins 构建
+            返回打包任务
           </Button>
           <h1
             className="text-lg font-bold"
@@ -80,7 +80,7 @@ export default function JenkinsLogDetail() {
         </div>
         <div className="text-sm text-right" style={{ color: tokens.colors.textSecondary }}>
           <div>开始时间：{dayjs(build.started_at).format('YYYY-MM-DD HH:mm')}</div>
-          <div>耗时：{build.duration || '-'}</div>
+          <div>耗时：{build.duration ? `${Math.round(build.duration / 1000)}s` : '-'}</div>
         </div>
       </div>
 

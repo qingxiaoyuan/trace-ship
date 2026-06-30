@@ -49,7 +49,7 @@ class TestJenkinsService:
         release = SimpleNamespace(
             id=None,
             version="VA.1.0.0",
-            target_branch="main",
+            branch="main",
             git_hash="abc",
         )
         build = JenkinsService.trigger_build(
@@ -72,8 +72,7 @@ class TestJenkinsService:
             repository=repository,
             version="VA.1.0.0",
             tag_name="VA.1.0.0",
-            source_branch="develop",
-            target_branch="main",
+            branch="main",
             release_type="formal",
             status="pending",
             publisher=user,
@@ -99,8 +98,7 @@ class TestJenkinsService:
             repository=repository,
             version="VA.1.0.0",
             tag_name="VA.1.0.0",
-            source_branch="develop",
-            target_branch="main",
+            branch="main",
             release_type="formal",
             status="building",
             publisher=user,

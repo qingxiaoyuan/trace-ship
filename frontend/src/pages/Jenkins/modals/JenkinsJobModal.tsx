@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Form, Input, Select, Switch, Row, Col, Button } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { TsModal } from '@/components/TsModal';
@@ -6,7 +6,6 @@ import { FormSection } from '@/components/FormSection';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { credentialApi } from '@/api/credential';
-import { accountApi } from '@/api/account';
 import type { JenkinsJob } from '@/types';
 
 interface JenkinsJobModalProps {
@@ -17,10 +16,8 @@ interface JenkinsJobModalProps {
 }
 
 const credentialModeOptions = [
-  { label: '项目固定凭证', value: 'fixed' },
-  { label: '当前用户', value: 'current_user' },
-  { label: '指定用户', value: 'specified_user' },
-  { label: '系统全局凭证', value: 'global' },
+  { label: '项目凭证', value: 'project' },
+  { label: '个人凭证', value: 'personal' },
 ];
 
 export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalProps) {
@@ -32,7 +29,8 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
     enabled: open,
   });
 
-  const selectedProjectId = Form.useWatch('project', form);
+  const selectedProjectId = Form.useWatch('project', form) as string | undefined;
+  const credentialMode = (Form.useWatch('credential_mode', form) || 'project') as string;
 
   const { data: repoData, isLoading: reposLoading } = useQuery({
     queryKey: ['repositories', selectedProjectId],
@@ -40,29 +38,30 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
     enabled: open && !!selectedProjectId,
   });
 
+  // 按凭证来源拉取 jenkins_token 凭证：个人来源取自己的，项目来源取挂靠在当前项目下的
   const { data: credentialData, isLoading: credentialsLoading } = useQuery({
-    queryKey: ['credentials-all'],
-    queryFn: () => credentialApi.getCredentials({ page_size: 1000 }),
-    enabled: open,
-  });
-
-  const { data: usersData, isLoading: usersLoading } = useQuery({
-    queryKey: ['account-users-all'],
-    queryFn: () => accountApi.getUsers({ page_size: 1000 }),
-    enabled: open,
+    queryKey: ['jenkins-credentials', credentialMode, selectedProjectId],
+    queryFn: () =>
+      credentialApi.getCredentials({
+        page_size: 1000,
+        cred_type: 'jenkins_token',
+        scope: credentialMode,
+        project: credentialMode === 'project' ? selectedProjectId : undefined,
+      }),
+    enabled:
+      open &&
+      !!credentialMode &&
+      (credentialMode === 'personal' || !!selectedProjectId),
   });
 
   const projectOptions =
     projectData?.results.map((p) => ({ label: p.name, value: p.id })) || [];
   const repoOptions =
     repoData?.results.map((r) => ({ label: r.name, value: r.id })) || [];
-  const credentialOptions =
-    credentialData?.results.map((c) => ({ label: c.name, value: c.id })) || [];
-  const userOptions =
-    usersData?.results.map((u) => ({
-      label: `${u.nickname || u.username} (${u.username})`,
-      value: u.id,
-    })) || [];
+  const credentialOptions = useMemo(
+    () => credentialData?.results.map((c) => ({ label: c.name, value: c.id })) || [],
+    [credentialData],
+  );
 
   useEffect(() => {
     if (open) {
@@ -73,16 +72,15 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
           name: job.name,
           server_url: job.server_url,
           job_name: job.job_name,
-          credential_mode: job.credential_mode || 'fixed',
+          credential_mode: job.credential_mode || 'project',
           credential: job.credential_id,
-          specified_user: job.specified_user_id,
           params_template: job.params_template ? JSON.stringify(job.params_template, null, 2) : '',
           is_active: job.is_active,
         });
       } else {
         form.resetFields();
         form.setFieldsValue({
-          credential_mode: 'fixed',
+          credential_mode: 'project',
           is_active: true,
           params_template: JSON.stringify({ VERSION: '{version}', BRANCH: '{branch}' }, null, 2),
         });
@@ -90,7 +88,13 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
     }
   }, [open, job, form]);
 
-  const credentialMode = Form.useWatch('credential_mode', form);
+  // 可选凭证变化后，若已选凭证不在新列表中则清空
+  useEffect(() => {
+    const currentId = form.getFieldValue('credential');
+    if (currentId && !credentialOptions.some((c) => c.value === currentId)) {
+      form.setFieldsValue({ credential: undefined });
+    }
+  }, [credentialOptions, form]);
 
   const handleOk = () => {
     form.validateFields().then((values) => {
@@ -109,9 +113,7 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
         server_url: values.server_url,
         job_name: values.job_name,
         credential_mode: values.credential_mode,
-        credential: values.credential_mode === 'fixed' ? values.credential : undefined,
-        specified_user:
-          values.credential_mode === 'specified_user' ? values.specified_user : undefined,
+        credential: values.credential,
         params_template: paramsTemplate,
         is_active: values.is_active,
       };
@@ -120,9 +122,7 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
     });
   };
 
-  const isFixed = credentialMode === 'fixed';
-  const isSpecifiedUser = credentialMode === 'specified_user';
-  const confirmLoading = projectsLoading || reposLoading || credentialsLoading || usersLoading;
+  const confirmLoading = projectsLoading || reposLoading || credentialsLoading;
 
   return (
     <TsModal
@@ -218,53 +218,31 @@ export function JenkinsJobModal({ open, job, onCancel, onOk }: JenkinsJobModalPr
             <Col span={12}>
               <Form.Item
                 name="credential_mode"
-                label="凭证模式"
-                rules={[{ required: true, message: '请选择凭证模式' }]}
+                label="凭证来源"
+                rules={[{ required: true, message: '请选择凭证来源' }]}
               >
                 <Select options={credentialModeOptions} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <div
-                className={`overflow-hidden transition-all duration-300 ${
-                  isFixed ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
-                }`}
+              <Form.Item
+                name="credential"
+                label="凭证"
+                rules={[{ required: true, message: '请选择凭证' }]}
               >
-                <Form.Item
-                  name="credential"
-                  label="凭证"
-                  rules={[{ required: isFixed, message: '请选择凭证' }]}
-                >
-                  <Select
-                    showSearch
-                    placeholder="选择 jenkins_token 类型凭证"
-                    loading={credentialsLoading}
-                    options={credentialOptions}
-                    optionFilterProp="label"
-                  />
-                </Form.Item>
-              </div>
-            </Col>
-            <Col span={12}>
-              <div
-                className={`overflow-hidden transition-all duration-300 ${
-                  isSpecifiedUser ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
-                }`}
-              >
-                <Form.Item
-                  name="specified_user"
-                  label="指定用户"
-                  rules={[{ required: isSpecifiedUser, message: '请选择指定用户' }]}
-                >
-                  <Select
-                    showSearch
-                    placeholder="选择用户"
-                    loading={usersLoading}
-                    options={userOptions}
-                    optionFilterProp="label"
-                  />
-                </Form.Item>
-              </div>
+                <Select
+                  showSearch
+                  placeholder="选择 jenkins_token 类型凭证"
+                  loading={credentialsLoading}
+                  options={credentialOptions}
+                  optionFilterProp="label"
+                  notFoundContent={
+                    credentialMode === 'personal'
+                      ? '暂无可用的个人凭证'
+                      : '暂无可用的项目凭证'
+                  }
+                />
+              </Form.Item>
             </Col>
           </Row>
         </FormSection>

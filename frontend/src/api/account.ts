@@ -1,6 +1,20 @@
 import { get, post, put, del } from './request';
 import type { PaginatedData } from '@/types';
 
+export interface AccountRoleBrief {
+  id: string;
+  name: string;
+  code: string;
+}
+
+export interface AccountPermission {
+  id: string;
+  name: string;
+  code: string;
+  module?: string;
+  description?: string;
+}
+
 export interface AccountUser {
   id: string;
   username: string;
@@ -11,7 +25,7 @@ export interface AccountUser {
   source: string;
   is_active: boolean;
   is_superuser: boolean;
-  roles: string[];
+  roles: AccountRoleBrief[];
   created_at: string;
 }
 
@@ -20,14 +34,9 @@ export interface AccountRole {
   name: string;
   code: string;
   description?: string;
+  permissions?: AccountPermission[];
+  permission_ids?: string[];
   created_at: string;
-}
-
-export interface AccountPermission {
-  id: string;
-  name: string;
-  code: string;
-  description?: string;
 }
 
 export interface UserListParams {
@@ -60,5 +69,6 @@ export const accountApi = {
   updateRole: (id: string, data: Partial<AccountRole>) =>
     put<AccountRole>(`/account/roles/${id}/`, data),
   deleteRole: (id: string) => del<null>(`/account/roles/${id}/`),
-  getPermissions: () => get<AccountPermission[]>('/account/permissions/'),
+  getPermissions: (params?: RoleListParams) =>
+    get<PaginatedData<AccountPermission>>('/account/permissions/', { params }),
 };

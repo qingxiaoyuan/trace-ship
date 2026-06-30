@@ -135,8 +135,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 project=data["project"],
                 repository=data["repository"],
                 release_type=data["release_type"],
-                source_branch=data["source_branch"],
-                target_branch=data["target_branch"],
+                branch=data["branch"],
                 publisher=request.user,
                 version=data.get("version"),
                 tag_name=data.get("tag_name"),
@@ -165,15 +164,14 @@ class ReleaseViewSet(StandardModelViewSet):
         data = serializer.validated_data
 
         # 更新允许修改的字段
-        instance.source_branch = data.get("source_branch", instance.source_branch)
-        instance.target_branch = data.get("target_branch", instance.target_branch)
+        instance.branch = data.get("branch", instance.branch)
         instance.version = data.get("version", instance.version)
 
-        # 若目标分支变化则重新获取 git_hash
-        if "target_branch" in data:
+        # 若分支变化则重新获取 git_hash
+        if "branch" in data:
             try:
                 instance.git_hash = ReleaseService._resolve_branch_head_hash(
-                    instance.repository, instance.target_branch, request.user
+                    instance.repository, instance.branch, request.user
                 )
             except Exception as exc:
                 return error_response(40002, str(exc))
@@ -188,7 +186,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 if not instance.tag_name.startswith(prefix):
                     instance.tag_name = f"{prefix}-{instance.tag_name}"
 
-        instance.save(update_fields=["source_branch", "target_branch", "version", "tag_name", "git_hash", "updated_at"])
+        instance.save(update_fields=["branch", "version", "tag_name", "git_hash", "updated_at"])
         return success_response(self._serialize_release(instance), message="更新成功")
 
     def destroy(self, request: Request, *args, **kwargs) -> Response:

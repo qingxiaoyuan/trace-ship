@@ -10,6 +10,7 @@ import type { ReviewStatus } from '@/types';
 const { Title, Text } = Typography;
 
 const reviewStatusMap: Record<ReviewStatus, { status: 'success' | 'warning' | 'danger'; text: string }> = {
+  unreviewed: { status: 'warning', text: '未审查' },
   pass: { status: 'success', text: '合规' },
   warning: { status: 'warning', text: '警告' },
   illegal: { status: 'danger', text: '不合规' },

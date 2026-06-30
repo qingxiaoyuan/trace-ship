@@ -25,23 +25,10 @@ export function CredentialTab({ repo }: CredentialTabProps) {
       ? 'border-rose-200 bg-rose-50 text-rose-600'
       : 'border-slate-200 bg-slate-50 text-slate-500';
 
-  const mode = repo.credential_mode;
-  // 凭证名称：fixed 模式显示绑定的凭证名；其余模式按模式语义展示
-  const credentialName = repo.credential_name || (
-    mode === 'global' ? '系统全局凭证' :
-    mode === 'current_user' ? '当前登录用户凭证' :
-    mode === 'specified_user' ? '指定用户凭证' : '-'
-  );
-  // 使用用户凭证：specified_user 显示指定用户；fixed 显示凭证归属人；current_user/global 显示语义文本
-  const userCredential = mode === 'specified_user'
-    ? (repo.specified_user_name || '-')
-    : mode === 'fixed'
-      ? (repo.credential_owner_name || '-')
-      : mode === 'current_user'
-        ? '当前登录用户'
-        : mode === 'global'
-          ? '系统全局'
-          : '-';
+  // 凭证名称：展示绑定的凭证名
+  const credentialName = repo.credential_name || '-';
+  // 凭证归属人：展示绑定凭证的归属人
+  const credentialOwner = repo.credential_owner_name || '-';
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -51,14 +38,14 @@ export function CredentialTab({ repo }: CredentialTabProps) {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-violet">
             <KeyRound className="h-4 w-4" strokeWidth={1.5} />
           </div>
-          <h4 className="text-[14px] font-semibold text-slate-900">凭证模式</h4>
+          <h4 className="text-[14px] font-semibold text-slate-900">凭证配置</h4>
         </div>
         <div className="space-y-2 text-[12px]">
-          <Row label="模式">{repo.credential_mode_display || repo.credential_mode || '-'}</Row>
+          <Row label="来源">{repo.credential_mode_display || repo.credential_mode || '-'}</Row>
           <Row label="凭证名称">
             <span className="font-mono">{credentialName}</span>
           </Row>
-          <Row label="使用用户凭证">{userCredential}</Row>
+          <Row label="凭证归属人">{credentialOwner}</Row>
         </div>
       </div>
 

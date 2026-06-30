@@ -5,7 +5,6 @@
 """
 import uuid
 from django.db import models
-from django.conf import settings
 
 from apps.repository.managers import CommitRecordManager
 
@@ -26,8 +25,7 @@ class Repository(models.Model):
         external_identity: 外部唯一标识
         default_branch: 默认分支
         credential: 关联凭证
-        credential_mode: 凭证使用模式
-        specified_user: 指定用户
+        credential_mode: 凭证来源（个人 / 项目）
         health_status: 健康状态
         last_sync_at: 最后同步时间
         created_at: 创建时间
@@ -51,10 +49,8 @@ class Repository(models.Model):
         ("unknown", "未知"),
     ]
     CREDENTIAL_MODE_CHOICES = [
-        ("current_user", "当前用户"),
-        ("specified_user", "指定用户"),
-        ("fixed", "项目固定凭证"),
-        ("global", "系统全局凭证"),
+        ("personal", "个人"),
+        ("project", "项目"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -81,16 +77,8 @@ class Repository(models.Model):
     credential_mode = models.CharField(
         max_length=20,
         choices=CREDENTIAL_MODE_CHOICES,
-        default="fixed",
-        verbose_name="凭证使用模式",
-    )
-    specified_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="specified_repositories",
-        verbose_name="指定用户",
+        default="project",
+        verbose_name="凭证来源",
     )
     health_status = models.CharField(
         max_length=20,

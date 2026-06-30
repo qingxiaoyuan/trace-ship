@@ -123,7 +123,7 @@ export function TopHeader() {
     if (jenkinsLogMatch) {
       const build = mockBuildRecords.find((b) => b.id === jenkinsLogMatch[1]);
       return [
-        { title: 'Jenkins 构建', path: '/jenkins' },
+        { title: '打包任务', path: '/jenkins' },
         { title: build ? `构建日志 #${build.build_number}` : '构建日志' },
       ];
     }

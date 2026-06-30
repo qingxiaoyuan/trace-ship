@@ -41,13 +41,11 @@ const tokenOnlyTypes: CredentialType[] = [
 const scopeDescMap: Record<CredentialScope, string> = {
   personal: '仅当前用户可用',
   project: '关联指定项目',
-  global: '所有项目可用',
 };
 
 const scopeIconClassMap: Record<CredentialScope, string> = {
   personal: 'icon-violet',
   project: 'icon-indigo',
-  global: 'icon-emerald',
 };
 
 interface FieldLabelProps {
@@ -71,7 +69,7 @@ interface ScopeCardsProps {
 
 function ScopeCards({ value, onChange }: ScopeCardsProps) {
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 gap-3">
       {credentialScopeOptions.map(([scopeValue, label]) => {
         const isActive = value === scopeValue;
         const Icon = credentialScopeIconMap[scopeValue];

@@ -260,9 +260,7 @@ export default function CredentialList() {
               const subText =
                 item.scope === 'project'
                   ? `项目 · ${item.project_name || '-'}`
-                  : item.scope === 'personal'
-                  ? `个人 · ${item.username || '-'}`
-                  : '全局';
+                  : `个人 · ${item.username || '-'}`;
               return (
                 <div
                   key={item.id}

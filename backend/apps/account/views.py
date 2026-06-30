@@ -252,7 +252,7 @@ class AuthViewSet(viewsets.GenericViewSet):
             {"id": "credentials", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined"},
             {"id": "commits", "name": "提交规范审查", "path": "/commits", "icon": "FileTextOutlined"},
             {"id": "tags", "name": "Tag 生成与发布", "path": "/tags", "icon": "TagsOutlined"},
-            {"id": "jenkins", "name": "Jenkins构建", "path": "/jenkins", "icon": "PlayCircleOutlined"},
+            {"id": "jenkins", "name": "打包任务", "path": "/jenkins", "icon": "PlayCircleOutlined"},
             {"id": "workflows", "name": "工作流审批", "path": "/workflows", "icon": "ProfileOutlined"},
             {
                 "id": "system",
@@ -304,14 +304,16 @@ class UserViewSet(StandardModelViewSet):
         """
         根据当前用户身份返回查询集
 
+        超管返回全部用户，普通用户仅返回自己；预加载角色关联以避免 N+1 查询。
+
         Returns:
             超管返回全部用户，普通用户仅返回自己
         """
         if getattr(self, "swagger_fake_view", False):
             return User.objects.none()
         if self.request.user.is_superuser:
-            return User.objects.all()
-        return User.objects.filter(id=self.request.user.id)
+            return User.objects.all().prefetch_related("user_roles__role")
+        return User.objects.filter(id=self.request.user.id).prefetch_related("user_roles__role")
 
     def get_serializer_class(self):
         """
@@ -352,7 +354,7 @@ class RoleViewSet(StandardModelViewSet):
     提供角色增删改查，仅超管可操作。
     """
 
-    queryset = Role.objects.all()
+    queryset = Role.objects.all().prefetch_related("permissions")
     serializer_class = RoleSerializer
     permission_classes = [IsAuthenticated, IsSuperUser]
 

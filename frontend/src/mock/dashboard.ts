@@ -15,9 +15,9 @@ export const mockDashboardOverview: DashboardOverview = {
 };
 
 export const mockRecentReleases: Release[] = [
-  { id: '1', project_id: '1', project_name: '核心交易平台', version: 'v2.4.1', tag_name: 'v2.4.1', release_type: 'formal', status: 'released', source_branch: 'develop', target_branch: 'main', git_hash: 'abc123', publisher: '张三', created_at: '2026-06-15T10:00:00+08:00' },
-  { id: '2', project_id: '1', project_name: '核心交易平台', version: 'v2.4.1', tag_name: 'beta-v2.4.1', release_type: 'beta', status: 'pending', source_branch: 'develop', target_branch: 'main', git_hash: 'def456', publisher: '李四', created_at: '2026-06-14T10:00:00+08:00' },
-  { id: '3', project_id: '2', project_name: '数据中台', version: 'v2.3.9', tag_name: 'v2.3.9', release_type: 'formal', status: 'released', source_branch: 'develop', target_branch: 'main', git_hash: 'ghi789', publisher: '王五', created_at: '2026-06-10T10:00:00+08:00' },
+  { id: '1', project_id: '1', project_name: '核心交易平台', version: 'v2.4.1', tag_name: 'v2.4.1', release_type: 'formal', status: 'released', branch: 'main', git_hash: 'abc123', publisher: '张三', created_at: '2026-06-15T10:00:00+08:00' },
+  { id: '2', project_id: '1', project_name: '核心交易平台', version: 'v2.4.1', tag_name: 'beta-v2.4.1', release_type: 'beta', status: 'pending', branch: 'main', git_hash: 'def456', publisher: '李四', created_at: '2026-06-14T10:00:00+08:00' },
+  { id: '3', project_id: '2', project_name: '数据中台', version: 'v2.3.9', tag_name: 'v2.3.9', release_type: 'formal', status: 'released', branch: 'main', git_hash: 'ghi789', publisher: '王五', created_at: '2026-06-10T10:00:00+08:00' },
 ];
 
 export const mockCommits: CommitRecord[] = [
@@ -152,9 +152,9 @@ export function getCommitById(id: string): CommitRecord | undefined {
 }
 
 export const mockBuildRecords: BuildRecord[] = [
-  { id: '1', job_id: 'j1', job_name: '后端打包任务', build_number: 128, version: 'v2.4.1', status: 'success', started_at: '2026-06-15T10:00:00+08:00', finished_at: '2026-06-15T10:05:00+08:00', duration: '5分12秒', created_at: '2026-06-15T10:00:00+08:00' },
-  { id: '2', job_id: 'j2', job_name: '前端打包任务', build_number: 89, version: 'v2.4.1-test.3', status: 'running', started_at: '2026-06-14T10:00:00+08:00', duration: '进行中', created_at: '2026-06-14T10:00:00+08:00' },
-  { id: '3', job_id: 'j1', job_name: '后端打包任务', build_number: 127, version: 'v2.4.0', status: 'failure', started_at: '2026-06-10T10:00:00+08:00', finished_at: '2026-06-10T10:03:00+08:00', duration: '3分45秒', created_at: '2026-06-10T10:00:00+08:00' },
+  { id: '1', job_id: 'j1', job_name: '后端打包任务', build_number: 128, version: 'v2.4.1', status: 'success', started_at: '2026-06-15T10:00:00+08:00', finished_at: '2026-06-15T10:05:00+08:00', duration: 312000, created_at: '2026-06-15T10:00:00+08:00' },
+  { id: '2', job_id: 'j2', job_name: '前端打包任务', build_number: 89, version: 'v2.4.1-test.3', status: 'running', started_at: '2026-06-14T10:00:00+08:00', duration: null, created_at: '2026-06-14T10:00:00+08:00' },
+  { id: '3', job_id: 'j1', job_name: '后端打包任务', build_number: 127, version: 'v2.4.0', status: 'failure', started_at: '2026-06-10T10:00:00+08:00', finished_at: '2026-06-10T10:03:00+08:00', duration: 225000, created_at: '2026-06-10T10:00:00+08:00' },
 ];
 
 export const mockBuildLog = `Started by user 张三
@@ -172,12 +172,12 @@ Build completed successfully.
 Finished: SUCCESS`;
 
 export const mockWorkflowTasks: WorkflowTask[] = [
-  { id: '1', title: '审批发布 v2.5.0', applicant: '李四', project_name: '核心交易平台', current_node: '项目负责人审批', submit_time: '2026-06-22T09:50:00+08:00', remaining_time: '2小时', status: 'pending', version: 'v2.5.0', release_type: 'formal', source_branch: 'master' },
-  { id: '2', title: '审批发布 beta-v2.4.2', applicant: '王五', project_name: '核心交易平台', current_node: '测试负责人审批', submit_time: '2026-06-22T09:00:00+08:00', remaining_time: '5小时', status: 'pending', version: 'v2.4.2', release_type: 'beta', source_branch: 'develop' },
+  { id: '1', title: '审批发布 v2.5.0', applicant: '李四', project_name: '核心交易平台', current_node: '项目负责人审批', submit_time: '2026-06-22T09:50:00+08:00', remaining_time: '2小时', status: 'pending', version: 'v2.5.0', release_type: 'formal', branch: 'master' },
+  { id: '2', title: '审批发布 beta-v2.4.2', applicant: '王五', project_name: '核心交易平台', current_node: '测试负责人审批', submit_time: '2026-06-22T09:00:00+08:00', remaining_time: '5小时', status: 'pending', version: 'v2.4.2', release_type: 'beta', branch: 'develop' },
 ];
 
 export const mockDoneTasks: WorkflowTask[] = [
-  { id: '3', title: '审批发布 v2.4.1', applicant: '李四', project_name: '核心交易平台', current_node: '-', submit_time: '2026-06-15T10:00:00+08:00', status: 'approved', version: 'v2.4.1', release_type: 'formal', source_branch: 'master' },
+  { id: '3', title: '审批发布 v2.4.1', applicant: '李四', project_name: '核心交易平台', current_node: '-', submit_time: '2026-06-15T10:00:00+08:00', status: 'approved', version: 'v2.4.1', release_type: 'formal', branch: 'master' },
 ];
 
 export const mockTodoList = [

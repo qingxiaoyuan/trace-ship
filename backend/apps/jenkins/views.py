@@ -62,7 +62,7 @@ class JenkinsJobViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return JenkinsJob.objects.none()
         user = self.request.user
-        queryset = JenkinsJob.objects.select_related("project", "credential", "specified_user", "repository")
+        queryset = JenkinsJob.objects.select_related("project", "credential", "repository").prefetch_related("builds")
         if user.is_superuser:
             return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
@@ -151,7 +151,7 @@ class JenkinsJobViewSet(StandardModelViewSet):
                 release = SimpleNamespace(
                     id=None,
                     version=request.data.get("version", ""),
-                    target_branch=request.data.get("branch", ""),
+                    branch=request.data.get("branch", ""),
                     git_hash=request.data.get("git_hash", ""),
                 )
                 build = JenkinsService.trigger_build(job, release, request.user)

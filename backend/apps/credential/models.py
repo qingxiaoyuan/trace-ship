@@ -14,7 +14,7 @@ class Credential(models.Model):
     凭证模型
 
     支持多种凭证类型（GitLab/Gitea/SVN/Jenkins/LDAP/AI）和认证模式（Token/用户名密码），
-    通过 scope 控制可见范围：个人、项目、全局。
+    通过 scope 控制可见范围：个人、项目。
 
     Attributes:
         id: UUID 主键
@@ -49,7 +49,6 @@ class Credential(models.Model):
     SCOPE_CHOICES = [
         ("personal", "个人"),
         ("project", "项目"),
-        ("global", "全局"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -7,7 +7,6 @@ import {
   KeyRound,
   User,
   Folder,
-  Globe,
 } from 'lucide-react';
 import type { CredentialType, CredentialScope } from '@/types';
 
@@ -25,7 +24,6 @@ export const credentialTypeMap: Record<CredentialType, string> = {
 export const credentialScopeMap: Record<CredentialScope, string> = {
   personal: '个人',
   project: '项目',
-  global: '全局',
 };
 
 export const credentialTypeIconMap: Record<CredentialType, LucideIcon> = {
@@ -52,7 +50,6 @@ export const credentialTypeColorMap: Record<
 export const credentialScopeIconMap: Record<CredentialScope, LucideIcon> = {
   personal: User,
   project: Folder,
-  global: Globe,
 };
 
 export const credentialScopeColorMap: Record<
@@ -61,7 +58,6 @@ export const credentialScopeColorMap: Record<
 > = {
   personal: { border: 'border-violet-200', bg: 'bg-violet-50', text: 'text-violet-700' },
   project: { border: 'border-indigo-200', bg: 'bg-indigo-50', text: 'text-indigo-700' },
-  global: { border: 'border-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-700' },
 };
 
 export const credentialTypeOptions: [CredentialType, string][] = Object.entries(

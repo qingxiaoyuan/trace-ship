@@ -22,7 +22,9 @@ export const mockCredentials: Credential[] = [
     auth_mode: 'token',
     masked_data: 'jenkins****xyz',
     expires_at: '2026-07-01T10:00:00+08:00',
-    scope: 'global',
+    scope: 'project',
+    project_id: '1',
+    project_name: '核心交易平台',
     is_active: true,
     last_used_at: '2026-06-21T10:00:00+08:00',
     created_at: '2026-02-01T10:00:00+08:00',
@@ -40,7 +42,6 @@ export const credentialTypeMap: Record<string, string> = {
 export const credentialScopeMap: Record<string, string> = {
   personal: '个人',
   project: '项目',
-  global: '全局',
 };
 
 export const credentialTypeOptions = Object.entries(credentialTypeMap).map(([value, label]) => ({

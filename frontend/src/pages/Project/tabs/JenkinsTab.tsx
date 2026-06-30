@@ -12,10 +12,8 @@ interface JenkinsTabProps {
 }
 
 const credentialModeMap: Record<string, string> = {
-  fixed: '项目固定凭证',
-  current_user: '当前用户',
-  specified_user: '指定用户',
-  global: '系统全局凭证',
+  personal: '个人',
+  project: '项目',
 };
 
 export function JenkinsTab({ projectId }: JenkinsTabProps) {

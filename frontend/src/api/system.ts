@@ -2,23 +2,29 @@ import { get, post, put, del } from './request';
 import type { PaginatedData } from '@/types';
 
 export interface SystemConfig {
+  id: string;
   key: string;
-  name: string;
   value: string;
   description?: string;
+  is_public: boolean;
   created_at?: string;
   updated_at?: string;
 }
 
+export interface SystemLogUser {
+  id?: string;
+  username?: string;
+  nickname?: string;
+}
+
 export interface SystemLog {
   id: string;
-  user_id?: string;
-  username?: string;
+  user?: SystemLogUser | null;
   action: string;
   module: string;
   resource_type?: string;
   resource_id?: string;
-  detail?: string;
+  detail?: Record<string, unknown>;
   description?: string;
   result?: 'success' | 'failure';
   ip?: string;

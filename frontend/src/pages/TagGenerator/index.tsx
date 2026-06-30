@@ -34,7 +34,7 @@ export default function TagGenerator() {
 
   // 表单受控字段，便于在分支/仓库/类型变化时联动
   const repositoryId = Form.useWatch('repository', form);
-  const sourceBranch = Form.useWatch('source_branch', form);
+  const branch = Form.useWatch('branch', form);
   const releaseType = Form.useWatch('release_type', form);
   const version = Form.useWatch('version', form);
   const gitHash = Form.useWatch('git_hash', form);
@@ -105,7 +105,7 @@ export default function TagGenerator() {
     if (!repositoryId || !branchesData || !nextVersionData) return;
     const defaultBranch = branchesData.find((b) => b.is_default)?.name || branchesData[0]?.name;
     const values: Record<string, unknown> = {
-      source_branch: defaultBranch,
+      branch: defaultBranch,
       start_tag: nextVersionData.latest_tag || '',
       version: nextVersionData.next_version || '',
       tag_name: nextVersionData.next_tag_name || '',
@@ -118,14 +118,14 @@ export default function TagGenerator() {
     form.setFieldsValue(values);
   }, [repositoryId, branchesData, nextVersionData, form]);
 
-  // 切换来源分支时，更新 git_hash
+  // 切换分支时，更新 git_hash
   useEffect(() => {
-    if (!sourceBranch || !branchesData) return;
-    const branchInfo = branchesData.find((b) => b.name === sourceBranch);
+    if (!branch || !branchesData) return;
+    const branchInfo = branchesData.find((b) => b.name === branch);
     if (branchInfo?.last_commit_hash) {
       form.setFieldValue('git_hash', branchInfo.last_commit_hash);
     }
-  }, [sourceBranch, branchesData, form]);
+  }, [branch, branchesData, form]);
 
   // 切换发布类型时，重新拉取 nextVersion
   // （已在 useQuery 的 queryKey 中依赖 releaseType，自动重拉）
@@ -149,8 +149,7 @@ export default function TagGenerator() {
         project: values.project,
         repository: values.repository,
         release_type: values.release_type,
-        source_branch: values.source_branch,
-        target_branch: values.source_branch,
+        branch: values.branch,
         version: values.version,
         tag_name: values.tag_name,
         git_hash: values.git_hash,

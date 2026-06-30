@@ -29,7 +29,7 @@ def test_stats_returns_aggregate_counts(api_client, project, repository):
         url="svn://svn.example.com/config",
         external_identity="config",
         default_branch="trunk",
-        credential_mode="global",
+        credential_mode="project",
         health_status="healthy",
     )
     Repository.objects.create(
@@ -40,7 +40,7 @@ def test_stats_returns_aggregate_counts(api_client, project, repository):
         url="https://gitlab.example.com/test/healthy.git",
         external_identity="test/healthy",
         default_branch="main",
-        credential_mode="global",
+        credential_mode="project",
         health_status="healthy",
     )
 
@@ -83,7 +83,7 @@ def test_tags_returns_empty_for_svn(api_client, project):
         url="svn://svn.example.com/repo",
         external_identity="repo",
         default_branch="trunk",
-        credential_mode="global",
+        credential_mode="project",
     )
     response = api_client.get(f"/api/repositories/{repo.id}/tags/")
     assert response.status_code == 200

@@ -72,8 +72,7 @@ def test_detail_returns_all_counts(client, project):
         publisher=project.leader,
         version="V.1.0.0",
         release_type="formal",
-        source_branch="develop",
-        target_branch="main",
+        branch="main",
         status="draft",
     )
     resp = client.get(f"/api/projects/{project.id}/")

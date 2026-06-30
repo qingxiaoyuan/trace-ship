@@ -47,10 +47,10 @@ export function Step1Branch({
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
-            <Form.Item name="source_branch" label="来源分支" rules={[{ required: true }]}>
+            <Form.Item name="branch" label="分支" rules={[{ required: true }]}>
               <Select
                 options={branchOptions}
-                placeholder="选择来源分支"
+                placeholder="选择分支"
                 size="large"
                 loading={branchOptions.length === 0}
                 disabled={!form.getFieldValue('repository')}

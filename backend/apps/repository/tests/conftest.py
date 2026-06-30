@@ -62,7 +62,7 @@ def repository(project, credential):
         external_identity="test/backend",
         default_branch="develop",
         credential=credential,
-        credential_mode="fixed",
+        credential_mode="project",
         health_status="unknown",
     )
 
