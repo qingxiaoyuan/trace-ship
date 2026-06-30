@@ -219,7 +219,7 @@ export function TopHeader() {
         </button>
       </div>
 
-      <div className="ml-auto flex items-center gap-1 md:ml-0">
+      <div className="ml-auto flex items-center gap-2 md:ml-0">
         <button
           type="button"
           onClick={() => navigate("/releases/create")}
@@ -236,6 +236,7 @@ export function TopHeader() {
             onClick={() => setBellOpen((v) => !v)}
             className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
             aria-label="通知"
+            aria-expanded={bellOpen}
           >
             <Bell className="h-4 w-4" strokeWidth={1.5} />
             {unreadCount > 0 ? (
@@ -311,16 +312,18 @@ export function TopHeader() {
           ) : null}
         </div>
 
-        <div className="mx-1 h-5 w-px bg-indigo-100" />
+        <div className="mx-2 h-5 w-px bg-indigo-100" />
 
         <div className="relative">
           <button
             ref={userRef}
             type="button"
             onClick={() => setUserOpen((v) => !v)}
-            className="group flex h-9 items-center gap-2 rounded-lg bg-white pl-2 pr-2.5 shadow-[0_0_0_1px_rgba(99,102,241,0.12)] transition-all hover:shadow-[0_0_0_1px_rgba(99,102,241,0.12),0_16px_40px_-10px_rgba(79,70,229,0.18)] active:scale-[0.98]"
+            className="group flex h-10 min-w-28 items-center gap-2.5 rounded-lg bg-white pl-2.5 pr-3 shadow-[0_0_0_1px_rgba(99,102,241,0.12)] transition-all hover:shadow-[0_0_0_1px_rgba(99,102,241,0.12),0_16px_40px_-10px_rgba(79,70,229,0.18)] active:scale-[0.98]"
             style={{ border: "1px solid rgba(99, 102, 241, 0.15)" }}
             aria-label="用户信息"
+            aria-haspopup="menu"
+            aria-expanded={userOpen}
           >
             <span
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-semibold text-white"
@@ -331,17 +334,17 @@ export function TopHeader() {
               {avatarLetter}
             </span>
 
-            <span className="flex flex-col items-start leading-none">
-              <span className="max-w-[80px] truncate text-[12px] font-semibold text-slate-800 transition-colors group-hover:text-indigo-600">
+            <span className="flex min-w-0 flex-col items-start leading-tight">
+              <span className="max-w-[96px] truncate text-[12px] font-semibold text-slate-800 transition-colors group-hover:text-indigo-600">
                 {displayName}
               </span>
-              <span className="mt-0.5 text-[10px] text-slate-500 transition-colors group-hover:text-indigo-500">
+              <span className="mt-1 text-[10px] text-slate-500 transition-colors group-hover:text-indigo-500">
                 {roleLabel}
               </span>
             </span>
 
             <svg
-              className={`ml-0.5 h-3 w-3 shrink-0 text-slate-400 transition-transform group-hover:text-indigo-500 ${userOpen ? "rotate-180" : ""}`}
+              className={`ml-auto h-3 w-3 shrink-0 text-slate-400 transition-transform group-hover:text-indigo-500 ${userOpen ? "rotate-180" : ""}`}
               fill="none"
               stroke="currentColor"
               strokeWidth={1.5}

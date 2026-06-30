@@ -59,32 +59,32 @@
           <span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span>
         </button>
 
-        <div class="mx-1 h-5 w-px bg-indigo-100"></div>
+        <div class="mx-2 h-5 w-px bg-indigo-100"></div>
 
         <!-- 用户信息触发器：矩形胶囊 -->
         <div class="relative">
           <button
             type="button"
-            class="group flex h-9 items-center gap-2 rounded-lg bg-white pl-2 pr-2.5 shadow-card transition-all hover:shadow-cardHover hover:border-indigo-200 active:scale-[0.98]"
+            class="group flex h-10 min-w-28 items-center gap-2.5 rounded-lg bg-white pl-2.5 pr-3 shadow-card transition-all hover:shadow-cardHover hover:border-indigo-200 active:scale-[0.98]"
             style="border: 1px solid rgba(99, 102, 241, 0.15);"
           >
             <!-- 姓氏色块 -->
             <span
-              class="flex h-6 w-6 items-center justify-center rounded-md text-[12px] font-semibold text-white"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-semibold text-white"
               style="background: linear-gradient(135deg, #6366F1, #06B6D4);"
             >
               系
             </span>
 
             <!-- 文字信息 -->
-            <span class="flex flex-col items-start leading-none">
-              <span class="text-[12px] font-semibold text-slate-800">系统</span>
-              <span class="mt-0.5 text-[10px] text-slate-500">管理员</span>
+            <span class="flex min-w-0 flex-col items-start leading-tight">
+              <span class="max-w-24 truncate text-[12px] font-semibold text-slate-800 transition-colors group-hover:text-indigo-600">系统</span>
+              <span class="mt-1 text-[10px] text-slate-500 transition-colors group-hover:text-indigo-500">管理员</span>
             </span>
 
             <!-- 下拉箭头 -->
             <svg
-              class="ml-0.5 h-3 w-3 text-slate-400 transition-transform group-hover:text-indigo-500 group-data-[state=open]:rotate-180"
+              class="ml-auto h-3 w-3 shrink-0 text-slate-400 transition-transform group-hover:text-indigo-500 group-data-[state=open]:rotate-180"
               fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"
             >
               <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
@@ -180,12 +180,12 @@
       <h2 class="mb-4 text-base font-semibold text-slate-800">关键尺寸与对齐规范</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-slate-700">
         <div class="space-y-3">
-          <p><strong class="text-slate-900">触发器尺寸：</strong>高 36px（h-9），内部姓氏色块 24×24px（h-6 w-6），圆角 8px（rounded-lg）。</p>
-          <p><strong class="text-slate-900">文字层级：</strong>姓名使用 12px semibold（text-[12px] font-semibold），角色使用 10px regular（text-[10px] text-slate-500）。</p>
+          <p><strong class="text-slate-900">触发器尺寸：</strong>高 40px（h-10），最小宽度 112px（min-w-28），内部姓氏色块 24×24px（h-6 w-6），圆角 8px（rounded-lg）。</p>
+          <p><strong class="text-slate-900">文字层级：</strong>姓名使用 12px semibold（text-[12px] font-semibold），角色使用 10px regular（text-[10px] text-slate-500）；行高 leading-tight，两行间距 mt-1（4px）。</p>
           <p><strong class="text-slate-900">对齐方式：</strong>触发器与下拉菜单共用同一个 relative 父容器；下拉菜单使用 <code>absolute right-0 top-full</code>，保证右边缘与触发器右边缘对齐。</p>
         </div>
         <div class="space-y-3">
-          <p><strong class="text-slate-900">间距：</strong>触发器内部 gap 8px；文字区域行高 1（leading-none），姓名与角色间距 2px（mt-0.5）。</p>
+          <p><strong class="text-slate-900">间距：</strong>触发器内部 gap 10px（gap-2.5）；文字区域行高 leading-tight，姓名与角色间距 4px（mt-1）；下拉箭头使用 <code>ml-auto</code> 自动右推。</p>
           <p><strong class="text-slate-900">配色：</strong>姓氏色块沿用原头像渐变 <code>linear-gradient(135deg, #6366F1, #06B6D4)</code>；边框使用 indigo-500 的 15% 透明度。</p>
           <p><strong class="text-slate-900">交互：</strong>Hover 时阴影增强、边框颜色加深；文字 hover 后变为 indigo-600；点击时轻微缩放 <code>active:scale-[0.98]</code>。</p>
         </div>
@@ -197,26 +197,26 @@
       <h2 class="mb-4 text-sm font-medium text-ts-muted uppercase tracking-wider">可直接复用的 HTML 片段</h2>
       <pre class="rounded-xl bg-slate-900 p-4 overflow-x-auto text-[13px] text-slate-200 leading-relaxed"><code>&lt;div class="relative"&gt;
   &lt;button type="button"
-    class="group flex h-9 items-center gap-2 rounded-lg bg-white pl-2 pr-2.5
+    class="group flex h-10 min-w-28 items-center gap-2.5 rounded-lg bg-white pl-2.5 pr-3
            shadow-card transition-all hover:shadow-cardHover
            active:scale-[0.98]"
     style="border: 1px solid rgba(99, 102, 241, 0.15);"&gt;
 
     &lt;!-- 姓氏色块 --&gt;
-    &lt;span class="flex h-6 w-6 items-center justify-center rounded-md
+    &lt;span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md
                  text-[12px] font-semibold text-white"
           style="background: linear-gradient(135deg, #6366F1, #06B6D4);"&gt;
       系
     &lt;/span&gt;
 
     &lt;!-- 姓名 + 角色 --&gt;
-    &lt;span class="flex flex-col items-start leading-none"&gt;
-      &lt;span class="text-[12px] font-semibold text-slate-800"&gt;系统&lt;/span&gt;
-      &lt;span class="mt-0.5 text-[10px] text-slate-500"&gt;管理员&lt;/span&gt;
+    &lt;span class="flex min-w-0 flex-col items-start leading-tight"&gt;
+      &lt;span class="max-w-24 truncate text-[12px] font-semibold text-slate-800"&gt;系统&lt;/span&gt;
+      &lt;span class="mt-1 text-[10px] text-slate-500"&gt;管理员&lt;/span&gt;
     &lt;/span&gt;
 
     &lt;!-- 下拉箭头 --&gt;
-    &lt;svg class="ml-0.5 h-3 w-3 text-slate-400
+    &lt;svg class="ml-auto h-3 w-3 shrink-0 text-slate-400
                 transition-transform group-hover:text-indigo-500
                 group-data-[state=open]:rotate-180"&gt;...&lt;/svg&gt;
   &lt;/button&gt;

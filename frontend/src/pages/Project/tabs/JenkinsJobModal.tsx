@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
-import { Form, Input, Select, Switch } from 'antd';
+import { Form, Input, Select, Switch, Button } from 'antd';
 import { useQuery } from '@tanstack/react-query';
+import { Check } from 'lucide-react';
 import { TsModal } from '@/components/TsModal';
 import { repositoryApi } from '@/api/repository';
 import { credentialApi } from '@/api/credential';
@@ -84,6 +85,11 @@ export function JenkinsJobModal({ open, job, projectId, onCancel, onOk }: Jenkin
     }
   }, [credentialOptions, form]);
 
+  const handleCancel = () => {
+    form.resetFields();
+    onCancel();
+  };
+
   const handleOk = () => {
     form.validateFields().then((values) => {
       let paramsTemplate: unknown = {};
@@ -115,12 +121,28 @@ export function JenkinsJobModal({ open, job, projectId, onCancel, onOk }: Jenkin
     <TsModal
       title={job ? '编辑 Jenkins 任务' : '新增 Jenkins 任务'}
       open={open}
-      onCancel={() => {
-        form.resetFields();
-        onCancel();
-      }}
-      onOk={handleOk}
-      confirmLoading={reposLoading || credentialsLoading}
+      onCancel={handleCancel}
+      footerStyle={{ background: 'transparent' }}
+      footer={
+        <div className="flex items-center justify-end gap-3">
+          <Button
+            type="text"
+            className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:text-indigo-600"
+            onClick={handleCancel}
+          >
+            取消
+          </Button>
+          <Button
+            type="primary"
+            className="btn-glow inline-flex h-auto items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white"
+            onClick={handleOk}
+            loading={reposLoading || credentialsLoading}
+          >
+            <Check className="h-3.5 w-3.5" strokeWidth={2} />
+            确认
+          </Button>
+        </div>
+      }
     >
       <Form form={form} layout="vertical">
         <Form.Item name="repository" label="关联仓库">
