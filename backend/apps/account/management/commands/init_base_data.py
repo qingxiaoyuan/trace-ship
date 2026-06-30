@@ -31,11 +31,17 @@ class Command(BaseCommand):
             {"name": "编辑项目", "code": "project.edit", "module": "project"},
             {"name": "删除项目", "code": "project.delete", "module": "project"},
             {"name": "管理项目成员", "code": "project.member", "module": "project"},
+            {"name": "查看仓库", "code": "repository.view", "module": "repository"},
+            {"name": "管理仓库", "code": "repository.manage", "module": "repository"},
             {"name": "查看凭证", "code": "credential.view", "module": "credential"},
             {"name": "管理凭证", "code": "credential.manage", "module": "credential"},
             {"name": "查看发布", "code": "release.view", "module": "release"},
             {"name": "创建发布", "code": "release.create", "module": "release"},
             {"name": "审批发布", "code": "release.audit", "module": "release"},
+            {"name": "触发构建", "code": "jenkins.trigger", "module": "jenkins"},
+            {"name": "管理构建任务", "code": "jenkins.manage", "module": "jenkins"},
+            {"name": "查看提交审查", "code": "commit.view", "module": "commit"},
+            {"name": "查看工作流", "code": "workflow.view", "module": "workflow"},
             {"name": "系统管理", "code": "system.manage", "module": "system"},
         ]
         permission_map: Dict[str, Permission] = {}
@@ -51,19 +57,30 @@ class Command(BaseCommand):
             {"name": "超级管理员", "code": "super_admin", "perms": list(permission_map.keys())},
             {"name": "项目管理员", "code": "project_manager", "perms": [
                 "project.view", "project.create", "project.edit", "project.member",
-                "credential.view", "credential.manage", "release.view", "release.create",
+                "repository.view", "repository.manage",
+                "credential.view", "credential.manage",
+                "release.view", "release.create",
+                "jenkins.trigger", "jenkins.manage",
+                "commit.view", "workflow.view",
             ]},
             {"name": "开发人员", "code": "developer", "perms": [
-                "project.view", "credential.view", "release.view", "release.create",
+                "project.view", "repository.view",
+                "credential.view",
+                "release.view", "release.create",
+                "jenkins.trigger", "commit.view", "workflow.view",
             ]},
             {"name": "测试人员", "code": "tester", "perms": [
-                "project.view", "release.view",
+                "project.view", "repository.view",
+                "release.view", "commit.view", "workflow.view",
             ]},
             {"name": "审核人", "code": "auditor", "perms": [
-                "project.view", "release.view", "release.audit",
+                "project.view", "repository.view",
+                "release.view", "release.audit",
+                "commit.view", "workflow.view",
             ]},
             {"name": "只读人员", "code": "viewer", "perms": [
-                "project.view",
+                "project.view", "repository.view",
+                "release.view", "workflow.view",
             ]},
         ]
         role_map: Dict[str, Role] = {}

@@ -177,7 +177,7 @@ export default function RepositoryList() {
         </div>
 
         {/* 行 */}
-        <div className="divide-y divide-indigo-50/50">
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
           {isLoading ? (
             <div className="px-5 py-10 text-center text-[13px] text-slate-400">加载中…</div>
           ) : results.length === 0 ? (

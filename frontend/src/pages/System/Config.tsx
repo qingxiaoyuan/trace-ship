@@ -177,7 +177,7 @@ export default function SystemConfigPage() {
           <div className="col-span-1 text-right">操作</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50">
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : filtered.length === 0 ? (

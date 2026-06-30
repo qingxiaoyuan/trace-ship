@@ -16,6 +16,7 @@ import {
   Hammer,
   Rocket,
   Settings,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -110,7 +111,7 @@ function getRelatedAction(
 export default function NotificationPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { message } = useAppMessage();
+  const { message, modal } = useAppMessage();
 
   const [filter, setFilter] = useState<FilterKey>('all');
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -171,6 +172,24 @@ export default function NotificationPage() {
     onSuccess: (res) => {
       invalidateAll();
       message.success(`已标记 ${res.count} 条通知为已读`);
+    },
+  });
+
+  const clearReadMutation = useMutation({
+    mutationFn: () => notificationApi.clearRead(),
+    onSuccess: (res) => {
+      invalidateAll();
+      setSelected(null);
+      message.success(`已清除 ${res.count} 条已读通知`);
+    },
+  });
+
+  const clearAllMutation = useMutation({
+    mutationFn: () => notificationApi.clearAll(),
+    onSuccess: (res) => {
+      invalidateAll();
+      setSelected(null);
+      message.success(`已清除 ${res.count} 条通知`);
     },
   });
 
@@ -380,6 +399,40 @@ export default function NotificationPage() {
           >
             <CheckCheck className="h-3.5 w-3.5" strokeWidth={1.5} />
             全部已读
+          </button>
+          <button
+            onClick={() => {
+              modal.confirm({
+                title: '清除已读通知',
+                content: '确定清除所有已读通知吗？此操作不可恢复。',
+                okText: '清除',
+                okButtonProps: { danger: true },
+                cancelText: '取消',
+                onOk: () => clearReadMutation.mutate(),
+              });
+            }}
+            disabled={clearReadMutation.isPending || !total}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            清除已读
+          </button>
+          <button
+            onClick={() => {
+              modal.confirm({
+                title: '清除全部通知',
+                content: '确定清除全部通知（含未读）吗？此操作不可恢复。',
+                okText: '全部清除',
+                okButtonProps: { danger: true },
+                cancelText: '取消',
+                onOk: () => clearAllMutation.mutate(),
+              });
+            }}
+            disabled={clearAllMutation.isPending || !total}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            清除全部
           </button>
         </div>
       </div>

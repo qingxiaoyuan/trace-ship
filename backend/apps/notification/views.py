@@ -67,3 +67,31 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
         """全部已读"""
         count = NotificationService.mark_all_read(request.user)
         return success_response({"count": count}, message="全部已读")
+
+    @action(detail=False, methods=["delete"], url_path="clear")
+    def clear(self, request: Request) -> Response:
+        """
+        清除当前用户全部已读通知
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            删除条数
+        """
+        count, _ = self.get_queryset().filter(is_read=True).delete()
+        return success_response({"count": count}, message="清除成功")
+
+    @action(detail=False, methods=["delete"], url_path="clear-all")
+    def clear_all(self, request: Request) -> Response:
+        """
+        清除当前用户全部通知（含未读）
+
+        Args:
+            request: DRF Request
+
+        Returns:
+            删除条数
+        """
+        count, _ = self.get_queryset().delete()
+        return success_response({"count": count}, message="清除成功")

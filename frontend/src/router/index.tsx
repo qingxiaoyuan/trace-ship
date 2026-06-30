@@ -26,7 +26,6 @@ import {
   SystemLogList,
   SystemRoleList,
   SystemUserList,
-  TagGenerator,
   Workflow,
 } from './pages';
 
@@ -73,7 +72,7 @@ const routes: AppRouteObject[] = [
               { path: ':id', element: <PageLoader><CommitDetail /></PageLoader>, handle: { title: '查看详情' } },
             ],
           },
-          { path: 'tags', element: <PageLoader><TagGenerator /></PageLoader>, handle: { title: 'Tag 生成与发布' } },
+          { path: 'tags', element: <Navigate to="/releases/create" replace /> },
           {
             path: 'jenkins',
             handle: { title: '打包任务' },

@@ -49,7 +49,7 @@ const fallbackMenus: MenuItem[] = [
   { id: 'credentials', name: '凭证管理', path: '/credentials', icon: 'KeyOutlined' },
   { id: 'jenkins', name: '打包任务', path: '/jenkins', icon: 'PlayCircleOutlined' },
   { id: 'commits', name: '提交规范审查', path: '/commits', icon: 'FileTextOutlined' },
-  { id: 'tags', name: 'Tag 生成与发布', path: '/tags', icon: 'TagsOutlined' },
+  { id: 'tags', name: '新建发布', path: '/releases/create', icon: 'TagsOutlined' },
   {
     id: 'system',
     name: '系统管理',
@@ -74,7 +74,7 @@ const pathIconMap: Record<string, LucideIcon> = {
   '/credentials': KeyRound,
   '/jenkins': Hammer,
   '/commits': ScanSearch,
-  '/tags': Tag,
+  '/releases/create': Tag,
   '/system/users': Users,
   '/system/roles': ShieldCheck,
   '/system/configs': Settings,
@@ -84,7 +84,7 @@ const pathIconMap: Record<string, LucideIcon> = {
 const groupRules = [
   { title: '概览', paths: ['/dashboard', '/releases', '/workflows', '/notifications'] },
   { title: '资源', paths: ['/projects', '/repositories', '/credentials', '/jenkins'] },
-  { title: '质量', paths: ['/commits', '/tags'] },
+  { title: '质量', paths: ['/commits', '/releases/create'] },
   { title: '系统', paths: ['/system/users', '/system/roles', '/system/configs', '/system/logs'] },
 ];
 
@@ -94,7 +94,7 @@ const labelMap: Record<string, string> = {
   '/credentials': '凭证',
   '/jenkins': '打包任务',
   '/commits': '提交审查',
-  '/tags': 'Tag 生成',
+  '/releases/create': '新建发布',
   '/workflows': '审批中心',
   '/notifications': '通知',
 };
@@ -116,24 +116,6 @@ function buildGroups(menus: MenuItem[]): NavGroup[] {
       title: group.title,
       items: group.paths.reduce<NavItem[]>((items, path) => {
           const source = menuByPath.get(path);
-          if (!source && path === '/notifications') {
-            items.push({
-              id: 'notifications',
-              name: '通知',
-              path,
-              icon: Bell,
-            });
-            return items;
-          }
-          if (!source && path === '/releases') {
-            items.push({
-              id: 'releases',
-              name: '发布看板',
-              path,
-              icon: Rocket,
-            });
-            return items;
-          }
           if (!source) return items;
 
           items.push({
