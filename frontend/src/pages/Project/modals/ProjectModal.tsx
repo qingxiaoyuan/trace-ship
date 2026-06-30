@@ -24,6 +24,11 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
     }
   }, [open]);
 
+  const handleCancel = () => {
+    form.resetFields();
+    onCancel();
+  };
+
   const handleOk = () => {
     form.validateFields().then((values) => {
       onOk({ ...project, ...values });
@@ -35,19 +40,22 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
     <TsModal
       title={project ? '编辑项目' : '新增项目'}
       open={open}
-      onCancel={() => {
-        form.resetFields();
-        onCancel();
-      }}
+      onCancel={handleCancel}
+      footerStyle={{ background: 'transparent' }}
       footer={
-        <div className="flex justify-end gap-3">
-          <Button type="text" className="text-slate-500" onClick={() => {
-            form.resetFields();
-            onCancel();
-          }}>
+        <div className="flex items-center justify-end gap-3">
+          <Button
+            type="text"
+            className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium text-slate-700 transition hover:text-indigo-600"
+            onClick={handleCancel}
+          >
             取消
           </Button>
-          <Button type="primary" onClick={handleOk}>
+          <Button
+            type="primary"
+            className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium"
+            onClick={handleOk}
+          >
             确认
           </Button>
         </div>
