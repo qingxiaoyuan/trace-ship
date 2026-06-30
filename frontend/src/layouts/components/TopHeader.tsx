@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Bell,
-  ChevronRight,
-  LogOut,
-  Plus,
-  Search,
-  User,
-} from "lucide-react";
+import { Bell, ChevronRight, LogOut, Plus, Search, User } from "lucide-react";
 import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tokens } from "@/styles/theme";
@@ -326,7 +319,7 @@ export function TopHeader() {
             aria-expanded={userOpen}
           >
             <span
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-semibold text-white"
+              className="flex h-6 w-6 shrink-0 leading-[100%] items-center justify-center rounded-md text-[12px] font-semibold text-white"
               style={{
                 background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
               }}
@@ -361,7 +354,7 @@ export function TopHeader() {
           {userOpen ? (
             <div
               ref={userPanelRef}
-              className="tech-card absolute right-0 top-full mt-2 w-[160px] rounded-xl py-1 shadow-lg"
+              className="tech-card  absolute right-0 top-full mt-2 w-[160px] rounded-xl py-1 shadow-lg"
               style={{ boxShadow: "0 12px 40px -10px rgba(79,70,229,.15)" }}
             >
               <button
