@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { ConfigProvider, Form, Input, Select, DatePicker, Button } from 'antd';
 import dayjs from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
@@ -50,6 +50,12 @@ const scopeIconClassMap: Record<CredentialScope, string> = {
   global: 'icon-emerald',
 };
 
+const selectCommonProps = {
+  suffixIcon: <ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />,
+  classNames: { popup: { root: 'credential-select-popup' } },
+  className: 'credential-select',
+};
+
 interface FieldLabelProps {
   text: string;
   required?: boolean;
@@ -77,10 +83,17 @@ function ScopeCards({ value, onChange }: ScopeCardsProps) {
         const Icon = credentialScopeIconMap[scopeValue];
 
         return (
-          <div
+          <button
+            type="button"
             key={scopeValue}
             onClick={() => onChange?.(scopeValue)}
-            className={['scope-card', isActive ? 'on' : ''].filter(Boolean).join(' ')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onChange?.(scopeValue);
+              }
+            }}
+            className={['scope-card text-left', isActive ? 'on' : ''].filter(Boolean).join(' ')}
           >
             <div className="flex items-center justify-between">
               <div className={`ic ${scopeIconClassMap[scopeValue]}`}>
@@ -94,7 +107,7 @@ function ScopeCards({ value, onChange }: ScopeCardsProps) {
             </div>
             <div className="text-[13px] font-semibold text-slate-900 mt-1">{label}</div>
             <div className="text-[11px] text-slate-400">{scopeDescMap[scopeValue]}</div>
-          </div>
+          </button>
         );
       })}
     </div>
@@ -149,6 +162,8 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
     queryKey: ['projects-all'],
     queryFn: () => projectApi.getProjects({ page_size: 1000 }),
     enabled: open,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
   const scope = Form.useWatch('scope', form);
@@ -162,23 +177,21 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
     [],
   );
 
-  const projectOptions =
-    projectData?.results.map((p) => ({ label: p.name, value: p.id })) || [];
+  const projectOptions = useMemo(
+    () => projectData?.results.map((p) => ({ label: p.name, value: p.id })) || [],
+    [projectData],
+  );
 
-  useEffect(() => {
-    if (open) {
-      if (credential) {
-        form.setFieldsValue({
-          ...credential,
-          project: credential.project_id,
-          expires_at: credential.expires_at ? dayjs(credential.expires_at) : undefined,
-        });
-      } else {
-        form.resetFields();
-        form.setFieldsValue({ is_active: true, scope: 'project' });
-      }
+  const initialValues = useMemo(() => {
+    if (credential) {
+      return {
+        ...credential,
+        project: credential.project_id,
+        expires_at: credential.expires_at ? dayjs(credential.expires_at) : undefined,
+      };
     }
-  }, [open, credential, form]);
+    return { is_active: true, scope: 'project' };
+  }, [credential]);
 
   // Token 类凭证自动锁定认证模式为 token
   useEffect(() => {
@@ -224,27 +237,24 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
   };
 
   /** 凭证类型选项 / 触发标签 */
-  const renderTypeLabel = (value: CredentialType) => {
-    const Icon = credentialTypeIconMap[value];
-    const color = credentialTypeColorMap[value];
-    const label = typeLabelMap[value] || value;
-    return (
-      <div className="flex items-center gap-2">
-        <div
-          className={`flex h-6 w-6 items-center justify-center rounded-md border ${color.bg} ${color.border}`}
-        >
-          <Icon className={`h-3.5 w-3.5 ${color.text}`} strokeWidth={1.5} />
+  const renderTypeLabel = useCallback(
+    (value: CredentialType) => {
+      const Icon = credentialTypeIconMap[value];
+      const color = credentialTypeColorMap[value];
+      const label = typeLabelMap[value] || value;
+      return (
+        <div className="flex items-center gap-2">
+          <div
+            className={`flex h-6 w-6 items-center justify-center rounded-md border ${color.bg} ${color.border}`}
+          >
+            <Icon className={`h-3.5 w-3.5 ${color.text}`} strokeWidth={1.5} />
+          </div>
+          <span className="text-[13px] text-slate-700">{label}</span>
         </div>
-        <span className="text-[13px] text-slate-700">{label}</span>
-      </div>
-    );
-  };
-
-  const selectCommonProps = {
-    suffixIcon: <ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />,
-    classNames: { popup: { root: 'credential-select-popup' } },
-    className: 'credential-select',
-  };
+      );
+    },
+    [typeLabelMap],
+  );
 
   const tokenLabel = authMode === 'password' ? '密码' : 'Token';
 
@@ -256,6 +266,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
       open={open}
       onCancel={handleCancel}
       width={760}
+      destroyOnClose
       bodyStyle={{ maxHeight: 'none' }}
       footerStyle={{ background: 'transparent' }}
       footer={
@@ -267,7 +278,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           <div className="flex items-center gap-3">
             <Button
               type="text"
-              className="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition h-auto"
+              className="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-700 hover:text-indigo-600 transition h-auto"
               onClick={handleCancel}
             >
               取消
@@ -298,7 +309,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ is_active: true, scope: 'project' }}
+          initialValues={initialValues}
           requiredMark={false}
         >
           <FormSection title="基本信息" compact>

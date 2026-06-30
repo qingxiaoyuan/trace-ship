@@ -15,6 +15,8 @@ interface TsModalProps {
   bodyStyle?: CSSProperties;
   bodyClassName?: string;
   footerStyle?: CSSProperties;
+  destroyOnClose?: boolean;
+  afterOpenChange?: (open: boolean) => void;
 }
 
 export function TsModal({
@@ -31,6 +33,8 @@ export function TsModal({
   bodyStyle,
   bodyClassName,
   footerStyle,
+  destroyOnClose,
+  afterOpenChange,
 }: TsModalProps) {
   const titleNode = (
     <div className="flex items-center gap-3">
@@ -60,6 +64,8 @@ export function TsModal({
       width={width}
       centered
       footer={footer}
+      destroyOnClose={destroyOnClose}
+      afterOpenChange={afterOpenChange}
       classNames={{
         header: 'px-6 py-4 border-b border-indigo-50 mb-0',
         body: `px-6 py-5 scrollbar-thin ${bodyClassName || ''}`,

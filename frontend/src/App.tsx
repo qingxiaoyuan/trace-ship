@@ -5,6 +5,19 @@ import { useEffect } from 'react';
 import { router } from '@/router';
 import { antdTheme } from '@/styles/theme';
 import { useAuthStore } from '@/stores/authStore';
+import { registerAuthHandlers } from '@/api/request';
+
+// 注册认证回调处理器，避免 request.ts 与 authStore/authApi 形成循环依赖。
+registerAuthHandlers({
+  getRefreshToken: () => localStorage.getItem('refreshToken'),
+  onRefreshSuccess: (accessToken, refreshToken) => {
+    useAuthStore.getState().setTokens(accessToken, refreshToken);
+  },
+  onRefreshFailed: () => {
+    useAuthStore.getState().clearAuth();
+    window.location.href = '/login';
+  },
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
