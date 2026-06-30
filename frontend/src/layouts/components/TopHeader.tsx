@@ -5,7 +5,6 @@ import {
   LogOut,
   Plus,
   Search,
-  Settings,
   User,
 } from "lucide-react";
 import { useLocation, useMatches, useNavigate } from "react-router-dom";
