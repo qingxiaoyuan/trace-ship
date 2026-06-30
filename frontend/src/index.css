@@ -558,3 +558,110 @@ a[href],
     linear-gradient(90deg, rgba(79, 70, 229, 0.045) 1px, transparent 1px);
   background-size: 48px 48px;
 }
+
+/* Credential modal scope cards */
+.scope-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid #E0E7FF;
+  border-radius: 10px;
+  padding: 11px 12px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  background: #fff;
+}
+
+.scope-card:hover {
+  border-color: #C7D2FE;
+  background: #FAFAFF;
+}
+
+.scope-card.on {
+  border-color: #6366F1;
+  background: #EEF2FF;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.scope-card .ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  width: 30px;
+  border-radius: 8px;
+}
+
+/* Credential modal custom select popup */
+.credential-select-popup {
+  border-radius: 10px !important;
+  border: 1px solid #E0E7FF !important;
+  background: #fff !important;
+  box-shadow: 0 12px 32px -8px rgba(79, 70, 229, 0.22) !important;
+  padding: 5px !important;
+}
+
+.credential-select-popup .ant-select-item {
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.credential-select-popup .ant-select-item-option-active,
+.credential-select-popup .ant-select-item-option-selected {
+  background: #EEF2FF !important;
+}
+
+.credential-select-popup .ant-select-item-option-selected {
+  color: #4F46E5;
+  font-weight: 500;
+}
+
+.credential-select .ant-select-selector {
+  border-radius: 8px !important;
+  border-color: #E0E7FF !important;
+  background: #fff !important;
+  padding: 4px 11px !important;
+  min-height: 36px !important;
+}
+
+.credential-select .ant-select-selector:hover {
+  border-color: #C7D2FE !important;
+}
+
+.credential-select.ant-select-focused .ant-select-selector {
+  border-color: #6366F1 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12) !important;
+}
+
+.credential-select .ant-select-selection-item {
+  line-height: 26px !important;
+  font-size: 13px;
+  color: #334155;
+}
+
+.credential-select .ant-select-selection-placeholder {
+  line-height: 26px !important;
+  font-size: 13px;
+  color: #94A3B8;
+}
+
+.credential-select .ant-select-arrow {
+  color: #94A3B8;
+}
+
+/* Credential modal form labels */
+.credential-form-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.credential-form-label .req {
+  color: #EF4444;
+}
