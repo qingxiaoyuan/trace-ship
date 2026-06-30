@@ -14,30 +14,26 @@
 body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
 .font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
 .aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.3; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.28; }
 .aurora::before{ width:520px; height:520px; top:-140px; right:-100px; background:radial-gradient(circle,#818CF8,transparent 70%); }
 .aurora::after{ width:440px; height:440px; bottom:-120px; left:200px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
 .grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:48px 48px; }
-.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); transition:border-color .2s,box-shadow .2s,transform .2s; }
+.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); transition:border-color .2s,box-shadow .2s; }
 .btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
 .btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
-.text-gradient{ background:linear-gradient(135deg,#4F46E5 0%,#0891B2 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
 .icon-indigo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); color:#4F46E5; border:1px solid #C7D2FE; }
 .icon-cyan{ background:linear-gradient(135deg,#ECFEFF,#CFFAFE); color:#0891B2; border:1px solid #A5F3FC; }
 .icon-amber{ background:linear-gradient(135deg,#FFFBEB,#FEF3C7); color:#B45309; border:1px solid #FDE68A; }
-.icon-rose{ background:linear-gradient(135deg,#FFF1F2,#FFE4E6); color:#BE123C; border:1px solid #FECDD3; }
 .icon-violet{ background:linear-gradient(135deg,#F5F3FF,#EDE9FE); color:#6D28D9; border:1px solid #DDD6FE; }
 .icon-emerald{ background:linear-gradient(135deg,#ECFDF5,#D1FAE5); color:#047857; border:1px solid #A7F3D0; }
+.icon-rose{ background:linear-gradient(135deg,#FFF1F2,#FFE4E6); color:#BE123C; border:1px solid #FECDD3; }
 .scrollbar-thin::-webkit-scrollbar{ width:5px; height:5px; }
 .scrollbar-thin::-webkit-scrollbar-thumb{ background:#C7D2FE; border-radius:9999px; }
 .scrollbar-thin::-webkit-scrollbar-track{ background:transparent; }
-@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
-.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
 .nav-active{ background:linear-gradient(90deg,rgba(79,70,229,.1),rgba(34,211,238,.05)); border:1px solid rgba(79,70,229,.18); color:#4F46E5; }
 .nav-active i{ color:#4F46E5 !important; }
-.dt-tab.on{ color:#4F46E5; border-color:#4F46E5; }
-.input-field{ transition:border-color .2s,box-shadow .2s; }
-.input-field:focus{ border-color:#6366F1; box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
 </style>
 </head>
 <body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
@@ -47,7 +43,9 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
   <!-- 侧边栏 -->
   <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
     <div class="flex h-[60px] items-center gap-2.5 px-5">
-      <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 text-white">
+        <i data-lucide="ship" class="h-4 w-4" style="stroke-width:1.5"></i>
+      </div>
       <div class="flex flex-col leading-none">
         <span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span>
         <span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span>
@@ -68,7 +66,7 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
           <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="folder-kanban" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>项目</span></a>
           <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-fork" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>仓库</span></a>
           <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="key-round" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>凭证</span></a>
-          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="hammer" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>Jenkins</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="hammer" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>打包任务</span></a>
         </div>
       </div>
       <div>
@@ -83,6 +81,7 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
           <a class="nav-active flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium cursor-pointer"><i data-lucide="user-circle" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>个人中心</span></a>
           <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="users" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>用户与角色</span></a>
           <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="settings" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>系统配置</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="scroll-text" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>操作日志</span></a>
         </div>
       </div>
     </nav>
@@ -91,7 +90,7 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
   <div class="flex-1 lg:ml-[244px]">
     <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
       <div class="hidden items-center gap-1.5 text-[13px] md:flex">
-        <span class="text-slate-400">系统</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">个人中心</span>
+        <span class="text-slate-400">系统</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300" style="stroke-width:1.5"></i><span class="font-medium text-slate-800">个人中心</span>
       </div>
       <div class="ml-auto hidden md:flex items-center">
         <button class="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 hover:border-indigo-200 hover:bg-white hover:text-indigo-600 w-[260px]">
@@ -100,14 +99,13 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
         </button>
       </div>
       <div class="ml-auto flex items-center gap-1 md:ml-0">
-        <button class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="plus" class="h-4 w-4" style="stroke-width:1.5"></i></button>
         <button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i><span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span></button>
         <div class="mx-1 h-5 w-px bg-indigo-100"></div>
         <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-[12px] font-semibold text-white ring-1 ring-indigo-200 cursor-pointer">张</div>
       </div>
     </header>
 
-    <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1100px] mx-auto">
+    <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[920px] mx-auto">
 
       <!-- ============ 个人信息头部卡片 ============ -->
       <div class="tech-card rounded-xl p-5">
@@ -115,7 +113,7 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
           <div class="flex items-center gap-4">
             <div class="flex h-16 w-16 items-center justify-center rounded-2xl text-[26px] font-semibold tracking-tight text-white" style="background:linear-gradient(135deg,#6366F1,#06B6D4);box-shadow:0 6px 18px -6px rgba(99,102,241,.5)">张</div>
             <div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <h1 class="text-[22px] font-semibold tracking-tight text-slate-900">张三</h1>
                 <span class="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700"><i data-lucide="shield-check" class="h-3 w-3" style="stroke-width:1.5"></i>超管</span>
                 <span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>启用</span>
@@ -133,282 +131,133 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
             <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="log-out" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>退出登录</button>
           </div>
         </div>
-        <div class="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-3">
-          <div class="flex items-center gap-2"><i data-lucide="calendar-clock" class="h-4 w-4 text-emerald-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">最近登录</span><span class="text-[12px] text-slate-700">2 分钟前</span></div>
-          <div class="flex items-center gap-2"><i data-lucide="calendar-plus" class="h-4 w-4 text-cyan-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">账号创建</span><span class="text-[12px] text-slate-700">2024-03-12</span></div>
-          <div class="flex items-center gap-2"><i data-lucide="shield" class="h-4 w-4 text-violet-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">角色</span><span class="text-[12px] text-slate-700">系统管理员</span></div>
+      </div>
+
+      <!-- ============ LDAP 同步提示 ============ -->
+      <div class="tech-card rounded-xl p-4 flex items-start gap-3">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-indigo"><i data-lucide="info" class="h-4 w-4" style="stroke-width:1.5"></i></div>
+        <div class="text-[12px] text-slate-600 leading-relaxed">
+          <span class="font-medium text-indigo-700">该账号为 LDAP 账号，姓名、邮箱、部门由 LDAP 目录同步。</span>
+          下次登录时这些字段将自动覆盖本地修改。如需变更，请联系管理员在 LDAP 目录中修改。
         </div>
       </div>
 
-      <!-- ============ Tab 容器 ============ -->
-      <div class="tech-card rounded-xl overflow-hidden">
-        <div class="flex items-center gap-1 border-b border-indigo-50 px-4 overflow-x-auto scrollbar-thin">
-          <button class="dt-tab on whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2.5 text-[13px] font-medium" data-tab="profile">个人资料</button>
-          <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="notify">我的通知</button>
-          <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="activity">操作记录</button>
+      <!-- ============ 两栏：账号信息 + 角色权限 ============ -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        <!-- 左：账号信息（只读） -->
+        <div class="tech-card rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2.5 border-b border-indigo-50 px-5 py-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-lg icon-indigo"><i data-lucide="user-circle" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+            <h3 class="text-[14px] font-semibold text-slate-900">账号信息</h3>
+            <span class="ml-auto inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400"><i data-lucide="lock" class="h-2.5 w-2.5" style="stroke-width:1.5"></i>只读</span>
+          </div>
+          <div class="divide-y divide-indigo-50/60">
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="at-sign" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>用户名</span>
+              <span class="font-mono text-[13px] text-slate-800">zhangsan</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="id-card" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>姓名</span>
+              <span class="text-[13px] text-slate-800">张三</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="mail" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>邮箱</span>
+              <span class="text-[13px] text-slate-800">zhangsan@company.com</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="phone" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>手机号</span>
+              <span class="font-mono text-[13px] text-slate-800">138****6688</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="building-2" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>部门</span>
+              <span class="text-[13px] text-slate-800">研发中心 / 平台组</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="database" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>账号来源</span>
+              <span class="inline-flex items-center gap-1 rounded border border-indigo-100 bg-indigo-50/50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600"><i data-lucide="ldap" class="h-3 w-3" style="stroke-width:1.5"></i>LDAP</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="circle-check" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>账号状态</span>
+              <span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>启用</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3">
+              <span class="flex items-center gap-2 text-[13px] text-slate-500"><i data-lucide="calendar-plus" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>创建时间</span>
+              <span class="font-mono text-[12px] text-slate-700">2024-03-12 10:24</span>
+            </div>
+          </div>
         </div>
-        <div class="p-5">
 
-          <!-- ========== 个人资料 ========== -->
-          <div id="dt-profile" class="dt-pane">
-            <!-- LDAP 同步提示 -->
-            <div class="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 flex items-start gap-2">
-              <i data-lucide="info" class="h-4 w-4 text-indigo-500 shrink-0 mt-0.5" style="stroke-width:1.5"></i>
-              <div class="text-[12px] text-slate-600 leading-relaxed">
-                <span class="font-medium text-indigo-700">该账号为 LDAP 账号，姓名、邮箱、部门由 LDAP 目录同步。</span>
-                下次登录时这些字段将自动覆盖本地修改。如需变更，请联系管理员在 LDAP 目录中修改。
+        <!-- 右：角色与权限 -->
+        <div class="tech-card rounded-xl overflow-hidden">
+          <div class="flex items-center gap-2.5 border-b border-indigo-50 px-5 py-3.5">
+            <div class="flex h-7 w-7 items-center justify-center rounded-lg icon-violet"><i data-lucide="shield-check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+            <h3 class="text-[14px] font-semibold text-slate-900">角色与权限</h3>
+            <span class="ml-auto text-[11px] text-slate-400">2 个角色</span>
+          </div>
+          <div class="p-5 space-y-3">
+            <!-- 角色 1 -->
+            <div class="rounded-lg border border-violet-100 bg-violet-50/30 p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="flex h-7 w-7 items-center justify-center rounded-lg icon-violet"><i data-lucide="crown" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+                  <div>
+                    <div class="text-[13px] font-semibold text-slate-900">系统管理员</div>
+                    <div class="font-mono text-[10px] text-slate-400">super_admin</div>
+                  </div>
+                </div>
+                <span class="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-violet-600">内置</span>
               </div>
+              <p class="mt-2 text-[12px] text-slate-500 leading-relaxed">拥有系统全部权限，可管理所有项目和系统配置</p>
             </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              <!-- 左：账号信息（只读） -->
-              <div>
-                <div class="flex items-center gap-2 mb-3">
-                  <div class="flex h-7 w-7 items-center justify-center rounded-lg icon-indigo"><i data-lucide="user-circle" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
-                  <h3 class="text-[14px] font-semibold text-slate-900">账号信息</h3>
-                  <span class="text-[10px] text-slate-400">只读</span>
-                </div>
-                <div class="rounded-lg border border-indigo-100 bg-white divide-y divide-indigo-50/50">
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-slate-500">用户名</span>
-                    <span class="font-mono text-[13px] text-slate-800">zhangsan</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-slate-500">账号来源</span>
-                    <span class="inline-flex items-center gap-1 rounded border border-indigo-100 bg-indigo-50/50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600"><i data-lucide="ldap" class="h-3 w-3" style="stroke-width:1.5"></i>LDAP</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-slate-500">LDAP DN</span>
-                    <span class="font-mono text-[11px] text-slate-600 truncate max-w-[260px]" title="cn=张三,ou=users,dc=example,dc=com">cn=张三,ou=users,dc=example,dc=com</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-slate-500">姓名（昵称）</span>
-                    <span class="text-[13px] text-slate-800">张三</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-slate-500">邮箱</span>
-                    <span class="text-[13px] text-slate-800">zhangsan@company.com</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-slate-500">部门</span>
-                    <span class="text-[13px] text-slate-800">研发中心 / 平台组</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-slate-500">账号状态</span>
-                    <span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>启用</span>
+            <!-- 角色 2 -->
+            <div class="rounded-lg border border-indigo-100 bg-white p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="flex h-7 w-7 items-center justify-center rounded-lg icon-indigo"><i data-lucide="users" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+                  <div>
+                    <div class="text-[13px] font-semibold text-slate-900">项目管理员</div>
+                    <div class="font-mono text-[10px] text-slate-400">project_manager</div>
                   </div>
                 </div>
+                <span class="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">业务</span>
               </div>
-
-              <!-- 右：可编辑信息 -->
-              <div>
-                <div class="flex items-center gap-2 mb-3">
-                  <div class="flex h-7 w-7 items-center justify-center rounded-lg icon-cyan"><i data-lucide="edit-3" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
-                  <h3 class="text-[14px] font-semibold text-slate-900">可编辑信息</h3>
-                </div>
-                <div class="rounded-lg border border-indigo-100 bg-white p-4">
-                  <div class="space-y-4">
-                    <div>
-                      <label class="block text-[12px] font-medium text-slate-600 mb-1.5">联系电话</label>
-                      <div class="relative">
-                        <i data-lucide="phone" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
-                        <input type="text" value="138****6688" class="input-field w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2.5 text-[13px] text-slate-700 outline-none" />
-                      </div>
-                      <p class="mt-1 text-[11px] text-slate-400">用于接收通知短信，保存在本地</p>
-                    </div>
-                  </div>
-                  <div class="mt-5 flex items-center justify-end gap-2 border-t border-indigo-50 pt-4">
-                    <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600">重置</button>
-                    <button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"><i data-lucide="save" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>保存修改</button>
-                  </div>
-                </div>
-
-                <!-- 安全说明 -->
-                <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-                  <div class="flex items-center gap-2 mb-2">
-                    <div class="flex h-6 w-6 items-center justify-center rounded-md icon-amber"><i data-lucide="key-round" class="h-3 w-3" style="stroke-width:1.5"></i></div>
-                    <h4 class="text-[13px] font-semibold text-slate-800">密码与安全</h4>
-                  </div>
-                  <p class="text-[12px] text-slate-500 leading-relaxed">LDAP 账号的密码由域控制器统一管理，无法在此修改。如需重置密码，请通过企业 IT 自助平台或联系管理员。</p>
-                  <a class="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 hover:text-indigo-500 cursor-pointer">前往 IT 自助平台<i data-lucide="external-link" class="h-3 w-3" style="stroke-width:1.5"></i></a>
-                </div>
+              <p class="mt-2 text-[12px] text-slate-500 leading-relaxed">可管理项目成员、仓库、凭证与打包任务，可创建和审批发布</p>
+              <div class="mt-3 flex flex-wrap gap-1.5 border-t border-indigo-50 pt-3">
+                <span class="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500">项目管理</span>
+                <span class="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500">仓库管理</span>
+                <span class="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500">凭证管理</span>
+                <span class="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500">触发构建</span>
+                <span class="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500">发布审批</span>
+                <span class="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-500">推送 Tag</span>
               </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          <!-- ========== 我的通知 ========== -->
-          <div id="dt-notify" class="dt-pane hidden">
-            <!-- 通知统计 -->
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
-              <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo"><i data-lucide="git-pull-request-arrow" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[18px] font-semibold text-slate-900">5</div><div class="text-[10px] text-slate-400">审批通知</div></div></div>
-              <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="hammer" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[18px] font-semibold text-slate-900">3</div><div class="text-[10px] text-slate-400">构建结果</div></div></div>
-              <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="rocket" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[18px] font-semibold text-slate-900">2</div><div class="text-[10px] text-slate-400">发布结果</div></div></div>
-              <div class="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-amber"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[18px] font-semibold text-slate-900">1</div><div class="text-[10px] text-slate-400">系统通知</div></div></div>
-            </div>
-
-            <!-- 筛选栏 -->
-            <div class="flex flex-wrap items-center gap-2 mb-4">
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-[13px] font-medium text-indigo-600">全部<span class="font-mono text-[11px] text-indigo-400">11</span></button>
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600">审批<span class="font-mono text-[11px] text-slate-400">5</span></button>
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600">构建<span class="font-mono text-[11px] text-slate-400">3</span></button>
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600">发布<span class="font-mono text-[11px] text-slate-400">2</span></button>
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600">系统<span class="font-mono text-[11px] text-slate-400">1</span></button>
-              <div class="ml-auto flex items-center gap-2">
-                <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="check-check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>全部已读</button>
-              </div>
-            </div>
-
-            <!-- 通知列表 -->
-            <div class="space-y-2.5">
-              <!-- 未读 - 审批 -->
-              <div class="rounded-lg border border-indigo-200 bg-indigo-50/30 p-4 flex items-start gap-3 hover:border-indigo-300 transition-colors">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg icon-violet"><i data-lucide="git-pull-request-arrow" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="text-[13px] font-medium text-slate-900">发布单待你审批</span>
-                    <span class="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot"></span>
-                  </div>
-                  <p class="mt-0.5 text-[12px] text-slate-600">用户中心 <span class="font-mono">USER-CTR v1.8.0</span> 等待审批，请尽快处理。</p>
-                  <div class="mt-1.5 flex items-center gap-2 text-[11px] text-slate-400"><span>审批通知</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>10 分钟前</span></div>
-                </div>
-                <button class="shrink-0 inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600">查看</button>
-              </div>
-              <!-- 未读 - 构建 -->
-              <div class="rounded-lg border border-indigo-200 bg-indigo-50/30 p-4 flex items-start gap-3 hover:border-indigo-300 transition-colors">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg icon-rose"><i data-lucide="x-circle" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="text-[13px] font-medium text-slate-900">Jenkins 构建失败</span>
-                    <span class="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot"></span>
-                  </div>
-                  <p class="mt-0.5 text-[12px] text-slate-600">订单管理 <span class="font-mono">ORDER-MG #128</span> 构建失败，请查看日志。</p>
-                  <div class="mt-1.5 flex items-center gap-2 text-[11px] text-slate-400"><span>构建结果</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>1 小时前</span></div>
-                </div>
-                <button class="shrink-0 inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600">查看</button>
-              </div>
-              <!-- 已读 - 发布 -->
-              <div class="rounded-lg border border-indigo-100 bg-white p-4 flex items-start gap-3 hover:border-indigo-200 transition-colors">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg icon-emerald"><i data-lucide="check-circle-2" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
-                <div class="flex-1 min-w-0">
-                  <span class="text-[13px] font-medium text-slate-700">发布成功</span>
-                  <p class="mt-0.5 text-[12px] text-slate-500">网关服务 <span class="font-mono">GATEWAY v3.0.0</span> 已发布，Tag 已推送。</p>
-                  <div class="mt-1.5 flex items-center gap-2 text-[11px] text-slate-400"><span>发布结果</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>5 小时前</span></div>
-                </div>
-                <button class="shrink-0 rounded-md p-1.5 text-slate-300 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
-              </div>
-              <!-- 已读 - 审批 -->
-              <div class="rounded-lg border border-indigo-100 bg-white p-4 flex items-start gap-3 hover:border-indigo-200 transition-colors">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg icon-violet"><i data-lucide="git-pull-request-arrow" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
-                <div class="flex-1 min-w-0">
-                  <span class="text-[13px] font-medium text-slate-700">审批已通过</span>
-                  <p class="mt-0.5 text-[12px] text-slate-500">支付核心服务 <span class="font-mono">PAY-CORE v2.4.0</span> 审批已通过，可触发构建。</p>
-                  <div class="mt-1.5 flex items-center gap-2 text-[11px] text-slate-400"><span>审批通知</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>昨天 14:30</span></div>
-                </div>
-                <button class="shrink-0 rounded-md p-1.5 text-slate-300 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
-              </div>
-              <!-- 已读 - 系统 -->
-              <div class="rounded-lg border border-indigo-100 bg-white p-4 flex items-start gap-3 hover:border-indigo-200 transition-colors">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg icon-amber"><i data-lucide="settings" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
-                <div class="flex-1 min-w-0">
-                  <span class="text-[13px] font-medium text-slate-700">系统维护通知</span>
-                  <p class="mt-0.5 text-[12px] text-slate-500">系统将于今晚 23:00-23:30 进行例行维护，期间服务可能短暂中断。</p>
-                  <div class="mt-1.5 flex items-center gap-2 text-[11px] text-slate-400"><span>系统通知</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>2 天前</span></div>
-                </div>
-                <button class="shrink-0 rounded-md p-1.5 text-slate-300 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
-              </div>
-            </div>
-
-            <div class="mt-5 flex items-center justify-center border-t border-indigo-50 pt-4">
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="chevrons-down" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>加载更多</button>
-            </div>
+      <!-- ============ 安全信息 ============ -->
+      <div class="tech-card rounded-xl overflow-hidden">
+        <div class="flex items-center gap-2.5 border-b border-indigo-50 px-5 py-3.5">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg icon-amber"><i data-lucide="key-round" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+          <h3 class="text-[14px] font-semibold text-slate-900">安全信息</h3>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 divide-y divide-indigo-50/60 md:divide-y-0 md:divide-x md:divide-indigo-50/60">
+          <div class="px-5 py-4">
+            <div class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400"><i data-lucide="lock-keyhole" class="h-3 w-3" style="stroke-width:1.5"></i>密码管理</div>
+            <div class="mt-1.5 text-[13px] text-slate-800">LDAP 域控统管</div>
+            <p class="mt-1 text-[11px] text-slate-400 leading-relaxed">密码由域控制器统一管理，无法在此修改</p>
           </div>
-
-          <!-- ========== 操作记录 ========== -->
-          <div id="dt-activity" class="dt-pane hidden">
-            <!-- 权限提示 -->
-            <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50/40 p-3 flex items-start gap-2">
-              <i data-lucide="shield-alert" class="h-4 w-4 text-amber-600 shrink-0 mt-0.5" style="stroke-width:1.5"></i>
-              <div class="text-[12px] text-slate-600 leading-relaxed">
-                <span class="font-medium text-amber-700">操作记录仅管理员可见。</span>
-                当前账号拥有超管权限，可查看全系统操作日志。普通用户无法访问此页签。
-              </div>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2 mb-4">
-              <div class="relative"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input type="text" placeholder="搜索操作内容" class="w-[220px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></div>
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="filter" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>全部模块</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button>
-              <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="check-circle" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>成功</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button>
-              <div class="ml-auto text-[12px] text-slate-400">共 86 条</div>
-            </div>
-
-            <div class="rounded-lg border border-indigo-100 overflow-hidden">
-              <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
-                <div class="col-span-2">时间</div><div class="col-span-2">模块</div><div class="col-span-3">操作</div><div class="col-span-2">资源</div><div class="col-span-2">IP</div><div class="col-span-1 text-right">结果</div>
-              </div>
-              <div class="divide-y divide-indigo-50/50">
-                <div class="grid grid-cols-12 gap-3 items-center px-4 py-3 hover:bg-indigo-50/20">
-                  <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600 font-mono">06-29 15:45</div>
-                  <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">auth</span></div>
-                  <div class="col-span-12 md:col-span-3 text-[13px] text-slate-700">登录</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">user / zhangsan</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">192.168.1.108</div>
-                  <div class="col-span-6 md:col-span-1 flex justify-end"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">成功</span></div>
-                </div>
-                <div class="grid grid-cols-12 gap-3 items-center px-4 py-3 hover:bg-indigo-50/20">
-                  <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600 font-mono">06-29 15:42</div>
-                  <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700">release</span></div>
-                  <div class="col-span-12 md:col-span-3 text-[13px] text-slate-700">创建发布单</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">PAY-CORE v2.4.1</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">192.168.1.108</div>
-                  <div class="col-span-6 md:col-span-1 flex justify-end"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">成功</span></div>
-                </div>
-                <div class="grid grid-cols-12 gap-3 items-center px-4 py-3 hover:bg-indigo-50/20">
-                  <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600 font-mono">06-29 14:35</div>
-                  <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700">workflow</span></div>
-                  <div class="col-span-12 md:col-span-3 text-[13px] text-slate-700">审批通过</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">USER-CTR v1.8.0</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">192.168.1.108</div>
-                  <div class="col-span-6 md:col-span-1 flex justify-end"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">成功</span></div>
-                </div>
-                <div class="grid grid-cols-12 gap-3 items-center px-4 py-3 hover:bg-indigo-50/20">
-                  <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600 font-mono">06-29 12:20</div>
-                  <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">jenkins</span></div>
-                  <div class="col-span-12 md:col-span-3 text-[13px] text-slate-700">触发构建</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">ORDER-MG #128</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">192.168.1.108</div>
-                  <div class="col-span-6 md:col-span-1 flex justify-end"><span class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">失败</span></div>
-                </div>
-                <div class="grid grid-cols-12 gap-3 items-center px-4 py-3 hover:bg-indigo-50/20">
-                  <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600 font-mono">06-28 16:10</div>
-                  <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">release</span></div>
-                  <div class="col-span-12 md:col-span-3 text-[13px] text-slate-700">推送 Git Tag</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">GATEWAY v3.0.0</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">192.168.1.108</div>
-                  <div class="col-span-6 md:col-span-1 flex justify-end"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">成功</span></div>
-                </div>
-                <div class="grid grid-cols-12 gap-3 items-center px-4 py-3 hover:bg-indigo-50/20">
-                  <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600 font-mono">06-28 10:05</div>
-                  <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">credential</span></div>
-                  <div class="col-span-12 md:col-span-3 text-[13px] text-slate-700">新增凭证</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">gitlab-deploy-token</div>
-                  <div class="col-span-6 md:col-span-2 font-mono text-[12px] text-slate-500">192.168.1.108</div>
-                  <div class="col-span-6 md:col-span-1 flex justify-end"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">成功</span></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-4 flex items-center justify-between">
-              <div class="text-[12px] text-slate-400">第 1-6 条 / 共 86 条</div>
-              <div class="flex items-center gap-1">
-                <button class="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 hover:bg-indigo-50"><i data-lucide="chevron-left" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
-                <button class="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-500 text-[12px] font-medium text-white">1</button>
-                <button class="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-[12px] font-medium text-slate-600 hover:bg-indigo-50">2</button>
-                <button class="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-[12px] font-medium text-slate-600 hover:bg-indigo-50">3</button>
-                <button class="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 hover:bg-indigo-50"><i data-lucide="chevron-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
-              </div>
-            </div>
+          <div class="px-5 py-4">
+            <div class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400"><i data-lucide="monitor-smartphone" class="h-3 w-3" style="stroke-width:1.5"></i>最近登录</div>
+            <div class="mt-1.5 text-[13px] text-slate-800">2 分钟前</div>
+            <p class="mt-1 text-[11px] text-slate-400 leading-relaxed">192.168.1.108 · Chrome</p>
           </div>
-
+          <div class="px-5 py-4">
+            <div class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400"><i data-lucide="shield-check" class="h-3 w-3" style="stroke-width:1.5"></i>双因子认证</div>
+            <div class="mt-1.5 text-[13px] text-slate-800">未启用</div>
+            <p class="mt-1 text-[11px] text-slate-400 leading-relaxed">LDAP 账号由域策略控制</p>
+          </div>
         </div>
       </div>
 
@@ -418,12 +267,6 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
 
 <script>
   lucide.createIcons();
-  document.querySelectorAll('.dt-tab').forEach(t => t.addEventListener('click', () => {
-    document.querySelectorAll('.dt-tab').forEach(x => { x.classList.remove('on','text-indigo-600'); x.classList.add('text-slate-500'); x.style.borderColor='transparent'; });
-    t.classList.add('on','text-indigo-600'); t.classList.remove('text-slate-500'); t.style.borderColor='#4F46E5';
-    document.querySelectorAll('.dt-pane').forEach(p => p.classList.add('hidden'));
-    document.getElementById('dt-'+t.dataset.tab)?.classList.remove('hidden');
-  }));
 </script>
 </body>
 </html>

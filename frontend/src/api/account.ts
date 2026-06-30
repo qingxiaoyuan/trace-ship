@@ -23,10 +23,13 @@ export interface AccountUser {
   phone?: string;
   department?: string;
   source: string;
+  ldap_dn?: string;
   is_active: boolean;
   is_superuser: boolean;
   roles: AccountRoleBrief[];
+  last_login?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface AccountRole {
