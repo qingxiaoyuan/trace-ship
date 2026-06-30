@@ -1,5 +1,5 @@
 import { Modal } from 'antd';
-import type { ReactNode } from 'react';
+import type { ReactNode, CSSProperties } from 'react';
 
 interface TsModalProps {
   title: string;
@@ -12,6 +12,9 @@ interface TsModalProps {
   confirmLoading?: boolean;
   width?: number;
   footer?: ReactNode | null;
+  bodyStyle?: CSSProperties;
+  bodyClassName?: string;
+  footerStyle?: CSSProperties;
 }
 
 export function TsModal({
@@ -25,6 +28,9 @@ export function TsModal({
   confirmLoading,
   width = 560,
   footer,
+  bodyStyle,
+  bodyClassName,
+  footerStyle,
 }: TsModalProps) {
   const titleNode = (
     <div className="flex items-center gap-3">
@@ -52,10 +58,11 @@ export function TsModal({
       onOk={onOk}
       confirmLoading={confirmLoading}
       width={width}
+      centered
       footer={footer}
       classNames={{
         header: 'px-6 py-4 border-b border-indigo-50 mb-0',
-        body: 'px-6 py-5 scrollbar-thin',
+        body: `px-6 py-5 scrollbar-thin ${bodyClassName || ''}`,
         footer: 'px-6 py-4 border-t border-indigo-50 mt-0',
       }}
       styles={{
@@ -77,12 +84,14 @@ export function TsModal({
           padding: '20px 24px',
           maxHeight: '70vh',
           overflow: 'auto',
+          ...bodyStyle,
         },
         footer: {
           padding: '16px 24px',
           borderTop: '1px solid #EEF2FF',
           marginTop: 0,
           background: 'rgba(255, 255, 255, 0.5)',
+          ...footerStyle,
         },
         mask: {
           backdropFilter: 'blur(2px)',

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Form, Input, Select, DatePicker, Button } from 'antd';
+import { ConfigProvider, Form, Input, Select, DatePicker, Button } from 'antd';
 import dayjs from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -13,6 +13,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { TsModal } from '@/components/TsModal';
+import { FormSection } from '@/components/FormSection';
 import { projectApi } from '@/api/project';
 import {
   credentialTypeOptions,
@@ -48,21 +49,6 @@ const scopeIconClassMap: Record<CredentialScope, string> = {
   project: 'icon-indigo',
   global: 'icon-emerald',
 };
-
-interface SectionTitleProps {
-  title: string;
-  extra?: React.ReactNode;
-}
-
-function SectionTitle({ title, extra }: SectionTitleProps) {
-  return (
-    <div className="flex items-center gap-2 mb-3.5">
-      <span className="text-[13px] font-semibold text-slate-800">{title}</span>
-      <span className="h-px flex-1 bg-indigo-50" />
-      {extra}
-    </div>
-  );
-}
 
 interface FieldLabelProps {
   text: string;
@@ -270,6 +256,8 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
       open={open}
       onCancel={handleCancel}
       width={760}
+      bodyStyle={{ maxHeight: 'none' }}
+      footerStyle={{ background: 'transparent' }}
       footer={
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -297,48 +285,53 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         </div>
       }
     >
-      <Form
-        form={form}
-        layout="vertical"
-        initialValues={{ is_active: true, scope: 'project' }}
-        requiredMark={false}
+      <ConfigProvider
+        theme={{
+          components: {
+            Form: {
+              itemMarginBottom: 0,
+              verticalLabelPadding: 0,
+            },
+          },
+        }}
       >
-        {/* 基本信息 */}
-        <section className="mb-6">
-          <SectionTitle title="基本信息" />
-          <div className="grid grid-cols-2 gap-x-5 gap-y-4">
-            <Form.Item
-              name="name"
-              label={<FieldLabel text="凭证名称" required />}
-              rules={[{ required: true, message: '请输入凭证名称' }]}
-              className="mb-0"
-            >
-              <Input
-                placeholder="请输入凭证名称"
-                className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
-              />
-            </Form.Item>
-            <Form.Item
-              name="cred_type"
-              label={<FieldLabel text="凭证类型" required />}
-              rules={[{ required: true, message: '请选择凭证类型' }]}
-              className="mb-0"
-            >
-              <Select
-                placeholder="请选择凭证类型"
-                options={credentialTypeOptions.map(([value, label]) => ({ value, label }))}
-                optionRender={(opt) => renderTypeLabel(opt.value as CredentialType)}
-                labelRender={(opt) => renderTypeLabel(opt.value as CredentialType)}
-                {...selectCommonProps}
-              />
-            </Form.Item>
-          </div>
-        </section>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ is_active: true, scope: 'project' }}
+          requiredMark={false}
+        >
+          <FormSection title="基本信息" compact>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <Form.Item
+                name="name"
+                label={<FieldLabel text="凭证名称" required />}
+                rules={[{ required: true, message: '请输入凭证名称' }]}
+              >
+                <Input
+                  placeholder="请输入凭证名称"
+                  className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
+                />
+              </Form.Item>
+              <Form.Item
+                name="cred_type"
+                label={<FieldLabel text="凭证类型" required />}
+                rules={[{ required: true, message: '请选择凭证类型' }]}
+              >
+                <Select
+                  placeholder="请选择凭证类型"
+                  options={credentialTypeOptions.map(([value, label]) => ({ value, label }))}
+                  optionRender={(opt) => renderTypeLabel(opt.value as CredentialType)}
+                  labelRender={(opt) => renderTypeLabel(opt.value as CredentialType)}
+                  {...selectCommonProps}
+                />
+              </Form.Item>
+            </div>
+          </FormSection>
 
-        {/* 认证信息 */}
-        <section className="mb-6">
-          <SectionTitle
+          <FormSection
             title="认证信息"
+            compact
             extra={
               isTokenOnly && (
                 <span className="text-[11px] text-indigo-500 font-medium inline-flex items-center gap-1">
@@ -347,135 +340,122 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                 </span>
               )
             }
-          />
-          <div
-            className="grid gap-x-5 gap-y-4"
-            style={{ gridTemplateColumns: isTokenOnly ? '1fr' : 'repeat(2, 1fr)' }}
           >
-            {!isTokenOnly && (
-              <Form.Item
-                name="auth_mode"
-                label={<FieldLabel text="认证模式" required />}
-                rules={[{ required: true, message: '请选择认证模式' }]}
-                className="mb-0"
-              >
-                <Select
-                  placeholder="请选择认证模式"
-                  options={[
-                    { label: 'Token', value: 'token' },
-                    { label: '用户名密码', value: 'password' },
-                  ]}
-                  {...selectCommonProps}
-                />
-              </Form.Item>
-            )}
-            <Form.Item
-              name="token"
-              label={<FieldLabel text={tokenLabel} required={!credential} />}
-              rules={[
-                {
-                  required: !credential,
-                  message: authMode === 'password' ? '请输入密码' : '请输入 Token',
-                },
-              ]}
-              className="mb-0"
+            <div
+              className="grid gap-x-4 gap-y-3"
+              style={{ gridTemplateColumns: isTokenOnly ? '1fr' : 'repeat(2, 1fr)' }}
             >
-              <TokenInput credential={credential} authMode={authMode} />
-              {credential && (
-                <p className="mt-1 mb-0 text-[11px] text-slate-400">留空表示不修改</p>
+              {!isTokenOnly && (
+                <Form.Item
+                  name="auth_mode"
+                  label={<FieldLabel text="认证模式" required />}
+                  rules={[{ required: true, message: '请选择认证模式' }]}
+                >
+                  <Select
+                    placeholder="请选择认证模式"
+                    options={[
+                      { label: 'Token', value: 'token' },
+                      { label: '用户名密码', value: 'password' },
+                    ]}
+                    {...selectCommonProps}
+                  />
+                </Form.Item>
               )}
-            </Form.Item>
-          </div>
-
-          {/* 用户名（密码模式） */}
-          <div
-            className={[
-              'overflow-hidden transition-all duration-300',
-              authMode === 'password' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
-            ].join(' ')}
-          >
-            <div className="w-1/2 pr-2.5">
               <Form.Item
-                name="username"
-                label={<FieldLabel text="用户名" required />}
+                name="token"
+                label={<FieldLabel text={tokenLabel} required={!credential} />}
                 rules={[
-                  { required: authMode === 'password', message: '密码模式必须填写用户名' },
+                  {
+                    required: !credential,
+                    message: authMode === 'password' ? '请输入密码' : '请输入 Token',
+                  },
                 ]}
-                className="mb-0"
               >
-                <Input
-                  placeholder="请输入用户名"
-                  className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
-                />
+                <TokenInput credential={credential} authMode={authMode} />
+                {credential && (
+                  <p className="mt-1 mb-0 text-[11px] text-slate-400">留空表示不修改</p>
+                )}
               </Form.Item>
             </div>
-          </div>
 
-          {/* 过期时间 / 备注 */}
-          <div className="grid grid-cols-2 gap-x-5 gap-y-4 mt-4">
-            <Form.Item
-              name="expires_at"
-              label={<FieldLabel text="过期时间" />}
-              className="mb-0"
+            {/* 用户名（密码模式） */}
+            <div
+              className={[
+                'overflow-hidden transition-all duration-300',
+                authMode === 'password' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
+              ].join(' ')}
             >
-              <DatePicker
-                showTime
-                className="w-full h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500"
-                placeholder="请选择过期时间"
-                suffixIcon={
-                  <Calendar className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
-                }
-              />
-            </Form.Item>
-            <Form.Item name="remark" label={<FieldLabel text="备注" />} className="mb-0">
-              <Input.TextArea
-                rows={1}
-                placeholder="可选"
-                className="min-h-[36px] rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500"
-              />
-            </Form.Item>
-          </div>
-        </section>
+              <div className="w-1/2 pr-2.5">
+                <Form.Item
+                  name="username"
+                  label={<FieldLabel text="用户名" required />}
+                  rules={[
+                    { required: authMode === 'password', message: '密码模式必须填写用户名' },
+                  ]}
+                >
+                  <Input
+                    placeholder="请输入用户名"
+                    className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
+                  />
+                </Form.Item>
+              </div>
+            </div>
 
-        {/* 作用范围 */}
-        <section>
-          <SectionTitle title="作用范围" />
-          <Form.Item
-            name="scope"
-            rules={[{ required: true, message: '请选择作用范围' }]}
-            className="mb-0"
-          >
-            <ScopeCards />
-          </Form.Item>
-
-          {/* 关联项目（项目作用域） */}
-          <div
-            className={[
-              'overflow-hidden transition-all duration-300',
-              scope === 'project' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
-            ].join(' ')}
-          >
-            <div className="w-1/2 pr-2.5">
-              <Form.Item
-                name="project"
-                label={<FieldLabel text="关联项目" required />}
-                rules={[
-                  { required: scope === 'project', message: '项目级凭证必须关联项目' },
-                ]}
-                className="mb-0"
-              >
-                <Select
-                  showSearch
-                  placeholder="选择项目"
-                  loading={projectsLoading}
-                  options={projectOptions}
-                  {...selectCommonProps}
+            {/* 过期时间 / 备注 */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3">
+              <Form.Item name="expires_at" label={<FieldLabel text="过期时间" />}>
+                <DatePicker
+                  showTime
+                  className="w-full h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500"
+                  placeholder="请选择过期时间"
+                  suffixIcon={
+                    <Calendar className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
+                  }
+                />
+              </Form.Item>
+              <Form.Item name="remark" label={<FieldLabel text="备注" />}>
+                <Input.TextArea
+                  rows={1}
+                  placeholder="可选"
+                  className="min-h-[36px] rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500"
                 />
               </Form.Item>
             </div>
-          </div>
-        </section>
-      </Form>
+          </FormSection>
+
+          <FormSection title="作用范围" compact>
+            <Form.Item name="scope" rules={[{ required: true, message: '请选择作用范围' }]}>
+              <ScopeCards />
+            </Form.Item>
+
+            {/* 关联项目（项目作用域） */}
+            <div
+              className={[
+                'overflow-hidden transition-all duration-300',
+                scope === 'project' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
+              ].join(' ')}
+            >
+              <div className="w-1/2 pr-2.5">
+                <Form.Item
+                  name="project"
+                  label={<FieldLabel text="关联项目" required />}
+                  rules={[
+                    { required: scope === 'project', message: '项目级凭证必须关联项目' },
+                  ]}
+                >
+                  <Select
+                    showSearch
+                    placeholder="选择项目"
+                    loading={projectsLoading}
+                    options={projectOptions}
+                    {...selectCommonProps}
+                  />
+                </Form.Item>
+              </div>
+            </div>
+          </FormSection>
+        </Form>
+      </ConfigProvider>
     </TsModal>
   );
 }
