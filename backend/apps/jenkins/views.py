@@ -36,7 +36,7 @@ class JenkinsJobViewSet(StandardModelViewSet):
     serializer_class = JenkinsJobSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "is_active"]
+    filterset_fields = ["project", "is_active", "credential"]
     search_fields = ["name", "job_name"]
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]

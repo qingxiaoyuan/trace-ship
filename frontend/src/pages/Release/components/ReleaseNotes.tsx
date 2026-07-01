@@ -88,20 +88,16 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-indigo-100 bg-slate-50/50 p-4">
+      <div className="overflow-hidden rounded-lg border border-slate-200">
         {rows.length > 0 ? (
-          <table className="w-full border-collapse text-[13px]">
-            <thead>
-              <tr className="border-b border-indigo-100">
-                <th className="w-[140px] py-2 pr-3 text-left text-[12px] font-medium text-slate-400">项目</th>
-                <th className="py-2 text-left text-[12px] font-medium text-slate-400">内容</th>
-              </tr>
-            </thead>
+          <table className="w-full border-collapse">
             <tbody>
               {rows.map((row, idx) => (
                 <tr key={idx} className="border-b border-slate-100 last:border-0">
-                  <td className="py-2 pr-3 text-[12px] font-medium text-slate-500 align-top">{row.key}</td>
-                  <td className="py-2 text-[13px] text-slate-700">
+                  <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500">
+                    {row.key}
+                  </td>
+                  <td className="px-3 py-2 text-[13px] text-slate-700">
                     {row.value.split('<br>').map((line, lineIdx) => (
                       <div key={lineIdx}>{line}</div>
                     ))}
@@ -111,7 +107,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
             </tbody>
           </table>
         ) : (
-          <pre className="whitespace-pre-wrap font-mono text-[12px] text-slate-600">{mdContent}</pre>
+          <pre className="whitespace-pre-wrap p-4 font-mono text-[13px] text-slate-700">{mdContent}</pre>
         )}
       </div>
 

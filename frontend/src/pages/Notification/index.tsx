@@ -507,10 +507,7 @@ export default function NotificationPage() {
                 <div
                   key={n.id}
                   onClick={() => openDetail(n)}
-                  className={[
-                    'group flex cursor-pointer items-start gap-3 px-5 py-4 transition-colors hover:bg-indigo-50/30',
-                    n.is_read ? 'border-l-2 border-transparent' : 'border-l-2 border-cyan-400',
-                  ].join(' ')}
+                  className={'group flex cursor-pointer items-start gap-3 px-5 py-4 transition-colors hover:bg-indigo-50/30 border-l-2 border-transparent'}
                 >
                   <div
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconCls}`}
@@ -528,7 +525,7 @@ export default function NotificationPage() {
                         {n.title}
                       </span>
                       {!n.is_read && (
-                        <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
                       )}
                       <span
                         className={`inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium ${tagTone[n.notification_type]}`}

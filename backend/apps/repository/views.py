@@ -41,7 +41,7 @@ class RepositoryViewSet(StandardModelViewSet):
     serializer_class = RepositorySerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repo_type", "vendor", "health_status"]
+    filterset_fields = ["project", "repo_type", "vendor", "health_status", "credential"]
     search_fields = ["name", "url", "external_identity"]
     ordering_fields = ["created_at", "last_sync_at"]
     ordering = ["-created_at"]

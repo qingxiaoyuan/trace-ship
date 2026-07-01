@@ -3,6 +3,9 @@
 
 根据 Repository 或 JenkinsJob 绑定的 credential 直接解析出实际可用的凭证数据。
 绑定阶段已在序列化器校验凭证来源（个人 / 项目）与类型，运行时只需读取绑定的凭证。
+
+每次成功解析后更新凭证的 last_used_at 并写入一条使用记录（操作日志），供凭证详情页
+「使用记录」Tab 展示。
 """
 from django.utils import timezone
 
@@ -18,6 +21,30 @@ VENDOR_TO_CRED_TYPE = {
     "svn": "svn_password",
     "jenkins": "jenkins_token",
 }
+
+
+def _module_for_source(source) -> str:
+    """根据 source 类型返回使用记录模块名。"""
+    from apps.repository.models import Repository
+    from apps.jenkins.models import JenkinsJob
+
+    if isinstance(source, Repository):
+        return "代码仓库"
+    if isinstance(source, JenkinsJob):
+        return "Jenkins"
+    return "未知模块"
+
+
+def _resource_display(source) -> str:
+    """生成资源展示名称。"""
+    from apps.repository.models import Repository
+    from apps.jenkins.models import JenkinsJob
+
+    if isinstance(source, Repository):
+        return f"{source.project.name if source.project else '-'} / {source.name}"
+    if isinstance(source, JenkinsJob):
+        return f"{source.project.name if source.project else '-'} / {source.name}"
+    return str(source)
 
 
 def resolve_credential(source, request_user=None) -> dict:
@@ -45,5 +72,22 @@ def resolve_credential(source, request_user=None) -> dict:
     # 更新最后使用时间
     credential.last_used_at = timezone.now()
     credential.save(update_fields=["last_used_at"])
+
+    # 写入使用记录（异步静默，失败不影响主流程）
+    try:
+        from apps.system.services import OperationLogService
+
+        OperationLogService.log(
+            user=request_user,
+            module="凭证管理",
+            action="使用凭证",
+            resource_type="credential",
+            resource_id=str(credential.id),
+            description=f"{_module_for_source(source)} 使用凭证 {_resource_display(source)}",
+            result="success",
+            detail={"module": _module_for_source(source), "source_id": str(source.id)},
+        )
+    except Exception:
+        pass
 
     return credential.get_data()

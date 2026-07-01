@@ -4,7 +4,7 @@
 提供流程定义、流程实例、审批任务的 RESTful API。
 """
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, viewsets
+from rest_framework import filters, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -233,6 +233,10 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
             instance = WorkflowEngine.process_task(task, "approve", comment)
             if instance.status == "completed":
                 ReleaseService.handle_workflow_completed(instance)
+        except serializers.ValidationError as exc:
+            # 抛出审批校验异常中的首条可读信息，避免前端仅看到 "'node_id'" 这类字段名
+            message = self._extract_validation_message(exc)
+            return error_response(40001, message)
         except Exception as exc:
             return error_response(40001, str(exc))
         serializer = self.get_serializer(task)
@@ -247,6 +251,9 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
             instance = WorkflowEngine.process_task(task, "reject", comment)
             if instance.status == "rejected":
                 ReleaseService.handle_workflow_rejected(instance, comment)
+        except serializers.ValidationError as exc:
+            message = self._extract_validation_message(exc)
+            return error_response(40001, message)
         except Exception as exc:
             return error_response(40001, str(exc))
         serializer = self.get_serializer(task)
@@ -265,6 +272,9 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
             return error_response(40401, "目标用户不存在")
         try:
             WorkflowEngine.process_task(task, "transfer", comment, to_user)
+        except serializers.ValidationError as exc:
+            message = self._extract_validation_message(exc)
+            return error_response(40001, message)
         except Exception as exc:
             return error_response(40001, str(exc))
         serializer = self.get_serializer(task)
@@ -283,6 +293,9 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
                 comment,
                 rollback_target=rollback_target,
             )
+        except serializers.ValidationError as exc:
+            message = self._extract_validation_message(exc)
+            return error_response(40001, message)
         except Exception as exc:
             return error_response(40001, str(exc))
 
@@ -298,3 +311,12 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
             return success_response(serializer.data, message="已回退到初始节点，流程已删除")
 
         return success_response(serializer.data, message="回退成功")
+
+    def _extract_validation_message(self, exc: serializers.ValidationError) -> str:
+        """从 DRF ValidationError 中提取第一条可读错误信息。"""
+        if not exc.detail:
+            return "参数校验失败"
+        first = exc.detail[0] if isinstance(exc.detail, list) else next(iter(exc.detail.values()))
+        if isinstance(first, list):
+            first = first[0]
+        return str(first) if first else "参数校验失败"

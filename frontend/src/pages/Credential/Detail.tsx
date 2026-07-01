@@ -17,9 +17,12 @@ import {
   GitCompare,
   Trash2,
   Folder,
+  Server,
 } from "lucide-react";
 import { credentialApi } from "@/api/credential";
-import type { Credential } from "@/types";
+import { repositoryApi } from "@/api/repository";
+import { jenkinsApi } from "@/api/jenkins";
+import type { Credential, Repository, JenkinsJob } from "@/types";
 import { CredentialIcon } from "./components/CredentialIcon";
 import { StatusBadge } from "./components/StatusBadge";
 import { CredentialModal } from "./components/CredentialModal";
@@ -77,7 +80,19 @@ export default function CredentialDetail() {
     queryFn: () => credentialApi.getUsage(id || "", { page_size: 1000 }),
     enabled: !!id && activeTab === "usage",
   });
+  const { data: repoData } = useQuery({
+    queryKey: ["credential-repositories", id],
+    queryFn: () =>
+      repositoryApi.getRepositories({ credential: id || "", page_size: 1000 }),
+    enabled: !!id && activeTab === "resources",
+  });
 
+  const { data: jobData } = useQuery({
+    queryKey: ["credential-jenkins-jobs", id],
+    queryFn: () =>
+      jenkinsApi.getJobs({ credential: id || "", page_size: 1000 }),
+    enabled: !!id && activeTab === "resources",
+  });
   const handleSave = async (values: Partial<Credential>) => {
     try {
       await credentialApi.updateCredential(id || "", values);
@@ -143,12 +158,16 @@ export default function CredentialDetail() {
     id: string;
     module: string;
     action: string;
+    description?: string;
+    detail?: { module?: string; source_id?: string };
     used_at?: string;
     result?: string;
-    detail?: string;
+    created_at?: string;
   }[];
 
-  const relatedCount = usageRecords.length;
+  const relatedRepos = (repoData?.results || []) as Repository[];
+  const relatedJobs = (jobData?.results || []) as JenkinsJob[];
+  const relatedCount = relatedRepos.length + relatedJobs.length;
 
   return (
     <div className="space-y-5 page-fade-in">
@@ -396,15 +415,15 @@ export default function CredentialDetail() {
                         <Icon className="h-4 w-4" strokeWidth={1.5} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-slate-900 truncate">
-                          {record.module} · {record.action}
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate">
-                          {record.detail || `${credential.name}`}
-                        </div>
+                  <div className="text-[13px] font-medium text-slate-900 truncate">
+                    {record.detail?.module || record.module} · {record.action}
+                  </div>
+                  <div className="text-[11px] text-slate-400 truncate">
+                    {record.description || `${credential.name}`}
+                  </div>
                       </div>
                       <span className="text-[11px] text-slate-400 whitespace-nowrap">
-                        {fromNow(record.used_at)}
+                        {fromNow(record.created_at || record.used_at)}
                       </span>
                       <span
                         className={[
@@ -426,7 +445,7 @@ export default function CredentialDetail() {
           {activeTab === "resources" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {credential.scope === "project" && credential.project_id ? (
-                <div className="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3 tech-card-hover transition-colors">
+                <div className="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3 tech-card-hover transition-colors cursor-pointer" onClick={() => navigate(`/projects/${credential.project_id}`)}>
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo">
                     <Folder className="h-4 w-4" strokeWidth={1.5} />
                   </div>
@@ -439,9 +458,51 @@ export default function CredentialDetail() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : null}
+
+              {relatedRepos.map((repo) => (
+                <div
+                  key={repo.id}
+                  onClick={() => navigate(`/repositories/${repo.id}`)}
+                  className="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3 tech-card-hover transition-colors cursor-pointer"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan">
+                    <GitFork className="h-4 w-4" strokeWidth={1.5} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-medium text-slate-900 truncate">
+                      {repo.name}
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate">
+                      代码仓库 · {repo.project_name || '-'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {relatedJobs.map((job) => (
+                <div
+                  key={job.id}
+                  onClick={() => navigate(`/jenkins/jobs/${job.id}`)}
+                  className="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3 tech-card-hover transition-colors cursor-pointer"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-amber">
+                    <Server className="h-4 w-4" strokeWidth={1.5} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-medium text-slate-900 truncate">
+                      {job.name}
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate">
+                      Jenkins 任务 · {job.project_name || '-'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {credential.scope !== "project" && relatedRepos.length === 0 && relatedJobs.length === 0 && (
                 <div className="col-span-full text-center text-[13px] text-slate-400 py-8">
-                  个人凭证暂未绑定具体项目资源
+                  该凭证暂未绑定仓库或 Jenkins 任务资源
                 </div>
               )}
             </div>
