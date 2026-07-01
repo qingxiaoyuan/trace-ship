@@ -9,7 +9,7 @@ from typing import List, Optional
 import requests
 from django.utils.dateparse import parse_datetime
 
-from .base import BranchInfo, CommitInfo, GitProvider, TagInfo
+from .base import BranchInfo, CommitInfo, GitProvider, MergeRequestInfo, TagInfo
 from .exceptions import AuthenticationError, ConnectionError, ProviderError
 
 
@@ -195,6 +195,198 @@ class GiteaProvider(GitProvider):
                 ),
             )
             for c in resp.json().get("commits", [])
+        ]
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """拉取合并到目标分支的 PR 列表"""
+        owner, repo = self._owner_repo(repo_identity)
+        params: dict = {
+            "state": "closed",
+            "base": target_branch,
+            "limit": 100,
+        }
+        resp = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params=params,
+        )
+        result: List[MergeRequestInfo] = []
+        for pr in resp.json():
+            merged_at = self._parse_datetime(pr.get("merged_at"))
+            # Gitea state=closed 可能仅关闭未合并，过滤掉未合并的
+            if not pr.get("merged") and not merged_at:
+                continue
+            if since and merged_at and merged_at < since:
+                continue
+            result.append(
+                MergeRequestInfo(
+                    number=str(pr.get("number", "")),
+                    title=pr.get("title", "") or "",
+                    description=pr.get("body", "") or "",
+                    author=pr.get("user", {}).get("login", "") or "",
+                    source_branch=pr.get("head", {}).get("ref", "") or "",
+                    target_branch=pr.get("base", {}).get("ref", "") or "",
+                    web_url=pr.get("html_url", "") or "",
+                    merged_at=merged_at,
+                )
+            )
+        return result
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """拉取合并到目标分支的 PR 列表（Gitea 中 PR 即 Pull Request）"""
+        owner, repo = self._owner_repo(repo_identity)
+        params: dict = {
+            "state": "closed",
+            "base": target_branch,
+            "limit": 100,
+        }
+        if since:
+            params["since"] = since.isoformat()
+        resp = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params=params,
+        )
+        mrs: List[MergeRequestInfo] = []
+        for pr in resp.json():
+            merged_at = self._parse_datetime(pr.get("merged_at"))
+            # Gitea closed 状态可能含未合并的 PR，仅保留已合并的
+            if pr.get("merged") is not True and merged_at is None:
+                continue
+            mrs.append(
+                MergeRequestInfo(
+                    number=str(pr.get("number", "")),
+                    title=pr.get("title", ""),
+                    description=pr.get("body", "") or "",
+                    author=pr.get("user", {}).get("login", "") or "",
+                    source_branch=pr.get("head", {}).get("ref", "") or "",
+                    target_branch=pr.get("base", {}).get("ref", "") or "",
+                    web_url=pr.get("html_url", "") or "",
+                    merged_at=merged_at,
+                )
+            )
+        return mrs
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """拉取合并到目标分支的 PR 列表"""
+        owner, repo = self._owner_repo(repo_identity)
+        params: dict = {
+            "state": "closed",
+            "base": target_branch,
+            "limit": 100,
+        }
+        if since:
+            params["since"] = since.isoformat()
+        resp = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params=params,
+        )
+        result: List[MergeRequestInfo] = []
+        for pr in resp.json():
+            merged_at_raw = pr.get("merged_at")
+            # Gitea 返回的 closed 但未合并的 PR 需过滤
+            if not merged_at_raw:
+                continue
+            user = pr.get("user", {}) or {}
+            result.append(
+                MergeRequestInfo(
+                    number=str(pr.get("number", "")),
+                    title=pr.get("title", "") or "",
+                    description=pr.get("body", "") or "",
+                    author=user.get("login", "") or user.get("full_name", "") or "",
+                    source_branch=pr.get("head", {}).get("ref", "") or "",
+                    target_branch=pr.get("base", {}).get("ref", "") or "",
+                    web_url=pr.get("html_url", "") or "",
+                    merged_at=self._parse_datetime(merged_at_raw),
+                )
+            )
+        return result
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """拉取合并到目标分支的 PR 列表（Gitea 称为 Pull）"""
+        owner, repo = self._owner_repo(repo_identity)
+        params: dict = {
+            "state": "closed",
+            "base": target_branch,
+            "limit": 100,
+            "type": "pulls",
+        }
+        if since:
+            params["since"] = since.isoformat()
+        resp = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params=params,
+        )
+        return [
+            MergeRequestInfo(
+                number=str(pr.get("number", "")),
+                title=pr.get("title", ""),
+                description=pr.get("body", "") or "",
+                author=pr.get("user", {}).get("login", ""),
+                source_branch=pr.get("head", {}).get("ref", "") or "",
+                target_branch=pr.get("base", {}).get("ref", "") or "",
+                web_url=pr.get("html_url", "") or "",
+                merged_at=self._parse_datetime(pr.get("merged_at")),
+            )
+            for pr in resp.json()
+        ]
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """拉取合并到目标分支的 PR 列表"""
+        owner, repo = self._owner_repo(repo_identity)
+        params: dict = {
+            "state": "closed",
+            "base": target_branch,
+            "limit": 100,
+            "type": "pulls",
+        }
+        if since:
+            params["since"] = since.isoformat()
+        resp = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            params=params,
+        )
+        return [
+            MergeRequestInfo(
+                number=str(p.get("number", "")),
+                title=p.get("title", ""),
+                description=p.get("body", "") or "",
+                author=p.get("user", {}).get("login", ""),
+                source_branch=p.get("head", {}).get("ref", "") or "",
+                target_branch=p.get("base", {}).get("ref", "") or "",
+                web_url=p.get("html_url", "") or "",
+                merged_at=self._parse_datetime(p.get("merged_at")),
+            )
+            for p in resp.json()
+            if p.get("merged_at") is not None
         ]
 
     @staticmethod

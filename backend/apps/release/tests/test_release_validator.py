@@ -51,8 +51,8 @@ class TestReleaseValidator:
                 "beta", "develop", "VA.1.0.0", rule, version_rule
             )
 
-    def test_validate_release_cycle_rejects_too_frequent(self, project, repository, user):
-        """正式版本未达到发布周期被拒绝"""
+    def test_validate_release_cycle_allows_any_time(self, project, repository, user):
+        """正式发布周期不再限制频率"""
         ReleaseRecord.objects.create(
             project=project,
             repository=repository,
@@ -64,23 +64,6 @@ class TestReleaseValidator:
             publisher=user,
         )
         rule = ReleaseValidator.get_release_rule(project)
-        with pytest.raises(Exception, match="正式版本每"):
-            ReleaseValidator.validate_release_cycle(project, "formal", rule)
-
-    def test_validate_release_cycle_allows_after_interval(self, project, repository, user):
-        """超过发布周期后允许新的正式发布"""
-        old_release = ReleaseRecord.objects.create(
-            project=project,
-            repository=repository,
-            version="VA.1.0.0",
-            tag_name="VA.1.0.0",
-            branch="main",
-            release_type="formal",
-            status="released",
-            publisher=user,
-        )
-        old_release.created_at = timezone.now() - timedelta(days=4)
-        old_release.save(update_fields=["created_at"])
-        rule = ReleaseValidator.get_release_rule(project)
         # 不应抛异常
         ReleaseValidator.validate_release_cycle(project, "formal", rule)
+

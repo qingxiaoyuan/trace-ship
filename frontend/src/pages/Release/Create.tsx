@@ -19,22 +19,19 @@ import {
   Package,
   Cpu,
   Check,
+  DownloadCloud,
+  FileCog,
+  ShieldAlert,
+  CheckSquare,
+  GitCommitHorizontal,
+  GitPullRequestArrow,
 } from 'lucide-react';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { releaseApi } from '@/api/release';
 import { useAppMessage } from '@/hooks/useAppMessage';
-import { releaseTypeText } from '@/pages/Release/constants';
-import type { Release, ReleaseType, Repository } from '@/types';
-
-/** 发布说明文档（generate-doc 返回结构） */
-interface ReleaseDoc {
-  change_type?: string;
-  updates?: { type?: string; content?: string }[];
-  config_changes?: Record<string, Record<string, string>>;
-  related_changes?: Record<string, string>;
-  publisher?: string;
-}
+import { parseMdTable, buildMdTable, type MdTableRow } from '@/utils/markdownTable';
+import type { Release, ReleaseType, Repository, ChangesPreview, ParsedUpdate } from '@/types';
 
 /** 关联变更清单条目 */
 interface RelatedChange {
@@ -43,20 +40,17 @@ interface RelatedChange {
 }
 
 /** 变更条目（A/F 类） */
-interface UpdateItem {
-  type: 'A' | 'F';
+interface UpdateItem extends ParsedUpdate {
+  type: string;
   content: string;
 }
 
 /** 发布类型卡片配置 */
 const RELEASE_TYPES: { value: ReleaseType; title: string; desc: string }[] = [
   { value: 'formal', title: '正式', desc: '目标分支须为 main / master' },
-  { value: 'rc', title: 'RC', desc: 'Tag 自动加 rc- 前缀' },
-  { value: 'beta', title: 'Beta', desc: 'Tag 自动加 beta- 前缀' },
+  { value: 'rc', title: 'RC', desc: 'Tag 自动加 -rc 后缀' },
+  { value: 'beta', title: 'Beta', desc: 'Tag 自动加 -beta 后缀' },
 ];
-
-/** 变更条目类型说明 */
-const UPDATE_TYPE_LABEL: Record<string, string> = { A: '功能增加', F: 'BUG 修复' };
 
 export default function ReleaseCreate() {
   const navigate = useNavigate();
@@ -66,11 +60,18 @@ export default function ReleaseCreate() {
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [createdRelease, setCreatedRelease] = useState<Release | null>(null);
-  const [releaseDoc, setReleaseDoc] = useState<ReleaseDoc | null>(null);
+  const [docRows, setDocRows] = useState<MdTableRow[]>([]);
+  const [docSaved, setDocSaved] = useState(true);
 
-  // 关联变更清单 / 变更条目为可选本地态（不在 antd Form 内管理）
-  const [relatedChanges, setRelatedChanges] = useState<RelatedChange[]>([]);
+  // 本地态：更新内容 / 关联变更 / 配置项 / 影响验证
   const [updates, setUpdates] = useState<UpdateItem[]>([]);
+  const [relatedChanges, setRelatedChanges] = useState<RelatedChange[]>([]);
+  const [hasConfigChanges, setHasConfigChanges] = useState(false);
+  const [configChangeDoc, setConfigChangeDoc] = useState('');
+  const [impactOther, setImpactOther] = useState(false);
+  const [impactDesc, setImpactDesc] = useState('');
+  const [selfTestPassed, setSelfTestPassed] = useState(false);
+  const [retestPassed, setRetestPassed] = useState(false);
 
   // 响应式跟踪关键字段
   const watchProject = Form.useWatch('project', form) as string | undefined;
@@ -101,17 +102,44 @@ export default function ReleaseCreate() {
     retry: false,
   });
 
-  // 分支拉取失败的错误信息（凭证失效 / 仓库无法连接等）
   const branchesErrorMsg = branchesError
     ? (branchesError as { message?: string })?.message || '获取分支失败，请检查仓库凭证与连通性'
     : undefined;
 
-  // 自动版本号预览（选择分支后触发，tag 是仓库级概念但按需求在分支选定后再展示）
+  // 自动版本号预览
   const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
     queryKey: ['repository-next-version', watchRepository, watchReleaseType, watchBranch],
     queryFn: () => repositoryApi.getNextVersion(watchRepository || '', watchReleaseType),
     enabled: !!watchRepository && !!watchBranch,
   });
+
+  // 变更预览：选 branch 后拉取 commits + MRs + parsed_updates
+  const { data: changesPreview, isLoading: changesLoading } = useQuery<ChangesPreview>({
+    queryKey: ['repository-changes-preview', watchRepository, watchBranch],
+    queryFn: () => repositoryApi.previewChanges(watchRepository || '', watchBranch || ''),
+    enabled: !!watchRepository && !!watchBranch,
+    retry: false,
+  });
+
+  // 选 branch 后自动回填 parsed_updates（仅在首次拉取或切换分支时触发）
+  const lastPreviewRef = useRef<string>('');
+  useEffect(() => {
+    if (!changesPreview) return;
+    const key = `${watchRepository}-${watchBranch}`;
+    if (key === lastPreviewRef.current) return;
+    lastPreviewRef.current = key;
+    if (changesPreview.parsed_updates?.length) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUpdates(
+        changesPreview.parsed_updates.map((u) => ({
+          type: u.type || 'A',
+          content: u.content || '',
+          source: u.source,
+          source_ref: u.source_ref,
+        }))
+      );
+    }
+  }, [changesPreview, watchRepository, watchBranch]);
 
   const projectOptions = useMemo(
     () => (projectData?.results || []).map((p) => ({ label: p.name, value: p.id })),
@@ -126,19 +154,13 @@ export default function ReleaseCreate() {
     [branches]
   );
 
-  // 分支 HEAD
-  const branchHead = useMemo(() => {
-    if (!watchBranch) return undefined;
-    return (branches || []).find((b) => b.name === watchBranch)?.last_commit_hash;
-  }, [branches, watchBranch]);
-
   useEffect(() => {
     if (projectIdFromQuery) {
       form.setFieldsValue({ project: projectIdFromQuery });
     }
   }, [projectIdFromQuery, form]);
 
-  // tag_name 是否被用户手动编辑过（未手动改时自动跟随建议 tag 名）
+  // tag_name 自动回填
   const tagNameDirtyRef = useRef(false);
   useEffect(() => {
     const suggested = nextVersionData?.next_tag_name;
@@ -147,7 +169,6 @@ export default function ReleaseCreate() {
     }
   }, [nextVersionData?.next_tag_name, form]);
 
-  // 切换仓库/分支/发布类型时重置 dirty 标记，允许重新回填
   useEffect(() => {
     tagNameDirtyRef.current = false;
   }, [watchRepository, watchBranch, watchReleaseType]);
@@ -162,7 +183,13 @@ export default function ReleaseCreate() {
         tag_name: (values.tag_name as string)?.trim() || undefined,
         related_changes: relatedChanges.filter((r) => r.key.trim()),
         updates: updates.filter((u) => u.content.trim()),
-      } as never),
+        has_config_changes: hasConfigChanges,
+        config_change_doc: configChangeDoc,
+        impact_other: impactOther,
+        impact_desc: impactDesc,
+        self_test_passed: selfTestPassed,
+        retest_passed: retestPassed,
+      }),
     onSuccess: (release) => {
       setCreatedRelease(release);
       message.success('发布草稿创建成功');
@@ -174,8 +201,21 @@ export default function ReleaseCreate() {
 
   const generateDocMutation = useMutation({
     mutationFn: (id: string) => releaseApi.generateDoc(id),
-    onSuccess: (doc) => setReleaseDoc(doc as ReleaseDoc),
+    onSuccess: (md) => {
+      const mdStr = md as string;
+      setDocRows(parseMdTable(mdStr));
+      setDocSaved(true);
+    },
     onError: () => message.error('生成发布说明失败'),
+  });
+
+  const updateDocMutation = useMutation({
+    mutationFn: ({ id, md }: { id: string; md: string }) => releaseApi.updateDoc(id, md),
+    onSuccess: () => {
+      message.success('发布说明已保存');
+      setDocSaved(true);
+    },
+    onError: (err: { message?: string }) => message.error(err?.message || '保存失败'),
   });
 
   const submitMutation = useMutation({
@@ -198,11 +238,21 @@ export default function ReleaseCreate() {
     if (createdRelease?.id) submitMutation.mutate(createdRelease.id);
   };
 
+  const handleSaveDoc = () => {
+    if (createdRelease?.id) {
+      const md = buildMdTable(docRows);
+      updateDocMutation.mutate({ id: createdRelease.id, md });
+    }
+  };
+
   const steps = [
     { title: '创建发布' },
     { title: '生成说明' },
     { title: '提交审批' },
   ];
+
+  // 步骤 1 表单字段是否就绪
+  const formReady = !!watchProject && !!watchRepository && !!watchBranch;
 
   return (
     <div className="mx-auto max-w-[960px] space-y-5 page-fade-in">
@@ -218,7 +268,7 @@ export default function ReleaseCreate() {
         </button>
         <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">创建发布</h1>
         <p className="mt-1 text-[13px] text-slate-500">
-          选择项目与仓库，配置发布类型与分支，系统将自动计算版本号与 Tag 名
+          选择项目与仓库，配置发布类型与分支，系统将自动拉取提交与 MR 记录并解析更新内容
         </p>
       </div>
 
@@ -261,6 +311,7 @@ export default function ReleaseCreate() {
         </div>
       </div>
 
+      {/* ========== 步骤 1：填写表单 ========== */}
       {currentStep === 0 && (
         <Form form={form} layout="vertical" onFinish={(v) => createMutation.mutate(v)} requiredMark={false}>
           {/* 1. 基础配置 */}
@@ -271,7 +322,6 @@ export default function ReleaseCreate() {
               </div>
               <h3 className="text-[14px] font-semibold text-slate-900">基础配置</h3>
             </div>
-
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Form.Item name="project" label="项目" rules={[{ required: true, message: '请选择项目' }]}>
                 <SelectField
@@ -284,7 +334,6 @@ export default function ReleaseCreate() {
                   hint="只有你参与的项目才会显示"
                 />
               </Form.Item>
-
               <Form.Item name="repository" label="目标仓库" rules={[{ required: true, message: '请选择仓库' }]}>
                 <SelectField
                   icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
@@ -296,7 +345,6 @@ export default function ReleaseCreate() {
                 />
               </Form.Item>
             </div>
-
             <Form.Item
               name="release_type"
               label="发布类型"
@@ -316,36 +364,43 @@ export default function ReleaseCreate() {
               </div>
               <h3 className="text-[14px] font-semibold text-slate-900">分支配置</h3>
             </div>
+            <Form.Item name="branch" label="分支" rules={[{ required: true, message: '请选择分支' }]}>
+              <SelectField
+                icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
+                placeholder="选择分支"
+                loading={branchesLoading}
+                options={branchOptions}
+                hint={
+                  branchesErrorMsg
+                    ? branchesErrorMsg
+                    : '发布说明将拉取此分支的提交，Tag 将推送到此分支；正式版本只能从 main / master 发布'
+                }
+                error={!!branchesErrorMsg}
+              />
+            </Form.Item>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-1">
-              <Form.Item name="branch" label="分支" rules={[{ required: true, message: '请选择分支' }]}>
-                <SelectField
-                  icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
-                  placeholder="选择分支"
-                  loading={branchesLoading}
-                  options={branchOptions}
-                  hint={
-                    branchesErrorMsg
-                      ? branchesErrorMsg
-                      : '发布说明将拉取此分支的提交，Tag 将推送到此分支；正式版本只能从 main / master 发布'
-                  }
-                  error={!!branchesErrorMsg}
-                />
-              </Form.Item>
-            </div>
-
-            {branchHead && (
-              <div className="mt-1 flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/30 p-3">
-                <Info className="h-3.5 w-3.5 shrink-0 text-indigo-500" style={{ strokeWidth: 1.5 }} />
-                <span className="text-[12px] text-slate-600">
-                  分支当前 HEAD：
-                  <span className="font-mono text-indigo-600">{branchHead.slice(0, 12)}</span>
-                </span>
+            {/* 基线信息 */}
+            {formReady && changesPreview && (
+              <div className="mt-1 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/30 p-3">
+                  <GitPullRequestArrow className="h-3.5 w-3.5 shrink-0 text-indigo-500" style={{ strokeWidth: 1.5 }} />
+                  <span className="text-[12px] text-slate-600">
+                    上一个 Tag（基线）：
+                    <span className="font-mono text-indigo-600">{changesPreview.last_tag || '无'}</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg border border-cyan-100 bg-cyan-50/30 p-3">
+                  <GitCommitHorizontal className="h-3.5 w-3.5 shrink-0 text-cyan-500" style={{ strokeWidth: 1.5 }} />
+                  <span className="text-[12px] text-slate-600">
+                    本次基线 HEAD：
+                    <span className="font-mono text-cyan-600">{changesPreview.head_hash?.slice(0, 12) || '-'}</span>
+                  </span>
+                </div>
               </div>
             )}
           </section>
 
-          {/* 3. 版本号选择 */}
+          {/* 3. 版本号配置 */}
           <section className="tech-card mb-5 rounded-xl p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -356,19 +411,16 @@ export default function ReleaseCreate() {
               </div>
               <span className="text-[11px] text-slate-400">不填则自动计算</span>
             </div>
-
             <Form.Item name="tag_name" label="Tag 名" className="mb-0">
               <input
                 placeholder="留空自动生成"
-                onChange={() => {
-                  tagNameDirtyRef.current = true;
-                }}
+                onChange={() => { tagNameDirtyRef.current = true; }}
                 className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[13px] text-slate-700 placeholder-slate-400 outline-none"
               />
             </Form.Item>
             <p className="mt-1 text-[11px] text-slate-400">正式无后缀 / RC 加 -rc / Beta 加 -beta</p>
 
-            {/* 各发布类型最新 Tag（只读） */}
+            {/* 自动计算预览 */}
             {nextVersionData?.all_types && (
               <div className="mt-4 rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-cyan-50/30 p-4">
                 <div className="mb-3 flex items-center gap-1.5 text-[11px] font-medium text-indigo-600">
@@ -381,10 +433,7 @@ export default function ReleaseCreate() {
                     const item = nextVersionData.all_types[rt];
                     const label = rt === 'formal' ? '正式' : rt === 'rc' ? 'RC' : 'Beta';
                     return (
-                      <div
-                        key={rt}
-                        className="rounded-md border border-slate-200 bg-white/70 px-2.5 py-2"
-                      >
+                      <div key={rt} className="rounded-md border border-slate-200 bg-white/70 px-2.5 py-2">
                         <div className="text-[10px] text-slate-400">{label}</div>
                         <div className="mt-0.5 truncate font-mono text-[11px] text-slate-600" title={item?.latest_tag || '无'}>
                           {item?.latest_tag || '无'}
@@ -398,7 +447,227 @@ export default function ReleaseCreate() {
             )}
           </section>
 
-          {/* 4. 关联变更清单（可选） */}
+          {/* 4. 提交与 MR 记录 */}
+          {formReady && (
+            <section className="tech-card mb-5 rounded-xl p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-cyan">
+                    <DownloadCloud className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                  </div>
+                  <h3 className="text-[14px] font-semibold text-slate-900">提交与 MR 记录</h3>
+                  {changesPreview && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 border border-emerald-200">
+                      {changesLoading ? '拉取中…' : '已拉取'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 统计条 */}
+              {changesPreview && (
+                <div className="mb-4 grid grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                      <GitCommitHorizontal className="h-3 w-3" style={{ strokeWidth: 1.5 }} />Commit 总数
+                    </div>
+                    <div className="mt-1 font-mono text-[18px] font-semibold text-slate-900">
+                      {changesPreview.commits.length}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                      <GitPullRequestArrow className="h-3 w-3" style={{ strokeWidth: 1.5 }} />MR 总数
+                    </div>
+                    <div className="mt-1 font-mono text-[18px] font-semibold text-slate-900">
+                      {changesPreview.merge_requests.length}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                    <div className="flex items-center gap-1.5 text-[10px] text-emerald-600">
+                      <Check className="h-3 w-3" style={{ strokeWidth: 1.5 }} />已解析条目
+                    </div>
+                    <div className="mt-1 font-mono text-[18px] font-semibold text-emerald-600">
+                      {changesPreview.parsed_updates.length}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Commit 列表 */}
+              {changesPreview && changesPreview.commits.length > 0 && (
+                <div className="space-y-2">
+                  {changesPreview.commits.map((c, idx) => (
+                    <div
+                      key={idx}
+                      className={`rounded-lg border p-3 ${
+                        c.has_af
+                          ? 'border-emerald-200 bg-emerald-50/30'
+                          : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            c.has_af
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-slate-100 text-slate-400'
+                          }`}
+                        >
+                          {c.has_af ? 'AF 命中' : '未命中'}
+                        </span>
+                        <span className="font-mono text-[11px] text-slate-500">{c.hash.slice(0, 12)}</span>
+                        <span className="text-[11px] text-slate-400">· {c.author}</span>
+                      </div>
+                      <div className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-[12px] text-slate-700">
+                        {c.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {changesLoading && (
+                <p className="py-4 text-center text-[13px] text-slate-400">拉取中…</p>
+              )}
+            </section>
+          )}
+
+          {/* 5. 更新内容 */}
+          <section className="tech-card mb-5 rounded-xl p-5">
+            <div className="mb-1 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-emerald">
+                  <ListChecks className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                </div>
+                <h3 className="text-[14px] font-semibold text-slate-900">更新内容</h3>
+                {updates.length > 0 && (
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 border border-indigo-200">
+                    {updates.length} 条
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setUpdates((prev) => [...prev, { type: 'A', content: '' }])}
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"
+              >
+                <Plus className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
+                手动添加
+              </button>
+            </div>
+            <p className="mb-3 text-[11px] text-slate-400">
+              来源：Commit 中含「A 」或「F 」前缀的行 + MR 描述中正则匹配的行，可在此编辑
+            </p>
+
+            {updates.length === 0 ? (
+              <p className="text-[12px] text-slate-400">暂无条目</p>
+            ) : (
+              <div className="space-y-2">
+                {updates.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
+                  >
+                    <select
+                      value={item.type}
+                      onChange={(e) =>
+                        setUpdates((prev) =>
+                          prev.map((u, i) => (i === idx ? { ...u, type: e.target.value } : u))
+                        )
+                      }
+                      className={`rounded-md border bg-white px-2 py-1 text-[11px] font-mono font-medium outline-none ${
+                        item.type === 'A'
+                          ? 'border-emerald-200 text-emerald-700'
+                          : 'border-amber-200 text-amber-700'
+                      }`}
+                    >
+                      <option value="A">A</option>
+                      <option value="F">F</option>
+                    </select>
+                    <input
+                      value={item.content}
+                      onChange={(e) =>
+                        setUpdates((prev) =>
+                          prev.map((u, i) => (i === idx ? { ...u, content: e.target.value } : u))
+                        )
+                      }
+                      placeholder="变更内容描述"
+                      className="input-field flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
+                    />
+                    {item.source && (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] border ${
+                          item.source === 'commit'
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                            : 'bg-violet-50 text-violet-600 border-violet-100'
+                        }`}
+                      >
+                        {item.source === 'commit' ? (
+                          <GitCommitHorizontal className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
+                        ) : (
+                          <GitPullRequestArrow className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
+                        )}
+                        {item.source_ref}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setUpdates((prev) => prev.filter((_, i) => i !== idx))}
+                      className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                    >
+                      <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 6. 配置项改动 */}
+          <section className="tech-card mb-5 rounded-xl p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-amber">
+                <FileCog className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+              </div>
+              <h3 className="text-[14px] font-semibold text-slate-900">配置项改动</h3>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+              <div>
+                <div className="text-[13px] font-medium text-slate-700">是否有配置项改动</div>
+                <div className="text-[11px] text-slate-400">若涉及配置文件、环境变量等变更，需填写配置项变更文档</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHasConfigChanges((v) => !v)}
+                className={`relative h-[22px] w-[38px] rounded-full transition-colors ${
+                  hasConfigChanges ? 'bg-indigo-600' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`absolute left-0 top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    hasConfigChanges ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {hasConfigChanges && (
+              <div className="mt-4">
+                <label className="mb-1.5 block text-[12px] font-medium text-slate-600">配置项变更文档</label>
+                <textarea
+                  rows={6}
+                  value={configChangeDoc}
+                  onChange={(e) => setConfigChangeDoc(e.target.value)}
+                  placeholder="请填写配置项变更文档，说明新增 / 修改 / 删除的配置项及取值"
+                  className="input-field w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[13px] text-slate-700 placeholder-slate-400 outline-none"
+                />
+              </div>
+            )}
+          </section>
+
+          {/* 7. 关联变更清单 */}
           <section className="tech-card mb-5 rounded-xl p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -417,9 +686,8 @@ export default function ReleaseCreate() {
                 添加条目
               </button>
             </div>
-
             {relatedChanges.length === 0 ? (
-                <p className="text-[12px] text-slate-400">暂无条目，点击右上角添加</p>
+              <p className="text-[12px] text-slate-400">暂无条目，点击右上角添加</p>
             ) : (
               <div className="space-y-2">
                 {relatedChanges.map((item, idx) => {
@@ -466,89 +734,70 @@ export default function ReleaseCreate() {
             <p className="mt-2 text-[11px] text-slate-400">记录硬件版本、依赖模块等关联变更信息，将写入发布说明</p>
           </section>
 
-          {/* 5. 变更条目（可选） */}
+          {/* 8. 影响与验证 */}
           <section className="tech-card mb-5 rounded-xl p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-emerald">
-                  <ListChecks className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
-                </div>
-                <h3 className="text-[14px] font-semibold text-slate-900">变更条目</h3>
-                <span className="text-[10px] text-slate-400">可选</span>
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-rose" style={{ background: 'linear-gradient(135deg,#FFF1F2,#FFE4E6)', color: '#BE123C', border: '1px solid #FECDD3' }}>
+                <ShieldAlert className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+              </div>
+              <h3 className="text-[14px] font-semibold text-slate-900">影响与验证</h3>
+            </div>
+
+            {/* 是否影响其他功能 */}
+            <div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+              <div>
+                <div className="text-[13px] font-medium text-slate-700">是否影响其他功能</div>
+                <div className="text-[11px] text-slate-400">本次发布是否对其他模块或上下游系统产生影响</div>
               </div>
               <button
                 type="button"
-                onClick={() => setUpdates((prev) => [...prev, { type: 'A', content: '' }])}
-                className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"
+                onClick={() => setImpactOther((v) => !v)}
+                className={`relative h-[22px] w-[38px] rounded-full transition-colors ${
+                  impactOther ? 'bg-indigo-600' : 'bg-slate-300'
+                }`}
               >
-                <Plus className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
-                添加条目
+                <span
+                  className={`absolute left-0 top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    impactOther ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                  }`}
+                />
               </button>
             </div>
 
-            {updates.length === 0 ? (
-                <p className="text-[12px] text-slate-400">暂无条目，点击右上角添加</p>
-            ) : (
-              <div className="space-y-2">
-                {updates.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
-                  >
-                    <select
-                      value={item.type}
-                      onChange={(e) =>
-                        setUpdates((prev) =>
-                          prev.map((u, i) =>
-                            i === idx ? { ...u, type: e.target.value as 'A' | 'F' } : u
-                          )
-                        )
-                      }
-                      className={`rounded-md border bg-white px-2 py-1 text-[11px] font-mono font-medium outline-none ${
-                        item.type === 'A'
-                          ? 'border-emerald-200 text-emerald-700'
-                          : 'border-amber-200 text-amber-700'
-                      }`}
-                    >
-                      <option value="A">A</option>
-                      <option value="F">F</option>
-                    </select>
-                    <input
-                      value={item.content}
-                      onChange={(e) =>
-                        setUpdates((prev) =>
-                          prev.map((u, i) => (i === idx ? { ...u, content: e.target.value } : u))
-                        )
-                      }
-                      placeholder="变更内容描述"
-                      className="input-field flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setUpdates((prev) => prev.filter((_, i) => i !== idx))}
-                      className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
-                    >
-                      <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
-                    </button>
-                  </div>
-                ))}
+            {impactOther && (
+              <div className="mb-4">
+                <label className="mb-1.5 block text-[12px] font-medium text-slate-600">影响范围说明</label>
+                <textarea
+                  rows={2}
+                  value={impactDesc}
+                  onChange={(e) => setImpactDesc(e.target.value)}
+                  placeholder="说明受影响的模块、接口、上下游系统"
+                  className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none"
+                />
               </div>
             )}
-            <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-400">
-              {(Object.keys(UPDATE_TYPE_LABEL) as (keyof typeof UPDATE_TYPE_LABEL)[]).map((t) => (
-                <span key={t} className="inline-flex items-center gap-1">
-                  <span
-                    className={`inline-flex w-4 justify-center rounded border py-0.5 font-mono font-medium ${
-                      t === 'A'
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-amber-200 bg-amber-50 text-amber-700'
-                    }`}
-                  >
-                    {t}
-                  </span>
-                  {UPDATE_TYPE_LABEL[t]}
-                </span>
-              ))}
+
+            {/* 测试验证 */}
+            <div className="rounded-lg border border-slate-200 bg-white p-3.5">
+              <div className="mb-3 flex items-center gap-1.5">
+                <CheckSquare className="h-4 w-4 text-indigo-500" style={{ strokeWidth: 1.5 }} />
+                <span className="text-[13px] font-medium text-slate-700">测试验证</span>
+                <span className="text-[11px] text-slate-400">提交审批前请确认测试状态</span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <CheckCard
+                  checked={selfTestPassed}
+                  onChange={setSelfTestPassed}
+                  title="自测试通过"
+                  desc="开发人员已完成自测"
+                />
+                <CheckCard
+                  checked={retestPassed}
+                  onChange={setRetestPassed}
+                  title="研发测试复验通过"
+                  desc="测试团队已复验通过"
+                />
+              </div>
             </div>
           </section>
 
@@ -556,7 +805,7 @@ export default function ReleaseCreate() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <Info className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
-              <span>创建后状态为草稿，可编辑分支与版本号，随后生成发布说明</span>
+              <span>创建后状态为草稿，提交审批前请确认更新内容、配置项与测试状态</span>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -579,69 +828,74 @@ export default function ReleaseCreate() {
         </Form>
       )}
 
-      {/* 步骤 2/3：预览发布说明 + 提交审批 */}
+      {/* ========== 步骤 2：编辑发布说明（表格组件，无表头） ========== */}
       {currentStep >= 1 && createdRelease && (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <section className="tech-card rounded-xl p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-violet">
-                  <Tag className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
-                </div>
-                <h3 className="text-[14px] font-semibold text-slate-900">版本信息</h3>
-              </div>
-              <dl className="space-y-2.5 text-[13px]">
-                <InfoRow label="版本号" value={createdRelease.version || '-'} mono />
-                <InfoRow label="Tag 名" value={createdRelease.tag_name || '-'} mono />
-                <InfoRow label="发布类型" value={releaseTypeText[createdRelease.release_type]} />
-                <InfoRow label="分支" value={createdRelease.branch} mono />
-                <InfoRow label="Git Hash" value={createdRelease.git_hash?.slice(0, 12) || '-'} mono />
-              </dl>
-            </section>
-
-            <section className="tech-card rounded-xl p-5">
-              <div className="mb-4 flex items-center gap-2">
+          <section className="tech-card rounded-xl p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-emerald">
                   <ListChecks className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                 </div>
                 <h3 className="text-[14px] font-semibold text-slate-900">发布说明</h3>
+                {generateDocMutation.isPending && (
+                  <span className="text-[12px] text-slate-400">生成中…</span>
+                )}
               </div>
-              {generateDocMutation.isPending && (
-                <p className="text-[13px] text-slate-400">生成中…</p>
-              )}
-              {releaseDoc && (
-                <div className="space-y-3 text-[13px]">
-                  <div>
-                    <span className="text-slate-400">变更类型：</span>
-                    <span className="text-slate-700">{releaseDoc.change_type || '-'}</span>
-                  </div>
-                  <div>
-                    <p className="mb-1 font-medium text-slate-600">更新内容：</p>
-                    {(releaseDoc.updates || []).length === 0 ? (
-                      <p className="text-slate-400">无</p>
-                    ) : (
-                      <ul className="space-y-1">
-                        {(releaseDoc.updates || []).map((u, idx) => (
-                          <li key={idx} className="flex items-start gap-2 text-slate-700">
-                            <span
-                              className={`mt-0.5 inline-flex w-4 shrink-0 justify-center rounded border py-0.5 font-mono text-[10px] font-medium ${
-                                u.type === 'A'
-                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                  : 'border-amber-200 bg-amber-50 text-amber-700'
-                              }`}
-                            >
-                              {u.type || '-'}
-                            </span>
-                            <span>{u.content || '-'}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-slate-400">
+                  {docSaved ? '已保存' : '有未保存的修改'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSaveDoc}
+                  disabled={updateDocMutation.isPending || docSaved}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-50"
+                >
+                  <Check className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                  保存编辑
+                </button>
+              </div>
+            </div>
+
+            {/* 可编辑 2 列表格（无表头），左列标题只读，右列内容可编辑 */}
+            {docRows.length > 0 ? (
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <table className="w-full border-collapse">
+                  <tbody>
+                    {docRows.map((row, idx) => (
+                      <tr key={idx} className="border-b border-slate-100 last:border-0">
+                        <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500">
+                          {row.key}
+                        </td>
+                        <td className="px-3 py-2">
+                          <textarea
+                            value={row.value}
+                            onChange={(e) => {
+                              const newVal = e.target.value;
+                              setDocRows((prev) =>
+                                prev.map((r, i) => (i === idx ? { ...r, value: newVal } : r))
+                              );
+                              setDocSaved(false);
+                            }}
+                            rows={Math.max(1, Math.ceil((row.value.length || 0) / 50))}
+                            className="input-field w-full resize-y rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-[13px] text-slate-400">
+                {generateDocMutation.isPending ? '生成中…' : '发布说明为空'}
+              </p>
+            )}
+            <p className="mt-2 text-[11px] text-slate-400">
+              变更内容中 A 为功能增加，F 为 BUG 修复；保存后将序列化为 Markdown 文档
+            </p>
+          </section>
 
           <div className="flex items-center justify-end gap-2">
             <button
@@ -668,7 +922,6 @@ export default function ReleaseCreate() {
 
 /* ---------------- 子组件 ---------------- */
 
-/** 带左侧图标的 antd Select 封装 */
 function SelectField({
   icon,
   hint,
@@ -710,7 +963,6 @@ function SelectField({
   );
 }
 
-/** 发布类型卡片单选 */
 function ReleaseTypeCards({ value, onChange }: { value?: ReleaseType; onChange?: (v: ReleaseType) => void }) {
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -745,12 +997,38 @@ function ReleaseTypeCards({ value, onChange }: { value?: ReleaseType; onChange?:
   );
 }
 
-/** 信息行 */
-function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function CheckCard({
+  checked,
+  onChange,
+  title,
+  desc,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title: string;
+  desc: string;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-slate-400">{label}</dt>
-      <dd className={`text-slate-700 ${mono ? 'font-mono' : ''}`}>{value}</dd>
-    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors ${
+        checked
+          ? 'border-indigo-300 bg-indigo-50/40'
+          : 'border-slate-200 bg-slate-50/40 hover:border-indigo-200'
+      }`}
+    >
+      <span
+        className={`mt-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] transition-colors ${
+          checked ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'
+        }`}
+      >
+        {checked && <Check className="h-3 w-3 text-white" style={{ strokeWidth: 3 }} />}
+      </span>
+      <div>
+        <div className="text-[13px] font-medium text-slate-700">{title}</div>
+        <div className="text-[11px] text-slate-400">{desc}</div>
+      </div>
+    </button>
   );
 }

@@ -11,9 +11,10 @@ from utils.provider.base import CommitInfo
 class MockProvider:
     """用于发布说明生成的模拟 GitProvider"""
 
-    def __init__(self, commits=None, tags=None):
+    def __init__(self, commits=None, tags=None, merge_requests=None):
         self.commits = commits or []
         self.tags = tags or []
+        self.merge_requests = merge_requests or []
 
     def list_tags(self, repo_identity: str):
         return self.tags
@@ -23,6 +24,9 @@ class MockProvider:
 
     def compare_commits(self, repo_identity: str, base: str, head: str):
         return self.commits
+
+    def list_merge_requests(self, repo_identity: str, target_branch: str, since=None):
+        return self.merge_requests
 
 
 @pytest.mark.django_db
@@ -41,72 +45,98 @@ class TestReleaseDocGenerator:
             branch="main",
             release_type="formal",
             publisher=user,
+            updates=[{"type": "A", "content": "新增功能", "source": "commit", "source_ref": "h1"}],
+            has_config_changes=True,
+            config_change_doc="[System]\nKey=Value1",
+            impact_other=False,
+            self_test_passed=True,
+            retest_passed=False,
         )
 
-    def test_aggregate_updates_and_config(self, release):
-        """聚合更新内容与配置项改动"""
+    def test_generate_markdown_doc(self, release):
+        """生成 Markdown 发布说明文档"""
         commits = [
             CommitInfo(
                 hash="h1",
                 author="张三",
                 author_email="",
-                message="变更类型：\n□ 无配置项改动 ☑有配置项改动\n\n更新内容：\n1. A 功能1\n\n配置项改动：\n[System]\nKey=Value1",
+                message="A 新增功能",
+                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+            ),
+        ]
+        provider = MockProvider(commits=commits)
+        generator = ReleaseDocGenerator(release, provider)
+        md = generator.generate()
+
+        assert isinstance(md, str)
+        assert "| 项目 | 内容 |" in md
+        assert "变更类型" in md
+        assert "有配置项改动" in md
+        assert "新增功能" in md
+        assert "配置项改动" in md
+        assert "自测试通过" in md
+
+    def test_generate_without_config_changes(self, release):
+        """无配置项改动时配置项改动行值为无"""
+        release.has_config_changes = False
+        release.save()
+        commits = [
+            CommitInfo(
+                hash="h1",
+                author="张三",
+                author_email="",
+                message="A 新增功能",
+                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+            ),
+        ]
+        provider = MockProvider(commits=commits)
+        generator = ReleaseDocGenerator(release, provider)
+        md = generator.generate()
+
+        assert "无配置项改动" in md
+        # 配置项改动行始终存在，无改动时值为「无」
+        assert "| 配置项改动 | 无 |" in md
+
+    def test_persist_release_commits(self, release):
+        """生成时持久化 ReleaseCommit 关联"""
+        commits = [
+            CommitInfo(
+                hash="h1",
+                author="张三",
+                author_email="",
+                message="A 新增功能",
                 committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
             ),
             CommitInfo(
                 hash="h2",
                 author="李四",
                 author_email="",
-                message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. F 修复 bug",
+                message="F 修复 bug",
                 committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=tz.utc),
             ),
         ]
         provider = MockProvider(commits=commits)
         generator = ReleaseDocGenerator(release, provider)
-        doc = generator.generate()
+        generator.generate()
 
-        assert doc["change_type"] == "有配置项改动"
-        assert len(doc["updates"]) == 2
-        assert doc["config_changes"] == {"System": {"Key": "Value1"}}
+        assert release.release_commits.count() == 2
+        assert release.release_commits.get(commit__commit_hash="h1").is_included is True
 
-    def test_merge_similar_updates(self, release):
-        """合并相同 type+content 的更新项"""
+    def test_regenerate_updates_existing_release_commits(self, release):
+        """重复生成时更新已有 ReleaseCommit 关联"""
         commits = [
             CommitInfo(
                 hash="h1",
                 author="张三",
                 author_email="",
-                message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. A 相同功能",
+                message="A 功能1",
                 committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
             ),
             CommitInfo(
                 hash="h2",
                 author="李四",
                 author_email="",
-                message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. A 相同功能",
-                committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=tz.utc),
-            ),
-        ]
-        provider = MockProvider(commits=commits)
-        generator = ReleaseDocGenerator(release, provider)
-        doc = generator.generate(merge_similar=True)
-        assert len(doc["updates"]) == 1
-
-    def test_regenerate_doc_updates_existing_release_commits(self, release):
-        """重复生成发布说明时更新已有 ReleaseCommit 关联"""
-        commits = [
-            CommitInfo(
-                hash="h1",
-                author="张三",
-                author_email="",
-                message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. A 功能1",
-                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
-            ),
-            CommitInfo(
-                hash="h2",
-                author="李四",
-                author_email="",
-                message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. F 修复 bug",
+                message="F 修复 bug",
                 committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=tz.utc),
             ),
         ]
@@ -147,12 +177,14 @@ class TestReleaseDocGenerator:
                 hash="pass001",
                 author="李四",
                 author_email="",
-                message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. A 合法功能",
+                message="A 合法功能",
                 committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=tz.utc),
             ),
         ]
         provider = MockProvider(commits=commits)
         generator = ReleaseDocGenerator(release, provider)
-        doc = generator.generate()
-        assert len(doc["updates"]) == 1
-        assert doc["updates"][0]["content"] == "合法功能"
+        md = generator.generate()
+
+        # 非法提交应被过滤，不创建 ReleaseCommit
+        assert not release.release_commits.filter(commit__commit_hash="illegal001").exists()
+        assert release.release_commits.filter(commit__commit_hash="pass001").exists()

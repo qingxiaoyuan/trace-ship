@@ -38,12 +38,13 @@ def test_parse_valid_commit():
     assert result.related_changes == {"PXX板卡硬件版本": "1.0"}
 
 
-def test_parse_missing_change_type():
-    """测试缺少变更类型"""
-    message = "更新内容：\n[A为功能增加 F为BUG修复]：\n1. A xxx"
+def test_parse_missing_change_type_but_has_updates():
+    """测试缺少变更类型但有 A/F 更新内容时视为合法"""
+    message = "更新内容：\n[A为功能增加 F为BUG修复]：\n1. A xxx\nF yyy"
     result = CommitParser.parse(message)
-    assert result.is_valid is False
-    assert "变更类型" in result.errors[0]
+    assert result.is_valid is True
+    assert result.change_type == "无配置项改动"
+    assert len(result.updates) == 2
 
 
 def test_parse_missing_updates():

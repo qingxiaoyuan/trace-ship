@@ -272,12 +272,12 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="rollback")
     def rollback(self, request: Request, pk=None) -> Response:
-        """回退到上一节点"""
+        """回退到上一节点或初始节点"""
         task = self.get_object()
         comment = request.data.get("comment", "")
         rollback_target = request.data.get("rollback_target")
         try:
-            WorkflowEngine.process_task(
+            instance = WorkflowEngine.process_task(
                 task,
                 "rollback",
                 comment,
@@ -285,5 +285,16 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
             )
         except Exception as exc:
             return error_response(40001, str(exc))
+
         serializer = self.get_serializer(task)
+
+        # 驳回到初始节点：流程作废，自动删除该实例并让发布回到草稿态
+        if instance.status == "rejected":
+            try:
+                ReleaseService.handle_workflow_rollback_to_start(instance, comment)
+            except Exception:
+                pass
+            instance.delete()
+            return success_response(serializer.data, message="已回退到初始节点，流程已删除")
+
         return success_response(serializer.data, message="回退成功")

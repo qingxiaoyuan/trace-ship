@@ -101,7 +101,7 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         if self.action in ["create", "update", "partial_update", "destroy"]:
             return [IsAuthenticated(), IsProjectMember()]
-        if self.action in ["generate_doc", "submit_audit", "push_tag"]:
+        if self.action in ["generate_doc", "update_doc", "submit_audit", "push_tag"]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         return super().get_permissions()
 
@@ -141,6 +141,12 @@ class ReleaseViewSet(StandardModelViewSet):
                 tag_name=data.get("tag_name"),
                 related_changes=data.get("related_changes"),
                 updates=data.get("updates"),
+                has_config_changes=data.get("has_config_changes", False),
+                config_change_doc=data.get("config_change_doc", ""),
+                impact_other=data.get("impact_other", False),
+                impact_desc=data.get("impact_desc", ""),
+                self_test_passed=data.get("self_test_passed", False),
+                retest_passed=data.get("retest_passed", False),
             )
         except Exception as exc:
             return error_response(40002, str(exc))
@@ -248,6 +254,46 @@ class ReleaseViewSet(StandardModelViewSet):
         except Exception as exc:
             return error_response(50000, f"生成发布说明失败: {exc}", status_code=500)
         return success_response(doc, message="生成成功")
+
+    @action(detail=True, methods=["post"], url_path="update-doc")
+    def update_doc(self, request: Request, pk=None) -> Response:
+        """
+        手动编辑发布说明 Markdown 文档
+
+        Args:
+            request: DRF Request，body 需包含 release_doc
+            pk: 发布主键
+
+        Returns:
+            更新后的发布记录
+        """
+        release = self.get_object()
+        md_content = request.data.get("release_doc", "")
+        try:
+            ReleaseService.update_doc(release, md_content)
+        except Exception as exc:
+            return error_response(40002, str(exc))
+        return success_response(self._serialize_release(release), message="保存成功")
+
+    @action(detail=True, methods=["get"], url_path="export-md")
+    def export_md(self, request: Request, pk=None):
+        """
+        导出 Markdown 发布单
+
+        Args:
+            request: DRF Request
+            pk: 发布主键
+
+        Returns:
+            Markdown 文件响应（纯文本，不经 DRF 渲染器）
+        """
+        from django.http import HttpResponse
+
+        release = self.get_object()
+        md_content = release.release_doc or ""
+        response = HttpResponse(md_content, content_type="text/markdown; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="release-{release.version}.md"'
+        return response
 
     @action(detail=True, methods=["post"], url_path="submit-audit")
     def submit_audit(self, request: Request, pk=None) -> Response:

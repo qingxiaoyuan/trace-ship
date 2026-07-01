@@ -8,6 +8,35 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 
+# 更新内容行正则：匹配 A 或 F 作为类型标记，后接空格和内容。
+# 允许类型标记前为行首、空白或任意非字母字符；按行提取，换行为有效数据分隔。
+UPDATE_LINE_RE = re.compile(r"(?:^|[^A-Za-z])([AF])\s+(.+)$", re.MULTILINE)
+
+
+def extract_update_lines(text: str) -> List[Dict[str, str]]:
+    """
+    从 commit message 或 MR description 中提取 A/F 更新行
+
+    规则：行以「A 」或「F 」开头（可选前导序号如「1. 」「1、」），类型即该字母。
+    commit message 和 MR description 共用此规则。
+
+    Args:
+        text: 原始文本（commit message 或 MR description）
+
+    Returns:
+        更新条目列表，每项 {"type": "A"/"F", "content": "..."}
+    """
+    if not text:
+        return []
+    result: List[Dict[str, str]] = []
+    for match in UPDATE_LINE_RE.finditer(text):
+        result.append({
+            "type": match.group(1).upper(),
+            "content": match.group(2).strip(),
+        })
+    return result
+
+
 @dataclass
 class ParsedCommit:
     """
@@ -68,19 +97,22 @@ class CommitParser:
             result.errors.append("提交信息为空")
             return result
 
-        # 1. 变更类型
-        result.change_type = cls._extract_change_type(message)
-        if result.change_type is None:
-            result.is_valid = False
-            result.errors.append("缺少或无法识别变更类型标记")
-
-        # 2. 更新内容
+        # 1. 更新内容（A/F 行为合法提交的核心依据）
         result.updates = cls._extract_updates(message)
         if not result.updates:
             result.is_valid = False
             result.errors.append("缺少更新内容")
 
-        # 3. 配置项改动（如果声明有）
+        # 2. 变更类型；未显式声明但有更新内容时，默认视为无配置项改动
+        result.change_type = cls._extract_change_type(message)
+        if result.change_type is None:
+            if result.updates:
+                result.change_type = "无配置项改动"
+            else:
+                result.is_valid = False
+                result.errors.append("缺少或无法识别变更类型标记")
+
+        # 3. 配置项改动（显式声明有配置项改动时才校验）
         if result.change_type == "有配置项改动":
             result.config_changes = cls._extract_config_changes(message)
             if not result.config_changes:
@@ -122,16 +154,10 @@ class CommitParser:
         """
         提取更新内容列表
 
-        匹配 "1. A xxx" / "1、A xxx" 等格式；类型暂按单个大写字母提取，由审查规则校验是否为 A/F。
+        匹配 "A xxx" / "F xxx" / "1. A xxx" / "1、A xxx" 等格式；
+        类型按单个大写字母提取，由审查规则校验是否为 A/F。
         """
-        updates = []
-        pattern = re.compile(r"^\s*\d+[\.\s、]\s*([A-Z])\s+(.+)$", re.MULTILINE)
-        for match in pattern.finditer(message):
-            updates.append({
-                "type": match.group(1).upper(),
-                "content": match.group(2).strip(),
-            })
-        return updates
+        return extract_update_lines(message)
 
     @classmethod
     def _extract_config_changes(cls, message: str) -> Dict[str, Dict[str, str]]:

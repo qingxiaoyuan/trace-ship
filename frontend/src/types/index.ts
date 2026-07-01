@@ -92,9 +92,22 @@ export interface Release {
   git_hash: string;
   publisher: string;
   publisher_name?: string;
+  /** 发布说明文档（Markdown 字符串） */
   release_doc?: string;
   related_changes?: unknown;
   updates?: unknown;
+  /** 是否有配置项改动 */
+  has_config_changes?: boolean;
+  /** 配置项变更文档 */
+  config_change_doc?: string;
+  /** 是否影响其他功能 */
+  impact_other?: boolean;
+  /** 影响范围说明 */
+  impact_desc?: string;
+  /** 自测试通过 */
+  self_test_passed?: boolean;
+  /** 研发测试复验通过 */
+  retest_passed?: boolean;
   jenkins_build?: string | null;
   build_detail?: ReleaseBuildDetail | null;
   rejected_reason?: string;
@@ -138,6 +151,41 @@ export type ReviewStatus = 'unreviewed' | 'pass' | 'warning' | 'illegal';
 export interface ParsedUpdate {
   type?: string;
   content?: string;
+  /** 来源：commit 或 mr */
+  source?: 'commit' | 'mr';
+  /** 来源引用（commit hash 或 MR 编号） */
+  source_ref?: string;
+}
+
+/** 变更预览中的 commit 项 */
+export interface PreviewCommit {
+  hash: string;
+  author: string;
+  message: string;
+  committed_at: string | null;
+  has_af: boolean;
+}
+
+/** 变更预览中的 MR 项 */
+export interface PreviewMergeRequest {
+  number: string;
+  title: string;
+  description: string;
+  author: string;
+  source_branch: string;
+  target_branch: string;
+  web_url: string;
+  merged_at: string | null;
+  has_af: boolean;
+}
+
+/** changes-preview 接口返回结构 */
+export interface ChangesPreview {
+  last_tag: string | null;
+  head_hash: string;
+  commits: PreviewCommit[];
+  merge_requests: PreviewMergeRequest[];
+  parsed_updates: ParsedUpdate[];
 }
 
 /** 提交信息解析结果（CommitParser 输出） */

@@ -369,6 +369,7 @@ class WorkflowEngine:
         target_node_id = node_ids[target_idx]
         target_node = node_config[target_idx]
 
+        # 标记当前任务为已回退
         task.status = "rollbacked"
         task.comment = comment
         task.action_time = now
@@ -386,6 +387,19 @@ class WorkflowEngine:
             rollback_target_node_id=target_node_id,
         )
 
+        OperationLogService.log_workflow(
+            user=task.approver,
+            task=task,
+            action="rollback",
+            detail={"comment": comment, "target_node": target_node_id, "to_start": target_idx == 0},
+        )
+
+        # 回退到初始节点（第一个审批节点）→ 视为流程作废，结束实例。
+        # 由视图层联动发布回到草稿态并删除该流程实例（关联任务级联删除）。
+        if target_idx == 0:
+            cls._finish_instance(instance, "rejected")
+            return
+
         # 更新实例当前节点，并清除目标节点及之后节点的状态快照
         instance.current_node_id = target_node_id
         node_status = instance.node_status or {}
@@ -397,13 +411,6 @@ class WorkflowEngine:
 
         # 为目标节点重新创建 pending 任务
         cls._create_node_tasks(instance, target_node, instance.graph_data, is_rollback=True)
-
-        OperationLogService.log_workflow(
-            user=task.approver,
-            task=task,
-            action="rollback",
-            detail={"comment": comment, "target_node": target_node_id},
-        )
 
     @classmethod
     def _advance(cls, instance: WorkflowInstance, current_node_id: str) -> None:

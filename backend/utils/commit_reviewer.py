@@ -16,12 +16,6 @@ class CommitReviewer:
 
     RULES = [
         {
-            "name": "变更类型必填",
-            "check": lambda p: p.change_type is not None,
-            "severity": "illegal",
-            "message": "缺少或无法识别变更类型标记",
-        },
-        {
             "name": "更新内容必填",
             "check": lambda p: len(p.updates) > 0,
             "severity": "illegal",

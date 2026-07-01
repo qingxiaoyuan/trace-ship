@@ -1,5 +1,6 @@
 import { get, post, put, del } from './request';
 import type {
+  ChangesPreview,
   CommitRecord,
   PaginatedData,
   RepoComplianceStat,
@@ -50,4 +51,6 @@ export const repositoryApi = {
         }
       >;
     }>(`/repositories/${id}/next-version/`, { params: { release_type: releaseType } }),
+  previewChanges: (id: string, branch: string) =>
+    get<ChangesPreview>(`/repositories/${id}/changes-preview/`, { params: { branch } }),
 };

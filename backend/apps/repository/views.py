@@ -261,6 +261,30 @@ class RepositoryViewSet(StandardModelViewSet):
             "all_types": all_types,
         })
 
+    @action(detail=True, methods=["get"], url_path="changes-preview")
+    def changes_preview(self, request: Request, pk=None) -> Response:
+        """
+        预览上个 Tag 到本次基线之间的 commits 与 MRs，并自动解析更新内容
+
+        不落库，供创建发布表单实时预览。
+
+        Args:
+            request: DRF Request，query 参数 branch
+            pk: 仓库主键
+
+        Returns:
+            预览数据
+        """
+        repo = self.get_object()
+        branch = request.query_params.get("branch", "")
+        if not branch:
+            return error_response(40001, "缺少 branch 参数")
+        try:
+            data = ReleaseService.preview_changes(repo, branch, request.user)
+            return success_response(data)
+        except Exception as exc:
+            return error_response(50000, f"预览失败: {exc}", status_code=500)
+
     @action(detail=False, methods=["get"])
     def stats(self, request: Request) -> Response:
         """仓库统计：仓库总数 / 健康数 / Git 仓库数 / SVN 仓库数。"""

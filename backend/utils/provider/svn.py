@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from django.utils.dateparse import parse_datetime
 
-from .base import CommitInfo
+from .base import CommitInfo, MergeRequestInfo
 from .exceptions import ConnectionError, ProviderError
 
 
@@ -148,3 +148,12 @@ class SVNProvider:
             return None
         dt = parse_datetime(value)
         return dt
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """SVN 不支持 MR 概念，返回空列表"""
+        return []
