@@ -103,11 +103,10 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      // 只持久化 token，menus/user/isAuthenticated 在 initializeAuth 时从 API 恢复
       partialize: (state) => ({
         token: state.token,
         refreshToken: state.refreshToken,
-        isAuthenticated: state.isAuthenticated,
-        menus: state.menus,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
