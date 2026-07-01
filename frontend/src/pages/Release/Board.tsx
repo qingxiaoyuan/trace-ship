@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Loader, Plus, XCircle } from 'lucide-react';
@@ -44,18 +44,27 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
 export function ReleaseBoard() {
   const navigate = useNavigate();
 
-  // 拉取足够多的发布用于看板分列（每列最多展示若干条）
   const { data, isLoading } = useQuery({
     queryKey: ['release-board', 'kanban'],
     queryFn: () => releaseApi.getReleases({ page: 1, page_size: 100 }),
   });
 
-  const releases = data?.results || [];
+  // 一次 groupBy 替代每列各自 filter 两次（items + count）
+  const groupedReleases = useMemo(() => {
+    const groups: Record<string, Release[]> = {};
+    for (const r of data?.results || []) {
+      const key = r.status || 'draft';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
+    }
+    return groups;
+  }, [data?.results]);
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
       {boardColumns.map((col) => {
-        const items = releases.filter((r) => r.status === col.key).slice(0, 8);
+        const items = (groupedReleases[col.key] || []).slice(0, 8);
+        const count = groupedReleases[col.key]?.length ?? 0;
         return (
           <div key={col.key} className={`rounded-lg border p-3 ${col.tone}`}>
             <div className="mb-3 flex items-center justify-between">
@@ -64,7 +73,7 @@ export function ReleaseBoard() {
                 <span className="text-[12px] font-medium text-slate-600">{col.label}</span>
               </div>
               <span className={`text-[11px] font-medium ${col.countText}`}>
-                {releases.filter((r) => r.status === col.key).length}
+                {count}
               </span>
             </div>
             <div className="space-y-2">
