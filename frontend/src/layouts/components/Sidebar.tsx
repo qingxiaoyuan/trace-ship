@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { useMemo } from 'react';
 import {
   Bell,
   ChevronsUpDown,
@@ -142,7 +143,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const menus = useAuthStore((state) => state.menus);
   const user = useAuthStore((state) => state.user);
-  const navGroups = buildGroups(menus);
+  const navGroups = useMemo(() => buildGroups(menus), [menus]);
   const { data: projectData } = useQuery({
     queryKey: ['sidebar-project-count'],
     queryFn: () => projectApi.getProjects({ page: 1, page_size: 1 }),
