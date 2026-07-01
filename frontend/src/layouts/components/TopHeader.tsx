@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ChevronRight, LogOut, Plus, Search, User } from "lucide-react";
-import { useLocation, useMatches, useNavigate } from "react-router-dom";
+import { useMatches, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tokens } from "@/styles/theme";
 import { useAuthStore } from "@/stores/authStore";
 import { notificationApi } from "@/api/notification";
-import { mockProjects } from "@/mock/projects";
-import { mockBuildRecords } from "@/mock/dashboard";
 
 const typeMap: Record<string, string> = {
   audit: "审批",
@@ -16,7 +14,6 @@ const typeMap: Record<string, string> = {
 };
 
 export function TopHeader() {
-  const location = useLocation();
   const matches = useMatches();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
@@ -79,53 +76,6 @@ export function TopHeader() {
   }, [bellOpen, userOpen]);
 
   const breadcrumbItems = useMemo<{ title: string; path?: string }[]>(() => {
-    const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
-    if (projectMatch) {
-      const project = mockProjects.find((p) => p.id === projectMatch[1]);
-      return [
-        { title: "项目管理", path: "/projects" },
-        { title: project?.name || "项目详情" },
-      ];
-    }
-
-    const repoMatch = location.pathname.match(/^\/repositories\/([^/]+)/);
-    if (repoMatch) {
-      return [
-        { title: "仓库管理", path: "/repositories" },
-        { title: "仓库详情" },
-      ];
-    }
-
-    const credentialMatch = location.pathname.match(/^\/credentials\/([^/]+)/);
-    if (credentialMatch) {
-      return [
-        { title: "凭证管理", path: "/credentials" },
-        { title: "凭证详情" },
-      ];
-    }
-
-    const credentialUsageMatch = location.pathname.match(
-      /^\/credentials\/([^/]+)\/usage/,
-    );
-    if (credentialUsageMatch) {
-      return [
-        { title: "凭证管理", path: "/credentials" },
-        { title: "凭证详情", path: `/credentials/${credentialUsageMatch[1]}` },
-        { title: "使用记录" },
-      ];
-    }
-
-    const jenkinsLogMatch = location.pathname.match(
-      /^\/jenkins\/logs\/([^/]+)/,
-    );
-    if (jenkinsLogMatch) {
-      const build = mockBuildRecords.find((b) => b.id === jenkinsLogMatch[1]);
-      return [
-        { title: "打包任务", path: "/jenkins" },
-        { title: build ? `构建日志 #${build.build_number}` : "构建日志" },
-      ];
-    }
-
     const items: { title: string; path?: string }[] = [];
     matches.forEach((match, index) => {
       const title = (match.handle as { title?: string } | undefined)?.title;
@@ -136,12 +86,11 @@ export function TopHeader() {
         });
       }
     });
-
     if (items.length === 0) {
       items.push({ title: "工作台" });
     }
     return items;
-  }, [location.pathname, matches]);
+  }, [matches]);
 
   const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || "U";
 
