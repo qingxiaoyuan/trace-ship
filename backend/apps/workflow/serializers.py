@@ -61,11 +61,14 @@ class WorkflowDefinitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkflowDefinition
         fields = [
-            "id", "project", "name", "biz_type",
+            "id", "project", "name", "biz_type", "release_type",
             "node_config", "graph_data",
             "is_active", "created_by", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "graph_data", "created_by", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "project", "name", "biz_type", "release_type",
+            "graph_data", "is_active", "created_by", "created_at", "updated_at",
+        ]
 
     def create(self, validated_data: dict) -> WorkflowDefinition:
         """创建流程定义时根据 node_config 自动生成 graph_data"""
@@ -115,7 +118,7 @@ class WorkflowDefinitionListSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkflowDefinition
         fields = [
-            "id", "project", "name", "biz_type",
+            "id", "project", "name", "biz_type", "release_type",
             "node_config", "graph_data", "is_active", "created_at",
         ]
         read_only_fields = ["graph_data"]

@@ -35,6 +35,12 @@ class WorkflowDefinition(models.Model):
         ("release", "发布审批"),
     ]
 
+    RELEASE_TYPE_CHOICES = [
+        ("formal", "正式"),
+        ("rc", "RC"),
+        ("beta", "Beta"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(
         "project.Project",
@@ -48,6 +54,12 @@ class WorkflowDefinition(models.Model):
         choices=BIZ_TYPE_CHOICES,
         default="release",
         verbose_name="业务类型",
+    )
+    release_type = models.CharField(
+        max_length=20,
+        choices=RELEASE_TYPE_CHOICES,
+        default="formal",
+        verbose_name="发布类型",
     )
     node_config = models.JSONField(default=list, verbose_name="审批链配置")
     graph_data = models.JSONField(default=dict, verbose_name="流程图数据")
@@ -67,9 +79,15 @@ class WorkflowDefinition(models.Model):
         db_table = "workflow_definition"
         verbose_name = "工作流定义"
         verbose_name_plural = "工作流定义"
-        ordering = ["-created_at"]
+        ordering = ["release_type", "-created_at"]
         indexes = [
             models.Index(fields=["project", "biz_type", "is_active"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "biz_type", "release_type"],
+                name="uniq_project_biz_release_type",
+            ),
         ]
 
     def __str__(self) -> str:

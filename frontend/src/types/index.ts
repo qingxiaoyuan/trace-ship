@@ -396,6 +396,7 @@ export interface WorkflowDefinition {
   project: string;
   name: string;
   biz_type: string;
+  release_type: 'formal' | 'rc' | 'beta';
   node_config: WorkflowNodeConfig[];
   graph_data: {
     nodes: WorkflowNode[];

@@ -41,5 +41,13 @@ export const repositoryApi = {
       next_version: string;
       next_tag_name: string;
       has_existing_tags: boolean;
+      all_types: Record<
+        'formal' | 'rc' | 'beta',
+        {
+          latest_tag: string | null;
+          next_version: string;
+          next_tag_name: string;
+        }
+      >;
     }>(`/repositories/${id}/next-version/`, { params: { release_type: releaseType } }),
 };

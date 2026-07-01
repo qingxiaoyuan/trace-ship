@@ -9,7 +9,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters as drf_filters, viewsets
+from rest_framework import filters as drf_filters, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -165,7 +165,6 @@ class ReleaseViewSet(StandardModelViewSet):
 
         # 更新允许修改的字段
         instance.branch = data.get("branch", instance.branch)
-        instance.version = data.get("version", instance.version)
 
         # 若分支变化则重新获取 git_hash
         if "branch" in data:
@@ -176,15 +175,34 @@ class ReleaseViewSet(StandardModelViewSet):
             except Exception as exc:
                 return error_response(40002, str(exc))
 
-        # 若版本号变化则按新 Tag 流程重新计算 tag_name
-        if "version" in data:
-            rule = ReleaseValidator.get_release_rule(instance.project)
-            prefixes = rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes())
+        # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
+        rule = ReleaseValidator.get_release_rule(instance.project)
+        version_rule = instance.project.version_rule or {}
+        if "tag_name" in data and data.get("tag_name"):
+            instance.tag_name = data["tag_name"]
+            # rc/beta 类型自动补后缀
+            if instance.release_type in ("rc", "beta"):
+                suffixes = version_rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
+                suffix = (suffixes.get(instance.release_type, "") or "").strip("-")
+                if suffix and not instance.tag_name.endswith(f"-{suffix}"):
+                    instance.tag_name = f"{instance.tag_name}-{suffix}"
+            instance.version = ReleaseValidator.strip_suffix(instance.tag_name, version_rule)
+        elif "version" in data and data.get("version"):
+            instance.version = data["version"]
             instance.tag_name = instance.version
             if instance.release_type in ("rc", "beta"):
-                prefix = (prefixes.get(instance.release_type, "") or "").strip("-")
-                if not instance.tag_name.startswith(prefix):
-                    instance.tag_name = f"{prefix}-{instance.tag_name}"
+                suffixes = version_rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
+                suffix = (suffixes.get(instance.release_type, "") or "").strip("-")
+                if suffix and not instance.tag_name.endswith(f"-{suffix}"):
+                    instance.tag_name = f"{instance.tag_name}-{suffix}"
+
+        # 校验分支规则与 tag 后缀一致性
+        try:
+            ReleaseValidator.validate_branch_and_suffix(
+                instance.release_type, instance.branch, instance.tag_name, rule, version_rule
+            )
+        except serializers.ValidationError as exc:
+            return error_response(40002, str(exc.detail[0]) if exc.detail else "校验失败")
 
         instance.save(update_fields=["branch", "version", "tag_name", "git_hash", "updated_at"])
         return success_response(self._serialize_release(instance), message="更新成功")
