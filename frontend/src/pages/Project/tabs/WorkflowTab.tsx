@@ -1,36 +1,82 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Table,
-  Button,
-  Space,
-  Modal,
-  Form,
-  Input,
-  Select,
-  Card,
-  Tag,
-  Radio,
-} from 'antd';
-import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { StatusTag } from '@/components/StatusTag';
-import WorkflowFlowChart from '@/components/WorkflowFlowChart';
+  Workflow,
+  Settings2,
+  Play,
+  Flag,
+  Plus,
+  X,
+  Check,
+  Info,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  CheckCircle2,
+  Rocket,
+  GitPullRequest,
+  FlaskConical,
+  Crown,
+  ShieldCheck,
+  User,
+  UserCog,
+  UserCheck,
+  Users,
+} from 'lucide-react';
+import { TsModal } from '@/components/TsModal';
+import { Dropdown } from '@/components/Dropdown';
+import { ApprovalFlowPreview } from '@/components/ApprovalFlowPreview';
 import { workflowApi } from '@/api/workflow';
 import { accountApi } from '@/api/account';
 import { useAuthStore } from '@/stores/authStore';
 import { useAppMessage } from '@/hooks/useAppMessage';
-import type { Project, WorkflowDefinition, WorkflowNodeConfig, WorkflowApproverConfig } from '@/types';
+import type {
+  Project,
+  WorkflowDefinition,
+  WorkflowNodeConfig,
+  WorkflowApproverConfig,
+} from '@/types';
 
 interface WorkflowTabProps {
   project: Project;
 }
 
+type FlowType = 'formal' | 'rc' | 'beta';
+
+/** 发布类型元信息 */
+const FLOW_META: Record<FlowType, {
+  name: string;
+  icon: typeof Rocket;
+  iconCls: string;
+  desc: string;
+  title: string;
+}> = {
+  formal: { name: '正式发布审批', icon: Rocket, iconCls: 'icon-emerald', desc: '从 main / master 发布，无前缀 Tag', title: '审批链 · 正式发布' },
+  rc: { name: 'RC 发布审批', icon: GitPullRequest, iconCls: 'icon-cyan', desc: 'Tag 自动加 rc- 前缀', title: '审批链 · RC 发布' },
+  beta: { name: 'Beta 发布审批', icon: FlaskConical, iconCls: 'icon-amber', desc: 'Tag 自动加 beta- 前缀', title: '审批链 · Beta 发布' },
+};
+
+const FLOW_ORDER: FlowType[] = ['formal', 'rc', 'beta'];
+
+/** 审批人类型元信息 */
+const APPROVER_META: Record<string, { label: string; icon: typeof Crown; cls: string }> = {
+  leader: { label: '项目负责人', icon: Crown, cls: 'icon-violet' },
+  role: { label: '指定角色', icon: ShieldCheck, cls: 'icon-indigo' },
+  user: { label: '指定用户', icon: User, cls: 'icon-cyan' },
+  self: { label: '发起人自己', icon: UserCog, cls: 'icon-emerald' },
+};
+
+/** 审批模式元信息 */
+const MODE_META: Record<'any' | 'all', { label: string; icon: typeof UserCheck; chipCls: string; cardIconCls: string }> = {
+  any: { label: '或签', icon: UserCheck, chipCls: 'border-blue-200 bg-blue-50 text-blue-600', cardIconCls: 'icon-indigo' },
+  all: { label: '会签', icon: Users, chipCls: 'border-amber-200 bg-amber-50 text-amber-600', cardIconCls: 'icon-amber' },
+};
+
 const APPROVER_TYPE_OPTIONS = [
-  { label: '项目负责人', value: 'leader' },
+  { label: '项目负责人 (leader)', value: 'leader' },
   { label: '指定角色', value: 'role' },
   { label: '指定用户', value: 'user' },
-  { label: '发起人自己', value: 'self' },
+  { label: '发起人自己 (self)', value: 'self' },
 ];
 
 const ROLE_OPTIONS = [
@@ -41,30 +87,64 @@ const ROLE_OPTIONS = [
   { label: '只读人员', value: 'viewer' },
 ];
 
-function generateNodeId() {
+const ROLE_LABELS: Record<string, string> = {
+  developer: '开发人员',
+  tester: '测试人员',
+  manager: '项目管理员',
+  auditor: '审核人',
+  viewer: '只读人员',
+};
+
+/** 生成节点 ID */
+function genNodeId() {
   return `approval_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function defaultNodeConfig(): WorkflowNodeConfig {
-  return {
-    node_id: generateNodeId(),
-    node_name: '',
-    approvers: [{ type: 'leader' }],
-    mode: 'any',
-  };
+/** 默认节点 */
+function defaultNode(): WorkflowNodeConfig {
+  return { node_id: genNodeId(), node_name: '新建审批节点', mode: 'any', approvers: [{ type: 'leader' }] };
+}
+
+/** 审批人展示文案 */
+function approverDisplay(apr: WorkflowApproverConfig, usersData?: { results: { id: string; nickname?: string; username: string }[] }) {
+  const meta = APPROVER_META[apr.type] || APPROVER_META.leader;
+  let label = meta.label;
+  let sub = '';
+  if (apr.type === 'leader') {
+    sub = '系统自动解析为项目 leader';
+  } else if (apr.type === 'self') {
+    sub = '发起人自己 · self';
+  } else if (apr.type === 'role') {
+    label = ROLE_LABELS[apr.role || ''] || apr.role || '未选择角色';
+    sub = `指定角色 · ${apr.role || ''}`;
+  } else if (apr.type === 'user') {
+    const u = usersData?.results.find((x) => x.id === apr.user_id);
+    label = u ? (u.nickname || u.username) : '未选择用户';
+    sub = `指定用户 · ${u?.username || apr.user_id || ''}`;
+  }
+  return { label, sub, icon: meta.icon, cls: meta.cls };
 }
 
 export function WorkflowTab({ project }: WorkflowTabProps) {
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<WorkflowDefinition | null>(null);
-  const [preview, setPreview] = useState<WorkflowDefinition | null>(null);
-  const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const { message, modal } = useAppMessage();
+  const { message } = useAppMessage();
 
-  // 只有项目负责人或超管可新增/编辑/删除流程配置
   const canManage = Boolean(user?.is_superuser || user?.id === project.leader_id);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingDef, setEditingDef] = useState<WorkflowDefinition | null>(null);
+  const [preview, setPreview] = useState<WorkflowDefinition | null>(null);
+  const [selIdx, setSelIdx] = useState(0);
+  const [pendingAprType, setPendingAprType] = useState<string>('leader');
+  const [pendingAprRole, setPendingAprRole] = useState<string>('');
+  const [pendingAprUserId, setPendingAprUserId] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+
+  /** 本地编辑副本：当前流程的 node_config[] */
+  const [nodes, setNodes] = useState<WorkflowNodeConfig[]>([]);
+  /** 原始快照用于 diff */
+  const [origNodes, setOrigNodes] = useState<WorkflowNodeConfig[]>([]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['workflow-definitions-tab', project.id],
@@ -75,390 +155,498 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
   const { data: usersData } = useQuery({
     queryKey: ['users-for-workflow'],
     queryFn: () => accountApi.getUsers({ page_size: 1000 }),
-    enabled: formOpen,
+    enabled: editOpen,
   });
 
-  const createMutation = useMutation({
-    mutationFn: (values: Partial<WorkflowDefinition>) => workflowApi.createDefinition(values),
-    onSuccess: () => {
+  const sortedData = useMemo(
+    () => [...(data?.results || [])].sort(
+      (a, b) => FLOW_ORDER.indexOf(a.release_type as FlowType) - FLOW_ORDER.indexOf(b.release_type as FlowType)
+    ),
+    [data]
+  );
+
+  /** 当前编辑流程对应的发布类型元信息 */
+  const curMeta = editingDef ? (FLOW_META[editingDef.release_type as FlowType] || FLOW_META.formal) : FLOW_META.formal;
+
+  /** 打开编辑弹窗：拷贝该流程的 node_config 到本地 */
+  const openEdit = (def: WorkflowDefinition) => {
+    const snap = def.node_config?.length
+      ? def.node_config.map((n) => ({ ...n, approvers: (n.approvers || []).map((a) => ({ ...a })) }))
+      : [defaultNode()];
+    setNodes(snap);
+    setOrigNodes(JSON.parse(JSON.stringify(snap)));
+    setEditingDef(def);
+    setSelIdx(0);
+    setEditOpen(true);
+  };
+
+  const closeEdit = () => {
+    setEditOpen(false);
+    setEditingDef(null);
+  };
+
+  /** 更新当前选中节点 */
+  const updateNode = (patch: Partial<WorkflowNodeConfig>) => {
+    setNodes((prev) => {
+      const next = [...prev];
+      next[selIdx] = { ...next[selIdx], ...patch };
+      return next;
+    });
+  };
+
+  /** 交换节点 */
+  const moveNode = (idx: number, dir: -1 | 1) => {
+    const next = [...nodes];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setNodes(next);
+    setSelIdx(target);
+  };
+
+  /** 添加节点 */
+  const addNode = () => {
+    const next = [...nodes, defaultNode()];
+    setNodes(next);
+    setSelIdx(next.length - 1);
+  };
+
+  /** 删除节点 */
+  const delNode = () => {
+    if (nodes.length <= 1) return;
+    const next = [...nodes];
+    next.splice(selIdx, 1);
+    setNodes(next);
+    setSelIdx((s) => Math.max(0, s - 1));
+  };
+
+  /** 添加审批人 */
+  const addApprover = () => {
+    const apr: WorkflowApproverConfig = { type: pendingAprType as WorkflowApproverConfig['type'] };
+    if (pendingAprType === 'role') {
+      if (!pendingAprRole) { message.error('请选择角色'); return; }
+      apr.role = pendingAprRole;
+    } else if (pendingAprType === 'user') {
+      if (!pendingAprUserId) { message.error('请选择用户'); return; }
+      apr.user_id = pendingAprUserId;
+    }
+    const node = nodes[selIdx];
+    const approvers = [...(node.approvers || []), apr];
+    updateNode({ approvers });
+    setPendingAprRole('');
+    setPendingAprUserId('');
+  };
+
+  /** 移除审批人 */
+  const removeApprover = (i: number) => {
+    const node = nodes[selIdx];
+    if ((node.approvers || []).length <= 1) return;
+    const approvers = (node.approvers || []).filter((_, idx) => idx !== i);
+    updateNode({ approvers });
+  };
+
+  /** 保存：有变更才提交 */
+  const handleSave = async () => {
+    if (!editingDef) return;
+    if (JSON.stringify(nodes) === JSON.stringify(origNodes)) {
+      message.info('无变更');
+      closeEdit();
+      return;
+    }
+    setSaving(true);
+    try {
+      await workflowApi.updateDefinition(editingDef.id, { node_config: nodes });
       message.success('保存成功');
-      setFormOpen(false);
-      form.resetFields();
       queryClient.invalidateQueries({ queryKey: ['workflow-definitions-tab'] });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (values: Partial<WorkflowDefinition>) => {
-      if (!editing) throw new Error('未选择编辑项');
-      return workflowApi.updateDefinition(editing.id, values);
-    },
-    onSuccess: () => {
-      message.success('更新成功');
-      setFormOpen(false);
-      form.resetFields();
-      setEditing(null);
-      queryClient.invalidateQueries({ queryKey: ['workflow-definitions-tab'] });
-    },
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: (def: WorkflowDefinition) =>
-      workflowApi.updateDefinition(def.id, { is_active: !def.is_active }),
-    onSuccess: () => {
-      message.success('状态更新成功');
-      queryClient.invalidateQueries({ queryKey: ['workflow-definitions-tab'] });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => workflowApi.deleteDefinition(id),
-    onSuccess: () => {
-      message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['workflow-definitions-tab'] });
-    },
-  });
-
-  const handleDelete = (record: WorkflowDefinition) => {
-    modal.confirm({
-      title: '确认删除',
-      content: `确定要删除流程「${record.name}」吗？删除后不可恢复。`,
-      okText: '删除',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: () => deleteMutation.mutate(record.id),
-    });
-  };
-
-  const openCreate = () => {
-    setEditing(null);
-    form.setFieldsValue({
-      name: '',
-      biz_type: 'release',
-      is_active: true,
-      node_config: [defaultNodeConfig()],
-    });
-    setFormOpen(true);
-  };
-
-  const openEdit = (record: WorkflowDefinition) => {
-    setEditing(record);
-    form.setFieldsValue({
-      name: record.name,
-      biz_type: record.biz_type,
-      is_active: record.is_active,
-      node_config: record.node_config?.length ? record.node_config : [defaultNodeConfig()],
-    });
-    setFormOpen(true);
-  };
-
-  const handleOk = async () => {
-    const values = await form.validateFields();
-    const payload = {
-      ...values,
-      project: project.id,
-    };
-    if (editing) {
-      updateMutation.mutate(payload);
-    } else {
-      createMutation.mutate(payload);
+      closeEdit();
+    } catch (e) {
+      message.error((e as { message?: string })?.message || '保存失败');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const columns: ColumnsType<WorkflowDefinition> = [
-    {
-      title: '流程名称',
-      dataIndex: 'name',
-      width: 180,
-      render: (text: string) => <span className="font-semibold text-slate-900">{text}</span>,
-    },
-    {
-      title: '业务类型',
-      dataIndex: 'biz_type',
-      width: 100,
-      render: (value: string) => (value === 'release' ? '发布审批' : value),
-    },
-    {
-      title: '审批链',
-      dataIndex: 'node_config',
-      render: (config: WorkflowNodeConfig[]) => (
-        <div className="flex flex-wrap gap-2">
-          {config?.length ? (
-            config.map((node, idx) => (
-              <Tag key={node.node_id || `node-${idx}`} color={node.mode === 'all' ? 'orange' : 'blue'}>
-                {idx + 1}. {node.node_name} ({node.mode === 'all' ? '会签' : '或签'})
-              </Tag>
-            ))
-          ) : (
-            <span className="text-slate-400 text-sm">未配置审批链</span>
-          )}
-        </div>
-      ),
-    },
-    {
-      title: '是否启用',
-      dataIndex: 'is_active',
-      width: 100,
-      render: (active: boolean) => (
-        <StatusTag status={active ? 'success' : 'neutral'}>
-          {active ? '启用' : '停用'}
-        </StatusTag>
-      ),
-    },
-    {
-      title: '操作',
-      width: canManage ? 240 : 100,
-      fixed: 'right',
-      render: (_: unknown, record: WorkflowDefinition) => (
-        <Space size="small" wrap>
-          <Button type="text" size="small" onClick={() => setPreview(record)}>
-            预览
-          </Button>
-          {canManage && (
-            <>
-              <Button type="text" size="small" onClick={() => openEdit(record)}>
-                编辑
-              </Button>
-              <Button type="text" size="small" onClick={() => toggleMutation.mutate(record)}>
-                {record.is_active ? '停用' : '启用'}
-              </Button>
-              <Button type="text" size="small" danger onClick={() => handleDelete(record)}>
-                删除
-              </Button>
-            </>
-          )}
-        </Space>
-      ),
-    },
-  ];
+  const curNode = nodes[selIdx];
 
   return (
     <div className="space-y-4">
-      {canManage && (
-        <div className="flex justify-end">
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新增流程
-          </Button>
-        </div>
-      )}
-      <Table
-        rowKey="id"
-        dataSource={data?.results || []}
-        loading={isLoading}
-        pagination={false}
-        columns={columns}
-        scroll={{ x: 800 }}
-        locale={{
-          emptyText: <div className="py-8 text-slate-400">暂无流程定义</div>,
-        }}
-      />
-
-      <Modal
-        title={editing ? '编辑流程' : '新增流程'}
-        open={formOpen}
-        onCancel={() => {
-          setFormOpen(false);
-          setEditing(null);
-          form.resetFields();
-        }}
-        onOk={handleOk}
-        confirmLoading={createMutation.isPending || updateMutation.isPending}
-        width={760}
-        styles={{ body: { maxHeight: '60vh', overflow: 'auto' } }}
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="name" label="流程名称" rules={[{ required: true, message: '请输入流程名称' }]}>
-            <Input placeholder="请输入流程名称" />
-          </Form.Item>
-          <Form.Item name="biz_type" label="业务类型" rules={[{ required: true }]}>
-            <Select options={[{ label: '发布审批', value: 'release' }]} />
-          </Form.Item>
-          <Form.Item
-            name="is_active"
-            label="是否启用"
-            rules={[{ required: true }]}
-          >
-            <Radio.Group
-              options={[
-                { label: '启用', value: true },
-                { label: '停用', value: false },
-              ]}
-            />
-          </Form.Item>
-
-          <Form.List name="node_config">
-            {(fields, { add, remove }) => (
-              <div className="space-y-4">
-                {fields.map(({ key, ...field }, index) => (
-                  <Card
-                    key={key}
-                    size="small"
-                    title={`审批节点 ${index + 1}`}
-                    extra={
-                      fields.length > 1 && (
-                        <MinusCircleOutlined
-                          className="text-red-500 cursor-pointer"
-                          onClick={() => remove(field.name)}
-                        />
-                      )
-                    }
+      {/* 流程列表 */}
+      <div className="space-y-3">
+        {isLoading ? (
+          <div className="py-8 text-center text-[13px] text-slate-400">加载中…</div>
+        ) : sortedData.length === 0 ? (
+          <div className="py-8 text-center text-[13px] text-slate-400">暂无流程定义</div>
+        ) : (
+          sortedData.map((def) => {
+            const rt = def.release_type as FlowType;
+            const meta = FLOW_META[rt] || FLOW_META.formal;
+            const Icon = meta.icon;
+            const nodeCount = def.node_config?.length || 0;
+            return (
+              <div
+                key={def.id}
+                className="tech-card flex items-center gap-3 rounded-xl p-4"
+              >
+                <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${meta.iconCls}`}>
+                  <Icon className="h-4 w-4" style={{ strokeWidth: 1.5 }} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold text-slate-900">{def.name}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-400">{meta.desc} · {nodeCount} 个审批节点</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPreview(def)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
                   >
-                    <Form.Item
-                      {...field}
-                      name={[field.name, 'node_name']}
-                      label="节点名称"
-                      rules={[{ required: true, message: '请输入节点名称' }]}
+                    预览
+                  </button>
+                  {canManage && (
+                    <button
+                      onClick={() => openEdit(def)}
+                      className="rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-white hover:text-indigo-600"
                     >
-                      <Input placeholder="如：技术负责人审批" />
-                    </Form.Item>
-
-                    <Form.Item
-                      {...field}
-                      name={[field.name, 'mode']}
-                      label="审批模式"
-                      rules={[{ required: true }]}
-                    >
-                      <Select
-                        options={[
-                          { label: '或签（任一审批人通过即可）', value: 'any' },
-                          { label: '会签（全部审批人通过才生效）', value: 'all' },
-                        ]}
-                      />
-                    </Form.Item>
-
-                    <Form.Item label="审批人">
-                      <Form.List name={[field.name, 'approvers']}>
-                        {(approverFields, { add: addApprover, remove: removeApprover }) => (
-                          <div className="space-y-2">
-                            {approverFields.map(({ key, ...approverField }) => (
-                              <Space key={key} align="baseline">
-                                <Form.Item
-                                  {...approverField}
-                                  name={[approverField.name, 'type']}
-                                  rules={[{ required: true, message: '请选择审批人类型' }]}
-                                  noStyle
-                                >
-                                  <Select
-                                    style={{ width: 140 }}
-                                    options={APPROVER_TYPE_OPTIONS}
-                                    placeholder="类型"
-                                  />
-                                </Form.Item>
-                                <Form.Item
-                                  noStyle
-                                  shouldUpdate={(prev, curr) => {
-                                    const prevType =
-                                      prev?.node_config?.[field.name]?.approvers?.[approverField.name]?.type;
-                                    const currType =
-                                      curr?.node_config?.[field.name]?.approvers?.[approverField.name]?.type;
-                                    return prevType !== currType;
-                                  }}
-                                >
-                                  {({ getFieldValue }) => {
-                                    const type = getFieldValue([
-                                      'node_config',
-                                      field.name,
-                                      'approvers',
-                                      approverField.name,
-                                      'type',
-                                    ]);
-                                    if (type === 'user') {
-                                      return (
-                                        <Form.Item
-                                          {...approverField}
-                                          name={[approverField.name, 'user_id']}
-                                          rules={[{ required: true, message: '请选择用户' }]}
-                                          noStyle
-                                        >
-                                          <Select
-                                            style={{ width: 180 }}
-                                            placeholder="选择用户"
-                                            showSearch
-                                            filterOption={(input, option) =>
-                                              String(option?.label ?? '')
-                                                .toLowerCase()
-                                                .includes(input.toLowerCase())
-                                            }
-                                            options={usersData?.results?.map((u) => ({
-                                              value: u.id,
-                                              label: `${u.nickname || u.username} (${u.username})`,
-                                            }))}
-                                          />
-                                        </Form.Item>
-                                      );
-                                    }
-                                    if (type === 'role') {
-                                      return (
-                                        <Form.Item
-                                          {...approverField}
-                                          name={[approverField.name, 'role']}
-                                          rules={[{ required: true, message: '请选择角色' }]}
-                                          noStyle
-                                        >
-                                          <Select
-                                            style={{ width: 180 }}
-                                            placeholder="选择角色"
-                                            options={ROLE_OPTIONS}
-                                          />
-                                        </Form.Item>
-                                      );
-                                    }
-                                    return null;
-                                  }}
-                                </Form.Item>
-                                {approverFields.length > 1 && (
-                                  <MinusCircleOutlined
-                                    className="text-red-500 cursor-pointer"
-                                    onClick={() => removeApprover(approverField.name)}
-                                  />
-                                )}
-                              </Space>
-                            ))}
-                            <Button
-                              type="dashed"
-                              onClick={() => addApprover({ type: 'leader' } as WorkflowApproverConfig)}
-                              icon={<PlusOutlined />}
-                              size="small"
-                            >
-                              添加审批人
-                            </Button>
-                          </div>
-                        )}
-                      </Form.List>
-                    </Form.Item>
-                  </Card>
-                ))}
-                <Button
-                  type="dashed"
-                  onClick={() => add(defaultNodeConfig())}
-                  icon={<PlusOutlined />}
-                  block
-                >
-                  添加审批节点
-                </Button>
+                      编辑节点
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
-          </Form.List>
-        </Form>
-      </Modal>
+            );
+          })
+        )}
+      </div>
 
-      <Modal
+      {/* 大号编辑弹窗 */}
+      <TsModal
+        title={`编辑审批节点 · ${editingDef?.name || ''}`}
+        subtitle="流程为项目内置，仅可调整审批节点与审批人"
+        titleIcon={<Workflow className="h-[18px] w-[18px]" style={{ strokeWidth: 1.5 }} />}
+        open={editOpen}
+        onCancel={closeEdit}
+        width={1120}
+        confirmLoading={saving}
+        onOk={handleSave}
+        bodyStyle={{ maxHeight: '72vh' }}
+        bodyClassName="space-y-5"
+        footer={(
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+              <Info className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+              节点变更将重新生成流程图，已有进行中实例不受影响
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={closeEdit}
+                className="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60"
+              >
+                <Check className="h-3.5 w-3.5" style={{ strokeWidth: 2 }} />
+                保存
+              </button>
+            </div>
+          </div>
+        )}
+      >
+        {/* 主体：左流程图 + 右节点编辑器 */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+          {/* 左：审批链可视化 */}
+          <section className="lg:col-span-3">
+            <div className="tech-card overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-indigo-50 px-5 py-3.5">
+                <div className="flex items-center gap-2">
+                  <Workflow className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />
+                  <h2 className="text-[14px] font-semibold text-slate-900">{curMeta.title}</h2>
+                </div>
+                {canManage && (
+                  <button
+                    onClick={addNode}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/40 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-white hover:text-indigo-600"
+                  >
+                    <Plus className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                    添加节点
+                  </button>
+                )}
+              </div>
+              <div className="px-5 py-6">
+                {/* 开始 */}
+                <div className="flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald">
+                    <Play className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                  </span>
+                  <div>
+                    <div className="text-[13px] font-medium text-slate-900">开始</div>
+                    <div className="text-[11px] text-slate-400">提交发布申请</div>
+                  </div>
+                </div>
+                <div className="ml-4 h-6 w-px bg-slate-200" />
+
+                {/* 节点列表 */}
+                {nodes.map((node, idx) => {
+                  const active = idx === selIdx;
+                  const mode = MODE_META[node.mode as 'any' | 'all'] || MODE_META.any;
+                  const ModeIcon = mode.icon;
+                  return (
+                    <div key={node.node_id || idx}>
+                      <div
+                        onClick={() => setSelIdx(idx)}
+                        className={`cursor-pointer rounded-xl border p-3.5 transition-all ${
+                          active
+                            ? 'border-indigo-300 bg-indigo-50/40 ring-1 ring-indigo-200'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <span className={`flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-semibold ${
+                              active ? 'btn-glow text-white' : 'icon-indigo'
+                            }`}>
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <div className="text-[13px] font-semibold text-slate-900">{node.node_name || '未命名节点'}</div>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${mode.chipCls}`}>
+                                  <ModeIcon className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
+                                  {mode.label}
+                                </span>
+                                {(node.approvers || []).map((apr, ai) => {
+                                  const d = approverDisplay(apr, usersData);
+                                  const AI = d.icon;
+                                  return (
+                                    <span key={ai} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">
+                                      <AI className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
+                                      {d.label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                          {active && canManage && (
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); moveNode(idx, -1); }}
+                                disabled={idx === 0}
+                                className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-indigo-100 disabled:hover:text-indigo-500"
+                              >
+                                <ChevronUp className="h-4 w-4" style={{ strokeWidth: 2 }} />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); moveNode(idx, 1); }}
+                                disabled={idx === nodes.length - 1}
+                                className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-indigo-100 disabled:hover:text-indigo-500"
+                              >
+                                <ChevronDown className="h-4 w-4" style={{ strokeWidth: 2 }} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="ml-4 h-4 w-px bg-slate-200" />
+                    </div>
+                  );
+                })}
+
+                {/* 完成 */}
+                <div className="flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400">
+                    <Flag className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                  </span>
+                  <div>
+                    <div className="text-[13px] font-medium text-slate-900">完成</div>
+                    <div className="text-[11px] text-slate-400">推送 Tag，发布生效</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 右：节点编辑面板 */}
+          <aside className="lg:col-span-2">
+            <div className="tech-card overflow-hidden rounded-xl">
+              <div className="flex items-center justify-between border-b border-indigo-50 px-5 py-3.5">
+                <div className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />
+                  <h2 className="text-[14px] font-semibold text-slate-900">节点配置</h2>
+                </div>
+                <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-600">节点 {selIdx + 1}</span>
+              </div>
+              <div className="px-5 py-5">
+                {curNode ? (
+                  <>
+                    {/* 节点名称 */}
+                    <div className="mb-5">
+                      <label className="mb-1.5 flex items-center gap-1 text-[12.5px] font-medium text-slate-600">
+                        节点名称<span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        value={curNode.node_name || ''}
+                        onChange={(e) => updateNode({ node_name: e.target.value })}
+                        placeholder="如：技术负责人审批"
+                        className="w-full rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none transition-colors placeholder:text-slate-400 hover:border-indigo-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+
+                    {/* 审批模式 */}
+                    <div className="mb-5">
+                      <label className="mb-1.5 flex items-center gap-1 text-[12.5px] font-medium text-slate-600">
+                        审批模式<span className="text-rose-500">*</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['any', 'all'] as const).map((m) => {
+                          const meta = MODE_META[m];
+                          const MIcon = meta.icon;
+                          const on = curNode.mode === m;
+                          return (
+                            <button
+                              key={m}
+                              onClick={() => updateNode({ mode: m })}
+                              className={`flex flex-col gap-1 rounded-lg border p-2.5 text-left transition-all ${
+                                on ? 'border-indigo-500 bg-indigo-50 shadow-[0_0_0_3px_rgba(99,102,241,.1)]' : 'border-indigo-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/30'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={`flex h-[30px] w-[30px] items-center justify-center rounded-lg ${meta.cardIconCls}`}>
+                                  <MIcon className="h-4 w-4" style={{ strokeWidth: 1.5 }} />
+                                </span>
+                                {on
+                                  ? <CheckCircle2 className="h-3.5 w-3.5 text-indigo-500" style={{ strokeWidth: 1.5 }} />
+                                  : <span className="h-3.5 w-3.5 rounded-full border border-slate-200" />}
+                              </div>
+                              <div className="mt-1 text-[12px] font-semibold text-slate-900">{meta.label}</div>
+                              <div className="text-[10px] text-slate-400">{m === 'any' ? '任一审批人通过' : '全部通过才生效'}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 审批人列表 */}
+                    <div className="mb-5">
+                      <label className="mb-2 block text-[12.5px] font-medium text-slate-600">审批人</label>
+                      <div className="space-y-2">
+                        {(curNode.approvers || []).map((apr, i) => {
+                          const d = approverDisplay(apr, usersData);
+                          const AI = d.icon;
+                          return (
+                            <div
+                              key={i}
+                              className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-white px-2.5 py-2 transition-colors hover:border-indigo-200"
+                            >
+                              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${d.cls}`}>
+                                <AI className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[12px] font-medium text-slate-900">{d.label}</div>
+                                <div className="text-[10px] text-slate-400">{d.sub}</div>
+                              </div>
+                              <button
+                                onClick={() => removeApprover(i)}
+                                className="text-slate-300 transition-colors hover:text-rose-500"
+                              >
+                                <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* 添加审批人 */}
+                      {canManage && (
+                        <div className="mt-2.5 rounded-lg border border-dashed border-slate-200 p-2.5">
+                          <div className="flex items-center gap-2">
+                            <Dropdown
+                              value={pendingAprType}
+                              onChange={setPendingAprType}
+                              placeholder="选择类型"
+                              className="flex-1"
+                              options={APPROVER_TYPE_OPTIONS.map((o) => {
+                                const M = APPROVER_META[o.value];
+                                const Ic = M?.icon;
+                                return {
+                                  value: o.value,
+                                  label: o.label,
+                                  icon: Ic ? <Ic className="h-3.5 w-3.5 text-slate-400" style={{ strokeWidth: 1.5 }} /> : null,
+                                };
+                              })}
+                            />
+                            {pendingAprType === 'role' && (
+                              <Dropdown
+                                value={pendingAprRole}
+                                onChange={setPendingAprRole}
+                                placeholder="选择角色"
+                                width={180}
+                                options={ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                              />
+                            )}
+                            {pendingAprType === 'user' && (
+                              <Dropdown
+                                value={pendingAprUserId}
+                                onChange={setPendingAprUserId}
+                                placeholder="选择用户"
+                                width={220}
+                                options={(usersData?.results || []).map((u) => ({
+                                  value: u.id,
+                                  label: `${u.nickname || u.username} (${u.username})`,
+                                }))}
+                              />
+                            )}
+                            <button
+                              onClick={addApprover}
+                              className="btn-glow shrink-0 rounded-md px-3 py-1.5 text-[12px] font-medium text-white"
+                            >
+                              添加
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 删除节点 */}
+                    {canManage && (
+                      <div className="flex items-center justify-between border-t border-indigo-50 pt-4">
+                        <button
+                          onClick={delNode}
+                          disabled={nodes.length <= 1}
+                          className="inline-flex items-center gap-1.5 text-[12px] font-medium text-rose-500 transition-colors hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                          删除节点
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="py-8 text-center text-[13px] text-slate-400">请选择左侧节点</div>
+                )}
+              </div>
+            </div>
+          </aside>
+        </div>
+      </TsModal>
+
+      {/* 流程预览弹窗 */}
+      <TsModal
         title={`流程预览：${preview?.name || ''}`}
         open={!!preview}
         onCancel={() => setPreview(null)}
+        width={560}
         footer={null}
-        width={760}
       >
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
-          {preview?.graph_data?.nodes?.length ? (
-            <WorkflowFlowChart graphData={preview.graph_data} height={360} />
-          ) : (
-            <div className="h-80 flex items-center justify-center text-slate-400">
-              暂无流程图，请先配置审批链
-            </div>
-          )}
-        </div>
-      </Modal>
+        {preview?.node_config?.length ? (
+          <div className="rounded-lg border border-slate-200 bg-white">
+            <ApprovalFlowPreview nodeConfig={preview.node_config} />
+          </div>
+        ) : (
+          <div className="h-40 flex items-center justify-center text-slate-400">暂无审批链，请先配置节点</div>
+        )}
+      </TsModal>
     </div>
   );
 }

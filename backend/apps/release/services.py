@@ -28,42 +28,64 @@ class VersionCalculator:
     """
     版本号计算器
 
-    根据项目配置的 version_rule 解析最新 tag 并递增版本号。
-    本阶段默认递增最后一个数字段（通常为 patch）。
+    基于结构化 version_rule（prefix / major / minor / patch / suffixes）解析最新 tag 并递增修订号。
+    版本格式：{prefix}.{major}.{minor}.{patch}，rc/beta 追加后缀 -{suffix}。
     """
+
+    # 默认后缀映射：beta → beta，rc → rc
+    DEFAULT_SUFFIXES: Dict[str, str] = {"rc": "rc", "beta": "beta"}
 
     def __init__(self, version_rule: dict):
         """
         Args:
-            version_rule: 版本号规则，包含 format 和 initial
+            version_rule: 结构化版本规则，含 prefix/major/minor/patch/suffixes
         """
-        self.format: str = version_rule.get("format", "{major}.{minor}.{patch}")
-        self.initial: str = version_rule.get("initial", "1.0.0")
+        rule = version_rule or {}
+        self.prefix: str = rule.get("prefix", "")
+        self.major: int = int(rule.get("major", 1))
+        self.minor: int = int(rule.get("minor", 0))
+        self.patch: int = int(rule.get("patch", 0))
+        self.suffixes: Dict[str, str] = rule.get("suffixes") or dict(self.DEFAULT_SUFFIXES)
 
-    def _format_to_regex(self) -> Tuple[str, List[str]]:
+    @property
+    def initial_version(self) -> str:
+        """初始版本号（不含后缀）"""
+        return self._format_version(self.major, self.minor, self.patch)
+
+    def _format_version(self, major: int, minor: int, patch: int) -> str:
+        """格式化纯版本号"""
+        base = f"{major}.{minor}.{patch}"
+        return f"{self.prefix}.{base}" if self.prefix else base
+
+    def _build_regex(self, release_type: str = "formal") -> re.Pattern:
         """
-        将 format 模板转换为可匹配 tag 的正则表达式
+        构建匹配 tag 的正则（仅新格式）
 
-        Returns:
-            (正则表达式字符串, 占位符名称列表)
+        formal：({prefix}.)?{major}.{minor}.{patch}（无后缀）
+        rc/beta：({prefix}.)?{major}.{minor}.{patch}-{suffix}
+        旧前缀格式（rc-/beta-）由调用方手动兼容。
         """
-        fields = re.findall(r"\{(\w+)\}", self.format)
-        pattern = self.format
-        markers: Dict[str, str] = {}
-        for index, field in enumerate(fields):
-            marker = f"__PLACEHOLDER_{index}__"
-            markers[marker] = f"(?P<{field}>\\d+)"
-            pattern = pattern.replace(f"{{{field}}}", marker)
+        prefix_escaped = re.escape(self.prefix) if self.prefix else ""
+        prefix_part = f"(?:{prefix_escaped}\\.)?" if prefix_escaped else ""
+        version_core = f"(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+        if release_type in ("rc", "beta"):
+            suffix = self.suffixes.get(release_type, "")
+            suffix_part = f"-{re.escape(suffix)}" if suffix else ""
+            pattern = f"^{prefix_part}{version_core}{suffix_part}$"
+        else:
+            pattern = f"^{prefix_part}{version_core}$"
+        return re.compile(pattern)
 
-        # 对非占位符字符进行转义
-        pattern = re.escape(pattern)
-        for marker, repl in markers.items():
-            pattern = pattern.replace(re.escape(marker), repl)
-        return pattern, fields
+    def _build_version_regex(self) -> re.Pattern:
+        """构建匹配纯版本号（不含后缀）的正则，prefix 可选"""
+        prefix_escaped = re.escape(self.prefix) if self.prefix else ""
+        prefix_part = f"(?:{prefix_escaped}\\.)?" if prefix_escaped else ""
+        pattern = f"^{prefix_part}(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)$"
+        return re.compile(pattern)
 
     def find_latest_matching_tag(self, tags: List[TagInfo]) -> Optional[Tuple[TagInfo, Dict[str, int]]]:
         """
-        从 tag 列表中找到匹配 version_rule 的最新版本
+        从 tag 列表中找到匹配纯版本号的最新版本（不含后缀）
 
         Args:
             tags: TagInfo 列表
@@ -71,71 +93,101 @@ class VersionCalculator:
         Returns:
             最新匹配 tag 及其字段值字典，无匹配时返回 None
         """
-        pattern, fields = self._format_to_regex()
-        regex = re.compile(f"^{pattern}$")
-
+        regex = self._build_version_regex()
         candidates: List[Tuple[TagInfo, Dict[str, int], Tuple[int, ...]]] = []
         for tag in tags:
             match = regex.match(tag.name)
             if not match:
                 continue
-            values = {field: int(match.group(field)) for field in fields}
-            numeric_key = tuple(values[field] for field in fields)
-            candidates.append((tag, values, numeric_key))
-
+            values = {f: int(match.group(f)) for f in ("major", "minor", "patch")}
+            candidates.append((tag, values, tuple(values.values())))
         if not candidates:
             return None
-        # 按数字段元组降序，取最新
         candidates.sort(key=lambda item: item[2], reverse=True)
         return candidates[0][0], candidates[0][1]
+
+    def find_latest_tag_by_type(
+        self,
+        tags: List[TagInfo],
+        release_type: str,
+    ) -> Optional[str]:
+        """
+        按发布类型查找最新匹配的 tag 原始名
+
+        formal 取无后缀的 tag；rc/beta 取带对应后缀的 tag。
+
+        Args:
+            tags: TagInfo 列表
+            release_type: 发布类型 formal/rc/beta
+
+        Returns:
+            最新匹配 tag 的原始名，无匹配时返回 None
+        """
+        regex = self._build_regex(release_type)
+        candidates: List[Tuple[str, Tuple[int, ...]]] = []
+        for tag in tags:
+            match = regex.match(tag.name)
+            if not match:
+                continue
+            values = (int(match.group("major")), int(match.group("minor")), int(match.group("patch")))
+            candidates.append((tag.name, values))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[1], reverse=True)
+        return candidates[0][0]
 
     def calculate(
         self,
         tags: List[TagInfo],
         release_type: str = "formal",
-        prefixes: Optional[Dict[str, str]] = None,
     ) -> Tuple[str, str]:
         """
         计算下一个版本号和 tag 名称
 
-        从所有 tag 中匹配 version_rule 并找到最大版本号递增，
-        无匹配时使用 initial。最后根据 release_type 拼接前缀。
+        按发布类型独立过滤 tag：仅匹配该类型的 tag（formal 无后缀 / rc 带 -rc / beta 带 -beta），
+        找到最大版本号后修订号 +1，无匹配时使用初始版本。
 
         Args:
             tags: 当前仓库的 tag 列表
             release_type: 发布类型 formal/rc/beta
-            prefixes: 各发布类型对应的前缀配置，如 {"rc": "rc", "beta": "beta"}
 
         Returns:
-            (version, tag_name) 元组
+            (version, tag_name) 元组，version 为纯版本号，tag_name 含后缀
         """
-        prefixes = prefixes or {}
-        prefix = (prefixes.get(release_type, "") or "").strip("-")
-
-        # 统一去掉已知前缀后再匹配版本号，确保正式/rc/beta 都基于同一版本序列递增
-        normalized_tags: List[TagInfo] = []
-        all_prefixes = set((p or "").strip("-") for p in prefixes.values())
+        # 按类型匹配 tag（formal 匹配无后缀，rc/beta 匹配新后缀或旧前缀格式）
+        type_regex = self._build_regex(release_type)
+        version_regex = self._build_version_regex()
+        old_prefix = release_type if release_type in ("rc", "beta") else None
+        matched_tags: List[TagInfo] = []
         for t in tags:
             name = t.name
-            for p in all_prefixes:
-                if p and name.startswith(f"{p}-"):
-                    name = name[len(p) + 1 :]
-                    break
-            normalized_tags.append(TagInfo(name=name, commit_hash=t.commit_hash, created_at=t.created_at))
+            if type_regex.match(name):
+                # 新后缀格式：去除后缀
+                all_suffixes = set(self.suffixes.values())
+                for s in all_suffixes:
+                    if s and name.endswith(f"-{s}"):
+                        name = name[: -(len(s) + 1)]
+                        break
+            elif old_prefix and name.startswith(f"{old_prefix}-"):
+                # 旧前缀格式：去除前缀
+                name = name[len(old_prefix) + 1:]
+            else:
+                continue
+            if version_regex.match(name):
+                matched_tags.append(TagInfo(name=name, commit_hash=t.commit_hash, created_at=t.created_at))
 
-        latest = self.find_latest_matching_tag(normalized_tags)
+        latest = self.find_latest_matching_tag(matched_tags)
         if latest is None:
-            version = self.initial
+            version = self.initial_version
         else:
-            tag, values = latest
-            fields = list(values.keys())
-            # 默认递增最后一个字段
-            increment_field = fields[-1]
-            values[increment_field] = values[increment_field] + 1
-            version = self.format.format(**values)
+            _, values = latest
+            values["patch"] = values["patch"] + 1
+            version = self._format_version(values["major"], values["minor"], values["patch"])
 
-        if prefix:
-            tag_name = f"{prefix}-{version}"
+        # 按发布类型追加后缀
+        if release_type in ("rc", "beta"):
+            suffix = self.suffixes.get(release_type, "")
+            tag_name = f"{version}-{suffix}" if suffix else version
         else:
             tag_name = version
         return version, tag_name
@@ -145,7 +197,7 @@ class ReleaseValidator:
     """
     发布校验器
 
-    校验项目状态、分支规则、测试前缀、发布周期等业务规则。
+    校验项目状态、分支规则、后缀规则、发布周期等业务规则。
     """
 
     @staticmethod
@@ -162,22 +214,39 @@ class ReleaseValidator:
         rule = project.release_rule or {}
         return {
             "formal_branch": rule.get("formal_branch", ["main", "master"]),
-            "tag_prefixes": rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes()),
             "release_cycle_days": int(rule.get("release_cycle_days", 3)),
         }
 
     @staticmethod
-    def get_default_tag_prefixes() -> Dict[str, str]:
+    def get_default_suffixes() -> Dict[str, str]:
         """
-        获取默认 tag 前缀配置
+        获取默认后缀配置
 
         Returns:
-            发布类型到前缀的映射
+            发布类型到后缀的映射
         """
-        return {
-            "rc": "rc",
-            "beta": "beta",
-        }
+        return {"rc": "rc", "beta": "beta"}
+
+    @staticmethod
+    def strip_suffix(tag_name: str, version_rule: dict) -> str:
+        """
+        从 tag 名去除后缀，反推出纯版本号
+
+        Args:
+            tag_name: tag 名称
+            version_rule: 版本规则
+
+        Returns:
+            去除后缀后的版本号
+        """
+        suffixes = (version_rule or {}).get("suffixes") or ReleaseValidator.get_default_suffixes()
+        all_suffixes = set((s or "").strip("-") for s in suffixes.values() if (s or "").strip("-"))
+        version = tag_name
+        for s in all_suffixes:
+            if s and version.endswith(f"-{s}"):
+                version = version[: -(len(s) + 1)]
+                break
+        return version
 
     @staticmethod
     def validate_project_status(project: Project) -> None:
@@ -194,20 +263,22 @@ class ReleaseValidator:
             raise serializers.ValidationError({"project": "项目已停用，禁止创建发布"})
 
     @staticmethod
-    def validate_branch_and_prefix(
+    def validate_branch_and_suffix(
         release_type: str,
         branch: str,
         tag_name: str,
         release_rule: dict,
+        version_rule: dict,
     ) -> None:
         """
-        校验分支规则与 tag 前缀
+        校验分支规则与 tag 后缀
 
         Args:
             release_type: 发布类型
             branch: 发布分支
             tag_name: tag 名称
             release_rule: 发布规则
+            version_rule: 版本规则
 
         Raises:
             serializers.ValidationError: 校验失败
@@ -215,17 +286,16 @@ class ReleaseValidator:
         formal_branches = ReleaseValidator._normalize_formal_branches(
             release_rule.get("formal_branch", ["main", "master"])
         )
-        prefixes = release_rule.get("tag_prefixes", ReleaseValidator.get_default_tag_prefixes())
-
         if release_type == "formal" and branch not in formal_branches:
             raise serializers.ValidationError(
                 {"branch": f"正式版本只能从 {', '.join(formal_branches)} 分支发布"}
             )
         if release_type in ("rc", "beta"):
-            prefix = (prefixes.get(release_type, "") or "").strip("-")
-            if prefix and not tag_name.startswith(prefix):
+            suffixes = (version_rule or {}).get("suffixes") or ReleaseValidator.get_default_suffixes()
+            suffix = (suffixes.get(release_type, "") or "").strip("-")
+            if suffix and not tag_name.endswith(f"-{suffix}"):
                 raise serializers.ValidationError(
-                    {"tag_name": f"{release_type} 版本 tag 必须以 {prefix} 开头"}
+                    {"tag_name": f"{release_type} 版本 tag 必须以 -{suffix} 结尾"}
                 )
 
     @staticmethod
@@ -544,36 +614,47 @@ class ReleaseService:
         """
         ReleaseValidator.validate_project_status(project)
         release_rule = ReleaseValidator.get_release_rule(project)
+        version_rule = project.version_rule or {}
 
         provider = cls._get_provider(repository, publisher)
+
+        # 若未传 version 但传了 tag_name，从 tag_name 去后缀反推 version
+        if not version and tag_name:
+            version = ReleaseValidator.strip_suffix(tag_name, version_rule)
 
         if not version:
             try:
                 tags = provider.list_tags(repository.external_identity)
             except ProviderError as exc:
                 raise serializers.ValidationError({"repository": f"获取 tag 列表失败: {exc}"})
-            version_rule = project.version_rule or {}
             calculator = VersionCalculator(version_rule)
-            prefixes = release_rule.get("tag_prefixes", {}) or ReleaseValidator.get_default_tag_prefixes()
             version, auto_tag_name = calculator.calculate(
                 tags,
                 release_type=release_type,
-                prefixes=prefixes,
             )
         else:
+            # 手动传 version 时按 release_type 追加后缀
             if release_type in ("rc", "beta"):
-                prefixes = release_rule.get("tag_prefixes", {}) or ReleaseValidator.get_default_tag_prefixes()
-                prefix = (prefixes.get(release_type, "") or "").strip("-")
+                suffixes = version_rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
+                suffix = (suffixes.get(release_type, "") or "").strip("-")
                 auto_tag_name = version
-                if prefix and not auto_tag_name.startswith(prefix):
-                    auto_tag_name = f"{prefix}-{auto_tag_name}"
+                if suffix and not auto_tag_name.endswith(f"-{suffix}"):
+                    auto_tag_name = f"{auto_tag_name}-{suffix}"
             else:
                 auto_tag_name = version
 
-        tag_name = tag_name or auto_tag_name
+        # tag_name 优先使用传入值，rc/beta 类型自动补后缀
+        if tag_name:
+            if release_type in ("rc", "beta"):
+                suffixes = version_rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
+                suffix = (suffixes.get(release_type, "") or "").strip("-")
+                if suffix and not tag_name.endswith(f"-{suffix}"):
+                    tag_name = f"{tag_name}-{suffix}"
+        else:
+            tag_name = auto_tag_name
 
-        ReleaseValidator.validate_branch_and_prefix(
-            release_type, branch, tag_name, release_rule
+        ReleaseValidator.validate_branch_and_suffix(
+            release_type, branch, tag_name, release_rule, version_rule
         )
         ReleaseValidator.validate_release_cycle(project, release_type, release_rule)
 
@@ -654,14 +735,17 @@ class ReleaseService:
         if illegal_exists:
             raise serializers.ValidationError({"commits": "包含非法提交，无法提交审批"})
 
-        # 查找项目生效的发布审批流程定义
+        # 按发布类型查找项目生效的发布审批流程定义
         definition = WorkflowDefinition.objects.filter(
             project=release.project,
             biz_type="release",
+            release_type=release.release_type,
             is_active=True,
         ).first()
         if not definition:
-            raise serializers.ValidationError({"workflow": "项目未配置发布审批流程"})
+            raise serializers.ValidationError(
+                {"workflow": f"项目未配置 {release.release_type} 发布审批流程"}
+            )
 
         instance = WorkflowEngine.create_instance(
             definition=definition,
@@ -757,7 +841,21 @@ class ReleaseService:
             )
             return
 
-        # 当前流程审批后已直接推 tag，若仍有构建回调则直接标记为 released
+        # 构建成功后仅当审批流程已结束才标记为 released，否则保持 pending 等待审批
+        workflow_done = (
+            not release.workflow_instance_id
+            or release.workflow_instance.status == "completed"
+        )
+        if not workflow_done:
+            NotificationService.notify_build_result(build, release)
+            OperationLogService.log_release(
+                user=release.publisher,
+                release=release,
+                action="build_success",
+                detail={"note": "审批流程未结束，暂不标记为已发布"},
+            )
+            return
+
         release.status = "released"
         release.released_at = release.released_at or timezone.now()
         release.save(update_fields=["status", "released_at", "updated_at"])
@@ -773,7 +871,7 @@ class ReleaseService:
         """
         推送 tag
 
-        新 Tag 流程允许在 pending（审批完成）状态直接推 tag。
+        审批流程完成后才能推 tag：若存在关联工作流实例，必须处于 completed 状态。
 
         Args:
             release: ReleaseRecord 实例
@@ -784,6 +882,12 @@ class ReleaseService:
         """
         if release.status != "pending":
             raise serializers.ValidationError({"status": "只有待审批状态才能推 tag"})
+
+        # 校验审批流程已结束，避免工作流仍 running 时提前推 tag
+        if release.workflow_instance_id and release.workflow_instance.status != "completed":
+            raise serializers.ValidationError(
+                {"workflow": "审批流程尚未结束，无法推 tag"}
+            )
 
         provider = cls._get_provider(release.repository, request_user)
         try:

@@ -102,9 +102,10 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data: dict) -> Project:
         """
-        创建项目时自动生成编码
+        创建项目时自动生成编码与三种发布类型内置审批流程
 
-        若调用方未提供 code，则按 PROJ + 年月日 + 4位自增序号规则生成。
+        若调用方未提供 code，则按 PROJ + 年月日 + 4位自增序号规则生成；
+        同时为项目预置 formal/rc/beta 三个发布审批流程定义，仅可后续编辑节点。
 
         Args:
             validated_data: 已校验的数据
@@ -114,7 +115,11 @@ class ProjectSerializer(serializers.ModelSerializer):
         """
         if not validated_data.get("code"):
             validated_data["code"] = ProjectService.generate_project_code()
-        return super().create(validated_data)
+        project = super().create(validated_data)
+        from apps.workflow.services import ensure_builtin_workflow_definitions
+
+        ensure_builtin_workflow_definitions(project)
+        return project
 
     def update(self, instance: Project, validated_data: dict) -> Project:
         """

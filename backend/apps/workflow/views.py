@@ -62,7 +62,7 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
 
     def get_permissions(self):
         """写操作需项目负责人"""
-        if self.action in ["create", "update", "partial_update", "destroy"]:
+        if self.action in ["update", "partial_update"]:
             return [IsAuthenticated(), IsProjectLeader()]
         return super().get_permissions()
 
@@ -71,26 +71,25 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
         serializer.save(created_by=self.request.user)
 
     def create(self, request: Request, *args, **kwargs) -> Response:
-        """创建流程定义"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return success_response(serializer.data, message="创建成功", status=201)
+        """内置流程随项目自动创建，不支持手动新增"""
+        return error_response(40003, "流程为项目内置，不支持手动新增")
 
     def update(self, request: Request, *args, **kwargs) -> Response:
-        """更新流程定义"""
+        """更新流程定义（仅允许修改审批节点配置）"""
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        # 内置流程仅允许修改 node_config，其余标识字段保持不变
+        data = {"node_config": request.data.get("node_config")}
+        if data["node_config"] is None:
+            return error_response(40001, "仅可修改审批节点配置")
+        serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
+        serializer.save()
         return success_response(serializer.data, message="更新成功")
 
     def destroy(self, request: Request, *args, **kwargs) -> Response:
-        """删除流程定义"""
-        instance = self.get_object()
-        self.perform_destroy(instance)
-        return success_response(None, message="删除成功")
+        """内置流程不可删除"""
+        return error_response(40003, "流程为项目内置，不可删除")
 
 
 class WorkflowInstanceViewSet(StandardModelViewSet):

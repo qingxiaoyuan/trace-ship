@@ -16,14 +16,16 @@ import { OverviewTab } from './tabs/OverviewTab';
 import { RepoTab } from './tabs/RepoTab';
 import { MemberTab } from './tabs/MemberTab';
 import { RuleTab } from './tabs/RuleTab';
+import { WorkflowTab } from './tabs/WorkflowTab';
 import { projectApi } from '@/api/project';
 import type { ProjectStatus } from '@/types';
 
-/** Tab 配置（按设计图：基本信息 / 仓库 / 成员 / 规则配置） */
+/** Tab 配置：基本信息 / 仓库 / 成员 / 审批流 / 规则配置 */
 const tabItems = [
   { key: 'overview', label: '基本信息' },
   { key: 'repos', label: '仓库' },
   { key: 'members', label: '成员' },
+  { key: 'workflows', label: '审批流' },
   { key: 'rules', label: '规则配置' },
 ] as const;
 
@@ -172,6 +174,7 @@ export default function ProjectDetail() {
           {activeTab === 'overview' && <OverviewTab project={project} />}
           {activeTab === 'repos' && <RepoTab projectId={id || ''} />}
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
+          {activeTab === 'workflows' && <WorkflowTab project={project} />}
           {activeTab === 'rules' && <RuleTab project={project} />}
         </div>
       </TsCard>

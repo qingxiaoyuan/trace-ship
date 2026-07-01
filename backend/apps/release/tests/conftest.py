@@ -29,8 +29,8 @@ def project(user):
         name="发布测试项目",
         leader=user,
         status=1,
-        version_rule={"format": "VA.{major}.{minor}.{patch}", "initial": "VA.1.0.0"},
-        release_rule={"formal_branch": "main", "test_prefix": "test", "release_cycle_days": 3},
+        version_rule={"prefix": "VA", "major": 1, "minor": 0, "patch": 0, "suffixes": {"rc": "rc", "beta": "alpha"}},
+        release_rule={"formal_branch": "main", "release_cycle_days": 3},
     )
     ProjectMember.objects.create(project=project, user=user, role="manager")
     return project

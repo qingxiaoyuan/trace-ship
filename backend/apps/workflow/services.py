@@ -18,6 +18,58 @@ from apps.system.services import OperationLogService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 
 
+# 内置发布类型 → 流程名称
+BUILTIN_RELEASE_FLOW_NAMES: Dict[str, str] = {
+    "formal": "正式发布审批",
+    "rc": "RC 发布审批",
+    "beta": "Beta 发布审批",
+}
+
+
+def get_default_node_config() -> list:
+    """返回默认审批链配置（项目负责人或签审批）。"""
+    return [
+        {
+            "node_id": "approval_1",
+            "node_name": "项目负责人审批",
+            "approvers": [{"type": "leader"}],
+            "mode": "any",
+        }
+    ]
+
+
+def ensure_builtin_workflow_definitions(project: Project) -> None:
+    """
+    为项目补齐三种发布类型（formal/rc/beta）的内置审批流程定义。
+
+    已存在的对应类型不重复创建；用于项目创建时与存量数据迁移。
+
+    Args:
+        project: 项目实例
+    """
+    from apps.workflow.serializers import WorkflowDefinitionSerializer
+
+    existing_types = set(
+        WorkflowDefinition.objects.filter(
+            project=project, biz_type="release"
+        ).values_list("release_type", flat=True)
+    )
+    node_config = get_default_node_config()
+    graph_data = WorkflowEngine._build_graph_data(node_config)
+    for release_type, name in BUILTIN_RELEASE_FLOW_NAMES.items():
+        if release_type in existing_types:
+            continue
+        WorkflowDefinition.objects.create(
+            project=project,
+            name=name,
+            biz_type="release",
+            release_type=release_type,
+            node_config=node_config,
+            graph_data=graph_data,
+            is_active=True,
+        )
+
+
 class WorkflowEngine:
     """
     工作流引擎

@@ -25,6 +25,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     release_type_display = serializers.CharField(source="get_release_type_display", read_only=True)
     version = serializers.CharField(required=False, allow_blank=True)
+    tag_name = serializers.CharField(required=False, allow_blank=True)
     build_detail = serializers.SerializerMethodField()
 
     class Meta:
@@ -39,7 +40,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "tag_name", "git_hash", "status", "release_doc",
+            "id", "git_hash", "status", "release_doc",
             "jenkins_build", "build_detail", "rejected_reason",
             "released_at", "created_at", "updated_at",
         ]

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Form, Select } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -14,7 +14,6 @@ import {
   Plus,
   X,
   Sparkles,
-  Lock,
   Info,
   Rocket,
   Package,
@@ -49,12 +48,6 @@ interface UpdateItem {
   content: string;
 }
 
-/** 版本规则 */
-interface VersionRule {
-  format?: string;
-  initial?: string;
-}
-
 /** 发布类型卡片配置 */
 const RELEASE_TYPES: { value: ReleaseType; title: string; desc: string }[] = [
   { value: 'formal', title: '正式', desc: '目标分支须为 main / master' },
@@ -62,26 +55,8 @@ const RELEASE_TYPES: { value: ReleaseType; title: string; desc: string }[] = [
   { value: 'beta', title: 'Beta', desc: 'Tag 自动加 beta- 前缀' },
 ];
 
-/** 默认 tag 前缀（与后端 ReleaseValidator.get_default_tag_prefixes 一致） */
-const DEFAULT_TAG_PREFIXES: Record<string, string> = { rc: 'rc', beta: 'beta' };
-
 /** 变更条目类型说明 */
 const UPDATE_TYPE_LABEL: Record<string, string> = { A: '功能增加', F: 'BUG 修复' };
-
-/** 从版本规则 format 中解析占位符字段名列表 */
-function parseFormatFields(format?: string): string[] {
-  if (!format) return [];
-  const matched = format.match(/\{(\w+)\}/g);
-  return matched ? matched.map((m) => m.slice(1, -1)) : [];
-}
-
-/** 根据发布类型与前缀配置推导 Tag 名 */
-function deriveTagName(version: string, releaseType: ReleaseType, prefixes?: Record<string, string>): string {
-  if (releaseType === 'formal') return version;
-  const prefix = (prefixes?.[releaseType] ?? DEFAULT_TAG_PREFIXES[releaseType] ?? '').replace(/^-+|-+$/g, '');
-  if (!prefix) return version;
-  return version.startsWith(`${prefix}-`) ? version : `${prefix}-${version}`;
-}
 
 export default function ReleaseCreate() {
   const navigate = useNavigate();
@@ -102,7 +77,6 @@ export default function ReleaseCreate() {
   const watchRepository = Form.useWatch('repository', form) as string | undefined;
   const watchReleaseType = (Form.useWatch('release_type', form) as ReleaseType) || 'formal';
   const watchBranch = Form.useWatch('branch', form) as string | undefined;
-  const watchVersion = Form.useWatch('version', form) as string | undefined;
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-all'],
@@ -132,11 +106,11 @@ export default function ReleaseCreate() {
     ? (branchesError as { message?: string })?.message || '获取分支失败，请检查仓库凭证与连通性'
     : undefined;
 
-  // 自动版本号预览
+  // 自动版本号预览（选择分支后触发，tag 是仓库级概念但按需求在分支选定后再展示）
   const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
-    queryKey: ['repository-next-version', watchRepository, watchReleaseType],
+    queryKey: ['repository-next-version', watchRepository, watchReleaseType, watchBranch],
     queryFn: () => repositoryApi.getNextVersion(watchRepository || '', watchReleaseType),
-    enabled: !!watchRepository,
+    enabled: !!watchRepository && !!watchBranch,
   });
 
   const projectOptions = useMemo(
@@ -152,36 +126,31 @@ export default function ReleaseCreate() {
     [branches]
   );
 
-  // 当前选中项目的版本规则与发布规则
-  const selectedProject = useMemo(
-    () => (projectData?.results || []).find((p) => p.id === watchProject),
-    [projectData, watchProject]
-  );
-  const versionRule = (selectedProject?.version_rule as VersionRule | undefined) || {};
-  const releaseRule = (selectedProject?.release_rule as Record<string, unknown> | undefined) || {};
-  const tagPrefixes = (releaseRule.tag_prefixes as Record<string, string> | undefined) || DEFAULT_TAG_PREFIXES;
-  const formatFields = parseFormatFields(versionRule.format);
-  const incrementField = formatFields[formatFields.length - 1];
-
   // 分支 HEAD
   const branchHead = useMemo(() => {
     if (!watchBranch) return undefined;
     return (branches || []).find((b) => b.name === watchBranch)?.last_commit_hash;
   }, [branches, watchBranch]);
 
-  // 预览：手动版本号优先，否则取自动计算
-  const manualVersion = watchVersion?.trim();
-  const previewVersion = manualVersion || nextVersionData?.next_version || '—';
-  const previewTag = manualVersion
-    ? deriveTagName(manualVersion, watchReleaseType, tagPrefixes)
-    : nextVersionData?.next_tag_name || '—';
-  const latestTag = nextVersionData?.latest_tag || '无';
-
   useEffect(() => {
     if (projectIdFromQuery) {
       form.setFieldsValue({ project: projectIdFromQuery });
     }
   }, [projectIdFromQuery, form]);
+
+  // tag_name 是否被用户手动编辑过（未手动改时自动跟随建议 tag 名）
+  const tagNameDirtyRef = useRef(false);
+  useEffect(() => {
+    const suggested = nextVersionData?.next_tag_name;
+    if (suggested && !tagNameDirtyRef.current) {
+      form.setFieldsValue({ tag_name: suggested });
+    }
+  }, [nextVersionData?.next_tag_name, form]);
+
+  // 切换仓库/分支/发布类型时重置 dirty 标记，允许重新回填
+  useEffect(() => {
+    tagNameDirtyRef.current = false;
+  }, [watchRepository, watchBranch, watchReleaseType]);
 
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) =>
@@ -190,7 +159,7 @@ export default function ReleaseCreate() {
         repository: values.repository as string,
         release_type: values.release_type as ReleaseType,
         branch: values.branch as string,
-        version: (values.version as string)?.trim() || undefined,
+        tag_name: (values.tag_name as string)?.trim() || undefined,
         related_changes: relatedChanges.filter((r) => r.key.trim()),
         updates: updates.filter((u) => u.content.trim()),
       } as never),
@@ -376,70 +345,57 @@ export default function ReleaseCreate() {
             )}
           </section>
 
-          {/* 3. 版本号配置 */}
+          {/* 3. 版本号选择 */}
           <section className="tech-card mb-5 rounded-xl p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-violet">
                   <Tag className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                 </div>
-                <h3 className="text-[14px] font-semibold text-slate-900">版本号配置</h3>
+                <h3 className="text-[14px] font-semibold text-slate-900">需要发布的版本号</h3>
               </div>
               <span className="text-[11px] text-slate-400">不填则自动计算</span>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Form.Item name="version" label="版本号（可选）" className="mb-0">
-                <input
-                  placeholder="留空自动计算"
-                  className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[13px] text-slate-700 placeholder-slate-400 outline-none"
-                />
-              </Form.Item>
-              <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-slate-600">Tag 名（自动生成）</label>
-                <div className="relative">
-                  <input
-                    readOnly
-                    value={previewTag === '—' ? '' : previewTag}
-                    placeholder="留空自动生成"
-                    className="input-field w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5 pr-9 font-mono text-[13px] text-slate-500 placeholder-slate-400 outline-none"
-                  />
-                  <Lock
-                    className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300"
-                    style={{ strokeWidth: 1.5 }}
-                    aria-label="只读，自动计算"
-                  />
-                </div>
-                <p className="mt-1 text-[11px] text-slate-400">正式无前缀 / RC 加 rc- / Beta 加 beta-</p>
-              </div>
-            </div>
+            <Form.Item name="tag_name" label="Tag 名" className="mb-0">
+              <input
+                placeholder="留空自动生成"
+                onChange={() => {
+                  tagNameDirtyRef.current = true;
+                }}
+                className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[13px] text-slate-700 placeholder-slate-400 outline-none"
+              />
+            </Form.Item>
+            <p className="mt-1 text-[11px] text-slate-400">正式无后缀 / RC 加 -rc / Beta 加 -beta</p>
 
-            {/* 自动计算预览 */}
-            <div className="mt-4 rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-cyan-50/30 p-4">
-              <div className="mb-3 flex items-center gap-1.5 text-[11px] font-medium text-indigo-600">
-                <Sparkles className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
-                自动计算预览
-                {nextVersionLoading && <span className="text-slate-400">（计算中…）</span>}
-              </div>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <PreviewItem label="上一个 Tag" value={latestTag} />
-                <PreviewItem
-                  label="递增字段"
-                  value={incrementField ? `${incrementField} +1` : '—'}
-                  mono
-                />
-                <PreviewItem label="计算版本号" value={previewVersion} highlight mono />
-                <PreviewItem label="生成 Tag 名" value={previewTag} highlight cyan mono />
-              </div>
-              {versionRule.format && (
-                <div className="mt-3 border-t border-indigo-100 pt-3">
-                  <div className="mb-1 text-[10px] text-slate-400">版本规则</div>
-                  <code className="inline-block rounded border border-indigo-100 bg-white px-2.5 py-1.5 font-mono text-[10px] text-slate-500">
-                    {JSON.stringify({ format: versionRule.format, initial: versionRule.initial })}
-                  </code>
+            {/* 各发布类型最新 Tag（只读） */}
+            {nextVersionData?.all_types && (
+              <div className="mt-4 rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-cyan-50/30 p-4">
+                <div className="mb-3 flex items-center gap-1.5 text-[11px] font-medium text-indigo-600">
+                  <Sparkles className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                  各类型最新 Tag
+                  {nextVersionLoading && <span className="text-slate-400">（计算中…）</span>}
                 </div>
-              )}
-            </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['formal', 'rc', 'beta'] as const).map((rt) => {
+                    const item = nextVersionData.all_types[rt];
+                    const label = rt === 'formal' ? '正式' : rt === 'rc' ? 'RC' : 'Beta';
+                    return (
+                      <div
+                        key={rt}
+                        className="rounded-md border border-slate-200 bg-white/70 px-2.5 py-2"
+                      >
+                        <div className="text-[10px] text-slate-400">{label}</div>
+                        <div className="mt-0.5 truncate font-mono text-[11px] text-slate-600" title={item?.latest_tag || '无'}>
+                          {item?.latest_tag || '无'}
+                        </div>
+                        <div className="mt-1 text-[9px] text-slate-300">下一个 {item?.next_tag_name || '—'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* 4. 关联变更清单（可选） */}
@@ -785,34 +741,6 @@ function ReleaseTypeCards({ value, onChange }: { value?: ReleaseType; onChange?:
           </button>
         );
       })}
-    </div>
-  );
-}
-
-/** 自动计算预览单元 */
-function PreviewItem({
-  label,
-  value,
-  highlight,
-  cyan,
-  mono,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-  cyan?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <div>
-      <div className="mb-1 text-[10px] text-slate-400">{label}</div>
-      <div
-        className={`${mono ? 'font-mono' : ''} ${
-          highlight ? (cyan ? 'text-[15px] font-semibold text-cyan-600' : 'text-[15px] font-semibold text-indigo-600') : 'text-[13px] text-slate-700'
-        }`}
-      >
-        {value}
-      </div>
     </div>
   );
 }

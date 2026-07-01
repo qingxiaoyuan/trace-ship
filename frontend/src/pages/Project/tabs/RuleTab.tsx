@@ -28,18 +28,16 @@ interface RuleTabProps {
 }
 
 interface RuleFormValues {
-  versionRule: string;
+  prefix: string;
+  major: number;
+  minor: number;
+  patch: number;
+  rcSuffix: string;
+  betaSuffix: string;
   releaseCycle: number;
   formalBranch: string[];
-  rcPrefix: string;
-  betaPrefix: string;
   complianceThreshold: number;
 }
-
-const versionRuleOptions = [
-  { label: '主版本.次版本.修订号', value: '主版本.次版本.修订号' },
-  { label: '年月日.修订号', value: '年月日.修订号' },
-];
 
 const releaseCycleOptions = [
   { label: '3 天一发', value: 3 },
@@ -55,16 +53,19 @@ export function RuleTab({ project }: RuleTabProps) {
 
   const versionRule = (project.version_rule as Record<string, unknown>) || {};
   const releaseRule = (project.release_rule as Record<string, unknown>) || {};
-  const tagPrefixes = (releaseRule.tag_prefixes as Record<string, string>) || {};
+  const suffixes = (versionRule.suffixes as Record<string, string>) || {};
 
   const initialValues: RuleFormValues = {
-    versionRule: (versionRule.format as string) || '主版本.次版本.修订号',
+    prefix: (versionRule.prefix as string) || 'VA',
+    major: (versionRule.major as number) ?? 1,
+    minor: (versionRule.minor as number) ?? 0,
+    patch: (versionRule.patch as number) ?? 0,
+    rcSuffix: suffixes.rc || 'rc',
+    betaSuffix: suffixes.beta || 'beta',
     releaseCycle: (releaseRule.release_cycle_days as number) || 3,
     formalBranch: releaseRule.formal_branch
       ? String(releaseRule.formal_branch).split(',')
       : ['main', 'master'],
-    rcPrefix: tagPrefixes.rc || 'rc',
-    betaPrefix: tagPrefixes.beta || 'beta',
     complianceThreshold: (releaseRule.compliance_threshold as number) ?? 90,
   };
 
@@ -72,15 +73,18 @@ export function RuleTab({ project }: RuleTabProps) {
     mutationFn: (values: RuleFormValues) => {
       const payload = {
         version_rule: {
-          format: values.versionRule,
+          prefix: values.prefix,
+          major: values.major,
+          minor: values.minor,
+          patch: values.patch,
+          suffixes: {
+            rc: values.rcSuffix,
+            beta: values.betaSuffix,
+          },
         },
         release_rule: {
           release_cycle_days: values.releaseCycle,
           formal_branch: values.formalBranch.join(','),
-          tag_prefixes: {
-            rc: values.rcPrefix,
-            beta: values.betaPrefix,
-          },
           compliance_threshold: values.complianceThreshold,
         },
       };
@@ -100,52 +104,80 @@ export function RuleTab({ project }: RuleTabProps) {
       initialValues={initialValues}
       onFinish={(values) => mutation.mutate(values as RuleFormValues)}
     >
-      <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-        <Form.Item name="versionRule" label="版本号规则">
-          <Select options={versionRuleOptions} />
-        </Form.Item>
+      {/* 版本号规则 */}
+      <div className="mb-6">
+        <div className="mb-3 text-[13px] font-semibold text-slate-700">版本号规则</div>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+          <Form.Item name="prefix" label="版本前缀">
+            <Input placeholder="VA" />
+          </Form.Item>
+          <div className="hidden" />
 
-        <Form.Item name="releaseCycle" label="发布周期">
-          <Select options={releaseCycleOptions} />
-        </Form.Item>
+          <Form.Item name="major" label="主版本（初始值）">
+            <InputNumber min={0} className="w-full" />
+          </Form.Item>
+          <Form.Item name="minor" label="次版本（初始值）">
+            <InputNumber min={0} className="w-full" />
+          </Form.Item>
+          <Form.Item name="patch" label="修订号（初始值）">
+            <InputNumber min={0} className="w-full" />
+          </Form.Item>
+          <div className="hidden" />
 
-        <Form.Item
-          name="formalBranch"
-          label="正式发布分支限制"
-          className="col-span-2"
-        >
-          <Select
-            mode="tags"
-            placeholder="输入分支名称"
-            options={[
-              { label: 'master', value: 'master' },
-              { label: 'main', value: 'main' },
-            ]}
-            tagRender={(props) => (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm mr-2">
-                {props.label}
-                <span
-                  className="ml-1.5 cursor-pointer text-blue-400 hover:text-blue-600"
-                  onClick={props.onClose}
-                >
-                  ×
+          <Form.Item name="rcSuffix" label="RC 后缀">
+            <Input placeholder="rc" />
+          </Form.Item>
+          <Form.Item name="betaSuffix" label="Beta 后缀">
+            <Input placeholder="beta" />
+          </Form.Item>
+        </div>
+        <div className="mt-2 rounded-lg border border-indigo-50 bg-indigo-50/30 px-4 py-2.5 text-[12px] text-slate-500">
+          格式预览：<span className="font-mono text-indigo-600">{form.getFieldValue('prefix') || 'VA'}.{form.getFieldValue('major') ?? 1}.{form.getFieldValue('minor') ?? 0}.{form.getFieldValue('patch') ?? 0}</span>
+          <span className="mx-1 text-slate-300">|</span>
+          RC: <span className="font-mono text-indigo-600">{form.getFieldValue('prefix') || 'VA'}.{form.getFieldValue('major') ?? 1}.{form.getFieldValue('minor') ?? 0}.{form.getFieldValue('patch') ?? 0}-{form.getFieldValue('rcSuffix') || 'rc'}</span>
+          <span className="mx-1 text-slate-300">|</span>
+          Beta: <span className="font-mono text-indigo-600">{form.getFieldValue('prefix') || 'VA'}.{form.getFieldValue('major') ?? 1}.{form.getFieldValue('minor') ?? 0}.{form.getFieldValue('patch') ?? 0}-{form.getFieldValue('betaSuffix') || 'beta'}</span>
+        </div>
+      </div>
+
+      {/* 发布规则 */}
+      <div className="mb-6 border-t border-slate-100 pt-5">
+        <div className="mb-3 text-[13px] font-semibold text-slate-700">发布规则</div>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+          <Form.Item name="releaseCycle" label="发布周期">
+            <Select options={releaseCycleOptions} />
+          </Form.Item>
+
+          <Form.Item
+            name="formalBranch"
+            label="正式发布分支限制"
+            className="col-span-2"
+          >
+            <Select
+              mode="tags"
+              placeholder="输入分支名称"
+              options={[
+                { label: 'master', value: 'master' },
+                { label: 'main', value: 'main' },
+              ]}
+              tagRender={(props) => (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm mr-2">
+                  {props.label}
+                  <span
+                    className="ml-1.5 cursor-pointer text-blue-400 hover:text-blue-600"
+                    onClick={props.onClose}
+                  >
+                    ×
+                  </span>
                 </span>
-              </span>
-            )}
-          />
-        </Form.Item>
+              )}
+            />
+          </Form.Item>
 
-        <Form.Item name="rcPrefix" label="RC Tag 前缀">
-          <Input placeholder="rc" />
-        </Form.Item>
-
-        <Form.Item name="betaPrefix" label="Beta Tag 前缀">
-          <Input placeholder="beta" />
-        </Form.Item>
-
-        <Form.Item name="complianceThreshold" label="Commit 合规率阈值（%）">
-          <PercentInput />
-        </Form.Item>
+          <Form.Item name="complianceThreshold" label="Commit 合规率阈值（%）">
+            <PercentInput />
+          </Form.Item>
+        </div>
       </div>
 
       <div className="mt-6 flex justify-end">

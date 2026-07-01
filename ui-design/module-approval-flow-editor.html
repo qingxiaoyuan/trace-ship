@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · 审批流节点编辑弹窗</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.3; }
+.aurora::before{ width:520px; height:520px; top:-140px; right:-100px; background:radial-gradient(circle,#818CF8,transparent 70%); }
+.aurora::after{ width:440px; height:440px; bottom:-120px; left:200px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:48px 48px; }
+.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); transition:border-color .2s,box-shadow .2s,transform .2s; }
+.tech-card-hover:hover{ border-color:rgba(99,102,241,.4); box-shadow:0 0 0 1px rgba(99,102,241,.12),0 16px 40px -10px rgba(79,70,229,.18); transform:translateY(-1px); }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
+.btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
+.icon-indigo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-cyan{ background:linear-gradient(135deg,#ECFEFF,#CFFAFE); color:#0891B2; border:1px solid #A5F3FC; }
+.icon-amber{ background:linear-gradient(135deg,#FFFBEB,#FEF3C7); color:#B45309; border:1px solid #FDE68A; }
+.icon-rose{ background:linear-gradient(135deg,#FFF1F2,#FFE4E6); color:#BE123C; border:1px solid #FECDD3; }
+.icon-violet{ background:linear-gradient(135deg,#F5F3FF,#EDE9FE); color:#6D28D9; border:1px solid #DDD6FE; }
+.icon-emerald{ background:linear-gradient(135deg,#ECFDF5,#D1FAE5); color:#047857; border:1px solid #A7F3D0; }
+.scrollbar-thin::-webkit-scrollbar{ width:5px; height:5px; }
+.scrollbar-thin::-webkit-scrollbar-thumb{ background:#C7D2FE; border-radius:9999px; }
+.scrollbar-thin::-webkit-scrollbar-track{ background:transparent; }
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
+/* 表单输入 */
+.fld{ width:100%; border-radius:8px; border:1px solid #E0E7FF; background:#fff; padding:8px 11px; font-size:13px; color:#334155; outline:none; transition:border-color .15s,box-shadow .15s; }
+.fld::placeholder{ color:#94A3B8; }
+.fld:hover{ border-color:#C7D2FE; }
+.fld:focus{ border-color:#6366F1; box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+.lbl{ display:flex; align-items:center; gap:4px; font-size:12.5px; font-weight:500; color:#475569; margin-bottom:6px; }
+.lbl .req{ color:#EF4444; }
+.sel-pop{ position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:50; border-radius:10px; border:1px solid #E0E7FF; background:#fff; box-shadow:0 12px 32px -8px rgba(79,70,229,.22); padding:5px; max-height:240px; overflow-y:auto; }
+.sel-opt{ display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:7px; font-size:13px; color:#334155; cursor:pointer; }
+.sel-opt:hover{ background:#EEF2FF; }
+.sel-opt.on{ background:#EEF2FF; color:#4F46E5; font-weight:500; }
+.fld-wrap{ position:relative; }
+.fld-wrap .fld{ padding-right:36px; }
+.fld-ic{ position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#94A3B8; cursor:pointer; }
+/* radio 卡片 */
+.mode-card{ display:flex; flex-direction:column; gap:4px; border:1px solid #E0E7FF; border-radius:10px; padding:11px 12px; cursor:pointer; transition:all .15s; background:#fff; }
+.mode-card:hover{ border-color:#C7D2FE; background:#FAFAFF; }
+.mode-card.on{ border-color:#6366F1; background:#EEF2FF; box-shadow:0 0 0 3px rgba(99,102,241,.1); }
+.mode-card .ic{ display:flex; align-items:center; justify-content:center; height:30px; width:30px; border-radius:8px; }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
+<div class="aurora"></div>
+
+<div class="relative z-10 min-h-screen">
+  <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1200px] mx-auto">
+
+    <!-- 顶部说明 -->
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="text-[26px] font-semibold tracking-tight text-slate-900">审批流节点编辑 · 设计稿</h1>
+        <p class="mt-1 text-[13px] text-slate-500">基于 <span class="font-mono text-indigo-600">WorkflowTab.tsx</span> 弹窗交互，三种发布类型内置流程，仅可编辑审批节点</p>
+      </div>
+      <button id="reopen-modal" class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-white"><i data-lucide="maximize-2" class="h-3 w-3" style="stroke-width:2"></i>打开弹窗</button>
+    </div>
+
+    <!-- 列表底图（弱化） -->
+    <div class="tech-card rounded-xl overflow-hidden opacity-60 pointer-events-none select-none">
+      <div class="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+        <div class="text-[13px] font-semibold text-slate-800">审批流配置</div>
+        <div class="ml-auto text-[12px] text-slate-400">3 个内置流程</div>
+      </div>
+      <div class="divide-y divide-indigo-50/50">
+        <div class="grid grid-cols-12 gap-3 items-center px-5 py-3"><div class="col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="rocket" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">正式发布审批</div><div class="text-[10px] text-slate-400">formal</div></div></div><div class="col-span-4"><span class="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-600">1. 项目负责人 (或签)</span><span class="ml-1 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">2. 审核人 (会签)</span></div><div class="col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>启用</span></div><div class="col-span-3 text-right"><button class="rounded-md border border-indigo-100 bg-indigo-50/40 px-2.5 py-1 text-[12px] font-medium text-slate-600">编辑节点</button></div></div>
+        <div class="px-5 py-6 text-center text-[12px] text-slate-400">（列表底图，弹窗悬浮于其上）</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- 遮罩 -->
+<div id="modal-mask" class="fixed inset-0 z-[60]" style="background:rgba(15,23,42,0.45);"></div>
+
+<!-- 大号弹窗 -->
+<div id="modal-wrapper" class="fixed inset-x-0 top-0 z-[61] mx-auto flex justify-center px-4 pt-[4vh] pb-[4vh] pointer-events-none">
+  <div class="tech-card rounded-2xl shadow-[0_24px_70px_-12px_rgba(30,27,75,.55)] border-indigo-200/70 overflow-hidden w-[1120px] max-w-full pointer-events-auto max-h-[92vh] flex flex-col">
+
+    <!-- 头部 -->
+    <div class="flex items-center justify-between border-b border-indigo-50 px-6 py-4 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="flex h-9 w-9 items-center justify-center rounded-lg icon-violet"><i data-lucide="workflow" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
+        <div>
+          <h2 class="text-[16px] font-semibold tracking-tight text-slate-900">编辑审批节点</h2>
+          <p class="text-[11px] text-slate-400">流程为项目内置，仅可调整审批节点与审批人</p>
+        </div>
+      </div>
+      <button id="modal-close" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="x" class="h-4 w-4" style="stroke-width:1.5"></i></button>
+    </div>
+
+    <!-- body：可滚动 -->
+    <div class="px-6 py-5 space-y-5 overflow-y-auto scrollbar-thin flex-1">
+
+      <!-- 发布类型选择器 -->
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" id="flowTabs">
+        <button data-flow="formal" class="flow-tab group relative overflow-hidden rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 text-left transition-all hover:border-indigo-400 hover:shadow-sm">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="flex h-7 w-7 items-center justify-center rounded-lg icon-emerald"><i data-lucide="rocket" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></span>
+              <span class="text-[14px] font-semibold text-slate-900">正式发布审批</span>
+            </div>
+            <i data-lucide="check-circle-2" class="h-4 w-4 text-indigo-600 check-mark" style="stroke-width:1.5"></i>
+          </div>
+          <p class="mt-2 text-[11px] text-slate-500">从 main / master 发布，无前缀 Tag</p>
+          <div class="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400"><i data-lucide="git-branch" class="h-3 w-3" style="stroke-width:1.5"></i><span class="node-count">2 个审批节点</span></div>
+        </button>
+        <button data-flow="rc" class="flow-tab group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 text-left transition-all hover:border-slate-300 hover:shadow-sm">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="flex h-7 w-7 items-center justify-center rounded-lg icon-cyan"><i data-lucide="git-pull-request" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></span>
+              <span class="text-[14px] font-semibold text-slate-900">RC 发布审批</span>
+            </div>
+            <i data-lucide="check-circle-2" class="h-4 w-4 text-indigo-600 check-mark hidden" style="stroke-width:1.5"></i>
+          </div>
+          <p class="mt-2 text-[11px] text-slate-500">Tag 自动加 rc- 前缀</p>
+          <div class="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400"><i data-lucide="git-branch" class="h-3 w-3" style="stroke-width:1.5"></i><span class="node-count">1 个审批节点</span></div>
+        </button>
+        <button data-flow="beta" class="flow-tab group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 text-left transition-all hover:border-slate-300 hover:shadow-sm">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="flex h-7 w-7 items-center justify-center rounded-lg icon-amber"><i data-lucide="flask-conical" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></span>
+              <span class="text-[14px] font-semibold text-slate-900">Beta 发布审批</span>
+            </div>
+            <i data-lucide="check-circle-2" class="h-4 w-4 text-indigo-600 check-mark hidden" style="stroke-width:1.5"></i>
+          </div>
+          <p class="mt-2 text-[11px] text-slate-500">Tag 自动加 beta- 前缀</p>
+          <div class="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400"><i data-lucide="git-branch" class="h-3 w-3" style="stroke-width:1.5"></i><span class="node-count">1 个审批节点</span></div>
+        </button>
+      </div>
+
+      <!-- 主体：左流程图 + 右节点编辑器 -->
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-5">
+
+        <!-- 左：审批链可视化 -->
+        <section class="lg:col-span-3">
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-5 py-3.5">
+              <div class="flex items-center gap-2">
+                <i data-lucide="workflow" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
+                <h2 class="text-[14px] font-semibold text-slate-900" id="flowTitle">审批链 · 正式发布</h2>
+              </div>
+              <button id="addNodeBtn" class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/40 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-white hover:text-indigo-600">
+                <i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>添加节点
+              </button>
+            </div>
+            <div class="px-5 py-6">
+              <div class="flex items-center gap-3">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full icon-emerald"><i data-lucide="play" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></span>
+                <div><div class="text-[13px] font-medium text-slate-900">开始</div><div class="text-[11px] text-slate-400">提交发布申请</div></div>
+              </div>
+              <div class="ml-4 h-6 w-px bg-slate-200"></div>
+              <div id="nodeList" class="space-y-0"></div>
+              <div class="ml-4 h-6 w-px bg-slate-200"></div>
+              <div class="flex items-center gap-3">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="flag" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></span>
+                <div><div class="text-[13px] font-medium text-slate-900">完成</div><div class="text-[11px] text-slate-400">推送 Tag，发布生效</div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 右：节点编辑面板 -->
+        <aside class="lg:col-span-2">
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-5 py-3.5">
+              <div class="flex items-center gap-2">
+                <i data-lucide="settings-2" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
+                <h2 class="text-[14px] font-semibold text-slate-900">节点配置</h2>
+              </div>
+              <span id="nodeBadge" class="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-600">节点 1</span>
+            </div>
+            <div class="px-5 py-5" id="nodeEditor">
+              <div class="mb-5">
+                <div class="lbl">节点名称<span class="req">*</span></div>
+                <input id="nodeNameInput" type="text" value="项目负责人审批" class="fld" placeholder="如：技术负责人审批" />
+              </div>
+              <div class="mb-5">
+                <div class="lbl">审批模式<span class="req">*</span></div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="mode-card on" data-mode="any">
+                    <div class="flex items-center justify-between">
+                      <div class="ic icon-indigo"><i data-lucide="user-check" class="h-4 w-4" style="stroke-width:1.5"></i></div>
+                      <i data-lucide="check-circle-2" class="h-3.5 w-3.5 text-indigo-500 mode-check" style="stroke-width:1.5"></i>
+                    </div>
+                    <div class="text-[12px] font-semibold text-slate-900 mt-1">或签</div>
+                    <div class="text-[10px] text-slate-400">任一审批人通过</div>
+                  </div>
+                  <div class="mode-card" data-mode="all">
+                    <div class="flex items-center justify-between">
+                      <div class="ic icon-amber"><i data-lucide="users" class="h-4 w-4" style="stroke-width:1.5"></i></div>
+                      <i data-lucide="circle" class="h-3.5 w-3.5 text-slate-300 mode-check hidden" style="stroke-width:1.5"></i>
+                    </div>
+                    <div class="text-[12px] font-semibold text-slate-900 mt-1">会签</div>
+                    <div class="text-[10px] text-slate-400">全部通过才生效</div>
+                  </div>
+                </div>
+              </div>
+              <div class="mb-5">
+                <div class="mb-2 flex items-center justify-between">
+                  <div class="lbl" style="margin-bottom:0">审批人</div>
+                  <button class="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 transition-colors hover:text-indigo-700"><i data-lucide="plus" class="h-3 w-3" style="stroke-width:1.5"></i>添加</button>
+                </div>
+                <div class="space-y-2" id="approverList"></div>
+                <div class="mt-2.5 rounded-lg border border-dashed border-slate-200 p-2.5">
+                  <div class="flex items-center gap-2">
+                    <div class="fld-wrap flex-1" data-select="aprType">
+                      <div class="fld flex items-center justify-between cursor-pointer" id="aprType-trigger" style="padding:7px 11px;">
+                        <span class="flex items-center gap-2"><i data-lucide="plus-circle" class="h-3.5 w-3.5 text-indigo-500" style="stroke-width:1.5"></i><span id="aprType-label" style="font-size:12px;">项目负责人 (leader)</span></span>
+                        <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+                      </div>
+                      <div class="sel-pop hidden" id="aprType-pop">
+                        <div class="sel-opt on" data-type="leader" data-label="项目负责人 (leader)"><i data-lucide="crown" class="h-3.5 w-3.5 text-violet-500" style="stroke-width:1.5"></i>项目负责人 (leader)</div>
+                        <div class="sel-opt" data-type="role" data-label="指定角色"><i data-lucide="shield-check" class="h-3.5 w-3.5 text-indigo-500" style="stroke-width:1.5"></i>指定角色</div>
+                        <div class="sel-opt" data-type="user" data-label="指定用户"><i data-lucide="user" class="h-3.5 w-3.5 text-cyan-500" style="stroke-width:1.5"></i>指定用户</div>
+                        <div class="sel-opt" data-type="self" data-label="发起人自己 (self)"><i data-lucide="user-cog" class="h-3.5 w-3.5 text-emerald-500" style="stroke-width:1.5"></i>发起人自己 (self)</div>
+                      </div>
+                    </div>
+                    <button id="addAprBtn" class="rounded-md btn-glow px-3 py-1.5 text-[12px] font-medium text-white">添加</button>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center justify-between border-t border-indigo-50 pt-4">
+                <button id="delNodeBtn" class="inline-flex items-center gap-1.5 text-[12px] font-medium text-rose-500 transition-colors hover:text-rose-600"><i data-lucide="trash-2" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>删除节点</button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+    </div>
+
+    <!-- 底部 -->
+    <div class="flex items-center justify-between border-t border-indigo-50 px-6 py-4 bg-white/50 shrink-0">
+      <div class="flex items-center gap-1.5 text-[11px] text-slate-400"><i data-lucide="info" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>节点变更将重新生成流程图，已有进行中实例不受影响</div>
+      <div class="flex items-center gap-3">
+        <button id="modal-cancel" class="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition">取消</button>
+        <button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:2"></i>保存</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  lucide.createIcons();
+
+  const flowData = {
+    formal: { title:'审批链 · 正式发布', nodes:[
+      { id:'n1', name:'项目负责人审批', mode:'any', approvers:[{type:'leader',label:'项目负责人',sub:'系统自动解析为项目 leader',icon:'crown',cls:'icon-violet'}] },
+      { id:'n2', name:'审核人会签', mode:'all', approvers:[
+        {type:'role',label:'审核人',sub:'指定角色 · auditor',icon:'shield-check',cls:'icon-indigo'},
+        {type:'user',label:'张三',sub:'指定用户 · zhangsan',icon:'user',cls:'icon-cyan'},
+      ]},
+    ]},
+    rc: { title:'审批链 · RC 发布', nodes:[
+      { id:'n1', name:'项目负责人审批', mode:'any', approvers:[{type:'leader',label:'项目负责人',sub:'系统自动解析为项目 leader',icon:'crown',cls:'icon-violet'}] },
+    ]},
+    beta: { title:'审批链 · Beta 发布', nodes:[
+      { id:'n1', name:'项目负责人审批', mode:'any', approvers:[{type:'leader',label:'项目负责人',sub:'系统自动解析为项目 leader',icon:'crown',cls:'icon-violet'}] },
+    ]},
+  };
+  const modeMap = { any:{label:'或签',icon:'user-check',cls:'border-blue-200 bg-blue-50 text-blue-600'}, all:{label:'会签',icon:'users',cls:'border-amber-200 bg-amber-50 text-amber-600'} };
+  let curFlow='formal', selIdx=0, pendingAprType='leader';
+
+  function renderNodes(){
+    const flow=flowData[curFlow]; const list=document.getElementById('nodeList'); list.innerHTML='';
+    flow.nodes.forEach((node,idx)=>{
+      const m=modeMap[node.mode]; const active=idx===selIdx;
+      const chips=node.approvers.map(a=>`<span class="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600"><i data-lucide="${a.icon}" class="h-2.5 w-2.5" style="stroke-width:1.5"></i>${a.label}</span>`).join('');
+      list.insertAdjacentHTML('beforeend',`
+        <div class="node-card cursor-pointer rounded-xl border ${active?'border-indigo-300 bg-indigo-50/40 ring-1 ring-indigo-200':'border-slate-200 bg-white hover:border-slate-300'} p-3.5 transition-all" data-idx="${idx}">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-2.5">
+              <span class="flex h-8 w-8 items-center justify-center rounded-full ${active?'btn-glow text-white':'icon-indigo'} text-[12px] font-semibold">${idx+1}</span>
+              <div>
+                <div class="text-[13px] font-semibold text-slate-900">${node.name}</div>
+                <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span class="inline-flex items-center gap-1 rounded-md border ${m.cls} px-1.5 py-0.5 text-[10px] font-medium"><i data-lucide="${m.icon}" class="h-2.5 w-2.5" style="stroke-width:1.5"></i>${m.label}</span>
+                  ${chips}
+                </div>
+              </div>
+            </div>
+            ${active?`<div class="flex flex-col gap-1">
+              <button class="move-up flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 ${idx===0?'opacity-30 cursor-not-allowed hover:bg-white hover:border-indigo-100 hover:text-indigo-500':''}" data-idx="${idx}" ${idx===0?'disabled':''}><i data-lucide="chevron-up" class="h-4 w-4" style="stroke-width:2"></i></button>
+              <button class="move-down flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 ${idx===flow.nodes.length-1?'opacity-30 cursor-not-allowed hover:bg-white hover:border-indigo-100 hover:text-indigo-500':''}" data-idx="${idx}" ${idx===flow.nodes.length-1?'disabled':''}><i data-lucide="chevron-down" class="h-4 w-4" style="stroke-width:2"></i></button>
+            </div>`:''}
+          </div>
+        </div>
+        <div class="ml-4 h-4 w-px bg-slate-200"></div>`);
+    });
+    document.getElementById('flowTitle').textContent=flow.title;
+    document.querySelectorAll('.flow-tab').forEach(t=>{ const c=t.querySelector('.node-count'); if(c) c.textContent=flowData[t.dataset.flow].nodes.length+' 个审批节点'; });
+    lucide.createIcons();
+    list.querySelectorAll('.node-card').forEach(card=>card.addEventListener('click',()=>{selIdx=parseInt(card.dataset.idx);renderNodes();renderEditor();}));
+    list.querySelectorAll('.move-up').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();const i=parseInt(btn.dataset.idx);if(i<=0)return;const ns=flowData[curFlow].nodes;[ns[i-1],ns[i]]=[ns[i],ns[i-1]];selIdx=i-1;renderNodes();renderEditor();}));
+    list.querySelectorAll('.move-down').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();const i=parseInt(btn.dataset.idx);const ns=flowData[curFlow].nodes;if(i>=ns.length-1)return;[ns[i+1],ns[i]]=[ns[i],ns[i+1]];selIdx=i+1;renderNodes();renderEditor();}));
+  }
+
+  function renderEditor(){
+    const node=flowData[curFlow].nodes[selIdx]; if(!node) return;
+    document.getElementById('nodeBadge').textContent='节点 '+(selIdx+1);
+    document.getElementById('nodeNameInput').value=node.name;
+    document.querySelectorAll('.mode-card').forEach(c=>{
+      const on=c.dataset.mode===node.mode;
+      c.classList.toggle('on',on);
+      const checks=c.querySelectorAll('.mode-check');
+      checks.forEach((ch,i)=>{ if(on&&i===0)ch.classList.remove('hidden'); if(on&&i===1)ch.classList.add('hidden'); if(!on&&i===0)ch.classList.add('hidden'); if(!on&&i===1)ch.classList.remove('hidden'); });
+    });
+    const al=document.getElementById('approverList');
+    al.innerHTML=node.approvers.map((a,i)=>`
+      <div class="apr" data-idx="${i}" style="display:flex;align-items:center;gap:8px;border:1px solid #E0E7FF;border-radius:8px;padding:8px 10px;background:#fff;transition:border-color .15s;">
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${a.cls}"><i data-lucide="${a.icon}" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></span>
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[12px] font-medium text-slate-900">${a.label}</div>
+          <div class="text-[10px] text-slate-400">${a.sub}</div>
+        </div>
+        <button class="rmv-apr text-slate-300 hover:text-rose-500 transition" data-idx="${i}"><i data-lucide="x" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+      </div>`).join('');
+    lucide.createIcons();
+    al.querySelectorAll('.rmv-apr').forEach(b=>b.addEventListener('click',()=>{ if(node.approvers.length<=1)return; node.approvers.splice(parseInt(b.dataset.idx),1); renderEditor();renderNodes(); }));
+  }
+
+  document.querySelectorAll('.flow-tab').forEach(tab=>tab.addEventListener('click',()=>{
+    curFlow=tab.dataset.flow; selIdx=0;
+    document.querySelectorAll('.flow-tab').forEach(t=>{ const active=t===tab; t.className='flow-tab group relative overflow-hidden rounded-xl border p-4 text-left transition-all hover:shadow-sm '+(active?'border-indigo-200 bg-indigo-50/50 hover:border-indigo-400':'border-slate-200 bg-white hover:border-slate-300'); t.querySelector('.check-mark').classList.toggle('hidden',!active); });
+    renderNodes();renderEditor();
+  }));
+
+  document.querySelectorAll('.mode-card').forEach(c=>c.addEventListener('click',()=>{ flowData[curFlow].nodes[selIdx].mode=c.dataset.mode; renderNodes();renderEditor(); }));
+  document.getElementById('nodeNameInput').addEventListener('input',e=>{ const n=flowData[curFlow].nodes[selIdx]; if(n){n.name=e.target.value||'未命名节点';renderNodes();} });
+  document.getElementById('addNodeBtn').addEventListener('click',()=>{ flowData[curFlow].nodes.push({id:'n'+Date.now(),name:'新建审批节点',mode:'any',approvers:[{type:'leader',label:'项目负责人',sub:'系统自动解析为项目 leader',icon:'crown',cls:'icon-violet'}]}); selIdx=flowData[curFlow].nodes.length-1; renderNodes();renderEditor(); });
+  document.getElementById('delNodeBtn').addEventListener('click',()=>{ const ns=flowData[curFlow].nodes; if(ns.length<=1)return; ns.splice(selIdx,1); selIdx=Math.max(0,selIdx-1); renderNodes();renderEditor(); });
+
+  function togglePop(id){ document.querySelectorAll('.sel-pop').forEach(p=>{if(p.id!==id)p.classList.add('hidden');}); document.getElementById(id).classList.toggle('hidden'); }
+  document.getElementById('aprType-trigger').addEventListener('click',e=>{e.stopPropagation();togglePop('aprType-pop');});
+  document.addEventListener('click',()=>document.getElementById('aprType-pop').classList.add('hidden'));
+  document.getElementById('aprType-pop').addEventListener('click',e=>{ const o=e.target.closest('.sel-opt'); if(!o)return; pendingAprType=o.dataset.type; document.querySelectorAll('#aprType-pop .sel-opt').forEach(x=>x.classList.toggle('on',x===o)); document.getElementById('aprType-label').textContent=o.dataset.label; document.getElementById('aprType-pop').classList.add('hidden'); });
+  const aprTemplates={leader:{type:'leader',label:'项目负责人',sub:'系统自动解析为项目 leader',icon:'crown',cls:'icon-violet'},role:{type:'role',label:'审核人',sub:'指定角色 · auditor',icon:'shield-check',cls:'icon-indigo'},user:{type:'user',label:'张三',sub:'指定用户 · zhangsan',icon:'user',cls:'icon-cyan'},self:{type:'self',label:'发起人自己',sub:'发起人自己 · self',icon:'user-cog',cls:'icon-emerald'}};
+  document.getElementById('addAprBtn').addEventListener('click',()=>{ const t=aprTemplates[pendingAprType]||aprTemplates.leader; flowData[curFlow].nodes[selIdx].approvers.push({...t}); renderEditor();renderNodes(); });
+
+  const mask=document.getElementById('modal-mask'),wrapper=document.getElementById('modal-wrapper'),reopen=document.getElementById('reopen-modal');
+  function closeModal(){ mask.classList.add('hidden');wrapper.classList.add('hidden');reopen.classList.remove('hidden'); }
+  function openModal(){ mask.classList.remove('hidden');wrapper.classList.remove('hidden');reopen.classList.add('hidden');window.scrollTo({top:0,behavior:'smooth'}); }
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  document.getElementById('modal-cancel').addEventListener('click',closeModal);
+  mask.addEventListener('click',closeModal);
+  reopen.addEventListener('click',openModal);
+
+  renderNodes();renderEditor();
+</script>
+
+</body>
+</html>

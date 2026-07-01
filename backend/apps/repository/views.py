@@ -3,6 +3,8 @@
 
 提供仓库 CRUD、连通性测试、分支/commit 查询、手动同步以及提交记录审查接口。
 """
+from typing import Any, Dict
+
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Q
 from rest_framework import filters, viewsets
@@ -221,7 +223,7 @@ class RepositoryViewSet(StandardModelViewSet):
             pk: 仓库主键
 
         Returns:
-            建议版本信息
+            建议版本信息，含顶层当前类型字段与 all_types 三类详情
         """
         repo = self.get_object()
         release_type = request.query_params.get("release_type", "formal")
@@ -238,20 +240,25 @@ class RepositoryViewSet(StandardModelViewSet):
 
         version_rule = repo.project.version_rule or {}
         calculator = VersionCalculator(version_rule)
-        release_rule = ReleaseValidator.get_release_rule(repo.project)
-        prefixes = release_rule.get("tag_prefixes") or ReleaseValidator.get_default_tag_prefixes()
-        version, tag_name = calculator.calculate(
-            tags,
-            release_type=release_type,
-            prefixes=prefixes,
-        )
 
-        latest = calculator.find_latest_matching_tag(tags)
+        # 计算三类发布类型各自的结果
+        all_types: Dict[str, Dict[str, Any]] = {}
+        for rt in ("formal", "rc", "beta"):
+            rt_version, rt_tag_name = calculator.calculate(tags, release_type=rt)
+            all_types[rt] = {
+                "latest_tag": calculator.find_latest_tag_by_type(tags, rt),
+                "next_version": rt_version,
+                "next_tag_name": rt_tag_name,
+            }
+
+        version, tag_name = calculator.calculate(tags, release_type=release_type)
+        latest = calculator.find_latest_tag_by_type(tags, release_type)
         return success_response({
-            "latest_tag": latest[0].name if latest else None,
+            "latest_tag": latest,
             "next_version": version,
             "next_tag_name": tag_name,
             "has_existing_tags": len(tags) > 0,
+            "all_types": all_types,
         })
 
     @action(detail=False, methods=["get"])
