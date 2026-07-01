@@ -47,21 +47,30 @@ export default function Dashboard() {
   const { data: overview } = useQuery({
     queryKey: ['dashboard-overview'],
     queryFn: () => dashboardApi.getOverview(),
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
 
   const { data: releaseData } = useQuery({
     queryKey: ['dashboard-releases'],
     queryFn: () => releaseApi.getReleases({ page_size: 20 }),
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
 
   const { data: commitData } = useQuery({
     queryKey: ['dashboard-commits'],
-    queryFn: () => commitApi.getCommits({ page_size: 1000 }),
+    // 统计类请求不需要 1000 条，20 条足够算各类数量
+    queryFn: () => commitApi.getCommits({ page_size: 20 }),
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
 
   const { data: buildData } = useQuery({
     queryKey: ['dashboard-builds'],
     queryFn: () => jenkinsApi.getBuilds({ page_size: 20 }),
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
 
   const releases = useMemo(() => releaseData?.results || [], [releaseData?.results]);
