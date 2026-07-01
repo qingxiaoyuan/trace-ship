@@ -1,0 +1,90 @@
+{
+  "name": "commit",
+  "displayName": "规范提交助手",
+  "description": "AI驱动的代码提交规范助手，自动生成符合规范的commit信息",
+  "version": "1.0.0",
+  "publisher": "trace-ship",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "categories": [
+    "Other",
+    "Scanners"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "commit-sidebar",
+          "title": "规范提交助手",
+          "icon": "$(git-commit)"
+        }
+      ]
+    },
+    "views": {
+      "commit-sidebar": [
+        {
+          "type": "webview",
+          "id": "commitView",
+          "name": "规范提交助手",
+          "icon": "$(git-commit)",
+          "description": "AI驱动的代码提交规范助手"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "commit.generateCommit",
+        "title": "生成规范Commit",
+        "category": "规范提交"
+      },
+      {
+        "command": "commit.copyCommit",
+        "title": "复制Commit信息",
+        "category": "规范提交"
+      },
+      {
+        "command": "commit.refreshDiff",
+        "title": "刷新Diff",
+        "category": "规范提交"
+      }
+    ],
+    "configuration": {
+      "title": "规范提交助手配置",
+      "properties": {
+        "commit.apiEndpoint": {
+          "type": "string",
+          "default": "https://api.minimaxi.com/anthropic/v1/messages",
+          "markdownDescription": "AI API 地址（标准 OpenAI 协议，请求会拼接 `/v1/chat/completions`）。若填入完整路径（如 `https://api.example.com/v1/chat/completions`）则直接使用，不再拼接。兼容 OpenAI / DeepSeek / 通义千问 / 本地 Ollama 等任何兼容服务。"
+        },
+        "commit.apiKey": {
+          "type": "string",
+          "default": "sk-cp-nYy5nC4VxYmznKTphv-Nw9mzhT6yRPhk4yhlt030KfSNmORvgtny7kGvxEry7u4F6mlf3GWxlG_w1K6qFH8RXRxS_bjyoz24RqQreqEaqVRM8taRSnbGp4M",
+          "markdownDescription": "AI API 密钥（Bearer 鉴权）"
+        },
+        "commit.model": {
+          "type": "string",
+          "default": "MiniMax-M2.7",
+          "markdownDescription": "使用的 AI 模型名称（如 `gpt-4o-mini`、`deepseek-chat`、`qwen-plus` 等）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "postinstall": ""
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.3.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {}
+}
