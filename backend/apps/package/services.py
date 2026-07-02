@@ -4,7 +4,9 @@
 import hashlib
 import logging
 import os
+import signal
 import re
+import select
 import shutil
 import subprocess
 import threading
@@ -24,6 +26,10 @@ from utils.provider.credential_resolver import resolve_credential
 logger = logging.getLogger(__name__)
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_ENV_RE = re.compile(r"(TOKEN|PASSWORD|PASSWD|SECRET|KEY|CREDENTIAL|AUTH)", re.IGNORECASE)
+
+
+class PackageTaskCanceledError(RuntimeError):
+    """打包任务已取消。"""
 
 
 class PackageService:
@@ -211,13 +217,47 @@ class PackageService:
             stderr=subprocess.STDOUT,
             text=True,
             shell=shell,
+            start_new_session=True,
         )
         assert process.stdout is not None
-        for line in process.stdout:
-            cls._append_log(task, line.rstrip("\n"))
-        code = process.wait()
+        try:
+            while True:
+                cls._ensure_task_not_canceled(task)
+                ready, _, _ = select.select([process.stdout], [], [], 0.5)
+                if ready:
+                    line = process.stdout.readline()
+                    if line:
+                        cls._append_log(task, line.rstrip("\n"))
+                        continue
+                code = process.poll()
+                if code is not None:
+                    break
+        except PackageTaskCanceledError:
+            cls._terminate_process_group(process)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls._kill_process_group(process)
+                process.wait(timeout=5)
+            raise
         if code != 0:
             raise RuntimeError(f"命令执行失败，退出码 {code}")
+
+    @staticmethod
+    def _terminate_process_group(process: subprocess.Popen) -> None:
+        """终止整个进程组，避免子进程继续执行。"""
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    @staticmethod
+    def _kill_process_group(process: subprocess.Popen) -> None:
+        """强制杀死整个进程组。"""
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
     @staticmethod
     def _display_command(command: list[str], shell: bool = False) -> str:
@@ -352,6 +392,41 @@ class PackageService:
         return artifacts
 
     @classmethod
+    def cancel_task(cls, task: PackageTask) -> PackageTask:
+        """取消排队中或进行中的打包任务。"""
+        if task.is_finished:
+            return task
+        now = timezone.now()
+        task.status = "canceled"
+        task.progress = 0
+        task.stage_info = {"stage": "canceled", "progress": 0}
+        task.finished_at = now
+        if task.started_at and not task.duration:
+            task.duration = int((now - task.started_at).total_seconds() * 1000)
+        cls._append_log(task, "任务已被用户取消")
+        task.save(update_fields=[
+            "status", "progress", "stage_info", "finished_at", "duration", "updated_at",
+        ])
+        return task
+
+    @classmethod
+    def _ensure_task_not_canceled(cls, task: PackageTask) -> None:
+        """检查任务是否已被用户取消。"""
+        task.refresh_from_db(fields=["status", "progress", "stage_info", "finished_at", "duration", "updated_at"])
+        if task.status == "canceled":
+            raise PackageTaskCanceledError("任务已被用户取消")
+
+    @classmethod
+    def _update_stage(cls, task: PackageTask, stage: str, progress: int, log: str = "") -> None:
+        """更新任务阶段和进度。"""
+        cls._ensure_task_not_canceled(task)
+        task.stage_info = {"stage": stage, "progress": progress}
+        task.progress = progress
+        task.save(update_fields=["stage_info", "progress", "updated_at"])
+        if log:
+            cls._append_log(task, log)
+
+    @classmethod
     def run_task(cls, task: PackageTask) -> PackageTask:
         """执行打包任务。"""
         if task.is_finished:
@@ -359,19 +434,31 @@ class PackageService:
         started = timezone.now()
         task.status = "running"
         task.started_at = started
-        task.save(update_fields=["status", "started_at", "updated_at"])
+        task.progress = 0
+        task.stage_info = {"stage": "checkout", "progress": 5}
+        task.save(update_fields=["status", "started_at", "progress", "stage_info", "updated_at"])
         workspace = cls.prepare_workspace(task)
         try:
             cls._append_log(task, f"开始打包 {task.version} ({task.tag_name})")
+            cls._update_stage(task, "checkout", 5, "正在拉取源码…")
             cls._checkout_source(task, workspace)
+            cls._ensure_task_not_canceled(task)
+            cls._update_stage(task, "build", 30, "开始执行打包…")
             if task.mode == "simple":
                 cls._run_simple(task, workspace)
             else:
                 cls._run_local(task, workspace)
+            cls._ensure_task_not_canceled(task)
+            cls._update_stage(task, "artifacts", 80, "正在扫描产物…")
             task.artifact_info = cls._scan_artifacts(workspace)
             task.status = "success"
+            task.progress = 100
+            task.stage_info = {"stage": "done", "progress": 100}
             task.error_message = ""
             cls._append_log(task, "打包完成")
+        except PackageTaskCanceledError:
+            task.refresh_from_db(fields=["status", "progress", "stage_info", "finished_at", "duration", "updated_at"])
+            task.error_message = ""
         except Exception as exc:
             task.status = "failure"
             task.error_message = str(exc)
@@ -381,7 +468,7 @@ class PackageService:
             task.finished_at = finished
             task.duration = int((finished - started).total_seconds() * 1000)
             task.save(update_fields=[
-                "status", "artifact_info", "error_message", "finished_at",
+                "status", "progress", "stage_info", "artifact_info", "error_message", "finished_at",
                 "duration", "updated_at",
             ])
             try:

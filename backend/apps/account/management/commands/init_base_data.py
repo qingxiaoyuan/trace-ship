@@ -7,6 +7,7 @@
 from typing import Dict, List
 from django.core.management.base import BaseCommand
 from apps.account.models import User, Role, Permission, UserRole, RolePermission
+from apps.package.models import PackageImage
 
 
 class Command(BaseCommand):

@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · 打包看板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.3; }
+.aurora::before{ width:520px; height:520px; top:-140px; right:-100px; background:radial-gradient(circle,#818CF8,transparent 70%); }
+.aurora::after{ width:440px; height:440px; bottom:-120px; left:200px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:48px 48px; }
+.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); transition:border-color .2s,box-shadow .2s,transform .2s; }
+.tech-card-hover:hover{ border-color:rgba(99,102,241,.4); box-shadow:0 0 0 1px rgba(99,102,241,.12),0 16px 40px -10px rgba(79,70,229,.18); transform:translateY(-1px); }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
+.btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
+.icon-indigo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-cyan{ background:linear-gradient(135deg,#ECFEFF,#CFFAFE); color:#0891B2; border:1px solid #A5F3FC; }
+.icon-amber{ background:linear-gradient(135deg,#FFFBEB,#FEF3C7); color:#B45309; border:1px solid #FDE68A; }
+.icon-rose{ background:linear-gradient(135deg,#FFF1F2,#FFE4E6); color:#BE123C; border:1px solid #FECDD3; }
+.icon-violet{ background:linear-gradient(135deg,#F5F3FF,#EDE9FE); color:#6D28D9; border:1px solid #DDD6FE; }
+.icon-emerald{ background:linear-gradient(135deg,#ECFDF5,#D1FAE5); color:#047857; border:1px solid #A7F3D0; }
+.scrollbar-thin::-webkit-scrollbar{ width:5px; height:5px; }
+.scrollbar-thin::-webkit-scrollbar-thumb{ background:#C7D2FE; border-radius:9999px; }
+.scrollbar-thin::-webkit-scrollbar-track{ background:transparent; }
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
+@keyframes spin-slow{ to{ transform:rotate(360deg); } }
+.spin-slow{ animation:spin-slow 2.5s linear infinite; transform-origin:center; }
+@keyframes shimmer{ 0%{ background-position:-200% 0; } 100%{ background-position:200% 0; } }
+.shimmer{ background:linear-gradient(90deg,rgba(34,211,238,0) 0%,rgba(34,211,238,.25) 50%,rgba(34,211,238,0) 100%); background-size:200% 100%; animation:shimmer 2.2s linear infinite; }
+.nav-active{ background:linear-gradient(90deg,rgba(79,70,229,.1),rgba(34,211,238,.05)); border:1px solid rgba(79,70,229,.18); color:#4F46E5; }
+.nav-active i{ color:#4F46E5 !important; }
+.view{ display:none; } .view.active{ display:block; }
+.seg{ background:rgba(255,255,255,.7); border:1px solid rgba(99,102,241,.14); }
+.seg-btn{ color:#64748B; transition:all .15s; }
+.seg-btn.on{ background:#fff; color:#4F46E5; box-shadow:0 1px 2px rgba(79,70,229,.12),0 1px 1px rgba(0,0,0,.04); }
+.terminal{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; background:#0B1020; color:#94A3B8; }
+.terminal .log-info{ color:#60A5FA; } .terminal .log-success{ color:#34D399; } .terminal .log-warn{ color:#FBBF24; } .terminal .log-err{ color:#FB7185; } .terminal .log-dim{ color:#475569; }
+.stage-line{ background:linear-gradient(90deg,#C7D2FE,#22D3EE); }
+.lt-tab.on{ color:#4F46E5; border-color:#4F46E5; }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
+<div class="aurora"></div>
+<div class="relative z-10 flex min-h-screen">
+  <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
+    <div class="flex h-[60px] items-center gap-2.5 px-5">
+      <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+      <div class="flex flex-col leading-none"><span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span><span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span></div>
+    </div>
+    <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-4">
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">概览</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="layout-dashboard" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>工作台</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="rocket" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>发布看板</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-pull-request-arrow" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>审批中心</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">资源</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="folder-kanban" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>项目</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-fork" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>仓库</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="key-round" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>凭证</span></a>
+        <a class="nav-active flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium cursor-pointer"><i data-lucide="package" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>打包看板</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="hammer" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>Jenkins</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">质量</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="scan-search" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>提交审查</span></a>
+      </div></div>
+      <div><div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">系统</div><div class="space-y-0.5">
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="users" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>用户与角色</span></a>
+        <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="settings" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>系统配置</span></a>
+      </div></div>
+    </nav>
+  </aside>
+
+  <div class="flex-1 lg:ml-[244px]">
+    <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
+      <div id="crumb" class="hidden items-center gap-1.5 text-[13px] md:flex"><span class="text-slate-400">资源</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span id="crumb-tail" class="font-medium text-slate-800">打包看板</span></div>
+      <div class="ml-auto hidden md:flex items-center"><button class="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 hover:border-indigo-200 hover:bg-white hover:text-indigo-600 w-[260px]"><i data-lucide="search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>搜索…</span><span class="ml-auto"><kbd class="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘K</kbd></span></button></div>
+      <div class="ml-auto flex items-center gap-1 md:ml-0"><button class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="plus" class="h-4 w-4" style="stroke-width:1.5"></i></button><button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i><span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span></button><div class="mx-1 h-5 w-px bg-indigo-100"></div><img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=64&h=64&fit=crop&crop=face" class="h-8 w-8 rounded-full object-cover ring-1 ring-indigo-200 cursor-pointer" alt="" /></div>
+    </header>
+
+    <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1400px] mx-auto">
+      <!-- ============ 列表页 ============ -->
+      <section id="view-list" class="view active space-y-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><h1 class="text-[26px] font-semibold tracking-tight text-slate-900">打包看板</h1><p class="mt-1 text-[13px] text-slate-500">管理打包任务，监控打包进度，查看实时日志与产物</p></div>
+          <div class="flex items-center gap-2"><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="refresh-cw" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>刷新</button><button data-new class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"><i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>添加打包任务</button></div>
+        </div>
+
+        <!-- 分段控件 -->
+        <div class="flex items-center gap-2">
+          <div class="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
+            <button class="seg-btn on inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium" data-tab="running"><i data-lucide="activity" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>进行中<span class="rounded bg-cyan-100 px-1 py-0.5 text-[10px] font-medium text-cyan-700">2</span></button>
+            <button class="seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium" data-tab="jobs"><i data-lucide="boxes" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>打包任务</button>
+          </div>
+          <div class="ml-auto flex items-center gap-2">
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="refresh-cw" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+            <button data-new class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white"><i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>添加打包任务</button>
+          </div>
+        </div>
+
+        <!-- 进行中 Tab -->
+        <div id="pk-running" class="pk-pane">
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="hidden md:grid grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400"><div class="col-span-4">任务 / 版本</div><div class="col-span-2">当前阶段</div><div class="col-span-3">进度</div><div class="col-span-2">触发人 · 耗时</div><div class="col-span-1 text-right">操作</div></div>
+            <div class="divide-y divide-indigo-50/50">
+              <div class="group grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open-build>
+                <div class="col-span-12 md:col-span-4 flex items-center gap-2.5"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot shrink-0"></span><div class="min-w-0"><div class="text-[13px] font-medium text-slate-900 truncate">pay-core-pack</div><div class="font-mono text-[10px] text-slate-400 truncate">#142 · v3.1.0 · pay-core-service</div></div></div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700"><i data-lucide="box" class="h-3 w-3" style="stroke-width:1.5"></i>构建镜像</span></div>
+                <div class="col-span-6 md:col-span-3"><div class="flex items-center gap-2"><div class="h-1.5 flex-1 rounded-full bg-indigo-50 overflow-hidden"><div class="h-full rounded-full stage-line" style="width:65%"></div></div><span class="font-mono text-[11px] text-cyan-600 font-medium shrink-0">65%</span></div></div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5 text-[11px] text-slate-500"><img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=32&h=32&fit=crop&crop=face" class="h-4 w-4 rounded-full" alt="" /><span>张三</span><span class="text-slate-300">·</span><span class="font-mono">3m24s</span></div>
+                <div class="col-span-6 md:col-span-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+              </div>
+              <div class="group grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open-build>
+                <div class="col-span-12 md:col-span-4 flex items-center gap-2.5"><span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot shrink-0"></span><div class="min-w-0"><div class="text-[13px] font-medium text-slate-900 truncate">user-center-pack</div><div class="font-mono text-[10px] text-slate-400 truncate">#98 · v2.4.0 · user-center-api</div></div></div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"><i data-lucide="flask-conical" class="h-3 w-3" style="stroke-width:1.5"></i>单元测试</span></div>
+                <div class="col-span-6 md:col-span-3"><div class="flex items-center gap-2"><div class="h-1.5 flex-1 rounded-full bg-indigo-50 overflow-hidden"><div class="h-full rounded-full stage-line" style="width:42%"></div></div><span class="font-mono text-[11px] text-amber-600 font-medium shrink-0">42%</span></div></div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5 text-[11px] text-slate-500"><img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=32&h=32&fit=crop&crop=face" class="h-4 w-4 rounded-full" alt="" /><span>李四</span><span class="text-slate-300">·</span><span class="font-mono">2m10s</span></div>
+                <div class="col-span-6 md:col-span-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition"><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 打包任务 Tab -->
+        <div id="pk-jobs" class="pk-pane hidden">
+          <div class="tech-card rounded-xl overflow-hidden">
+          <div class="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+            <div class="relative"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input id="kw" type="text" placeholder="搜索任务名称 / 仓库" class="w-[240px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></div>
+            <div class="relative" id="proj-filter">
+              <button id="proj-btn" class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="folder" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>项目</span><span class="text-slate-300">/</span><span id="proj-count" class="text-indigo-500 font-medium">全部</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button>
+              <div id="proj-panel" class="hidden absolute left-0 top-[calc(100%+6px)] z-40 w-[260px] rounded-xl border border-indigo-100 bg-white p-2 shadow-xl shadow-indigo-100/50">
+                <div class="relative mb-1.5"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input type="text" placeholder="搜索项目" class="w-full rounded-lg border border-indigo-100 bg-slate-50/60 pl-8 pr-3 py-1.5 text-[12px] outline-none focus:border-indigo-400" /></div>
+                <div class="max-h-[220px] overflow-y-auto scrollbar-thin space-y-0.5" id="proj-list">
+                  <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 cursor-pointer proj-item"><span class="proj-chk flex h-4 w-4 items-center justify-center rounded border border-indigo-300 bg-white text-transparent"><i data-lucide="check" class="h-3 w-3" style="stroke-width:2.5"></i></span>支付核心服务</label>
+                  <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 cursor-pointer proj-item"><span class="proj-chk flex h-4 w-4 items-center justify-center rounded border border-indigo-300 bg-white text-transparent"></span>网关服务</label>
+                  <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 cursor-pointer proj-item"><span class="proj-chk flex h-4 w-4 items-center justify-center rounded border border-indigo-300 bg-white text-transparent"></span>风控引擎</label>
+                  <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 cursor-pointer proj-item"><span class="proj-chk flex h-4 w-4 items-center justify-center rounded border border-indigo-300 bg-white text-transparent"></span>订单管理</label>
+                  <label class="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 cursor-pointer proj-item"><span class="proj-chk flex h-4 w-4 items-center justify-center rounded border border-indigo-300 bg-white text-transparent"></span>用户中心</label>
+                </div>
+                <div class="flex items-center justify-between border-t border-indigo-50 mt-1.5 pt-1.5 px-1"><button id="proj-clear" class="text-[12px] text-slate-400 hover:text-slate-600">清除</button><button id="proj-apply" class="rounded-md bg-indigo-600 px-2.5 py-1 text-[12px] font-medium text-white hover:bg-indigo-700">应用</button></div>
+              </div>
+            </div>
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="filter" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>状态</span><i data-lucide="chevron-down" class="h-3 w-3" style="stroke-width:1.5"></i></button>
+            <div class="ml-auto text-[12px] text-slate-400">共 18 条</div>
+          </div>
+          <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid"><div class="col-span-3">任务名称</div><div class="col-span-2">所属项目</div><div class="col-span-2">关联仓库</div><div class="col-span-2">产物 / 镜像</div><div class="col-span-2">最近打包</div><div class="col-span-1 text-right">状态</div></div>
+          <div class="divide-y divide-indigo-50/50" id="job-rows">
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open>
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo"><i data-lucide="package" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">pay-core-pack</div><div class="font-mono text-[10px] text-slate-400">pay-core-service</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">支付核心服务</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">pay-core-service</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[11px] text-slate-500">registry/pay-core</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#142</span><span class="text-[11px] text-slate-400 ml-1.5">8分钟前</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end"><span class="inline-flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>构建中</span></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open>
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-violet"><i data-lucide="package" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">user-center-pack</div><div class="font-mono text-[10px] text-slate-400">user-center-api</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">用户中心</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">user-center-api</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[11px] text-slate-500">registry/user-center</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#98</span><span class="text-[11px] text-slate-400 ml-1.5">8分钟前</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end"><span class="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span>测试中</span></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open>
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="package" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">gateway-pack</div><div class="font-mono text-[10px] text-slate-400">gateway-service</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">网关服务</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">gateway-service</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[11px] text-slate-500">registry/gateway</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#141</span><span class="text-[11px] text-slate-400 ml-1.5">2小时前</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>成功</span></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open>
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-rose"><i data-lucide="package" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">risk-engine-pack</div><div class="font-mono text-[10px] text-slate-400">risk-engine</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">风控引擎</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">risk-engine</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[11px] text-slate-500">registry/risk-engine</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#140</span><span class="text-[11px] text-slate-400 ml-1.5">5小时前</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end"><span class="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600"><span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>失败</span></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open>
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-amber"><i data-lucide="package" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">order-pack</div><div class="font-mono text-[10px] text-slate-400">order-service</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">订单管理</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">order-service</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[11px] text-slate-500">registry/order</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#139</span><span class="text-[11px] text-slate-400 ml-1.5">8小时前</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end"><span class="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>成功</span></div>
+            </div>
+            <div class="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer" data-open>
+              <div class="col-span-12 md:col-span-3 flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-400 border border-slate-200"><i data-lucide="package" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="text-[13px] font-medium text-slate-900">report-pack</div><div class="font-mono text-[10px] text-slate-400">report-service</div></div></div>
+              <div class="col-span-6 md:col-span-2 text-[12px] text-slate-600">报表服务</div>
+              <div class="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500">report-service</div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[11px] text-slate-500">registry/report</span></div>
+              <div class="col-span-6 md:col-span-2"><span class="font-mono text-[12px] text-slate-700">#76</span><span class="text-[11px] text-slate-400 ml-1.5">昨天</span></div>
+              <div class="col-span-6 md:col-span-1 flex items-center justify-end"><span class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500"><span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>排队中</span></div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+      <!-- ============ 详情页 ============ -->
+      <section id="view-detail" class="view space-y-5">
+        <div class="flex items-center gap-2 text-[13px]"><a id="back-to-list" class="text-slate-400 hover:text-indigo-600 cursor-pointer">打包看板</a><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">pay-core-pack</span></div>
+
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo"><i data-lucide="package" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div><div class="text-[15px] font-semibold tracking-tight text-slate-900">pay-core-pack</div><div class="font-mono text-[10px] text-slate-400">pay-core-service · 支付核心服务</div></div></div>
+          <div class="ml-auto flex items-center gap-2"><button id="cfg-btn" class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"><i data-lucide="settings-2" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>打包配置</button></div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <!-- 构建任务列表 -->
+          <div class="lg:col-span-1 tech-card rounded-xl overflow-hidden flex flex-col min-w-0">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-3 py-2.5"><h3 class="text-[12px] font-semibold tracking-tight text-slate-900">构建历史</h3><span class="text-[10px] text-slate-400">142</span></div>
+            <div class="divide-y divide-indigo-50/50 overflow-y-auto scrollbar-thin" style="max-height:560px;">
+              <div class="px-2.5 py-2 hover:bg-indigo-50/30 cursor-pointer border-l-2 border-cyan-400 bg-cyan-50/20">
+                <div class="flex items-center gap-1.5"><span class="font-mono text-[12px] font-medium text-slate-900">#142</span><span class="text-[10px] text-slate-400 truncate">v3.1.0 · 张三</span><span class="ml-auto text-[10px] text-slate-400 shrink-0">3m24s</span></div>
+                <div class="mt-1.5 flex items-center gap-1.5"><div class="h-1 flex-1 rounded-full bg-indigo-50 overflow-hidden"><div class="h-full rounded-full stage-line" style="width:65%"></div></div><span class="font-mono text-[10px] text-cyan-600 font-medium shrink-0">65%</span></div>
+                <div class="mt-1.5 flex items-center justify-between"><span class="inline-flex items-center gap-1 text-[10px] text-cyan-600"><span class="h-1 w-1 rounded-full bg-cyan-500 pulse-dot"></span>构建镜像</span><button class="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-white px-1 py-0 text-[10px] font-medium text-rose-600 hover:bg-rose-50"><i data-lucide="square" class="h-2.5 w-2.5" style="stroke-width:1.5"></i>停止</button></div>
+              </div>
+              <div class="px-2.5 py-2 hover:bg-indigo-50/30 cursor-pointer">
+                <div class="flex items-center gap-1.5"><span class="font-mono text-[12px] font-medium text-slate-900">#141</span><span class="text-[10px] text-slate-400 truncate">v4.2.1 · 李四</span><span class="ml-auto text-[10px] text-slate-400 shrink-0">4m08s</span></div>
+                <div class="mt-1.5 flex items-center justify-between"><span class="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1 py-0 text-[10px] font-medium text-emerald-700"><span class="h-1 w-1 rounded-full bg-emerald-500"></span>成功</span><span class="text-[10px] text-slate-400">2h前</span></div>
+              </div>
+              <div class="px-2.5 py-2 hover:bg-indigo-50/30 cursor-pointer">
+                <div class="flex items-center gap-1.5"><span class="font-mono text-[12px] font-medium text-slate-900">#140</span><span class="text-[10px] text-slate-400 truncate">v2.0.0 · 赵六</span><span class="ml-auto text-[10px] text-slate-400 shrink-0">2m03s</span></div>
+                <div class="mt-1.5 flex items-center justify-between"><span class="inline-flex items-center gap-1 rounded border border-rose-200 bg-rose-50 px-1 py-0 text-[10px] font-medium text-rose-600"><span class="h-1 w-1 rounded-full bg-rose-500"></span>失败</span><span class="text-[10px] text-slate-400">5h前</span></div>
+              </div>
+              <div class="px-2.5 py-2 hover:bg-indigo-50/30 cursor-pointer">
+                <div class="flex items-center gap-1.5"><span class="font-mono text-[12px] font-medium text-slate-900">#139</span><span class="text-[10px] text-slate-400 truncate">v1.8.1 · 王五</span><span class="ml-auto text-[10px] text-slate-400 shrink-0">3m52s</span></div>
+                <div class="mt-1.5 flex items-center justify-between"><span class="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1 py-0 text-[10px] font-medium text-emerald-700"><span class="h-1 w-1 rounded-full bg-emerald-500"></span>成功</span><span class="text-[10px] text-slate-400">8h前</span></div>
+              </div>
+              <div class="px-2.5 py-2 hover:bg-indigo-50/30 cursor-pointer">
+                <div class="flex items-center gap-1.5"><span class="font-mono text-[12px] font-medium text-slate-900">#138</span><span class="text-[10px] text-slate-400 truncate">v2.4.2 · 钱七</span><span class="ml-auto text-[10px] text-slate-400 shrink-0">1m30s</span></div>
+                <div class="mt-1.5 flex items-center justify-between"><span class="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1 py-0 text-[10px] font-medium text-slate-500"><span class="h-1 w-1 rounded-full bg-slate-400"></span>中止</span><span class="text-[10px] text-slate-400">昨天</span></div>
+              </div>
+              <div class="px-2.5 py-2 hover:bg-indigo-50/30 cursor-pointer">
+                <div class="flex items-center gap-1.5"><span class="font-mono text-[12px] font-medium text-slate-900">#137</span><span class="text-[10px] text-slate-400 truncate">v1.7.0 · 李四</span><span class="ml-auto text-[10px] text-slate-400 shrink-0">5m10s</span></div>
+                <div class="mt-1.5 flex items-center justify-between"><span class="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1 py-0 text-[10px] font-medium text-emerald-700"><span class="h-1 w-1 rounded-full bg-emerald-500"></span>成功</span><span class="text-[10px] text-slate-400">昨天</span></div>
+              </div>
+              <div class="px-2.5 py-2 hover:bg-indigo-50/30 cursor-pointer">
+                <div class="flex items-center gap-1.5"><span class="font-mono text-[12px] font-medium text-slate-900">#136</span><span class="text-[10px] text-slate-400 truncate">v1.6.2 · 张三</span><span class="ml-auto text-[10px] text-slate-400 shrink-0">4m45s</span></div>
+                <div class="mt-1.5 flex items-center justify-between"><span class="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1 py-0 text-[10px] font-medium text-emerald-700"><span class="h-1 w-1 rounded-full bg-emerald-500"></span>成功</span><span class="text-[10px] text-slate-400">2天前</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 日志面板 -->
+          <div class="lg:col-span-4 tech-card rounded-xl overflow-hidden flex flex-col">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-4">
+              <div class="flex items-center gap-1">
+                <button class="lt-tab on whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-medium" data-ltab="log">构建日志</button>
+                <button class="lt-tab whitespace-nowrap border-b-2 border-transparent px-3 py-3 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-ltab="artifacts">打包产物<span class="ml-1 rounded bg-slate-100 px-1 py-0 text-[10px] font-medium text-slate-500">2</span></button>
+              </div>
+              <div class="flex items-center gap-2"><span class="font-mono text-[12px] text-slate-500">#142</span><span class="inline-flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>构建中</span><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            </div>
+            <div id="lt-log" class="lt-pane">
+            <div class="terminal p-4 text-[11.5px] leading-relaxed overflow-y-auto scrollbar-thin" style="min-height:480px;max-height:560px;">
+              <div class="log-dim">[2026-07-02 09:21:14] Started by user 张三</div>
+              <div class="log-info">[09:21:15] Checkout pay-core-service @ a3f2c1d8e9</div>
+              <div class="log-success">[09:21:20] ✓ Checked out 18 commits (v3.1.0-rc1)</div>
+              <div class="log-info">[09:21:22] Installing dependencies (maven)</div>
+              <div class="log-dim">[09:21:48] Downloaded 247 artifacts</div>
+              <div class="log-info">[09:22:02] [INFO] maven-compiler-plugin:compile</div>
+              <div class="log-success">[09:22:34] ✓ Compiled 412 source files</div>
+              <div class="log-info">[09:22:40] [INFO] maven-surefire-plugin:test</div>
+              <div class="log-success">[09:23:10] ✓ Tests run: 86, Failures: 0, Errors: 0</div>
+              <div class="log-warn">[09:23:18] [WARN] Skipped 2 integration tests</div>
+              <div class="log-info">[09:23:25] Packaging pay-core-3.1.0.jar</div>
+              <div class="log-success">[09:23:42] ✓ Built jar: pay-core-3.1.0.jar (42.7 MB)</div>
+              <div class="log-info">[09:24:01] [Docker] Building registry/pay-core:3.1.0</div>
+              <div class="log-dim">[09:24:15] Step 1/12 : FROM openjdk:17-slim</div>
+              <div class="log-dim">[09:24:30] Step 2/12 : COPY target/pay-core-3.1.0.jar /app/</div>
+              <div class="log-warn">[09:24:38] [WARN] Image size exceeds 500MB threshold</div>
+              <div class="log-info">[09:24:48] Step 8/12 : EXPOSE 8080</div>
+              <div class="text-cyan-300">[09:24:55] ▸ Pushing layer... 65%</div>
+              <div class="flex items-center gap-1.5 mt-1 text-cyan-300"><span class="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot"></span><span>构建进行中</span></div>
+            </div>
+            </div>
+            <div id="lt-artifacts" class="lt-pane hidden p-4 space-y-3" style="min-height:480px;max-height:560px;overflow-y:auto;">
+              <div class="flex items-center gap-2.5 rounded-lg border border-indigo-100 px-3 py-2.5 hover:bg-indigo-50/30">
+                <div class="flex h-9 w-9 items-center justify-center rounded-lg icon-emerald shrink-0"><i data-lucide="file-archive" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
+                <div class="min-w-0 flex-1"><div class="text-[13px] font-medium text-slate-900 truncate">pay-core-3.1.0.jar</div><div class="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5"><span class="font-mono">42.7 MB</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>构建产物</span><span class="rounded bg-emerald-50 px-1 text-[9px] font-medium text-emerald-700">已生成</span></div></div>
+                <button class="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 shrink-0"><i data-lucide="download" class="h-3 w-3" style="stroke-width:1.5"></i>下载</button>
+              </div>
+              <div class="flex items-center gap-2.5 rounded-lg border border-indigo-100 px-3 py-2.5 hover:bg-indigo-50/30">
+                <div class="flex h-9 w-9 items-center justify-center rounded-lg icon-cyan shrink-0"><i data-lucide="container" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
+                <div class="min-w-0 flex-1"><div class="text-[13px] font-medium text-slate-900 truncate font-mono">registry/pay-core:3.1.0</div><div class="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5"><span class="font-mono">512 MB</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>Docker 镜像</span><span class="inline-flex items-center gap-1 rounded bg-cyan-50 px-1 text-[9px] font-medium text-cyan-700"><span class="h-1 w-1 rounded-full bg-cyan-500 pulse-dot"></span>推送中</span></div></div>
+                <button class="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 shrink-0"><i data-lucide="external-link" class="h-3 w-3" style="stroke-width:1.5"></i>查看</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="view-build" class="view space-y-5">
+        <div class="flex items-center gap-2 text-[13px]"><a id="back-to-list-build" class="text-slate-400 hover:text-indigo-600 cursor-pointer">打包看板</a><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">#142 · pay-core-pack</span></div>
+
+        <!-- 构建信息 -->
+        <div class="tech-card rounded-xl p-5">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div class="flex items-center gap-3">
+              <div class="flex h-11 w-11 items-center justify-center rounded-xl icon-cyan"><i data-lucide="loader" class="h-5 w-5 spin-slow" style="stroke-width:1.5"></i></div>
+              <div>
+                <div class="flex items-center gap-2"><h1 class="text-[20px] font-semibold tracking-tight text-slate-900">#142</h1><span class="inline-flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>构建中</span></div>
+                <div class="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500"><span class="font-mono">pay-core-pack</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span class="font-mono">v3.1.0</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>张三</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>2026-07-02 09:21</span></div>
+              </div>
+            </div>
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[13px] font-medium text-rose-600 hover:bg-rose-50"><i data-lucide="square" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>停止构建</button>
+          </div>
+          <div class="mt-4"><div class="flex items-center justify-between text-[12px] text-slate-500 mb-1.5"><span>构建镜像 · 65%</span><span class="font-mono text-cyan-600">3m24s</span></div><div class="h-2 w-full rounded-full bg-indigo-50 overflow-hidden"><div class="h-full rounded-full stage-line" style="width:65%"></div></div></div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <!-- 日志 -->
+          <div class="lg:col-span-3 tech-card rounded-xl overflow-hidden flex flex-col">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-4 py-3"><div class="flex items-center gap-2"><i data-lucide="terminal" class="h-4 w-4 text-indigo-400" style="stroke-width:1.5"></i><h3 class="text-[13px] font-semibold tracking-tight text-slate-900">构建日志</h3></div><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+            <div class="terminal flex-1 p-4 text-[11.5px] leading-relaxed overflow-y-auto scrollbar-thin" style="min-height:420px;max-height:560px;">
+              <div class="log-dim">[2026-07-02 09:21:14] Started by user 张三</div>
+              <div class="log-info">[09:21:15] Checkout pay-core-service @ a3f2c1d8e9</div>
+              <div class="log-success">[09:21:20] ✓ Checked out 18 commits (v3.1.0-rc1)</div>
+              <div class="log-info">[09:21:22] Installing dependencies (maven)</div>
+              <div class="log-dim">[09:21:48] Downloaded 247 artifacts</div>
+              <div class="log-info">[09:22:02] [INFO] maven-compiler-plugin:compile</div>
+              <div class="log-success">[09:22:34] ✓ Compiled 412 source files</div>
+              <div class="log-info">[09:22:40] [INFO] maven-surefire-plugin:test</div>
+              <div class="log-success">[09:23:10] ✓ Tests run: 86, Failures: 0, Errors: 0</div>
+              <div class="log-warn">[09:23:18] [WARN] Skipped 2 integration tests</div>
+              <div class="log-info">[09:23:25] Packaging pay-core-3.1.0.jar</div>
+              <div class="log-success">[09:23:42] ✓ Built jar: pay-core-3.1.0.jar (42.7 MB)</div>
+              <div class="log-info">[09:24:01] [Docker] Building registry/pay-core:3.1.0</div>
+              <div class="log-dim">[09:24:15] Step 1/12 : FROM openjdk:17-slim</div>
+              <div class="log-dim">[09:24:30] Step 2/12 : COPY target/pay-core-3.1.0.jar /app/</div>
+              <div class="log-warn">[09:24:38] [WARN] Image size exceeds 500MB threshold</div>
+              <div class="log-info">[09:24:48] Step 8/12 : EXPOSE 8080</div>
+              <div class="text-cyan-300">[09:24:55] ▸ Pushing layer... 65%</div>
+              <div class="flex items-center gap-1.5 mt-1 text-cyan-300"><span class="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot"></span><span>构建进行中</span></div>
+            </div>
+          </div>
+
+          <!-- 打包产物 -->
+          <div class="lg:col-span-2 tech-card rounded-xl overflow-hidden flex flex-col">
+            <div class="flex items-center justify-between border-b border-indigo-50 px-4 py-3"><div class="flex items-center gap-2"><i data-lucide="package-check" class="h-4 w-4 text-indigo-400" style="stroke-width:1.5"></i><h3 class="text-[13px] font-semibold tracking-tight text-slate-900">打包产物</h3></div><span class="text-[10px] text-slate-400">2 个</span></div>
+            <div class="divide-y divide-indigo-50/50">
+              <div class="px-4 py-3 hover:bg-indigo-50/30">
+                <div class="flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="file-archive" class="h-4 w-4" style="stroke-width:1.5"></i></div><div class="min-w-0 flex-1"><div class="text-[13px] font-medium text-slate-900 truncate">pay-core-3.1.0.jar</div><div class="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5"><span class="font-mono">42.7 MB</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>构建产物</span></div></div><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"><i data-lucide="download" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+              </div>
+              <div class="px-4 py-3 hover:bg-indigo-50/30">
+                <div class="flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="container" class="h-4 w-4" style="stroke-width:1.5"></i></div><div class="min-w-0 flex-1"><div class="text-[13px] font-medium text-slate-900 truncate">registry/pay-core:3.1.0</div><div class="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5"><span class="font-mono">512 MB</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>Docker 镜像</span><span class="inline-flex items-center gap-1 rounded bg-cyan-50 px-1 py-0 text-[9px] font-medium text-cyan-700"><span class="h-1 w-1 rounded-full bg-cyan-500 pulse-dot"></span>推送中</span></div></div><button class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"><i data-lucide="external-link" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button></div>
+              </div>
+            </div>
+            <div class="border-t border-indigo-50 px-4 py-2.5 bg-slate-50/40"><div class="flex items-center gap-1.5 text-[11px] text-slate-400"><i data-lucide="info" class="h-3 w-3" style="stroke-width:1.5"></i><span>镜像推送完成后可拉取部署</span></div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- 配置抽屉 -->
+<div id="cfg-mask" class="hidden fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-sm"></div>
+<aside id="cfg-drawer" class="fixed inset-y-0 right-0 z-50 w-full max-w-[420px] translate-x-full transition-transform duration-300 bg-white shadow-2xl flex flex-col">
+  <div class="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
+    <div class="flex items-center gap-2"><i id="cfg-icon" data-lucide="settings-2" class="h-4 w-4 text-indigo-500" style="stroke-width:1.5"></i><h3 id="cfg-title" class="text-[15px] font-semibold tracking-tight text-slate-900">打包配置</h3></div>
+    <button id="cfg-close" class="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="x" class="h-4 w-4" style="stroke-width:1.5"></i></button>
+  </div>
+  <div class="flex-1 overflow-y-auto scrollbar-thin px-5 py-4 space-y-4">
+    <div>
+      <label class="block text-[12px] font-medium text-slate-500 mb-1.5">任务名称</label>
+      <input id="cfg-name" type="text" value="pay-core-pack" placeholder="输入任务名称" class="w-full rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+    </div>
+    <div>
+      <label class="block text-[12px] font-medium text-slate-500 mb-1.5">所属项目</label>
+      <div id="cfg-project" class="flex items-center justify-between rounded-lg border border-indigo-100 bg-slate-50/50 px-3 py-2 text-[13px] text-slate-700 cursor-pointer hover:bg-indigo-50/40"><span>支付核心服务</span><i data-lucide="folder" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i></div>
+    </div>
+    <div>
+      <label class="block text-[12px] font-medium text-slate-500 mb-1.5">关联仓库</label>
+      <div id="cfg-repo" class="flex items-center justify-between rounded-lg border border-indigo-100 bg-slate-50/50 px-3 py-2 text-[13px] text-slate-700 cursor-pointer hover:bg-indigo-50/40"><span class="font-mono">pay-core-service</span><i data-lucide="git-fork" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i></div>
+    </div>
+    <div>
+      <label class="block text-[12px] font-medium text-slate-500 mb-1.5">构建脚本</label>
+      <input type="text" value="mvn clean package" class="w-full rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-mono text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+    </div>
+    <div>
+      <label class="block text-[12px] font-medium text-slate-500 mb-1.5">Dockerfile 路径</label>
+      <input type="text" value="./Dockerfile" class="w-full rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-mono text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+    </div>
+    <div>
+      <label class="block text-[12px] font-medium text-slate-500 mb-1.5">镜像仓库</label>
+      <input type="text" value="registry/pay-core" class="w-full rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-mono text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+    </div>
+  </div>
+  <div class="flex items-center gap-2 border-t border-indigo-50 px-5 py-3.5">
+    <button id="cfg-cancel" class="flex-1 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50">取消</button>
+    <button class="btn-glow flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-white">保存</button>
+  </div>
+</aside>
+<script>
+  lucide.createIcons();
+  function show(id){
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.getElementById('crumb-tail').textContent = id==='view-list' ? '打包看板' : (id==='view-build' ? '#142 构建详情' : 'pay-core-pack');
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('[data-open]').forEach(r => r.addEventListener('click', () => show('view-detail')));
+  document.querySelectorAll('[data-open-build]').forEach(r => r.addEventListener('click', () => show('view-build')));
+  document.getElementById('back-to-list').addEventListener('click', () => show('view-list'));
+  document.getElementById('back-to-list-build').addEventListener('click', () => show('view-list'));
+  document.getElementById('back-to-list-build').addEventListener('click', () => show('view-list'));
+  // 配置抽屉（新建 / 编辑共用）
+  const cfgMask=document.getElementById('cfg-mask'), cfgDrawer=document.getElementById('cfg-drawer');
+  const cfgTitle=document.getElementById('cfg-title'), cfgIcon=document.getElementById('cfg-icon');
+  const cfgName=document.getElementById('cfg-name');
+  function openCfg(isNew){
+    cfgTitle.textContent = isNew ? '新建打包任务' : '打包配置';
+    cfgIcon.setAttribute('data-lucide', isNew ? 'plus' : 'settings-2');
+    if(isNew){
+      cfgName.value='';
+      document.getElementById('cfg-project').querySelector('span').textContent='选择项目';
+      document.getElementById('cfg-repo').querySelector('span').textContent='选择仓库';
+    }
+    lucide.createIcons();
+    cfgMask.classList.remove('hidden');
+    cfgDrawer.classList.remove('translate-x-full');
+  }
+  function closeCfg(){ cfgMask.classList.add('hidden'); cfgDrawer.classList.add('translate-x-full'); }
+  document.getElementById('cfg-btn').addEventListener('click', () => openCfg(false));
+  document.querySelectorAll('[data-new]').forEach(b => b.addEventListener('click', () => openCfg(true)));
+  document.getElementById('cfg-close').addEventListener('click', closeCfg);
+  document.getElementById('cfg-cancel').addEventListener('click', closeCfg);
+  cfgMask.addEventListener('click', closeCfg);
+  // 项目下拉
+  const projBtn=document.getElementById('proj-btn'), projPanel=document.getElementById('proj-panel');
+  projBtn.addEventListener('click',e=>{e.stopPropagation();projPanel.classList.toggle('hidden');});
+  document.addEventListener('click',e=>{ if(!document.getElementById('proj-filter').contains(e.target)) projPanel.classList.add('hidden'); });
+  let sel=0;
+  document.querySelectorAll('.proj-item').forEach(it=>{
+    it.addEventListener('click',()=>{
+      const chk=it.querySelector('.proj-chk');
+      const on=chk.classList.toggle('bg-indigo-600'); chk.classList.toggle('border-indigo-600');
+      chk.classList.toggle('text-white'); chk.classList.toggle('text-transparent');
+      sel+= on?1:-1;
+      const c=document.getElementById('proj-count');
+      c.textContent = sel===0 ? '全部' : sel+' 项';
+    });
+  });
+  document.getElementById('proj-clear').addEventListener('click',()=>{
+    document.querySelectorAll('.proj-chk').forEach(chk=>{chk.classList.remove('bg-indigo-600','border-indigo-600','text-white');chk.classList.add('text-transparent');});
+    sel=0; document.getElementById('proj-count').textContent='全部';
+  });
+  // 关键字搜索过滤
+  document.getElementById('kw').addEventListener('input',e=>{
+    const kw=e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#job-rows > div').forEach(row=>{
+      const txt=row.innerText.toLowerCase();
+      row.style.display = !kw || txt.includes(kw) ? '' : 'none';
+    });
+  });
+  // 列表分段控件切换
+  document.querySelectorAll('.seg-btn').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.seg-btn').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    document.querySelectorAll('.pk-pane').forEach(p => p.classList.add('hidden'));
+    document.getElementById('pk-'+t.dataset.tab)?.classList.remove('hidden');
+  }));
+  // 日志/产物 Tab 切换
+  document.querySelectorAll('.lt-tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.lt-tab').forEach(x => { x.classList.remove('on'); x.classList.add('text-slate-500'); x.classList.add('border-transparent'); });
+    t.classList.add('on'); t.classList.remove('text-slate-500'); t.classList.remove('border-transparent');
+    document.querySelectorAll('.lt-pane').forEach(p => p.classList.add('hidden'));
+    document.getElementById('lt-'+t.dataset.ltab)?.classList.remove('hidden');
+  }));
+  document.querySelectorAll('.lt-tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.lt-tab').forEach(x => { x.classList.remove('on'); x.classList.add('text-slate-500'); x.style.borderColor='transparent'; });
+    t.classList.add('on'); t.classList.remove('text-slate-500'); t.style.borderColor='#4F46E5';
+    document.querySelectorAll('.lt-pane').forEach(p => p.classList.add('hidden'));
+    document.getElementById('lt-'+t.dataset.ltab)?.classList.remove('hidden');
+  }));
+</script>
+</body>
+</html>

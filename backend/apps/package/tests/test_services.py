@@ -1,9 +1,12 @@
 import pytest
 from rest_framework.test import APIClient
+import subprocess
+import signal
+from pathlib import Path
 
 from apps.account.models import User
 from apps.package.models import PackageConfig, PackageImage, PackageTask
-from apps.package.services import PackageService
+from apps.package.services import PackageService, PackageTaskCanceledError
 from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
@@ -341,3 +344,107 @@ def test_package_failure_does_not_rollback_release(project, repository, user, se
 
     assert release.status == "released"
     assert task.status == "failure"
+
+
+@pytest.mark.django_db
+def test_cancel_running_task_keeps_canceled_status(project, repository, user, settings, tmp_path, monkeypatch):
+    """运行中的任务被取消后，后续执行结果不应覆盖取消状态。"""
+    settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.1",
+        tag_name="VA.1.0.1",
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+    )
+    task = PackageTask.objects.create(
+        release=release,
+        project=project,
+        repository=repository,
+        name="打包任务",
+        mode="local",
+        build_type="web",
+        tag_name=release.tag_name,
+        version=release.version,
+        config_snapshot={"local_script": "echo test"},
+    )
+    monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
+
+    def fake_run_local(task, workspace):
+        PackageService.cancel_task(task)
+
+    monkeypatch.setattr(PackageService, "_run_local", fake_run_local)
+    monkeypatch.setattr(PackageService, "_scan_artifacts", lambda workspace: [{"id": "artifact", "name": "a.zip", "path": "a.zip", "size": 1, "sha256": "x"}])
+
+    PackageService.run_task(task)
+    task.refresh_from_db()
+
+    assert task.status == "canceled"
+    assert task.progress == 0
+    assert task.error_message == ""
+    assert task.artifact_info == []
+
+
+@pytest.mark.django_db
+def test_run_command_terminates_process_group_when_task_canceled(project, repository, user, monkeypatch):
+    """任务取消时应终止整个进程组，避免子进程继续执行。"""
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.2",
+        tag_name="VA.1.0.2",
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+    )
+    task = PackageTask.objects.create(
+        release=release,
+        project=project,
+        repository=repository,
+        name="打包任务",
+        mode="local",
+        build_type="web",
+        tag_name=release.tag_name,
+        version=release.version,
+        log_path="/tmp/package-build.log",
+    )
+
+    class FakeStdout:
+        def fileno(self):
+            return 0
+
+        def readline(self):
+            return ""
+
+    class FakeProcess:
+        pid = 4321
+        stdout = FakeStdout()
+
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+    fake_process = FakeProcess()
+    popen_calls = {}
+    signal_calls = []
+
+    def fake_popen(*args, **kwargs):
+        popen_calls.update(kwargs)
+        return fake_process
+
+    monkeypatch.setattr("apps.package.services.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("apps.package.services.select.select", lambda *args, **kwargs: ([], [], []))
+    monkeypatch.setattr(PackageService, "_ensure_task_not_canceled", lambda task: (_ for _ in ()).throw(PackageTaskCanceledError("任务已被用户取消")))
+    monkeypatch.setattr("apps.package.services.os.killpg", lambda pid, sig: signal_calls.append((pid, sig)))
+
+    with pytest.raises(PackageTaskCanceledError):
+        PackageService._run_command(task, ["echo", "test"], Path("."))
+
+    assert popen_calls["start_new_session"] is True
+    assert signal_calls == [(fake_process.pid, signal.SIGTERM)]

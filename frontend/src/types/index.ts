@@ -367,6 +367,8 @@ export interface PackageTask {
   config_snapshot?: Record<string, unknown>;
   status: PackageTaskStatus;
   status_display?: string;
+  progress?: number;
+  stage_info?: { stage?: string; progress?: number } | Record<string, unknown>;
   artifact_info?: PackageArtifact[];
   duration?: number;
   error_message?: string;

@@ -41,6 +41,7 @@ export const packageApi = {
 
   getConfigs: (params?: PackageConfigListParams) =>
     get<PaginatedData<PackageConfig>>('/packages/configs/', { params }),
+  getConfig: (id: string) => get<PackageConfig>(`/packages/configs/${id}/`),
   createConfig: (data: Partial<PackageConfig>) => post<PackageConfig>('/packages/configs/', data),
   updateConfig: (id: string, data: Partial<PackageConfig>) =>
     put<PackageConfig>(`/packages/configs/${id}/`, data),
@@ -53,6 +54,7 @@ export const packageApi = {
   getTasks: (params?: PackageTaskListParams) =>
     get<PaginatedData<PackageTask>>('/packages/tasks/', { params }),
   getTask: (id: string) => get<PackageTask>(`/packages/tasks/${id}/`),
+  cancelTask: (id: string) => post<PackageTask>(`/packages/tasks/${id}/cancel/`),
   getTaskLog: (id: string) => get<Blob>(`/packages/tasks/${id}/logs/`, { responseType: 'blob' }),
   downloadArtifact: (taskId: string, artifactId: string) =>
     get<Blob>(`/packages/tasks/${taskId}/artifacts/${artifactId}/download/`, { responseType: 'blob' }),

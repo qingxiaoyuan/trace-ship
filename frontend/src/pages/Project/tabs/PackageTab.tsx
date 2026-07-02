@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Form, Input, Modal, Select, Space, Switch, Table, Tag } from 'antd';
-import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { App, Form, Input, Modal, Select, Switch } from 'antd';
+import {
+  Plus,
+  Search,
+  Pencil,
+  Hammer,
+  Trash2,
+  Container,
+  Package as PackageIcon,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
@@ -22,6 +30,16 @@ const buildTypeOptions = [
   { label: 'Qt', value: 'qt' },
 ];
 
+const typeBadgeMap: Record<string, string> = {
+  web: 'border-indigo-200 bg-indigo-50 text-indigo-600',
+  qt: 'border-violet-200 bg-violet-50 text-violet-700',
+};
+
+const modeBadgeMap: Record<string, string> = {
+  simple: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+  local: 'border-amber-200 bg-amber-50 text-amber-700',
+};
+
 export function PackageTab({ projectId }: PackageTabProps) {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
@@ -30,6 +48,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [editing, setEditing] = useState<PackageConfig | null>(null);
   const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
+  const [keyword, setKeyword] = useState('');
   const [form] = Form.useForm<Partial<PackageConfig>>();
   const [triggerForm] = Form.useForm<{ release_id: string }>();
   const mode = (Form.useWatch('mode', form) || 'simple') as PackageMode;
@@ -128,7 +147,18 @@ export function PackageTab({ projectId }: PackageTabProps) {
     onError: () => message.error('触发打包失败'),
   });
 
-  const rows = data?.results || [];
+  const rows = useMemo(() => {
+    const allRows = data?.results || [];
+    if (!keyword.trim()) return allRows;
+    const kw = keyword.toLowerCase();
+    return allRows.filter(
+      (r) =>
+        r.name.toLowerCase().includes(kw) ||
+        (r.repository_name || '').toLowerCase().includes(kw) ||
+        (r.image_name || '').toLowerCase().includes(kw),
+    );
+  }, [data, keyword]);
+
   const repoOptions = (reposData?.results || []).map((repo) => ({ label: repo.name, value: repo.id }));
   const imageOptions = (imagesData?.results || []).map((image) => ({
     label: `${image.name} / ${image.image}`,
@@ -152,50 +182,139 @@ export function PackageTab({ projectId }: PackageTabProps) {
           <div className="text-[15px] font-semibold text-slate-900">打包配置</div>
           <div className="mt-1 text-[12px] text-slate-500">配置发布成功后的自动打包流程</div>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true); }}>
+        <button
+          type="button"
+          onClick={() => { setEditing(null); setOpen(true); }}
+          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
           新增配置
-        </Button>
+        </button>
       </div>
 
-      <Table
-        rowKey="id"
-        loading={isLoading}
-        dataSource={rows}
-        pagination={false}
-        columns={[
-          { title: '名称', dataIndex: 'name', render: (v: string) => <span className="font-medium text-slate-900">{v}</span> },
-          { title: '仓库', dataIndex: 'repository_name' },
-          { title: '模式', dataIndex: 'mode_display' },
-          { title: '类型', dataIndex: 'build_type', render: (v: PackageBuildType) => <Tag color={v === 'web' ? 'blue' : 'purple'}>{v === 'web' ? 'Web' : 'Qt'}</Tag> },
-          { title: '镜像', dataIndex: 'image_name', render: (v: string) => v || '-' },
-          { title: '自动打包', dataIndex: 'auto_package_on_release', render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '开启' : '关闭'}</Tag> },
-          { title: '状态', dataIndex: 'is_active', render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '启用' : '停用'}</Tag> },
-          {
-            title: '操作',
-            render: (_, record) => (
-              <Space>
-                <Button type="text" disabled={!record.is_active} onClick={() => openTrigger(record)}>
-                  手动打包
-                </Button>
-                <Button type="text" icon={<EditOutlined />} onClick={() => { setEditing(record); setOpen(true); }}>
-                  编辑
-                </Button>
-                <Button
-                  type="text"
-                  danger
-                  onClick={() => modal.confirm({
-                    title: '删除打包配置',
-                    content: `确定删除「${record.name}」吗？`,
-                    onOk: () => deleteMutation.mutate(record.id),
-                  })}
-                >
-                  删除
-                </Button>
-              </Space>
-            ),
-          },
-        ]}
-      />
+      <div className="tech-card overflow-hidden rounded-xl">
+        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
+            <input
+              type="text"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜索名称 / 仓库 / 镜像"
+              className="w-[200px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+          <div className="ml-auto text-[12px] text-slate-400">共 {rows.length} 条</div>
+        </div>
+
+        <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+          <div className="col-span-3">配置名称</div>
+          <div className="col-span-2">仓库</div>
+          <div className="col-span-1">模式</div>
+          <div className="col-span-1">类型</div>
+          <div className="col-span-2">镜像</div>
+          <div className="col-span-1 text-center">自动</div>
+          <div className="col-span-1 text-center">状态</div>
+          <div className="col-span-1 text-right">操作</div>
+        </div>
+
+        <div className="divide-y divide-indigo-50/50">
+          {isLoading ? (
+            <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
+          ) : rows.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <PackageIcon className="mx-auto h-10 w-10 text-slate-300" strokeWidth={1.5} />
+              <p className="mt-3 text-[13px] text-slate-400">暂无打包配置</p>
+            </div>
+          ) : (
+            rows.map((config) => (
+              <div
+                key={config.id}
+                className="group grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30"
+              >
+                <div className="col-span-12 flex items-center gap-2.5 md:col-span-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo shrink-0">
+                    <Container className="h-4 w-4" strokeWidth={1.5} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-slate-900 truncate">{config.name}</div>
+                    <div className="font-mono text-[10px] text-slate-400 truncate">
+                      {config.build_path || '.'} → {config.output_path || 'dist'}
+                    </div>
+                  </div>
+                </div>
+                <div className="col-span-6 text-[12px] text-slate-600 truncate md:col-span-2">{config.repository_name || '-'}</div>
+                <div className="col-span-3 md:col-span-1">
+                  <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${modeBadgeMap[config.mode] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                    {config.mode_display || config.mode}
+                  </span>
+                </div>
+                <div className="col-span-3 md:col-span-1">
+                  <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${typeBadgeMap[config.build_type] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                    {config.build_type === 'web' ? 'Web' : 'Qt'}
+                  </span>
+                </div>
+                <div className="col-span-12 text-[12px] text-slate-500 truncate font-mono md:col-span-2">
+                  {config.image_name || (config.mode === 'local' ? '本地脚本' : '-')}
+                </div>
+                <div className="col-span-3 flex items-center justify-center md:col-span-1">
+                  {config.auto_package_on_release ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />开启
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+                      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />关闭
+                    </span>
+                  )}
+                </div>
+                <div className="col-span-3 flex items-center justify-center md:col-span-1">
+                  {config.is_active ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />启用
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+                      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />停用
+                    </span>
+                  )}
+                </div>
+                <div className="col-span-6 flex items-center justify-end gap-1 md:col-span-1">
+                  <button
+                    type="button"
+                    disabled={!config.is_active}
+                    onClick={() => openTrigger(config)}
+                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-100 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="立即打包"
+                  >
+                    <Hammer className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditing(config); setOpen(true); }}
+                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-100 hover:text-indigo-600"
+                    title="编辑"
+                  >
+                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => modal.confirm({
+                      title: '删除打包配置',
+                      content: `确定删除「${config.name}」吗？`,
+                      onOk: () => deleteMutation.mutate(config.id),
+                    })}
+                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-100 hover:text-rose-600"
+                    title="删除"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
       <Modal
         title={editing ? '编辑打包配置' : '新增打包配置'}
@@ -222,11 +341,11 @@ export function PackageTab({ projectId }: PackageTabProps) {
             </Form.Item>
           </div>
           {mode === 'simple' ? (
-            <Form.Item name="image" label="打包镜像" rules={[{ required: true }]}>
-              <Select options={imageOptions} placeholder="按打包类型选择镜像" />
+            <Form.Item name="image" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
+              <Select options={imageOptions} placeholder="按打包类型选择镜像" showSearch optionFilterProp="label" />
             </Form.Item>
           ) : (
-            <Form.Item name="local_script" label="本地打包脚本" rules={[{ required: true }]}>
+            <Form.Item name="local_script" label="本地打包脚本" rules={[{ required: true, message: '请填写打包脚本' }]}>
               <Input.TextArea rows={6} placeholder="npm ci && npm run build && cp -r dist/* $ARTIFACTS_DIR/" />
             </Form.Item>
           )}
@@ -256,7 +375,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
       </Modal>
 
       <Modal
-        title="手动打包"
+        title="立即打包"
         open={triggerOpen}
         onCancel={() => {
           setTriggerOpen(false);

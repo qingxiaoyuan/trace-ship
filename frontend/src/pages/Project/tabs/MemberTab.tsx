@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Table, Button, Space, Avatar, App, Modal, Form, Select } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { App, Modal, Form, Select } from 'antd';
+import { Plus, Search, User, Trash2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { accountApi, type AccountUser } from '@/api/account';
 import {
   projectMemberApi,
   type ProjectMember,
   type ProjectMemberRole,
-  type ProjectMemberUser,
 } from '@/api/projectMember';
 import { getAvatarColor } from '@/utils/avatar';
 
@@ -19,7 +19,6 @@ const roleMap: Record<ProjectMemberRole, string> = {
   viewer: '只读人员',
 };
 
-// 角色选项在模块级缓存，避免每次渲染重新创建
 const roleOptions = Object.entries(roleMap).map(([value, label]) => ({
   value,
   label,
@@ -33,6 +32,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
   const [form] = Form.useForm();
 
   const { data, isLoading } = useQuery({
@@ -106,102 +106,117 @@ export function MemberTab({ projectId }: MemberTabProps) {
     [usersData]
   );
 
-  const columns = useMemo(
-    () => [
-      {
-        title: '成员',
-        dataIndex: 'user',
-        key: 'user',
-        render: (user: ProjectMemberUser) => (
-          <Space>
-            <Avatar
-              size="small"
-              style={{
-                backgroundColor: getAvatarColor(user.nickname || user.username),
-                color: '#fff',
-              }}
-            >
-              {(user.nickname || user.username).charAt(0)}
-            </Avatar>
-            {user.nickname || user.username}
-          </Space>
-        ),
-      },
-      {
-        title: '用户名',
-        dataIndex: 'user',
-        key: 'username',
-        render: (user: ProjectMemberUser) => user.username,
-      },
-      {
-        title: '部门',
-        dataIndex: 'user',
-        key: 'department',
-        render: (user: ProjectMemberUser) => user.department || '-',
-      },
-      {
-        title: '角色',
-        dataIndex: 'role',
-        key: 'role',
-        render: (role: ProjectMemberRole, record: ProjectMember) => (
-          <Select
-            value={role}
-            options={roleOptions}
-            onChange={(newRole) =>
-              updateMutation.mutate({ memberId: record.id, role: newRole })
-            }
-            loading={
-              updateMutation.isPending &&
-              updateMutation.variables?.memberId === record.id
-            }
-            style={{ width: 140 }}
-          />
-        ),
-      },
-      {
-        title: '加入时间',
-        dataIndex: 'created_at',
-        key: 'created_at',
-        render: (text: string) => new Date(text).toLocaleString(),
-      },
-      {
-        title: '操作',
-        key: 'action',
-        render: (_: unknown, record: ProjectMember) => (
-          <Button
-            type="text"
-            danger
-            loading={
-              removeMutation.isPending && removeMutation.variables === record.id
-            }
-            onClick={() => handleRemove(record)}
-          >
-            移除
-          </Button>
-        ),
-      },
-    ],
-    [updateMutation, removeMutation, handleRemove]
-  );
+  const filteredMembers = useMemo(() => {
+    const members = data?.results || [];
+    if (!keyword.trim()) return members;
+    const lower = keyword.toLowerCase();
+    return members.filter((m) => {
+      const name = (m.user.nickname || m.user.username).toLowerCase();
+      const username = m.user.username.toLowerCase();
+      const department = (m.user.department || '').toLowerCase();
+      return name.includes(lower) || username.includes(lower) || department.includes(lower);
+    });
+  }, [data, keyword]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
+    <div className="space-y-5 page-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">项目成员</h1>
+          <p className="mt-1 text-[13px] text-slate-500">管理项目成员、角色与权限</p>
+        </div>
+        <button
+          type="button"
           onClick={() => setIsModalOpen(true)}
+          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
         >
+          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
           添加成员
-        </Button>
+        </button>
       </div>
-      <Table
-        rowKey="id"
-        dataSource={data?.results || []}
-        loading={isLoading}
-        pagination={false}
-        columns={columns}
-      />
+
+      <div className="tech-card overflow-hidden rounded-xl">
+        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
+            <input
+              type="text"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜索成员 / 用户名 / 部门"
+              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+          <div className="ml-auto text-[12px] text-slate-400">共 {filteredMembers.length} 位成员</div>
+        </div>
+
+        <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+          <div className="col-span-3">成员</div>
+          <div className="col-span-2">用户名</div>
+          <div className="col-span-2">部门</div>
+          <div className="col-span-2">角色</div>
+          <div className="col-span-2">加入时间</div>
+          <div className="col-span-1 text-right">操作</div>
+        </div>
+
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
+          {isLoading ? (
+            <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
+          ) : filteredMembers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center px-5 py-12 text-[13px] text-slate-400">
+              <User className="mb-2 h-8 w-8 text-slate-300" strokeWidth={1.5} />
+              暂无成员
+            </div>
+          ) : (
+            filteredMembers.map((member) => {
+              const name = member.user.nickname || member.user.username;
+              const initial = name.charAt(0);
+              return (
+                <div
+                  key={member.id}
+                  className="grid grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30"
+                >
+                  <div className="col-span-3 flex items-center gap-2">
+                    <div
+                      className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                      style={{ background: getAvatarColor(name) }}
+                    >
+                      {initial}
+                    </div>
+                    <span className="text-[13px] font-medium text-slate-900">{name}</span>
+                  </div>
+                  <div className="col-span-2 text-[12px] text-slate-600">{member.user.username}</div>
+                  <div className="col-span-2 text-[12px] text-slate-600">{member.user.department || '-'}</div>
+                  <div className="col-span-2">
+                    <Select
+                      value={member.role}
+                      options={roleOptions}
+                      onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
+                      loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
+                      style={{ width: 140 }}
+                    />
+                  </div>
+                  <div className="col-span-2 text-[12px] text-slate-600">
+                    {dayjs(member.created_at).format('YYYY-MM-DD HH:mm')}
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={removeMutation.isPending && removeMutation.variables === member.id}
+                      onClick={() => handleRemove(member)}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40"
+                      title="移除"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       <Modal
         title="添加成员"
         open={isModalOpen}
@@ -212,11 +227,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
         onOk={() => form.submit()}
         okButtonProps={{ loading: addMutation.isPending }}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={(values) => addMutation.mutate(values)}
-        >
+        <Form form={form} layout="vertical" onFinish={(values) => addMutation.mutate(values)}>
           <Form.Item
             name="user_id"
             label="选择用户"

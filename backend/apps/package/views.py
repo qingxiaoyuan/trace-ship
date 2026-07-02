@@ -103,7 +103,19 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
+        if self.action == "cancel":
+            return [IsAuthenticated(), IsProjectManager()]
         return [IsAuthenticated(), IsProjectMember()]
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        """取消排队中或进行中的打包任务。"""
+        task = self.get_object()
+        if task.is_finished:
+            return error_response(40000, "任务已结束，无法取消", status_code=status.HTTP_400_BAD_REQUEST)
+        PackageService.cancel_task(task)
+        data = PackageTaskSerializer(task, context={"request": request}).data
+        return success_response(data, "任务已取消")
 
     @action(detail=True, methods=["get"], url_path="logs")
     def logs(self, request, pk=None):

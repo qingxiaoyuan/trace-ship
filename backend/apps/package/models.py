@@ -155,6 +155,8 @@ class PackageTask(models.Model):
     commit_hash = models.CharField(max_length=100, blank=True, verbose_name="提交哈希")
     config_snapshot = models.JSONField(default=dict, blank=True, verbose_name="配置快照")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued", verbose_name="状态")
+    progress = models.IntegerField(default=0, verbose_name="进度百分比")
+    stage_info = models.JSONField(default=dict, blank=True, verbose_name="阶段信息")
     workspace_path = models.CharField(max_length=1000, blank=True, verbose_name="工作区路径")
     log_path = models.CharField(max_length=1000, blank=True, verbose_name="日志路径")
     artifact_info = models.JSONField(default=list, blank=True, verbose_name="产物信息")

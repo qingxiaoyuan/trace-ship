@@ -1,7 +1,17 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Table, Button, Space, App } from 'antd';
-import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { App } from 'antd';
+import {
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  RefreshCw,
+  PlayCircle,
+  Tag,
+  GitFork,
+} from 'lucide-react';
+import dayjs from 'dayjs';
 import { repositoryApi } from '@/api/repository';
 import { StatusTag } from '@/components/StatusTag';
 import { RepositoryModal } from '@/pages/Repository/modals/RepositoryModal';
@@ -27,6 +37,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
   const [editingRepo, setEditingRepo] = useState<Repository | null>(null);
   const [tagRepo, setTagRepo] = useState<Repository | null>(null);
   const [tagModalOpen, setTagModalOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['repositories', projectId],
@@ -117,129 +128,168 @@ export function RepoTab({ projectId }: RepoTabProps) {
     }
   };
 
-  const columns = [
-    {
-      title: '仓库名称',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string) => <span className="font-semibold text-slate-900">{text}</span>,
-    },
-    {
-      title: '类型',
-      key: 'type',
-      render: (_: unknown, record: Repository) => {
-        const config = vendorMap[record.vendor] || {
-          label: record.vendor?.toUpperCase() || record.repo_type,
-          status: 'neutral' as const,
-        };
-        return <StatusTag status={config.status}>{config.label}</StatusTag>;
-      },
-    },
-    {
-      title: '仓库地址',
-      dataIndex: 'url',
-      key: 'url',
-      render: (url?: string) =>
-        url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-600 hover:underline"
-          >
-            {url}
-          </a>
-        ) : (
-          '-'
-        ),
-    },
-    {
-      title: '默认分支',
-      dataIndex: 'default_branch',
-      key: 'default_branch',
-      render: (text?: string) => <span className="font-mono text-xs">{text || '-'}</span>,
-    },
-    {
-      title: '凭证模式',
-      dataIndex: 'credential_mode',
-      key: 'credential_mode',
-      render: (text?: string) => text || '-',
-    },
-    {
-      title: '健康状态',
-      dataIndex: 'health_status',
-      key: 'health_status',
-      render: (status?: string) => {
-        const isHealthy = status === 'healthy';
-        return (
-          <StatusTag status={isHealthy ? 'success' : status === 'unhealthy' ? 'danger' : 'neutral'}>
-            {isHealthy ? '正常' : status === 'unhealthy' ? '异常' : status || '-'}
-          </StatusTag>
-        );
-      },
-    },
-    {
-      title: '最后同步',
-      dataIndex: 'last_sync_at',
-      key: 'last_sync_at',
-      render: (text?: string) => (text ? new Date(text).toLocaleString() : '-'),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (_: unknown, record: Repository) => (
-        <Space>
-          <Button
-            type="text"
-            loading={testMutation.isPending && testMutation.variables === record.id}
-            onClick={() => testMutation.mutate(record.id)}
-          >
-            测试
-          </Button>
-          <Button
-            type="text"
-            loading={syncMutation.isPending && syncMutation.variables === record.id}
-            onClick={() => syncMutation.mutate(record.id)}
-          >
-            同步提交
-          </Button>
-          <Button type="text" onClick={() => handleCreateTag(record)}>
-            新建 Tag
-          </Button>
-          <Button type="text" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-            编辑
-          </Button>
-          <Button
-            type="text"
-            danger
-            loading={deleteMutation.isPending && deleteMutation.variables === record.id}
-            onClick={() => handleDelete(record)}
-          >
-            删除
-          </Button>
-        </Space>
-      ),
-    },
-  ];
+  const repositories = data?.results || [];
+  const filteredRepositories = repositories.filter((r) => {
+    const lowerKeyword = keyword.trim().toLowerCase();
+    if (!lowerKeyword) return true;
+    return (
+      r.name?.toLowerCase().includes(lowerKeyword) ||
+      r.vendor?.toLowerCase().includes(lowerKeyword)
+    );
+  });
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
+    <div className="space-y-5 page-fade-in">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">仓库管理</h1>
+          <p className="mt-1 text-[13px] text-slate-500">管理项目下的代码仓库、同步状态与访问凭证</p>
+        </div>
+        <button
+          type="button"
           onClick={handleAdd}
+          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
         >
+          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
           添加仓库
-        </Button>
+        </button>
       </div>
-      <Table
-        rowKey="id"
-        dataSource={data?.results || []}
-        loading={isLoading}
-        pagination={false}
-        columns={columns}
-      />
+
+      <div className="tech-card overflow-hidden rounded-xl">
+        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
+            <input
+              type="text"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜索仓库名称 / 类型"
+              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+          <div className="ml-auto text-[12px] text-slate-400">共 {filteredRepositories.length} 个仓库</div>
+        </div>
+
+        <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+          <div className="col-span-3">仓库名称</div>
+          <div className="col-span-1">类型</div>
+          <div className="col-span-3">仓库地址</div>
+          <div className="col-span-1">默认分支</div>
+          <div className="col-span-1">凭证</div>
+          <div className="col-span-1">健康状态</div>
+          <div className="col-span-1">最后同步</div>
+          <div className="col-span-1 text-right">操作</div>
+        </div>
+
+        <div className="divide-y divide-indigo-50/50">
+          {isLoading ? (
+            <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
+          ) : filteredRepositories.length === 0 ? (
+            <div className="flex flex-col items-center justify-center px-5 py-12 text-[13px] text-slate-400">
+              <GitFork className="mb-2 h-8 w-8 text-slate-300" strokeWidth={1.5} />
+              暂无仓库
+            </div>
+          ) : (
+            filteredRepositories.map((record) => {
+              const vendorConfig = vendorMap[record.vendor] || {
+                label: record.vendor?.toUpperCase() || record.repo_type,
+                status: 'neutral' as const,
+              };
+              const isHealthy = record.health_status === 'healthy';
+
+              return (
+                <div
+                  key={record.id}
+                  className="grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30"
+                >
+                  <div className="col-span-3 flex items-center gap-2">
+                    <GitFork className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
+                    <span className="truncate text-[13px] font-semibold text-slate-900">{record.name}</span>
+                  </div>
+                  <div className="col-span-1">
+                    <StatusTag status={vendorConfig.status}>{vendorConfig.label}</StatusTag>
+                  </div>
+                  <div className="col-span-3 truncate text-[13px]">
+                    {record.url ? (
+                      <a
+                        href={record.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                        title={record.url}
+                      >
+                        {record.url}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </div>
+                  <div className="col-span-1 font-mono text-[12px] text-slate-600">
+                    {record.default_branch || '-'}
+                  </div>
+                  <div className="col-span-1 text-[12px] text-slate-600">
+                    {record.credential_mode || '-'}
+                  </div>
+                  <div className="col-span-1">
+                    <StatusTag status={isHealthy ? 'success' : record.health_status === 'unhealthy' ? 'danger' : 'neutral'}>
+                      {isHealthy ? '正常' : record.health_status === 'unhealthy' ? '异常' : record.health_status || '-'}
+                    </StatusTag>
+                  </div>
+                  <div className="col-span-1 text-[12px] text-slate-500">
+                    {record.last_sync_at ? dayjs(record.last_sync_at).format('YYYY-MM-DD HH:mm') : '-'}
+                  </div>
+                  <div className="col-span-1 flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => testMutation.mutate(record.id)}
+                      disabled={testMutation.isPending && testMutation.variables === record.id}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                      title="测试"
+                    >
+                      <PlayCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => syncMutation.mutate(record.id)}
+                      disabled={syncMutation.isPending && syncMutation.variables === record.id}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                      title="同步提交"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCreateTag(record)}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                      title="新建 Tag"
+                    >
+                      <Tag className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(record)}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                      title="编辑"
+                    >
+                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(record)}
+                      disabled={deleteMutation.isPending && deleteMutation.variables === record.id}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                      title="删除"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       <RepositoryModal
         open={modalOpen}
         repo={editingRepo}
