@@ -23,7 +23,11 @@ def user = hudsonRealm.getUser(adminUser)
 if (user == null) {
     user = hudsonRealm.createAccount(adminUser, adminPassword)
 } else {
-    user.addProperty(new hudson.security.HudsonPrivateSecurityRealm.Details(adminPassword))
+    def oldDetails = user.getProperty(hudson.security.HudsonPrivateSecurityRealm.Details.class)
+    if (oldDetails != null) {
+        user.getProperties().remove(oldDetails)
+    }
+    user.addProperty(hudson.security.HudsonPrivateSecurityRealm.Details.fromPlainPassword(adminPassword))
 }
 user.save()
 
