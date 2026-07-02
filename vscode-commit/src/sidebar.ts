@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import { exec, execSync } from "child_process";
+import { exec } from "child_process";
 import { promisify } from "util";
+import { autoCorrectCommit, validateCommit } from "./commitValidator";
 
 const execAsync = promisify(exec);
 
@@ -45,7 +46,7 @@ interface RepoChange {
   dir: string;
   fullPath: string;
   isStaged: boolean;
-  isImage: boolean; // 是否为图片文件，决定是否启用图片预览
+  isImage: boolean; // 是否为图片文件，用于在列表中显示图片图标
   originalFullPath?: string; // 重命名文件的原路径，打开 diff 时需要
 }
 
@@ -129,9 +130,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 message.status,
                 message.originalFilepath,
               );
-              break;
-            case "previewImage":
-              await this.previewImage(message.filepath, message.status);
               break;
             case "stageFile":
               await this.stageFile(message.filepath);
@@ -368,7 +366,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         dir,
         fullPath,
         isStaged,
-        isImage: this._isImageFile(filename),
+        isImage: this._isPreviewableImageFile(filename),
         originalFullPath: change.originalUri?.fsPath,
       };
     };
@@ -607,10 +605,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 判断一个 diff 块是否属于二进制文件（git 标记为 Binary files differ 或包含 binary patch）。
+   * VS Code 内置图片预览编辑器支持的常见图片类型。
+   */
+  private _isPreviewableImageFile(filename: string): boolean {
+    const imageExts = new Set([
+      "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "svg",
+      "tiff", "tif",
+    ]);
+    const ext = filename.split(".").pop()?.toLowerCase() || "";
+    return imageExts.has(ext);
+  }
+
+  /**
+   * 判断一个 diff 块是否属于二进制文件。
+   * git 对二进制文件输出形如 "Binary files /dev/null and b/x.png differ"，
+   * 文件路径夹在 "Binary files" 与 "differ" 之间，因此用 .* 跨越路径匹配。
    */
   private _isBinaryDiffBlock(diffBlock: string): boolean {
-    return /Binary files differ|GIT binary patch/i.test(diffBlock);
+    return /Binary files.*differ|GIT binary patch/i.test(diffBlock);
+  }
+
+  /**
+   * 从 diff 块中提取文件名（优先取 +++ b/<path>，删除文件回退到 --- a/<path>）。
+   * 用于按扩展名跳过图片等不希望进入 AI prompt 的文件。
+   */
+  private _extractFilenameFromDiffBlock(diffBlock: string): string | undefined {
+    const m =
+      diffBlock.match(/^\+\+\+ b\/(.+)$/m) ||
+      diffBlock.match(/^--- a\/(.+)$/m);
+    if (!m) {
+      return undefined;
+    }
+    const p = m[1].trim().replace(/^"|"$/g, "");
+    return path.basename(p);
   }
 
   private async openFileInDiffView(
@@ -638,15 +665,79 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     const Status = this._getStatusEnum(gitApi);
+    const rootPath = repo.rootUri.fsPath;
 
-    // 使用 VS Code 内置 Git 扩展的 toGitUri 构造 git URI；
-    // 手动构造的 git URI 缺少 authority 等字段，VS Code 会把它识别为普通文件，
-    // 导致二进制图片被当作文本打开而报错。
-    const makeGitUri = (targetUri: vscode.Uri, ref: string): vscode.Uri => {
-      if (typeof gitApi.toGitUri !== "function") {
-        throw new Error("gitApi.toGitUri 不可用");
+    // 优先使用 VS Code 内置 Git 扩展的 toGitUri 构造 git scheme URI，兼容性和准确性更好
+    const makeGitUri = (targetUri: vscode.Uri, ref: string): vscode.Uri =>
+      typeof gitApi.toGitUri === "function"
+        ? gitApi.toGitUri(targetUri, ref)
+        : targetUri.with({
+            scheme: "git",
+            query: JSON.stringify({ path: targetUri.fsPath, ref }),
+          });
+
+    /**
+     * 尝试打开 diff 视图；若 Git 历史版本不存在（如新文件、被忽略文件等），
+     * 则静默退化为直接打开工作区版本，避免弹窗报错。
+     */
+    const tryOpenDiff = async (
+      leftUri: vscode.Uri,
+      rightUri: vscode.Uri,
+      title: string,
+    ) => {
+      try {
+        // 解析 git URI query 中的绝对路径，计算相对仓库根目录的路径
+        const query = JSON.parse(leftUri.query || "{}");
+        const absPath = query.path || leftUri.fsPath;
+        const relPath = path.relative(rootPath, absPath).replace(/\\/g, "/");
+        if (relPath) {
+          // 先用 git cat-file 检查该文件在指定 ref 中是否存在
+          const escaped = relPath.replace(/"/g, '\\"');
+          await execAsync(`git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`, {
+            maxBuffer: 10 * 1024 * 1024,
+          });
+        }
+        await vscode.commands.executeCommand(
+          "vscode.diff",
+          leftUri,
+          rightUri,
+          title,
+          { preview: true },
+        );
+      } catch {
+        // 直接打开工作区版本；使用 vscode.open 命令可兼容文本与二进制文件（如图片）
+        await vscode.commands.executeCommand("vscode.open", rightUri, {
+          preview: true,
+        });
       }
-      return gitApi.toGitUri(targetUri, ref);
+    };
+
+    /**
+     * 尝试打开单个 Git URI（用于已删除文件打开 HEAD 版本）；
+     * 若 HEAD 中不存在，则显示提示信息。
+     */
+    const tryOpenGitFile = async (
+      gitUri: vscode.Uri,
+      notFoundMessage: string,
+    ) => {
+      try {
+        const query = JSON.parse(gitUri.query || "{}");
+        const absPath = query.path || gitUri.fsPath;
+        const relPath = path
+          .relative(rootPath, absPath)
+          .replace(/\\/g, "/");
+        if (relPath) {
+          const escaped = relPath.replace(/"/g, '\\"');
+          await execAsync(`git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`, {
+            maxBuffer: 10 * 1024 * 1024,
+          });
+        }
+        await vscode.commands.executeCommand("vscode.open", gitUri, {
+          preview: true,
+        });
+      } catch {
+        vscode.window.showInformationMessage(notFoundMessage);
+      }
     };
 
     try {
@@ -666,12 +757,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         return;
       }
 
-      // 已删除文件：打开 HEAD 版本
+      // 已删除文件：打开 HEAD 版本；若 HEAD 中不存在则给出提示
       if (status === Status.DELETED || status === Status.INDEX_DELETED) {
-        const gitUri = makeGitUri(uri, "HEAD");
-        await vscode.commands.executeCommand("vscode.open", gitUri, {
-          preview: true,
-        });
+        await tryOpenGitFile(
+          makeGitUri(uri, "HEAD"),
+          "该文件在 Git 历史版本中不存在，无法预览删除前的内容",
+        );
         return;
       }
 
@@ -684,147 +775,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const oldPath = originalFilepath || filepath;
         const oldUri = vscode.Uri.file(oldPath);
         const title = `${filename} (Renamed)`;
-        await vscode.commands.executeCommand(
-          "vscode.diff",
-          makeGitUri(oldUri, "HEAD"),
-          uri,
-          title,
-          { preview: true },
-        );
+        await tryOpenDiff(makeGitUri(oldUri, "HEAD"), uri, title);
         return;
       }
 
-      // 默认：已修改文件打开 diff 视图（含二进制图片，VS Code 会显示二进制 diff）
+      // 默认：已修改文件打开 diff 视图（文本文件）
       const title = `${filename} (Working Tree)`;
-      await vscode.commands.executeCommand(
-        "vscode.diff",
-        makeGitUri(uri, "HEAD"),
-        uri,
-        title,
-        { preview: true },
-      );
+      await tryOpenDiff(makeGitUri(uri, "HEAD"), uri, title);
     } catch (err: any) {
       console.error("[openFileInDiffView] 打开文件失败:", err);
-      // 最终兜底：直接打开工作区版本
-      try {
-        await vscode.commands.executeCommand("vscode.open", uri, {
-          preview: true,
-        });
-      } catch {}
+      const rawMessage = err?.message || "";
+      const isBinaryTextError = /binary|cannot be opened as text/i.test(rawMessage);
+      const hint = isBinaryTextError
+        ? `VS Code 把 ${filename} 当作文本文件打开失败。请检查：1) 该文件是否真的是有效图片；2) settings.json 中 workbench.editorAssociations 是否把 *.png 绑定到了文本编辑器。`
+        : rawMessage || `无法打开文件 ${filename}`;
+      vscode.window.showErrorMessage(`[Commit] ${hint}`);
     }
-  }
-
-  private async previewImage(filepath: string, status: GitStatus) {
-    if (!this._view) {
-      return;
-    }
-
-    const gitApi = await this._getGitApi().catch(() => null);
-    if (!gitApi) {
-      this._view.webview.postMessage({
-        command: "error",
-        error: "Git 扩展未启用，无法预览图片",
-      });
-      return;
-    }
-
-    const repo = (gitApi.repositories || []).find((r: any) => {
-      const root = r.rootUri?.fsPath || "";
-      return filepath === root || filepath.startsWith(root + path.sep);
-    });
-    if (!repo) {
-      this._view.webview.postMessage({
-        command: "error",
-        error: "未找到文件所属的 Git 仓库",
-      });
-      return;
-    }
-
-    const Status = this._getStatusEnum(gitApi);
-    const filename = path.basename(filepath);
-    const ext = filename.split(".").pop()?.toLowerCase() || "";
-    const mime = this._getImageMimeType(ext);
-
-    try {
-      let dataUrl: string;
-      let headDataUrl: string | undefined;
-      const isDeleted =
-        status === Status.DELETED || status === Status.INDEX_DELETED;
-
-      if (isDeleted) {
-        // 已删除图片：显示 HEAD 版本
-        dataUrl = await this._readGitHeadImage(repo, filepath, mime);
-      } else {
-        // 其他状态：显示工作区版本
-        const buffer = fs.readFileSync(filepath);
-        dataUrl = `data:${mime};base64,${buffer.toString("base64")}`;
-
-        // 修改状态额外读取 HEAD 版本，用于对比
-        if (
-          status === Status.MODIFIED ||
-          status === Status.INDEX_MODIFIED
-        ) {
-          try {
-            headDataUrl = await this._readGitHeadImage(repo, filepath, mime);
-          } catch {
-            headDataUrl = undefined;
-          }
-        }
-      }
-
-      this._view.webview.postMessage({
-        command: "imagePreview",
-        filename,
-        statusLetter: this._statusToLetter(status, Status),
-        statusColor: this._statusToColor(status, Status),
-        isDeleted,
-        dataUrl,
-        headDataUrl,
-      });
-    } catch (err: any) {
-      this._view.webview.postMessage({
-        command: "error",
-        error: err?.message || `无法预览图片 ${filename}`,
-      });
-    }
-  }
-
-  /**
-   * 根据扩展名返回图片 MIME 类型
-   */
-  private _getImageMimeType(ext: string): string {
-    const map: Record<string, string> = {
-      png: "image/png",
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      gif: "image/gif",
-      bmp: "image/bmp",
-      webp: "image/webp",
-      ico: "image/x-icon",
-      svg: "image/svg+xml",
-      tiff: "image/tiff",
-      tif: "image/tiff",
-      heic: "image/heic",
-      heif: "image/heif",
-    };
-    return map[ext] || "image/png";
-  }
-
-  /**
-   * 读取 Git HEAD 中指定路径的图片文件，返回 base64 data URL
-   */
-  private async _readGitHeadImage(
-    repo: any,
-    filepath: string,
-    mime: string,
-  ): Promise<string> {
-    const root: string = repo.rootUri.fsPath;
-    const rel = path.relative(root, filepath).replace(/\\/g, "/");
-    const buffer = execSync(`git -C "${root}" show HEAD:"${rel}"`, {
-      encoding: "buffer",
-      maxBuffer: 20 * 1024 * 1024,
-    });
-    return `data:${mime};base64,${buffer.toString("base64")}`;
   }
 
   private async stageFile(filepath: string) {
@@ -1068,9 +1034,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
 
       // 两阶段生成：先按文件生成一句话摘要，再汇总提炼最终 commit，避免单 prompt 过长
-      const fileDiffs = this._splitDiffByFile(diffToUse).filter(
-        (d) => !this._isBinaryDiffBlock(d),
-      );
+      // 过滤掉二进制文件和图片（图片不进入 AI prompt，仅由文件名参与统计）
+      const fileDiffs = this._splitDiffByFile(diffToUse).filter((d) => {
+        if (this._isBinaryDiffBlock(d)) {
+          return false;
+        }
+        const name = this._extractFilenameFromDiffBlock(d);
+        return !name || !this._isImageFile(name);
+      });
       const summaries: string[] = [];
       for (const fileDiff of fileDiffs) {
         if (!fileDiff.trim()) {
@@ -1100,11 +1071,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         throw new Error(`AI 返回内容为空，请检查 API 端点/模型/密钥配置`);
       }
 
-      this._currentCommit = commitText;
+      // 自动校正并校验最终 commit 信息，防止 AI 输出跑偏
+      const { corrected, ok, errors, warnings } = validateCommit(commitText);
+      const finalCommit = corrected;
+      this._currentCommit = finalCommit;
+
       this._view.webview.postMessage({
         command: "commitGenerated",
-        commit: commitText,
+        commit: finalCommit,
       });
+
+      if (!ok) {
+        this._view.webview.postMessage({
+          command: "error",
+          error: `提交信息已自动校正，但仍存在不符合规范的问题：${errors.join(
+            "；",
+          )}。请手动修改后再提交。`,
+        });
+      } else if (warnings.length > 0) {
+        this._view.webview.postMessage({
+          command: "status",
+          message: `已生成，但存在以下建议修改：${warnings.join("；")}`,
+          type: "info",
+        });
+      }
     } catch (error: any) {
       this._view.webview.postMessage({
         command: "error",
@@ -1180,7 +1170,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       data?.output?.trim() ||
       "";
 
-    return this._stripThinkingBlocks(text);
+    return autoCorrectCommit(text);
   }
 
   /**
@@ -1246,58 +1236,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     // 若条目数过多，只保留有价值的（去重后最多 8 条）
     return featFixLines.slice(0, 8).join("\n");
-  }
-
-  /**
-   * 后置清洗：只保留最终 commit 结论，剔除 AI 思考过程、解释说明、前缀后缀
-   * 用字符串扫描替代正则回溯，避免长文本卡顿
-   */
-  private _stripThinkingBlocks(text: string): string {
-    let result = text;
-    const tags = ["think", "thinking", "reasoning", "analysis", "reflection"];
-
-    for (const tag of tags) {
-      const open = `<${tag}`;
-      const close = `</${tag}>`;
-      let safety = 0;
-      while (safety++ < 100) {
-        const start = result.indexOf(open);
-        if (start === -1) {
-          break;
-        }
-        const tagEnd = result.indexOf(">", start);
-        if (tagEnd === -1) {
-          break;
-        }
-        const end = result.indexOf(close, tagEnd + 1);
-        if (end === -1) {
-          break;
-        }
-        result = result.slice(0, start) + result.slice(end + close.length);
-      }
-    }
-
-    // 清洗：移除标题行 "更新内容：" 和 "[A为功能增加 F为BUG修复]："
-    const markers = [
-      "更新内容：",
-      "[A为功能增加 F为BUG修复]：",
-      "[A 为功能增加 F 为 BUG 修复]：",
-    ];
-    for (const marker of markers) {
-      const idx = result.indexOf(marker);
-      if (idx !== -1) {
-        result = result.slice(0, idx) + result.slice(idx + marker.length);
-      }
-    }
-
-    // 清理 "思考："、"分析：" 等中文前缀行，以及空行首尾
-    return result
-      .split("\n")
-      .filter(
-        (line) => !/^\s*(思考|分析|推理|备注|说明|总结)[：:]\s*/.test(line),
-      )
-      .join("\n")
-      .trim();
   }
 
   /**
@@ -1380,22 +1318,24 @@ ${joined}
 或
 <fix> F 一句话描述修复的BUG
 
-情况二：同时存在 A 和 F，或存在多个不同主题时，使用复杂提交。必须先精炼出 1-3 个主题，再分条：
-<feat> 提交了xxx
+情况二：同时存在 A 和 F，或存在多个不同主题时，使用复杂提交。整体只输出一个标题行，标题按主要主题选择 <feat> 或 <fix>；标题下方用从 1 开始的连续编号列出条目：
+<feat> 一句话概括本次提交主题
 
 1. A 具体功能描述
 2. F 具体修复描述
-3. A/F ...（按实际主题连续编号）
+3. A 具体功能描述
+4. A/F ...（按实际内容连续编号到末尾，序号不得重置）
 
 ## 生成规则（严禁违反）：
 1. 直接输出最终 commit 内容，禁止先写 "思考"、"分析"、"推理"、"总结" 等任何说明。
-2. 必须先归纳主题，再输出条目。不要简单把每个文件摘要直接转成一条 commit 条目。
-3. 相同或相关的摘要要合并成一条，不要重复罗列文件。
-4. 同时存在 A 和 F 时，严禁使用单行 "A | F" 格式，必须使用复杂提交的序号列表。
-5. 只输出最终 commit 内容，禁止输出 "更新内容："、"[A为功能增加 F为BUG修复]：" 等标题行。
-6. 禁止输出思考过程、分析、解释、总结、备注、"根据 diff"、"以下是"等任何前缀或后缀。
-7. 禁止用三个反引号代码块包裹输出。
-8. 每个描述必须简洁、具体、面向用户价值，不写 "优化"、"调整" 等模糊词汇。
+2. 复杂提交必须且只能输出一个标题行（<feat> 或 <fix>），严禁出现两个或以上 <feat>/<fix> 标题；严禁按 A/F 分组各起一个标题块。
+3. 标题行下方为单一序号列表，序号从 1 开始连续递增到末尾，禁止中途重置、跳号或分组重新计数。
+4. 相同或相关的摘要要合并成一条，不要简单把每个文件摘要直接转成一条，也不要重复罗列文件。
+5. 同时存在 A 和 F 时，严禁使用单行 "A | F" 格式，必须使用复杂提交的序号列表。
+6. 只输出最终 commit 内容，禁止输出 "更新内容："、"[A为功能增加 F为BUG修复]：" 等标题行。
+7. 禁止输出思考过程、分析、解释、总结、备注、"根据 diff"、"以下是"等任何前缀或后缀。
+8. 禁止用三个反引号代码块包裹输出。
+9. 每个描述必须简洁、具体、面向用户价值，不写 "优化"、"调整" 等模糊词汇。
 9. 单行提交必须保留 A 或 F 字母标识，例如 "<feat> A ..." 或 "<fix> F ..."。
 
 请直接生成最终 commit 信息。`;
@@ -1871,127 +1811,6 @@ ${joined}
       flex-shrink: 0;
     }
 
-    /* ===== 图片预览 Overlay ===== */
-    #imagePreviewOverlay {
-      position: fixed;
-      inset: 0;
-      z-index: 200;
-      background: rgba(0, 0, 0, 0.55);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      backdrop-filter: blur(2px);
-    }
-    #imagePreviewOverlay.show { display: flex; }
-    .image-preview-box {
-      display: flex;
-      flex-direction: column;
-      max-width: calc(100% - 48px);
-      max-height: calc(100% - 48px);
-      background: var(--vscode-editor-background);
-      border: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
-      border-radius: var(--r-lg);
-      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
-      overflow: hidden;
-    }
-    .image-preview-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
-      background: var(--vscode-panel-background, var(--vscode-editor-background));
-      flex-shrink: 0;
-    }
-    .image-preview-status {
-      width: 18px;
-      height: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 3px;
-      font-size: 10px;
-      font-weight: 700;
-      color: #fff;
-    }
-    .image-preview-filename {
-      flex: 1;
-      min-width: 0;
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .image-preview-deleted {
-      font-size: 11px;
-      padding: 2px 6px;
-      border-radius: var(--r-sm);
-      background: var(--vscode-testing-runFailed, rgba(218,54,51,0.18));
-      color: var(--vscode-testing-runFailed, #f14c4c);
-    }
-    .image-preview-compare-btn {
-      padding: 4px 10px;
-      border: 1px solid var(--vscode-button-secondaryBackground);
-      border-radius: var(--r-sm);
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-      font-size: 12px;
-      cursor: pointer;
-      transition: background var(--dur) var(--ease);
-    }
-    .image-preview-compare-btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
-    .image-preview-close {
-      width: 26px;
-      height: 26px;
-      border: none;
-      border-radius: var(--r-sm);
-      background: transparent;
-      color: var(--vscode-foreground);
-      font-size: 16px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background var(--dur) var(--ease);
-    }
-    .image-preview-close:hover { background: var(--vscode-toolbar-hoverBackground); }
-    .image-preview-body {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: auto;
-      padding: 16px;
-      gap: 16px;
-    }
-    .image-preview-body img {
-      max-width: 100%;
-      max-height: calc(100vh - 180px);
-      object-fit: contain;
-      border-radius: var(--r-sm);
-      background: repeating-conic-gradient(var(--vscode-editor-background) 0% 25%, rgba(128,128,128,0.08) 0% 50%) 50% / 16px 16px;
-    }
-    .image-preview-body.compare-mode .preview-image-wrap {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-    }
-    .image-preview-body.compare-mode img {
-      max-height: calc(100vh - 210px);
-    }
-    .preview-image-label {
-      font-size: 11px;
-      color: var(--vscode-descriptionForeground);
-      padding: 2px 8px;
-      border-radius: var(--r-sm);
-      background: var(--vscode-editor-inactiveSelectionBackground, rgba(128,128,128,0.12));
-    }
-
     /* ===== 空状态 ===== */
     .empty-state {
       padding: 28px 16px;
@@ -2118,22 +1937,6 @@ ${joined}
     </div>
   </section>
 
-  <!-- 图片预览 Overlay -->
-  <div id="imagePreviewOverlay">
-    <div class="image-preview-box">
-      <div class="image-preview-header">
-        <span class="image-preview-status" id="previewStatus">M</span>
-        <span class="image-preview-filename" id="previewFilename"></span>
-        <span class="image-preview-deleted" id="previewDeleted" style="display:none;">已删除</span>
-        <button class="image-preview-compare-btn" id="previewCompareBtn" style="display:none;">对比 HEAD</button>
-        <button class="image-preview-close" id="previewClose" title="关闭">×</button>
-      </div>
-      <div class="image-preview-body" id="previewBody">
-        <img id="previewImg" src="" alt="">
-      </div>
-    </div>
-  </div>
-
   <script>
     const vscode = acquireVsCodeApi();
     let isGenerating = false;
@@ -2166,14 +1969,6 @@ ${joined}
       changesCollapseIcon: document.getElementById('changesCollapseIcon'),
       btnStageAll: document.getElementById('btnStageAll'),
       btnRefresh: document.getElementById('btnRefresh'),
-      imagePreviewOverlay: document.getElementById('imagePreviewOverlay'),
-      previewStatus: document.getElementById('previewStatus'),
-      previewFilename: document.getElementById('previewFilename'),
-      previewDeleted: document.getElementById('previewDeleted'),
-      previewCompareBtn: document.getElementById('previewCompareBtn'),
-      previewClose: document.getElementById('previewClose'),
-      previewBody: document.getElementById('previewBody'),
-      previewImg: document.getElementById('previewImg'),
     };
 
     let toastTimer = null;
@@ -2255,11 +2050,7 @@ ${joined}
         const file = files[item.dataset.index];
         item.addEventListener('click', (e) => {
           if (e.target.closest('.file-actions')) return;
-          if (file.isImage) {
-            vscode.postMessage({ command: 'previewImage', filepath, status: file.status });
-          } else {
-            vscode.postMessage({ command: 'openFile', filepath, status: file.status, originalFilepath });
-          }
+          vscode.postMessage({ command: 'openFile', filepath, status: file.status, originalFilepath });
         });
       });
 
