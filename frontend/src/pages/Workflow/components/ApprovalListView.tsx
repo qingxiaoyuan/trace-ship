@@ -30,7 +30,7 @@ function toDetail(
     version: row.version,
     releaseType: row.release_type as ReleaseType | undefined,
     branch: row.branch,
-    buildNumber: (row as WorkflowTask).build_number,
+    packageStatus: (row as WorkflowTask).package_status,
     applicant: row.applicant,
     projectName: row.project_name,
     submitTime: row.submit_time,

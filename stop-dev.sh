@@ -1,5 +1,5 @@
 #!/bin/bash
-# 停止 start-dev.sh 启动的后端和前端进程
+# 停止 start-dev.sh 启动的后端、Celery Worker 和前端进程
 
 set -e
 
@@ -25,6 +25,7 @@ stop_service() {
 }
 
 stop_service "backend"
+stop_service "celery"
 stop_service "frontend"
 
 echo ""

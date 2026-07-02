@@ -17,7 +17,7 @@ export interface DetailSource {
   version?: string;
   releaseType?: ReleaseType;
   branch?: string;
-  buildNumber?: string | number;
+  packageStatus?: string;
   applicant: string;
   projectName: string;
   submitTime: string;

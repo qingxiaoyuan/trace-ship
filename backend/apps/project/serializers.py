@@ -58,7 +58,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     项目序列化器
 
     读取时展开负责人名称，状态字段支持字符串/数字双格式。
-    详情场景下附带仓库 / Jenkins / 成员 / 累计发布数量（由视图 annotate 注入）。
+    详情场景下附带仓库 / 打包配置 / 成员 / 累计发布数量（由视图 annotate 注入）。
     """
 
     leader_id = serializers.PrimaryKeyRelatedField(
@@ -68,7 +68,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     status = ProjectStatusField()
     repo_count = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
-    jenkins_count = serializers.SerializerMethodField()
+    package_count = serializers.SerializerMethodField()
     release_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -76,7 +76,7 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = [
             "id", "code", "name", "leader_id", "leader_name", "description",
             "version_rule", "release_rule", "status", "created_at", "updated_at",
-            "repo_count", "member_count", "jenkins_count", "release_count",
+            "repo_count", "member_count", "package_count", "release_count",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -92,9 +92,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         """项目成员数"""
         return self._count(obj, "member_count")
 
-    def get_jenkins_count(self, obj: Project) -> int:
-        """关联 Jenkins 任务数"""
-        return self._count(obj, "jenkins_count")
+    def get_package_count(self, obj: Project) -> int:
+        """关联打包配置数"""
+        return self._count(obj, "package_count")
 
     def get_release_count(self, obj: Project) -> int:
         """累计发布数"""

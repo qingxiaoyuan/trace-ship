@@ -18,6 +18,7 @@ import { MemberTab } from './tabs/MemberTab';
 import { RuleTab } from './tabs/RuleTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
 import { ReleaseTab } from './tabs/ReleaseTab';
+import { PackageTab } from './tabs/PackageTab';
 import { projectApi } from '@/api/project';
 import type { ProjectStatus } from '@/types';
 
@@ -27,6 +28,7 @@ const tabItems = [
   { key: 'repos', label: '仓库' },
   { key: 'members', label: '成员' },
   { key: 'workflows', label: '审批流' },
+  { key: 'packages', label: '打包配置' },
   { key: 'rules', label: '规则配置' },
   { key: 'releases', label: '发布版本' },
 ] as const;
@@ -34,7 +36,7 @@ const tabItems = [
 /** 详情头统计项 */
 const headerStats = [
   { key: 'repo_count', label: '仓库', icon: GitFork, color: 'text-indigo-400' },
-  { key: 'jenkins_count', label: 'Jenkins', icon: Hammer, color: 'text-cyan-500' },
+  { key: 'package_count', label: '打包配置', icon: Hammer, color: 'text-cyan-500' },
   { key: 'member_count', label: '成员', icon: Users, color: 'text-violet-500' },
   { key: 'release_count', label: '累计发布', icon: Rocket, color: 'text-emerald-500' },
 ] as const;
@@ -177,6 +179,7 @@ export default function ProjectDetail() {
           {activeTab === 'repos' && <RepoTab projectId={id || ''} />}
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
           {activeTab === 'workflows' && <WorkflowTab project={project} />}
+          {activeTab === 'packages' && <PackageTab projectId={id || ''} />}
           {activeTab === 'rules' && <RuleTab project={project} />}
           {activeTab === 'releases' && <ReleaseTab projectId={id || ''} />}
         </div>

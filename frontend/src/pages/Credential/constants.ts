@@ -2,7 +2,6 @@ import type { ComponentType } from 'react';
 import {
   GitBranch,
   FolderTree,
-  Hammer,
   Shield,
   KeyRound,
   User,
@@ -17,7 +16,6 @@ export const credentialTypeMap: Record<CredentialType, string> = {
   gitea_token: 'Gitea Token',
   github_token: 'GitHub Token',
   svn_password: 'SVN',
-  jenkins_token: 'Jenkins',
   ldap_password: 'LDAP',
   ai_api_key: 'AI API Key',
 };
@@ -32,7 +30,6 @@ export const credentialTypeIconMap: Record<CredentialType, LucideIcon> = {
   gitea_token: GitBranch,
   github_token: GitBranch,
   svn_password: FolderTree,
-  jenkins_token: Hammer,
   ldap_password: Shield,
   ai_api_key: KeyRound,
 };
@@ -45,7 +42,6 @@ export const credentialTypeColorMap: Record<
   gitea_token: { border: 'border-cyan-200', bg: 'bg-cyan-50', text: 'text-cyan-600' },
   github_token: { border: 'border-slate-200', bg: 'bg-slate-50', text: 'text-slate-600' },
   svn_password: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-600' },
-  jenkins_token: { border: 'border-violet-200', bg: 'bg-violet-50', text: 'text-violet-600' },
   ldap_password: { border: 'border-rose-200', bg: 'bg-rose-50', text: 'text-rose-500' },
   ai_api_key: { border: 'border-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-600' },
 };

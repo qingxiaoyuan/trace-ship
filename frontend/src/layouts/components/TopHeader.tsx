@@ -8,7 +8,7 @@ import { notificationApi } from "@/api/notification";
 
 const typeMap: Record<string, string> = {
   audit: "审批",
-  build: "构建",
+  build: "打包",
   release: "发布",
   system: "系统",
 };

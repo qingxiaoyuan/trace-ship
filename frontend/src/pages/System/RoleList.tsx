@@ -186,7 +186,7 @@ export default function SystemRoleList() {
       release: '发布管理',
       repository: '仓库管理',
       credential: '凭证管理',
-      jenkins: 'Jenkins',
+      package: '打包',
       commit: '提交审查',
       system: '系统管理',
       auth: '认证',

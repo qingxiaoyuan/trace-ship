@@ -48,7 +48,7 @@ export type PipelineRange = 'all' | 'today' | 'week';
 /** 我的待办类型过滤 */
 export type TodoFilter = 'all' | 'audit' | 'build';
 
-/** 构建趋势单日数据 */
+/** 打包趋势单日数据 */
 export interface BuildTrendItem {
   day: string;
   success: number;

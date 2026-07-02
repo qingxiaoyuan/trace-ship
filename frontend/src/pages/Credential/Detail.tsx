@@ -11,18 +11,15 @@ import {
   Link,
   ShieldCheck,
   Eye,
-  GitBranch,
   GitFork,
   Tag,
   GitCompare,
   Trash2,
   Folder,
-  Server,
 } from "lucide-react";
 import { credentialApi } from "@/api/credential";
 import { repositoryApi } from "@/api/repository";
-import { jenkinsApi } from "@/api/jenkins";
-import type { Credential, Repository, JenkinsJob } from "@/types";
+import type { Credential, Repository } from "@/types";
 import { CredentialIcon } from "./components/CredentialIcon";
 import { StatusBadge } from "./components/StatusBadge";
 import { CredentialModal } from "./components/CredentialModal";
@@ -37,7 +34,6 @@ const usageIconMap: Record<
 > = {
   repository: GitFork,
   release: Tag,
-  jenkins: GitBranch,
   default: GitCompare,
 };
 
@@ -87,12 +83,6 @@ export default function CredentialDetail() {
     enabled: !!id && activeTab === "resources",
   });
 
-  const { data: jobData } = useQuery({
-    queryKey: ["credential-jenkins-jobs", id],
-    queryFn: () =>
-      jenkinsApi.getJobs({ credential: id || "", page_size: 1000 }),
-    enabled: !!id && activeTab === "resources",
-  });
   const handleSave = async (values: Partial<Credential>) => {
     try {
       await credentialApi.updateCredential(id || "", values);
@@ -166,8 +156,7 @@ export default function CredentialDetail() {
   }[];
 
   const relatedRepos = (repoData?.results || []) as Repository[];
-  const relatedJobs = (jobData?.results || []) as JenkinsJob[];
-  const relatedCount = relatedRepos.length + relatedJobs.length;
+  const relatedCount = relatedRepos.length;
 
   return (
     <div className="space-y-5 page-fade-in">
@@ -480,29 +469,9 @@ export default function CredentialDetail() {
                 </div>
               ))}
 
-              {relatedJobs.map((job) => (
-                <div
-                  key={job.id}
-                  onClick={() => navigate(`/jenkins/jobs/${job.id}`)}
-                  className="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3 tech-card-hover transition-colors cursor-pointer"
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-amber">
-                    <Server className="h-4 w-4" strokeWidth={1.5} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium text-slate-900 truncate">
-                      {job.name}
-                    </div>
-                    <div className="text-[11px] text-slate-400 truncate">
-                      Jenkins 任务 · {job.project_name || '-'}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {credential.scope !== "project" && relatedRepos.length === 0 && relatedJobs.length === 0 && (
+              {credential.scope !== "project" && relatedRepos.length === 0 && (
                 <div className="col-span-full text-center text-[13px] text-slate-400 py-8">
-                  该凭证暂未绑定仓库或 Jenkins 任务资源
+                  该凭证暂未绑定仓库资源
                 </div>
               )}
             </div>

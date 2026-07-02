@@ -65,7 +65,7 @@ def test_list_returns_repo_and_member_count(client, project):
 
 
 def test_detail_returns_all_counts(client, project):
-    """详情返回仓库 / Jenkins / 成员 / 累计发布四个 count"""
+    """详情返回仓库 / 打包配置 / 成员 / 累计发布四个 count"""
     ReleaseRecord.objects.create(
         project=project,
         repository=project.repositories.first(),
@@ -80,5 +80,5 @@ def test_detail_returns_all_counts(client, project):
     data = resp.data["data"]
     assert data["repo_count"] == 2
     assert data["member_count"] == 1
-    assert data["jenkins_count"] == 0
+    assert data["package_count"] == 0
     assert data["release_count"] == 1

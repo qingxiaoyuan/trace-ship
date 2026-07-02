@@ -34,7 +34,6 @@ interface CredentialModalProps {
 const tokenOnlyTypes: CredentialType[] = [
   'gitlab_token',
   'gitea_token',
-  'jenkins_token',
   'ai_api_key',
 ];
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 本地开发一键启动脚本：同时启动 Django 后端和 React 前端
+# 本地开发一键启动脚本：同时启动 Django 后端、Celery Worker 和 React 前端
 
 set -e
 
@@ -8,7 +8,7 @@ LOG_DIR="$ROOT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
 # 如果已经启动过，先停止旧进程
-if [ -f "$LOG_DIR/backend.pid" ] || [ -f "$LOG_DIR/frontend.pid" ]; then
+if [ -f "$LOG_DIR/backend.pid" ] || [ -f "$LOG_DIR/celery.pid" ] || [ -f "$LOG_DIR/frontend.pid" ]; then
   echo "检测到已有进程，先执行停止..."
   "$ROOT_DIR/stop-dev.sh" || true
   sleep 1
@@ -135,6 +135,11 @@ fi
 nohup "$PYTHON_BIN" manage.py runserver 0.0.0.0:8000 > "$LOG_DIR/backend.log" 2>&1 &
 echo $! > "$LOG_DIR/backend.pid"
 
+# ========== 启动 Celery ==========
+echo "启动 Celery Worker..."
+nohup "$PYTHON_BIN" -m celery -A config worker -l info > "$LOG_DIR/celery.log" 2>&1 &
+echo $! > "$LOG_DIR/celery.pid"
+
 # ========== 启动前端 ==========
 echo "启动前端 (http://localhost:5173)..."
 cd "$ROOT_DIR/frontend"
@@ -154,6 +159,7 @@ echo $! > "$LOG_DIR/frontend.pid"
 
 # ========== 健康检查 ==========
 BACKEND_OK=false
+CELERY_OK=false
 FRONTEND_OK=false
 
 if wait_for_service "后端" "http://localhost:8000/health/" 30; then
@@ -162,13 +168,21 @@ else
   echo "后端启动失败，查看日志: $LOG_DIR/backend.log"
 fi
 
+sleep 2
+if [ -f "$LOG_DIR/celery.pid" ] && kill -0 "$(cat "$LOG_DIR/celery.pid")" >/dev/null 2>&1; then
+  CELERY_OK=true
+  echo "Celery Worker 启动成功"
+else
+  echo "Celery Worker 启动失败，查看日志: $LOG_DIR/celery.log"
+fi
+
 if wait_for_service "前端" "http://localhost:5173/" 30; then
   FRONTEND_OK=true
 else
   echo "前端启动失败，查看日志: $LOG_DIR/frontend.log"
 fi
 
-if [ "$BACKEND_OK" != "true" ] || [ "$FRONTEND_OK" != "true" ]; then
+if [ "$BACKEND_OK" != "true" ] || [ "$CELERY_OK" != "true" ] || [ "$FRONTEND_OK" != "true" ]; then
   echo ""
   echo "部分服务启动失败，正在清理..."
   "$ROOT_DIR/stop-dev.sh" || true
@@ -178,10 +192,12 @@ fi
 echo ""
 echo "启动完成："
 echo "  后端: http://localhost:8000  日志: $LOG_DIR/backend.log"
+echo "  Celery: Worker 已启动  日志: $LOG_DIR/celery.log"
 echo "  前端: http://localhost:5173  日志: $LOG_DIR/frontend.log"
 echo ""
 echo "查看实时日志："
 echo "  tail -f $LOG_DIR/backend.log"
+echo "  tail -f $LOG_DIR/celery.log"
 echo "  tail -f $LOG_DIR/frontend.log"
 echo ""
 echo "停止服务："

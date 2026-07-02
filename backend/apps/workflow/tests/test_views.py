@@ -167,9 +167,9 @@ class TestWorkflowTaskSerializer:
         results = response.data["data"]["results"]
         assert len(results) == 1
         task = results[0]
-        # release 不存在时，branch / build_number 应为空值
+        # release 不存在时，branch / package_status 应为空值
         assert task["branch"] == ""
-        assert task["build_number"] is None
+        assert task["package_status"] == ""
         assert task["version"] == ""
 
 

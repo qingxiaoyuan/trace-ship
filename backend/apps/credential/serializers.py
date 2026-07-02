@@ -42,7 +42,7 @@ class CredentialSerializer(serializers.ModelSerializer):
         """
         校验凭证类型与认证模式的一致性
 
-        Git 类 Token 凭证和 Jenkins Token 只能使用 token 模式；
+        Git 类 Token 凭证只能使用 token 模式；
         SVN/LDAP 密码类凭证只能使用 password 模式。
 
         Args:
@@ -57,7 +57,7 @@ class CredentialSerializer(serializers.ModelSerializer):
         cred_type = attrs.get("cred_type", getattr(self.instance, "cred_type", None))
         auth_mode = attrs.get("auth_mode", getattr(self.instance, "auth_mode", None))
 
-        token_types = {"gitlab_token", "gitea_token", "github_token", "gitee_token", "jenkins_token"}
+        token_types = {"gitlab_token", "gitea_token", "github_token", "gitee_token"}
         password_types = {"svn_password", "ldap_password"}
 
         # 凭证类型友好名称映射
@@ -66,7 +66,6 @@ class CredentialSerializer(serializers.ModelSerializer):
             "gitea_token": "Gitea Token",
             "github_token": "GitHub Token",
             "gitee_token": "Gitee Token",
-            "jenkins_token": "Jenkins Token",
             "svn_password": "SVN 密码",
             "ldap_password": "LDAP 密码",
         }

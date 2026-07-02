@@ -4,7 +4,7 @@ import type { ReleaseType } from '@/types';
 export const releaseStatusText: Record<string, string> = {
   draft: '草稿',
   pending: '待审批',
-  building: '构建中',
+  building: '打包中',
   auditing: '待审批',
   released: '已发布',
   rejected: '已驳回',

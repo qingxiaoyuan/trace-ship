@@ -84,10 +84,7 @@ class ReleaseViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return ReleaseRecord.objects.none()
         user = self.request.user
-        select_related_fields = ["project", "repository", "publisher"]
-        if self.action != "list":
-            select_related_fields.append("jenkins_build")
-        queryset = ReleaseRecord.objects.select_related(*select_related_fields)
+        queryset = ReleaseRecord.objects.select_related("project", "repository", "publisher").prefetch_related("package_tasks")
         if user.is_superuser:
             return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)

@@ -73,7 +73,7 @@ class CredentialService:
         """
         检查凭证是否可以删除
 
-        若凭证已被仓库或 Jenkins 任务引用，则禁止删除。
+        若凭证已被仓库引用，则禁止删除。
 
         Args:
             credential: 待删除的 Credential 实例
@@ -83,5 +83,3 @@ class CredentialService:
         """
         if credential.repositories.exists():
             raise serializers.ValidationError("凭证已被仓库引用，无法删除")
-        if credential.jenkins_jobs.exists():
-            raise serializers.ValidationError("凭证已被 Jenkins 任务引用，无法删除")

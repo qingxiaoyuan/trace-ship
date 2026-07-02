@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldCheck,
   Tag,
+  Box,
   Users,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -48,7 +49,7 @@ const fallbackMenus: MenuItem[] = [
   { id: 'projects', name: '项目管理', path: '/projects', icon: 'FolderOutlined' },
   { id: 'repositories', name: '仓库管理', path: '/repositories', icon: 'DatabaseOutlined' },
   { id: 'credentials', name: '凭证管理', path: '/credentials', icon: 'KeyOutlined' },
-  { id: 'jenkins', name: '打包任务', path: '/jenkins', icon: 'PlayCircleOutlined' },
+  { id: 'packages', name: '打包任务', path: '/packages', icon: 'PlayCircleOutlined' },
   { id: 'commits', name: '提交规范审查', path: '/commits', icon: 'FileTextOutlined' },
   { id: 'tags', name: '新建发布', path: '/releases/create', icon: 'TagsOutlined' },
   {
@@ -60,6 +61,7 @@ const fallbackMenus: MenuItem[] = [
       { id: 'system_users', name: '用户管理', path: '/system/users', icon: 'TeamOutlined' },
       { id: 'system_roles', name: '角色管理', path: '/system/roles', icon: 'SafetyCertificateOutlined' },
       { id: 'system_configs', name: '系统配置', path: '/system/configs', icon: 'SettingOutlined' },
+      { id: 'system_package_images', name: '打包镜像', path: '/system/package-images', icon: 'BoxPlotOutlined' },
       { id: 'system_logs', name: '操作日志', path: '/system/logs', icon: 'FileTextOutlined' },
     ],
   },
@@ -73,27 +75,29 @@ const pathIconMap: Record<string, LucideIcon> = {
   '/projects': FolderKanban,
   '/repositories': GitFork,
   '/credentials': KeyRound,
-  '/jenkins': Hammer,
+  '/packages': Hammer,
   '/commits': ScanSearch,
   '/releases/create': Tag,
   '/system/users': Users,
   '/system/roles': ShieldCheck,
   '/system/configs': Settings,
+  '/system/package-images': Box,
   '/system/logs': ScrollText,
 };
 
 const groupRules = [
   { title: '概览', paths: ['/dashboard', '/releases', '/workflows', '/notifications'] },
-  { title: '资源', paths: ['/projects', '/repositories', '/credentials', '/jenkins'] },
+  { title: '资源', paths: ['/projects', '/repositories', '/credentials', '/packages'] },
   { title: '质量', paths: ['/commits', '/releases/create'] },
-  { title: '系统', paths: ['/system/users', '/system/roles', '/system/configs', '/system/logs'] },
+  { title: '系统', paths: ['/system/users', '/system/roles', '/system/configs', '/system/package-images', '/system/logs'] },
 ];
 
 const labelMap: Record<string, string> = {
   '/projects': '项目',
   '/repositories': '仓库',
   '/credentials': '凭证',
-  '/jenkins': '打包任务',
+  '/packages': '打包任务',
+  '/system/package-images': '打包镜像',
   '/commits': '提交审查',
   '/releases/create': '新建发布',
   '/workflows': '审批中心',

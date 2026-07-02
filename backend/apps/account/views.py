@@ -253,7 +253,7 @@ class AuthViewSet(viewsets.GenericViewSet):
             {"id": "projects", "name": "项目管理", "path": "/projects", "icon": "FolderOutlined", "modules": ["project"]},
             {"id": "repositories", "name": "仓库管理", "path": "/repositories", "icon": "DatabaseOutlined", "modules": ["repository"]},
             {"id": "credentials", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined", "modules": ["credential"]},
-            {"id": "jenkins", "name": "打包任务", "path": "/jenkins", "icon": "PlayCircleOutlined", "modules": ["jenkins"]},
+            {"id": "packages", "name": "打包任务", "path": "/packages", "icon": "PlayCircleOutlined", "modules": ["package"]},
             {"id": "commits", "name": "提交规范审查", "path": "/commits", "icon": "FileTextOutlined", "modules": ["commit"]},
             {"id": "tags", "name": "新建发布", "path": "/releases/create", "icon": "TagsOutlined", "modules": ["release"]},
             {
@@ -266,6 +266,7 @@ class AuthViewSet(viewsets.GenericViewSet):
                     {"id": "system_users", "name": "用户管理", "path": "/system/users", "icon": "TeamOutlined", "modules": ["system"]},
                     {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined", "modules": ["system"]},
                     {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined", "modules": ["system"]},
+                    {"id": "system_package_images", "name": "打包镜像", "path": "/system/package-images", "icon": "BoxPlotOutlined", "modules": ["system"]},
                     {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined", "modules": ["system"]},
                 ],
             },

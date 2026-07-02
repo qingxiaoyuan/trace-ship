@@ -124,7 +124,7 @@ export default function CredentialList() {
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">凭证</h1>
           <p className="mt-1 text-[13px] text-slate-500">
-            集中管理 Git / SVN / Jenkins 访问凭证，AES 加密存储
+            集中管理 Git / SVN 访问凭证，AES 加密存储
           </p>
         </div>
         <button

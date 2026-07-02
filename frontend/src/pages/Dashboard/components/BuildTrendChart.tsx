@@ -3,7 +3,7 @@ import { Chart } from 'chart.js';
 import { tokens } from '@/styles/theme';
 import type { BuildTrendItem } from '../types';
 
-/** 构建趋势柱状图（最近 7 天成功/失败） */
+/** 打包趋势柱状图（最近 7 天成功/失败） */
 export function BuildTrendChart({ data }: { data: BuildTrendItem[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);

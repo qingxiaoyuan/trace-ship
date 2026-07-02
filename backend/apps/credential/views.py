@@ -149,7 +149,6 @@ class CredentialViewSet(StandardModelViewSet):
                 {"value": "gitlab_token", "label": "GitLab Token"},
                 {"value": "gitea_token", "label": "Gitea Token"},
                 {"value": "svn_password", "label": "SVN 密码"},
-                {"value": "jenkins_token", "label": "Jenkins Token"},
                 {"value": "ldap_password", "label": "LDAP 密码"},
                 {"value": "ai_api_key", "label": "AI API Key"},
             ],

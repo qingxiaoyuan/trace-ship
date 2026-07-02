@@ -130,26 +130,25 @@ class NotificationService:
         )
 
     @staticmethod
-    def notify_build_result(build, release=None) -> None:
+    def notify_package_result(task, release=None) -> None:
         """
-        Jenkins 构建结束时通知发起人
+        打包任务结束时通知发起人
 
         Args:
-            build: JenkinsBuild 实例
+            task: PackageTask 实例
             release: ReleaseRecord 实例（可选）
         """
         if not release:
-            from apps.release.models import ReleaseRecord
-            release = ReleaseRecord.objects.filter(jenkins_build=build).first()
+            release = task.release
         if not release or not release.publisher:
             return
 
-        if build.status == "success":
-            title = "构建成功"
-            content = f"版本 {release.version} 的 Jenkins 构建已成功完成，进入待发布审批阶段。"
-        elif build.status in ("failure", "aborted"):
-            title = "构建失败"
-            content = f"版本 {release.version} 的 Jenkins 构建{build.get_status_display()}，发布已驳回。"
+        if task.status == "success":
+            title = "打包成功"
+            content = f"版本 {release.version} 的打包任务已成功完成。"
+        elif task.status in ("failure", "canceled"):
+            title = "打包失败"
+            content = f"版本 {release.version} 的打包任务{task.get_status_display()}，发布状态保持已发布。"
         else:
             return
 
@@ -158,8 +157,8 @@ class NotificationService:
             notification_type="build",
             title=title,
             content=content,
-            related_type="jenkins_build",
-            related_id=str(build.id),
+            related_type="package_task",
+            related_id=str(task.id),
         )
 
     @staticmethod

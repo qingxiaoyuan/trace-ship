@@ -56,7 +56,7 @@ export interface Project {
   status: ProjectStatus;
   repo_count?: number;
   member_count?: number;
-  jenkins_count?: number;
+  package_count?: number;
   release_count?: number;
   created_at: string;
   version_rule?: unknown;
@@ -116,8 +116,7 @@ export interface Release {
   self_test_passed?: boolean;
   /** 研发测试复验通过 */
   retest_passed?: boolean;
-  jenkins_build?: string | null;
-  build_detail?: ReleaseBuildDetail | null;
+  package_tasks?: ReleasePackageTaskSummary[];
   rejected_reason?: string;
   released_at?: string;
   created_at: string;
@@ -130,12 +129,16 @@ export interface Release {
   has_doc?: boolean;
 }
 
-/** 发布关联的 Jenkins 构建概要（release 详情 build_detail） */
-export interface ReleaseBuildDetail {
+/** 发布关联的打包任务概要（release 详情 package_tasks） */
+export interface ReleasePackageTaskSummary {
   id: string;
-  build_number: number | null;
-  status: 'queue' | 'running' | 'success' | 'failure' | 'aborted';
-  job_name: string;
+  name: string;
+  status: PackageTaskStatus;
+  status_display?: string;
+  mode: PackageMode;
+  build_type: PackageBuildType;
+  artifact_count: number;
+  created_at?: string;
   started_at?: string | null;
   finished_at?: string | null;
 }
@@ -297,46 +300,90 @@ export interface CommitAlertRecord extends CommitRecord {
   alert_status: AlertStatus;
 }
 
-export type BuildStatus = 'queue' | 'running' | 'success' | 'failure' | 'aborted';
+export type PackageMode = 'simple' | 'local';
+export type PackageBuildType = 'web' | 'qt';
+export type PackageTaskStatus = 'queued' | 'running' | 'success' | 'failure' | 'canceled';
 
-export interface JenkinsBuildLatest {
+export interface PackageImage {
   id: string;
-  build_number: number | null;
-  status: BuildStatus;
-  started_at?: string | null;
-  created_at?: string | null;
+  name: string;
+  build_type: PackageBuildType;
+  build_type_display?: string;
+  image: string;
+  script_entry: string;
+  default_build_path: string;
+  default_output_path: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-export type JenkinsConfigMode = 'simple' | 'advanced';
-export type JenkinsBuildType = 'web' | 'qt' | 'custom';
-
-export interface BuildRecord {
+export interface PackageConfig {
   id: string;
-  job_id: string;
-  job_name: string;
+  project: string;
   project_id?: string;
   project_name?: string;
-  release?: string | null;
-  release_id?: string | null;
+  repository: string;
+  repository_id?: string;
+  repository_name?: string;
+  name: string;
+  mode: PackageMode;
+  mode_display?: string;
+  build_type: PackageBuildType;
+  build_type_display?: string;
+  image?: string | null;
+  image_id?: string | null;
+  image_name?: string;
+  local_script?: string;
+  build_path?: string;
+  output_path?: string;
+  env_vars?: Record<string, unknown>;
+  auto_package_on_release?: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackageTask {
+  id: string;
+  config?: string | null;
+  config_name?: string;
+  release: string;
   release_version?: string;
-  queue_id?: string;
-  build_number?: number;
-  version?: string;
-  status: BuildStatus;
-  status_display?: string;
+  project: string;
+  project_name?: string;
+  repository: string;
+  repository_name?: string;
   triggered_by?: string | null;
   triggered_by_name?: string;
-  params?: unknown;
-  stage_info?: unknown;
-  log_url?: string;
-  artifact_info?: unknown[];
-  duration?: number | null;
-  estimated_duration?: number | null;
+  name: string;
+  mode: PackageMode;
+  mode_display?: string;
+  build_type: PackageBuildType;
+  build_type_display?: string;
+  tag_name: string;
+  version: string;
+  commit_hash?: string;
+  config_snapshot?: Record<string, unknown>;
+  status: PackageTaskStatus;
+  status_display?: string;
+  workspace_path?: string;
+  log_path?: string;
+  artifact_info?: PackageArtifact[];
+  duration?: number;
+  error_message?: string;
   started_at?: string | null;
   finished_at?: string | null;
-  duration_display?: string;
   created_at: string;
   updated_at?: string;
+}
+
+export interface PackageArtifact {
+  id: string;
+  name: string;
+  path: string;
+  size: number;
+  sha256: string;
 }
 
 export type CredentialType =
@@ -344,7 +391,6 @@ export type CredentialType =
   | 'gitea_token'
   | 'github_token'
   | 'svn_password'
-  | 'jenkins_token'
   | 'ldap_password'
   | 'ai_api_key';
 
@@ -428,50 +474,6 @@ export interface RepositoryTag {
   created_at?: string | null;
 }
 
-export interface JenkinsJob {
-  id: string;
-  project_id: string;
-  project_name?: string;
-  repository_id?: string;
-  repository_name?: string;
-  config_mode: JenkinsConfigMode;
-  config_mode_display?: string;
-  build_type: JenkinsBuildType;
-  build_type_display?: string;
-  build_preset?: string;
-  build_preset_id?: string;
-  build_preset_name?: string;
-  name: string;
-  server_url: string;
-  job_name: string;
-  credential_id?: string;
-  credential_mode?: string;
-  params_template?: unknown;
-  build_path?: string;
-  output_path?: string;
-  auto_build_on_release?: boolean;
-  managed_job?: boolean;
-  pipeline_config?: unknown;
-  is_active: boolean;
-  latest_build?: JenkinsBuildLatest | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface JenkinsBuildPreset {
-  id: string;
-  name: string;
-  build_type: JenkinsBuildType;
-  build_type_display?: string;
-  image: string;
-  script_entry: string;
-  default_build_path: string;
-  default_output_path: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
 export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked';
 
 export interface WorkflowApproverConfig {
@@ -503,7 +505,7 @@ export interface WorkflowTask {
   release_type?: ReleaseType;
   branch?: string;
 
-  build_number?: string | number;
+  package_status?: string;
   mode?: 'any' | 'all';
   is_rollback?: boolean;
   rollback_target_node_id?: string;
@@ -586,7 +588,7 @@ export interface WorkflowInstance {
   version?: string;
   release_type?: ReleaseType;
   branch?: string;
-  build_number?: string | number;
+  package_status?: string;
 }
 
 /**
@@ -613,7 +615,7 @@ export interface WorkflowInstanceListItem {
   release_type?: ReleaseType;
   branch?: string;
 
-  build_number?: string | number;
+  package_status?: string;
 }
 
 export interface Notification {

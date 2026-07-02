@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.jenkins.models import JenkinsBuild
 from apps.notification.services import NotificationService
 from apps.project.models import Project
 from apps.release.models import ReleaseCommit, ReleaseMergeRequest, ReleaseRecord
@@ -1067,78 +1066,27 @@ class ReleaseService:
     @staticmethod
     def trigger_build_for_release(release: ReleaseRecord) -> None:
         """
-        为发布触发 Jenkins 构建（当前流程已替换为 Tag 流程，此方法不再使用）。
+        为发布触发打包（历史兼容方法，新流程由 push_tag 自动触发）。
 
         Args:
             release: ReleaseRecord 实例
         """
-        # Tag 流程不再触发 Jenkins 构建，保留函数签名避免外部引用报错。
+        from apps.package.services import PackageService
+
+        PackageService.trigger_auto_packages_for_release(release, request_user=release.publisher)
         pass
 
     @staticmethod
     def handle_build_completed(build, success: bool, error_msg: str = "") -> None:
         """
-        Jenkins 构建完成时驱动发布状态（保留兼容，若被调用则直接结束）。
+        历史构建完成回调兼容方法。
 
         Args:
-            build: JenkinsBuild 实例
+            build: 历史构建实例
             success: 是否成功
             error_msg: 失败原因
         """
-        from apps.release.models import ReleaseRecord
-
-        release = build.release or ReleaseRecord.objects.filter(jenkins_build=build).first()
-        if not release:
-            return
-        if release.status == "released":
-            NotificationService.notify_build_result(build, release)
-            OperationLogService.log_release(
-                user=release.publisher,
-                release=release,
-                action="build_finished",
-                result="success" if success else "failure",
-                detail={"error": error_msg} if error_msg else {},
-            )
-            return
-
-        if not success:
-            release.status = "rejected"
-            release.rejected_reason = error_msg or "构建失败"
-            release.save(update_fields=["status", "rejected_reason", "updated_at"])
-            NotificationService.notify_build_result(build, release)
-            OperationLogService.log_release(
-                user=release.publisher,
-                release=release,
-                action="build_failure",
-                result="failure",
-                detail={"error": error_msg},
-            )
-            return
-
-        # 构建成功后仅当审批流程已结束才标记为 released，否则保持 pending 等待审批
-        workflow_done = (
-            not release.workflow_instance_id
-            or release.workflow_instance.status == "completed"
-        )
-        if not workflow_done:
-            NotificationService.notify_build_result(build, release)
-            OperationLogService.log_release(
-                user=release.publisher,
-                release=release,
-                action="build_success",
-                detail={"note": "审批流程未结束，暂不标记为已发布"},
-            )
-            return
-
-        release.status = "released"
-        release.released_at = release.released_at or timezone.now()
-        release.save(update_fields=["status", "released_at", "updated_at"])
-        NotificationService.notify_build_result(build, release)
-        OperationLogService.log_release(
-            user=release.publisher,
-            release=release,
-            action="build_success",
-        )
+        return
 
     @classmethod
     def push_tag(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
@@ -1187,14 +1135,14 @@ class ReleaseService:
             action="push_tag",
         )
         try:
-            from apps.jenkins.services import JenkinsService
+            from apps.package.services import PackageService
 
-            JenkinsService.trigger_auto_builds_for_release(release, request_user=request_user or release.publisher)
+            PackageService.trigger_auto_packages_for_release(release, request_user=request_user or release.publisher)
         except Exception as exc:
             OperationLogService.log_release(
                 user=request_user or release.publisher,
                 release=release,
-                action="auto_build_trigger",
+                action="auto_package_trigger",
                 result="failure",
                 detail={"error": str(exc)},
             )

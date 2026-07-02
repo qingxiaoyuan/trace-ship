@@ -42,7 +42,9 @@ INSTALLED_APPS = [
     "apps.project.apps.ProjectConfig",
     "apps.repository.apps.RepositoryConfig",
     "apps.release.apps.ReleaseConfig",
+    # 历史迁移依赖保留，不再注册产品 API 入口
     "apps.jenkins.apps.JenkinsConfig",
+    "apps.package.apps.PackageConfig",
     "apps.system.apps.SystemConfig",
     "apps.workflow.apps.WorkflowConfig",
     "apps.notification.apps.NotificationConfig",
@@ -192,6 +194,9 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 
+# 系统内置打包工作区根目录
+PACKAGE_WORKSPACE_ROOT = os.getenv("PACKAGE_WORKSPACE_ROOT", str(BASE_DIR / "package_workspaces"))
+
 # Django REST Framework 全局配置
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -232,7 +237,7 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
 }
 
-# 凭证加密密钥（用于加密存储 Git/Jenkins 等凭据）
+# 凭证加密密钥（用于加密存储 Git/SVN/LDAP/AI 等凭据）
 CREDENTIAL_SECRET_KEY = os.getenv("CREDENTIAL_SECRET_KEY", "change-me-in-production-32bytes!")
 
 # 跨域资源共享（CORS）配置

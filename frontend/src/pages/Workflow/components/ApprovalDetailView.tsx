@@ -30,7 +30,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
     version: instance?.version || source.version,
     releaseType: (instance?.release_type as ReleaseType | undefined) || source.releaseType,
     branch: instance?.branch || source.branch,
-    buildNumber: instance?.build_number || source.buildNumber,
+    packageStatus: instance?.package_status || source.packageStatus,
     applicant: instance?.applicant || source.applicant,
     projectName: instance?.project_name || source.projectName,
     submitTime: instance?.submit_time || source.submitTime,
@@ -89,7 +89,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                 </div>
               </div>
             </div>
-            {/* 分支 / 构建号 小信息栏 */}
+            {/* 分支 / 打包状态 小信息栏 */}
             <div className="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-3">
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-slate-500">分支</span>
@@ -98,9 +98,9 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[12px] text-slate-500">构建号</span>
+                <span className="text-[12px] text-slate-500">打包状态</span>
                 <span className="font-mono text-[12px] font-semibold text-slate-900">
-                  {detailSource.buildNumber ? `#${detailSource.buildNumber}` : '-'}
+                  {detailSource.packageStatus || '-'}
                 </span>
               </div>
             </div>

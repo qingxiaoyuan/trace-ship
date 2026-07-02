@@ -23,7 +23,7 @@ export function TodoPanel({
           {([
             { key: 'all', label: '全部' },
             { key: 'audit', label: '审批' },
-            { key: 'build', label: '构建' },
+            { key: 'build', label: '打包' },
           ] as const).map((opt) => (
             <button
               key={opt.key}

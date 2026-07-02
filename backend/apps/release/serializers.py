@@ -16,7 +16,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     发布记录序列化器
 
     读取时展开项目/仓库/发布人信息，写入时校验项目归属与仓库一致性。
-    详情场景下附带关联 Jenkins 构建的概要信息（build_detail）。
+    详情场景下附带关联打包任务概要信息。
     """
 
     project_name = serializers.CharField(source="project.name", read_only=True)
@@ -27,7 +27,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     version = serializers.CharField(required=False, allow_blank=True)
     tag_name = serializers.CharField(required=False, allow_blank=True)
     release_doc = serializers.CharField(required=False, allow_blank=True)
-    build_detail = serializers.SerializerMethodField()
+    package_tasks = serializers.SerializerMethodField()
 
     class Meta:
         model = ReleaseRecord
@@ -39,29 +39,34 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
             "self_test_passed", "retest_passed",
-            "publisher", "publisher_name", "jenkins_build",
-            "build_detail",
+            "publisher", "publisher_name",
+            "package_tasks",
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "git_hash", "status",
-            "jenkins_build", "build_detail", "rejected_reason",
+            "package_tasks", "rejected_reason",
             "released_at", "created_at", "updated_at",
         ]
 
-    def get_build_detail(self, obj: ReleaseRecord) -> dict | None:
-        """返回关联 Jenkins 构建的概要信息，未关联时为 None。"""
-        build = obj.jenkins_build
-        if not build:
-            return None
-        return {
-            "id": str(build.id),
-            "build_number": build.build_number,
-            "status": build.status,
-            "job_name": build.job.job_name if build.job_id else "",
-            "started_at": build.started_at,
-            "finished_at": build.finished_at,
-        }
+    def get_package_tasks(self, obj: ReleaseRecord) -> list[dict]:
+        """返回该发布关联的打包任务概要。"""
+        tasks = obj.package_tasks.all().order_by("-created_at") if hasattr(obj, "package_tasks") else []
+        return [
+            {
+                "id": str(task.id),
+                "name": task.name,
+                "status": task.status,
+                "status_display": task.get_status_display(),
+                "mode": task.mode,
+                "build_type": task.build_type,
+                "artifact_count": len(task.artifact_info or []),
+                "started_at": task.started_at,
+                "finished_at": task.finished_at,
+                "created_at": task.created_at,
+            }
+            for task in tasks
+        ]
 
     def validate_project(self, value: Project) -> Project:
         """

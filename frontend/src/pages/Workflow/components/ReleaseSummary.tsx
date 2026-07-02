@@ -53,9 +53,9 @@ export function ReleaseSummary({ source, instance }: ReleaseSummaryProps) {
             <span className="font-mono text-[12px] text-slate-800">{source.branch || '-'}</span>
           </div>
           <div className="flex items-center justify-between py-1.5">
-            <span className="text-[12px] text-slate-500">构建号</span>
+            <span className="text-[12px] text-slate-500">打包状态</span>
             <span className="font-mono text-[13px] text-slate-800">
-              {source.buildNumber ? `#${source.buildNumber}` : '-'}
+              {source.packageStatus || '-'}
             </span>
           </div>
         </div>

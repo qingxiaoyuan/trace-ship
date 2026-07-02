@@ -30,7 +30,6 @@ const typeVariantMap: Record<CredentialType, Variant> = {
   gitea_token: 'cyan',
   github_token: 'slate',
   svn_password: 'amber',
-  jenkins_token: 'violet',
   ldap_password: 'rose',
   ai_api_key: 'emerald',
 };

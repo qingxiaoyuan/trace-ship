@@ -13,7 +13,7 @@ class Credential(models.Model):
     """
     凭证模型
 
-    支持多种凭证类型（GitLab/Gitea/SVN/Jenkins/LDAP/AI）和认证模式（Token/用户名密码），
+    支持多种凭证类型（GitLab/Gitea/SVN/LDAP/AI）和认证模式（Token/用户名密码），
     通过 scope 控制可见范围：个人、项目。
 
     Attributes:
@@ -39,7 +39,6 @@ class Credential(models.Model):
         ("gitlab_token", "GitLab Token"),
         ("gitea_token", "Gitea Token"),
         ("svn_password", "SVN 密码"),
-        ("jenkins_token", "Jenkins Token"),
         ("ldap_password", "LDAP 密码"),
     ]
     AUTH_MODE_CHOICES = [

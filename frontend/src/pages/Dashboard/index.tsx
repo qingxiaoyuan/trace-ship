@@ -16,7 +16,7 @@ import { Chart, registerables } from 'chart.js';
 import { dashboardApi } from '@/api/dashboard';
 import { releaseApi } from '@/api/release';
 import { commitApi } from '@/api/commit';
-import { jenkinsApi } from '@/api/jenkins';
+import { packageApi } from '@/api/package';
 import { useAuthStore } from '@/stores/authStore';
 import type { KpiCard, PipelineColumn, PipelineRange, TodoFilter, TodoItem } from './types';
 import {
@@ -53,8 +53,14 @@ export default function Dashboard() {
 
   const { data: releaseData } = useQuery({
     queryKey: ['dashboard-releases'],
-    // 多取一些，避免草稿被过滤后最近发布面板不足 10 条
     queryFn: () => releaseApi.getReleases({ page_size: 50 }),
+    staleTime: 30_000,
+    gcTime: 300_000,
+  });
+
+  const { data: recentReleaseData } = useQuery({
+    queryKey: ['dashboard-recent-releases', 'released'],
+    queryFn: () => releaseApi.getReleases({ status: 'released', page_size: 10 }),
     staleTime: 30_000,
     gcTime: 300_000,
   });
@@ -67,14 +73,15 @@ export default function Dashboard() {
     gcTime: 300_000,
   });
 
-  const { data: buildData } = useQuery({
-    queryKey: ['dashboard-builds'],
-    queryFn: () => jenkinsApi.getBuilds({ page_size: 20 }),
+  const { data: packageTaskData } = useQuery({
+    queryKey: ['dashboard-package-tasks'],
+    queryFn: () => packageApi.getTasks({ page_size: 20 }),
     staleTime: 30_000,
     gcTime: 300_000,
   });
 
   const releases = useMemo(() => releaseData?.results || [], [releaseData?.results]);
+  const recentReleaseRows = useMemo(() => recentReleaseData?.results || [], [recentReleaseData?.results]);
   // 发布流水线按时间范围过滤后的发布记录
   const rangeReleases = useMemo(() => {
     if (pipelineRange === 'all') return releases;
@@ -87,11 +94,11 @@ export default function Dashboard() {
     });
   }, [releases, pipelineRange]);
   const commits = useMemo(() => commitData?.results || [], [commitData?.results]);
-  const builds = useMemo(() => buildData?.results || [], [buildData?.results]);
-  const recentReleases = releases.filter((r) => r.status !== 'draft').slice(0, 10);
-  const runningBuilds = builds.filter(isBuildRunning);
+  const packageTasks = useMemo(() => packageTaskData?.results || [], [packageTaskData?.results]);
+  const recentReleases = recentReleaseRows.filter((r) => r.status === 'released').slice(0, 10);
+  const runningBuilds = packageTasks.filter(isBuildRunning);
   const pendingReleases = releases.filter((r) => normalizeStatus(r) === 'pending');
-  const buildTrendData = useMemo(() => buildSevenDayTrend(builds), [builds]);
+  const buildTrendData = useMemo(() => buildSevenDayTrend(packageTasks), [packageTasks]);
 
   const totalReleases = overview?.total_releases || 0;
   const pendingAuditCount = overview?.pending_audit_count || pendingReleases.length;
@@ -113,8 +120,8 @@ export default function Dashboard() {
   const pendingDescription = latestPendingRelease
     ? `最近提交于 ${formatRelative(latestPendingRelease.created_at)}`
     : '暂无待审批发布';
-  const completedBuildDurations = builds
-    .filter((build) => build.status === 'success' || build.status === 'failure' || build.status === 'aborted')
+  const completedBuildDurations = packageTasks
+    .filter((task) => task.status === 'success' || task.status === 'failure' || task.status === 'canceled')
     .map(getBuildDurationSeconds)
     .filter((duration): duration is number => duration !== null);
   const averageBuildDuration = completedBuildDurations.length
@@ -133,7 +140,7 @@ export default function Dashboard() {
     },
     {
       key: 'building',
-      label: '构建中',
+      label: '打包中',
       count: runningBuilds.length + rangeReleases.filter((r) => normalizeStatus(r) === 'building').length,
       tone: 'border-cyan-200/70 bg-cyan-50/40 text-cyan-700',
       dot: 'bg-cyan-500 pulse-dot',
@@ -192,18 +199,18 @@ export default function Dashboard() {
       })),
     ...runningBuilds.slice(0, 1).map((build) => ({
       key: `build-${build.id}`,
-      title: `构建 #${build.build_number || build.queue_id || '--'} 进行中`,
-      project: build.project_name || build.job_name,
+      title: `打包任务 ${build.name} 进行中`,
+      project: build.project_name || build.repository_name || '-',
       meta: `${build.version || '当前版本'} · ${build.status_display || '运行中'}`,
       icon: Hammer,
       iconClass: 'icon-cyan',
       type: 'build' as const,
       actions: (
         <button
-          onClick={() => navigate(`/jenkins/logs/${build.id}`)}
+          onClick={() => navigate('/packages')}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600"
         >
-          查看日志
+          查看任务
         </button>
       ),
     })),
@@ -286,7 +293,7 @@ export default function Dashboard() {
       title: '已驳回',
       value: <span className="text-[28px] font-semibold tracking-tight text-slate-900">{rejectedCount}</span>,
       unit: '个驳回',
-      description: '需关注异常构建',
+      description: '需关注异常打包',
       icon: TriangleAlert,
       iconClass: 'icon-rose',
       action: (
@@ -337,8 +344,8 @@ export default function Dashboard() {
     },
   ];
 
-  const buildSuccess = builds.filter((build) => build.status === 'success').length;
-  const buildFailed = builds.filter((build) => build.status === 'failure' || build.status === 'aborted').length;
+  const buildSuccess = packageTasks.filter((task) => task.status === 'success').length;
+  const buildFailed = packageTasks.filter((task) => task.status === 'failure' || task.status === 'canceled').length;
 
   return (
     <div className="space-y-5">
@@ -348,7 +355,7 @@ export default function Dashboard() {
           <p className="mt-1 text-[13px] text-slate-500">
             {getGreeting()}，{displayName}。今天有{' '}
             <span className="font-medium text-indigo-600">{pendingAuditCount}</span> 个发布待审批，
-            <span className="font-medium text-cyan-600">{runningBuilds.length}</span> 个构建进行中。
+            <span className="font-medium text-cyan-600">{runningBuilds.length}</span> 个打包任务进行中。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -413,7 +420,7 @@ export default function Dashboard() {
         <TodoPanel items={todoItems} filter={todoFilter} onFilterChange={setTodoFilter} />
         <div className="tech-card rounded-xl p-5">
           <div className="mb-4">
-            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">构建趋势</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包趋势</h2>
             <p className="mt-0.5 text-[12px] text-slate-500">最近 7 天</p>
           </div>
           <BuildTrendChart data={buildTrendData} />
@@ -434,7 +441,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
-            <span className="text-[11px] text-slate-400">平均构建时长</span>
+            <span className="text-[11px] text-slate-400">平均打包时长</span>
             <span className="font-mono text-[13px] font-medium text-cyan-600">
               {formatDurationSeconds(averageBuildDuration)}
             </span>

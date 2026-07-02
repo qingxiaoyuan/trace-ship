@@ -2,7 +2,7 @@
 项目管理数据模型
 
 包含项目（Project）、项目成员（ProjectMember）。
-仓库与 Jenkins 任务直接归属项目并绑定凭证，不再经过外站绑定层。
+仓库与打包配置直接归属项目并绑定凭证，不再经过外站绑定层。
 """
 import uuid
 from django.db import models
@@ -13,7 +13,7 @@ class Project(models.Model):
     """
     项目模型
 
-    表示一个软件项目，是 Git 仓库、发布流程、Jenkins 打包任务的合集。
+    表示一个软件项目，是 Git 仓库、发布流程、系统内置打包配置的合集。
 
     Attributes:
         id: UUID 主键

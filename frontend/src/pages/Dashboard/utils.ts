@@ -1,4 +1,4 @@
-import type { BuildRecord, Release } from '@/types';
+import type { PackageTask, Release } from '@/types';
 import type { BuildTrendItem, PipelineStatus } from './types';
 
 /** 取日期字符串的日期部分（YYYY-MM-DD） */
@@ -31,20 +31,20 @@ export function formatTrendDay(date: Date): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
-/** 基于构建记录统计最近 7 天的成功/失败趋势 */
-export function buildSevenDayTrend(builds: BuildRecord[]): BuildTrendItem[] {
+/** 基于打包任务统计最近 7 天的成功/失败趋势 */
+export function buildSevenDayTrend(tasks: PackageTask[]): BuildTrendItem[] {
   const today = new Date();
 
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(today);
     date.setDate(today.getDate() - (6 - index));
     const key = getDateKey(date);
-    const matchedBuilds = builds.filter((build) => getDateKey(new Date(build.created_at)) === key);
+    const matchedTasks = tasks.filter((task) => getDateKey(new Date(task.created_at)) === key);
 
     return {
       day: formatTrendDay(date),
-      success: matchedBuilds.filter((build) => build.status === 'success').length,
-      failed: matchedBuilds.filter((build) => build.status === 'failure' || build.status === 'aborted').length,
+      success: matchedTasks.filter((task) => task.status === 'success').length,
+      failed: matchedTasks.filter((task) => task.status === 'failure' || task.status === 'canceled').length,
     };
   });
 }
@@ -67,19 +67,15 @@ export function parseDurationSeconds(duration?: string): number | null {
   return total > 0 ? total : null;
 }
 
-/** 取构建记录的实际耗时（秒），优先用 duration，回退到起止时间差 */
-export function getBuildDurationSeconds(build: BuildRecord): number | null {
-  if (typeof build.duration === 'number' && build.duration > 0) {
-    return Math.round(build.duration / 1000);
-  }
-  if (typeof build.duration === 'string') {
-    const parsed = parseDurationSeconds(build.duration);
-    if (parsed !== null) return parsed;
+/** 取打包任务的实际耗时（秒），优先用 duration，回退到起止时间差 */
+export function getBuildDurationSeconds(task: PackageTask): number | null {
+  if (typeof task.duration === 'number' && task.duration > 0) {
+    return Math.round(task.duration / 1000);
   }
 
-  if (!build.started_at || !build.finished_at) return null;
-  const startedAt = new Date(build.started_at).getTime();
-  const finishedAt = new Date(build.finished_at).getTime();
+  if (!task.started_at || !task.finished_at) return null;
+  const startedAt = new Date(task.started_at).getTime();
+  const finishedAt = new Date(task.finished_at).getTime();
 
   if (!Number.isFinite(startedAt) || !Number.isFinite(finishedAt) || finishedAt <= startedAt) return null;
   return Math.round((finishedAt - startedAt) / 1000);
@@ -118,7 +114,7 @@ export function normalizeStatus(release: Release): PipelineStatus {
   return 'draft';
 }
 
-/** 判断构建是否处于运行中（排队或构建中） */
-export function isBuildRunning(build: BuildRecord): boolean {
-  return build.status === 'queue' || build.status === 'running';
+/** 判断打包任务是否处于运行中（排队或打包中） */
+export function isBuildRunning(task: PackageTask): boolean {
+  return task.status === 'queued' || task.status === 'running';
 }

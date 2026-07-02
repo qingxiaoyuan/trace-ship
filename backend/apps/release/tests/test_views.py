@@ -176,44 +176,40 @@ class TestReleaseViews:
         assert response.status_code == 200
         assert response.data["data"]["total"] == 1
 
-    def test_retrieve_returns_build_detail(self, api_client, project, repository):
-        """详情接口展开关联 Jenkins 构建概要"""
-        from apps.jenkins.models import JenkinsBuild, JenkinsJob
+    def test_retrieve_returns_package_tasks(self, api_client, project, repository):
+        """详情接口展开关联打包任务概要"""
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            branch="main",
+            release_type="formal",
+            publisher=api_client.handler._force_user,
+        )
+        from apps.package.models import PackageTask
 
-        job = JenkinsJob.objects.create(
+        PackageTask.objects.create(
+            release=release,
             project=project,
             repository=repository,
             name="打包任务",
-            server_url="https://jenkins.example.com",
-            job_name="backend-build",
-            credential_mode="project",
-            params_template={},
-        )
-        build = JenkinsBuild.objects.create(
-            job=job,
-            build_number=139,
+            mode="simple",
+            build_type="web",
+            tag_name=release.tag_name,
+            version=release.version,
             status="success",
-        )
-        release = ReleaseRecord.objects.create(
-            project=project,
-            repository=repository,
-            version="VA.1.0.0",
-            tag_name="VA.1.0.0",
-            branch="main",
-            release_type="formal",
-            publisher=api_client.handler._force_user,
-            jenkins_build=build,
+            artifact_info=[{"id": "a", "path": "dist/app.zip"}],
         )
         response = api_client.get(f"/api/releases/{release.id}/")
         assert response.status_code == 200
-        build_detail = response.data["data"]["build_detail"]
-        assert build_detail is not None
-        assert build_detail["build_number"] == 139
-        assert build_detail["status"] == "success"
-        assert build_detail["job_name"] == "backend-build"
+        tasks = response.data["data"]["package_tasks"]
+        assert len(tasks) == 1
+        assert tasks[0]["status"] == "success"
+        assert tasks[0]["artifact_count"] == 1
 
-    def test_retrieve_build_detail_none_when_no_build(self, api_client, project, repository):
-        """未关联构建时 build_detail 为 None"""
+    def test_retrieve_package_tasks_empty_when_no_task(self, api_client, project, repository):
+        """未关联打包任务时 package_tasks 为空列表"""
         release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
@@ -225,4 +221,4 @@ class TestReleaseViews:
         )
         response = api_client.get(f"/api/releases/{release.id}/")
         assert response.status_code == 200
-        assert response.data["data"]["build_detail"] is None
+        assert response.data["data"]["package_tasks"] == []

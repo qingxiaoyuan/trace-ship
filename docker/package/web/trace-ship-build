@@ -1,0 +1,81 @@
+#!/bin/sh
+set -eu
+
+log() {
+  printf '[trace-ship-web] %s\n' "$*"
+}
+
+WORKSPACE="${WORKSPACE:-/workspace}"
+SOURCE_DIR="${SOURCE_DIR:-$WORKSPACE/source}"
+ARTIFACTS_DIR="$WORKSPACE/artifacts"
+BUILD_PATH="${BUILD_PATH:-.}"
+OUTPUT_PATH="dist"
+
+case "$BUILD_PATH" in
+  ""|".") APP_DIR="$SOURCE_DIR" ;;
+  /*) echo "BUILD_PATH must be relative" >&2; exit 2 ;;
+  *..*) echo "BUILD_PATH must not contain .." >&2; exit 2 ;;
+  *) APP_DIR="$SOURCE_DIR/$BUILD_PATH" ;;
+esac
+
+case "$OUTPUT_PATH" in
+  ""|".") BUILD_OUTPUT_DIR="$APP_DIR" ;;
+  /*) echo "OUTPUT_PATH must be relative" >&2; exit 2 ;;
+  *..*) echo "OUTPUT_PATH must not contain .." >&2; exit 2 ;;
+  *) BUILD_OUTPUT_DIR="$APP_DIR/$OUTPUT_PATH" ;;
+esac
+
+cd "$APP_DIR"
+
+log "tag=${TAG_NAME:-}"
+log "version=${VERSION:-}"
+log "app_dir=$APP_DIR"
+log "output_path=dist"
+log "artifacts_dir=$ARTIFACTS_DIR"
+
+if [ -f package.json ]; then
+  if [ -f pnpm-lock.yaml ]; then
+    log "install dependencies with pnpm"
+    pnpm install --frozen-lockfile
+    log "run pnpm build"
+    pnpm run build
+  elif [ -f yarn.lock ]; then
+    log "install dependencies with yarn"
+    yarn install --frozen-lockfile
+    log "run yarn build"
+    yarn build
+  elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+    log "install dependencies with npm ci"
+    npm ci
+    log "run npm build"
+    npm run build
+  else
+    log "install dependencies with npm install"
+    npm install
+    log "run npm build"
+    npm run build
+  fi
+else
+  echo "package.json not found in $APP_DIR" >&2
+  exit 2
+fi
+
+if [ ! -d "$BUILD_OUTPUT_DIR" ]; then
+  for candidate in dist build out; do
+    if [ -d "$APP_DIR/$candidate" ]; then
+      BUILD_OUTPUT_DIR="$APP_DIR/$candidate"
+      break
+    fi
+  done
+fi
+
+if [ ! -d "$BUILD_OUTPUT_DIR" ]; then
+  echo "build output directory not found: $BUILD_OUTPUT_DIR" >&2
+  exit 3
+fi
+
+mkdir -p "$ARTIFACTS_DIR"
+log "copy artifacts from $BUILD_OUTPUT_DIR to $ARTIFACTS_DIR"
+rsync -a --delete "$BUILD_OUTPUT_DIR"/ "$ARTIFACTS_DIR"/
+
+log "done"

@@ -31,7 +31,7 @@ type FilterKey = 'all' | 'audit' | 'build' | 'release' | 'system';
 /** 通知类型 → 文案 */
 const typeText: Record<Notification['notification_type'], string> = {
   audit: '审批',
-  build: '构建',
+  build: '打包',
   release: '发布',
   system: '系统',
 };
@@ -40,7 +40,7 @@ const typeText: Record<Notification['notification_type'], string> = {
 const relatedTypeText: Record<string, string> = {
   workflow_task: '审批任务',
   workflow_instance: '审批实例',
-  jenkins_build: 'Jenkins 构建',
+  package_task: '打包任务',
   release_record: '发布记录',
 };
 
@@ -56,7 +56,7 @@ const tagTone: Record<Notification['notification_type'], string> = {
 const filterTabs: { key: FilterKey; label: string; icon?: typeof Hammer; iconColor?: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'audit', label: '审批', icon: GitPullRequestArrow, iconColor: 'text-violet-500' },
-  { key: 'build', label: '构建', icon: Hammer, iconColor: 'text-cyan-500' },
+  { key: 'build', label: '打包', icon: Hammer, iconColor: 'text-cyan-500' },
   { key: 'release', label: '发布', icon: Rocket, iconColor: 'text-emerald-500' },
   { key: 'system', label: '系统', icon: Settings, iconColor: 'text-amber-500' },
 ];
@@ -99,8 +99,8 @@ function getRelatedAction(
     case 'workflow_task':
     case 'workflow_instance':
       return { label: '前往审批', icon: GitPullRequestArrow, to: '/workflows' };
-    case 'jenkins_build':
-      return id ? { label: '查看构建', icon: Hammer, to: `/jenkins/logs/${id}` } : null;
+    case 'package_task':
+      return id ? { label: '查看打包', icon: Hammer, to: '/packages' } : null;
     case 'release_record':
       return id ? { label: '查看发布单', icon: ExternalLink, to: `/releases/${id}` } : null;
     default:
@@ -388,7 +388,7 @@ export default function NotificationPage() {
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">通知中心</h1>
           <p className="mt-1 text-[13px] text-slate-500">
-            查看审批、构建、发布与系统通知，及时处理待办事项
+            查看审批、打包、发布与系统通知，及时处理待办事项
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -19,7 +19,7 @@ def resolve_release(instance: WorkflowInstance):
 
     try:
         return (
-            ReleaseRecord.objects.select_related("project", "publisher", "jenkins_build")
+            ReleaseRecord.objects.select_related("project", "publisher")
             .filter(id=instance.biz_id)
             .first()
         )
@@ -41,13 +41,15 @@ def release_fields(release) -> dict:
             "version": "",
             "release_type": "",
             "branch": "",
-            "build_number": None,
+            "package_status": "",
         }
     return {
         "version": release.version,
         "release_type": release.release_type,
         "branch": release.branch,
-        "build_number": release.jenkins_build.build_number if release.jenkins_build_id else None,
+        "package_status": release.package_tasks.order_by("-created_at").first().status
+        if hasattr(release, "package_tasks") and release.package_tasks.exists()
+        else "",
     }
 
 
@@ -151,7 +153,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
     version = serializers.SerializerMethodField()
     release_type = serializers.SerializerMethodField()
     branch = serializers.SerializerMethodField()
-    build_number = serializers.SerializerMethodField()
+    package_status = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowTask
@@ -164,7 +166,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
             "title", "applicant", "project_name", "current_node",
             "submit_time", "version", "release_type",
-            "branch", "build_number",
+            "branch", "package_status",
         ]
         read_only_fields = [
             "id", "instance", "created_at", "updated_at",
@@ -198,9 +200,9 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
         """返回发布分支。"""
         return release_fields(resolve_release(obj.instance))["branch"]
 
-    def get_build_number(self, obj: WorkflowTask):
-        """返回关联 Jenkins 构建号。"""
-        return release_fields(resolve_release(obj.instance))["build_number"]
+    def get_package_status(self, obj: WorkflowTask):
+        """返回最近打包任务状态。"""
+        return release_fields(resolve_release(obj.instance))["package_status"]
 
 
 class WorkflowInstanceSerializer(serializers.ModelSerializer):
@@ -223,7 +225,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     version = serializers.SerializerMethodField()
     release_type = serializers.SerializerMethodField()
     branch = serializers.SerializerMethodField()
-    build_number = serializers.SerializerMethodField()
+    package_status = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -233,14 +235,14 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "current_node_id", "node_status", "graph_data",
             "created_by", "created_at", "updated_at", "completed_at", "tasks",
             "title", "applicant", "project_name", "current_node", "submit_time",
-            "version", "release_type", "branch", "build_number",
+            "version", "release_type", "branch", "package_status",
         ]
         read_only_fields = [
             "id", "definition_name", "biz_type", "biz_id", "status",
             "current_node_id", "node_status", "graph_data", "created_by",
             "created_at", "updated_at", "completed_at", "tasks",
             "title", "applicant", "project_name", "current_node", "submit_time",
-            "version", "release_type", "branch", "build_number",
+            "version", "release_type", "branch", "package_status",
         ]
 
     def get_title(self, obj: WorkflowInstance) -> str:
@@ -277,9 +279,9 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
         """返回发布分支。"""
         return release_fields(resolve_release(obj))["branch"]
 
-    def get_build_number(self, obj: WorkflowInstance):
-        """返回关联 Jenkins 构建号。"""
-        return release_fields(resolve_release(obj))["build_number"]
+    def get_package_status(self, obj: WorkflowInstance):
+        """返回最近打包任务状态。"""
+        return release_fields(resolve_release(obj))["package_status"]
 
 
 class WorkflowInstanceListSerializer(serializers.ModelSerializer):
@@ -298,7 +300,7 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
     version = serializers.SerializerMethodField()
     release_type = serializers.SerializerMethodField()
     branch = serializers.SerializerMethodField()
-    build_number = serializers.SerializerMethodField()
+    package_status = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -307,7 +309,7 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
             "current_node_id", "created_by", "created_at", "completed_at",
             "title", "applicant", "project_name", "current_node", "submit_time",
             "version", "release_type",
-            "branch", "build_number",
+            "branch", "package_status",
         ]
         read_only_fields = fields
 
@@ -345,6 +347,6 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
         """返回发布分支。"""
         return release_fields(resolve_release(obj))["branch"]
 
-    def get_build_number(self, obj: WorkflowInstance):
-        """返回关联 Jenkins 构建号。"""
-        return release_fields(resolve_release(obj))["build_number"]
+    def get_package_status(self, obj: WorkflowInstance):
+        """返回最近打包任务状态。"""
+        return release_fields(resolve_release(obj))["package_status"]

@@ -53,7 +53,7 @@ class ProjectViewSet(StandardModelViewSet):
 
     def get_queryset(self):
         """
-        根据用户身份返回可见项目，并 annotate 仓库 / Jenkins / 成员 / 发布数量，
+        根据用户身份返回可见项目，并 annotate 仓库 / 打包配置 / 成员 / 发布数量，
         供列表与详情序列化器直接读取，避免 N+1 查询。
         """
         if getattr(self, "swagger_fake_view", False):
@@ -64,7 +64,7 @@ class ProjectViewSet(StandardModelViewSet):
         queryset = Project.objects.select_related("leader").annotate(
             repo_count=Count("repositories", distinct=True),
             member_count=Count("members", distinct=True),
-            jenkins_count=Count("jenkins_jobs", distinct=True),
+            package_count=Count("package_configs", distinct=True),
             release_count=Count("releases", distinct=True),
         )
         if user.is_superuser:
