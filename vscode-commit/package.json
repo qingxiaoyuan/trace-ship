@@ -1,8 +1,8 @@
 {
-  "name": "commit",
+  "name": "commit-help",
   "displayName": "规范提交助手",
   "description": "AI驱动的代码提交规范助手，自动生成符合规范的commit信息",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "publisher": "trace-ship",
   "engines": {
     "vscode": "^1.85.0"
@@ -58,8 +58,8 @@
       "properties": {
         "commit.apiEndpoint": {
           "type": "string",
-          "default": "https://api.minimaxi.com/anthropic/v1/messages",
-          "markdownDescription": "AI API 地址（标准 OpenAI 协议，请求会拼接 `/v1/chat/completions`）。若填入完整路径（如 `https://api.example.com/v1/chat/completions`）则直接使用，不再拼接。兼容 OpenAI / DeepSeek / 通义千问 / 本地 Ollama 等任何兼容服务。"
+          "default": "https://api.minimaxi.com",
+          "markdownDescription": "AI API 地址。若路径包含 `/anthropic`，使用 Anthropic Messages 协议（自动拼接 `/v1/messages`）；否则使用标准 OpenAI 协议（自动拼接 `/v1/chat/completions`）。兼容 MiniMax Anthropic / OpenAI / DeepSeek / 通义千问 / 本地 Ollama 等。"
         },
         "commit.apiKey": {
           "type": "string",
@@ -68,8 +68,8 @@
         },
         "commit.model": {
           "type": "string",
-          "default": "MiniMax-M2.7",
-          "markdownDescription": "使用的 AI 模型名称（如 `gpt-4o-mini`、`deepseek-chat`、`qwen-plus` 等）"
+          "default": "MiniMax-M3",
+          "markdownDescription": "使用的 AI 模型名称（如 `MiniMax-M2.7`、`MiniMax-M3`、`gpt-4o-mini`、`deepseek-chat` 等）"
         }
       }
     }
@@ -78,13 +78,15 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies",
+    "package:install": "npm run package && code --install-extension *.vsix",
     "postinstall": ""
   },
   "devDependencies": {
     "@types/node": "^18.19.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.3.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^5.3.0"
-  },
-  "dependencies": {}
+  }
 }

@@ -218,3 +218,5 @@ temp/
 *.bak
 *.orig
 .claude/
+.codegraph/
+.codebase-memory/
