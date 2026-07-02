@@ -136,6 +136,7 @@ class ReleaseListSerializer(serializers.ModelSerializer):
     pass_count = serializers.SerializerMethodField(read_only=True)
     warning_count = serializers.SerializerMethodField(read_only=True)
     illegal_count = serializers.SerializerMethodField(read_only=True)
+    has_doc = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = ReleaseRecord
@@ -143,7 +144,7 @@ class ReleaseListSerializer(serializers.ModelSerializer):
             "id", "project", "project_name", "repository", "repository_name",
             "version", "tag_name", "release_type", "release_type_display",
             "status", "status_display", "publisher_name", "released_at", "created_at",
-            "commit_total", "pass_count", "warning_count", "illegal_count",
+            "commit_total", "pass_count", "warning_count", "illegal_count", "has_doc",
         ]
 
     def _review_counts(self, obj: ReleaseRecord) -> dict:
@@ -172,6 +173,14 @@ class ReleaseListSerializer(serializers.ModelSerializer):
     def get_illegal_count(self, obj: ReleaseRecord) -> int:
         """非法数"""
         return self._review_counts(obj)["illegal_count"] or 0
+
+    def get_has_doc(self, obj: ReleaseRecord) -> bool:
+        """是否已生成有效的发布说明文档（Markdown 两列表格）"""
+        doc = (obj.release_doc or "").strip()
+        if not doc:
+            return False
+        # 旧版 release_doc 为 JSON 格式，非有效 Markdown 表格，视为无文档
+        return "| 项目 | 内容 |" in doc or doc.startswith("|")
 
 
 class ReleaseCommitSerializer(serializers.ModelSerializer):

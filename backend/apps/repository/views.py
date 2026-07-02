@@ -181,11 +181,13 @@ class RepositoryViewSet(StandardModelViewSet):
             分页后的提交记录列表
         """
         repo = self.get_object()
-        queryset = repo.commits.select_related("project", "repository").all()
+        queryset = repo.commits.select_related("project", "repository").order_by("-committed_at")
         review_status = request.query_params.get("review_status")
         if review_status:
             queryset = queryset.filter(review_status=review_status)
-        queryset = self.filter_queryset(queryset)
+        branch = request.query_params.get("branch")
+        if branch:
+            queryset = queryset.filter(branch=branch)
         page = self.paginate_queryset(queryset)
         serializer = CommitRecordSerializer(page, many=True, context={"request": request})
         return self.get_paginated_response(serializer.data)
@@ -284,6 +286,29 @@ class RepositoryViewSet(StandardModelViewSet):
             return success_response(data)
         except Exception as exc:
             return error_response(50000, f"预览失败: {exc}", status_code=500)
+
+    @action(detail=True, methods=["get"], url_path="review-range")
+    def review_range(self, request: Request, pk=None) -> Response:
+        """
+        按 Tag 区间拉取 commits 与 MRs 并做合规审查（不落库）
+
+        query 参数 tag：指定 Tag 名称，审查该 Tag 与上一个 Tag 之间的提交；
+        为空或 "latest" 时审查最新 Tag 到分支 HEAD 之间的提交。
+
+        Args:
+            request: DRF Request，query 参数 tag
+            pk: 仓库主键
+
+        Returns:
+            审查结果，含 commits / merge_requests / stats
+        """
+        repo = self.get_object()
+        tag = request.query_params.get("tag") or "latest"
+        try:
+            result = RepositoryService.review_range(repo, tag, request.user)
+            return success_response(result)
+        except Exception as exc:
+            return error_response(50000, f"拉取审查失败: {exc}", status_code=500)
 
     @action(detail=False, methods=["get"])
     def stats(self, request: Request) -> Response:

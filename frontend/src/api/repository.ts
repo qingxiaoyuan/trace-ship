@@ -8,6 +8,7 @@ import type {
   RepositoryBranch,
   RepositoryStats,
   RepositoryTag,
+  ReviewRangeResult,
 } from '@/types';
 
 export interface RepositoryListParams {
@@ -53,4 +54,8 @@ export const repositoryApi = {
     }>(`/repositories/${id}/next-version/`, { params: { release_type: releaseType } }),
   previewChanges: (id: string, branch: string) =>
     get<ChangesPreview>(`/repositories/${id}/changes-preview/`, { params: { branch } }),
+  reviewRange: (id: string, tag?: string) =>
+    get<ReviewRangeResult>(`/repositories/${id}/review-range/`, {
+      params: { tag: tag || 'latest' },
+    }),
 };

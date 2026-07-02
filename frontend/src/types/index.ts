@@ -83,10 +83,18 @@ export interface Release {
   id: string;
   project_id: string;
   project_name?: string;
+  /** 仓库 ID（列表/详情返回） */
+  repository?: string;
+  /** 仓名称（列表接口返回） */
+  repository_name?: string;
   version: string;
   tag_name: string;
   release_type: ReleaseType;
+  /** 发布类型中文展示（列表接口返回） */
+  release_type_display?: string;
   status: ReleaseStatus;
+  /** 状态中文展示（列表接口返回） */
+  status_display?: string;
   branch: string;
 
   git_hash: string;
@@ -118,6 +126,8 @@ export interface Release {
   pass_count?: number;
   warning_count?: number;
   illegal_count?: number;
+  /** 是否已生成发布说明文档（列表接口返回） */
+  has_doc?: boolean;
 }
 
 /** 发布关联的 Jenkins 构建概要（release 详情 build_detail） */
@@ -196,6 +206,72 @@ export interface ParsedCommit {
   related_changes?: Record<string, string>;
   is_valid?: boolean;
   errors?: string[];
+}
+
+/** Tag 区间审查结果项（commit 或 MR） */
+export interface ReviewRangeItem {
+  hash?: string;
+  number?: string;
+  author: string;
+  message: string;
+  title?: string;
+  description?: string;
+  source_branch?: string;
+  target_branch?: string;
+  web_url?: string;
+  committed_at?: string;
+  merged_at?: string;
+  review_status: ReviewStatus;
+  review_reason: string;
+  parsed_result?: ParsedCommit;
+}
+
+/** Tag 区间审查结果 */
+export interface ReviewRangeResult {
+  base: string;
+  head: string;
+  tags: { name: string; created_at: string | null }[];
+  commits: ReviewRangeItem[];
+  merge_requests: ReviewRangeItem[];
+  stats: {
+    total: number;
+    pass: number;
+    warning: number;
+    mr_total: number;
+  };
+}
+
+/** 主动拉取审查的单条结果（commit 或 MR） */
+export interface ReviewRangeItem {
+  hash?: string;
+  number?: string;
+  author: string;
+  message: string;
+  review_status: ReviewStatus;
+  review_reason: string;
+  parsed_result?: ParsedCommit;
+  committed_at?: string;
+  merged_at?: string;
+  title?: string;
+  description?: string;
+  source_branch?: string;
+  target_branch?: string;
+  web_url?: string;
+}
+
+/** 主动拉取审查结果 */
+export interface ReviewRangeResult {
+  base: string;
+  head: string;
+  tags: { name: string; created_at: string | null }[];
+  commits: ReviewRangeItem[];
+  merge_requests: ReviewRangeItem[];
+  stats: {
+    total: number;
+    pass: number;
+    warning: number;
+    mr_total: number;
+  };
 }
 
 export interface CommitRecord {

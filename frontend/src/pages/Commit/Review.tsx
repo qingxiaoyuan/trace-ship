@@ -1,175 +1,92 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { Select as AntSelect } from 'antd';
 import {
-  AlertOctagon,
-  AlertTriangle,
   ArrowLeft,
-  Ban,
   Check,
-  ChevronLeft,
+  CheckCircle2,
   ChevronRight,
-  CircleSlash,
-  FolderTree,
+  ClipboardCheck,
+  DownloadCloud,
+  FileText,
   GitBranch,
+  GitCompare,
   History,
+  Info,
   LoaderCircle,
-  Pencil,
   RefreshCw,
+  ScanSearch,
   Search,
-  XCircle,
+  TriangleAlert,
 } from 'lucide-react';
 import dayjs from 'dayjs';
-import { repositoryApi } from '@/api/repository';
+import { projectApi } from '@/api/project';
 import { releaseApi } from '@/api/release';
-import { commitApi } from '@/api/commit';
-import { useAppMessage } from '@/hooks/useAppMessage';
-import { TsModal } from '@/components/TsModal';
-import { formatRelativeTime } from '@/utils/time';
-import {
-  releaseStatusText,
-  statusBadge,
-} from '@/pages/Release/constants';
+import { repositoryApi } from '@/api/repository';
+import { parseMdTable } from '@/utils/markdownTable';
 import type {
-  CommitRecord,
-  ParsedCommit,
+  MdTableRow,
+} from '@/utils/markdownTable';
+import type {
+  Project,
   Release,
-  ReleaseCommit,
-  RepoComplianceStat,
+  ReleaseType,
+  Repository,
+  ReviewRangeItem,
+  ReviewRangeResult,
   ReviewStatus,
 } from '@/types';
 
 /** 三个审查板块 */
-type Sect = 'release-ing' | 'released' | 'repo';
+type Sect = 'pending' | 'released' | 'fetch';
 
-/** 审查状态展示元数据 */
-const reviewMeta: Record<
-  ReviewStatus,
-  { label: string; badge: string; dot: string; Icon: typeof Check }
-> = {
-  pass: {
-    label: '通过',
-    badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    dot: 'bg-emerald-500',
-    Icon: Check,
-  },
-  warning: {
-    label: '警告',
-    badge: 'border-amber-200 bg-amber-50 text-amber-600',
-    dot: 'bg-amber-400',
-    Icon: AlertTriangle,
-  },
-  illegal: {
-    label: '非法',
-    badge: 'border-rose-200 bg-rose-50 text-rose-600',
-    dot: 'bg-rose-500',
-    Icon: XCircle,
-  },
-  unreviewed: {
-    label: '未审查',
-    badge: 'border-slate-200 bg-slate-50 text-slate-500',
-    dot: 'bg-slate-300',
-    Icon: CircleSlash,
-  },
+/** 发布类型筛选选项 */
+type TypeFilter = 'all' | ReleaseType;
+
+const typeFilterLabels: Record<TypeFilter, string> = {
+  all: '全部',
+  formal: '正式',
+  beta: '测试',
+  rc: 'RC',
 };
 
-/** 提交行统一视图模型 */
-interface CommitRowVM {
-  id: string;
-  commit_hash: string;
-  author: string;
-  message: string;
-  review_status: ReviewStatus;
-  review_reason?: string;
-  parsed_result?: ParsedCommit;
-  committed_at: string;
+/** 审查状态归一为 正常 / 警告（illegal 归入警告） */
+function isWarning(status: ReviewStatus): boolean {
+  return status === 'warning' || status === 'illegal';
 }
-
-/** 更新内容类型标记颜色：A/F 为规范，其余标红 */
-function updateTypeColor(type?: string): string {
-  return type === 'A' || type === 'F' ? 'text-indigo-500' : 'text-rose-500';
-}
-
-/** 把发布提交 / 仓库提交归一化为行视图模型 */
-function toRowVM(c: ReleaseCommit | CommitRecord): CommitRowVM {
-  if ('commit_id' in c) {
-    return {
-      id: c.commit_id || c.id,
-      commit_hash: c.commit_hash,
-      author: c.author,
-      message: c.message,
-      review_status: c.review_status,
-      review_reason: c.review_reason,
-      parsed_result: c.parsed_result,
-      committed_at: c.committed_at,
-    };
-  }
-  return {
-    id: c.id,
-    commit_hash: c.commit_hash,
-    author: c.author,
-    message: c.message,
-    review_status: c.review_status,
-    review_reason: c.review_reason,
-    parsed_result: c.parsed_result,
-    committed_at: c.committed_at,
-  };
-}
-
-/** 阻断/回溯/警告等级：illegal 最严重 */
-function rowTone(illegal: number, warning: number): 'rose' | 'amber' | 'emerald' {
-  if (illegal > 0) return 'rose';
-  if (warning > 0) return 'amber';
-  return 'emerald';
-}
-
-const toneDot: Record<'rose' | 'amber' | 'emerald', string> = {
-  rose: 'bg-rose-500',
-  amber: 'bg-amber-400',
-  emerald: 'bg-emerald-500',
-};
 
 export default function CommitReview() {
-  const [sect, setSect] = useState<Sect>('release-ing');
+  const [sect, setSect] = useState<Sect>('pending');
 
   return (
     <div className="space-y-5">
-      {/* 页面标题 */}
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">提交审查</h1>
         <p className="mt-1 text-[13px] text-slate-500">
-          基于「变更类型 + A/F 更新内容」规范，审查发布中、已发布与仓库提交的合规性
+          审查审批中与已发布版本的变更合规性，也可主动拉取任意 Tag 区间的提交进行合规检查
         </p>
       </div>
 
-      {/* 三块 Tab */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <SectTab
-          active={sect === 'release-ing'}
-          onClick={() => setSect('release-ing')}
-          icon={LoaderCircle}
-          label="发布中审查"
-          countKey="release-ing"
-        />
-        <SectTab
-          active={sect === 'released'}
-          onClick={() => setSect('released')}
-          icon={History}
-          label="已发布回溯"
-          countKey="released"
-        />
-        <SectTab
-          active={sect === 'repo'}
-          onClick={() => setSect('repo')}
-          icon={GitBranch}
-          label="仓库合规扫描"
-          countKey="repo"
-        />
+        <SectTab active={sect === 'pending'} onClick={() => setSect('pending')} icon={ClipboardCheck} label="审批中审查" status="pending" />
+        <SectTab active={sect === 'released'} onClick={() => setSect('released')} icon={History} label="已发布回溯" status="released" />
+        <button
+          onClick={() => setSect('fetch')}
+          className={[
+            'inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-[13px] font-medium transition-colors',
+            sect === 'fetch'
+              ? 'border-indigo-500 bg-indigo-50 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-indigo-600',
+          ].join(' ')}
+        >
+          <RefreshCw className="h-4 w-4" strokeWidth={1.5} />
+          主动拉取审查
+        </button>
       </div>
 
-      {sect === 'release-ing' && <ReleaseReviewSection kind="ing" />}
-      {sect === 'released' && <ReleaseReviewSection kind="released" />}
-      {sect === 'repo' && <RepoScanSection />}
+      {sect === 'pending' && <ReleaseReviewSection status="pending" />}
+      {sect === 'released' && <ReleaseReviewSection status="released" />}
+      {sect === 'fetch' && <FetchReviewSection />}
     </div>
   );
 }
@@ -182,15 +99,19 @@ function SectTab({
   onClick,
   icon: Icon,
   label,
-  countKey,
+  status,
 }: {
   active: boolean;
   onClick: () => void;
   icon: typeof Check;
   label: string;
-  countKey: Sect;
+  status: 'pending' | 'released';
 }) {
-  const count = useSectionCount(countKey);
+  const { data } = useQuery({
+    queryKey: ['releases', 'count', status],
+    queryFn: () => releaseApi.getReleases({ status, page: 1, page_size: 1 }),
+  });
+  const count = data?.total ?? 0;
   return (
     <button
       onClick={onClick}
@@ -203,71 +124,56 @@ function SectTab({
     >
       <Icon className="h-4 w-4" strokeWidth={1.5} />
       {label}
-      <span
-        className={`font-mono text-[11px] ${active ? 'text-indigo-400' : 'text-slate-400'}`}
-      >
+      <span className={`font-mono text-[11px] ${active ? 'text-indigo-400' : 'text-slate-400'}`}>
         {count}
       </span>
     </button>
   );
 }
 
-/** 板块计数：发布中=draft+pending，已发布=released，仓库=仓库数 */
-function useSectionCount(key: Sect): number {
-  const draftQ = useQuery({
-    queryKey: ['releases', 'count', 'draft'],
-    queryFn: () => releaseApi.getReleases({ status: 'draft', page: 1, page_size: 1 }),
-  });
-  const pendingQ = useQuery({
-    queryKey: ['releases', 'count', 'pending'],
-    queryFn: () => releaseApi.getReleases({ status: 'pending', page: 1, page_size: 1 }),
-  });
-  const releasedQ = useQuery({
-    queryKey: ['releases', 'count', 'released'],
-    queryFn: () => releaseApi.getReleases({ status: 'released', page: 1, page_size: 1 }),
-  });
-  const repoQ = useQuery({
-    queryKey: ['repositories', 'compliance-stats', 'count'],
-    queryFn: () => repositoryApi.getComplianceStats(),
-  });
-  if (key === 'release-ing') return (draftQ.data?.total ?? 0) + (pendingQ.data?.total ?? 0);
-  if (key === 'released') return releasedQ.data?.total ?? 0;
-  return repoQ.data?.length ?? 0;
-}
-
 /* ============================================================
- * 第一/二块：发布中审查 / 已发布回溯
+ * 第一/二块：审批中审查 / 已发布回溯
  * ============================================================ */
-function ReleaseReviewSection({ kind }: { kind: 'ing' | 'released' }) {
+function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
   const [keyword, setKeyword] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [repoId, setRepoId] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [selected, setSelected] = useState<Release | null>(null);
 
-  const isReleased = kind === 'released';
-
-  // 拉取发布列表（发布中=draft+pending 两次请求合并；已发布单次，取较多条供客户端检索）
-  const draftQ = useQuery({
-    queryKey: ['releases', 'review', 'draft'],
-    queryFn: () => releaseApi.getReleases({ status: 'draft', page: 1, page_size: 100 }),
-    enabled: !isReleased,
-  });
-  const pendingQ = useQuery({
-    queryKey: ['releases', 'review', 'pending'],
-    queryFn: () => releaseApi.getReleases({ status: 'pending', page: 1, page_size: 100 }),
-    enabled: !isReleased,
-  });
-  const releasedQ = useQuery({
-    queryKey: ['releases', 'review', 'released'],
-    queryFn: () => releaseApi.getReleases({ status: 'released', page: 1, page_size: 100 }),
-    enabled: isReleased,
+  // 项目列表
+  const projectsQ = useQuery({
+    queryKey: ['projects', 'all'],
+    queryFn: () => projectApi.getProjects({ page: 1, page_size: 200 }),
   });
 
-  const loading = isReleased ? releasedQ.isLoading : draftQ.isLoading || pendingQ.isLoading;
-  const all = useMemo(() => {
-    if (isReleased) return releasedQ.data?.results ?? [];
-    return [...(draftQ.data?.results ?? []), ...(pendingQ.data?.results ?? [])];
-  }, [isReleased, releasedQ.data, draftQ.data, pendingQ.data]);
+  // 仓库列表（按项目筛选）
+  const reposQ = useQuery({
+    queryKey: ['repositories', 'filter', projectId],
+    queryFn: () =>
+      repositoryApi.getRepositories({
+        ...(projectId ? { project: projectId } : {}),
+        page: 1,
+        page_size: 200,
+      }),
+  });
+
+  // 发布列表
+  const releasesQ = useQuery({
+    queryKey: ['releases', 'review', status, projectId, repoId, typeFilter],
+    queryFn: () =>
+      releaseApi.getReleases({
+        status,
+        page: 1,
+        page_size: 100,
+        ...(projectId ? { project: projectId } : {}),
+        ...(repoId ? { repository: repoId } : {}),
+        ...(typeFilter !== 'all' ? { release_type: typeFilter } : {}),
+      }),
+  });
 
   const rows = useMemo(() => {
+    const all = releasesQ.data?.results ?? [];
     const kw = keyword.trim().toLowerCase();
     if (!kw) return all;
     return all.filter(
@@ -275,37 +181,75 @@ function ReleaseReviewSection({ kind }: { kind: 'ing' | 'released' }) {
         r.version?.toLowerCase().includes(kw) ||
         r.project_name?.toLowerCase().includes(kw),
     );
-  }, [all, keyword]);
+  }, [releasesQ.data, keyword]);
 
   if (selected) {
-    return (
-      <ReleaseReviewDetail
-        release={selected}
-        kind={kind}
-        onBack={() => setSelected(null)}
-      />
-    );
+    return <ReleaseReviewDetail release={selected} status={status} onBack={() => setSelected(null)} />;
   }
+
+  const loading = releasesQ.isLoading;
 
   return (
     <div className="space-y-5">
       <div className="tech-card overflow-hidden rounded-xl">
-        {/* 搜索栏 */}
+        {/* 筛选栏 */}
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
           <div className="relative">
-            <Search
-              className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
-              strokeWidth={1.5}
-            />
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索项目 / 版本号"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-[200px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
+          {/* 项目下拉 */}
+          <div className="w-[180px]">
+            <Select
+              value={projectId}
+              onChange={(v) => {
+                setProjectId(v);
+                setRepoId('');
+              }}
+              placeholder="全部项目"
+              options={(projectsQ.data?.results ?? []).map((p: Project) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+            />
+          </div>
+          {/* 仓库下拉 */}
+          <div className="w-[180px]">
+            <Select
+              value={repoId}
+              onChange={(v) => setRepoId(v)}
+              placeholder={projectId ? '全部仓库' : '先选项目'}
+              disabled={!projectId}
+              options={(reposQ.data?.results ?? []).map((r: Repository) => ({
+                value: r.id,
+                label: r.name,
+              }))}
+            />
+          </div>
+          {/* 类型按钮组 */}
+          <div className="flex items-center gap-0.5 rounded-lg border border-indigo-100 bg-white p-0.5">
+            {(Object.keys(typeFilterLabels) as TypeFilter[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={[
+                  'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+                  typeFilter === t
+                    ? 'bg-indigo-50 text-indigo-600'
+                    : 'text-slate-500 hover:text-indigo-600',
+                ].join(' ')}
+              >
+                {typeFilterLabels[t]}
+              </button>
+            ))}
+          </div>
           <div className="ml-auto text-[12px] text-slate-400">
-            共 {rows.length} 个{isReleased ? '已发布' : '发布中'}
+            共 {rows.length} 个{status === 'released' ? '已发布' : '审批中'}
           </div>
         </div>
 
@@ -313,29 +257,24 @@ function ReleaseReviewSection({ kind }: { kind: 'ing' | 'released' }) {
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-3">发布单</div>
           <div className="col-span-2">项目</div>
+          <div className="col-span-1">类型</div>
           <div className="col-span-1 text-center">提交</div>
-          <div className="col-span-1 text-center">通过</div>
-          <div className="col-span-1 text-center">警告</div>
-          <div className="col-span-1 text-center">非法</div>
-          <div className="col-span-1">{isReleased ? '回溯结果' : '状态'}</div>
-          <div className="col-span-1 text-right">操作</div>
+          <div className="col-span-1 text-center">审查</div>
+          <div className="col-span-2">状态</div>
+          <div className="col-span-2 text-right">操作</div>
         </div>
 
         {/* 列表 */}
         <div className="divide-y divide-indigo-50/50">
           {loading ? (
-            <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">
-              加载中…
-            </div>
+            <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">加载中…</div>
           ) : rows.length === 0 ? (
-            <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">
-              暂无数据
-            </div>
+            <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">暂无数据</div>
           ) : (
             rows.map((r) => {
-              const illegal = r.illegal_count ?? 0;
-              const warning = r.warning_count ?? 0;
-              const tone = rowTone(illegal, warning);
+              const warning = (r.warning_count ?? 0) + (r.illegal_count ?? 0);
+              const noDoc = r.has_doc !== true;
+              const hasWarning = warning > 0 || noDoc;
               return (
                 <div
                   key={r.id}
@@ -343,52 +282,44 @@ function ReleaseReviewSection({ kind }: { kind: 'ing' | 'released' }) {
                   className="grid cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30"
                 >
                   <div className="col-span-12 flex items-center gap-2 md:col-span-3">
-                    <span className={`inline-flex h-2 w-2 rounded-full ${toneDot[tone]}`} />
+                    <span className={`inline-flex h-2 w-2 rounded-full ${hasWarning ? 'bg-amber-400' : 'bg-emerald-500'}`} />
                     <div>
-                      <div className="font-mono text-[13px] font-medium text-slate-900">
-                        {r.version}
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {releaseStatusText[r.status]}
-                      </div>
+                      <div className="font-mono text-[13px] font-medium text-slate-900">{r.version}</div>
+                      <div className="text-[11px] text-slate-400">{r.repository_name || '-'}</div>
                     </div>
                   </div>
-                  <div className="col-span-6 text-[13px] text-slate-700 md:col-span-2">
-                    {r.project_name || '-'}
+                  <div className="col-span-6 text-[13px] text-slate-700 md:col-span-2">{r.project_name || '-'}</div>
+                  <div className="col-span-3 md:col-span-1">
+                    <ReleaseTypeBadge type={r.release_type} />
                   </div>
                   <div className="col-span-3 text-center font-mono text-[13px] text-slate-700 md:col-span-1">
                     {r.commit_total ?? 0}
                   </div>
-                  <div className="col-span-3 text-center font-mono text-[13px] text-emerald-600 md:col-span-1">
-                    {r.pass_count ?? 0}
-                  </div>
-                  <div className="col-span-3 text-center font-mono text-[13px] text-amber-600 md:col-span-1">
-                    {warning}
-                  </div>
                   <div className="col-span-3 text-center md:col-span-1">
-                    {illegal > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
-                        {illegal} 非法
+                    {hasWarning ? (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                        {noDoc ? '无文档' : `${warning} 警告`}
                       </span>
                     ) : (
-                      <span className="font-mono text-[13px] text-slate-300">0</span>
+                      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正常</span>
                     )}
                   </div>
-                  <div className="col-span-6 md:col-span-1">
-                    {isReleased ? (
-                      <ResultBadge tone={tone} />
-                    ) : (
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${statusBadge[r.status]}`}
-                      >
-                        {r.status === 'pending' && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot" />
-                        )}
-                        {releaseStatusText[r.status]}
-                      </span>
-                    )}
+                  <div className="col-span-6 md:col-span-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                      {r.status_display || r.status}
+                    </span>
                   </div>
-                  <div className="col-span-6 flex items-center justify-end md:col-span-1">
+                  <div className="col-span-6 flex items-center justify-end gap-1.5 md:col-span-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelected(r);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                    >
+                      <FileText className="h-3 w-3" strokeWidth={1.5} />
+                      查看文档
+                    </button>
                     <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
                   </div>
                 </div>
@@ -401,69 +332,30 @@ function ReleaseReviewSection({ kind }: { kind: 'ing' | 'released' }) {
   );
 }
 
-/** 回溯结果徽标 */
-function ResultBadge({ tone }: { tone: 'rose' | 'amber' | 'emerald' }) {
-  if (tone === 'rose')
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
-        <AlertOctagon className="h-3 w-3" strokeWidth={1.5} />存在非法
-      </span>
-    );
-  if (tone === 'amber')
-    return (
-      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
-        <AlertTriangle className="h-3 w-3" strokeWidth={1.5} />存在警告
-      </span>
-    );
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
-      <Check className="h-3 w-3" strokeWidth={1.5} />全部合规
-    </span>
-  );
-}
-
 /* ============================================================
- * 发布审查详情（第一/二块共用）
+ * 发布审查详情（第一/二块共用）：发布说明两列表格
  * ============================================================ */
 function ReleaseReviewDetail({
   release,
-  kind,
+  status,
   onBack,
 }: {
   release: Release;
-  kind: 'ing' | 'released';
+  status: 'pending' | 'released';
   onBack: () => void;
 }) {
-  const isReleased = kind === 'released';
-  const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'all'>('all');
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-
-  const illegal = release.illegal_count ?? 0;
-  const warning = release.warning_count ?? 0;
-  const pass = release.pass_count ?? 0;
-  const total = release.commit_total ?? 0;
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['release', 'commits', release.id, statusFilter, page, pageSize],
-    queryFn: () =>
-      releaseApi.getCommits(release.id, {
-        page,
-        page_size: pageSize,
-        ...(statusFilter !== 'all' ? { review_status: statusFilter } : {}),
-      }),
+  // 拉取完整 release 详情（含 release_doc）
+  const { data: detail, isLoading } = useQuery({
+    queryKey: ['release', 'detail', release.id],
+    queryFn: () => releaseApi.getRelease(release.id),
   });
 
-  const commits = data?.results ?? [];
-  const totalCommits = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCommits / pageSize));
+  const warningCount = (release.warning_count ?? 0) + (release.illegal_count ?? 0);
+  const releaseDoc = detail?.release_doc || '';
+  const rows = parseMdTable(releaseDoc);
+  const hasDoc = rows.length > 0;
 
-  const filters: { key: ReviewStatus | 'all'; label: string; count: number }[] = [
-    { key: 'all', label: '全部', count: total },
-    { key: 'illegal', label: '非法', count: illegal },
-    { key: 'warning', label: '警告', count: warning },
-    { key: 'pass', label: '通过', count: pass },
-  ];
+  const title = status === 'released' ? '已发布回溯' : '审批中审查';
 
   return (
     <div className="space-y-5">
@@ -474,756 +366,512 @@ function ReleaseReviewDetail({
           className="inline-flex items-center gap-1 text-slate-400 transition-colors hover:text-indigo-600"
         >
           <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
-          {isReleased ? '已发布回溯' : '发布中审查'}
+          {title}
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
         <span className="font-mono font-medium text-slate-800">{release.version}</span>
+        {!isLoading && (warningCount > 0 || !hasDoc) && (
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[12px] font-medium text-amber-600">
+            <TriangleAlert className="h-3.5 w-3.5" strokeWidth={1.5} />
+            {!hasDoc ? '无发布说明' : `${warningCount} 项警告`}
+          </span>
+        )}
       </div>
 
-      {/* 概要卡 */}
+      {isLoading ? (
+        <div className="tech-card flex items-center justify-center rounded-xl py-16 text-[13px] text-slate-400">
+          加载中…
+        </div>
+      ) : !hasDoc ? (
+        <div className="tech-card flex flex-col items-center justify-center rounded-xl py-16">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-amber-200 bg-amber-50">
+            <TriangleAlert className="h-6 w-6 text-amber-500" strokeWidth={1.5} />
+          </div>
+          <p className="mt-4 text-[14px] font-medium text-slate-700">该发布单尚未生成发布说明文档</p>
+          <p className="mt-1 text-[12px] text-slate-400">请先在发布详情页生成发布说明</p>
+        </div>
+      ) : (
+        <div className="tech-card overflow-hidden rounded-xl">
+          <div className="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
+            <FileText className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
+            <h3 className="text-[14px] font-semibold text-slate-900">发布说明</h3>
+            <span className="text-[12px] text-slate-400">
+              {release.version} · {release.release_type_display || release.release_type}
+            </span>
+          </div>
+          <div className="overflow-hidden">
+            <table className="w-full border-collapse">
+              <tbody>
+                {rows.map((row, idx) => (
+                  <DocRow key={idx} row={row} hasWarning={warningCount > 0} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 发布说明表格行 */
+function DocRow({ row, hasWarning }: { row: MdTableRow; hasWarning: boolean }) {
+  const isChangeContent = row.key === '变更内容';
+  // 变更内容按 <br> 分行，每行尝试提取类型标记
+  const lines = row.value.split('<br>');
+
+  return (
+    <tr className="border-b border-slate-100 last:border-0">
+      <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">
+        {isChangeContent && hasWarning ? (
+          <span className="inline-flex items-center gap-1">
+            {row.key}
+            <TriangleAlert className="h-3 w-3 text-amber-500" strokeWidth={1.5} />
+          </span>
+        ) : (
+          row.key
+        )}
+      </td>
+      <td className="px-4 py-2.5 text-[13px] text-slate-800">
+        {isChangeContent ? (
+          <div className="space-y-1">
+            {lines.map((line, i) => {
+              const m = line.trim().match(/^([AF])\s+(.*)/);
+              if (m) {
+                const type = m[1];
+                const content = m[2];
+                const typeCls =
+                  type === 'A'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : type === 'F'
+                      ? 'border-amber-200 bg-amber-50 text-amber-700'
+                      : 'border-slate-200 bg-slate-50 text-slate-600';
+                return (
+                  <div key={i} className="flex items-start gap-1.5">
+                    <span className={`font-mono text-[11px] rounded border px-1 py-0.5 shrink-0 ${typeCls}`}>
+                      {type}
+                    </span>
+                    <span>{content}</span>
+                  </div>
+                );
+              }
+              return <div key={i}>{line}</div>;
+            })}
+          </div>
+        ) : (
+          row.value.split('<br>').map((line, i) => <div key={i}>{line}</div>)
+        )}
+      </td>
+    </tr>
+  );
+}
+
+/* ============================================================
+ * 第三块：主动拉取审查
+ * ============================================================ */
+function FetchReviewSection() {
+  const [projectId, setProjectId] = useState('');
+  const [repoId, setRepoId] = useState('');
+  const [tagName, setTagName] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const [result, setResult] = useState<ReviewRangeResult | null>(null);
+
+  // 项目列表
+  const projectsQ = useQuery({
+    queryKey: ['projects', 'all'],
+    queryFn: () => projectApi.getProjects({ page: 1, page_size: 200 }),
+  });
+
+  // 仓库列表（按项目筛选）
+  const reposQ = useQuery({
+    queryKey: ['repositories', 'filter', projectId],
+    queryFn: () =>
+      repositoryApi.getRepositories({
+        ...(projectId ? { project: projectId } : {}),
+        page: 1,
+        page_size: 200,
+      }),
+    enabled: !!projectId,
+  });
+
+  // 仓库 Tag 列表
+  const tagsQ = useQuery({
+    queryKey: ['repository', 'tags', repoId],
+    queryFn: () => repositoryApi.getTags(repoId),
+    enabled: !!repoId,
+  });
+
+  const selectedRepo = reposQ.data?.results?.find((r) => r.id === repoId);
+
+  const handleFetch = async () => {
+    if (!repoId) return;
+    setFetching(true);
+    try {
+      const data = await repositoryApi.reviewRange(repoId, tagName || undefined);
+      setResult(data);
+    } catch {
+      setResult(null);
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const handleReset = () => {
+    setProjectId('');
+    setRepoId('');
+    setTagName('');
+    setResult(null);
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* 选择器卡片 */}
       <div className="tech-card rounded-xl p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-4 flex items-center gap-2">
+          <RefreshCw className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
+          <h3 className="text-[14px] font-semibold text-slate-900">选择审查范围</h3>
+          <span className="ml-auto text-[11px] text-slate-400">
+            拉取区间内的 commits 与 MR 进行合规审查，结果仅临时展示不落库
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* 项目 */}
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
+              项目
+            </label>
+            <Select
+              value={projectId}
+              onChange={(v) => {
+                setProjectId(v);
+                setRepoId('');
+                setTagName('');
+                setResult(null);
+              }}
+              placeholder="请选择项目"
+              options={(projectsQ.data?.results ?? []).map((p: Project) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+            />
+          </div>
+          {/* 仓库 */}
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
+              仓库
+            </label>
+            <Select
+              value={repoId}
+              onChange={(v) => {
+                setRepoId(v);
+                setTagName('');
+                setResult(null);
+              }}
+              placeholder={projectId ? '请选择仓库' : '先选项目'}
+              disabled={!projectId}
+              options={(reposQ.data?.results ?? []).map((r: Repository) => ({
+                value: r.id,
+                label: r.name,
+              }))}
+            />
+          </div>
+          {/* Tag 区间 */}
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
+              Tag 区间
+            </label>
+            <Select
+              value={tagName}
+              onChange={(v) => {
+                setTagName(v);
+                setResult(null);
+              }}
+              placeholder={repoId ? '默认最新 Tag → HEAD' : '先选仓库'}
+              disabled={!repoId}
+              options={[
+                { value: '', label: '最新（最新 Tag → 分支 HEAD）' },
+                ...(tagsQ.data ?? []).map((t) => ({
+                  value: t.name,
+                  label: t.name,
+                })),
+              ]}
+            />
+          </div>
+        </div>
+
+        {/* 拉取按钮 */}
+        <div className="mt-4 flex items-center gap-3 border-t border-indigo-50 pt-4">
+          <button
+            onClick={handleFetch}
+            disabled={!repoId || fetching}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <DownloadCloud className="h-3.5 w-3.5" strokeWidth={1.5} />
+            拉取并审查
+          </button>
+          <button
+            onClick={handleReset}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+          >
+            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+            重置
+          </button>
+          {selectedRepo && (
+            <div className="ml-auto text-[11px] text-slate-400">
+              区间：
+              <span className="font-mono text-slate-500">
+                {tagName ? `上一 Tag → ${tagName}` : '最新 Tag → HEAD'}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 结果区 */}
+      {fetching ? (
+        <div className="tech-card flex flex-col items-center justify-center rounded-xl py-12">
+          <LoaderCircle className="h-8 w-8 animate-spin text-indigo-500" strokeWidth={1.5} />
+          <p className="mt-4 text-[14px] font-medium text-slate-700">正在拉取并审查…</p>
+          <p className="mt-1 text-[12px] text-slate-400">从仓库拉取 commits 与 MR，逐条校验变更类型与更新内容</p>
+        </div>
+      ) : result ? (
+        <FetchReviewResult result={result} />
+      ) : (
+        <div className="tech-card flex flex-col items-center justify-center rounded-xl py-12">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-200 bg-indigo-50">
+            <ScanSearch className="h-7 w-7 text-indigo-500" strokeWidth={1.5} />
+          </div>
+          <h3 className="mt-4 text-[15px] font-semibold text-slate-800">选择审查范围后拉取</h3>
+          <p className="mt-1 text-[13px] text-slate-500">
+            依次选择 项目 → 仓库 → Tag，系统将拉取该 Tag 与上一个 Tag 之间的所有提交与合并请求进行合规审查
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 第三块结果展示 */
+function FetchReviewResult({ result }: { result: ReviewRangeResult }) {
+  const warningCount = result.stats.warning;
+  const passCount = result.stats.pass;
+
+  return (
+    <div className="space-y-5">
+      {/* 结果头 */}
+      <div className="tech-card rounded-xl p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className={`flex h-11 w-11 items-center justify-center rounded-xl ${
-                isReleased ? 'icon-indigo' : 'icon-rose'
-              }`}
-            >
-              {isReleased ? (
-                <History className="h-5 w-5" strokeWidth={1.5} />
-              ) : (
-                <LoaderCircle className="h-5 w-5" strokeWidth={1.5} />
-              )}
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50">
+              <GitCompare className="h-5 w-5 text-indigo-500" strokeWidth={1.5} />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-[20px] font-semibold tracking-tight text-slate-900">
-                  {release.version}
-                </h2>
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${statusBadge[release.status]}`}
-                >
-                  {release.status === 'pending' && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot" />
-                  )}
-                  {releaseStatusText[release.status]}
-                </span>
-              </div>
-              <div className="mt-0.5 text-[12px] text-slate-500">
-                {release.project_name || '-'} · {total} 个提交
-                {illegal > 0
-                  ? ` · 含 ${illegal} 个非法提交（将阻断审批）`
-                  : warning > 0
-                    ? ` · 含 ${warning} 个警告`
-                    : ' · 全部通过'}
+              <h2 className="text-[18px] font-semibold tracking-tight text-slate-900">
+                {result.base} → {result.head}
+              </h2>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+                <span>{result.stats.total} commits</span>
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                <span>{result.stats.mr_total} MRs</span>
               </div>
             </div>
           </div>
+          {warningCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 self-start rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[12px] font-medium text-amber-600">
+              <TriangleAlert className="h-3.5 w-3.5" strokeWidth={1.5} />
+              {warningCount} 项警告
+            </span>
+          )}
         </div>
-        <div className="mt-4 grid grid-cols-4 gap-3 border-t border-indigo-50 pt-4">
-          <Stat icon={Check} iconCls="icon-emerald" value={pass} label="通过" />
-          <Stat icon={AlertTriangle} iconCls="icon-amber" value={warning} label="警告" />
-          <Stat icon={XCircle} iconCls="icon-rose" value={illegal} label="非法" />
-          <Stat icon={CircleSlash} iconCls="icon-indigo" value={total} label="总计" />
+        <div className="mt-4 grid grid-cols-3 gap-3 border-t border-indigo-50 pt-4">
+          <StatBlock icon={CheckCircle2} iconCls="border-emerald-200 bg-emerald-50 text-emerald-600" value={passCount} label="正常" />
+          <StatBlock icon={TriangleAlert} iconCls="border-amber-200 bg-amber-50 text-amber-600" value={warningCount} label="警告" />
+          <StatBlock icon={GitBranch} iconCls="border-cyan-200 bg-cyan-50 text-cyan-600" value={result.stats.mr_total} label="合并请求" />
         </div>
       </div>
 
-      {/* 阻断 / 回溯提示 */}
-      {illegal > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50/50 p-4">
-          {isReleased ? (
-            <AlertOctagon className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" strokeWidth={1.5} />
-          ) : (
-            <Ban className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" strokeWidth={1.5} />
-          )}
-          <div className="text-[12px] leading-relaxed text-slate-600">
-            {isReleased ? (
-              <>
-                <span className="font-medium text-rose-600">
-                  回溯发现 {illegal} 个非法提交已发布到生产环境。
-                </span>
-                该提交在发布时未通过规则审查但仍被纳入发布说明，建议排查原因并完善审查流程。
-              </>
-            ) : (
-              <>
-                <span className="font-medium text-rose-600">
-                  存在 {illegal} 个非法提交，将阻断审批流程。
-                </span>
-                请通知对应开发者修正提交信息后重新生成发布说明，或人工复核标记为通过 / 警告。
-              </>
-            )}
+      {/* Commits 审查 */}
+      {result.commits.length > 0 && (
+        <div className="tech-card overflow-hidden rounded-xl">
+          <div className="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
+            <FileText className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
+            <h3 className="text-[14px] font-semibold text-slate-900">提交审查（{result.stats.total}）</h3>
+          </div>
+          <div className="divide-y divide-indigo-50/50">
+            {result.commits.map((c) => (
+              <FetchReviewRow key={c.hash} item={c} type="commit" />
+            ))}
           </div>
         </div>
       )}
 
-      {/* 提交列表 */}
-      <div className="tech-card overflow-hidden rounded-xl">
-        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <h3 className="text-[14px] font-semibold text-slate-900">提交列表（{total}）</h3>
-          <div className="ml-auto flex flex-wrap items-center gap-1">
-            {filters.map((f) => (
-              <FilterChip
-                key={f.key}
-                active={statusFilter === f.key}
-                onClick={() => {
-                  setStatusFilter(f.key);
-                  setPage(1);
-                }}
-              >
-                {f.label} {f.count}
-              </FilterChip>
+      {/* MR 审查 */}
+      {result.merge_requests.length > 0 && (
+        <div className="tech-card overflow-hidden rounded-xl">
+          <div className="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
+            <GitBranch className="h-4 w-4 text-cyan-500" strokeWidth={1.5} />
+            <h3 className="text-[14px] font-semibold text-slate-900">合并请求审查（{result.stats.mr_total}）</h3>
+            <span className="ml-auto text-[11px] text-slate-400">基于 MR 描述解析变更内容</span>
+          </div>
+          <div className="divide-y divide-indigo-50/50">
+            {result.merge_requests.map((m) => (
+              <FetchReviewRow key={m.number} item={m} type="mr" />
             ))}
           </div>
         </div>
-        <CommitList rows={commits.map(toRowVM)} loading={isLoading} />
-        {(totalCommits > 0 || page > 1) && (
-          <Pager
-            page={page}
-            totalPages={totalPages}
-            total={totalCommits}
-            pageSize={pageSize}
-            onChange={setPage}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
+      )}
 
-/* ============================================================
- * 第三块：仓库合规扫描
- * ============================================================ */
-function RepoScanSection() {
-  const [keyword, setKeyword] = useState('');
-  const [vendor, setVendor] = useState('all');
-  const [selected, setSelected] = useState<RepoComplianceStat | null>(null);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['repositories', 'compliance-stats'],
-    queryFn: () => repositoryApi.getComplianceStats(),
-  });
-
-  const rows = useMemo(() => {
-    const list = data ?? [];
-    const kw = keyword.trim().toLowerCase();
-    return list.filter((r) => {
-      if (vendor !== 'all' && r.vendor !== vendor) return false;
-      if (kw && !r.name?.toLowerCase().includes(kw) && !r.project_name?.toLowerCase().includes(kw))
-        return false;
-      return true;
-    });
-  }, [data, keyword, vendor]);
-
-  if (selected) {
-    return <RepoScanDetail repo={selected} onBack={() => setSelected(null)} />;
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="tech-card overflow-hidden rounded-xl">
-        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
-            <Search
-              className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
-              strokeWidth={1.5}
-            />
-            <input
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索仓库名称"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-          <VendorSelect value={vendor} onChange={setVendor} />
-          <div className="ml-auto text-[12px] text-slate-400">共 {rows.length} 个仓库</div>
-        </div>
-
-        <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
-          <div className="col-span-3">仓库</div>
-          <div className="col-span-2">项目</div>
-          <div className="col-span-1 text-center">提交</div>
-          <div className="col-span-1 text-center">通过</div>
-          <div className="col-span-1 text-center">警告</div>
-          <div className="col-span-1 text-center">非法</div>
-          <div className="col-span-1">最近同步</div>
-          <div className="col-span-1 text-right">操作</div>
-        </div>
-
-        <div className="divide-y divide-indigo-50/50">
-          {isLoading ? (
-            <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">
-              加载中…
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">
-              暂无仓库
-            </div>
-          ) : (
-            rows.map((r) => (
-              <RepoListRow key={r.id} repo={r} onClick={() => setSelected(r)} />
-            ))
-          )}
+      {/* 底部提示 */}
+      <div className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/30 p-4">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" strokeWidth={1.5} />
+        <div className="text-[12px] leading-relaxed text-slate-600">
+          本次审查结果为临时展示，不会写入数据库。如需持久化，可前往对应仓库详情页执行「同步提交」。
         </div>
       </div>
     </div>
   );
 }
 
-function RepoListRow({ repo, onClick }: { repo: RepoComplianceStat; onClick: () => void }) {
-  const queryClient = useQueryClient();
-  const { message } = useAppMessage();
-  const syncMut = useMutation({
-    mutationFn: () => repositoryApi.syncCommits(repo.id),
-    onSuccess: () => {
-      message.success('已触发同步，稍后刷新查看结果');
-      queryClient.invalidateQueries({ queryKey: ['repositories', 'compliance-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['repository', 'commits', repo.id] });
-    },
-    onError: (err: unknown) => {
-      message.error((err as { message?: string })?.message || '同步失败');
-    },
-  });
-  const syncing = syncMut.isPending;
-  return (
-    <div
-      onClick={onClick}
-      className="grid cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30"
-    >
-      <div className="col-span-12 flex items-center gap-2 md:col-span-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md icon-indigo">
-          {repo.repo_type === 'svn' ? (
-            <FolderTree className="h-3.5 w-3.5" strokeWidth={1.5} />
-          ) : (
-            <GitBranch className="h-3.5 w-3.5" strokeWidth={1.5} />
-          )}
-        </div>
-        <div>
-          <div className="text-[13px] font-medium text-slate-900">{repo.name}</div>
-          <div className="text-[11px] text-slate-400">
-            {repo.vendor} · {repo.default_branch}
-          </div>
-        </div>
-      </div>
-      <div className="col-span-6 text-[13px] text-slate-700 md:col-span-2">
-        {repo.project_name || '-'}
-      </div>
-      <div className="col-span-3 text-center font-mono text-[13px] text-slate-700 md:col-span-1">
-        {repo.commit_total.toLocaleString()}
-      </div>
-      <div className="col-span-3 text-center font-mono text-[13px] text-emerald-600 md:col-span-1">
-        {repo.pass_count.toLocaleString()}
-      </div>
-      <div className="col-span-3 text-center font-mono text-[13px] text-amber-600 md:col-span-1">
-        {repo.warning_count.toLocaleString()}
-      </div>
-      <div className="col-span-3 text-center font-mono text-[13px] text-rose-600 md:col-span-1">
-        {repo.illegal_count.toLocaleString()}
-      </div>
-      <div className="col-span-6 flex items-center gap-1 text-[12px] text-slate-500 md:col-span-1">
-        {syncing ? (
-          <>
-            <LoaderCircle className="h-3 w-3 animate-spin text-amber-500" strokeWidth={1.5} />
-            同步中
-          </>
-        ) : (
-          <>
-            <RefreshCw className="h-3 w-3 text-emerald-500" strokeWidth={1.5} />
-            {formatRelativeTime(repo.last_sync_at || undefined)}
-          </>
-        )}
-      </div>
-      <div className="col-span-6 flex items-center justify-end gap-1 md:col-span-1">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            syncMut.mutate();
-          }}
-          disabled={syncing}
-          title="同步扫描"
-          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-        </button>
-        <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
-      </div>
-    </div>
-  );
-}
-
-function RepoScanDetail({ repo, onBack }: { repo: RepoComplianceStat; onBack: () => void }) {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { message } = useAppMessage();
-  const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'all'>('all');
-  const [keyword, setKeyword] = useState('');
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['repository', 'commits', repo.id, statusFilter, page, pageSize],
-    queryFn: () =>
-      repositoryApi.getRepositoryCommits(repo.id, {
-        page,
-        page_size: pageSize,
-        ...(statusFilter !== 'all' ? { review_status: statusFilter } : {}),
-      }),
-  });
-
-  const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-  // 客户端在当前页内按关键字检索（message / hash / author）
-  const rows = useMemo(() => {
-    const allCommits = data?.results ?? [];
-    const kw = keyword.trim().toLowerCase();
-    if (!kw) return allCommits;
-    return allCommits.filter(
-      (c) =>
-        c.message?.toLowerCase().includes(kw) ||
-        c.commit_hash?.toLowerCase().includes(kw) ||
-        c.author?.toLowerCase().includes(kw),
-    );
-  }, [data, keyword]);
-
-  const complianceRate =
-    repo.commit_total > 0
-      ? ((repo.pass_count / repo.commit_total) * 100).toFixed(1)
-      : '0.0';
-
-  const syncMut = useMutation({
-    mutationFn: () => repositoryApi.syncCommits(repo.id),
-    onSuccess: () => {
-      message.success('已触发同步并扫描，稍后刷新查看结果');
-      queryClient.invalidateQueries({ queryKey: ['repositories', 'compliance-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['repository', 'commits', repo.id] });
-    },
-    onError: (err: unknown) => {
-      message.error((err as { message?: string })?.message || '同步失败');
-    },
-  });
-
-  const filters: { key: ReviewStatus | 'all'; label: string; count: number }[] = [
-    { key: 'all', label: '全部', count: repo.commit_total },
-    { key: 'illegal', label: '非法', count: repo.illegal_count },
-    { key: 'warning', label: '警告', count: repo.warning_count },
-    { key: 'pass', label: '通过', count: repo.pass_count },
-  ];
+/** 第三块审查结果行 */
+function FetchReviewRow({ item, type }: { item: ReviewRangeItem; type: 'commit' | 'mr' }) {
+  const warning = isWarning(item.review_status);
+  const time = item.committed_at || item.merged_at;
+  const hashOrNum = type === 'commit' ? item.hash?.slice(0, 7) : `!${item.number}`;
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2 text-[13px]">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-1 text-slate-400 transition-colors hover:text-indigo-600"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
-          仓库合规扫描
-        </button>
-        <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
-        <span className="font-medium text-slate-800">{repo.name}</span>
-      </div>
-
-      {/* 概要卡 */}
-      <div className="tech-card rounded-xl p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl icon-indigo">
-              {repo.repo_type === 'svn' ? (
-                <FolderTree className="h-5 w-5" strokeWidth={1.5} />
-              ) : (
-                <GitBranch className="h-5 w-5" strokeWidth={1.5} />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-[20px] font-semibold tracking-tight text-slate-900">
-                  {repo.name}
-                </h2>
-                <span className="inline-flex items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-600">
-                  {repo.vendor}
-                </span>
-              </div>
-              <div className="mt-0.5 text-[12px] text-slate-500">
-                {repo.project_name || '-'} · {repo.default_branch} ·{' '}
-                {repo.commit_total.toLocaleString()} commits · 合规率 {complianceRate}%
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => syncMut.mutate()}
-            disabled={syncMut.isPending}
-            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white disabled:opacity-60"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncMut.isPending ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-            同步并扫描
-          </button>
-        </div>
-        <div className="mt-4 grid grid-cols-4 gap-3 border-t border-indigo-50 pt-4">
-          <Stat icon={Check} iconCls="icon-emerald" value={repo.pass_count} label="通过" />
-          <Stat icon={AlertTriangle} iconCls="icon-amber" value={repo.warning_count} label="警告" />
-          <Stat icon={XCircle} iconCls="icon-rose" value={repo.illegal_count} label="非法" />
-          <Stat
-            icon={CircleSlash}
-            iconCls="icon-cyan"
-            value={repo.unreviewed_count}
-            label="未审查"
-          />
-        </div>
-      </div>
-
-      {/* 提交列表 */}
-      <div className="tech-card overflow-hidden rounded-xl">
-        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
-            <Search
-              className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
-              strokeWidth={1.5}
-            />
-            <input
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索提交信息 / hash（当前页）"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-1">
-            {filters.map((f) => (
-              <FilterChip
-                key={f.key}
-                active={statusFilter === f.key}
-                onClick={() => {
-                  setStatusFilter(f.key);
-                  setPage(1);
-                  setKeyword('');
-                }}
-              >
-                {f.label} {f.key === 'all' ? repo.commit_total : f.count}
-              </FilterChip>
-            ))}
-          </div>
-          <div className="ml-auto text-[12px] text-slate-400">
-            第 {total === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} 条 /{' '}
-            共 {total} 条
-          </div>
-        </div>
-        <CommitList
-          rows={rows.map(toRowVM)}
-          loading={isLoading}
-          onHashClick={(id) => navigate(`/commits/${id}`)}
-        />
-        {(total > 0 || page > 1) && (
-          <Pager
-            page={page}
-            totalPages={totalPages}
-            total={total}
-            pageSize={pageSize}
-            onChange={setPage}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
- * 通用：提交列表 + 解析结果面板 + 人工复核
- * ============================================================ */
-function CommitList({
-  rows,
-  loading,
-  onHashClick,
-}: {
-  rows: CommitRowVM[];
-  loading: boolean;
-  onHashClick?: (id: string) => void;
-}) {
-  const [reviewing, setReviewing] = useState<CommitRowVM | null>(null);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">
-        加载中…
-      </div>
-    );
-  }
-  if (rows.length === 0) {
-    return (
-      <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">
-        暂无提交
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="divide-y divide-indigo-50/50">
-        {rows.map((c) => (
-          <CommitRow
-            key={c.id + c.commit_hash}
-            row={c}
-            onReview={() => setReviewing(c)}
-            onHashClick={onHashClick}
-          />
-        ))}
-      </div>
-      <ReviewModal
-        commit={reviewing}
-        onClose={() => setReviewing(null)}
-      />
-    </>
-  );
-}
-
-function CommitRow({
-  row,
-  onReview,
-  onHashClick,
-}: {
-  row: CommitRowVM;
-  onReview: () => void;
-  onHashClick?: (id: string) => void;
-}) {
-  const meta = reviewMeta[row.review_status] ?? reviewMeta.unreviewed;
-  const { Icon } = meta;
-  const parsed = row.parsed_result;
-  const hasStructured = !!parsed && (parsed.updates?.length ?? 0) > 0;
-  const reasonLine =
-    row.review_reason || (parsed?.errors?.length ? parsed.errors.join(' · ') : '');
-
-  return (
-    <div className="px-5 py-4 transition-colors hover:bg-indigo-50/20">
+    <div className={`px-5 py-4 transition-colors ${warning ? 'bg-amber-50/20 hover:bg-amber-50/30' : 'hover:bg-indigo-50/20'}`}>
       <div className="flex items-start gap-3">
         <span
-          className={`mt-1 inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${meta.badge}`}
+          className={[
+            'mt-1 inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium',
+            warning
+              ? 'border-amber-200 bg-amber-50 text-amber-600'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-700',
+          ].join(' ')}
         >
-          <Icon className="h-3 w-3" strokeWidth={1.5} />
-          {meta.label}
+          {warning ? <TriangleAlert className="h-3 w-3" strokeWidth={1.5} /> : <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} />}
+          {warning ? '警告' : '正常'}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => onHashClick?.(row.id)}
-              disabled={!onHashClick}
-              className="font-mono text-[11px] text-slate-400 transition-colors hover:text-indigo-600 disabled:hover:text-slate-400"
-            >
-              {row.commit_hash.slice(0, 7)}
-            </button>
-            <span className="text-[13px] font-medium text-slate-900">{row.author}</span>
-            <span className="text-[11px] text-slate-400">
-              {dayjs(row.committed_at).format('MM-DD HH:mm')}
-            </span>
+            <span className="font-mono text-[11px] text-slate-400">{hashOrNum}</span>
+            {type === 'mr' && item.title && (
+              <span className="text-[13px] font-medium text-slate-900">{item.title}</span>
+            )}
+            <span className="text-[13px] font-medium text-slate-900">{item.author}</span>
+            {time && <span className="text-[11px] text-slate-400">{dayjs(time).format('MM-DD HH:mm')}</span>}
           </div>
-
-          {hasStructured ? (
-            <ParsedPanel parsed={parsed!} status={row.review_status} />
-          ) : (
-            <div
-              className={`mt-2 rounded-md border p-3 ${
-                row.review_status === 'illegal'
-                  ? 'border-rose-100 bg-rose-50/30'
-                  : 'border-slate-100 bg-slate-50/50'
-              }`}
-            >
-              <pre className="whitespace-pre-wrap font-mono text-[11px] text-slate-600">
-                {row.message}
-              </pre>
+          {/* 原始信息 */}
+          <div
+            className={[
+              'mt-2 rounded-md border p-3',
+              warning ? 'border-amber-100 bg-amber-50/30' : 'border-slate-100 bg-slate-50/50',
+            ].join(' ')}
+          >
+            <pre className="whitespace-pre-wrap font-mono text-[11px] text-slate-600">
+              {type === 'mr' ? item.description || item.title : item.message}
+            </pre>
+          </div>
+          {/* 警告原因 */}
+          {warning && item.review_reason && (
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600">
+              <TriangleAlert className="h-3 w-3" strokeWidth={1.5} />
+              <span>{item.review_reason}</span>
             </div>
           )}
-
-          {reasonLine && (
-            <div
-              className={`mt-2 flex items-center gap-1.5 text-[11px] ${
-                row.review_status === 'illegal'
-                  ? 'text-rose-600'
-                  : row.review_status === 'warning'
-                    ? 'text-amber-600'
-                    : 'text-slate-500'
-              }`}
-            >
-              <AlertOctagon className="h-3 w-3" strokeWidth={1.5} />
-              <span>{reasonLine}</span>
+          {/* 解析结果 */}
+          {item.parsed_result?.updates && item.parsed_result.updates.length > 0 && (
+            <div className="mt-2 rounded-md border border-slate-100 bg-white p-3">
+              <div className="space-y-1 text-[11px]">
+                {item.parsed_result.change_type && (
+                  <div className="flex gap-2">
+                    <span className="w-16 text-slate-400">变更类型</span>
+                    <span className="text-slate-700">{item.parsed_result.change_type}</span>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <span className="w-16 text-slate-400">更新内容</span>
+                  <span className="text-slate-700">
+                    {item.parsed_result.updates.map((u, i) => (
+                      <span key={i}>
+                        {i + 1}.{' '}
+                        {u.type && (
+                          <span
+                            className={`font-mono ${u.type === 'A' || u.type === 'F' ? 'text-indigo-500' : 'text-rose-500'}`}
+                          >
+                            {u.type}
+                          </span>
+                        )}{' '}
+                        {u.content}
+                        {i < item.parsed_result!.updates!.length - 1 ? ' ' : ''}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </div>
-        <button
-          onClick={onReview}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-        >
-          <Pencil className="h-3 w-3" strokeWidth={1.5} />
-          人工复核
-        </button>
       </div>
     </div>
-  );
-}
-
-/** 解析结果结构化面板 */
-function ParsedPanel({ parsed, status }: { parsed: ParsedCommit; status: ReviewStatus }) {
-  const tone =
-    status === 'illegal'
-      ? 'border-rose-100 bg-rose-50/30'
-      : status === 'warning'
-        ? 'border-amber-100 bg-amber-50/20'
-        : 'border-emerald-100 bg-emerald-50/20';
-  const labelTone =
-    status === 'illegal' ? 'text-rose-600' : status === 'warning' ? 'text-amber-600' : 'text-emerald-600';
-  return (
-    <div className={`mt-2 rounded-md border p-3 ${tone}`}>
-      <div className={`mb-1 text-[10px] font-medium ${labelTone}`}>解析结果</div>
-      <div className="space-y-1 text-[11px]">
-        {parsed.change_type && (
-          <div className="flex gap-2">
-            <span className="w-16 text-slate-400">变更类型</span>
-            <span className="text-slate-700">{parsed.change_type}</span>
-          </div>
-        )}
-        {parsed.updates && parsed.updates.length > 0 && (
-          <div className="flex gap-2">
-            <span className="w-16 text-slate-400">更新内容</span>
-            <span className="text-slate-700">
-              {parsed.updates.map((u, i) => (
-                <span key={i}>
-                  {i + 1}.{' '}
-                  {u.type && (
-                    <span className={`font-mono ${updateTypeColor(u.type)}`}>{u.type}</span>
-                  )}{' '}
-                  {u.content}
-                  {i < parsed.updates!.length - 1 ? ' ' : ''}
-                </span>
-              ))}
-            </span>
-          </div>
-        )}
-        {parsed.config_changes && Object.keys(parsed.config_changes).length > 0 && (
-          <div className="flex gap-2">
-            <span className="w-16 text-slate-400">配置项</span>
-            <span className="font-mono text-slate-700">
-              {Object.entries(parsed.config_changes).flatMap(([section, kvs]) =>
-                Object.entries(kvs || {}).map(([k, v]) => `[${section}] ${k}=${v}`),
-              ).join('  ')}
-            </span>
-          </div>
-        )}
-        {parsed.related_changes && Object.keys(parsed.related_changes).length > 0 && (
-          <div className="flex gap-2">
-            <span className="w-16 text-slate-400">关联改动</span>
-            <span className="font-mono text-slate-700">
-              {Object.entries(parsed.related_changes)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join('  ')}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** 人工复核弹窗：commit 变化时通过 key 重挂载，初始状态由 useState 初始化器读取 */
-function ReviewModal({
-  commit,
-  onClose,
-}: {
-  commit: CommitRowVM | null;
-  onClose: () => void;
-}) {
-  if (!commit) return null;
-  return <ReviewModalInner key={commit.id} commit={commit} onClose={onClose} />;
-}
-
-function ReviewModalInner({
-  commit,
-  onClose,
-}: {
-  commit: CommitRowVM;
-  onClose: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const { message } = useAppMessage();
-  const [status, setStatus] = useState<ReviewStatus>(
-    commit.review_status === 'unreviewed' ? 'pass' : commit.review_status,
-  );
-  const [reason, setReason] = useState(commit.review_reason || '');
-
-  const mut = useMutation({
-    mutationFn: () => commitApi.reviewCommit(commit.id, { review_status: status, reason }),
-    onSuccess: () => {
-      message.success('已提交人工复核');
-      queryClient.invalidateQueries({ queryKey: ['release', 'commits'] });
-      queryClient.invalidateQueries({ queryKey: ['repository', 'commits'] });
-      queryClient.invalidateQueries({ queryKey: ['repositories', 'compliance-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['releases', 'review'] });
-      onClose();
-    },
-    onError: (err: unknown) => {
-      message.error((err as { message?: string })?.message || '复核失败，可能无权操作');
-    },
-  });
-
-  const options: { key: ReviewStatus; label: string; cls: string }[] = [
-    { key: 'pass', label: '通过', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-    { key: 'warning', label: '警告', cls: 'border-amber-200 bg-amber-50 text-amber-600' },
-    { key: 'illegal', label: '非法', cls: 'border-rose-200 bg-rose-50 text-rose-600' },
-  ];
-
-  return (
-    <TsModal
-      title="人工复核"
-      open
-      onCancel={onClose}
-      onOk={() => mut.mutate()}
-      confirmLoading={mut.isPending}
-      width={480}
-    >
-      <div className="space-y-4">
-        <div className="rounded-md border border-slate-100 bg-slate-50/60 p-3">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="font-mono">{commit.commit_hash.slice(0, 7)}</span>
-            <span className="text-slate-500">{commit.author}</span>
-            <span>{dayjs(commit.committed_at).format('MM-DD HH:mm')}</span>
-          </div>
-          <pre className="mt-1.5 whitespace-pre-wrap font-mono text-[11px] text-slate-600">
-            {commit.message}
-          </pre>
-        </div>
-        <div>
-          <div className="mb-2 text-[12px] font-medium text-slate-600">审查结果</div>
-          <div className="flex items-center gap-2">
-            {options.map((o) => (
-              <button
-                key={o.key}
-                onClick={() => setStatus(o.key)}
-                className={[
-                  'inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-[12px] font-medium transition-all',
-                  status === o.key
-                    ? `${o.cls} ring-2 ring-offset-0 ring-current/20`
-                    : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600',
-                ].join(' ')}
-              >
-                {reviewMeta[o.key].label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div className="mb-2 text-[12px] font-medium text-slate-600">复核说明（可选）</div>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            placeholder="填写复核意见…"
-            className="w-full resize-none rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-          />
-        </div>
-      </div>
-    </TsModal>
   );
 }
 
 /* ============================================================
  * 小工具组件
  * ============================================================ */
-function Stat({
+
+/** 通用下拉选择（基于 antd Select） */
+function Select({
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <AntSelect
+      value={value || undefined}
+      onChange={(v: string) => onChange(v ?? '')}
+      options={options}
+      placeholder={placeholder}
+      disabled={disabled}
+      size="middle"
+      className={className}
+      style={{ width: '100%' }}
+      popupMatchSelectWidth={true}
+      allowClear
+      onClear={() => onChange('')}
+    />
+  );
+}
+
+/** 发布类型徽标 */
+function ReleaseTypeBadge({ type }: { type: ReleaseType }) {
+  const map: Record<ReleaseType, string> = {
+    formal: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    beta: 'border-amber-200 bg-amber-50 text-amber-700',
+    rc: 'border-blue-200 bg-blue-50 text-blue-700',
+  };
+  const labels: Record<ReleaseType, string> = { formal: '正式', beta: '测试', rc: 'RC' };
+  return (
+    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${map[type]}`}>
+      {labels[type]}
+    </span>
+  );
+}
+
+/** 统计小块 */
+function StatBlock({
   icon: Icon,
   iconCls,
   value,
@@ -1236,133 +884,12 @@ function Stat({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${iconCls}`}>
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg border ${iconCls}`}>
         <Icon className="h-4 w-4" strokeWidth={1.5} />
       </div>
       <div>
-        <div className="font-mono text-[16px] font-semibold text-slate-900">
-          {value.toLocaleString()}
-        </div>
+        <div className="font-mono text-[16px] font-semibold text-slate-900">{value}</div>
         <div className="text-[10px] text-slate-400">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={[
-        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[12px] font-medium transition-colors',
-        active
-          ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
-          : 'border-indigo-100 bg-white text-slate-500 hover:text-indigo-600',
-      ].join(' ')}
-    >
-      {children}
-    </button>
-  );
-}
-
-function VendorSelect({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const opts = [
-    { value: 'all', label: '全部供应商' },
-    { value: 'gitlab', label: 'GitLab' },
-    { value: 'gitea', label: 'Gitea' },
-    { value: 'github', label: 'GitHub' },
-    { value: 'gitee', label: 'Gitee' },
-    { value: 'svn', label: 'SVN' },
-  ];
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 outline-none transition-colors hover:border-indigo-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-    >
-      {opts.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function Pager({
-  page,
-  totalPages,
-  total,
-  pageSize,
-  onChange,
-}: {
-  page: number;
-  totalPages: number;
-  total: number;
-  pageSize: number;
-  onChange: (p: number) => void;
-}) {
-  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const end = Math.min(page * pageSize, total);
-  const pages = useMemo(() => {
-    const max = 5;
-    const half = Math.floor(max / 2);
-    let s = Math.max(1, page - half);
-    const e = Math.min(totalPages, s + max - 1);
-    s = Math.max(1, e - max + 1);
-    const arr: number[] = [];
-    for (let i = s; i <= e; i++) arr.push(i);
-    return arr;
-  }, [page, totalPages]);
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-indigo-50 px-5 py-3">
-      <div className="text-[12px] text-slate-400">
-        第 {start}-{end} 条 / 共 {total} 条
-      </div>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onChange(Math.max(1, page - 1))}
-          disabled={page <= 1}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </button>
-        {pages.map((p) => (
-          <button
-            key={p}
-            onClick={() => onChange(p)}
-            className={[
-              'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors',
-              p === page
-                ? 'bg-indigo-500 text-white'
-                : 'border border-indigo-100 text-slate-600 hover:bg-indigo-50',
-            ].join(' ')}
-          >
-            {p}
-          </button>
-        ))}
-        <button
-          onClick={() => onChange(Math.min(totalPages, page + 1))}
-          disabled={page >= totalPages}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </button>
       </div>
     </div>
   );
