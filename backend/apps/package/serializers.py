@@ -138,8 +138,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "triggered_by", "triggered_by_name", "name",
             "mode", "mode_display", "build_type", "build_type_display",
             "tag_name", "version", "commit_hash", "config_snapshot",
-            "status", "status_display", "workspace_path", "log_path",
-            "artifact_info", "duration", "error_message",
+            "status", "status_display", "artifact_info", "duration", "error_message",
             "started_at", "finished_at", "created_at", "updated_at",
         ]
         read_only_fields = fields

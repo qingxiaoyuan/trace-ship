@@ -23,6 +23,7 @@ from utils.provider.credential_resolver import resolve_credential
 
 logger = logging.getLogger(__name__)
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+SECRET_ENV_RE = re.compile(r"(TOKEN|PASSWORD|PASSWD|SECRET|KEY|CREDENTIAL|AUTH)", re.IGNORECASE)
 
 
 class PackageService:
@@ -201,7 +202,7 @@ class PackageService:
         shell: bool = False,
     ) -> None:
         """执行命令并把输出写入日志。"""
-        cls._append_log(task, f"$ {' '.join(command) if not shell else command[0]}")
+        cls._append_log(task, f"$ {cls._display_command(command, shell=shell)}")
         process = subprocess.Popen(
             command if not shell else command[0],
             cwd=str(cwd),
@@ -217,6 +218,28 @@ class PackageService:
         code = process.wait()
         if code != 0:
             raise RuntimeError(f"命令执行失败，退出码 {code}")
+
+    @staticmethod
+    def _display_command(command: list[str], shell: bool = False) -> str:
+        """返回用于日志展示的命令，避免泄露环境变量敏感值。"""
+        if shell:
+            return command[0]
+
+        display: list[str] = []
+        mask_next_env = False
+        for item in command:
+            if mask_next_env:
+                name, sep, value = item.partition("=")
+                if sep and (value or SECRET_ENV_RE.search(name)):
+                    display.append(f"{name}=******")
+                else:
+                    display.append(item)
+                mask_next_env = False
+                continue
+            display.append(item)
+            if item in ("-e", "--env"):
+                mask_next_env = True
+        return " ".join(display)
 
     @classmethod
     def _checkout_source(cls, task: PackageTask, workspace: Path) -> None:

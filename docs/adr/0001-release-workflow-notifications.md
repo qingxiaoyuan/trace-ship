@@ -1,11 +1,13 @@
 # 0001 - Release Workflow and Notifications
 
-**Status:** proposed
+**Status:** superseded by [0002 - 内置打包替代 Jenkins](./0002-internal-package-workflow.md) for build/package lifecycle
 **Date:** 2026-06-24
 **Spec:** none - needs linking
 **Deciders:** project maintainers
 
 ## Context
+
+> 2026-07-02 update: Jenkins 构建生命周期已由 ADR-0002 的系统内置打包任务替代。本文仍保留工作流与通知拆分的历史决策背景，不再作为发布后打包状态机依据。
 
 Release records now need an approval workflow before build, Jenkins build status integration, optional post-build approval progression, automatic tag publishing, operation logs, and in-app notifications.
 

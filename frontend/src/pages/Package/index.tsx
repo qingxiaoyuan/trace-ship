@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Drawer, Table, Tag } from 'antd';
 import { DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -27,6 +27,7 @@ function saveBlob(blob: Blob, filename: string) {
 export default function PackageTaskPage() {
   const navigate = useNavigate();
   const { id: routeTaskId } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<PackageTask | null>(null);
   const [logText, setLogText] = useState('');
@@ -41,18 +42,29 @@ export default function PackageTaskPage() {
   const total = data?.total || 0;
 
   const artifacts = useMemo(() => selected?.artifact_info || [], [selected]);
+  const selectedTaskId = selected?.id;
+  const shouldPollDetail = !!selected && ['queued', 'running'].includes(selected.status);
+
+  const loadTaskDetail = async (taskId: string) => {
+    const task = await packageApi.getTask(taskId);
+    const blob = await packageApi.getTaskLog(taskId);
+    setSelected(task);
+    setLogText(await blob.text());
+    if (!['queued', 'running'].includes(task.status)) {
+      queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+    }
+  };
 
   const openLog = async (task: PackageTask) => {
     setSelected(task);
-    const blob = await packageApi.getTaskLog(task.id);
-    setLogText(await blob.text());
+    await loadTaskDetail(task.id);
   };
 
   useEffect(() => {
     if (!routeTaskId) return;
 
     let ignore = false;
-    const loadTaskDetail = async () => {
+    const loadRouteTaskDetail = async () => {
       const task = await packageApi.getTask(routeTaskId);
       const blob = await packageApi.getTaskLog(routeTaskId);
       if (ignore) return;
@@ -60,11 +72,36 @@ export default function PackageTaskPage() {
       setLogText(await blob.text());
     };
 
-    loadTaskDetail();
+    loadRouteTaskDetail();
     return () => {
       ignore = true;
     };
   }, [routeTaskId]);
+
+  useEffect(() => {
+    if (!selectedTaskId || !shouldPollDetail) return;
+
+    let ignore = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const task = await packageApi.getTask(selectedTaskId);
+        const blob = await packageApi.getTaskLog(selectedTaskId);
+        if (ignore) return;
+        setSelected(task);
+        setLogText(await blob.text());
+        if (!['queued', 'running'].includes(task.status)) {
+          queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+        }
+      } catch {
+        // 轮询失败时保留当前展示，下一轮继续尝试。
+      }
+    }, 3000);
+
+    return () => {
+      ignore = true;
+      window.clearInterval(timer);
+    };
+  }, [queryClient, selectedTaskId, shouldPollDetail]);
 
   const downloadArtifact = async (task: PackageTask, artifactId: string, name: string) => {
     const blob = await packageApi.downloadArtifact(task.id, artifactId);

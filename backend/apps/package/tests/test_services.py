@@ -1,4 +1,5 @@
 import pytest
+from rest_framework.test import APIClient
 
 from apps.account.models import User
 from apps.package.models import PackageConfig, PackageImage, PackageTask
@@ -16,6 +17,14 @@ def user():
         password="pass",
         nickname="打包用户",
     )
+
+
+@pytest.fixture
+def api_client(user):
+    """已认证测试客户端。"""
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
 
 
 @pytest.fixture
@@ -82,6 +91,37 @@ def test_trigger_auto_packages_creates_task(project, repository, user, monkeypat
 
 
 @pytest.mark.django_db
+def test_package_images_readable_for_authenticated_user(api_client):
+    """项目配置选择镜像时，普通登录用户可以读取启用镜像列表。"""
+    PackageImage.objects.create(
+        name="Web 镜像",
+        build_type="web",
+        image="trace-ship/web:latest",
+    )
+
+    response = api_client.get("/api/packages/images/", {"build_type": "web", "is_active": True})
+
+    assert response.status_code == 200
+    assert response.data["data"]["total"] == 1
+
+
+@pytest.mark.django_db
+def test_package_images_write_requires_superuser(api_client):
+    """镜像维护仍然仅允许超管写入。"""
+    response = api_client.post(
+        "/api/packages/images/",
+        {
+            "name": "Web 镜像",
+            "build_type": "web",
+            "image": "trace-ship/web:latest",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
 def test_create_task_falls_back_to_local_worker_when_celery_broker_unavailable(project, repository, user, monkeypatch):
     """Celery 投递失败时不让手动触发接口 500，而是降级为本地后台执行。"""
     image = PackageImage.objects.create(
@@ -125,6 +165,23 @@ def test_create_task_falls_back_to_local_worker_when_celery_broker_unavailable(p
     assert task.status == "queued"
     assert dispatched["task_id"] == str(task.id)
     assert "Connection refused" in dispatched["reason"]
+
+
+def test_display_command_masks_docker_env_values():
+    """任务日志中的 docker 环境变量值需要脱敏。"""
+    command = [
+        "docker", "run", "--rm",
+        "-e", "NEXUS_PASSWORD=secret",
+        "-e", "PUBLIC_FLAG=true",
+        "trace-ship/web:latest",
+    ]
+
+    display = PackageService._display_command(command)
+
+    assert "NEXUS_PASSWORD=******" in display
+    assert "PUBLIC_FLAG=******" in display
+    assert "secret" not in display
+    assert "PUBLIC_FLAG=true" not in display
 
 
 @pytest.mark.django_db

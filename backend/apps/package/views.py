@@ -28,12 +28,16 @@ class PackageImageViewSet(StandardModelViewSet):
 
     queryset = PackageImage.objects.all()
     serializer_class = PackageImageSerializer
-    permission_classes = [IsAuthenticated, IsSuperUser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["build_type", "is_active"]
     search_fields = ["name", "image"]
     ordering_fields = ["created_at", "build_type"]
     ordering = ["build_type", "-created_at"]
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAuthenticated(), IsSuperUser()]
+        return [IsAuthenticated()]
 
 
 class PackageConfigViewSet(StandardModelViewSet):
@@ -107,7 +111,16 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         task = self.get_object()
         if not task.log_path or not Path(task.log_path).exists():
             return HttpResponse("", content_type="text/plain; charset=utf-8")
-        return FileResponse(open(task.log_path, "rb"), content_type="text/plain; charset=utf-8")
+        workspace = Path(task.workspace_path).resolve() if task.workspace_path else None
+        log_path = Path(task.log_path).resolve()
+        workspace_root = PackageService.workspace_root().resolve()
+        if (
+            not workspace
+            or (workspace != workspace_root and workspace_root not in workspace.parents)
+            or (workspace not in log_path.parents and log_path != workspace)
+        ):
+            raise Http404("日志路径非法")
+        return FileResponse(open(log_path, "rb"), content_type="text/plain; charset=utf-8")
 
     @action(detail=True, methods=["get"], url_path=r"artifacts/(?P<artifact_id>[^/.]+)/download")
     def download_artifact(self, request, pk=None, artifact_id=None):
@@ -116,7 +129,11 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         artifact = next((item for item in task.artifact_info if item.get("id") == artifact_id), None)
         if not artifact:
             raise Http404("产物不存在")
-        root = Path(task.workspace_path) / "artifacts"
+        workspace = Path(task.workspace_path).resolve() if task.workspace_path else None
+        workspace_root = PackageService.workspace_root().resolve()
+        if not workspace or (workspace != workspace_root and workspace_root not in workspace.parents):
+            raise Http404("工作区路径非法")
+        root = workspace / "artifacts"
         file_path = (root / artifact["path"]).resolve()
         if root.resolve() not in file_path.parents and file_path != root.resolve():
             raise Http404("产物路径非法")

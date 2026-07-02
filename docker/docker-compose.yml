@@ -81,28 +81,6 @@ services:
       postgres:
         condition: service_healthy
 
-  # Jenkins 自动打包
-  jenkins:
-    image: ${IMAGE_PREFIX:-}jenkins/jenkins:${JENKINS_VERSION:-lts}
-    container_name: ${COMPOSE_PROJECT_NAME:-release-manager-dev}-jenkins
-    restart: unless-stopped
-    user: root
-    environment:
-      TZ: ${TIMEZONE:-Asia/Shanghai}
-      JAVA_OPTS: -Djenkins.install.runSetupWizard=false
-      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
-      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-Jenkins@2024}
-    ports:
-      - "${JENKINS_HTTP_PORT:-8080}:8080"
-      - "${JENKINS_AGENT_PORT:-50000}:50000"
-    volumes:
-      - jenkins_home:/var/jenkins_home
-      - ./jenkins/plugins.txt:/usr/share/jenkins/ref/plugins.txt:ro
-      - ./jenkins/init.groovy.d:/usr/share/jenkins/ref/init.groovy.d:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - release_manager_net
-
   # OpenLDAP 域账号服务（本地构建，避免依赖 Docker Hub 上第三方镜像的可用性）
   openldap:
     build: ./openldap
@@ -281,7 +259,6 @@ volumes:
   postgres_data:
   redis_data:
   gitea_data:
-  jenkins_home:
   ldap_data:
   svn_data:
 

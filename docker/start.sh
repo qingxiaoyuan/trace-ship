@@ -1,5 +1,5 @@
 #!/bin/bash
-# 第三方服务一键启动脚本（数据库、缓存、Git、Jenkins、LDAP、SVN）
+# 第三方服务一键启动脚本（数据库、缓存、Git、LDAP、SVN）
 # 应用服务（backend / frontend / celery）请在本地分别启动，便于开发调试
 set -e
 
@@ -36,7 +36,6 @@ fi
 echo "✅ 创建持久化目录..."
 mkdir -p \
     postgres/init \
-    jenkins/init.groovy.d \
     openldap/init \
     svn
 
@@ -86,9 +85,6 @@ echo ""
 echo "🌐 Gitea (Git 仓库):     http://localhost:${GITEA_HTTP_PORT:-3000}"
 echo "   管理员账号: ${GITEA_ADMIN_USER:-gitea_admin} / ${GITEA_ADMIN_PASSWORD:-GiteaAdmin@2024}"
 echo ""
-echo "🔧 Jenkins (自动打包):   http://localhost:${JENKINS_HTTP_PORT:-8080}"
-echo "   管理员账号: ${JENKINS_ADMIN_USER:-admin} / ${JENKINS_ADMIN_PASSWORD:-Jenkins@2024}"
-echo ""
 echo "👤 OpenLDAP (域账号):    ldap://localhost:${LDAP_PORT:-389}"
 echo "   Base DN: dc=$(echo ${LDAP_DOMAIN:-example.com} | sed 's/\./,dc=/g')"
 echo "   管理员账号: cn=admin,dc=$(echo ${LDAP_DOMAIN:-example.com} | sed 's/\./,dc=/g')"
@@ -109,7 +105,6 @@ echo "   密码: ${REDIS_PASSWORD:-ReleaseManager@2024}"
 echo ""
 echo "====================================="
 echo "提示："
-echo "- 首次启动 Jenkins 插件安装可能需要 2-3 分钟"
 echo "- backend / frontend / celery 请在本地启动，便于开发调试"
 echo "- 如需一键启动完整应用服务，请使用: ${COMPOSE_CMD} --profile app up -d --build"
 echo "====================================="
