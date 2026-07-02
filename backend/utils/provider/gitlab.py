@@ -10,7 +10,7 @@ from urllib.parse import quote
 import requests
 from django.utils.dateparse import parse_datetime
 
-from .base import BranchInfo, CommitInfo, GitProvider, TagInfo
+from .base import BranchInfo, CommitInfo, GitProvider, MergeRequestInfo, TagInfo
 from .exceptions import AuthenticationError, ConnectionError, ProviderError
 
 
@@ -186,6 +186,108 @@ class GitLabProvider(GitProvider):
                 committed_at=self._parse_datetime(c.get("committed_date")),
             )
             for c in resp.json().get("commits", [])
+        ]
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """拉取合并到目标分支的 MR 列表"""
+        encoded = self._encode_identity(repo_identity)
+        params: dict = {
+            "state": "merged",
+            "target_branch": target_branch,
+            "per_page": 100,
+        }
+        if since:
+            params["updated_after"] = since.isoformat()
+        resp = self._request(
+            "GET",
+            f"/projects/{encoded}/merge_requests",
+            params=params,
+        )
+        return [
+            MergeRequestInfo(
+                number=str(mr.get("iid", "")),
+                title=mr.get("title", ""),
+                description=mr.get("description", "") or "",
+                author=mr.get("author", {}).get("name", ""),
+                source_branch=mr.get("source_branch", "") or "",
+                target_branch=mr.get("target_branch", "") or "",
+                web_url=mr.get("web_url", "") or "",
+                merged_at=self._parse_datetime(mr.get("merged_at")),
+            )
+            for mr in resp.json()
+        ]
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """
+        拉取合并到目标分支的 MR 列表
+
+        Args:
+            repo_identity: 仓库标识（owner/repo）
+            target_branch: 目标分支
+            since: 仅返回此时间之后合并的 MR
+
+        Returns:
+            MergeRequestInfo 列表
+        """
+        encoded = self._encode_identity(repo_identity)
+        params: dict = {"state": "merged", "target_branch": target_branch, "per_page": 100}
+        if since:
+            params["updated_after"] = since.isoformat()
+        resp = self._request(
+            "GET",
+            f"/projects/{encoded}/merge_requests",
+            params=params,
+        )
+        result = []
+        for mr in resp.json():
+            result.append(
+                MergeRequestInfo(
+                    number=str(mr.get("iid", "")),
+                    title=mr.get("title", ""),
+                    description=mr.get("description", "") or "",
+                    author=mr.get("author", {}).get("name", "") if isinstance(mr.get("author"), dict) else "",
+                    source_branch=mr.get("source_branch", "") or "",
+                    target_branch=mr.get("target_branch", "") or "",
+                    web_url=mr.get("web_url", "") or "",
+                    merged_at=self._parse_datetime(mr.get("merged_at")),
+                )
+            )
+        return result
+
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """拉取合并到目标分支的 MR 列表"""
+        encoded = self._encode_identity(repo_identity)
+        params: dict = {"state": "merged", "target_branch": target_branch, "per_page": 100}
+        if since:
+            params["updated_after"] = since.isoformat()
+        resp = self._request("GET", f"/projects/{encoded}/merge_requests", params=params)
+        return [
+            MergeRequestInfo(
+                number=str(mr.get("iid", "")),
+                title=mr.get("title", ""),
+                description=mr.get("description", "") or "",
+                author=(mr.get("author") or {}).get("name", ""),
+                source_branch=mr.get("source_branch", "") or "",
+                target_branch=mr.get("target_branch", "") or "",
+                web_url=mr.get("web_url", "") or "",
+                merged_at=self._parse_datetime(mr.get("merged_at")),
+            )
+            for mr in resp.json()
         ]
 
     @staticmethod

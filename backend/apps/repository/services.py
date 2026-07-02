@@ -201,3 +201,127 @@ class RepositoryService:
 
         return {"synced_count": synced_count, "illegal_count": illegal_count}
 
+    @staticmethod
+    def review_range(
+        repo: Repository,
+        tag: Optional[str] = None,
+        request_user=None,
+    ) -> dict:
+        """
+        按 Tag 区间拉取 commits 与 MRs 并做合规审查（不落库）
+
+        - 指定 tag：审查该 tag 与上一个 tag 之间的提交
+        - tag 为空或 "latest"：审查最新 tag 到分支 HEAD 之间的提交
+
+        Args:
+            repo: Repository 实例
+            tag: Tag 名称，None 或 "latest" 表示最新区间
+            request_user: 当前请求用户
+
+        Returns:
+            审查结果字典，含 commits / merge_requests / stats
+        """
+        cred_data = resolve_credential(repo, request_user)
+        provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
+        repo_identity = repo.external_identity
+        branch = repo.default_branch
+
+        # 获取 tags 并按 created_at 倒序（无时间的排最后）
+        try:
+            tags = provider.list_tags(repo_identity)
+        except ProviderError:
+            tags = []
+        sortable = [t for t in tags if t.created_at]
+        sortable.sort(key=lambda t: t.created_at, reverse=True)
+        tag_names = [t.name for t in sortable]
+
+        # 确定区间：base = 起点，head = 终点
+        base_ref: Optional[str] = None
+        head_ref = branch
+        if tag and tag != "latest":
+            if tag in tag_names:
+                idx = tag_names.index(tag)
+                head_ref = tag
+                base_ref = tag_names[idx + 1] if idx + 1 < len(tag_names) else None
+        else:
+            base_ref = tag_names[0] if tag_names else None
+            head_ref = branch
+
+        # 拉取区间 commits
+        commits: List[CommitInfo] = []
+        try:
+            if base_ref and head_ref:
+                commits = provider.compare_commits(repo_identity, base=base_ref, head=head_ref)
+            elif head_ref:
+                commits = provider.list_commits(repo_identity, head_ref)
+        except ProviderError:
+            commits = []
+
+        # 审查每个 commit
+        commit_results = []
+        for c in commits:
+            status, reason, parsed = CommitReviewer.review(c.message)
+            commit_results.append({
+                "hash": c.hash,
+                "author": c.author,
+                "author_email": c.author_email,
+                "message": c.message,
+                "committed_at": c.committed_at.isoformat() if c.committed_at else None,
+                "review_status": status,
+                "review_reason": reason,
+                "parsed_result": parsed,
+            })
+
+        # 拉取 MRs 并按 merged_at 过滤在区间内
+        merge_results = []
+        base_tag_time = None
+        if base_ref:
+            for t in sortable:
+                if t.name == base_ref:
+                    base_tag_time = t.created_at
+                    break
+        try:
+            mrs = provider.list_merge_requests(repo_identity, target_branch=branch)
+            for mr in mrs:
+                if not mr.merged_at:
+                    continue
+                if base_tag_time and mr.merged_at < base_tag_time:
+                    continue
+                status, reason, parsed = CommitReviewer.review(mr.description or mr.title or "")
+                merge_results.append({
+                    "number": mr.number,
+                    "title": mr.title,
+                    "description": mr.description,
+                    "author": mr.author,
+                    "source_branch": mr.source_branch,
+                    "target_branch": mr.target_branch,
+                    "web_url": mr.web_url,
+                    "merged_at": mr.merged_at.isoformat() if mr.merged_at else None,
+                    "review_status": status,
+                    "review_reason": reason,
+                    "parsed_result": parsed,
+                })
+        except ProviderError:
+            merge_results = []
+
+        # 统计：illegal 归入 warning（前端只需正常/警告两种）
+        c_pass = sum(1 for c in commit_results if c["review_status"] == "pass")
+        c_warn = sum(1 for c in commit_results if c["review_status"] in ("warning", "illegal"))
+
+        return {
+            "base": base_ref or "(初始提交)",
+            "head": head_ref,
+            "tags": [
+                {"name": t.name, "created_at": t.created_at.isoformat() if t.created_at else None}
+                for t in sortable
+            ],
+            "commits": commit_results,
+            "merge_requests": merge_results,
+            "stats": {
+                "total": len(commit_results),
+                "pass": c_pass,
+                "warning": c_warn,
+                "mr_total": len(merge_results),
+            },
+        }
+

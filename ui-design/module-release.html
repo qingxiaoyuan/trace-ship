@@ -36,8 +36,27 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
 .pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
 .nav-active{ background:linear-gradient(90deg,rgba(79,70,229,.1),rgba(34,211,238,.05)); border:1px solid rgba(79,70,229,.18); color:#4F46E5; }
 .nav-active i{ color:#4F46E5 !important; }
-.view{ display:none; } .view.active{ display:block; }
 .dt-tab.on{ color:#4F46E5; border-color:#4F46E5; }
+.card-stack{ position:relative; display:flex; flex-direction:column; width:100%; padding-bottom:8px; }
+.stack-card{ position:relative; width:100%; border-radius:10px; background:#fff; border:1px solid rgba(99,102,241,.15); box-shadow:0 2px 6px rgba(15,23,42,.08); }
+.stack-card-0{ z-index:30; }
+.stack-card-1{ z-index:20; margin-top:-52px; opacity:.80; pointer-events:none; }
+.stack-card-2{ z-index:10; margin-top:-52px; opacity:.55; pointer-events:none; }
+
+.column-more{ position:absolute; right:6px; top:6px; z-index:40; display:flex; align-items:center; justify-content:center; height:20px; min-width:20px; padding:0 5px; border-radius:9999px; background:rgba(255,255,255,.92); border:1px solid rgba(99,102,241,.12); font-size:10px; font-weight:600; color:#64748B; cursor:pointer; box-shadow:0 1px 2px rgba(15,23,42,.06); transition:all .15s ease; }
+.column-more:hover{ background:#fff; color:#4F46E5; border-color:#C7D2FE; }
+
+.drawer-mask{ position:fixed; inset:0; z-index:80; background:rgba(15,23,42,.45); backdrop-filter:blur(4px); opacity:0; pointer-events:none; transition:opacity .2s ease; }
+.drawer-mask.open{ opacity:1; pointer-events:auto; }
+.drawer-panel{ position:fixed; top:0; right:0; z-index:90; width:min(520px, 100vw); height:100vh; background:#fff; border-left:1px solid rgba(99,102,241,.12); box-shadow:-24px 0 70px -12px rgba(30,27,75,.35); transform:translateX(100%); opacity:0; pointer-events:none; transition:transform .25s cubic-bezier(.16,1,.3,1), opacity .2s ease; }
+.drawer-panel.open{ transform:translateX(0); opacity:1; pointer-events:auto; }
+.modal-mask{ position:fixed; inset:0; z-index:60; background:rgba(15,23,42,.45); backdrop-filter:blur(4px); opacity:0; pointer-events:none; transition:opacity .2s ease; }
+.modal-mask.open{ opacity:1; pointer-events:auto; }
+.modal-panel{ position:fixed; top:50%; left:50%; z-index:70; width:min(920px, calc(100vw - 32px)); max-height:min(860px, calc(100vh - 48px)); transform:translate(-50%,-48%) scale(.96); opacity:0; pointer-events:none; transition:transform .2s cubic-bezier(.16,1,.3,1), opacity .2s ease; }
+.modal-panel.open{ transform:translate(-50%,-50%) scale(1); opacity:1; pointer-events:auto; }
+@media (max-width:640px){
+  .modal-panel{ width:calc(100vw - 16px); max-height:calc(100vh - 24px); }
+}
 </style>
 </head>
 <body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
@@ -45,7 +64,7 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
 <div class="relative z-10 flex min-h-screen">
   <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
     <div class="flex h-[60px] items-center gap-2.5 px-5">
-      <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white text-[13px] font-semibold tracking-tight">溯</div>
       <div class="flex flex-col leading-none"><span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span><span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span></div>
     </div>
     <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-4">
@@ -68,160 +87,402 @@ body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingF
 
   <div class="flex-1 lg:ml-[244px]">
     <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
-      <div id="crumb" class="hidden items-center gap-1.5 text-[13px] md:flex"><span class="text-slate-400">概览</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">发布看板</span></div>
+      <div class="hidden items-center gap-1.5 text-[13px] md:flex"><span class="text-slate-400">概览</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300" style="stroke-width:1.5"></i><span class="font-medium text-slate-800">发布看板</span></div>
       <div class="ml-auto hidden md:flex items-center"><button class="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 hover:border-indigo-200 hover:bg-white hover:text-indigo-600 w-[260px]"><i data-lucide="search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>搜索…</span><span class="ml-auto"><kbd class="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘K</kbd></span></button></div>
       <div class="ml-auto flex items-center gap-1 md:ml-0"><button class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="plus" class="h-4 w-4" style="stroke-width:1.5"></i></button><button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i><span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span></button><div class="mx-1 h-5 w-px bg-indigo-100"></div><img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=64&h=64&fit=crop&crop=face" class="h-8 w-8 rounded-full object-cover ring-1 ring-indigo-200 cursor-pointer" alt="" /></div>
     </header>
 
     <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1400px] mx-auto">
-
-      <!-- ============ 列表页 ============ -->
-      <section id="view-list" class="view active space-y-5">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><h1 class="text-[26px] font-semibold tracking-tight text-slate-900">发布看板</h1><p class="mt-1 text-[13px] text-slate-500">跟踪发布全生命周期：草稿 → 构建 → 审批 → 发布</p></div>
-          <div class="flex items-center gap-2"><div class="flex items-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50/40 p-0.5"><button class="rounded-md bg-white px-2.5 py-1 text-[12px] font-medium text-indigo-600 shadow-sm">看板</button><button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-slate-700">列表</button></div><button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"><i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>新建发布</button></div>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 class="text-[26px] font-semibold tracking-tight text-slate-900">发布看板</h1>
+          <p class="mt-1 text-[13px] text-slate-500">跟踪发布全生命周期：草稿 → 构建 → 审批 → 发布</p>
         </div>
-
-        <!-- 看板列 -->
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
-          <div class="rounded-lg border border-slate-200/70 bg-slate-50/50 p-3"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span><span class="text-[12px] font-medium text-slate-500">草稿</span></div><span class="text-[11px] font-medium text-slate-400">2</span></div>
-            <div class="space-y-2"><div class="rounded-lg border border-slate-200 bg-white p-2.5 hover:border-indigo-300 hover:shadow-sm cursor-pointer rcard"><div class="flex items-center justify-between"><span class="font-mono text-[12px] font-medium text-slate-800">v2.5.0</span><span class="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-medium text-amber-600">BETA</span></div><div class="mt-1.5 text-[11px] text-slate-500">支付核心服务</div><div class="mt-2 flex items-center gap-1.5"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" /><span class="text-[10px] text-slate-400">李四 · 2h前</span></div></div></div>
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50/40 p-0.5">
+            <button class="rounded-md bg-white px-2.5 py-1 text-[12px] font-medium text-indigo-600 shadow-sm">看板</button>
+            <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-slate-700">列表</button>
           </div>
-          <div class="rounded-lg border border-cyan-200/70 bg-cyan-50/40 p-3"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span><span class="text-[12px] font-medium text-cyan-700">构建中</span></div><span class="text-[11px] font-medium text-cyan-600">2</span></div>
-            <div class="space-y-2"><div class="rounded-lg border border-cyan-200 bg-white p-2.5 hover:border-cyan-400 hover:shadow-sm cursor-pointer rcard"><div class="flex items-center justify-between"><span class="font-mono text-[12px] font-medium text-slate-800">v3.1.0</span><span class="rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-medium text-blue-600">RC</span></div><div class="mt-1.5 text-[11px] text-slate-500">用户中心</div><div class="mt-2 flex items-center gap-1.5"><i data-lucide="loader" class="h-3 w-3 text-cyan-500" style="stroke-width:2"></i><span class="text-[10px] text-cyan-600">Build #142 · 3m24s</span></div><div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-cyan-100"><div class="h-full w-[65%] rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400"></div></div></div></div>
-          </div>
-          <div class="rounded-lg border border-amber-200/70 bg-amber-50/40 p-3"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span><span class="text-[12px] font-medium text-amber-700">待审批</span></div><span class="text-[11px] font-medium text-amber-600">3</span></div>
-            <div class="space-y-2"><div class="rounded-lg border border-amber-200 bg-white p-2.5 hover:border-amber-400 hover:shadow-sm cursor-pointer rcard"><div class="flex items-center justify-between"><span class="font-mono text-[12px] font-medium text-slate-800">v1.8.2</span><span class="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-medium text-emerald-600">正式</span></div><div class="mt-1.5 text-[11px] text-slate-500">订单管理</div><div class="mt-2 flex items-center justify-between"><div class="flex items-center gap-1.5"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" /><span class="text-[10px] text-slate-400">王五</span></div><span class="text-[10px] font-medium text-amber-600">待 2 人审</span></div></div></div>
-          </div>
-          <div class="rounded-lg border border-emerald-200/70 bg-emerald-50/40 p-3"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span><span class="text-[12px] font-medium text-emerald-700">已发布</span></div><span class="text-[11px] font-medium text-emerald-600">48</span></div>
-            <div class="space-y-2"><div class="rounded-lg border border-emerald-200 bg-white p-2.5 hover:border-emerald-400 hover:shadow-sm cursor-pointer rcard"><div class="flex items-center justify-between"><span class="font-mono text-[12px] font-medium text-slate-800">v4.2.1</span><span class="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-medium text-emerald-600">正式</span></div><div class="mt-1.5 text-[11px] text-slate-500">网关服务</div><div class="mt-2 flex items-center gap-1.5"><i data-lucide="check-circle-2" class="h-3 w-3 text-emerald-500" style="stroke-width:1.5"></i><span class="text-[10px] text-slate-400">2h前 · tag 已推送</span></div></div></div>
-          </div>
-          <div class="rounded-lg border border-rose-200/70 bg-rose-50/40 p-3"><div class="flex items-center justify-between mb-3"><div class="flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span><span class="text-[12px] font-medium text-rose-700">已驳回</span></div><span class="text-[11px] font-medium text-rose-500">5</span></div>
-            <div class="space-y-2"><div class="rounded-lg border border-rose-200 bg-white p-2.5 hover:border-rose-400 hover:shadow-sm cursor-pointer rcard"><div class="flex items-center justify-between"><span class="font-mono text-[12px] font-medium text-slate-800">v2.0.0</span><span class="rounded border border-rose-200 bg-rose-50 px-1 py-0.5 text-[9px] font-medium text-rose-500">驳回</span></div><div class="mt-1.5 text-[11px] text-slate-500">风控引擎</div><div class="mt-2 flex items-center gap-1.5"><i data-lucide="x-circle" class="h-3 w-3 text-rose-400" style="stroke-width:1.5"></i><span class="text-[10px] text-slate-400">构建失败 · 超时</span></div></div></div>
-          </div>
+          <button class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white">
+            <i data-lucide="plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>新建发布
+          </button>
         </div>
-      </section>
+      </div>
 
-      <!-- ============ 详情页 ============ -->
-      <section id="view-detail" class="view space-y-5">
-        <div class="flex items-center gap-2 text-[13px]"><a id="back-to-list" class="text-slate-400 hover:text-indigo-600 cursor-pointer">发布看板</a><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">v1.8.2 · 订单管理</span></div>
-
-        <div class="tech-card rounded-xl p-5">
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div class="flex items-center gap-3">
-              <div class="flex h-12 w-12 items-center justify-center rounded-xl icon-emerald"><i data-lucide="rocket" class="h-6 w-6" style="stroke-width:1.5"></i></div>
-              <div>
-                <div class="flex items-center gap-2"><h1 class="text-[22px] font-semibold tracking-tight text-slate-900 font-mono">v1.8.2</h1><span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span><span class="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span>待审批</span></div>
-                <div class="mt-1 flex items-center gap-2 text-[12px] text-slate-500"><span>订单管理</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>发布人 王五</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>2026-06-29 09:12</span></div>
-              </div>
-            </div>
-            <div class="flex items-center gap-2"><button class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600">驳回</button><button class="btn-glow rounded-lg px-3 py-2 text-[13px] font-medium text-white">通过审批</button></div>
-          </div>
-          <div class="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
-            <div class="flex items-center gap-2"><i data-lucide="git-branch" class="h-4 w-4 text-indigo-400" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">来源</span><span class="font-mono text-[13px] font-semibold text-slate-900">release/v1.8.2</span></div>
-            <div class="flex items-center gap-2"><i data-lucide="git-branch" class="h-4 w-4 text-cyan-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">目标</span><span class="font-mono text-[13px] font-semibold text-slate-900">main</span></div>
-            <div class="flex items-center gap-2"><i data-lucide="git-commit-horizontal" class="h-4 w-4 text-violet-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">提交</span><span class="font-mono text-[13px] font-semibold text-slate-900">18 条</span></div>
-            <div class="flex items-center gap-2"><i data-lucide="tag" class="h-4 w-4 text-emerald-500" style="stroke-width:1.5"></i><span class="text-[12px] text-slate-500">Tag</span><span class="font-mono text-[13px] font-semibold text-slate-900">v1.8.2</span></div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <div class="lg:col-span-2 space-y-5">
-            <div class="tech-card rounded-xl overflow-hidden">
-              <div class="flex items-center gap-1 border-b border-indigo-50 px-4 overflow-x-auto scrollbar-thin">
-                <button class="dt-tab on whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2.5 text-[13px] font-medium" data-tab="commits">关联提交</button>
-                <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="notes">发布说明</button>
-                <button class="dt-tab whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600" data-tab="build">构建信息</button>
-              </div>
-              <div class="p-5">
-                <div id="dt-commits" class="dt-pane">
-                  <div class="flex items-center justify-between mb-3"><span class="text-[12px] text-slate-500">上一个 tag <span class="font-mono text-slate-700">v1.8.1</span> → <span class="font-mono text-slate-700">release/v1.8.2</span></span><span class="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">17 合规 · 1 警告</span></div>
-                  <div class="divide-y divide-indigo-50/50">
-                    <div class="flex items-center gap-3 py-2.5"><span class="font-mono text-[11px] text-indigo-500 w-16">a3f2c1d</span><span class="flex-1 text-[13px] text-slate-700 truncate"><span class="rounded bg-emerald-50 border border-emerald-200 px-1 py-0.5 text-[10px] font-medium text-emerald-700 mr-1.5">feat</span>新增微信支付分账能力</span><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" /><i data-lucide="check-circle-2" class="h-3.5 w-3.5 text-emerald-400" style="stroke-width:1.5"></i></div>
-                    <div class="flex items-center gap-3 py-2.5"><span class="font-mono text-[11px] text-indigo-500 w-16">b8e9d2a</span><span class="flex-1 text-[13px] text-slate-700 truncate"><span class="rounded bg-blue-50 border border-blue-200 px-1 py-0.5 text-[10px] font-medium text-blue-700 mr-1.5">fix</span>修复退款金额计算精度问题</span><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" /><i data-lucide="check-circle-2" class="h-3.5 w-3.5 text-emerald-400" style="stroke-width:1.5"></i></div>
-                    <div class="flex items-center gap-3 py-2.5 bg-amber-50/20 -mx-2 px-2 rounded"><span class="font-mono text-[11px] text-indigo-500 w-16">c2d4f7e</span><span class="flex-1 text-[13px] text-slate-700 truncate">update 修改了点东西</span><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" /><i data-lucide="triangle-alert" class="h-3.5 w-3.5 text-amber-400" style="stroke-width:1.5"></i></div>
-                    <div class="flex items-center gap-3 py-2.5"><span class="font-mono text-[11px] text-indigo-500 w-16">d9a1b3c</span><span class="flex-1 text-[13px] text-slate-700 truncate"><span class="rounded bg-violet-50 border border-violet-200 px-1 py-0.5 text-[10px] font-medium text-violet-700 mr-1.5">refactor</span>重构对账模块，拆分服务</span><img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" /><i data-lucide="check-circle-2" class="h-3.5 w-3.5 text-emerald-400" style="stroke-width:1.5"></i></div>
-                    <div class="flex items-center gap-3 py-2.5"><span class="font-mono text-[11px] text-indigo-500 w-16">e5f8a9d</span><span class="flex-1 text-[13px] text-slate-700 truncate"><span class="rounded bg-emerald-50 border border-emerald-200 px-1 py-0.5 text-[10px] font-medium text-emerald-700 mr-1.5">feat</span>银联渠道支持信用卡预授权</span><img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" /><i data-lucide="check-circle-2" class="h-3.5 w-3.5 text-emerald-400" style="stroke-width:1.5"></i></div>
-                  </div>
-                </div>
-                <div id="dt-notes" class="dt-pane hidden">
-                  <div class="rounded-lg border border-indigo-100 bg-slate-50/50 p-4 font-mono text-[12px] text-slate-600 leading-relaxed space-y-1.5">
-                    <div class="text-slate-400"># v1.8.2</div>
-                    <div class="text-emerald-600 font-medium">## ✨ 新特性</div><div class="pl-3">- 新增微信支付分账能力</div><div class="pl-3">- 银联渠道支持信用卡预授权</div>
-                    <div class="text-blue-600 font-medium mt-1.5">## 🐛 修复</div><div class="pl-3">- 修复退款金额计算精度问题</div>
-                    <div class="text-violet-600 font-medium mt-1.5">## ♻️ 重构</div><div class="pl-3">- 重构对账模块，拆分服务</div>
-                  </div>
-                  <div class="mt-3 flex items-center gap-2"><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="file-down" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>导出 PDF</button><button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>导出 Word</button></div>
-                </div>
-                <div id="dt-build" class="dt-pane hidden">
-                  <div class="space-y-3">
-                    <div class="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg icon-emerald"><i data-lucide="check-circle-2" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div class="flex-1"><div class="text-[13px] font-medium text-slate-900">构建 #139 · 成功</div><div class="text-[11px] text-slate-500">pay-core-build · 耗时 4m08s</div></div><span class="font-mono text-[11px] text-slate-400">8h前</span></div>
-                    <div class="grid grid-cols-2 gap-3">
-                      <div class="rounded-lg border border-indigo-100 bg-white p-3"><div class="text-[11px] text-slate-400">构建任务</div><div class="mt-1 text-[13px] font-medium text-slate-800">pay-core-build</div></div>
-                      <div class="rounded-lg border border-indigo-100 bg-white p-3"><div class="text-[11px] text-slate-400">构建号</div><div class="mt-1 font-mono text-[13px] font-medium text-slate-800">#139</div></div>
-                      <div class="rounded-lg border border-indigo-100 bg-white p-3"><div class="text-[11px] text-slate-400">开始时间</div><div class="mt-1 text-[13px] text-slate-800">09:21:14</div></div>
-                      <div class="rounded-lg border border-indigo-100 bg-white p-3"><div class="text-[11px] text-slate-400">耗时</div><div class="mt-1 font-mono text-[13px] text-slate-800">4m08s</div></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 审批时间线 -->
-          <div class="space-y-5">
-            <div class="tech-card rounded-xl p-5">
-              <h3 class="text-[15px] font-semibold tracking-tight text-slate-900 mb-4">发布流程</h3>
-              <div class="space-y-0">
-                <div class="flex gap-3">
-                  <div class="flex flex-col items-center"><div class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:2"></i></div><div class="w-px flex-1 bg-indigo-100 mt-1"></div></div>
-                  <div class="pb-5"><div class="text-[13px] font-medium text-slate-900">创建发布</div><div class="mt-0.5 text-[11px] text-slate-400">王五 · 09:12</div></div>
-                </div>
-                <div class="flex gap-3">
-                  <div class="flex flex-col items-center"><div class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:2"></i></div><div class="w-px flex-1 bg-indigo-100 mt-1"></div></div>
-                  <div class="pb-5"><div class="text-[13px] font-medium text-slate-900">生成发布说明</div><div class="mt-0.5 text-[11px] text-slate-400">自动 · 18 条提交聚合</div></div>
-                </div>
-                <div class="flex gap-3">
-                  <div class="flex flex-col items-center"><div class="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:2"></i></div><div class="w-px flex-1 bg-indigo-100 mt-1"></div></div>
-                  <div class="pb-5"><div class="text-[13px] font-medium text-slate-900">Jenkins 构建</div><div class="mt-0.5 text-[11px] text-slate-400">#139 · 4m08s · 成功</div></div>
-                </div>
-                <div class="flex gap-3">
-                  <div class="flex flex-col items-center"><div class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-white pulse-dot"><i data-lucide="git-pull-request-arrow" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div><div class="w-px flex-1 bg-slate-200 mt-1"></div></div>
-                  <div class="pb-5"><div class="text-[13px] font-medium text-amber-700">等待审批</div><div class="mt-0.5 text-[11px] text-slate-400">需 2 人审批 · 已审 0</div></div>
-                </div>
-                <div class="flex gap-3">
-                  <div class="flex flex-col items-center"><div class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-slate-200 bg-white text-slate-300"><i data-lucide="tag" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div></div>
-                  <div><div class="text-[13px] font-medium text-slate-400">推送 Tag</div><div class="mt-0.5 text-[11px] text-slate-400">审批通过后执行</div></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="tech-card rounded-xl p-5">
-              <h3 class="text-[14px] font-semibold tracking-tight text-slate-900 mb-3">审批信息</h3>
-              <div class="space-y-2.5">
-                <div class="flex items-center justify-between py-1.5 border-b border-indigo-50"><span class="text-[12px] text-slate-500">审批模式</span><span class="text-[12px] text-slate-700">多人会签（2人）</span></div>
-                <div class="flex items-center justify-between py-1.5 border-b border-indigo-50"><span class="text-[12px] text-slate-500">审批人</span><div class="flex -space-x-1.5"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-5 w-5 rounded-full ring-2 ring-white object-cover" alt="" /><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-5 w-5 rounded-full ring-2 ring-white object-cover" alt="" /></div></div>
-                <div class="flex items-center justify-between py-1.5"><span class="text-[12px] text-slate-500">剩余时间</span><span class="text-[12px] font-medium text-amber-600">23h 48m</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
+      <div id="board" class="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4"></div>
     </main>
   </div>
 </div>
+
+<div id="modalMask" class="modal-mask" onclick="closeModal()"></div>
+<div id="modalPanel" class="modal-panel">
+  <div id="modalInner" class="flex max-h-[min(860px,calc(100vh-48px))] flex-col overflow-hidden rounded-2xl border border-[rgba(99,102,241,.12)] bg-white/95 shadow-[0_24px_70px_-12px_rgba(30,27,75,.55)] backdrop-blur-xl">
+    <!-- 内容由 JS 注入 -->
+  </div>
+</div>
+
+<div id="drawerMask" class="drawer-mask" onclick="closeDrawer()"></div>
+<div id="drawerPanel" class="drawer-panel"></div>
+
 <script>
+const AVATARS={
+  '张三':'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&h=80&fit=crop&crop=face',
+  '李四':'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=80&h=80&fit=crop&crop=face',
+  '王五':'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&h=80&fit=crop&crop=face',
+  '赵六':'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop&crop=face',
+  '钱七':'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face',
+  '孙八':'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&h=80&fit=crop&crop=face',
+  '周九':'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop&crop=face',
+  '吴十':'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=80&h=80&fit=crop&crop=face'
+};
+const TYPE_MAP={
+  formal:{text:'正式',cls:'border-emerald-200 bg-emerald-50 text-emerald-700'},
+  rc:{text:'RC',cls:'border-blue-200 bg-blue-50 text-blue-700'},
+  beta:{text:'BETA',cls:'border-amber-200 bg-amber-50 text-amber-700'}
+};
+const STATUS_MAP={
+  draft:{label:'草稿',dot:'bg-slate-400',border:'border-slate-200/70',bg:'bg-slate-50/50',text:'text-slate-500',cardBorder:'border-slate-200 hover:border-indigo-300',badge:'border-slate-200 bg-slate-50 text-slate-600'},
+  building:{label:'构建中',dot:'bg-cyan-500 pulse-dot',border:'border-cyan-200/70',bg:'bg-cyan-50/40',text:'text-cyan-700',cardBorder:'border-cyan-200 hover:border-cyan-400',badge:'border-cyan-200 bg-cyan-50 text-cyan-700'},
+  pending:{label:'待审批',dot:'bg-amber-500 pulse-dot',border:'border-amber-200/70',bg:'bg-amber-50/40',text:'text-amber-700',cardBorder:'border-amber-200 hover:border-amber-400',badge:'border-amber-200 bg-amber-50 text-amber-700'},
+  released:{label:'已发布',dot:'bg-emerald-500',border:'border-emerald-200/70',bg:'bg-emerald-50/40',text:'text-emerald-700',cardBorder:'border-emerald-200 hover:border-emerald-400',badge:'border-emerald-200 bg-emerald-50 text-emerald-700'},
+  rejected:{label:'已驳回',dot:'bg-rose-500',border:'border-rose-200/70',bg:'bg-rose-50/40',text:'text-rose-700',cardBorder:'border-rose-200 hover:border-rose-400',badge:'border-rose-200 bg-rose-50 text-rose-700'}
+};
+const COLUMNS=[
+  {key:'draft'},
+  {key:'building'},
+  {key:'pending'},
+  {key:'released'},
+  {key:'rejected'}
+];
+const COMMITS=[
+  {hash:'a3f2c1d',message:'新增微信支付分账能力',author:'张三',reviewStatus:'pass',type:'feat'},
+  {hash:'b8e9d2a',message:'修复退款金额计算精度问题',author:'李四',reviewStatus:'pass',type:'fix'},
+  {hash:'c2d4f7e',message:'update 修改了点东西',author:'王五',reviewStatus:'warning',type:''},
+  {hash:'d9a1b3c',message:'重构对账模块，拆分服务',author:'赵六',reviewStatus:'pass',type:'refactor'},
+  {hash:'e5f8a9d',message:'银联渠道支持信用卡预授权',author:'张三',reviewStatus:'pass',type:'feat'}
+];
+const RELEASES=[
+  {id:'r1',project:'支付核心服务',version:'v2.5.0',tag:'v2.5.0',type:'beta',status:'draft',branch:'develop',publisher:'李四',time:'2h前',build:null,commits:COMMITS.slice(0,3),desc:'支付链路重构与性能优化'},
+  {id:'r2',project:'营销中台',version:'v1.3.0',tag:'v1.3.0',type:'beta',status:'draft',branch:'feature/coupon',publisher:'周九',time:'4h前',build:null,commits:COMMITS.slice(0,2),desc:'优惠券批量发放'},
+  {id:'r3',project:'运维门户',version:'v1.9.0',tag:'v1.9.0',type:'rc',status:'draft',branch:'develop',publisher:'吴十',time:'6h前',build:null,commits:COMMITS.slice(0,2),desc:'审计与告警模块升级'},
+  {id:'r4',project:'用户中心',version:'v3.1.0',tag:'v3.1.0',type:'rc',status:'building',branch:'release/v3.1.0',publisher:'张三',time:'15m前',build:{number:142,job:'user-center-build',duration:'3m24s',progress:65},commits:COMMITS.slice(0,4),desc:'新增 OAuth2 登录与权限校验'},
+  {id:'r5',project:'核心交易平台',version:'v2.4.2',tag:'v2.4.2',type:'rc',status:'building',branch:'develop',publisher:'李四',time:'30m前',build:{number:143,job:'trade-core-build',duration:'2m18s',progress:42},commits:COMMITS.slice(0,3),desc:'交易核心热修复'},
+  {id:'r6',project:'数据中台',version:'v2.5.0',tag:'v2.5.0',type:'formal',status:'building',branch:'main',publisher:'王五',time:'1h前',build:{number:144,job:'data-hub-build',duration:'1m52s',progress:28},commits:COMMITS.slice(0,4),desc:'数据同步升级'},
+  {id:'r7',project:'订单管理',version:'v1.8.2',tag:'v1.8.2',type:'formal',status:'pending',branch:'release/v1.8.2',publisher:'王五',time:'1h前',build:{number:139,job:'order-build',duration:'4m08s'},commits:COMMITS,desc:'订单拆分与退款精度修复'},
+  {id:'r8',project:'支付核心服务',version:'v2.5.0',tag:'v2.5.0',type:'formal',status:'pending',branch:'master',publisher:'李四',time:'2h前',build:{number:145,job:'pay-core-build',duration:'3m52s'},commits:COMMITS.slice(0,4),desc:'支付链路重构'},
+  {id:'r9',project:'运维门户',version:'v1.9.0',tag:'v1.9.0',type:'rc',status:'pending',branch:'main',publisher:'吴十',time:'3h前',build:{number:146,job:'ops-portal-build',duration:'2m45s'},commits:COMMITS.slice(0,3),desc:'审计与告警模块升级'},
+  {id:'r10',project:'网关服务',version:'v4.2.1',tag:'v4.2.1',type:'formal',status:'released',branch:'main',publisher:'钱七',time:'2h前',build:{number:141,job:'gateway-build',duration:'4m08s'},commits:COMMITS.slice(0,2),desc:'限流策略优化'},
+  {id:'r11',project:'核心交易平台',version:'v2.4.1',tag:'v2.4.1',type:'formal',status:'released',branch:'main',publisher:'张三',time:'1天前',build:{number:121,job:'trade-core-build',duration:'4m01s'},commits:COMMITS.slice(0,3),desc:'交易核心热修复'},
+  {id:'r12',project:'数据中台',version:'v2.4.0',tag:'v2.4.0',type:'formal',status:'released',branch:'main',publisher:'王五',time:'2天前',build:{number:99,job:'data-hub-build',duration:'5m12s'},commits:COMMITS.slice(0,2),desc:'指标看板上线'},
+  {id:'r13',project:'风控引擎',version:'v2.0.0',tag:'v2.0.0',type:'formal',status:'rejected',branch:'master',publisher:'孙八',time:'5h前',build:{number:138,job:'risk-engine-build',duration:'超时'},commits:COMMITS.slice(0,3),desc:'规则引擎升级'},
+  {id:'r14',project:'用户中心',version:'v3.0.9',tag:'v3.0.9',type:'formal',status:'rejected',branch:'main',publisher:'李四',time:'1天前',build:{number:115,job:'user-center-build',duration:'95s'},commits:COMMITS.slice(0,2),desc:'回滚测试'},
+  {id:'r15',project:'支付核心服务',version:'v2.3.8',tag:'v2.3.8',type:'formal',status:'rejected',branch:'master',publisher:'张三',time:'2天前',build:{number:110,job:'pay-core-build',duration:'超时'},commits:COMMITS.slice(0,3),desc:'旧版本回滚'}
+];
+const MAX_STACK=3;
+
+function avatar(name){ return AVATARS[name]||AVATARS['张三']; }
+function badge(type){ const t=TYPE_MAP[type]; return `<span class="rounded border px-1 py-0.5 text-[9px] font-medium ${t.cls}">${t.text}</span>`; }
+function statusBadge(status){ const s=STATUS_MAP[status]; return `<span class="rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${s.badge}">${s.label}</span>`; }
+
+function stackCard(r, index, hidden) {
+  const s = STATUS_MAP[r.status];
+  const isTop = index === 0;
+  const zClass = `stack-card-${index}`;
+  const click = isTop ? `onclick="openModal('${r.id}')"` : '';
+  const corner = isTop && hidden > 0 ? `<span class="absolute right-2 top-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">+${hidden}</span>` : '';
+  const content = isTop
+    ? `<div class="flex items-start justify-between gap-2"><span class="font-mono text-[12px] font-medium text-slate-800">${r.version}</span>${badge(r.type)}</div>
+       <div class="mt-1 truncate text-[11px] text-slate-500">${r.project}</div>
+       <div class="mt-2 flex items-center gap-1 text-[10px] text-slate-400"><i data-lucide="git-branch" class="h-3 w-3 flex-shrink-0" style="stroke-width:1.5"></i><span class="truncate">${r.branch}</span></div>
+       <div class="mt-2 flex items-center gap-1.5"><img src="${avatar(r.publisher)}" alt="" class="h-4 w-4 rounded-full object-cover ring-1 ring-white"><span class="text-[10px] text-slate-400">${r.publisher} · ${r.time}</span></div>`
+    : `<div class="flex items-start justify-between gap-2"><span class="font-mono text-[12px] font-medium text-slate-800">${r.version}</span>${badge(r.type)}</div>
+       <div class="mt-1 truncate text-[11px] text-slate-500">${r.project}</div>`;
+
+  return `<div ${click} class="stack-card ${zClass} ${isTop ? 'cursor-pointer border ' + s.cardBorder + ' shadow-sm hover:-translate-y-0.5 hover:shadow-md' : 'border'} p-3">${corner}${content}</div>`;
+}
+
+function renderBoard(){
+  const groups={}; COLUMNS.forEach(c=>groups[c.key]=[]);
+  RELEASES.forEach(r=>{ if(groups[r.status]) groups[r.status].push(r); });
+  const board=document.getElementById('board');
+  board.innerHTML=COLUMNS.map(col=>{
+    const items=groups[col.key];
+    const count=items.length;
+    const visible=items.slice(0,MAX_STACK);
+    const hidden=count-visible.length;
+    const s=STATUS_MAP[col.key];
+    let stack='';
+    if(count===0){
+      stack=`<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white/60 py-10 text-[12px] text-slate-400"><i data-lucide="layers" class="mb-2 h-5 w-5 text-slate-300" style="stroke-width:1.5"></i>暂无</div>`;
+    }else{
+      stack=`<div class="card-stack relative">`;
+      if(hidden>0) stack+=`<button type="button" onclick="event.stopPropagation();openDrawer('${col.key}')" class="column-more">+${hidden}</button>`;
+      visible.forEach((r,i)=>{
+        stack += stackCard(r, i, i === 0 ? 0 : 0);
+      });
+      stack+=`</div>`;
+    }
+    return `
+      <div class="rounded-xl border ${s.border} ${s.bg} p-3">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span class="h-1.5 w-1.5 rounded-full ${s.dot}"></span>
+            <span class="text-[12px] font-medium ${s.text}">${s.label}</span>
+          </div>
+          <span class="rounded-md bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold ${s.text}">${count}</span>
+        </div>
+        ${stack}
+      </div>
+    `;
+  }).join('');
   lucide.createIcons();
-  document.querySelectorAll('.rcard').forEach(r => r.addEventListener('click', () => show('view-detail')));
-  document.getElementById('back-to-list').addEventListener('click', () => show('view-list'));
-  function show(id){ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); document.getElementById(id).classList.add('active'); window.scrollTo({top:0,behavior:'smooth'}); }
-  document.querySelectorAll('.dt-tab').forEach(t => t.addEventListener('click', () => {
-    document.querySelectorAll('.dt-tab').forEach(x => { x.classList.remove('on','text-indigo-600'); x.classList.add('text-slate-500'); x.style.borderColor='transparent'; });
-    t.classList.add('on','text-indigo-600'); t.classList.remove('text-slate-500'); t.style.borderColor='#4F46E5';
-    document.querySelectorAll('.dt-pane').forEach(p => p.classList.add('hidden'));
-    document.getElementById('dt-'+t.dataset.tab)?.classList.remove('hidden');
-  }));
+}
+
+function commitRow(c){
+  const icon=c.reviewStatus==='pass'?'check-circle-2':c.reviewStatus==='warning'?'triangle-alert':'x-circle';
+  const color=c.reviewStatus==='pass'?'text-emerald-500':c.reviewStatus==='warning'?'text-amber-500':'text-rose-500';
+  const type=c.type?`<span class="mr-1.5 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-600">${c.type}</span>`:'';
+  return `
+    <div class="flex items-center gap-3 py-2.5">
+      <span class="font-mono text-[11px] text-indigo-500 w-16">${c.hash}</span>
+      <div class="flex-1 truncate text-[13px] text-slate-700">${type}${c.message}</div>
+      <img src="${avatar(c.author)}" alt="" class="h-4 w-4 rounded-full object-cover ring-1 ring-white">
+      <i data-lucide="${icon}" class="h-3.5 w-3.5 ${color}" style="stroke-width:1.5"></i>
+    </div>
+  `;
+}
+
+function timelineHtml(status){
+  const steps=[
+    {icon:'file-text',label:'创建发布',desc:'草稿已保存'},
+    {icon:'hammer',label:'Jenkins 构建',desc:'自动触发'},
+    {icon:'git-pull-request-arrow',label:'提交审批',desc:'等待审批人'},
+    {icon:'check-circle-2',label:'审批完成',desc:'允许发布'},
+    {icon:'tag',label:'推送 Tag',desc:'发布完成'}
+  ];
+  const order={draft:0,building:1,pending:2,released:4,rejected:1};
+  const idx=order[status]??0;
+  return `<div class="space-y-0">${steps.map((step,i)=>{
+    let state;
+    if(status==='rejected'){ state=i===0?'done':(i===1?'active-red':'pending'); }
+    else{ state=i<idx?'done':(i===idx?'active':'pending'); }
+    const node=state==='done'?'bg-emerald-500 text-white':state==='active'?'bg-indigo-600 text-white':state==='active-red'?'bg-rose-500 text-white':'border-2 border-slate-200 bg-white text-slate-300';
+    const line=i<4?(state==='done'?'bg-emerald-200':'bg-slate-200'):'';
+    const text=state==='pending'?'text-slate-400':state==='active-red'?'text-rose-700':'text-slate-900';
+    return `
+      <div class="flex gap-3">
+        <div class="flex flex-col items-center">
+          <div class="flex h-7 w-7 items-center justify-center rounded-full ${node}"><i data-lucide="${step.icon}" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>
+          ${i<4?`<div class="w-px flex-1 ${line} mt-1"></div>`:''}
+        </div>
+        <div class="pb-5">
+          <div class="text-[13px] font-medium ${text}">${step.label}</div>
+          <div class="mt-0.5 text-[11px] text-slate-400">${step.desc}</div>
+        </div>
+      </div>
+    `;
+  }).join('')}</div>`;
+}
+
+function buildPane(build){
+  if(!build) return '<div class="text-[13px] text-slate-500">暂无构建记录</div>';
+  const ok=typeof build.progress==='number';
+  const color=ok?'icon-cyan':'icon-emerald';
+  const icon=ok?'loader':'check-circle-2';
+  return `
+    <div class="flex items-center gap-3 rounded-lg border border-indigo-100 bg-white p-3 mb-3">
+      <div class="flex h-9 w-9 items-center justify-center rounded-lg ${color}"><i data-lucide="${icon}" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div>
+      <div class="flex-1">
+        <div class="text-[13px] font-medium text-slate-900">构建 #${build.number}</div>
+        <div class="text-[11px] text-slate-500">${build.job} · ${build.duration}</div>
+      </div>
+    </div>
+    ${ok?`<div class="h-1 w-full overflow-hidden rounded-full bg-cyan-100"><div class="h-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400" style="width:${build.progress}%"></div></div>`:''}
+  `;
+}
+
+function notesHtml(r){
+  return `
+    <div class="text-slate-400"># ${r.version}</div>
+    <div class="text-emerald-600 font-medium mt-1.5">## 变更摘要</div>
+    <div class="pl-3">- ${r.desc}</div>
+    <div class="text-blue-600 font-medium mt-1.5">## 影响范围</div>
+    <div class="pl-3">- ${r.project} · ${r.branch}</div>
+    <div class="text-violet-600 font-medium mt-1.5">## 注意事项</div>
+    <div class="pl-3">- 请在低峰期发布，并确认 Jenkins 构建成功。</div>
+  `;
+}
+
+function infoItem(icon,label,value){
+  return `
+    <div class="flex items-center gap-3 rounded-lg border border-indigo-100 bg-white p-3">
+      <div class="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo">
+        <i data-lucide="${icon}" class="h-4 w-4" style="stroke-width:1.5"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-slate-400">${label}</div>
+        <div class="truncate text-[13px] font-medium text-slate-800">${value}</div>
+      </div>
+    </div>
+  `;
+}
+
+function modalContent(r){
+  const counts={pass:0,warning:0,illegal:0};
+  r.commits.forEach(c=>{ if(counts[c.reviewStatus]!==undefined) counts[c.reviewStatus]++; });
+  return `
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-indigo-50 px-6 py-5">
+      <div class="flex items-center gap-3">
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl icon-indigo">
+          <i data-lucide="rocket" class="h-5 w-5" style="stroke-width:1.5"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h2 class="text-[20px] font-semibold tracking-tight text-slate-900 font-mono">${r.version}</h2>
+            ${badge(r.type)}
+            ${statusBadge(r.status)}
+          </div>
+          <p class="mt-0.5 text-[12px] text-slate-500">${r.project} · ${r.branch}</p>
+        </div>
+      </div>
+      <button onclick="closeModal()" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 self-start sm:self-auto">
+        <i data-lucide="x" class="h-4 w-4" style="stroke-width:1.5"></i>
+      </button>
+    </div>
+
+    <div class="overflow-y-auto p-6 scrollbar-thin">
+      <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        ${infoItem('git-branch','来源分支',r.branch)}
+        ${infoItem('tag','目标 Tag',r.tag)}
+        ${infoItem('user','发布人',r.publisher)}
+        ${infoItem('clock','发布时间',r.time)}
+        ${infoItem('git-commit-horizontal','提交数',`${r.commits.length} 条`)}
+        ${infoItem('hammer','构建',r.build?`#${r.build.number} · ${r.build.job}`:'未触发')}
+      </div>
+
+      <div class="mb-6 rounded-xl border border-indigo-100 bg-white p-4">
+        <h3 class="mb-4 text-[14px] font-semibold tracking-tight text-slate-900">发布流程</h3>
+        ${timelineHtml(r.status)}
+      </div>
+
+      <div>
+        <div class="mb-4 flex items-center gap-1 border-b border-indigo-50">
+          <button onclick="switchTab('commits')" id="tab-commits" class="dt-tab on rounded-t-lg border-b-2 border-indigo-600 px-3 py-2.5 text-[13px] font-medium text-indigo-600">关联提交</button>
+          <button onclick="switchTab('build')" id="tab-build" class="dt-tab rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600">构建信息</button>
+          <button onclick="switchTab('notes')" id="tab-notes" class="dt-tab rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600">发布说明</button>
+        </div>
+        <div id="pane-commits" class="dt-pane rounded-xl border border-indigo-100 bg-white p-4">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-[12px] text-slate-500">上一个 tag <span class="font-mono text-slate-700">${r.version.replace(/\.\d+$/,'.'+(parseInt(r.version.match(/\d+$/)||0)-1))}</span> → <span class="font-mono text-slate-700">${r.branch}</span></span>
+            <span class="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">${counts.pass} 合规 · ${counts.warning} 警告</span>
+          </div>
+          <div class="divide-y divide-indigo-50/50">${r.commits.map(commitRow).join('')}</div>
+        </div>
+        <div id="pane-build" class="dt-pane hidden rounded-xl border border-indigo-100 bg-white p-4">${buildPane(r.build)}</div>
+        <div id="pane-notes" class="dt-pane hidden rounded-xl border border-indigo-100 bg-slate-50/50 p-4 font-mono text-[12px] text-slate-600 leading-relaxed">${notesHtml(r)}</div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 border-t border-indigo-50 bg-slate-50/50 px-6 py-4">
+      <button onclick="closeModal()" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50">关闭</button>
+      ${r.status==='pending'?`
+        <button class="rounded-lg border border-rose-200 bg-white px-4 py-2 text-[13px] font-medium text-rose-600 hover:bg-rose-50">驳回</button>
+        <button class="btn-glow rounded-lg px-4 py-2 text-[13px] font-medium text-white">通过审批</button>
+      `:''}
+    </div>
+  `;
+}
+
+function openModal(id){
+  const r=RELEASES.find(x=>x.id===id);
+  if(!r) return;
+  document.getElementById('modalInner').innerHTML=modalContent(r);
+  document.getElementById('modalMask').classList.add('open');
+  document.getElementById('modalPanel').classList.add('open');
+  document.body.style.overflow='hidden';
+  lucide.createIcons();
+}
+
+function closeModal(){
+  document.getElementById('modalMask').classList.remove('open');
+  document.getElementById('modalPanel').classList.remove('open');
+  document.body.style.overflow='';
+}
+
+function switchTab(name){
+  ['commits','build','notes'].forEach(t=>{
+    document.getElementById('pane-'+t).classList.add('hidden');
+    const btn=document.getElementById('tab-'+t);
+    btn.classList.remove('on','border-indigo-600','text-indigo-600');
+    btn.classList.add('border-transparent','text-slate-500');
+  });
+  document.getElementById('pane-'+name).classList.remove('hidden');
+  const active=document.getElementById('tab-'+name);
+  active.classList.add('on','border-indigo-600','text-indigo-600');
+  active.classList.remove('border-transparent','text-slate-500');
+}
+
+function openDrawer(colKey){
+  const s=STATUS_MAP[colKey];
+  const items=RELEASES.filter(r=>r.status===colKey);
+  const drawer=document.getElementById('drawerPanel');
+  drawer.innerHTML=`
+    <div class="flex h-full flex-col">
+      <div class="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
+        <div class="flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full ${s.dot}"></span>
+          <h2 class="text-[16px] font-semibold tracking-tight text-slate-900">${s.label}</h2>
+          <span class="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-semibold text-slate-600">${items.length}</span>
+        </div>
+        <button onclick="closeDrawer()" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">
+          <i data-lucide="x" class="h-4 w-4" style="stroke-width:1.5"></i>
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4 scrollbar-thin">
+        <div class="space-y-3">
+          ${items.map(r=>`
+            <div onclick="openModal('${r.id}');closeDrawer();" class="cursor-pointer rounded-xl border ${s.cardBorder} bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+              <div class="flex items-start justify-between gap-2">
+                <span class="font-mono text-[13px] font-medium text-slate-800">${r.version}</span>
+                ${badge(r.type)}
+              </div>
+              <div class="mt-1 truncate text-[12px] text-slate-500">${r.project}</div>
+              <div class="mt-2 flex items-center gap-1 text-[11px] text-slate-400">
+                <i data-lucide="git-branch" class="h-3 w-3 flex-shrink-0" style="stroke-width:1.5"></i>
+                <span class="truncate">${r.branch}</span>
+              </div>
+              <div class="mt-3 flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <img src="${avatar(r.publisher)}" alt="" class="h-4 w-4 rounded-full object-cover ring-1 ring-white">
+                  <span class="text-[11px] text-slate-500">${r.publisher}</span>
+                </div>
+                <span class="text-[11px] text-slate-400">${r.time}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('drawerMask').classList.add('open');
+  document.getElementById('drawerPanel').classList.add('open');
+  document.body.style.overflow='hidden';
+  lucide.createIcons();
+}
+
+function closeDrawer(){
+  document.getElementById('drawerMask').classList.remove('open');
+  document.getElementById('drawerPanel').classList.remove('open');
+  document.body.style.overflow='';
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(!document.getElementById('drawerPanel').classList.contains('open')) closeModal();
+    else closeDrawer();
+  }
+});
+renderBoard();
 </script>
 </body>
 </html>

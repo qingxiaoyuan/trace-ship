@@ -83,18 +83,39 @@ export interface Release {
   id: string;
   project_id: string;
   project_name?: string;
+  /** 仓库 ID（列表/详情返回） */
+  repository?: string;
+  /** 仓名称（列表接口返回） */
+  repository_name?: string;
   version: string;
   tag_name: string;
   release_type: ReleaseType;
+  /** 发布类型中文展示（列表接口返回） */
+  release_type_display?: string;
   status: ReleaseStatus;
+  /** 状态中文展示（列表接口返回） */
+  status_display?: string;
   branch: string;
 
   git_hash: string;
   publisher: string;
   publisher_name?: string;
+  /** 发布说明文档（Markdown 字符串） */
   release_doc?: string;
   related_changes?: unknown;
   updates?: unknown;
+  /** 是否有配置项改动 */
+  has_config_changes?: boolean;
+  /** 配置项变更文档 */
+  config_change_doc?: string;
+  /** 是否影响其他功能 */
+  impact_other?: boolean;
+  /** 影响范围说明 */
+  impact_desc?: string;
+  /** 自测试通过 */
+  self_test_passed?: boolean;
+  /** 研发测试复验通过 */
+  retest_passed?: boolean;
   jenkins_build?: string | null;
   build_detail?: ReleaseBuildDetail | null;
   rejected_reason?: string;
@@ -105,6 +126,8 @@ export interface Release {
   pass_count?: number;
   warning_count?: number;
   illegal_count?: number;
+  /** 是否已生成发布说明文档（列表接口返回） */
+  has_doc?: boolean;
 }
 
 /** 发布关联的 Jenkins 构建概要（release 详情 build_detail） */
@@ -138,6 +161,41 @@ export type ReviewStatus = 'unreviewed' | 'pass' | 'warning' | 'illegal';
 export interface ParsedUpdate {
   type?: string;
   content?: string;
+  /** 来源：commit 或 mr */
+  source?: 'commit' | 'mr';
+  /** 来源引用（commit hash 或 MR 编号） */
+  source_ref?: string;
+}
+
+/** 变更预览中的 commit 项 */
+export interface PreviewCommit {
+  hash: string;
+  author: string;
+  message: string;
+  committed_at: string | null;
+  has_af: boolean;
+}
+
+/** 变更预览中的 MR 项 */
+export interface PreviewMergeRequest {
+  number: string;
+  title: string;
+  description: string;
+  author: string;
+  source_branch: string;
+  target_branch: string;
+  web_url: string;
+  merged_at: string | null;
+  has_af: boolean;
+}
+
+/** changes-preview 接口返回结构 */
+export interface ChangesPreview {
+  last_tag: string | null;
+  head_hash: string;
+  commits: PreviewCommit[];
+  merge_requests: PreviewMergeRequest[];
+  parsed_updates: ParsedUpdate[];
 }
 
 /** 提交信息解析结果（CommitParser 输出） */
@@ -148,6 +206,72 @@ export interface ParsedCommit {
   related_changes?: Record<string, string>;
   is_valid?: boolean;
   errors?: string[];
+}
+
+/** Tag 区间审查结果项（commit 或 MR） */
+export interface ReviewRangeItem {
+  hash?: string;
+  number?: string;
+  author: string;
+  message: string;
+  title?: string;
+  description?: string;
+  source_branch?: string;
+  target_branch?: string;
+  web_url?: string;
+  committed_at?: string;
+  merged_at?: string;
+  review_status: ReviewStatus;
+  review_reason: string;
+  parsed_result?: ParsedCommit;
+}
+
+/** Tag 区间审查结果 */
+export interface ReviewRangeResult {
+  base: string;
+  head: string;
+  tags: { name: string; created_at: string | null }[];
+  commits: ReviewRangeItem[];
+  merge_requests: ReviewRangeItem[];
+  stats: {
+    total: number;
+    pass: number;
+    warning: number;
+    mr_total: number;
+  };
+}
+
+/** 主动拉取审查的单条结果（commit 或 MR） */
+export interface ReviewRangeItem {
+  hash?: string;
+  number?: string;
+  author: string;
+  message: string;
+  review_status: ReviewStatus;
+  review_reason: string;
+  parsed_result?: ParsedCommit;
+  committed_at?: string;
+  merged_at?: string;
+  title?: string;
+  description?: string;
+  source_branch?: string;
+  target_branch?: string;
+  web_url?: string;
+}
+
+/** 主动拉取审查结果 */
+export interface ReviewRangeResult {
+  base: string;
+  head: string;
+  tags: { name: string; created_at: string | null }[];
+  commits: ReviewRangeItem[];
+  merge_requests: ReviewRangeItem[];
+  stats: {
+    total: number;
+    pass: number;
+    warning: number;
+    mr_total: number;
+  };
 }
 
 export interface CommitRecord {
@@ -183,12 +307,18 @@ export interface JenkinsBuildLatest {
   created_at?: string | null;
 }
 
+export type JenkinsConfigMode = 'simple' | 'advanced';
+export type JenkinsBuildType = 'web' | 'qt' | 'custom';
+
 export interface BuildRecord {
   id: string;
   job_id: string;
   job_name: string;
   project_id?: string;
   project_name?: string;
+  release?: string | null;
+  release_id?: string | null;
+  release_version?: string;
   queue_id?: string;
   build_number?: number;
   version?: string;
@@ -197,6 +327,7 @@ export interface BuildRecord {
   triggered_by?: string | null;
   triggered_by_name?: string;
   params?: unknown;
+  stage_info?: unknown;
   log_url?: string;
   artifact_info?: unknown[];
   duration?: number | null;
@@ -303,14 +434,40 @@ export interface JenkinsJob {
   project_name?: string;
   repository_id?: string;
   repository_name?: string;
+  config_mode: JenkinsConfigMode;
+  config_mode_display?: string;
+  build_type: JenkinsBuildType;
+  build_type_display?: string;
+  build_preset?: string;
+  build_preset_id?: string;
+  build_preset_name?: string;
   name: string;
   server_url: string;
   job_name: string;
   credential_id?: string;
   credential_mode?: string;
   params_template?: unknown;
+  build_path?: string;
+  output_path?: string;
+  auto_build_on_release?: boolean;
+  managed_job?: boolean;
+  pipeline_config?: unknown;
   is_active: boolean;
   latest_build?: JenkinsBuildLatest | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JenkinsBuildPreset {
+  id: string;
+  name: string;
+  build_type: JenkinsBuildType;
+  build_type_display?: string;
+  image: string;
+  script_entry: string;
+  default_build_path: string;
+  default_output_path: string;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -421,6 +578,15 @@ export interface WorkflowInstance {
   created_by: string;
   created_at: string;
   completed_at?: string;
+  title?: string;
+  applicant?: string;
+  project_name?: string;
+  current_node?: string;
+  submit_time?: string;
+  version?: string;
+  release_type?: ReleaseType;
+  branch?: string;
+  build_number?: string | number;
 }
 
 /**

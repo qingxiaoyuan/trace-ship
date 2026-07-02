@@ -14,7 +14,7 @@ class ReleaseRecord(models.Model):
     """
     发布记录模型
 
-    表示一次软件版本发布申请的全生命周期，支持草稿、待审批、构建中、待发布、已发布、已驳回等状态。
+    表示一次软件版本发布申请的全生命周期，支持草稿、待审批、已发布、已驳回等状态。
 
     Attributes:
         id: UUID 主键
@@ -26,7 +26,15 @@ class ReleaseRecord(models.Model):
         git_hash: 分支当前 commit hash
         release_type: 发布类型（formal 正式 / rc 候选 / beta 测试）
         status: 发布状态
-        release_doc: 发布说明文档（JSON）
+        release_doc: 发布说明文档（Markdown 格式字符串，2 列表格）
+        related_changes: 关联变更清单（硬件/软件版本条目列表）
+        updates: 变更条目（A/F 类），元素结构 {type, content, source, source_ref}
+        has_config_changes: 是否有配置项改动
+        config_change_doc: 配置项变更文档（多行文本）
+        impact_other: 是否影响其他功能
+        impact_desc: 影响范围说明
+        self_test_passed: 自测试通过
+        retest_passed: 研发测试复验通过
         publisher: 发布人
         jenkins_build: 关联的 Jenkins 构建记录
         rejected_reason: 驳回/失败原因
@@ -75,11 +83,24 @@ class ReleaseRecord(models.Model):
         default="draft",
         verbose_name="状态",
     )
-    release_doc = models.JSONField(default=dict, blank=True, verbose_name="发布说明文档")
+    # 发布说明文档：Markdown 格式字符串（2 列表格），可手动编辑
+    release_doc = models.TextField(blank=True, verbose_name="发布说明文档")
     # 关联变更清单：硬件/软件版本条目列表，由发布向导收集
     related_changes = models.JSONField(default=list, blank=True, verbose_name="关联变更清单")
-    # 变更条目：A 类 / F 类变更内容
+    # 变更条目：A 类 / F 类变更内容，元素结构 {type, content, source, source_ref}
     updates = models.JSONField(default=list, blank=True, verbose_name="变更条目")
+    # 是否有配置项改动
+    has_config_changes = models.BooleanField(default=False, verbose_name="是否有配置项改动")
+    # 配置项变更文档（多行文本，用户填写）
+    config_change_doc = models.TextField(blank=True, verbose_name="配置项变更文档")
+    # 是否影响其他功能
+    impact_other = models.BooleanField(default=False, verbose_name="是否影响其他功能")
+    # 影响范围说明
+    impact_desc = models.TextField(blank=True, verbose_name="影响范围说明")
+    # 自测试通过
+    self_test_passed = models.BooleanField(default=False, verbose_name="自测试通过")
+    # 研发测试复验通过
+    retest_passed = models.BooleanField(default=False, verbose_name="研发测试复验通过")
     publisher = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -167,3 +188,52 @@ class ReleaseCommit(models.Model):
     def __str__(self) -> str:
         """返回提交哈希前 8 位"""
         return f"{self.release.version} - {self.commit.commit_hash[:8]}"
+
+
+class ReleaseMergeRequest(models.Model):
+    """
+    发布关联 MR 模型
+
+    记录一次发布包含哪些 Merge Request / Pull Request，供发布说明引用。
+
+    Attributes:
+        id: UUID 主键
+        release: 关联发布记录
+        mr_number: MR 编号（如 !42、#56）
+        title: MR 标题
+        description: MR 描述正文（用于解析更新内容）
+        author: MR 作者
+        source_branch: 源分支
+        target_branch: 目标分支
+        web_url: MR 页面链接
+        merged_at: 合并时间
+        created_at: 创建时间
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    release = models.ForeignKey(
+        ReleaseRecord,
+        on_delete=models.CASCADE,
+        related_name="release_mrs",
+        verbose_name="发布记录",
+    )
+    mr_number = models.CharField(max_length=50, verbose_name="MR 编号")
+    title = models.CharField(max_length=500, verbose_name="MR 标题")
+    description = models.TextField(blank=True, verbose_name="MR 描述")
+    author = models.CharField(max_length=200, blank=True, verbose_name="MR 作者")
+    source_branch = models.CharField(max_length=200, blank=True, verbose_name="源分支")
+    target_branch = models.CharField(max_length=200, blank=True, verbose_name="目标分支")
+    web_url = models.URLField(blank=True, verbose_name="MR 链接")
+    merged_at = models.DateTimeField(null=True, blank=True, verbose_name="合并时间")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        db_table = "release_mr"
+        verbose_name = "发布关联 MR"
+        verbose_name_plural = "发布关联 MR"
+        unique_together = ["release", "mr_number"]
+        ordering = ["-merged_at", "-created_at"]
+
+    def __str__(self) -> str:
+        """返回 MR 编号与标题"""
+        return f"{self.release.version} - {self.mr_number} {self.title}"

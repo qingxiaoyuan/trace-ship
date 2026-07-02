@@ -63,6 +63,32 @@ class TagInfo:
     created_at: Optional[datetime] = None
 
 
+@dataclass
+class MergeRequestInfo:
+    """
+    Merge Request / Pull Request 信息数据类
+
+    Attributes:
+        number: MR 编号（GitLab 为 iid 如 42，Gitea 为 number 如 42）
+        title: MR 标题
+        description: MR 描述正文（用于正则解析更新内容）
+        author: MR 作者
+        source_branch: 源分支
+        target_branch: 目标分支
+        web_url: MR 页面链接
+        merged_at: 合并时间
+    """
+
+    number: str
+    title: str = ""
+    description: str = ""
+    author: str = ""
+    source_branch: str = ""
+    target_branch: str = ""
+    web_url: str = ""
+    merged_at: Optional[datetime] = None
+
+
 class GitProvider(ABC):
     """
     Git 平台统一适配器抽象基类
@@ -119,4 +145,44 @@ class GitProvider(ABC):
     @abstractmethod
     def compare_commits(self, repo_identity: str, base: str, head: str) -> List[CommitInfo]:
         """比较两个 ref 之间的差异"""
+        pass
+
+    @abstractmethod
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: str,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """
+        拉取合并到目标分支的 MR 列表
+
+        Args:
+            repo_identity: 仓库标识
+            target_branch: 目标分支（MR 合入的分支）
+            since: 仅返回此时间之后合并的 MR
+
+        Returns:
+            MergeRequestInfo 列表
+        """
+        pass
+
+    @abstractmethod
+    def list_merge_requests(
+        self,
+        repo_identity: str,
+        target_branch: Optional[str] = None,
+        since: Optional[datetime] = None,
+    ) -> List[MergeRequestInfo]:
+        """
+        拉取已合并的 Merge Request / Pull Request 列表
+
+        Args:
+            repo_identity: 仓库标识
+            target_branch: 仅返回合并到该目标分支的 MR，为空时返回全部
+            since: 仅返回该时间之后合并的 MR，为空时不限时间
+
+        Returns:
+            MergeRequestInfo 列表
+        """
         pass

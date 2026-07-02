@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Table, Button, Space, App } from 'antd';
+import { Table, Button, Space, App, Modal, Select } from 'antd';
 import { PlusOutlined, EditOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { jenkinsApi } from '@/api/jenkins';
+import { repositoryApi } from '@/api/repository';
 import { StatusTag } from '@/components/StatusTag';
 import { JenkinsJobModal } from './JenkinsJobModal';
 import type { JenkinsJob } from '@/types';
@@ -16,11 +17,18 @@ const credentialModeMap: Record<string, string> = {
   project: '项目',
 };
 
+const configModeMap: Record<string, string> = {
+  simple: '简单',
+  advanced: '高级',
+};
+
 export function JenkinsTab({ projectId }: JenkinsTabProps) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<JenkinsJob | null>(null);
+  const [triggerJob, setTriggerJob] = useState<JenkinsJob | null>(null);
+  const [triggerTag, setTriggerTag] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['jenkins-jobs', projectId],
@@ -54,9 +62,21 @@ export function JenkinsTab({ projectId }: JenkinsTabProps) {
   });
 
   const triggerMutation = useMutation({
-    mutationFn: (id: string) => jenkinsApi.triggerJob(id),
-    onSuccess: () => message.success('触发构建成功'),
+    mutationFn: ({ id, tagName }: { id: string; tagName?: string }) =>
+      jenkinsApi.triggerJob(id, tagName ? { tag_name: tagName } : {}),
+    onSuccess: () => {
+      message.success('触发构建成功');
+      setTriggerJob(null);
+      setTriggerTag('');
+      queryClient.invalidateQueries({ queryKey: ['jenkins-jobs', projectId] });
+    },
     onError: () => message.error('触发构建失败'),
+  });
+
+  const { data: tagData, isLoading: tagsLoading } = useQuery({
+    queryKey: ['repository-tags', triggerJob?.repository_id],
+    queryFn: () => repositoryApi.getTags(triggerJob?.repository_id || ''),
+    enabled: !!triggerJob?.repository_id,
   });
 
   const handleAdd = () => {
@@ -88,6 +108,15 @@ export function JenkinsTab({ projectId }: JenkinsTabProps) {
     }
   };
 
+  const handleTrigger = (record: JenkinsJob) => {
+    if (record.config_mode === 'simple') {
+      setTriggerJob(record);
+      setTriggerTag('');
+      return;
+    }
+    triggerMutation.mutate({ id: record.id });
+  };
+
   const columns = [
     {
       title: '任务名称',
@@ -95,8 +124,19 @@ export function JenkinsTab({ projectId }: JenkinsTabProps) {
       key: 'name',
       render: (text: string) => <span className="font-semibold text-slate-900">{text}</span>,
     },
+    {
+      title: '模式',
+      dataIndex: 'config_mode',
+      key: 'config_mode',
+      render: (mode?: string) => configModeMap[mode || ''] || mode || '-',
+    },
     { title: 'Jenkins 地址', dataIndex: 'server_url', key: 'server_url' },
-    { title: 'Job 名', dataIndex: 'job_name', key: 'job_name' },
+    {
+      title: 'Job / 预设',
+      key: 'job_or_preset',
+      render: (_: unknown, record: JenkinsJob) =>
+        record.config_mode === 'simple' ? (record.build_preset_name || '-') : record.job_name,
+    },
     {
       title: '关联仓库',
       dataIndex: 'repository_name',
@@ -108,6 +148,13 @@ export function JenkinsTab({ projectId }: JenkinsTabProps) {
       dataIndex: 'credential_mode',
       key: 'credential_mode',
       render: (mode?: string) => credentialModeMap[mode || ''] || mode || '-',
+    },
+    {
+      title: '自动打包',
+      dataIndex: 'auto_build_on_release',
+      key: 'auto_build_on_release',
+      render: (enabled: boolean, record: JenkinsJob) =>
+        record.config_mode === 'simple' ? (enabled ? '开启' : '关闭') : '-',
     },
     {
       title: '状态',
@@ -127,8 +174,8 @@ export function JenkinsTab({ projectId }: JenkinsTabProps) {
           <Button
             type="text"
             icon={<PlayCircleOutlined />}
-            loading={triggerMutation.isPending && triggerMutation.variables === record.id}
-            onClick={() => triggerMutation.mutate(record.id)}
+            loading={triggerMutation.isPending && triggerMutation.variables?.id === record.id}
+            onClick={() => handleTrigger(record)}
           >
             触发构建
           </Button>
@@ -169,6 +216,30 @@ export function JenkinsTab({ projectId }: JenkinsTabProps) {
         onCancel={() => { setModalOpen(false); setEditingJob(null); }}
         onOk={handleSave}
       />
+      <Modal
+        title="选择打包 Tag"
+        open={!!triggerJob}
+        okText="触发构建"
+        cancelText="取消"
+        confirmLoading={triggerMutation.isPending}
+        okButtonProps={{ disabled: !triggerTag }}
+        onCancel={() => { setTriggerJob(null); setTriggerTag(''); }}
+        onOk={() => {
+          if (!triggerJob || !triggerTag) return;
+          triggerMutation.mutate({ id: triggerJob.id, tagName: triggerTag });
+        }}
+      >
+        <Select
+          showSearch
+          className="w-full"
+          placeholder="选择需要打包的 tag"
+          loading={tagsLoading}
+          value={triggerTag || undefined}
+          options={(tagData || []).map((tag) => ({ label: tag.name, value: tag.name }))}
+          optionFilterProp="label"
+          onChange={setTriggerTag}
+        />
+      </Modal>
     </div>
   );
 }

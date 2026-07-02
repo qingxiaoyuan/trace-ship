@@ -53,7 +53,8 @@ export default function Dashboard() {
 
   const { data: releaseData } = useQuery({
     queryKey: ['dashboard-releases'],
-    queryFn: () => releaseApi.getReleases({ page_size: 20 }),
+    // 多取一些，避免草稿被过滤后最近发布面板不足 10 条
+    queryFn: () => releaseApi.getReleases({ page_size: 50 }),
     staleTime: 30_000,
     gcTime: 300_000,
   });
@@ -87,7 +88,7 @@ export default function Dashboard() {
   }, [releases, pipelineRange]);
   const commits = useMemo(() => commitData?.results || [], [commitData?.results]);
   const builds = useMemo(() => buildData?.results || [], [buildData?.results]);
-  const recentReleases = releases.slice(0, 10);
+  const recentReleases = releases.filter((r) => r.status !== 'draft').slice(0, 10);
   const runningBuilds = builds.filter(isBuildRunning);
   const pendingReleases = releases.filter((r) => normalizeStatus(r) === 'pending');
   const buildTrendData = useMemo(() => buildSevenDayTrend(builds), [builds]);

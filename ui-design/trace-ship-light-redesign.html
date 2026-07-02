@@ -100,6 +100,31 @@
       color: #4F46E5;
     }
     .nav-active i { color: #4F46E5 !important; }
+
+    /* 看板卡片堆叠 */
+    .card-stack { position: relative; display: flex; flex-direction: column; width: 100%; padding-bottom: 8px; }
+    .stack-card { position: relative; width: 100%; border-radius: 10px; background: #fff; border: 1px solid rgba(99,102,241,0.15); box-shadow: 0 2px 6px rgba(15,23,42,0.08); }
+    .stack-card-0 { z-index: 30; }
+    .stack-card-1 { z-index: 20; margin-top: -52px; opacity: 0.80; pointer-events: none; }
+    .stack-card-2 { z-index: 10; margin-top: -52px; opacity: 0.55; pointer-events: none; }
+
+    .column-more { position: absolute; right: 6px; top: 6px; z-index: 40; display: flex; align-items: center; justify-content: center; height: 20px; min-width: 20px; padding: 0 5px; border-radius: 9999px; background: rgba(255,255,255,0.92); border: 1px solid rgba(99,102,241,0.12); font-size: 10px; font-weight: 600; color: #64748B; cursor: pointer; box-shadow: 0 1px 2px rgba(15,23,42,0.06); transition: all .15s ease; }
+    .column-more:hover { background: #fff; color: #4F46E5; border-color: #C7D2FE; }
+
+    .drawer-mask { position: fixed; inset: 0; z-index: 80; background: rgba(15,23,42,0.45); backdrop-filter: blur(4px); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    .drawer-mask.open { opacity: 1; pointer-events: auto; }
+    .drawer-panel { position: fixed; top: 0; right: 0; z-index: 90; width: min(520px, 100vw); height: 100vh; background: #fff; border-left: 1px solid rgba(99,102,241,0.12); box-shadow: -24px 0 70px -12px rgba(30,27,75,0.35); transform: translateX(100%); opacity: 0; pointer-events: none; transition: transform .25s cubic-bezier(.16,1,.3,1), opacity .2s ease; }
+    .drawer-panel.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+
+    /* 发布详情弹窗 */
+    .modal-mask { position: fixed; inset: 0; z-index: 60; background: rgba(15,23,42,0.45); backdrop-filter: blur(4px); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    .modal-mask.open { opacity: 1; pointer-events: auto; }
+    .modal-panel { position: fixed; top: 50%; left: 50%; z-index: 70; width: min(920px, calc(100vw - 32px)); max-height: min(860px, calc(100vh - 48px)); transform: translate(-50%, -48%) scale(0.96); opacity: 0; pointer-events: none; transition: transform .2s cubic-bezier(.16,1,.3,1), opacity .2s ease; }
+    .modal-panel.open { transform: translate(-50%, -50%) scale(1); opacity: 1; pointer-events: auto; }
+    @media (max-width: 640px) {
+      .modal-panel { width: calc(100vw - 16px); max-height: calc(100vh - 24px); }
+    }
+    .dt-tab.on { color: #4F46E5; border-color: #4F46E5; }
   </style>
 </head>
 <body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
@@ -387,130 +412,147 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
+          <div class="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4" id="pipelineBoard">
 
             <!-- 草稿 -->
-            <div class="rounded-lg border border-slate-200/70 bg-slate-50/50 p-3">
+            <div class="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3">
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-1.5">
                   <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
                   <span class="text-[12px] font-medium text-slate-500">草稿</span>
                 </div>
-                <span class="text-[11px] font-medium text-slate-400">2</span>
+                <span class="rounded-md bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-slate-400">2</span>
               </div>
-              <div class="space-y-2">
-                <div class="rounded-lg border border-slate-200 bg-white p-2.5 transition-colors hover:border-indigo-300 hover:shadow-sm cursor-pointer">
-                  <div class="flex items-center justify-between">
+              <div class="card-stack">
+                <button type="button" onclick="event.stopPropagation();openColumnDrawer('draft')" class="column-more">+2</button>
+                <div onclick="openReleaseModal('draft1')" class="stack-card stack-card-0 cursor-pointer border border-slate-200 shadow-sm p-3 hover:-translate-y-0.5 hover:shadow-md hover:border-indigo-300">
+                  <div class="flex items-start justify-between gap-2">
                     <span class="font-mono text-[12px] font-medium text-slate-800">v2.5.0</span>
                     <span class="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-medium text-amber-600">BETA</span>
                   </div>
-                  <div class="mt-1.5 text-[11px] text-slate-500">支付核心服务</div>
-                  <div class="mt-2 flex items-center gap-1.5">
-                    <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
-                    <span class="text-[10px] text-slate-400">李四 · 2h前</span>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">支付核心服务</div>
+                  <div class="mt-2 flex items-center gap-1 text-[10px] text-slate-400"><i data-lucide="git-branch" class="h-3 w-3 flex-shrink-0" style="stroke-width:1.5"></i><span class="truncate">develop</span></div>
+                  <div class="mt-2 flex items-center gap-1.5"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover ring-1 ring-white" alt="" /><span class="text-[10px] text-slate-400">李四 · 2h前</span></div>
+                </div>
+                <div onclick="openReleaseModal('draft2')" class="stack-card stack-card-1 border p-3">
+                  <div class="flex items-start justify-between gap-2">
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v1.3.0</span>
+                    <span class="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-medium text-amber-600">BETA</span>
                   </div>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">营销中台</div>
                 </div>
               </div>
             </div>
 
             <!-- 构建中 -->
-            <div class="rounded-lg border border-cyan-200/70 bg-cyan-50/40 p-3">
+            <div class="rounded-xl border border-cyan-200/70 bg-cyan-50/40 p-3">
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-1.5">
                   <span class="h-1.5 w-1.5 rounded-full bg-cyan-500 pulse-dot"></span>
                   <span class="text-[12px] font-medium text-cyan-700">构建中</span>
                 </div>
-                <span class="text-[11px] font-medium text-cyan-600">2</span>
+                <span class="rounded-md bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-cyan-700">2</span>
               </div>
-              <div class="space-y-2">
-                <div class="rounded-lg border border-cyan-200 bg-white p-2.5 transition-colors hover:border-cyan-400 hover:shadow-sm cursor-pointer">
-                  <div class="flex items-center justify-between">
+              <div class="card-stack">
+                <button type="button" onclick="event.stopPropagation();openColumnDrawer('building')" class="column-more">+2</button>
+                <div onclick="openReleaseModal('build1')" class="stack-card stack-card-0 cursor-pointer border border-cyan-200 shadow-sm p-3 hover:-translate-y-0.5 hover:shadow-md hover:border-cyan-400">
+                  <div class="flex items-start justify-between gap-2">
                     <span class="font-mono text-[12px] font-medium text-slate-800">v3.1.0</span>
                     <span class="rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-medium text-blue-600">RC</span>
                   </div>
-                  <div class="mt-1.5 text-[11px] text-slate-500">用户中心</div>
-                  <div class="mt-2 flex items-center gap-1.5">
-                    <i data-lucide="loader" class="h-3 w-3 text-cyan-500 spin-slow" style="stroke-width:2"></i>
-                    <span class="text-[10px] text-cyan-600">Build #142 · 3m24s</span>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">用户中心</div>
+                  <div class="mt-2 flex items-center gap-1.5"><i data-lucide="loader" class="h-3 w-3 text-cyan-500 spin-slow" style="stroke-width:2"></i><span class="text-[10px] text-cyan-600">Build #142 · 3m24s</span></div>
+                  <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-cyan-100"><div class="h-full w-[65%] rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400"></div></div>
+                </div>
+                <div onclick="openReleaseModal('build2')" class="stack-card stack-card-1 border p-3">
+                  <div class="flex items-start justify-between gap-2">
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v2.4.2</span>
+                    <span class="rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-medium text-blue-600">RC</span>
                   </div>
-                  <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-cyan-100">
-                    <div class="h-full w-[65%] rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400"></div>
-                  </div>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">核心交易平台</div>
                 </div>
               </div>
             </div>
 
             <!-- 待审批 -->
-            <div class="rounded-lg border border-amber-200/70 bg-amber-50/40 p-3">
+            <div class="rounded-xl border border-amber-200/70 bg-amber-50/40 p-3">
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-1.5">
                   <span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span>
                   <span class="text-[12px] font-medium text-amber-700">待审批</span>
                 </div>
-                <span class="text-[11px] font-medium text-amber-600">3</span>
+                <span class="rounded-md bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">3</span>
               </div>
-              <div class="space-y-2">
-                <div class="rounded-lg border border-amber-200 bg-white p-2.5 transition-colors hover:border-amber-400 hover:shadow-sm cursor-pointer">
-                  <div class="flex items-center justify-between">
+              <div class="card-stack">
+                <button type="button" onclick="event.stopPropagation();openColumnDrawer('pending')" class="column-more">+2</button>
+                <div onclick="openReleaseModal('pending1')" class="stack-card stack-card-0 cursor-pointer border border-amber-200 shadow-sm p-3 hover:-translate-y-0.5 hover:shadow-md hover:border-amber-400">
+                  <span class="absolute right-2 top-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">+2</span>
+                  <div class="flex items-start justify-between gap-2">
                     <span class="font-mono text-[12px] font-medium text-slate-800">v1.8.2</span>
                     <span class="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-medium text-emerald-600">正式</span>
                   </div>
-                  <div class="mt-1.5 text-[11px] text-slate-500">订单管理</div>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">订单管理</div>
+                  <div class="mt-2 flex items-center gap-1 text-[10px] text-slate-400"><i data-lucide="git-branch" class="h-3 w-3 flex-shrink-0" style="stroke-width:1.5"></i><span class="truncate">release/v1.8.2</span></div>
                   <div class="mt-2 flex items-center justify-between">
-                    <div class="flex items-center gap-1.5">
-                      <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover" alt="" />
-                      <span class="text-[10px] text-slate-400">王五</span>
-                    </div>
+                    <div class="flex items-center gap-1.5"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop&crop=face" class="h-4 w-4 rounded-full object-cover ring-1 ring-white" alt="" /><span class="text-[10px] text-slate-400">王五</span></div>
                     <span class="text-[10px] font-medium text-amber-600">待 2 人审</span>
                   </div>
+                </div>
+                <div onclick="openReleaseModal('pending2')" class="stack-card stack-card-1 border p-3">
+                  <div class="flex items-start justify-between gap-2">
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v2.5.0</span>
+                    <span class="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-medium text-emerald-600">正式</span>
+                  </div>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">支付核心服务</div>
+                </div>
+                <div onclick="openReleaseModal('pending3')" class="stack-card stack-card-2 border p-3">
+                  <div class="flex items-start justify-between gap-2">
+                    <span class="font-mono text-[12px] font-medium text-slate-800">v1.9.0</span>
+                    <span class="rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-medium text-blue-600">RC</span>
+                  </div>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">运维门户</div>
                 </div>
               </div>
             </div>
 
             <!-- 已发布 -->
-            <div class="rounded-lg border border-emerald-200/70 bg-emerald-50/40 p-3">
+            <div class="rounded-xl border border-emerald-200/70 bg-emerald-50/40 p-3">
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-1.5">
                   <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                   <span class="text-[12px] font-medium text-emerald-700">已发布</span>
                 </div>
-                <span class="text-[11px] font-medium text-emerald-600">48</span>
+                <span class="rounded-md bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">48</span>
               </div>
-              <div class="space-y-2">
-                <div class="rounded-lg border border-emerald-200 bg-white p-2.5 transition-colors hover:border-emerald-400 hover:shadow-sm cursor-pointer">
-                  <div class="flex items-center justify-between">
+              <div class="card-stack">
+                <div onclick="openReleaseModal('released1')" class="stack-card stack-card-0 cursor-pointer border border-emerald-200 shadow-sm p-3 hover:-translate-y-0.5 hover:shadow-md hover:border-emerald-400">
+                  <div class="flex items-start justify-between gap-2">
                     <span class="font-mono text-[12px] font-medium text-slate-800">v4.2.1</span>
                     <span class="rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[9px] font-medium text-emerald-600">正式</span>
                   </div>
-                  <div class="mt-1.5 text-[11px] text-slate-500">网关服务</div>
-                  <div class="mt-2 flex items-center gap-1.5">
-                    <i data-lucide="check-circle-2" class="h-3 w-3 text-emerald-500" style="stroke-width:1.5"></i>
-                    <span class="text-[10px] text-slate-400">2h前 · tag 已推送</span>
-                  </div>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">网关服务</div>
+                  <div class="mt-2 flex items-center gap-1.5"><i data-lucide="check-circle-2" class="h-3 w-3 text-emerald-500" style="stroke-width:1.5"></i><span class="text-[10px] text-slate-400">2h前 · tag 已推送</span></div>
                 </div>
               </div>
             </div>
 
             <!-- 已驳回 -->
-            <div class="rounded-lg border border-rose-200/70 bg-rose-50/40 p-3">
+            <div class="rounded-xl border border-rose-200/70 bg-rose-50/40 p-3">
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-1.5">
                   <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
                   <span class="text-[12px] font-medium text-rose-700">已驳回</span>
                 </div>
-                <span class="text-[11px] font-medium text-rose-500">5</span>
+                <span class="rounded-md bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700">5</span>
               </div>
-              <div class="space-y-2">
-                <div class="rounded-lg border border-rose-200 bg-white p-2.5 transition-colors hover:border-rose-400 hover:shadow-sm cursor-pointer">
-                  <div class="flex items-center justify-between">
+              <div class="card-stack">
+                <div onclick="openReleaseModal('rejected1')" class="stack-card stack-card-0 cursor-pointer border border-rose-200 shadow-sm p-3 hover:-translate-y-0.5 hover:shadow-md hover:border-rose-400">
+                  <div class="flex items-start justify-between gap-2">
                     <span class="font-mono text-[12px] font-medium text-slate-800">v2.0.0</span>
                     <span class="rounded border border-rose-200 bg-rose-50 px-1 py-0.5 text-[9px] font-medium text-rose-500">驳回</span>
                   </div>
-                  <div class="mt-1.5 text-[11px] text-slate-500">风控引擎</div>
-                  <div class="mt-2 flex items-center gap-1.5">
-                    <i data-lucide="x-circle" class="h-3 w-3 text-rose-400" style="stroke-width:1.5"></i>
-                    <span class="text-[10px] text-slate-400">构建失败 · 超时</span>
-                  </div>
+                  <div class="mt-1 truncate text-[11px] text-slate-500">风控引擎</div>
+                  <div class="mt-2 flex items-center gap-1.5"><i data-lucide="x-circle" class="h-3 w-3 text-rose-400" style="stroke-width:1.5"></i><span class="text-[10px] text-slate-400">构建失败 · 超时</span></div>
                 </div>
               </div>
             </div>
@@ -1044,6 +1086,175 @@
         }
       }
     });
+
+    // 发布详情弹窗
+    const releaseData = {
+      draft1: { version: 'v2.5.0', type: 'BETA', typeCls: 'border-amber-200 bg-amber-50 text-amber-700', status: 'draft', statusCls: 'border-slate-200 bg-slate-50 text-slate-600', statusLabel: '草稿', project: '支付核心服务', branch: 'develop', publisher: '李四', time: '2h前', tag: 'beta-v2.5.0.3', build: null, desc: '支付链路重构与性能优化' },
+      draft2: { version: 'v1.3.0', type: 'BETA', typeCls: 'border-amber-200 bg-amber-50 text-amber-700', status: 'draft', statusCls: 'border-slate-200 bg-slate-50 text-slate-600', statusLabel: '草稿', project: '营销中台', branch: 'feature/coupon', publisher: '周九', time: '4h前', tag: 'beta-v1.3.0.1', build: null, desc: '优惠券批量发放功能预览' },
+      build1: { version: 'v3.1.0', type: 'RC', typeCls: 'border-blue-200 bg-blue-50 text-blue-700', status: 'building', statusCls: 'border-cyan-200 bg-cyan-50 text-cyan-700', statusLabel: '构建中', project: '用户中心', branch: 'release/v3.1.0', publisher: '张三', time: '15m前', tag: 'v3.1.0-rc1', build: { number: 142, job: 'user-center-build', duration: '3m24s', progress: 65 }, desc: '新增 OAuth2 登录与权限校验' },
+      build2: { version: 'v2.4.2', type: 'RC', typeCls: 'border-blue-200 bg-blue-50 text-blue-700', status: 'building', statusCls: 'border-cyan-200 bg-cyan-50 text-cyan-700', statusLabel: '构建中', project: '核心交易平台', branch: 'develop', publisher: '李四', time: '30m前', tag: 'v2.4.2-rc2', build: { number: 143, job: 'trade-core-build', duration: '2m18s', progress: 42 }, desc: '交易核心热修复' },
+      pending1: { version: 'v1.8.2', type: '正式', typeCls: 'border-emerald-200 bg-emerald-50 text-emerald-700', status: 'pending', statusCls: 'border-amber-200 bg-amber-50 text-amber-700', statusLabel: '待审批', project: '订单管理', branch: 'release/v1.8.2', publisher: '王五', time: '1h前', tag: 'v1.8.2', build: { number: 139, job: 'order-build', duration: '4m08s' }, desc: '订单拆分与退款精度修复' },
+      pending2: { version: 'v2.5.0', type: '正式', typeCls: 'border-emerald-200 bg-emerald-50 text-emerald-700', status: 'pending', statusCls: 'border-amber-200 bg-amber-50 text-amber-700', statusLabel: '待审批', project: '支付核心服务', branch: 'master', publisher: '李四', time: '2h前', tag: 'v2.5.0', build: { number: 144, job: 'pay-core-build', duration: '3m52s' }, desc: '支付链路重构' },
+      pending3: { version: 'v1.9.0', type: 'RC', typeCls: 'border-blue-200 bg-blue-50 text-blue-700', status: 'pending', statusCls: 'border-amber-200 bg-amber-50 text-amber-700', statusLabel: '待审批', project: '运维门户', branch: 'main', publisher: '吴十', time: '3h前', tag: 'v1.9.0-rc1', build: { number: 145, job: 'ops-portal-build', duration: '2m45s' }, desc: '审计与告警模块升级' },
+      released1: { version: 'v4.2.1', type: '正式', typeCls: 'border-emerald-200 bg-emerald-50 text-emerald-700', status: 'released', statusCls: 'border-emerald-200 bg-emerald-50 text-emerald-700', statusLabel: '已发布', project: '网关服务', branch: 'main', publisher: '钱七', time: '2h前', tag: 'v4.2.1', build: { number: 141, job: 'gateway-build', duration: '4m08s' }, desc: '限流策略优化' },
+      rejected1: { version: 'v2.0.0', type: '正式', typeCls: 'border-emerald-200 bg-emerald-50 text-emerald-700', status: 'rejected', statusCls: 'border-rose-200 bg-rose-50 text-rose-700', statusLabel: '已驳回', project: '风控引擎', branch: 'master', publisher: '孙八', time: '5h前', tag: 'v2.0.0', build: { number: 138, job: 'risk-engine-build', duration: '超时' }, desc: '规则引擎升级' }
+    };
+    const COMMITS = [
+      { hash: 'a3f2c1d', message: '新增微信支付分账能力', author: '张三', reviewStatus: 'pass', type: 'feat' },
+      { hash: 'b8e9d2a', message: '修复退款金额计算精度问题', author: '李四', reviewStatus: 'pass', type: 'fix' },
+      { hash: 'c2d4f7e', message: 'update 修改了点东西', author: '王五', reviewStatus: 'warning', type: '' },
+      { hash: 'd9a1b3c', message: '重构对账模块，拆分服务', author: '赵六', reviewStatus: 'pass', type: 'refactor' },
+      { hash: 'e5f8a9d', message: '银联渠道支持信用卡预授权', author: '张三', reviewStatus: 'pass', type: 'feat' }
+    ];
+    const AVATARS = {
+      '张三': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&h=80&fit=crop&crop=face',
+      '李四': 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=80&h=80&fit=crop&crop=face',
+      '王五': 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&h=80&fit=crop&crop=face',
+      '赵六': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop&crop=face',
+      '钱七': 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=80&h=80&fit=crop&crop=face',
+      '孙八': 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&h=80&fit=crop&crop=face',
+      '周九': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop&crop=face',
+      '吴十': 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=80&h=80&fit=crop&crop=face'
+    };
+    function avatar(name) { return AVATARS[name] || AVATARS['张三']; }
+    function commitRow(c) {
+      const icon = c.reviewStatus === 'pass' ? 'check-circle-2' : c.reviewStatus === 'warning' ? 'triangle-alert' : 'x-circle';
+      const color = c.reviewStatus === 'pass' ? 'text-emerald-500' : c.reviewStatus === 'warning' ? 'text-amber-500' : 'text-rose-500';
+      const type = c.type ? `<span class="mr-1.5 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-600">${c.type}</span>` : '';
+      return `<div class="flex items-center gap-3 py-2"><span class="font-mono text-[11px] text-indigo-500 w-16">${c.hash}</span><div class="flex-1 truncate text-[13px] text-slate-700">${type}${c.message}</div><img src="${avatar(c.author)}" alt="" class="h-4 w-4 rounded-full object-cover ring-1 ring-white"><i data-lucide="${icon}" class="h-3.5 w-3.5 ${color}" style="stroke-width:1.5"></i></div>`;
+    }
+    function timelineHtml(status) {
+      const steps = [
+        { icon: 'file-text', label: '创建发布', desc: '草稿已保存' },
+        { icon: 'hammer', label: 'Jenkins 构建', desc: '自动触发' },
+        { icon: 'git-pull-request-arrow', label: '提交审批', desc: '等待审批人' },
+        { icon: 'check-circle-2', label: '审批完成', desc: '允许发布' },
+        { icon: 'tag', label: '推送 Tag', desc: '发布完成' }
+      ];
+      const order = { draft: 0, building: 1, pending: 2, released: 4, rejected: 1 };
+      const idx = order[status] ?? 0;
+      return `<div class="space-y-0">${steps.map((step, i) => {
+        let state;
+        if (status === 'rejected') state = i === 0 ? 'done' : (i === 1 ? 'active-red' : 'pending');
+        else state = i < idx ? 'done' : (i === idx ? 'active' : 'pending');
+        const node = state === 'done' ? 'bg-emerald-500 text-white' : state === 'active' ? 'bg-indigo-600 text-white' : state === 'active-red' ? 'bg-rose-500 text-white' : 'border-2 border-slate-200 bg-white text-slate-300';
+        const line = i < 4 ? (state === 'done' ? 'bg-emerald-200' : 'bg-slate-200') : '';
+        const text = state === 'pending' ? 'text-slate-400' : state === 'active-red' ? 'text-rose-700' : 'text-slate-900';
+        return `<div class="flex gap-3"><div class="flex flex-col items-center"><div class="flex h-7 w-7 items-center justify-center rounded-full ${node}"><i data-lucide="${step.icon}" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></div>${i < 4 ? `<div class="w-px flex-1 ${line} mt-1"></div>` : ''}</div><div class="pb-5"><div class="text-[13px] font-medium ${text}">${step.label}</div><div class="mt-0.5 text-[11px] text-slate-400">${step.desc}</div></div></div>`;
+      }).join('')}</div>`;
+    }
+    function infoItem(icon, label, value) {
+      return `<div class="flex items-center gap-3 rounded-lg border border-indigo-100 bg-white p-3"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo"><i data-lucide="${icon}" class="h-4 w-4" style="stroke-width:1.5"></i></div><div class="min-w-0"><div class="text-[11px] text-slate-400">${label}</div><div class="truncate text-[13px] font-medium text-slate-800">${value}</div></div></div>`;
+    }
+    function buildPane(build) {
+      if (!build) return '<div class="text-[13px] text-slate-500">暂无构建记录</div>';
+      const ok = build.progress !== undefined;
+      const color = ok ? 'icon-cyan' : 'icon-emerald';
+      const icon = ok ? 'loader' : 'check-circle-2';
+      return `<div class="flex items-center gap-3 rounded-lg border border-indigo-100 bg-white p-3 mb-3"><div class="flex h-9 w-9 items-center justify-center rounded-lg ${color}"><i data-lucide="${icon}" class="h-[18px] w-[18px]" style="stroke-width:1.5"></i></div><div class="flex-1"><div class="text-[13px] font-medium text-slate-900">构建 #${build.number}</div><div class="text-[11px] text-slate-500">${build.job} · ${build.duration}</div></div></div>${ok ? `<div class="h-1 w-full overflow-hidden rounded-full bg-cyan-100"><div class="h-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-400" style="width:${build.progress}%"></div></div>` : ''}`;
+    }
+    function notesHtml(r) {
+      return `<div class="text-slate-400"># ${r.version}</div><div class="text-emerald-600 font-medium mt-1.5">## 变更摘要</div><div class="pl-3">- ${r.desc}</div><div class="text-blue-600 font-medium mt-1.5">## 影响范围</div><div class="pl-3">- ${r.project} · ${r.branch}</div><div class="text-violet-600 font-medium mt-1.5">## 注意事项</div><div class="pl-3">- 请在低峰期发布，并确认 Jenkins 构建成功。</div>`;
+    }
+    function modalContent(r) {
+      const counts = { pass: 0, warning: 0, illegal: 0 };
+      COMMITS.forEach(c => { if (counts[c.reviewStatus] !== undefined) counts[c.reviewStatus]++; });
+      return `<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-indigo-50 px-6 py-5"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-xl icon-indigo"><i data-lucide="rocket" class="h-5 w-5" style="stroke-width:1.5"></i></div><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><h2 class="text-[20px] font-semibold tracking-tight text-slate-900 font-mono">${r.version}</h2><span class="rounded-md border px-2 py-0.5 text-[11px] font-medium ${r.typeCls}">${r.type}</span><span class="rounded-md border px-2 py-0.5 text-[11px] font-medium ${r.statusCls}">${r.statusLabel}</span></div><p class="mt-0.5 text-[12px] text-slate-500">${r.project} · ${r.branch}</p></div></div><button onclick="closeReleaseModal()" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 self-start sm:self-auto"><i data-lucide="x" class="h-4 w-4" style="stroke-width:1.5"></i></button></div><div class="overflow-y-auto p-6 scrollbar-thin"><div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${infoItem('git-branch', '来源分支', r.branch)}${infoItem('tag', '目标 Tag', r.tag)}${infoItem('user', '发布人', r.publisher)}${infoItem('clock', '发布时间', r.time)}${infoItem('git-commit-horizontal', '提交数', `${COMMITS.length} 条`)}${infoItem('hammer', '构建', r.build ? `#${r.build.number} · ${r.build.job}` : '未触发')}</div><div class="mb-6 rounded-xl border border-indigo-100 bg-white p-4"><h3 class="mb-4 text-[14px] font-semibold tracking-tight text-slate-900">发布流程</h3>${timelineHtml(r.status)}</div><div><div class="mb-4 flex items-center gap-1 border-b border-indigo-50"><button onclick="switchReleaseTab('commits')" id="tab-commits" class="dt-tab on rounded-t-lg border-b-2 border-indigo-600 px-3 py-2.5 text-[13px] font-medium text-indigo-600">关联提交</button><button onclick="switchReleaseTab('build')" id="tab-build" class="dt-tab rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600">构建信息</button><button onclick="switchReleaseTab('notes')" id="tab-notes" class="dt-tab rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 hover:text-indigo-600">发布说明</button></div><div id="pane-commits" class="dt-pane rounded-xl border border-indigo-100 bg-white p-4"><div class="flex items-center justify-between mb-3"><span class="text-[12px] text-slate-500">上一个 tag <span class="font-mono text-slate-700">${r.version.replace(/\.\d+$/, '.' + (parseInt(r.version.match(/\d+$/) || 0) - 1))}</span> → <span class="font-mono text-slate-700">${r.branch}</span></span><span class="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">${counts.pass} 合规 · ${counts.warning} 警告</span></div><div class="divide-y divide-indigo-50/50">${COMMITS.map(commitRow).join('')}</div></div><div id="pane-build" class="dt-pane hidden rounded-xl border border-indigo-100 bg-white p-4">${buildPane(r.build)}</div><div id="pane-notes" class="dt-pane hidden rounded-xl border border-indigo-100 bg-slate-50/50 p-4 font-mono text-[12px] text-slate-600 leading-relaxed">${notesHtml(r)}</div></div></div><div class="flex items-center justify-end gap-2 border-t border-indigo-50 bg-slate-50/50 px-6 py-4"><button onclick="closeReleaseModal()" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50">关闭</button>${r.status === 'pending' ? `<button class="rounded-lg border border-rose-200 bg-white px-4 py-2 text-[13px] font-medium text-rose-600 hover:bg-rose-50">驳回</button><button class="btn-glow rounded-lg px-4 py-2 text-[13px] font-medium text-white">通过审批</button>` : ''}</div>`;
+    }
+    function openReleaseModal(id) {
+      const r = releaseData[id];
+      if (!r) return;
+      document.getElementById('releaseModalInner').innerHTML = modalContent(r);
+      document.getElementById('releaseModalMask').classList.add('open');
+      document.getElementById('releaseModalPanel').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      lucide.createIcons();
+    }
+    function closeReleaseModal() {
+      document.getElementById('releaseModalMask').classList.remove('open');
+      document.getElementById('releaseModalPanel').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    function switchReleaseTab(name) {
+      ['commits', 'build', 'notes'].forEach(t => {
+        document.getElementById('pane-' + t).classList.add('hidden');
+        const btn = document.getElementById('tab-' + t);
+        btn.classList.remove('on', 'border-indigo-600', 'text-indigo-600');
+        btn.classList.add('border-transparent', 'text-slate-500');
+      });
+      document.getElementById('pane-' + name).classList.remove('hidden');
+      const active = document.getElementById('tab-' + name);
+      active.classList.add('on', 'border-indigo-600', 'text-indigo-600');
+      active.classList.remove('border-transparent', 'text-slate-500');
+    }
+    function openColumnDrawer(colKey) {
+      const map = {
+        draft: { label: '草稿', dot: 'bg-slate-400', border: 'border-slate-200 hover:border-indigo-300' },
+        building: { label: '构建中', dot: 'bg-cyan-500 pulse-dot', border: 'border-cyan-200 hover:border-cyan-400' },
+        pending: { label: '待审批', dot: 'bg-amber-500 pulse-dot', border: 'border-amber-200 hover:border-amber-400' },
+        released: { label: '已发布', dot: 'bg-emerald-500', border: 'border-emerald-200 hover:border-emerald-400' },
+        rejected: { label: '已驳回', dot: 'bg-rose-500', border: 'border-rose-200 hover:border-rose-400' }
+      };
+      const cfg = map[colKey];
+      const items = Object.values(releaseData).filter(r => r.status === colKey);
+      const drawer = document.getElementById('columnDrawerPanel');
+      drawer.innerHTML = `
+        <div class="flex h-full flex-col">
+          <div class="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
+            <div class="flex items-center gap-2">
+              <span class="h-2 w-2 rounded-full ${cfg.dot}"></span>
+              <h2 class="text-[16px] font-semibold tracking-tight text-slate-900">${cfg.label}</h2>
+              <span class="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-semibold text-slate-600">${items.length}</span>
+            </div>
+            <button onclick="closeColumnDrawer()" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">
+              <i data-lucide="x" class="h-4 w-4" style="stroke-width:1.5"></i>
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-4 scrollbar-thin">
+            <div class="space-y-3">
+              ${items.map(r => `
+                <div onclick="openReleaseModal('${Object.keys(releaseData).find(k => releaseData[k] === r)}'); closeColumnDrawer();" class="cursor-pointer rounded-xl border ${cfg.border} bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+                  <div class="flex items-start justify-between gap-2">
+                    <span class="font-mono text-[13px] font-medium text-slate-800">${r.version}</span>
+                    <span class="rounded border px-1.5 py-0.5 text-[10px] font-medium ${r.typeCls}">${r.type}</span>
+                  </div>
+                  <div class="mt-1 truncate text-[12px] text-slate-500">${r.project}</div>
+                  <div class="mt-2 flex items-center gap-1 text-[11px] text-slate-400"><i data-lucide="git-branch" class="h-3 w-3 flex-shrink-0" style="stroke-width:1.5"></i><span class="truncate">${r.branch}</span></div>
+                  <div class="mt-3 flex items-center justify-between">
+                    <div class="flex items-center gap-1.5"><img src="${r.publisher === '李四' ? AVATARS['李四'] : r.publisher === '王五' ? AVATARS['王五'] : r.publisher === '张三' ? AVATARS['张三'] : r.publisher === '赵六' ? AVATARS['赵六'] : r.publisher === '钱七' ? AVATARS['钱七'] : r.publisher === '孙八' ? AVATARS['孙八'] : r.publisher === '周九' ? AVATARS['周九'] : AVATARS['吴十']}" alt="" class="h-4 w-4 rounded-full object-cover ring-1 ring-white"><span class="text-[11px] text-slate-500">${r.publisher}</span></div>
+                    <span class="text-[11px] text-slate-400">${r.time}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+      document.getElementById('columnDrawerMask').classList.add('open');
+      document.getElementById('columnDrawerPanel').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      lucide.createIcons();
+    }
+    function closeColumnDrawer() {
+      document.getElementById('columnDrawerMask').classList.remove('open');
+      document.getElementById('columnDrawerPanel').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        if (document.getElementById('columnDrawerPanel').classList.contains('open')) closeColumnDrawer();
+        else closeReleaseModal();
+      }
+    });
   </script>
+
+  <div id="releaseModalMask" class="modal-mask" onclick="closeReleaseModal()"></div>
+  <div id="releaseModalPanel" class="modal-panel">
+    <div id="releaseModalInner" class="flex max-h-[min(860px,calc(100vh-48px))] flex-col overflow-hidden rounded-2xl border border-[rgba(99,102,241,.12)] bg-white/95 shadow-[0_24px_70px_-12px_rgba(30,27,75,.55)] backdrop-blur-xl">
+      <!-- 内容由 JS 注入 -->
+    </div>
+  </div>
+  <div id="columnDrawerMask" class="drawer-mask" onclick="closeColumnDrawer()"></div>
+  <div id="columnDrawerPanel" class="drawer-panel"></div>
 </body>
 </html>

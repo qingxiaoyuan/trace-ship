@@ -103,7 +103,7 @@ export function ReleaseList() {
   const navigate = useNavigate();
   const { data, isLoading } = useQuery({
     queryKey: ['release-board', 'list'],
-    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 50 }),
+    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 8 }),
   });
 
   const releases = data?.results || [];

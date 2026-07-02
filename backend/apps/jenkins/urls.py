@@ -6,9 +6,10 @@ Jenkins 集成路由配置
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from apps.jenkins.views import JenkinsBuildViewSet, JenkinsJobViewSet
+from apps.jenkins.views import JenkinsBuildPresetViewSet, JenkinsBuildViewSet, JenkinsJobViewSet
 
 router = DefaultRouter()
+router.register(r"presets", JenkinsBuildPresetViewSet, basename="jenkins-build-preset")
 router.register(r"jobs", JenkinsJobViewSet, basename="jenkins-job")
 router.register(r"builds", JenkinsBuildViewSet, basename="jenkins-build")
 

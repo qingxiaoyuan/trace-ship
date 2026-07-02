@@ -95,7 +95,9 @@ class TestReleaseViews:
         )
         assert response.status_code == 200
         assert response.data["code"] == 0
-        assert response.data["data"]["change_type"] == "无配置项改动"
+        # generate_doc 返回 Markdown 字符串
+        assert isinstance(response.data["data"], str)
+        assert "| 项目 | 内容 |" in response.data["data"]
 
     def test_submit_audit(self, api_client, project, repository, commit, patched_provider, user):
         """提交审批"""
@@ -133,7 +135,7 @@ class TestReleaseViews:
             branch="main",
             release_type="formal",
             publisher=api_client.handler._force_user,
-            release_doc={"updates": []},
+            release_doc="| 项目 | 内容 |\n|------|------|\n| 变更类型 | 无配置项改动 |",
         )
         response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
         assert response.status_code == 200

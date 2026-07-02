@@ -1,5 +1,6 @@
 import { get, post, put, del } from './request';
 import type {
+  ChangesPreview,
   CommitRecord,
   PaginatedData,
   RepoComplianceStat,
@@ -7,11 +8,13 @@ import type {
   RepositoryBranch,
   RepositoryStats,
   RepositoryTag,
+  ReviewRangeResult,
 } from '@/types';
 
 export interface RepositoryListParams {
   keyword?: string;
   project?: string;
+  credential?: string;
   repo_type?: string;
   page?: number;
   page_size?: number;
@@ -50,4 +53,10 @@ export const repositoryApi = {
         }
       >;
     }>(`/repositories/${id}/next-version/`, { params: { release_type: releaseType } }),
+  previewChanges: (id: string, branch: string) =>
+    get<ChangesPreview>(`/repositories/${id}/changes-preview/`, { params: { branch } }),
+  reviewRange: (id: string, tag?: string) =>
+    get<ReviewRangeResult>(`/repositories/${id}/review-range/`, {
+      params: { tag: tag || 'latest' },
+    }),
 };

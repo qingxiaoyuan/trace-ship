@@ -11,16 +11,63 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
-from apps.jenkins.models import JenkinsBuild, JenkinsJob
+from apps.jenkins.models import JenkinsBuild, JenkinsBuildPreset, JenkinsJob
 from apps.jenkins.serializers import (
     JenkinsBuildSerializer,
+    JenkinsBuildPresetSerializer,
     JenkinsJobListSerializer,
     JenkinsJobSerializer,
 )
 from apps.jenkins.services import JenkinsService
 from apps.project.models import ProjectMember
-from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectMember
+from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectMember, IsSuperUser
 from utils.response import error_response, success_response
+
+
+class JenkinsBuildPresetViewSet(StandardModelViewSet):
+    """
+    Jenkins 打包预设视图集
+
+    - 项目管理员可维护预设
+    - 登录用户可查看启用预设
+    """
+
+    queryset = JenkinsBuildPreset.objects.all()
+    serializer_class = JenkinsBuildPresetSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["build_type", "is_active"]
+    search_fields = ["name", "image"]
+    ordering_fields = ["created_at", "build_type"]
+    ordering = ["build_type", "-created_at"]
+
+    def get_permissions(self):
+        """写操作仅允许项目管理员角色或超管。"""
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAuthenticated(), IsSuperUser()]
+        return super().get_permissions()
+
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        """创建打包预设。"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return success_response(serializer.data, message="创建成功", status=201)
+
+    def update(self, request: Request, *args, **kwargs) -> Response:
+        """更新打包预设。"""
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return success_response(serializer.data, message="更新成功")
+
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        """删除打包预设。"""
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return success_response(None, message="删除成功")
 
 
 class JenkinsJobViewSet(StandardModelViewSet):
@@ -36,7 +83,7 @@ class JenkinsJobViewSet(StandardModelViewSet):
     serializer_class = JenkinsJobSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "is_active"]
+    filterset_fields = ["project", "repository", "config_mode", "build_type", "is_active", "credential"]
     search_fields = ["name", "job_name"]
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]
@@ -62,7 +109,9 @@ class JenkinsJobViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return JenkinsJob.objects.none()
         user = self.request.user
-        queryset = JenkinsJob.objects.select_related("project", "credential", "repository").prefetch_related("builds")
+        queryset = JenkinsJob.objects.select_related(
+            "project", "credential", "repository", "build_preset"
+        ).prefetch_related("builds")
         if user.is_superuser:
             return queryset.all()
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
@@ -94,6 +143,8 @@ class JenkinsJobViewSet(StandardModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
+        JenkinsService.ensure_managed_pipeline(serializer.instance, request.user)
+        serializer = self.get_serializer(serializer.instance)
         return success_response(serializer.data, message="创建成功", status=201)
 
     def update(self, request: Request, *args, **kwargs) -> Response:
@@ -111,6 +162,8 @@ class JenkinsJobViewSet(StandardModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+        JenkinsService.ensure_managed_pipeline(serializer.instance, request.user)
+        serializer = self.get_serializer(serializer.instance)
         return success_response(serializer.data, message="更新成功")
 
     def destroy(self, request: Request, *args, **kwargs) -> Response:
@@ -133,7 +186,7 @@ class JenkinsJobViewSet(StandardModelViewSet):
         触发构建
 
         Args:
-            request: DRF Request，body 可包含 release_id 或 version/branch/git_hash
+            request: DRF Request，简单模式 body 必须包含 tag_name；高级模式可包含 release_id 或 version/branch/git_hash/tag_name
             pk: 任务主键
 
         Returns:
@@ -141,11 +194,12 @@ class JenkinsJobViewSet(StandardModelViewSet):
         """
         job = self.get_object()
         release_id = request.data.get("release_id")
+        tag_name = request.data.get("tag_name", "")
         try:
             if release_id:
                 from apps.release.models import ReleaseRecord
                 release = ReleaseRecord.objects.get(id=release_id)
-                build = JenkinsService.trigger_build(job, release, request.user)
+                build = JenkinsService.trigger_build(job, release=release, request_user=request.user, tag_name=tag_name)
             else:
                 from types import SimpleNamespace
                 release = SimpleNamespace(
@@ -153,8 +207,9 @@ class JenkinsJobViewSet(StandardModelViewSet):
                     version=request.data.get("version", ""),
                     branch=request.data.get("branch", ""),
                     git_hash=request.data.get("git_hash", ""),
+                    tag_name=tag_name,
                 )
-                build = JenkinsService.trigger_build(job, release, request.user)
+                build = JenkinsService.trigger_build(job, release=release, request_user=request.user, tag_name=tag_name)
         except Exception as exc:
             return error_response(50001, f"触发构建失败: {exc}", status_code=500)
         serializer = JenkinsBuildSerializer(build, context={"request": request})

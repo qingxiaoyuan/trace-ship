@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · 提交审查</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; font-feature-settings:'cv02','cv03','cv04','cv11'; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.aurora::before,.aurora::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); opacity:.3; }
+.aurora::before{ width:520px; height:520px; top:-140px; right:-100px; background:radial-gradient(circle,#818CF8,transparent 70%); }
+.aurora::after{ width:440px; height:440px; bottom:-120px; left:200px; background:radial-gradient(circle,#22D3EE,transparent 70%); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:48px 48px; }
+.tech-card{ background:rgba(255,255,255,.85); backdrop-filter:blur(12px) saturate(160%); -webkit-backdrop-filter:blur(12px) saturate(160%); border:1px solid rgba(99,102,241,.12); }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 6px 18px -6px rgba(99,102,241,.55); transition:all .2s; }
+.btn-glow:hover{ background:linear-gradient(135deg,#818CF8 0%,#6366F1 100%); box-shadow:0 1px 2px rgba(79,70,229,.35),0 8px 24px -6px rgba(99,102,241,.7); }
+.btn-glow:disabled{ opacity:.5; cursor:not-allowed; box-shadow:none; }
+.icon-indigo{ background:linear-gradient(135deg,#EEF2FF,#E0E7FF); color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-cyan{ background:linear-gradient(135deg,#ECFEFF,#CFFAFE); color:#0891B2; border:1px solid #A5F3FC; }
+.icon-amber{ background:linear-gradient(135deg,#FFFBEB,#FEF3C7); color:#B45309; border:1px solid #FDE68A; }
+.icon-rose{ background:linear-gradient(135deg,#FFF1F2,#FFE4E6); color:#BE123C; border:1px solid #FECDD3; }
+.icon-violet{ background:linear-gradient(135deg,#F5F3FF,#EDE9FE); color:#6D28D9; border:1px solid #DDD6FE; }
+.icon-emerald{ background:linear-gradient(135deg,#ECFDF5,#D1FAE5); color:#047857; border:1px solid #A7F3D0; }
+.scrollbar-thin::-webkit-scrollbar{ width:5px; height:5px; }
+.scrollbar-thin::-webkit-scrollbar-thumb{ background:#C7D2FE; border-radius:9999px; }
+.scrollbar-thin::-webkit-scrollbar-track{ background:transparent; }
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+.pulse-dot{ animation:pulse-dot 1.8s ease-in-out infinite; }
+.nav-active{ background:linear-gradient(90deg,rgba(79,70,229,.1),rgba(34,211,238,.05)); border:1px solid rgba(79,70,229,.18); color:#4F46E5; }
+.nav-active i{ color:#4F46E5 !important; }
+.sect-tab.on{ color:#4F46E5; border-color:#4F46E5; background:#EEF2FF; }
+.view{ display:none; }
+.view.active{ display:block; }
+.filter-active{ background:#EEF2FF !important; border-color:#6366F1 !important; color:#4F46E5 !important; }
+/* 自定义下拉 */
+.dd-menu{ position:absolute; top:calc(100% + 4px); left:0; z-index:50; min-width:100%; max-height:280px; overflow-y:auto; background:#fff; border:1px solid rgba(99,102,241,.15); border-radius:10px; box-shadow:0 12px 32px -8px rgba(30,27,75,.2); padding:4px; }
+.dd-item{ display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; font-size:13px; color:#475569; cursor:pointer; transition:background .12s; }
+.dd-item:hover{ background:#EEF2FF; color:#4F46E5; }
+.dd-item.sel{ background:#EEF2FF; color:#4F46E5; font-weight:500; }
+/* 步骤指示器 */
+.step-dot{ width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; border:1.5px solid #C7D2FE; color:#94A3B8; background:#fff; transition:all .2s; }
+.step-dot.done{ background:#4F46E5; border-color:#4F46E5; color:#fff; }
+.step-dot.active{ border-color:#4F46E5; color:#4F46E5; background:#EEF2FF; box-shadow:0 0 0 4px rgba(99,102,241,.1); }
+.step-line{ flex:1; height:2px; background:#E2E8F0; }
+.step-line.done{ background:#4F46E5; }
+/* 文档区块 */
+.doc-block{ border:1px solid rgba(99,102,241,.1); border-radius:10px; overflow:hidden; }
+.doc-block-head{ display:flex; align-items:center; gap:8px; padding:10px 14px; background:rgba(238,242,255,.5); border-bottom:1px solid rgba(99,102,241,.08); }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-700 text-[14px] relative">
+<div class="aurora"></div>
+<div class="relative z-10 flex min-h-screen">
+
+  <!-- 侧边栏 -->
+  <aside class="fixed inset-y-0 left-0 z-40 hidden lg:flex w-[244px] flex-col border-r border-indigo-100 bg-white/70 backdrop-blur-xl">
+    <div class="flex h-[60px] items-center gap-2.5 px-5">
+      <img src="../frontend/public/favicon.ico" alt="溯舟" class="h-8 w-8 rounded-lg object-contain" />
+      <div class="flex flex-col leading-none">
+        <span class="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span>
+        <span class="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">Trace Ship</span>
+      </div>
+    </div>
+    <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 space-y-4">
+      <div>
+        <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">概览</div>
+        <div class="space-y-0.5">
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="layout-dashboard" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>工作台</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="rocket" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>发布看板</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="bell" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>通知中心</span></a>
+        </div>
+      </div>
+      <div>
+        <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">资源</div>
+        <div class="space-y-0.5">
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="folder-kanban" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>项目</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="git-fork" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>仓库</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="key-round" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>凭证</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="hammer" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>Jenkins</span></a>
+        </div>
+      </div>
+      <div>
+        <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">质量</div>
+        <div class="space-y-0.5">
+          <a class="nav-active flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium cursor-pointer"><i data-lucide="scan-search" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>提交审查</span></a>
+        </div>
+      </div>
+      <div>
+        <div class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">系统</div>
+        <div class="space-y-0.5">
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="user-circle" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>个人中心</span></a>
+          <a class="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[13px] font-medium text-slate-500 hover:bg-indigo-50/60 hover:text-indigo-600 cursor-pointer"><i data-lucide="users" class="h-[17px] w-[17px]" style="stroke-width:1.5"></i><span>用户与角色</span></a>
+        </div>
+      </div>
+    </nav>
+  </aside>
+
+  <div class="flex-1 lg:ml-[244px]">
+    <header class="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/60 bg-white/70 px-5 backdrop-blur-xl lg:px-7">
+      <div class="hidden items-center gap-1.5 text-[13px] md:flex">
+        <span class="text-slate-400">质量</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i><span class="font-medium text-slate-800">提交审查</span>
+      </div>
+      <div class="ml-auto hidden md:flex items-center">
+        <button class="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 hover:border-indigo-200 hover:bg-white hover:text-indigo-600 w-[260px]">
+          <i data-lucide="search" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>搜索…</span>
+          <span class="ml-auto flex items-center gap-0.5"><kbd class="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">⌘K</kbd></span>
+        </button>
+      </div>
+      <div class="ml-auto flex items-center gap-1 md:ml-0">
+        <button class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="plus" class="h-4 w-4" style="stroke-width:1.5"></i></button>
+        <button class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i><span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white"></span></button>
+        <div class="mx-1 h-5 w-px bg-indigo-100"></div>
+        <div class="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-[12px] font-semibold text-white ring-1 ring-indigo-200 cursor-pointer">张</div>
+      </div>
+    </header>
+
+    <main class="grid-bg px-5 py-6 lg:px-7 lg:py-7 space-y-5 max-w-[1280px] mx-auto">
+
+      <!-- 页面标题 -->
+      <div>
+        <h1 class="text-[26px] font-semibold tracking-tight text-slate-900">提交审查</h1>
+        <p class="mt-1 text-[13px] text-slate-500">审查审批中与已发布版本的变更合规性，也可主动拉取任意 Tag 区间的提交进行合规检查</p>
+      </div>
+
+      <!-- 三块 Tab -->
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <button class="sect-tab on inline-flex items-center gap-1.5 rounded-lg border border-transparent px-3.5 py-2 text-[13px] font-medium transition-colors" data-sect="pending"><i data-lucide="clipboard-check" class="h-4 w-4" style="stroke-width:1.5"></i>审批中审查<span class="font-mono text-[11px] text-indigo-400">3</span></button>
+        <button class="sect-tab inline-flex items-center gap-1.5 rounded-lg border border-transparent px-3.5 py-2 text-[13px] font-medium text-slate-500 hover:text-indigo-600 transition-colors" data-sect="released"><i data-lucide="history" class="h-4 w-4" style="stroke-width:1.5"></i>已发布回溯<span class="font-mono text-[11px] text-slate-400">28</span></button>
+        <button class="sect-tab inline-flex items-center gap-1.5 rounded-lg border border-transparent px-3.5 py-2 text-[13px] font-medium text-slate-500 hover:text-indigo-600 transition-colors" data-sect="fetch"><i data-lucide="git-fetch" class="h-4 w-4" style="stroke-width:1.5"></i>主动拉取审查</button>
+      </div>
+
+      <!-- ============================= -->
+      <!-- 第一块：审批中审查 -->
+      <!-- ============================= -->
+      <section id="sect-pending" class="sect space-y-5">
+
+        <!-- 列表页 -->
+        <div id="pd-list" class="space-y-5">
+          <div class="tech-card rounded-xl overflow-hidden">
+            <!-- 筛选栏 -->
+            <div class="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+              <div class="relative"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input type="text" placeholder="搜索项目 / 版本号" class="w-[200px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></div>
+              <!-- 项目筛选 -->
+              <div class="relative" id="pd-project-filter">
+                <button class="flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/40" onclick="toggleDD(this)"><i data-lucide="folder-kanban" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><span class="dd-label">全部项目</span><i data-lucide="chevron-down" class="h-3 w-3 text-slate-400" style="stroke-width:1.5"></i></button>
+                <div class="dd-menu hidden">
+                  <div class="dd-item sel"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>全部项目</div>
+                  <div class="dd-item">支付核心服务</div>
+                  <div class="dd-item">用户中心</div>
+                  <div class="dd-item">网关服务</div>
+                  <div class="dd-item">订单管理</div>
+                </div>
+              </div>
+              <!-- 仓库筛选 -->
+              <div class="relative" id="pd-repo-filter">
+                <button class="flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/40" onclick="toggleDD(this)"><i data-lucide="git-fork" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><span class="dd-label">全部仓库</span><i data-lucide="chevron-down" class="h-3 w-3 text-slate-400" style="stroke-width:1.5"></i></button>
+                <div class="dd-menu hidden">
+                  <div class="dd-item sel"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>全部仓库</div>
+                  <div class="dd-item font-mono text-[12px]">pay-core-service</div>
+                  <div class="dd-item font-mono text-[12px]">user-center</div>
+                  <div class="dd-item font-mono text-[12px]">gateway</div>
+                </div>
+              </div>
+              <!-- 类型筛选 -->
+              <div class="flex items-center gap-1 rounded-lg border border-indigo-100 bg-white p-0.5">
+                <button class="filter-active rounded-md px-2.5 py-1 text-[12px] font-medium" onclick="setTypeFilter(this)">全部</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-indigo-600" onclick="setTypeFilter(this)">正式</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-indigo-600" onclick="setTypeFilter(this)">测试</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-indigo-600" onclick="setTypeFilter(this)">RC</button>
+              </div>
+              <div class="ml-auto text-[12px] text-slate-400">共 3 个审批中</div>
+            </div>
+            <!-- 表头 -->
+            <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+              <div class="col-span-3">发布单</div><div class="col-span-2">项目</div><div class="col-span-1">类型</div><div class="col-span-1 text-center">提交</div><div class="col-span-1 text-center">审查</div><div class="col-span-2">状态</div><div class="col-span-2">操作</div>
+            </div>
+            <div class="divide-y divide-indigo-50/50">
+              <!-- 有警告 -->
+              <div class="pd-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer" onclick="showDetail('pd')">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2"><span class="inline-flex h-2 w-2 rounded-full bg-amber-400"></span><div><div class="font-mono text-[13px] font-medium text-slate-900">PAY-CORE v2.4.1</div><div class="text-[11px] text-slate-400">pay-core-service</div></div></div>
+                <div class="col-span-6 md:col-span-2 text-[13px] text-slate-700">支付核心服务</div>
+                <div class="col-span-3 md:col-span-1"><span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span></div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">12</div>
+                <div class="col-span-3 md:col-span-1 text-center"><span class="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">2 警告</span></div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-500 pulse-dot"></span>auditing</span></div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5"><button class="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="file-text" class="h-3 w-3" style="stroke-width:1.5"></i>查看文档</button><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+              </div>
+              <!-- 仅警告 -->
+              <div class="pd-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer" onclick="showDetail('pd')">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2"><span class="inline-flex h-2 w-2 rounded-full bg-amber-400"></span><div><div class="font-mono text-[13px] font-medium text-slate-900">USER-CTR v1.8.0</div><div class="text-[11px] text-slate-400">user-center</div></div></div>
+                <div class="col-span-6 md:col-span-2 text-[13px] text-slate-700">用户中心</div>
+                <div class="col-span-3 md:col-span-1"><span class="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">测试</span></div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">8</div>
+                <div class="col-span-3 md:col-span-1 text-center"><span class="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">2 警告</span></div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700"><span class="h-1.5 w-1.5 rounded-full bg-violet-500"></span>pending</span></div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5"><button class="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="file-text" class="h-3 w-3" style="stroke-width:1.5"></i>查看文档</button><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+              </div>
+              <!-- 全部正常 -->
+              <div class="pd-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer" onclick="showDetail('pd')">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2"><span class="inline-flex h-2 w-2 rounded-full bg-emerald-500"></span><div><div class="font-mono text-[13px] font-medium text-slate-900">GATEWAY v3.0.0</div><div class="text-[11px] text-slate-400">gateway</div></div></div>
+                <div class="col-span-6 md:col-span-2 text-[13px] text-slate-700">网关服务</div>
+                <div class="col-span-3 md:col-span-1"><span class="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700">RC</span></div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">5</div>
+                <div class="col-span-3 md:col-span-1 text-center"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正常</span></div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700"><span class="h-1.5 w-1.5 rounded-full bg-violet-500"></span>pending</span></div>
+                <div class="col-span-6 md:col-span-2 flex items-center gap-1.5"><button class="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="file-text" class="h-3 w-3" style="stroke-width:1.5"></i>查看文档</button><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 详情页 -->
+        <div id="pd-detail" class="space-y-5 hidden">
+          <div class="flex items-center gap-2 text-[13px]">
+            <a class="inline-flex items-center gap-1 text-slate-400 hover:text-indigo-600 cursor-pointer" onclick="hideDetail('pd')"><i data-lucide="arrow-left" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>审批中审查</a>
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i>
+            <span class="font-mono font-medium text-slate-800">PAY-CORE v2.4.1</span>
+            <span class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[12px] font-medium text-amber-600"><i data-lucide="triangle-alert" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>2 项警告</span>
+          </div>
+
+          <!-- 发布说明文档（两列表格） -->
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
+              <i data-lucide="file-text" class="h-4 w-4 text-indigo-500" style="stroke-width:1.5"></i>
+              <h3 class="text-[14px] font-semibold text-slate-900">发布说明</h3>
+              <span class="text-[12px] text-slate-400">PAY-CORE v2.4.1 · 正式</span>
+            </div>
+            <div class="overflow-hidden rounded-lg">
+              <table class="w-full border-collapse">
+                <tbody>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">当前发布版本号</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800 font-mono">v2.4.1</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">Git提交hash</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800 font-mono">a3f1c2b9e4d5</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">变更类型</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800">有配置项改动</td>
+                  </tr>
+                  <!-- 变更内容：含警告项标红 -->
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">
+                      <span class="inline-flex items-center gap-1">变更内容<i data-lucide="triangle-alert" class="h-3 w-3 text-amber-500" style="stroke-width:1.5"></i></span>
+                    </td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800 space-y-1">
+                      <div class="flex items-start gap-1.5"><span class="font-mono text-[11px] rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-emerald-700 shrink-0">A</span><span>新增微信支付渠道，支持优惠券叠加</span></div>
+                      <div class="flex items-start gap-1.5"><span class="font-mono text-[11px] rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-amber-700 shrink-0">F</span><span>修复退款金额计算精度丢失</span></div>
+                      <div class="flex items-start gap-1.5 rounded-md bg-amber-50/40 px-1.5 py-1 -mx-1.5"><span class="font-mono text-[11px] rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-amber-700 shrink-0">F</span><span class="text-amber-700">修复登录页样式问题</span><span class="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 shrink-0"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i>警告</span></div>
+                      <div class="flex items-start gap-1.5 rounded-md bg-amber-50/40 px-1.5 py-1 -mx-1.5"><span class="font-mono text-[11px] rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-amber-700 shrink-0">A</span><span class="text-amber-700">优化日志输出格式</span><span class="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 shrink-0"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i>警告</span></div>
+                      <div class="flex items-start gap-1.5"><span class="font-mono text-[11px] rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-emerald-700 shrink-0">A</span><span>新增支付通道熔断降级能力</span></div>
+                    </td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">配置项改动</td>
+                    <td class="px-4 py-2.5 text-[13px] font-mono text-slate-700">[System] DeviceType=0<br>[Pay] WechatEnabled=1</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">关联项改动</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-700">PXX板卡硬件版本: 1.0</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">是否影响其他功能</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-700">否</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">测试验证</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-700">自测试通过、研发测试复验通过</td>
+                  </tr>
+                  <tr>
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">发布人</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800">李四</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= -->
+      <!-- 第二块：已发布回溯 -->
+      <!-- ============================= -->
+      <section id="sect-released" class="sect space-y-5 hidden">
+        <!-- 列表页 -->
+        <div id="rl-list" class="space-y-5">
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+              <div class="relative"><i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><input type="text" placeholder="搜索项目 / 版本号" class="w-[200px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></div>
+              <div class="relative">
+                <button class="flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/40" onclick="toggleDD(this)"><i data-lucide="folder-kanban" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><span class="dd-label">全部项目</span><i data-lucide="chevron-down" class="h-3 w-3 text-slate-400" style="stroke-width:1.5"></i></button>
+                <div class="dd-menu hidden">
+                  <div class="dd-item sel"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>全部项目</div>
+                  <div class="dd-item">订单管理</div>
+                  <div class="dd-item">网关服务</div>
+                  <div class="dd-item">支付核心服务</div>
+                </div>
+              </div>
+              <div class="relative">
+                <button class="flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/40" onclick="toggleDD(this)"><i data-lucide="git-fork" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i><span class="dd-label">全部仓库</span><i data-lucide="chevron-down" class="h-3 w-3 text-slate-400" style="stroke-width:1.5"></i></button>
+                <div class="dd-menu hidden">
+                  <div class="dd-item sel"><i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>全部仓库</div>
+                  <div class="dd-item font-mono text-[12px]">order-service</div>
+                  <div class="dd-item font-mono text-[12px]">gateway</div>
+                  <div class="dd-item font-mono text-[12px]">pay-core-service</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 rounded-lg border border-indigo-100 bg-white p-0.5">
+                <button class="filter-active rounded-md px-2.5 py-1 text-[12px] font-medium" onclick="setTypeFilter(this)">全部</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-indigo-600" onclick="setTypeFilter(this)">正式</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-indigo-600" onclick="setTypeFilter(this)">测试</button>
+                <button class="rounded-md px-2.5 py-1 text-[12px] font-medium text-slate-500 hover:text-indigo-600" onclick="setTypeFilter(this)">RC</button>
+              </div>
+              <div class="ml-auto text-[12px] text-slate-400">共 28 条 · 回溯发现 3 个版本存在警告</div>
+            </div>
+            <div class="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+              <div class="col-span-3">发布单</div><div class="col-span-2">项目</div><div class="col-span-1">类型</div><div class="col-span-1 text-center">提交</div><div class="col-span-1 text-center">警告</div><div class="col-span-2">状态</div><div class="col-span-1">发布时间</div><div class="col-span-1 text-right">操作</div>
+            </div>
+            <div class="divide-y divide-indigo-50/50">
+              <div class="rl-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer" onclick="showDetail('rl')">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2"><span class="inline-flex h-2 w-2 rounded-full bg-amber-400"></span><div><div class="font-mono text-[13px] font-medium text-slate-900">ORDER-MG v1.5.2</div><div class="text-[11px] text-slate-400">order-service</div></div></div>
+                <div class="col-span-6 md:col-span-2 text-[13px] text-slate-700">订单管理</div>
+                <div class="col-span-3 md:col-span-1"><span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span></div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">9</div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-amber-600">1</div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i>警告</span></div>
+                <div class="col-span-6 md:col-span-1 text-[12px] text-slate-500">06-20</div>
+                <div class="col-span-6 md:col-span-1 flex items-center justify-end"><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+              </div>
+              <div class="rl-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer" onclick="showDetail('rl')">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2"><span class="inline-flex h-2 w-2 rounded-full bg-emerald-500"></span><div><div class="font-mono text-[13px] font-medium text-slate-900">GATEWAY v3.0.0</div><div class="text-[11px] text-slate-400">gateway</div></div></div>
+                <div class="col-span-6 md:col-span-2 text-[13px] text-slate-700">网关服务</div>
+                <div class="col-span-3 md:col-span-1"><span class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正式</span></div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">5</div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-300">0</div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"><i data-lucide="check-circle-2" class="h-3 w-3" style="stroke-width:1.5"></i>正常</span></div>
+                <div class="col-span-6 md:col-span-1 text-[12px] text-slate-500">06-28</div>
+                <div class="col-span-6 md:col-span-1 flex items-center justify-end"><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+              </div>
+              <div class="rl-row grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-indigo-50/30 cursor-pointer" onclick="showDetail('rl')">
+                <div class="col-span-12 md:col-span-3 flex items-center gap-2"><span class="inline-flex h-2 w-2 rounded-full bg-amber-400"></span><div><div class="font-mono text-[13px] font-medium text-slate-900">PAY-CORE v2.4.0</div><div class="text-[11px] text-slate-400">pay-core-service</div></div></div>
+                <div class="col-span-6 md:col-span-2 text-[13px] text-slate-700">支付核心服务</div>
+                <div class="col-span-3 md:col-span-1"><span class="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">测试</span></div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-slate-700">14</div>
+                <div class="col-span-3 md:col-span-1 text-center font-mono text-[13px] text-amber-600">2</div>
+                <div class="col-span-6 md:col-span-2"><span class="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i>警告</span></div>
+                <div class="col-span-6 md:col-span-1 text-[12px] text-slate-500">06-15</div>
+                <div class="col-span-6 md:col-span-1 flex items-center justify-end"><i data-lucide="chevron-right" class="h-4 w-4 text-slate-300" style="stroke-width:1.5"></i></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 详情页 -->
+        <div id="rl-detail" class="space-y-5 hidden">
+          <div class="flex items-center gap-2 text-[13px]">
+            <a class="inline-flex items-center gap-1 text-slate-400 hover:text-indigo-600 cursor-pointer" onclick="hideDetail('rl')"><i data-lucide="arrow-left" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>已发布回溯</a>
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-300"></i>
+            <span class="font-mono font-medium text-slate-800">ORDER-MG v1.5.2</span>
+            <span class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[12px] font-medium text-amber-600"><i data-lucide="triangle-alert" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>1 项警告</span>
+          </div>
+
+          <!-- 发布说明文档（两列表格） -->
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
+              <i data-lucide="file-text" class="h-4 w-4 text-indigo-500" style="stroke-width:1.5"></i>
+              <h3 class="text-[14px] font-semibold text-slate-900">发布说明</h3>
+              <span class="text-[12px] text-slate-400">ORDER-MG v1.5.2 · 正式</span>
+            </div>
+            <div class="overflow-hidden rounded-lg">
+              <table class="w-full border-collapse">
+                <tbody>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">当前发布版本号</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800 font-mono">v1.5.2</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">Git提交hash</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800 font-mono">9e4f7a1b3c2d</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">变更类型</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800">无配置项改动</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">
+                      <span class="inline-flex items-center gap-1">变更内容<i data-lucide="triangle-alert" class="h-3 w-3 text-amber-500" style="stroke-width:1.5"></i></span>
+                    </td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800 space-y-1">
+                      <div class="flex items-start gap-1.5"><span class="font-mono text-[11px] rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-amber-700 shrink-0">F</span><span>修复优惠券叠加计算错误</span></div>
+                      <div class="flex items-start gap-1.5"><span class="font-mono text-[11px] rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-emerald-700 shrink-0">A</span><span>订单批量导出支持异步任务</span></div>
+                      <div class="flex items-start gap-1.5 rounded-md bg-amber-50/40 px-1.5 py-1 -mx-1.5"><span class="font-mono text-[11px] rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-amber-700 shrink-0">F</span><span class="text-amber-700">紧急修复订单超卖问题</span><span class="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 shrink-0"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i>警告</span></div>
+                      <div class="flex items-start gap-1.5"><span class="font-mono text-[11px] rounded border border-violet-200 bg-violet-50 px-1 py-0.5 text-violet-700 shrink-0">R</span><span>重构库存扣减逻辑</span></div>
+                    </td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">配置项改动</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-400">无</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">关联项改动</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-400">无</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">是否影响其他功能</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-700">否</td>
+                  </tr>
+                  <tr class="border-b border-slate-100">
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">测试验证</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-700">自测试通过、研发测试复验通过</td>
+                  </tr>
+                  <tr>
+                    <td class="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2.5 align-top text-[12px] font-medium text-slate-500">发布人</td>
+                    <td class="px-4 py-2.5 text-[13px] text-slate-800">赵六</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= -->
+      <!-- 第三块：主动拉取审查 -->
+      <!-- ============================= -->
+      <section id="sect-fetch" class="sect space-y-5 hidden">
+
+        <!-- 选择器卡片 -->
+        <div class="tech-card rounded-xl p-5">
+          <div class="flex items-center gap-2 mb-4">
+            <i data-lucide="git-fetch" class="h-4 w-4 text-indigo-500" style="stroke-width:1.5"></i>
+            <h3 class="text-[14px] font-semibold text-slate-900">选择审查范围</h3>
+            <span class="ml-auto text-[11px] text-slate-400">拉取区间内的 commits 与 MR 进行合规审查，结果仅临时展示不落库</span>
+          </div>
+
+          <!-- 步骤指示器 -->
+          <div class="flex items-center gap-2 mb-5 max-w-[520px]">
+            <div class="step-dot active">1</div>
+            <div class="step-line"></div>
+            <div class="step-dot">2</div>
+            <div class="step-line"></div>
+            <div class="step-dot">3</div>
+            <div class="ml-3 text-[12px] text-slate-400"><span class="text-indigo-600 font-medium">选项目</span> → 选仓库 → 选 Tag</div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <!-- 步骤1：项目 -->
+            <div class="relative" id="fetch-project">
+              <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">① 项目</label>
+              <button class="flex w-full items-center justify-between gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/40 px-3 py-2 text-[13px] text-slate-700 hover:border-indigo-300" onclick="toggleDD(this)">
+                <span class="flex items-center gap-2"><i data-lucide="folder-kanban" class="h-3.5 w-3.5 text-indigo-400" style="stroke-width:1.5"></i><span class="dd-label">请选择项目</span></span>
+                <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              </button>
+              <div class="dd-menu hidden w-full">
+                <div class="dd-item" onclick="pickFetch(this,'project','支付核心服务')">支付核心服务</div>
+                <div class="dd-item" onclick="pickFetch(this,'project','用户中心')">用户中心</div>
+                <div class="dd-item" onclick="pickFetch(this,'project','网关服务')">网关服务</div>
+                <div class="dd-item" onclick="pickFetch(this,'project','订单管理')">订单管理</div>
+              </div>
+            </div>
+            <!-- 步骤2：仓库（禁用态） -->
+            <div class="relative" id="fetch-repo">
+              <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">② 仓库</label>
+              <button class="flex w-full items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-400 cursor-not-allowed" disabled>
+                <span class="flex items-center gap-2"><i data-lucide="git-fork" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>先选项目</span></span>
+                <i data-lucide="lock" class="h-3.5 w-3.5 text-slate-300" style="stroke-width:1.5"></i>
+              </button>
+            </div>
+            <!-- 步骤3：Tag（禁用态） -->
+            <div class="relative" id="fetch-tag">
+              <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">③ Tag 区间</label>
+              <button class="flex w-full items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-400 cursor-not-allowed" disabled>
+                <span class="flex items-center gap-2"><i data-lucide="tag" class="h-3.5 w-3.5" style="stroke-width:1.5"></i><span>先选仓库</span></span>
+                <i data-lucide="lock" class="h-3.5 w-3.5 text-slate-300" style="stroke-width:1.5"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 拉取按钮 -->
+          <div class="mt-5 flex items-center gap-3 border-t border-indigo-50 pt-4">
+            <button id="fetch-btn" class="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white" disabled><i data-lucide="download-cloud" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>拉取并审查</button>
+            <button class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"><i data-lucide="rotate-ccw" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>重置</button>
+            <div class="ml-auto text-[11px] text-slate-400">区间：<span class="font-mono text-slate-500" id="fetch-range">—</span></div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div id="fetch-empty" class="tech-card rounded-xl p-12 text-center">
+          <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl icon-indigo"><i data-lucide="scan-search" class="h-7 w-7" style="stroke-width:1.5"></i></div>
+          <h3 class="mt-4 text-[15px] font-semibold text-slate-800">选择审查范围后拉取</h3>
+          <p class="mt-1 text-[13px] text-slate-500">依次选择 项目 → 仓库 → Tag，系统将拉取该 Tag 与上一个 Tag 之间的所有提交与合并请求进行合规审查</p>
+          <div class="mt-5 flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-400">
+            <div class="flex items-center gap-1.5"><i data-lucide="git-commit" class="h-3.5 w-3.5 text-indigo-400" style="stroke-width:1.5"></i>审查 commit 规范</div>
+            <div class="flex items-center gap-1.5"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-cyan-400" style="stroke-width:1.5"></i>审查 MR 描述</div>
+            <div class="flex items-center gap-1.5"><i data-lucide="eye-off" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>结果不落库</div>
+          </div>
+        </div>
+
+        <!-- 加载中 -->
+        <div id="fetch-loading" class="tech-card rounded-xl p-12 text-center hidden">
+          <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl icon-cyan"><i data-lucide="loader-circle" class="h-7 w-7 animate-spin" style="stroke-width:1.5"></i></div>
+          <h3 class="mt-4 text-[15px] font-semibold text-slate-800">正在拉取并审查…</h3>
+          <p class="mt-1 text-[13px] text-slate-500">从仓库拉取 commits 与 MR，逐条校验变更类型与更新内容</p>
+        </div>
+
+        <!-- 结果区 -->
+        <div id="fetch-result" class="space-y-5 hidden">
+          <!-- 结果头 -->
+          <div class="tech-card rounded-xl p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex items-center gap-3">
+                <div class="flex h-11 w-11 items-center justify-center rounded-xl icon-indigo"><i data-lucide="git-compare" class="h-5 w-5" style="stroke-width:1.5"></i></div>
+                <div>
+                  <h2 class="text-[18px] font-semibold tracking-tight text-slate-900">pay-core-service</h2>
+                  <div class="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+                    <span class="font-mono">v2.4.0</span><i data-lucide="arrow-right" class="h-3 w-3 text-slate-400" style="stroke-width:1.5"></i><span class="font-mono">v2.4.1</span>
+                    <span class="h-1 w-1 rounded-full bg-slate-300"></span><span>12 commits</span><span class="h-1 w-1 rounded-full bg-slate-300"></span><span>3 MRs</span>
+                  </div>
+                </div>
+              </div>
+              <span class="inline-flex items-center gap-1.5 self-start rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[12px] font-medium text-amber-600"><i data-lucide="triangle-alert" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>2 项警告</span>
+            </div>
+            <div class="mt-4 grid grid-cols-3 gap-3 border-t border-indigo-50 pt-4">
+              <div class="flex items-center gap-2"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald"><i data-lucide="check-circle-2" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[16px] font-semibold text-slate-900">10</div><div class="text-[10px] text-slate-400">正常</div></div></div>
+              <div class="flex items-center gap-2"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-amber"><i data-lucide="triangle-alert" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[16px] font-semibold text-slate-900">2</div><div class="text-[10px] text-slate-400">警告</div></div></div>
+              <div class="flex items-center gap-2"><div class="flex h-8 w-8 items-center justify-center rounded-lg icon-cyan"><i data-lucide="git-pull-request" class="h-4 w-4" style="stroke-width:1.5"></i></div><div><div class="font-mono text-[16px] font-semibold text-slate-900">3</div><div class="text-[10px] text-slate-400">合并请求</div></div></div>
+            </div>
+          </div>
+
+          <!-- Commits 审查 -->
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
+              <i data-lucide="git-commit-horizontal" class="h-4 w-4 text-indigo-500" style="stroke-width:1.5"></i>
+              <h3 class="text-[14px] font-semibold text-slate-900">提交审查（12）</h3>
+              <div class="ml-auto flex items-center gap-1">
+                <button class="filter-active inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[12px] font-medium">全部 12</button>
+                <button class="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[12px] font-medium text-slate-500 hover:text-indigo-600">警告 2</button>
+              </div>
+            </div>
+            <div class="divide-y divide-indigo-50/50">
+              <div class="px-5 py-4 hover:bg-amber-50/20">
+                <div class="flex items-start gap-3">
+                  <span class="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 shrink-0"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i>警告</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-mono text-[11px] text-slate-400">a3f1c2b</span>
+                      <span class="text-[13px] font-medium text-slate-900">李四</span>
+                      <span class="text-[11px] text-slate-400">06-29 14:22</span>
+                    </div>
+                    <div class="mt-2 rounded-md border border-amber-100 bg-amber-50/20 p-3">
+                      <pre class="font-mono text-[11px] text-slate-600 whitespace-pre-wrap">修复登录页样式问题</pre>
+                    </div>
+                    <div class="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i><span>缺少或无法识别变更类型标记 · 缺少更新内容</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="px-5 py-4 hover:bg-indigo-50/20">
+                <div class="flex items-start gap-3">
+                  <span class="mt-1 inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 shrink-0"><i data-lucide="check-circle-2" class="h-3 w-3" style="stroke-width:1.5"></i>正常</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-mono text-[11px] text-slate-400">5c2d1f8</span>
+                      <span class="text-[13px] font-medium text-slate-900">张三</span>
+                      <span class="text-[11px] text-slate-400">06-28 16:40</span>
+                    </div>
+                    <div class="mt-2 rounded-md border border-emerald-100 bg-emerald-50/20 p-3">
+                      <div class="space-y-1 text-[11px]">
+                        <div class="flex gap-2"><span class="text-slate-400 w-16">变更类型</span><span class="text-slate-700">有配置项改动</span></div>
+                        <div class="flex gap-2"><span class="text-slate-400 w-16">更新内容</span><span class="text-slate-700">1. <span class="font-mono text-indigo-500">A</span> 新增支付渠道开关 2. <span class="font-mono text-indigo-500">F</span> 修复退款金额计算</span></div>
+                        <div class="flex gap-2"><span class="text-slate-400 w-16">配置项</span><span class="font-mono text-slate-700">[System] DeviceType=0</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MR 审查 -->
+          <div class="tech-card rounded-xl overflow-hidden">
+            <div class="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
+              <i data-lucide="git-pull-request" class="h-4 w-4 text-cyan-500" style="stroke-width:1.5"></i>
+              <h3 class="text-[14px] font-semibold text-slate-900">合并请求审查（3）</h3>
+              <span class="ml-auto text-[11px] text-slate-400">基于 MR 描述解析变更内容</span>
+            </div>
+            <div class="divide-y divide-indigo-50/50">
+              <div class="px-5 py-4 hover:bg-indigo-50/20">
+                <div class="flex items-start gap-3">
+                  <span class="mt-1 inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 shrink-0"><i data-lucide="check-circle-2" class="h-3 w-3" style="stroke-width:1.5"></i>正常</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="inline-flex items-center rounded border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700 font-mono">!42</span>
+                      <span class="text-[13px] font-medium text-slate-900">新增微信支付渠道</span>
+                    </div>
+                    <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                      <span class="flex items-center gap-1"><i data-lucide="git-branch" class="h-3 w-3" style="stroke-width:1.5"></i>feature/wechat-pay → main</span>
+                      <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+                      <span>李四 · 06-28 合并</span>
+                    </div>
+                    <div class="mt-2 rounded-md border border-emerald-100 bg-emerald-50/20 p-3">
+                      <div class="space-y-1 text-[11px]">
+                        <div class="flex gap-2"><span class="text-slate-400 w-16">变更类型</span><span class="text-slate-700">有配置项改动</span></div>
+                        <div class="flex gap-2"><span class="text-slate-400 w-16">更新内容</span><span class="text-slate-700">1. <span class="font-mono text-indigo-500">A</span> 新增微信支付渠道开关</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="px-5 py-4 hover:bg-indigo-50/20">
+                <div class="flex items-start gap-3">
+                  <span class="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 shrink-0"><i data-lucide="triangle-alert" class="h-3 w-3" style="stroke-width:1.5"></i>警告</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="inline-flex items-center rounded border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700 font-mono">!41</span>
+                      <span class="text-[13px] font-medium text-slate-900">优化日志输出</span>
+                    </div>
+                    <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                      <span class="flex items-center gap-1"><i data-lucide="git-branch" class="h-3 w-3" style="stroke-width:1.5"></i>chore/log → main</span>
+                      <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+                      <span>王五 · 06-27 合并</span>
+                    </div>
+                    <div class="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600"><i data-lucide="alert-triangle" class="h-3 w-3" style="stroke-width:1.5"></i><span>MR 描述缺少变更类型标记</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部提示 -->
+          <div class="rounded-lg border border-indigo-100 bg-indigo-50/30 p-4 flex items-start gap-2">
+            <i data-lucide="info" class="h-4 w-4 text-indigo-500 shrink-0 mt-0.5" style="stroke-width:1.5"></i>
+            <div class="text-[12px] text-slate-600 leading-relaxed">本次审查结果为临时展示，不会写入数据库。如需持久化，可前往对应仓库详情页执行「同步提交」。</div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  lucide.createIcons();
+
+  // 块切换
+  document.querySelectorAll('.sect-tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.sect-tab').forEach(x => { x.classList.remove('on','text-indigo-600'); x.classList.add('text-slate-500'); });
+    t.classList.add('on','text-indigo-600'); t.classList.remove('text-slate-500');
+    document.querySelectorAll('.sect').forEach(s => s.classList.add('hidden'));
+    document.getElementById('sect-'+t.dataset.sect).classList.remove('hidden');
+    // 切换块时回到列表
+    document.querySelectorAll('.sect').forEach(s => { s.querySelectorAll('[id$="-list"]').forEach(l=>l.classList.remove('hidden')); s.querySelectorAll('[id$="-detail"]').forEach(d=>d.classList.add('hidden')); });
+    window.scrollTo({top:0,behavior:'smooth'});
+  }));
+
+  // 列表→详情切换
+  function showDetail(prefix){ document.getElementById(prefix+'-list').classList.add('hidden'); document.getElementById(prefix+'-detail').classList.remove('hidden'); window.scrollTo({top:0,behavior:'smooth'}); }
+  function hideDetail(prefix){ document.getElementById(prefix+'-detail').classList.add('hidden'); document.getElementById(prefix+'-list').classList.remove('hidden'); window.scrollTo({top:0,behavior:'smooth'}); }
+
+  // 类型筛选
+  function setTypeFilter(btn){
+    const group = btn.parentElement;
+    group.querySelectorAll('button').forEach(b=>{ b.classList.remove('filter-active'); b.classList.add('text-slate-500'); });
+    btn.classList.add('filter-active'); btn.classList.remove('text-slate-500');
+  }
+
+  // 下拉开关
+  function toggleDD(btn){
+    const menu = btn.nextElementSibling;
+    const isOpen = !menu.classList.contains('hidden');
+    document.querySelectorAll('.dd-menu').forEach(m=>m.classList.add('hidden'));
+    if(!isOpen){ menu.classList.remove('hidden'); }
+  }
+  document.addEventListener('click',(e)=>{
+    if(!e.target.closest('.relative')){ document.querySelectorAll('.dd-menu').forEach(m=>m.classList.add('hidden')); }
+  });
+  // 下拉项选择（通用）
+  document.querySelectorAll('.dd-menu').forEach(menu=>{
+    menu.querySelectorAll('.dd-item').forEach(item=>{
+      item.addEventListener('click',()=>{
+        menu.querySelectorAll('.dd-item').forEach(i=>i.classList.remove('sel'));
+        item.classList.add('sel');
+        const label = item.textContent.trim();
+        const btn = menu.previousElementSibling;
+        const labelEl = btn.querySelector('.dd-label');
+        if(labelEl) labelEl.textContent = label.replace('✓','').trim();
+        menu.classList.add('hidden');
+      });
+    });
+  });
+
+  // 第三块：步骤式选择
+  function pickFetch(el, step, value){
+    const container = document.getElementById('fetch-'+step);
+    const btn = container.querySelector('button');
+    const labelEl = btn.querySelector('.dd-label');
+    if(labelEl) labelEl.textContent = value;
+    container.querySelectorAll('.dd-item').forEach(i=>i.classList.remove('sel'));
+    el.classList.add('sel');
+    container.querySelector('.dd-menu').classList.add('hidden');
+    // 解锁下一步
+    if(step==='project'){
+      unlockStep('repo');
+      // 步骤指示器
+      updateSteps(1);
+    }
+    if(step==='repo'){
+      unlockStep('tag');
+      updateSteps(2);
+    }
+    if(step==='tag'){
+      updateSteps(3);
+      document.getElementById('fetch-btn').disabled = false;
+      const range = document.getElementById('fetch-range');
+      if(value==='最新 (HEAD → 最新 Tag)'){
+        range.textContent = '最新 Tag → main';
+      } else {
+        range.textContent = '上一 Tag → '+value;
+      }
+    }
+  }
+  function unlockStep(step){
+    const container = document.getElementById('fetch-'+step);
+    const btn = container.querySelector('button');
+    btn.disabled = false;
+    btn.classList.remove('cursor-not-allowed','border-slate-200','bg-slate-50','text-slate-400');
+    btn.classList.add('border-indigo-200','bg-indigo-50/40','text-slate-700','hover:border-indigo-300');
+    btn.querySelector('span span').textContent = step==='repo' ? '请选择仓库' : '请选择 Tag 区间';
+    const icon = btn.querySelector('i:last-child');
+    icon.setAttribute('data-lucide','chevron-down');
+    icon.classList.remove('lock');
+    lucide.createIcons();
+  }
+  function updateSteps(done){
+    const dots = document.querySelectorAll('.step-dot');
+    const lines = document.querySelectorAll('.step-line');
+    dots.forEach((d,i)=>{
+      d.classList.remove('done','active');
+      if(i < done) d.classList.add('done');
+      if(i === done) d.classList.add('active');
+    });
+    lines.forEach((l,i)=>{ l.classList.toggle('done', i < done); });
+  }
+  // 拉取按钮：模拟加载→结果
+  document.getElementById('fetch-btn').addEventListener('click',()=>{
+    document.getElementById('fetch-empty').classList.add('hidden');
+    document.getElementById('fetch-loading').classList.remove('hidden');
+    setTimeout(()=>{
+      document.getElementById('fetch-loading').classList.add('hidden');
+      document.getElementById('fetch-result').classList.remove('hidden');
+      lucide.createIcons();
+      window.scrollTo({top:0,behavior:'smooth'});
+    },1400);
+  });
+</script>
+</body>
+</html>

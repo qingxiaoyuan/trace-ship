@@ -136,7 +136,6 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-medium text-slate-900">
                         {row.title}
-                        {row.version ? <span className="font-mono"> {row.version}</span> : null}
                       </div>
                       <div className="text-[10px] text-slate-400">
                         发布审批{row.release_type ? ` · ${releaseTypeText[row.release_type as ReleaseType]}` : ''}

@@ -115,4 +115,7 @@ def mock_git_provider():
         def compare_commits(self, repo_identity: str, base: str, head: str):
             return self.list_commits(repo_identity, head)
 
+        def list_merge_requests(self, repo_identity: str, target_branch: str, since=None):
+            return []
+
     return MockProvider()

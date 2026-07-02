@@ -1,5 +1,8 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { GitBranch } from 'lucide-react';
+import { Select } from 'antd';
 import { repositoryApi } from '@/api/repository';
 import { getAvatarColor } from '@/utils/avatar';
 
@@ -25,16 +28,46 @@ const prefixBadge: Record<string, string> = {
 
 /** 最近提交 Tab */
 export function CommitsTab({ repoId }: { repoId: string }) {
+  const [branch, setBranch] = useState<string | undefined>(undefined);
+
+  const { data: branches } = useQuery({
+    queryKey: ['repository-branches', repoId],
+    queryFn: () => repositoryApi.getBranches(repoId),
+  });
+
   const { data, isLoading } = useQuery({
-    queryKey: ['repository-commits', repoId],
-    queryFn: () => repositoryApi.getRepositoryCommits(repoId, { page: 1, page_size: 20 }),
+    queryKey: ['repository-commits', repoId, branch],
+    queryFn: () =>
+      repositoryApi.getRepositoryCommits(repoId, {
+        page: 1,
+        page_size: 50,
+        branch,
+      }),
   });
 
   const commits = data?.results || [];
 
+  const branchOptions = useMemo(() => {
+    const list = branches || [];
+    return [
+      { value: '', label: '全部分支' },
+      ...list.map((b) => ({ value: b.name, label: b.name })),
+    ];
+  }, [branches]);
+
   return (
     <div>
-      <div className="mb-4 text-[12px] text-slate-400">最近 {commits.length} 条提交</div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-[12px] text-slate-400">最近 {commits.length} 条提交</div>
+        <Select
+          value={branch || ''}
+          options={branchOptions}
+          onChange={(value) => setBranch(value || undefined)}
+          placeholder="选择分支"
+          className="min-w-[140px]"
+          size="small"
+        />
+      </div>
       <div className="divide-y divide-indigo-50/50">
         {isLoading ? (
           <div className="py-6 text-center text-[13px] text-slate-400">加载中…</div>
@@ -66,11 +99,20 @@ export function CommitsTab({ repoId }: { repoId: string }) {
                       <span className="truncate text-[13px] text-slate-800">{c.message}</span>
                     )}
                   </div>
-                  <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
                     <span className="font-mono text-indigo-500">{c.commit_hash?.slice(0, 7)}</span>
                     <span>{c.author}</span>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
                     <span>{c.committed_at ? dayjs(c.committed_at).format('MM-DD HH:mm') : '-'}</span>
+                    {c.branch && (
+                      <>
+                        <span className="h-1 w-1 rounded-full bg-slate-300" />
+                        <span className="inline-flex items-center gap-1 rounded border border-indigo-100 bg-indigo-50/50 px-1.5 py-0.5 text-[10px] text-indigo-600">
+                          <GitBranch className="h-3 w-3" strokeWidth={1.5} />
+                          {c.branch}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <span className="font-mono text-[10px] text-slate-400">{c.commit_hash?.slice(0, 10)}</span>

@@ -24,6 +24,18 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
 
   const statusInfo = instanceStatusMap[instance?.status || 'running'] || instanceStatusMap.running;
   const isRunning = instance?.status === 'running';
+  const detailSource: DetailSource = {
+    ...source,
+    title: instance?.title || source.title,
+    version: instance?.version || source.version,
+    releaseType: (instance?.release_type as ReleaseType | undefined) || source.releaseType,
+    branch: instance?.branch || source.branch,
+    buildNumber: instance?.build_number || source.buildNumber,
+    applicant: instance?.applicant || source.applicant,
+    projectName: instance?.project_name || source.projectName,
+    submitTime: instance?.submit_time || source.submitTime,
+    currentNode: instance?.current_node || source.currentNode,
+  };
 
   return (
     <div className="space-y-5">
@@ -37,7 +49,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
           审批中心
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
-        <span className="font-medium text-slate-800">{source.title}</span>
+        <span className="font-medium text-slate-800">{detailSource.title}</span>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -52,8 +64,8 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
               <div className="flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-[20px] font-semibold tracking-tight text-slate-900">
-                    {source.title}
-                    {source.version ? <span className="font-mono"> {source.version}</span> : null}
+                    {detailSource.title}
+                    {detailSource.version ? <span className="font-mono"> {detailSource.version}</span> : null}
                   </h1>
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${statusInfo.badge}`}
@@ -65,15 +77,15 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                   </span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
-                  <span>{source.projectName || '-'}</span>
+                  <span>{detailSource.projectName || '-'}</span>
                   <span className="h-1 w-1 rounded-full bg-slate-300" />
                   <span>
-                    {source.releaseType ? releaseTypeText[source.releaseType as ReleaseType] + '发布' : '发布审批'}
+                    {detailSource.releaseType ? releaseTypeText[detailSource.releaseType as ReleaseType] + '发布' : '发布审批'}
                   </span>
                   <span className="h-1 w-1 rounded-full bg-slate-300" />
-                  <span>申请人 {source.applicant || '-'}</span>
+                  <span>申请人 {detailSource.applicant || '-'}</span>
                   <span className="h-1 w-1 rounded-full bg-slate-300" />
-                  <span>提交于 {source.submitTime ? dayjs(source.submitTime).format('MM-DD HH:mm') : '-'}</span>
+                  <span>提交于 {detailSource.submitTime ? dayjs(detailSource.submitTime).format('MM-DD HH:mm') : '-'}</span>
                 </div>
               </div>
             </div>
@@ -82,13 +94,13 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-slate-500">分支</span>
                 <span className="font-mono text-[12px] font-semibold text-slate-900">
-                  {source.branch || '-'}
+                  {detailSource.branch || '-'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-slate-500">构建号</span>
                 <span className="font-mono text-[12px] font-semibold text-slate-900">
-                  {source.buildNumber ? `#${source.buildNumber}` : '-'}
+                  {detailSource.buildNumber ? `#${detailSource.buildNumber}` : '-'}
                 </span>
               </div>
             </div>
@@ -107,11 +119,11 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
           </div>
 
           {/* 审批意见 + 操作 */}
-          <ApprovalActions source={source} instance={instance ?? null} onBack={onBack} />
+          <ApprovalActions source={detailSource} instance={instance ?? null} onBack={onBack} />
         </div>
 
         {/* 右侧信息 */}
-        <ReleaseSummary source={source} instance={instance ?? null} />
+        <ReleaseSummary source={detailSource} instance={instance ?? null} />
       </div>
     </div>
   );

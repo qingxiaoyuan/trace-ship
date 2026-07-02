@@ -14,6 +14,9 @@ from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 from apps.credential.models import Credential
 from apps.credential.serializers import CredentialSerializer, CredentialListSerializer
 from apps.credential.services import CredentialService
+from apps.system.models import OperationLog
+from apps.system.serializers import OperationLogSerializer
+from utils.pagination import StandardPagination
 from utils.response import success_response, error_response
 
 
@@ -110,17 +113,24 @@ class CredentialViewSet(StandardModelViewSet):
         """
         凭证使用记录
 
-        Args:
-            request: DRF Request
-            pk: 凭证主键
-
-        Returns:
-            当前为占位实现，后续补充使用记录查询
+        从操作日志中查询 module='凭证管理' 且 action='使用凭证'、resource_id 为当前凭证 ID 的记录。
         """
-        # TODO: 实现凭证使用记录查询
+        credential = self.get_object()
+        queryset = OperationLog.objects.filter(
+            module="凭证管理",
+            action="使用凭证",
+            resource_id=str(credential.id),
+        ).select_related("user").order_by("-created_at")
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = OperationLogSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = OperationLogSerializer(queryset, many=True)
         return success_response({
-            "total": 0,
-            "results": [],
+            "total": queryset.count(),
+            "results": serializer.data,
         })
 
     @action(detail=False, methods=["get"])
