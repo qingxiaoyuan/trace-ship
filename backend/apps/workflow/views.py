@@ -301,7 +301,7 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
         serializer = self.get_serializer(task)
 
-        # 驳回到初始节点：流程作废，自动删除该实例并让发布回到草稿态
+        # 驳回到初始节点：流程作废，自动删除该实例并让发布回到待提交态
         if instance.status == "rejected":
             try:
                 ReleaseService.handle_workflow_rollback_to_start(instance, comment)

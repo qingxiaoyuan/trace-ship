@@ -1,11 +1,14 @@
 """
 Jenkins Provider
 
-基于 python-jenkins 库封装 Jenkins 的连通性探测、构建触发、状态查询、日志与产物获取。
+基于 python-jenkins 库封装 Jenkins 的连通性探测、Job 管理、构建触发、状态查询、日志与产物获取。
 """
+import json
 from typing import Any, Dict, List, Optional
+from xml.sax.saxutils import escape
 
 import jenkins
+import requests
 
 from .exceptions import AuthenticationError, ConnectionError, ProviderError
 
@@ -35,19 +38,36 @@ class JenkinsProvider:
             Jenkins 客户端实例
         """
         if self._server is None:
-            username = self.credential_data.get("username", "")
-            password = (
-                self.credential_data.get("token")
-                or self.credential_data.get("password", "")
-            )
-            # 若未提供用户名，则使用 token 作为用户名（API Token 常见用法）
-            if not username and password:
-                username = password
+            username, password = self._get_auth_pair()
             try:
                 self._server = jenkins.Jenkins(self.server_url, username=username, password=password)
             except jenkins.JenkinsException as exc:
                 raise ConnectionError(f"Jenkins 连接失败: {exc}") from exc
         return self._server
+
+    def _get_auth_pair(self) -> tuple[str, str]:
+        """返回 Jenkins 用户名和 API Token / 密码。"""
+        username = self.credential_data.get("username", "")
+        password = self.credential_data.get("token") or self.credential_data.get("password", "")
+        # 若未提供用户名，则使用 token 作为用户名（兼容历史 token-only 凭证）
+        if not username and password:
+            username = password
+        return username, password
+
+    def _request_session(self) -> requests.Session:
+        """创建带 Jenkins 鉴权与 crumb 的 requests Session。"""
+        username, password = self._get_auth_pair()
+        session = requests.Session()
+        session.auth = (username, password)
+        try:
+            resp = session.get(f"{self.server_url}/crumbIssuer/api/json", timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                session.headers.update({data["crumbRequestField"]: data["crumb"]})
+        except requests.RequestException:
+            # 部分 Jenkins 关闭 crumb issuer，后续请求自行返回真实错误
+            pass
+        return session
 
     def test_connection(self) -> bool:
         """
@@ -90,6 +110,114 @@ class JenkinsProvider:
         except jenkins.JenkinsException as exc:
             raise ProviderError(f"触发 Jenkins 构建失败: {exc}") from exc
         return {"queue_id": queue_id}
+
+    def job_exists(self, job_name: str) -> bool:
+        """
+        判断 Jenkins Job 是否存在。
+
+        Args:
+            job_name: Jenkins Job 名
+
+        Returns:
+            是否存在
+        """
+        server = self._get_server()
+        try:
+            return bool(server.job_exists(job_name))
+        except jenkins.JenkinsException as exc:
+            raise ProviderError(f"检查 Jenkins Job 失败: {exc}") from exc
+
+    def create_or_update_pipeline_job(self, job_name: str, pipeline_script: str) -> None:
+        """
+        创建或更新 Pipeline Job。
+
+        Args:
+            job_name: Jenkins Job 名
+            pipeline_script: Pipeline Groovy 脚本
+        """
+        server = self._get_server()
+        config_xml = self._build_pipeline_config_xml(pipeline_script)
+        try:
+            if server.job_exists(job_name):
+                server.reconfig_job(job_name, config_xml)
+            else:
+                server.create_job(job_name, config_xml)
+        except jenkins.JenkinsException as exc:
+            raise ProviderError(f"创建或更新 Jenkins Pipeline Job 失败: {exc}") from exc
+
+    def create_or_update_username_password_credential(
+        self,
+        credential_id: str,
+        username: str,
+        password: str,
+        description: str = "",
+    ) -> None:
+        """
+        创建或覆盖 Jenkins 系统域用户名密码凭据。
+
+        Args:
+            credential_id: Jenkins 凭据 ID
+            username: 用户名
+            password: 密码或 Token
+            description: 描述
+        """
+        if not username or not password:
+            raise ProviderError("同步 Jenkins Git 凭据失败: 用户名或密码为空")
+
+        session = self._request_session()
+        base = f"{self.server_url}/credentials/store/system/domain/_"
+        # Jenkins credentials API 对重复 ID 返回 400；这里先删除再创建，保证配置可更新。
+        try:
+            session.post(f"{base}/credential/{credential_id}/doDelete", timeout=15)
+            payload = {
+                "": "0",
+                "credentials": {
+                    "scope": "GLOBAL",
+                    "id": credential_id,
+                    "username": username,
+                    "password": password,
+                    "description": description,
+                    "$class": "com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl",
+                },
+            }
+            resp = session.post(
+                f"{base}/createCredentials",
+                data={"json": json.dumps(payload)},
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            raise ProviderError(f"同步 Jenkins Git 凭据失败: {exc}") from exc
+
+        if resp.status_code not in (200, 302):
+            raise ProviderError(f"同步 Jenkins Git 凭据失败: HTTP {resp.status_code} {resp.text[:200]}")
+
+    @staticmethod
+    def _build_pipeline_config_xml(pipeline_script: str) -> str:
+        """构建 Pipeline Job config.xml。"""
+        script = escape(pipeline_script)
+        return f"""<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>Trace Ship 托管打包任务</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>TAG_NAME</name>
+          <description>需要打包的 Git Tag</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>{script}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>"""
 
     def get_build_number(self, job_name: str, queue_id: str) -> Optional[int]:
         """

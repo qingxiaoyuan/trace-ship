@@ -18,8 +18,13 @@ import {
 import { ProjectModal } from './modals/ProjectModal';
 import { projectApi } from '@/api/project';
 import { getAvatarColor } from '@/utils/avatar';
-import { projectStatusOptions } from '@/mock/projects';
 import type { Project, ProjectStatus } from '@/types';
+
+/** 项目状态选项 */
+const projectStatusOptions = [
+  { label: '启用', value: 'active' },
+  { label: '停用', value: 'inactive' },
+];
 
 /** 统计卡配置 */
 const statCards = [

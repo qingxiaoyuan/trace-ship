@@ -15,9 +15,14 @@ import {
 import { RepositoryModal } from './modals/RepositoryModal';
 import { repositoryApi } from '@/api/repository';
 import { projectApi } from '@/api/project';
-import { repoTypeOptions } from '@/mock/repositories';
 import { repoTypeBadge, healthDisplay } from './constants';
 import type { Repository } from '@/types';
+
+/** 仓库类型选项 */
+const repoTypeOptions = [
+  { label: 'Git', value: 'git' },
+  { label: 'SVN', value: 'svn' },
+];
 
 /** 统计卡配置 */
 const statCards = [

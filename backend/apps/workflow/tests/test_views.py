@@ -78,6 +78,73 @@ class TestWorkflowInstanceViews:
         target = next(item for item in results if item["biz_id"] == instance.biz_id)
         assert target["current_node"] == instance.current_node_id
 
+    def test_instance_detail_returns_release_fields(self, api_client, project, user, definition):
+        """流程详情返回发布摘要字段，供审批详情页兜底展示"""
+        from apps.credential.models import Credential
+        from apps.release.models import ReleaseRecord
+        from apps.repository.models import Repository
+        from apps.workflow.models import WorkflowTask
+
+        credential = Credential.objects.create(
+            name="Git Token",
+            cred_type="gitlab_token",
+            auth_mode="token",
+            owner=user,
+            scope="project",
+            project=project,
+        )
+        repository = Repository.objects.create(
+            project=project,
+            repo_type="git",
+            vendor="gitlab",
+            name="后端仓库",
+            url="https://gitlab.example.com/release/backend.git",
+            external_identity="release/backend",
+            default_branch="develop",
+            credential=credential,
+            credential_mode="project",
+        )
+        instance = WorkflowInstance.objects.create(
+            definition=definition,
+            biz_type="release",
+            biz_id="00000000-0000-0000-0000-000000000006",
+            status="running",
+            current_node_id="approval_1",
+            created_by=user,
+        )
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.2.3",
+            tag_name="VA.1.2.3",
+            branch="main",
+            release_type="formal",
+            status="pending",
+            publisher=user,
+            workflow_instance=instance,
+        )
+        instance.biz_id = str(release.id)
+        instance.save(update_fields=["biz_id"])
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=user,
+            mode="any",
+            status="pending",
+        )
+
+        response = api_client.get(f"/api/workflow/instances/{instance.id}/")
+
+        assert response.status_code == 200
+        data = response.data["data"]
+        assert data["version"] == "VA.1.2.3"
+        assert data["release_type"] == "formal"
+        assert data["branch"] == "main"
+        assert data["project_name"] == project.name
+        assert data["applicant"] == (user.nickname or user.username)
+        assert data["current_node"] == "技术负责人审批"
+
 
 class TestWorkflowTaskSerializer:
     """审批任务序列化器扩展字段测试"""
@@ -166,6 +233,7 @@ class TestRollbackToStart:
         self, api_client, project, user,
     ):
         """回退到初始节点 → 实例被删除 + 关联发布回到草稿态"""
+        from apps.release.models import ReleaseRecord
         from apps.repository.models import Repository
         from apps.workflow.models import WorkflowTask
 
@@ -180,9 +248,7 @@ class TestRollbackToStart:
             external_identity="test/repo",
             default_branch="develop",
         )
-        release = __import__(
-            "apps.release.models", fromlist=["ReleaseRecord"]
-        ).ReleaseRecord.objects.create(
+        release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
             version="V1.0.0",

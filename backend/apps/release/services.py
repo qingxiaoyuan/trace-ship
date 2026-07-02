@@ -3,6 +3,7 @@
 
 封装版本号计算、发布校验、发布说明生成、推 tag 等发布核心流程。
 """
+import logging
 import re
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,6 +24,8 @@ from utils.provider.base import CommitInfo, GitProvider, MergeRequestInfo, TagIn
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.exceptions import ProviderError
 from utils.provider.factory import get_provider
+
+logger = logging.getLogger(__name__)
 
 
 class VersionCalculator:
@@ -380,9 +383,13 @@ class ReleaseDocGenerator:
         if last_tag:
             try:
                 return self.provider.compare_commits(repo_identity, base=last_tag, head=self.release.branch)
-            except ProviderError:
-                pass
-        return self.provider.list_commits(repo_identity, self.release.branch)
+            except Exception as exc:
+                logger.warning("比较发布提交失败，将回退到分支提交列表: %s", exc)
+        try:
+            return self.provider.list_commits(repo_identity, self.release.branch)
+        except Exception as exc:
+            logger.warning("拉取发布提交失败，将继续生成基础发布说明: %s", exc)
+            return []
 
     def _fetch_merge_requests(self) -> List[MergeRequestInfo]:
         """
@@ -396,7 +403,8 @@ class ReleaseDocGenerator:
                 self.release.repository.external_identity,
                 target_branch=self.release.branch,
             )
-        except ProviderError:
+        except Exception as exc:
+            logger.warning("拉取发布 MR/PR 失败，将继续生成基础发布说明: %s", exc)
             return []
 
     @staticmethod
@@ -1079,8 +1087,18 @@ class ReleaseService:
         """
         from apps.release.models import ReleaseRecord
 
-        release = ReleaseRecord.objects.filter(jenkins_build=build).first()
+        release = build.release or ReleaseRecord.objects.filter(jenkins_build=build).first()
         if not release:
+            return
+        if release.status == "released":
+            NotificationService.notify_build_result(build, release)
+            OperationLogService.log_release(
+                user=release.publisher,
+                release=release,
+                action="build_finished",
+                result="success" if success else "failure",
+                detail={"error": error_msg} if error_msg else {},
+            )
             return
 
         if not success:
@@ -1168,6 +1186,18 @@ class ReleaseService:
             release=release,
             action="push_tag",
         )
+        try:
+            from apps.jenkins.services import JenkinsService
+
+            JenkinsService.trigger_auto_builds_for_release(release, request_user=request_user or release.publisher)
+        except Exception as exc:
+            OperationLogService.log_release(
+                user=request_user or release.publisher,
+                release=release,
+                action="auto_build_trigger",
+                result="failure",
+                detail={"error": str(exc)},
+            )
         return tag_info
 
     @classmethod

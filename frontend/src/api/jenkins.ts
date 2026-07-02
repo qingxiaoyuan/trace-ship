@@ -1,14 +1,35 @@
 import { get, post, put, patch, del } from './request';
-import type { PaginatedData, BuildRecord, JenkinsJob } from '@/types';
+import type { PaginatedData, BuildRecord, JenkinsBuildPreset, JenkinsBuildType, JenkinsJob } from '@/types';
 
 export interface JenkinsJobListParams {
   project?: string;
+  repository?: string;
+  credential?: string;
+  config_mode?: string;
+  build_type?: string;
+  is_active?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+export interface JenkinsPresetListParams {
+  build_type?: JenkinsBuildType;
   is_active?: boolean;
   page?: number;
   page_size?: number;
 }
 
 export const jenkinsApi = {
+  // Jenkins 打包预设
+  getPresets: (params?: JenkinsPresetListParams) =>
+    get<PaginatedData<JenkinsBuildPreset>>('/jenkins/presets/', { params }),
+  getPreset: (id: string) => get<JenkinsBuildPreset>(`/jenkins/presets/${id}/`),
+  createPreset: (data: Partial<JenkinsBuildPreset>) =>
+    post<JenkinsBuildPreset>('/jenkins/presets/', data),
+  updatePreset: (id: string, data: Partial<JenkinsBuildPreset>) =>
+    put<JenkinsBuildPreset>(`/jenkins/presets/${id}/`, data),
+  deletePreset: (id: string) => del<null>(`/jenkins/presets/${id}/`),
+
   // Jenkins 任务
   getJobs: (params?: JenkinsJobListParams) =>
     get<PaginatedData<JenkinsJob>>('/jenkins/jobs/', { params }),
@@ -19,7 +40,7 @@ export const jenkinsApi = {
   patchJob: (id: string, data: Partial<JenkinsJob>) =>
     patch<JenkinsJob>(`/jenkins/jobs/${id}/`, data),
   deleteJob: (id: string) => del<null>(`/jenkins/jobs/${id}/`),
-  triggerJob: (id: string, data?: { release_id?: string; version?: string; branch?: string; git_hash?: string }) =>
+  triggerJob: (id: string, data?: { release_id?: string; version?: string; branch?: string; git_hash?: string; tag_name?: string }) =>
     post<BuildRecord>(`/jenkins/jobs/${id}/trigger/`, data || {}),
 
   // Jenkins 构建记录

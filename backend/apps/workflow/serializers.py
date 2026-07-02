@@ -215,6 +215,15 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
         source="definition.name",
         read_only=True,
     )
+    title = serializers.SerializerMethodField()
+    applicant = serializers.SerializerMethodField()
+    project_name = serializers.SerializerMethodField()
+    current_node = serializers.SerializerMethodField()
+    submit_time = serializers.DateTimeField(source="created_at", read_only=True)
+    version = serializers.SerializerMethodField()
+    release_type = serializers.SerializerMethodField()
+    branch = serializers.SerializerMethodField()
+    build_number = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -223,12 +232,54 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "biz_type", "biz_id", "status",
             "current_node_id", "node_status", "graph_data",
             "created_by", "created_at", "updated_at", "completed_at", "tasks",
+            "title", "applicant", "project_name", "current_node", "submit_time",
+            "version", "release_type", "branch", "build_number",
         ]
         read_only_fields = [
             "id", "definition_name", "biz_type", "biz_id", "status",
             "current_node_id", "node_status", "graph_data", "created_by",
             "created_at", "updated_at", "completed_at", "tasks",
+            "title", "applicant", "project_name", "current_node", "submit_time",
+            "version", "release_type", "branch", "build_number",
         ]
+
+    def get_title(self, obj: WorkflowInstance) -> str:
+        """返回审批标题。"""
+        release = resolve_release(obj)
+        return f"审批发布 {release.version}" if release else obj.definition.name
+
+    def get_applicant(self, obj: WorkflowInstance) -> str:
+        """返回发起人名称。"""
+        release = resolve_release(obj)
+        return user_display(release.publisher if release else obj.created_by)
+
+    def get_project_name(self, obj: WorkflowInstance) -> str:
+        """返回项目名称。"""
+        release = resolve_release(obj)
+        return release.project.name if release else obj.definition.project.name
+
+    def get_current_node(self, obj: WorkflowInstance) -> str:
+        """返回当前节点名称。"""
+        pending = obj.tasks.filter(status="pending").first()
+        if pending and pending.node_name:
+            return pending.node_name
+        return obj.current_node_id
+
+    def get_version(self, obj: WorkflowInstance) -> str:
+        """返回发布版本号。"""
+        return release_fields(resolve_release(obj))["version"]
+
+    def get_release_type(self, obj: WorkflowInstance) -> str:
+        """返回发布类型。"""
+        return release_fields(resolve_release(obj))["release_type"]
+
+    def get_branch(self, obj: WorkflowInstance) -> str:
+        """返回发布分支。"""
+        return release_fields(resolve_release(obj))["branch"]
+
+    def get_build_number(self, obj: WorkflowInstance):
+        """返回关联 Jenkins 构建号。"""
+        return release_fields(resolve_release(obj))["build_number"]
 
 
 class WorkflowInstanceListSerializer(serializers.ModelSerializer):

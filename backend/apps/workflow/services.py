@@ -395,7 +395,7 @@ class WorkflowEngine:
         )
 
         # 回退到初始节点（第一个审批节点）→ 视为流程作废，结束实例。
-        # 由视图层联动发布回到草稿态并删除该流程实例（关联任务级联删除）。
+        # 由视图层联动发布回到待提交态并删除该流程实例（关联任务级联删除）。
         if target_idx == 0:
             cls._finish_instance(instance, "rejected")
             return

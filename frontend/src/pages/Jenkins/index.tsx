@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { App, Dropdown, Popconfirm } from 'antd';
+import { App, Dropdown, Modal, Select } from 'antd';
 import dayjs from 'dayjs';
 import {
   Plus,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { jenkinsApi } from '@/api/jenkins';
 import { projectApi } from '@/api/project';
+import { repositoryApi } from '@/api/repository';
 import type { JenkinsJob, BuildRecord, BuildStatus, JenkinsBuildLatest } from '@/types';
 import { JenkinsJobModal } from './modals/JenkinsJobModal';
 
@@ -111,6 +112,8 @@ export default function JenkinsPage() {
   // 任务弹窗
   const [jobModalOpen, setJobModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<JenkinsJob | null>(null);
+  const [triggerJob, setTriggerJob] = useState<JenkinsJob | null>(null);
+  const [triggerTag, setTriggerTag] = useState('');
 
   // 详情 tab
   const [detailTab, setDetailTab] = useState<'history' | 'params' | 'config'>('history');
@@ -154,13 +157,16 @@ export default function JenkinsPage() {
   });
 
   const triggerMutation = useMutation({
-    mutationFn: (id: string) => jenkinsApi.triggerJob(id),
+    mutationFn: ({ id, tagName }: { id: string; tagName?: string }) =>
+      jenkinsApi.triggerJob(id, tagName ? { tag_name: tagName } : {}),
     onSuccess: () => {
       message.success('触发构建成功');
       queryClient.invalidateQueries({ queryKey: ['jenkins-jobs'] });
       if (selectedJob) {
         queryClient.invalidateQueries({ queryKey: ['jenkins-builds', selectedJob.id] });
       }
+      setTriggerJob(null);
+      setTriggerTag('');
     },
     onError: () => message.error('触发构建失败'),
   });
@@ -185,6 +191,15 @@ export default function JenkinsPage() {
     setJobModalOpen(true);
   };
 
+  const handleTriggerJob = (job: JenkinsJob) => {
+    if (job.config_mode === 'simple') {
+      setTriggerJob(job);
+      setTriggerTag('');
+      return;
+    }
+    triggerMutation.mutate({ id: job.id });
+  };
+
   const handleSaveJob = (values: Partial<JenkinsJob>) => {
     if (editingJob?.id) {
       saveMutation.mutate({ ...values, id: editingJob.id });
@@ -201,7 +216,7 @@ export default function JenkinsPage() {
         onTabChange={setDetailTab}
         onBack={() => setView('list')}
         onEdit={() => handleEditJob(selectedJob)}
-        onTrigger={() => triggerMutation.mutate(selectedJob.id)}
+        onTrigger={() => handleTriggerJob(selectedJob)}
         triggering={triggerMutation.isPending}
         onOpenLogBuild={(buildId) => navigate(`/jenkins/logs/${buildId}`)}
       />
@@ -308,7 +323,11 @@ export default function JenkinsPage() {
                     </div>
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-medium text-slate-900">{job.name}</div>
-                      <div className="truncate font-mono text-[10px] text-slate-400">{job.repository_name || job.job_name}</div>
+                      <div className="truncate font-mono text-[10px] text-slate-400">
+                        {job.config_mode === 'simple'
+                          ? `简单模式 · ${job.build_preset_name || job.repository_name || '-'}`
+                          : `高级模式 · ${job.job_name}`}
+                      </div>
                     </div>
                   </div>
                   <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">{job.project_name || '-'}</div>
@@ -396,7 +415,67 @@ export default function JenkinsPage() {
         onCancel={() => { setJobModalOpen(false); setEditingJob(null); }}
         onOk={handleSaveJob}
       />
+      <TagTriggerModal
+        open={!!triggerJob}
+        job={triggerJob}
+        tagName={triggerTag}
+        loading={triggerMutation.isPending}
+        onTagChange={setTriggerTag}
+        onCancel={() => { setTriggerJob(null); setTriggerTag(''); }}
+        onConfirm={(tagName) => {
+          if (!triggerJob) return;
+          triggerMutation.mutate({ id: triggerJob.id, tagName });
+        }}
+      />
     </div>
+  );
+}
+
+function TagTriggerModal({
+  open,
+  job,
+  tagName,
+  loading,
+  onTagChange,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  job: JenkinsJob | null;
+  tagName: string;
+  loading: boolean;
+  onTagChange: (tagName: string) => void;
+  onCancel: () => void;
+  onConfirm: (tagName: string) => void;
+}) {
+  const { data: tags, isLoading } = useQuery({
+    queryKey: ['repository-tags', job?.repository_id],
+    queryFn: () => repositoryApi.getTags(job?.repository_id || ''),
+    enabled: open && !!job?.repository_id,
+  });
+
+  return (
+    <Modal
+      title="选择打包 Tag"
+      open={open}
+      okText="触发构建"
+      cancelText="取消"
+      confirmLoading={loading}
+      okButtonProps={{ disabled: !tagName }}
+      onCancel={onCancel}
+      onOk={() => tagName && onConfirm(tagName)}
+    >
+      <Select
+        showSearch
+        className="w-full"
+        placeholder="选择需要打包的 tag"
+        loading={isLoading}
+        value={tagName || undefined}
+        options={(tags || []).map((tag) => ({ label: tag.name, value: tag.name }))}
+        optionFilterProp="label"
+        onChange={onTagChange}
+      />
+    </Modal>
   );
 }
 
@@ -501,6 +580,8 @@ function JobDetail({ job, tab, onTabChange, onBack, onEdit, onTrigger, triggerin
                 <span className="font-mono">{currentJob.server_url}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span>{currentJob.project_name || '-'}</span>
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                <span>{currentJob.config_mode === 'simple' ? '简单模式' : '高级模式'}</span>
                 {currentJob.repository_name ? (
                   <>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
@@ -519,16 +600,15 @@ function JobDetail({ job, tab, onTabChange, onBack, onEdit, onTrigger, triggerin
               <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
               编辑
             </button>
-            <Popconfirm title="确定触发构建？" onConfirm={onTrigger}>
-              <button
-                type="button"
-                disabled={triggering}
-                className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white disabled:opacity-60"
-              >
-                <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
-                触发构建
-              </button>
-            </Popconfirm>
+            <button
+              type="button"
+              disabled={triggering}
+              onClick={onTrigger}
+              className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white disabled:opacity-60"
+            >
+              <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
+              触发构建
+            </button>
             <button
               type="button"
               onClick={() => window.open(currentJob.server_url, '_blank')}

@@ -10,6 +10,16 @@ const typeDisplay: Record<string, { status: StatusType; text: string }> = {
   beta: { status: 'warning', text: 'Beta' },
 };
 
+interface ReleaseTabItem {
+  id: string;
+  version?: string;
+  tag_name?: string;
+  release_type?: string;
+  publisher_name?: string;
+  publisher?: string;
+  released_at?: string;
+}
+
 export function ReleaseTab({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const { data, isLoading } = useQuery({
@@ -23,10 +33,10 @@ export function ReleaseTab({ projectId }: { projectId: string }) {
     enabled: !!projectId,
   });
 
-  const list = data?.results || [];
+  const list = (data?.results || []) as ReleaseTabItem[];
 
   return (
-    <Table
+    <Table<ReleaseTabItem>
       rowKey="id"
       loading={isLoading}
       dataSource={list}
@@ -60,7 +70,7 @@ export function ReleaseTab({ projectId }: { projectId: string }) {
         {
           title: '发布人',
           dataIndex: 'publisher_name',
-          render: (_: string, record: { publisher_name?: string; publisher?: string }) => (
+          render: (_: string, record) => (
             <span className="text-[13px] text-slate-700">{record.publisher_name || record.publisher || '-'}</span>
           ),
         },
@@ -74,7 +84,7 @@ export function ReleaseTab({ projectId }: { projectId: string }) {
         {
           title: '操作',
           width: 80,
-          render: (_: unknown, record: { id: string }) => (
+          render: (_: unknown, record) => (
             <Button type="text" size="small" onClick={() => navigate(`/releases/${record.id}`)}>
               详情
             </Button>

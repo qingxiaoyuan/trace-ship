@@ -29,6 +29,19 @@ class MockProvider:
         return self.merge_requests
 
 
+class FailingProvider(MockProvider):
+    """模拟仓库元数据接口不可用的 Provider"""
+
+    def list_commits(self, repo_identity: str, branch: str, since=None, until=None, per_page=100):
+        raise RuntimeError("git commits api unavailable")
+
+    def compare_commits(self, repo_identity: str, base: str, head: str):
+        raise RuntimeError("git compare api unavailable")
+
+    def list_merge_requests(self, repo_identity: str, target_branch: str, since=None):
+        raise RuntimeError("git mr api unavailable")
+
+
 @pytest.mark.django_db
 class TestReleaseDocGenerator:
     """ReleaseDocGenerator 测试类"""
@@ -188,3 +201,15 @@ class TestReleaseDocGenerator:
         # 非法提交应被过滤，不创建 ReleaseCommit
         assert not release.release_commits.filter(commit__commit_hash="illegal001").exists()
         assert release.release_commits.filter(commit__commit_hash="pass001").exists()
+
+    def test_generate_doc_when_provider_metadata_failed(self, release):
+        """仓库 commits/MR 拉取失败时仍生成基础发布说明"""
+        provider = FailingProvider()
+        generator = ReleaseDocGenerator(release, provider)
+
+        md = generator.generate()
+
+        assert "| 项目 | 内容 |" in md
+        assert "当前发布版本号" in md
+        assert "新增功能" in md
+        assert release.release_commits.count() == 0

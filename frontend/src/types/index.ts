@@ -307,12 +307,18 @@ export interface JenkinsBuildLatest {
   created_at?: string | null;
 }
 
+export type JenkinsConfigMode = 'simple' | 'advanced';
+export type JenkinsBuildType = 'web' | 'qt' | 'custom';
+
 export interface BuildRecord {
   id: string;
   job_id: string;
   job_name: string;
   project_id?: string;
   project_name?: string;
+  release?: string | null;
+  release_id?: string | null;
+  release_version?: string;
   queue_id?: string;
   build_number?: number;
   version?: string;
@@ -321,6 +327,7 @@ export interface BuildRecord {
   triggered_by?: string | null;
   triggered_by_name?: string;
   params?: unknown;
+  stage_info?: unknown;
   log_url?: string;
   artifact_info?: unknown[];
   duration?: number | null;
@@ -427,14 +434,40 @@ export interface JenkinsJob {
   project_name?: string;
   repository_id?: string;
   repository_name?: string;
+  config_mode: JenkinsConfigMode;
+  config_mode_display?: string;
+  build_type: JenkinsBuildType;
+  build_type_display?: string;
+  build_preset?: string;
+  build_preset_id?: string;
+  build_preset_name?: string;
   name: string;
   server_url: string;
   job_name: string;
   credential_id?: string;
   credential_mode?: string;
   params_template?: unknown;
+  build_path?: string;
+  output_path?: string;
+  auto_build_on_release?: boolean;
+  managed_job?: boolean;
+  pipeline_config?: unknown;
   is_active: boolean;
   latest_build?: JenkinsBuildLatest | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JenkinsBuildPreset {
+  id: string;
+  name: string;
+  build_type: JenkinsBuildType;
+  build_type_display?: string;
+  image: string;
+  script_entry: string;
+  default_build_path: string;
+  default_output_path: string;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -545,6 +578,15 @@ export interface WorkflowInstance {
   created_by: string;
   created_at: string;
   completed_at?: string;
+  title?: string;
+  applicant?: string;
+  project_name?: string;
+  current_node?: string;
+  submit_time?: string;
+  version?: string;
+  release_type?: ReleaseType;
+  branch?: string;
+  build_number?: string | number;
 }
 
 /**

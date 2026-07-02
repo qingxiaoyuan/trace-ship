@@ -14,6 +14,7 @@ import type {
 export interface RepositoryListParams {
   keyword?: string;
   project?: string;
+  credential?: string;
   repo_type?: string;
   page?: number;
   page_size?: number;

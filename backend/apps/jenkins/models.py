@@ -1,13 +1,80 @@
 """
 Jenkins 集成数据模型
 
-包含 Jenkins 任务配置（JenkinsJob）和构建记录（JenkinsBuild）。
+包含 Jenkins 打包预设（JenkinsBuildPreset）、任务配置（JenkinsJob）和构建记录（JenkinsBuild）。
 """
 import uuid
 from typing import Optional
 
 from django.conf import settings
 from django.db import models
+
+
+class JenkinsBuildPreset(models.Model):
+    """
+    Jenkins 简单模式打包预设
+
+    预设用于维护允许用户选择的 Docker 构建镜像白名单，以及镜像内置脚本入口。
+
+    Attributes:
+        id: UUID 主键
+        name: 预设名称
+        build_type: 打包类型
+        image: Docker 镜像
+        script_entry: 镜像内脚本入口
+        default_build_path: 默认构建目录
+        default_output_path: 默认输出目录
+        is_active: 是否启用
+        created_at: 创建时间
+        updated_at: 更新时间
+    """
+
+    BUILD_TYPE_CHOICES = [
+        ("web", "Web"),
+        ("qt", "Qt"),
+        ("custom", "自定义"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, verbose_name="预设名称")
+    build_type = models.CharField(
+        max_length=20,
+        choices=BUILD_TYPE_CHOICES,
+        default="web",
+        verbose_name="打包类型",
+    )
+    image = models.CharField(max_length=500, verbose_name="Docker 镜像")
+    script_entry = models.CharField(
+        max_length=500,
+        default="/usr/local/bin/trace-ship-build",
+        verbose_name="脚本入口",
+    )
+    default_build_path = models.CharField(
+        max_length=300,
+        default=".",
+        verbose_name="默认构建目录",
+    )
+    default_output_path = models.CharField(
+        max_length=300,
+        default="dist",
+        verbose_name="默认输出目录",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "jenkins_build_preset"
+        verbose_name = "Jenkins 打包预设"
+        verbose_name_plural = "Jenkins 打包预设"
+        ordering = ["build_type", "-created_at"]
+        indexes = [
+            models.Index(fields=["build_type", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        """返回预设名称"""
+        return self.name
 
 
 class JenkinsJob(models.Model):
@@ -32,6 +99,11 @@ class JenkinsJob(models.Model):
         updated_at: 更新时间
     """
 
+    CONFIG_MODE_CHOICES = [
+        ("simple", "简单模式"),
+        ("advanced", "高级模式"),
+    ]
+    BUILD_TYPE_CHOICES = JenkinsBuildPreset.BUILD_TYPE_CHOICES
     CREDENTIAL_MODE_CHOICES = [
         ("personal", "个人"),
         ("project", "项目"),
@@ -52,6 +124,26 @@ class JenkinsJob(models.Model):
         related_name="jenkins_jobs",
         verbose_name="关联仓库",
     )
+    config_mode = models.CharField(
+        max_length=20,
+        choices=CONFIG_MODE_CHOICES,
+        default="advanced",
+        verbose_name="配置模式",
+    )
+    build_type = models.CharField(
+        max_length=20,
+        choices=BUILD_TYPE_CHOICES,
+        default="web",
+        verbose_name="打包类型",
+    )
+    build_preset = models.ForeignKey(
+        JenkinsBuildPreset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jobs",
+        verbose_name="打包预设",
+    )
     name = models.CharField(max_length=200, verbose_name="任务名称")
     server_url = models.CharField(max_length=500, verbose_name="Jenkins 地址")
     job_name = models.CharField(max_length=200, verbose_name="Jenkins Job 名")
@@ -70,6 +162,11 @@ class JenkinsJob(models.Model):
         verbose_name="凭证来源",
     )
     params_template = models.JSONField(default=dict, blank=True, verbose_name="参数模板")
+    build_path = models.CharField(max_length=300, blank=True, default=".", verbose_name="构建目录")
+    output_path = models.CharField(max_length=300, blank=True, default="dist", verbose_name="输出目录")
+    auto_build_on_release = models.BooleanField(default=False, verbose_name="发布后自动打包")
+    managed_job = models.BooleanField(default=False, verbose_name="系统托管 Job")
+    pipeline_config = models.JSONField(default=dict, blank=True, verbose_name="Pipeline 配置")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
@@ -79,6 +176,10 @@ class JenkinsJob(models.Model):
         verbose_name = "Jenkins 任务"
         verbose_name_plural = "Jenkins 任务"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["project", "config_mode", "is_active"]),
+            models.Index(fields=["repository", "auto_build_on_release"]),
+        ]
 
     def __str__(self) -> str:
         """返回任务名称"""
@@ -137,6 +238,14 @@ class JenkinsBuild(models.Model):
         related_name="triggered_jenkins_builds",
         verbose_name="触发人",
     )
+    release = models.ForeignKey(
+        "release.ReleaseRecord",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jenkins_builds",
+        verbose_name="关联发布",
+    )
     queue_id = models.CharField(max_length=100, blank=True, verbose_name="队列号")
     build_number = models.IntegerField(null=True, blank=True, verbose_name="构建号")
     status = models.CharField(
@@ -146,6 +255,7 @@ class JenkinsBuild(models.Model):
         verbose_name="状态",
     )
     params = models.JSONField(default=dict, blank=True, verbose_name="构建参数")
+    stage_info = models.JSONField(default=dict, blank=True, verbose_name="阶段信息")
     log_url = models.CharField(max_length=500, blank=True, verbose_name="日志地址")
     artifact_info = models.JSONField(default=list, blank=True, verbose_name="产物信息")
     duration = models.IntegerField(null=True, blank=True, verbose_name="构建耗时(ms)")

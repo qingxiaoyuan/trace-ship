@@ -41,14 +41,15 @@ def patched_jenkins_views(monkeypatch, mock_jenkins_provider):
 class TestJenkinsViews:
     """Jenkins API 测试类"""
 
-    def test_create_job(self, api_client, project, jenkins_credential):
-        """创建 Jenkins 任务"""
+    def test_create_advanced_job(self, api_client, project, jenkins_credential):
+        """创建高级模式 Jenkins 任务"""
         response = api_client.post(
             "/api/jenkins/jobs/",
             {
                 "project": str(project.id),
+                "config_mode": "advanced",
+                "build_type": "web",
                 "name": "后端打包",
-                "server_url": "https://jenkins.example.com",
                 "job_name": "backend-build",
                 "credential": str(jenkins_credential.id),
                 "credential_mode": "project",
@@ -59,6 +60,41 @@ class TestJenkinsViews:
         assert response.status_code == 201
         assert response.data["code"] == 0
         assert response.data["data"]["job_name"] == "backend-build"
+        assert response.data["data"]["config_mode"] == "advanced"
+
+    def test_create_simple_job_upserts_pipeline(
+        self,
+        api_client,
+        project,
+        repository,
+        jenkins_credential,
+        build_preset,
+        patched_jenkins_views,
+    ):
+        """创建简单模式 Jenkins 任务时自动创建 Pipeline"""
+        response = api_client.post(
+            "/api/jenkins/jobs/",
+            {
+                "project": str(project.id),
+                "repository": str(repository.id),
+                "config_mode": "simple",
+                "build_type": "web",
+                "build_preset": str(build_preset.id),
+                "name": "Web 打包",
+                "job_name": "web-build",
+                "credential": str(jenkins_credential.id),
+                "credential_mode": "project",
+                "build_path": ".",
+                "output_path": "dist",
+                "auto_build_on_release": True,
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["code"] == 0
+        assert response.data["data"]["managed_job"] is True
+        assert patched_jenkins_views.upserted_job["job_name"] == "web-build"
+        assert "refs/tags/${params.TAG_NAME}" in patched_jenkins_views.upserted_job["pipeline_script"]
 
     def test_create_job_rejects_non_manager(self, project):
         """非项目管理员不能创建 Jenkins 任务"""
@@ -75,8 +111,9 @@ class TestJenkinsViews:
             "/api/jenkins/jobs/",
             {
                 "project": str(project.id),
+                "config_mode": "advanced",
+                "build_type": "web",
                 "name": "后端打包",
-                "server_url": "https://jenkins.example.com",
                 "job_name": "backend-build",
                 "credential_mode": "project",
                 "params_template": {"VERSION": "{version}"},
@@ -97,6 +134,43 @@ class TestJenkinsViews:
         assert response.status_code == 201
         assert response.data["code"] == 0
         assert response.data["data"]["status"] == "queue"
+
+    def test_trigger_simple_build_requires_tag(
+        self,
+        api_client,
+        project,
+        repository,
+        jenkins_credential,
+        build_preset,
+        patched_jenkins_views,
+    ):
+        """简单模式触发构建必须指定 tag"""
+        from apps.jenkins.models import JenkinsJob
+
+        job = JenkinsJob.objects.create(
+            project=project,
+            repository=repository,
+            config_mode="simple",
+            build_type="web",
+            build_preset=build_preset,
+            name="Web 打包",
+            server_url="https://jenkins.example.com",
+            job_name="web-build",
+            credential=jenkins_credential,
+            credential_mode="project",
+        )
+
+        response = api_client.post(f"/api/jenkins/jobs/{job.id}/trigger/", {}, format="json")
+        assert response.status_code == 500
+        assert "tag_name" in str(response.data)
+
+        response = api_client.post(
+            f"/api/jenkins/jobs/{job.id}/trigger/",
+            {"tag_name": "VA.1.0.0"},
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["data"]["params"]["TAG_NAME"] == "VA.1.0.0"
 
     def test_build_detail(self, api_client, jenkins_job):
         """查询构建详情"""

@@ -5,9 +5,10 @@ import pytest
 
 from apps.account.models import User
 from apps.credential.models import Credential
-from apps.jenkins.models import JenkinsBuild, JenkinsJob
+from apps.jenkins.models import JenkinsBuild, JenkinsBuildPreset, JenkinsJob
 from apps.project.models import Project, ProjectMember
 from apps.repository.models import Repository
+from apps.system.models import SystemConfig
 
 
 @pytest.fixture
@@ -31,6 +32,17 @@ def project(user):
     )
     ProjectMember.objects.create(project=project, user=user, role="manager")
     return project
+
+
+@pytest.fixture(autouse=True)
+def jenkins_server_config():
+    """系统级 Jenkins 地址配置"""
+    return SystemConfig.objects.create(
+        key="jenkins.server_url",
+        value="https://jenkins.example.com",
+        description="测试 Jenkins 地址",
+        is_public=False,
+    )
 
 
 @pytest.fixture
@@ -71,12 +83,27 @@ def jenkins_job(project, repository, jenkins_credential):
     return JenkinsJob.objects.create(
         project=project,
         repository=repository,
+        config_mode="advanced",
+        build_type="web",
         name="后端打包",
         server_url="https://jenkins.example.com",
         job_name="backend-build",
         credential=jenkins_credential,
         credential_mode="project",
         params_template={"VERSION": "{version}", "BRANCH": "{branch}"},
+    )
+
+
+@pytest.fixture
+def build_preset():
+    """测试打包预设"""
+    return JenkinsBuildPreset.objects.create(
+        name="Web 通用镜像",
+        build_type="web",
+        image="trace-ship/web-builder:latest",
+        script_entry="/usr/local/bin/trace-ship-build",
+        default_build_path=".",
+        default_output_path="dist",
     )
 
 
@@ -88,6 +115,8 @@ def mock_jenkins_provider():
             self.build_number = None
             self.status = "running"
             self.artifacts = []
+            self.upserted_job = None
+            self.synced_credential = None
 
         def trigger_build(self, job_name, params=None):
             return {"queue_id": 123}
@@ -106,5 +135,14 @@ def mock_jenkins_provider():
 
         def get_build_log(self, job_name, build_number):
             return "Started by user...\nFinished: SUCCESS"
+
+        def create_or_update_username_password_credential(self, **kwargs):
+            self.synced_credential = kwargs
+
+        def create_or_update_pipeline_job(self, job_name, pipeline_script):
+            self.upserted_job = {"job_name": job_name, "pipeline_script": pipeline_script}
+
+        def job_exists(self, job_name):
+            return self.upserted_job is not None
 
     return MockProvider()

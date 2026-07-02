@@ -206,7 +206,7 @@ export default function ReleaseCreate() {
       setDocRows(parseMdTable(mdStr));
       setDocSaved(true);
     },
-    onError: () => message.error('生成发布说明失败'),
+    onError: (err: { message?: string }) => message.error(err?.message || '生成发布说明失败'),
   });
 
   const updateDocMutation = useMutation({
