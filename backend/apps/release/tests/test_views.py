@@ -43,6 +43,64 @@ def patched_provider(monkeypatch, mock_git_provider):
 class TestReleaseViews:
     """Release API 测试类"""
 
+    def test_create_formal_release_clears_own_empty_existing_draft(self, api_client, project, repository, patched_provider):
+        """创建发布时若当前用户已有同版本空草稿，应先删除旧空草稿"""
+        old = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            branch="main",
+            release_type="formal",
+            status="draft",
+            publisher=api_client.handler._force_user,
+        )
+        response = api_client.post(
+            "/api/releases/",
+            {
+                "project": str(project.id),
+                "repository": str(repository.id),
+                "release_type": "formal",
+                "branch": "main",
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["code"] == 0
+        assert not ReleaseRecord.objects.filter(id=old.id).exists()
+        assert ReleaseRecord.objects.filter(
+            project=project, repository=repository, version="VA.1.0.0", status="draft"
+        ).count() == 1
+
+    def test_create_formal_release_keeps_existing_draft_with_content(self, api_client, project, repository, patched_provider):
+        """创建发布不会删除已有内容的同版本草稿"""
+        old = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            branch="main",
+            release_type="formal",
+            status="draft",
+            release_doc="| 项目 | 内容 |\n|------|------|\n| 变更类型 | 无配置项改动 |",
+            publisher=api_client.handler._force_user,
+        )
+        response = api_client.post(
+            "/api/releases/",
+            {
+                "project": str(project.id),
+                "repository": str(repository.id),
+                "release_type": "formal",
+                "branch": "main",
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        assert ReleaseRecord.objects.filter(id=old.id).exists()
+        assert ReleaseRecord.objects.filter(
+            project=project, repository=repository, version="VA.1.0.0", status="draft"
+        ).count() == 2
+
     def test_create_formal_release_success(self, api_client, project, repository, patched_provider):
         """创建正式发布申请成功"""
         response = api_client.post(

@@ -226,13 +226,28 @@ class RepositoryService:
         repo_identity = repo.external_identity
         branch = repo.default_branch
 
-        # 获取 tags 并按 created_at 倒序（无时间的排最后）
+        # 获取 tags 并按 created_at 倒序（无时间的按 commit_hash 兜底去重后放前面）
         try:
             tags = provider.list_tags(repo_identity)
         except ProviderError:
             tags = []
         sortable = [t for t in tags if t.created_at]
         sortable.sort(key=lambda t: t.created_at, reverse=True)
+        # 无 created_at 的 tag（如 Gitea 默认不返回时间）按名称中版本号降序补充到前面
+        seen = {t.name for t in sortable}
+        def _tag_version_key(name: str) -> tuple:
+            import re
+            m = re.search(r"(\d+)\.(\d+)\.(\d+)", name)
+            if m:
+                return tuple(int(x) for x in m.groups())
+            return (0, 0, 0)
+        for t in sorted(
+            [t for t in tags if t.name not in seen],
+            key=lambda t: _tag_version_key(t.name),
+            reverse=True,
+        ):
+            sortable.insert(0, t)
+            seen.add(t.name)
         tag_names = [t.name for t in sortable]
 
         # 确定区间：base = 起点，head = 终点
@@ -281,7 +296,7 @@ class RepositoryService:
                     base_tag_time = t.created_at
                     break
         try:
-            mrs = provider.list_merge_requests(repo_identity, target_branch=branch)
+            mrs = provider.list_merge_requests(repo_identity, target_branch=branch, since=base_tag_time)
             for mr in mrs:
                 if not mr.merged_at:
                     continue

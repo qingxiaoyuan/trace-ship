@@ -194,6 +194,17 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 
+# Celery beat 定时任务：每个整点清理草稿发布申请
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    "cleanup-draft-releases-hourly": {
+        "task": "apps.release.tasks.cleanup_draft_releases",
+        "schedule": crontab(minute=0),
+        "args": (),
+    },
+}
+
 # 系统内置打包工作区根目录
 PACKAGE_WORKSPACE_ROOT = os.getenv("PACKAGE_WORKSPACE_ROOT", str(BASE_DIR / "package_workspaces"))
 

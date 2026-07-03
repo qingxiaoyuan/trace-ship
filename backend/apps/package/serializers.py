@@ -48,6 +48,8 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
     image_id = serializers.UUIDField(source="image.id", read_only=True)
     image_name = serializers.CharField(source="image.name", read_only=True, default="")
+    svn_credential_id = serializers.UUIDField(source="svn_credential.id", read_only=True)
+    svn_credential_name = serializers.CharField(source="svn_credential.name", read_only=True, default="")
     mode_display = serializers.CharField(source="get_mode_display", read_only=True)
     build_type_display = serializers.CharField(source="get_build_type_display", read_only=True)
 
@@ -60,11 +62,14 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "image", "image_id", "image_name", "local_script",
             "build_path", "output_path", "env_vars",
             "auto_package_on_release", "is_active",
+            "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
+            "svn_path_template",
             "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "project_id", "project_name", "repository_id", "repository_name",
-            "image_id", "image_name", "mode_display", "build_type_display",
+            "image_id", "image_name", "svn_credential_id", "svn_credential_name",
+            "mode_display", "build_type_display",
             "created_at", "updated_at",
         ]
 
@@ -115,6 +120,22 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         if mode == "local" and not (local_script or "").strip():
             raise serializers.ValidationError({"local_script": "本地打包必须填写打包脚本"})
 
+        # SVN 推送配置校验
+        svn_push_enabled = attrs.get("svn_push_enabled", getattr(self.instance, "svn_push_enabled", False))
+        if svn_push_enabled:
+            svn_url = attrs.get("svn_url", getattr(self.instance, "svn_url", ""))
+            svn_credential = attrs.get("svn_credential", getattr(self.instance, "svn_credential", None))
+            if not svn_url:
+                raise serializers.ValidationError({"svn_url": "启用 SVN 推送时必须填写 SVN 仓库地址"})
+            if not svn_credential:
+                raise serializers.ValidationError({"svn_credential": "启用 SVN 推送时必须选择 SVN 凭证"})
+            if svn_credential.cred_type != "svn_password":
+                raise serializers.ValidationError({"svn_credential": "SVN 凭证类型必须为 svn_password"})
+            if not svn_credential.is_active:
+                raise serializers.ValidationError({"svn_credential": "SVN 凭证已停用"})
+            if svn_credential.project_id and project and svn_credential.project_id != project.id:
+                raise serializers.ValidationError({"svn_credential": "SVN 凭证必须属于当前项目"})
+
         return attrs
 
 
@@ -129,6 +150,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
     mode_display = serializers.CharField(source="get_mode_display", read_only=True)
     build_type_display = serializers.CharField(source="get_build_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    can_push_svn = serializers.SerializerMethodField()
 
     class Meta:
         model = PackageTask
@@ -138,8 +160,19 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "triggered_by", "triggered_by_name", "name",
             "mode", "mode_display", "build_type", "build_type_display",
             "tag_name", "version", "commit_hash", "config_snapshot",
-            "status", "status_display", "progress", "stage_info",
+            "status", "status_display", "progress", "stage_info", "can_push_svn",
             "artifact_info", "duration", "error_message",
             "started_at", "finished_at", "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+    def get_can_push_svn(self, obj: PackageTask) -> bool:
+        """任务是否具备手动推送 SVN 的条件。"""
+        snapshot = obj.config_snapshot or {}
+        return bool(
+            obj.status == "success"
+            and obj.artifact_info
+            and snapshot.get("svn_push_enabled")
+            and snapshot.get("svn_url")
+            and snapshot.get("svn_credential_id")
+        )

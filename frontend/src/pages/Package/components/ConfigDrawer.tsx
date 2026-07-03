@@ -1,11 +1,12 @@
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Drawer, Form, Input, Select, Switch } from 'antd';
+import { App, Button, Drawer, Form, Input, Select, Switch, Typography } from 'antd';
 import { Settings2 } from 'lucide-react';
 import type { PackageBuildType, PackageConfig, PackageMode } from '@/types';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { packageApi } from '@/api/package';
+import { credentialApi } from '@/api/credential';
 
 const modeOptions = [
   { label: '简易打包', value: 'simple' },
@@ -50,6 +51,20 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
     enabled: open && mode === 'simple',
   });
 
+  const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
+
+  const { data: svnCredsData } = useQuery({
+    queryKey: ['package-drawer-svn-creds', projectId],
+    queryFn: () =>
+      credentialApi.getCredentials({
+        cred_type: 'svn_password',
+        project: projectId,
+        is_active: true,
+        page_size: 1000,
+      }),
+    enabled: open && !!projectId && svnPushEnabled,
+  });
+
   useEffect(() => {
     if (!open) return;
     if (editing) {
@@ -63,6 +78,8 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
         env_vars: {},
         auto_package_on_release: true,
         is_active: true,
+        svn_push_enabled: false,
+        svn_path_template: '{version}',
       });
     }
   }, [editing, form, open]);
@@ -92,6 +109,10 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
   const imageOptions = useMemo(
     () => (imagesData?.results || []).map((img) => ({ label: `${img.name} / ${img.image}`, value: img.id })),
     [imagesData]
+  );
+  const svnCredentialOptions = useMemo(
+    () => (svnCredsData?.results || []).map((c) => ({ label: c.name, value: c.id })),
+    [svnCredsData]
   );
 
   const handleFinish = useCallback(
@@ -170,6 +191,41 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
           <Form.Item name="is_active" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
+        </div>
+        <div className="border-t border-slate-100 pt-3">
+          <Form.Item name="svn_push_enabled" label="启用 SVN 产物推送" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          {svnPushEnabled && (
+            <>
+              <Form.Item
+                name="svn_url"
+                label="SVN 仓库地址"
+                rules={[{ required: true, message: '请输入 SVN 仓库地址' }]}
+              >
+                <Input placeholder="svn://192.168.1.100/releases" />
+              </Form.Item>
+              <Form.Item
+                name="svn_credential"
+                label="SVN 凭证"
+                rules={[{ required: true, message: '请选择 SVN 凭证' }]}
+              >
+                <Select
+                  options={svnCredentialOptions}
+                  placeholder={projectId ? '选择 SVN 凭证' : '请先选择项目'}
+                  disabled={!projectId}
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+              <Form.Item name="svn_path_template" label="SVN 目录模板">
+                <Input placeholder="{version}" />
+              </Form.Item>
+              <Typography.Text type="secondary" className="text-xs">
+                可用占位符:{'{version}'}、{'{tag_name}'}、{'{build_type}'}、{'{project_code}'},默认按版本号创建目录
+              </Typography.Text>
+            </>
+          )}
         </div>
       </Form>
     </Drawer>

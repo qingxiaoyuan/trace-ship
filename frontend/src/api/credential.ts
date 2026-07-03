@@ -6,6 +6,7 @@ export interface CredentialListParams {
   cred_type?: CredentialType;
   scope?: string;
   project?: string;
+  is_active?: boolean;
   page?: number;
   page_size?: number;
 }

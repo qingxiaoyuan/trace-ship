@@ -156,6 +156,10 @@ class GiteaProvider(GitProvider):
             TagInfo(
                 name=t["name"],
                 commit_hash=t.get("commit", {}).get("sha"),
+                created_at=self._parse_datetime(
+                    t.get("created")
+                    or (t.get("commit") or {}).get("created")
+                ),
             )
             for t in resp.json()
         ]
@@ -178,24 +182,41 @@ class GiteaProvider(GitProvider):
         )
 
     def compare_commits(self, repo_identity: str, base: str, head: str) -> List[CommitInfo]:
-        """比较两个 ref 之间的 commits"""
+        """
+        比较两个 ref 之间的 commits。
+
+        优先调用 Gitea 原生 compare 接口；部分 Gitea 版本无该接口或返回 404，
+        则回退到分别拉取 base/head 的 commits，按 commit hash 去重后取差集。
+        """
         owner, repo = self._owner_repo(repo_identity)
-        resp = self._request(
-            "GET",
-            f"/repos/{owner}/{repo}/compare/{base}...{head}",
-        )
-        return [
-            CommitInfo(
-                hash=c["sha"],
-                author=c.get("commit", {}).get("author", {}).get("name", ""),
-                author_email=c.get("commit", {}).get("author", {}).get("email", ""),
-                message=c.get("commit", {}).get("message", ""),
-                committed_at=self._parse_datetime(
-                    c.get("commit", {}).get("author", {}).get("date")
-                ),
+        try:
+            resp = self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/compare/{base}...{head}",
             )
-            for c in resp.json().get("commits", [])
-        ]
+            return [
+                CommitInfo(
+                    hash=c["sha"],
+                    author=c.get("commit", {}).get("author", {}).get("name", ""),
+                    author_email=c.get("commit", {}).get("author", {}).get("email", ""),
+                    message=c.get("commit", {}).get("message", ""),
+                    committed_at=self._parse_datetime(
+                        c.get("commit", {}).get("author", {}).get("date")
+                    ),
+                )
+                for c in resp.json().get("commits", [])
+            ]
+        except Exception as exc:
+            # compare 接口不存在或失败时，回退到 hash 差集
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning("Gitea compare 接口调用失败，回退到 hash 差集: %s", exc)
+            try:
+                base_commits = self.list_commits(repo_identity, base, per_page=100)
+                head_commits = self.list_commits(repo_identity, head, per_page=100)
+            except Exception:
+                return []
+            base_hashes = {c.hash for c in base_commits}
+            return [c for c in head_commits if c.hash not in base_hashes]
 
     def list_merge_requests(
         self,

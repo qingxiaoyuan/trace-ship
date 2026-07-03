@@ -83,6 +83,19 @@ class PackageConfig(models.Model):
     output_path = models.CharField(max_length=300, default="dist", blank=True, verbose_name="产物目录")
     env_vars = models.JSONField(default=dict, blank=True, verbose_name="环境变量")
     auto_package_on_release = models.BooleanField(default=False, verbose_name="发布后自动打包")
+    svn_push_enabled = models.BooleanField(default=False, verbose_name="启用 SVN 推送")
+    svn_url = models.CharField(max_length=500, blank=True, verbose_name="SVN 仓库地址")
+    svn_credential = models.ForeignKey(
+        "credential.Credential",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="package_configs_svn",
+        verbose_name="SVN 凭证",
+    )
+    svn_path_template = models.CharField(
+        max_length=300, default="{version}", blank=True, verbose_name="SVN 目录模板"
+    )
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
