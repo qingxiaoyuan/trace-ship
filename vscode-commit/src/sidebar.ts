@@ -1045,13 +1045,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
       // 两阶段生成：先按文件生成一句话摘要，再汇总提炼最终 commit，避免单 prompt 过长
       // 过滤掉二进制文件和图片（图片不进入 AI prompt，仅由文件名参与统计）
-      const fileDiffs = this._splitDiffByFile(diffToUse).filter((d) => {
+      const MAX_FILE_DIFF_LENGTH = 50000; // 单个文件 diff 最大字符数，防止单文件撑爆 prompt
+      const MAX_TOTAL_DIFF_LENGTH = 300000; // 所有文件 diff 总字符数上限（现代模型上下文普遍 128K+，可适当放宽）
+      const rawFileDiffs = this._splitDiffByFile(diffToUse).filter((d) => {
         if (this._isBinaryDiffBlock(d)) {
           return false;
         }
         const name = this._extractFilenameFromDiffBlock(d);
         return !name || !this._isImageFile(name);
       });
+
+      // 对超长单文件 diff 截断，并控制总体积
+      const fileDiffs: string[] = [];
+      let totalDiffLength = 0;
+      let truncatedFileCount = 0;
+      for (const d of rawFileDiffs) {
+        const capped =
+          d.length > MAX_FILE_DIFF_LENGTH
+            ? d.slice(0, MAX_FILE_DIFF_LENGTH) + "\n\n... (该文件 diff 过长，已截断)"
+            : d;
+        if (
+          totalDiffLength + capped.length > MAX_TOTAL_DIFF_LENGTH &&
+          fileDiffs.length > 0
+        ) {
+          truncatedFileCount++;
+          continue;
+        }
+        totalDiffLength += capped.length;
+        fileDiffs.push(capped);
+      }
+
+      if (truncatedFileCount > 0) {
+        this._view.webview.postMessage({
+          command: "status",
+          message: `diff 总量过大，已跳过 ${truncatedFileCount} 个文件以控制 prompt 长度，生成结果可能不完整`,
+          type: "info",
+        });
+      }
+
       const summaries: string[] = [];
       const signal = this._aiAbortController?.signal;
       for (const fileDiff of fileDiffs) {
@@ -1473,9 +1504,9 @@ ${joined}
     }
     #statusToast.show { display: block; }
     #statusToast.in { transform: translateY(0); opacity: 1; }
-    .status-success { background: var(--vscode-testing-runPassed, rgba(38,162,32,0.18)); color: var(--vscode-testing-runPassed, #3fb950); border-color: rgba(63,185,80,0.3); }
-    .status-error { background: var(--vscode-testing-runFailed, rgba(218,54,51,0.18)); color: var(--vscode-testing-runFailed, #f14c4c); border-color: rgba(241,76,76,0.3); }
-    .status-info { background: var(--vscode-notificationsInfoIcon-foreground, rgba(0,120,212,0.18)); color: var(--vscode-notificationsInfoIcon-foreground, #0078d4); border-color: rgba(0,120,212,0.3); }
+    .status-success { background: var(--vscode-notifications-background); color: var(--vscode-notifications-foreground); border-color: var(--vscode-notifications-border); border-left: 3px solid var(--vscode-testing-iconPassed, #3fb950); }
+    .status-error { background: var(--vscode-notifications-background); color: var(--vscode-notifications-foreground); border-color: var(--vscode-notifications-border); border-left: 3px solid var(--vscode-notificationsErrorIcon-foreground, #f14c4c); }
+    .status-info { background: var(--vscode-notifications-background); color: var(--vscode-notifications-foreground); border-color: var(--vscode-notifications-border); border-left: 3px solid var(--vscode-notificationsInfoIcon-foreground, #0078d4); }
 
     /* ===== 区块通用 ===== */
     .panel { padding: 0 12px; }

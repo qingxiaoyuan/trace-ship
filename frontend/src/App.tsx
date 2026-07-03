@@ -1,4 +1,4 @@
-import { ConfigProvider, App as AntApp, theme } from 'antd';
+import { ConfigProvider, App as AntApp, theme, message } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from 'react-router-dom';
 import { useEffect } from 'react';
@@ -15,7 +15,8 @@ registerAuthHandlers({
   },
   onRefreshFailed: () => {
     useAuthStore.getState().clearAuth();
-    window.location.href = '/login';
+    message.error('登录已过期，请重新登录');
+    router.navigate('/login', { replace: true });
   },
 });
 
