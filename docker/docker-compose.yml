@@ -123,6 +123,7 @@ services:
       TZ: ${TIMEZONE:-Asia/Shanghai}
     ports:
       - "${SVN_PORT:-3690}:3690"
+      - "${SVN_HTTP_PORT:-3691}:80"
     volumes:
       - svn_data:/var/svn
     networks:
