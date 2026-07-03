@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Loader, Plus, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader, Plus, XCircle } from 'lucide-react';
 import dayjs from 'dayjs';
 import { releaseApi } from '@/api/release';
 import { getAvatarColor } from '@/utils/avatar';
@@ -76,6 +76,12 @@ export function ReleaseBoard() {
                 {count}
               </span>
             </div>
+            {col.key === 'draft' && (
+              <div className="mb-2 flex items-center gap-1 rounded border border-amber-100 bg-amber-50/60 px-2 py-1 text-[10px] text-amber-700">
+                <AlertTriangle className="h-3 w-3 flex-shrink-0" strokeWidth={1.5} />
+                <span>每小时整点自动清理草稿</span>
+              </div>
+            )}
             <div className="space-y-2">
               {isLoading ? (
                 <div className="py-4 text-center text-[11px] text-slate-400">加载中…</div>

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from django.http import FileResponse, Http404, HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, status
+from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
@@ -55,7 +55,7 @@ class PackageConfigViewSet(StandardModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return PackageConfig.objects.none()
-        queryset = PackageConfig.objects.select_related("project", "repository", "image")
+        queryset = PackageConfig.objects.select_related("project", "repository", "image", "svn_credential")
         if user.is_superuser:
             return queryset
         project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
@@ -103,7 +103,7 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
-        if self.action == "cancel":
+        if self.action in ("cancel", "push_svn"):
             return [IsAuthenticated(), IsProjectManager()]
         return [IsAuthenticated(), IsProjectMember()]
 
@@ -116,6 +116,20 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         PackageService.cancel_task(task)
         data = PackageTaskSerializer(task, context={"request": request}).data
         return success_response(data, "任务已取消")
+
+    @action(detail=True, methods=["post"], url_path="push-svn")
+    def push_svn(self, request, pk=None):
+        """手动推送打包产物到 SVN。"""
+        task = self.get_object()
+        try:
+            result = PackageService.manual_push_svn(task)
+        except serializers.ValidationError as exc:
+            return error_response(40000, str(exc.detail[0] if isinstance(exc.detail, list) else exc.detail),
+                                  status_code=status.HTTP_400_BAD_REQUEST)
+        except RuntimeError as exc:
+            return error_response(50000, str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+        data = PackageTaskSerializer(task, context={"request": request}).data
+        return success_response(data, f"已推送到 {result['remote_url']}")
 
     @action(detail=True, methods=["get"], url_path="logs")
     def logs(self, request, pk=None):

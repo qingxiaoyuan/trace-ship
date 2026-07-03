@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { App, Button, Form, Modal, Select } from 'antd';
 import {
-  Activity,
   ChevronRight,
+  Hammer,
   History,
   Package as PackageIcon,
   Plus,
@@ -50,13 +50,11 @@ export default function PackageTaskPage() {
 
   const { data: tasksData, isLoading: tasksLoading } = useQuery({
     queryKey: ['package-tasks', page],
-    queryFn: () => packageApi.getTasks({ page, page_size: pageSize }),
+    queryFn: () => packageApi.getTasks({ page, page_size: 20 }),
   });
 
   const configs = useMemo(() => configsData?.results || [], [configsData]);
   const tasks = useMemo(() => tasksData?.results || [], [tasksData]);
-
-  const runningCount = useMemo(() => tasks.filter((t) => isRunning(t.status)).length, [tasks]);
 
   const { data: releasedData, isLoading: releasesLoading } = useQuery({
     queryKey: ['package-trigger-releases', triggerConfig?.project, triggerConfig?.repository],
@@ -320,10 +318,10 @@ export default function PackageTaskPage() {
                 className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${activeTab === 'running' ? 'on' : ''}`}
                 onClick={() => setActiveTab('running')}
               >
-                <Activity className="h-3.5 w-3.5" strokeWidth={1.5} />
-                进行中
-                {runningCount > 0 && (
-                  <span className="rounded bg-cyan-100 px-1 py-0.5 text-[10px] font-medium text-cyan-700">{runningCount}</span>
+                <Hammer className="h-3.5 w-3.5" strokeWidth={1.5} />
+                构建列表
+                {tasks.length > 0 && (
+                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{tasks.length}</span>
                 )}
               </button>
               <button

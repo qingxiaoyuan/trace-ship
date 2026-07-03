@@ -55,6 +55,7 @@ export const packageApi = {
     get<PaginatedData<PackageTask>>('/packages/tasks/', { params }),
   getTask: (id: string) => get<PackageTask>(`/packages/tasks/${id}/`),
   cancelTask: (id: string) => post<PackageTask>(`/packages/tasks/${id}/cancel/`),
+  pushSvn: (id: string) => post<PackageTask>(`/packages/tasks/${id}/push-svn/`),
   getTaskLog: (id: string) => get<Blob>(`/packages/tasks/${id}/logs/`, { responseType: 'blob' }),
   downloadArtifact: (taskId: string, artifactId: string) =>
     get<Blob>(`/packages/tasks/${taskId}/artifacts/${artifactId}/download/`, { responseType: 'blob' }),

@@ -18,9 +18,11 @@ from django.db import close_old_connections
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.credential.models import Credential
 from apps.package.models import PackageConfig, PackageTask
 from apps.repository.serializers import RepositorySerializer
 from utils.provider.credential_resolver import resolve_credential
+from utils.provider.factory import get_provider
 
 
 logger = logging.getLogger(__name__)
@@ -93,6 +95,10 @@ class PackageService:
                 image.default_output_path if image else "artifacts",
             ),
             "env_vars": config.env_vars or {},
+            "svn_push_enabled": config.svn_push_enabled,
+            "svn_url": config.svn_url or "",
+            "svn_credential_id": str(config.svn_credential_id) if config.svn_credential_id else None,
+            "svn_path_template": config.svn_path_template or "{version}",
         }
 
     @classmethod
@@ -417,14 +423,145 @@ class PackageService:
             raise PackageTaskCanceledError("任务已被用户取消")
 
     @classmethod
-    def _update_stage(cls, task: PackageTask, stage: str, progress: int, log: str = "") -> None:
+    def _update_stage(
+        cls,
+        task: PackageTask,
+        stage: str,
+        progress: int,
+        log: str = "",
+        extra: dict[str, Any] | None = None,
+    ) -> None:
         """更新任务阶段和进度。"""
         cls._ensure_task_not_canceled(task)
-        task.stage_info = {"stage": stage, "progress": progress}
+        info: dict[str, Any] = {"stage": stage, "progress": progress}
+        if extra:
+            info.update(extra)
+        task.stage_info = info
         task.progress = progress
         task.save(update_fields=["stage_info", "progress", "updated_at"])
         if log:
             cls._append_log(task, log)
+
+    @classmethod
+    def _push_artifacts_to_svn(cls, task: PackageTask, workspace: Path) -> dict[str, Any]:
+        """将打包产物推送到 SVN 版本号目录。
+
+        Args:
+            task: 打包任务记录
+            workspace: 任务工作区
+
+        Returns:
+            推送结果字典，包含 remote_url、file_count、files
+
+        Raises:
+            RuntimeError: 配置不完整、凭证失效、目录已存在或推送失败
+        """
+        snapshot = task.config_snapshot or {}
+        svn_url = snapshot.get("svn_url", "")
+        cred_id = snapshot.get("svn_credential_id")
+        path_template = snapshot.get("svn_path_template", "{version}")
+
+        if not svn_url or not cred_id:
+            raise RuntimeError("SVN 推送配置不完整")
+
+        # 解析凭证
+        try:
+            credential = Credential.objects.get(id=cred_id)
+        except Credential.DoesNotExist as exc:
+            raise RuntimeError("SVN 凭证不存在") from exc
+        if not credential.is_active:
+            raise RuntimeError("SVN 凭证已停用")
+        credential.last_used_at = timezone.now()
+        credential.save(update_fields=["last_used_at", "updated_at"])
+        cred_data = credential.get_data()
+
+        # 渲染版本目录名
+        version_dir = path_template.format(
+            version=task.version,
+            tag_name=task.tag_name,
+            build_type=task.build_type,
+            project_code=task.project.code or task.project.name,
+        ).strip("/")
+        if not version_dir:
+            raise RuntimeError("SVN 目录模板渲染结果为空")
+        remote_url = f"{svn_url.rstrip('/')}/{version_dir}"
+
+        # 创建 provider 并检查目录是否已存在
+        provider = get_provider("svn", svn_url, cred_data)
+        if provider.remote_exists(remote_url):
+            raise RuntimeError(f"SVN 目录已存在: {remote_url}")
+
+        # 导入产物目录
+        artifacts_dir = workspace / "artifacts"
+        message = f"Release {task.version} artifacts ({task.tag_name})"
+        provider.import_path(str(artifacts_dir), remote_url, message)
+
+        artifact_names = [a.get("name", "") for a in (task.artifact_info or [])]
+        return {
+            "remote_url": remote_url,
+            "file_count": len(artifact_names),
+            "files": artifact_names,
+        }
+
+    @classmethod
+    def manual_push_svn(cls, task: PackageTask) -> dict[str, Any]:
+        """手动将已完成的打包产物推送到 SVN。
+
+        Args:
+            task: 已完成的打包任务
+
+        Returns:
+            推送结果字典，包含 remote_url、file_count、files
+
+        Raises:
+            serializers.ValidationError: 任务状态不满足或缺少产物
+            RuntimeError: SVN 配置不完整或推送失败
+        """
+        if task.status != "success":
+            raise serializers.ValidationError({"task": "只有打包成功的任务才能推送 SVN"})
+        if not task.artifact_info:
+            raise serializers.ValidationError({"task": "没有可推送的产物"})
+
+        # 确保工作区存在
+        workspace_path = task.workspace_path
+        if not workspace_path or not Path(workspace_path).exists():
+            raise RuntimeError("任务工作区不存在，无法推送产物")
+        workspace = Path(workspace_path)
+        artifacts_dir = workspace / "artifacts"
+        if not artifacts_dir.exists():
+            raise RuntimeError("产物目录不存在，无法推送")
+
+        # 从快照解析 SVN 配置，快照缺失时回退到配置
+        snapshot = task.config_snapshot or {}
+        if not snapshot.get("svn_url") or not snapshot.get("svn_credential_id"):
+            config = task.config
+            if not config or not config.svn_push_enabled:
+                raise RuntimeError("打包配置未启用 SVN 推送，无法手动推送")
+            snapshot = {
+                **snapshot,
+                "svn_push_enabled": True,
+                "svn_url": config.svn_url,
+                "svn_credential_id": str(config.svn_credential_id) if config.svn_credential_id else None,
+                "svn_path_template": config.svn_path_template or "{version}",
+            }
+            task.config_snapshot = snapshot
+        if not snapshot.get("svn_push_enabled"):
+            raise RuntimeError("打包配置未启用 SVN 推送，无法手动推送")
+
+        cls._append_log(task, "开始手动推送产物到 SVN…")
+        result = cls._push_artifacts_to_svn(task, workspace)
+        cls._append_log(
+            task,
+            f"SVN 推送完成: {result['remote_url']} ({result['file_count']} 个文件)",
+        )
+
+        # 更新 stage_info 记录推送结果
+        stage_info = dict(task.stage_info) if task.stage_info else {}
+        stage_info["svn_push"] = result
+        task.stage_info = stage_info
+        task.save(update_fields=["stage_info", "config_snapshot", "updated_at"])
+
+        return result
 
     @classmethod
     def run_task(cls, task: PackageTask) -> PackageTask:
@@ -438,22 +575,42 @@ class PackageService:
         task.stage_info = {"stage": "checkout", "progress": 5}
         task.save(update_fields=["status", "started_at", "progress", "stage_info", "updated_at"])
         workspace = cls.prepare_workspace(task)
+        snapshot = task.config_snapshot or {}
+        svn_push_enabled = bool(snapshot.get("svn_push_enabled"))
         try:
             cls._append_log(task, f"开始打包 {task.version} ({task.tag_name})")
             cls._update_stage(task, "checkout", 5, "正在拉取源码…")
             cls._checkout_source(task, workspace)
             cls._ensure_task_not_canceled(task)
-            cls._update_stage(task, "build", 30, "开始执行打包…")
+            build_progress = 25 if svn_push_enabled else 30
+            cls._update_stage(task, "build", build_progress, "开始执行打包…")
             if task.mode == "simple":
                 cls._run_simple(task, workspace)
             else:
                 cls._run_local(task, workspace)
             cls._ensure_task_not_canceled(task)
-            cls._update_stage(task, "artifacts", 80, "正在扫描产物…")
+            artifacts_progress = 65 if svn_push_enabled else 80
+            cls._update_stage(task, "artifacts", artifacts_progress, "正在扫描产物…")
             task.artifact_info = cls._scan_artifacts(workspace)
+            cls._ensure_task_not_canceled(task)
+
+            # SVN 推送阶段
+            svn_push_result: dict[str, Any] | None = None
+            if svn_push_enabled:
+                cls._update_stage(task, "svn_push", 90, "正在推送产物到 SVN…")
+                svn_push_result = cls._push_artifacts_to_svn(task, workspace)
+                cls._append_log(
+                    task,
+                    f"SVN 推送完成: {svn_push_result['remote_url']}"
+                    f" ({svn_push_result['file_count']} 个文件)",
+                )
+
             task.status = "success"
             task.progress = 100
-            task.stage_info = {"stage": "done", "progress": 100}
+            done_info: dict[str, Any] = {"stage": "done", "progress": 100}
+            if svn_push_result:
+                done_info["svn_push"] = svn_push_result
+            task.stage_info = done_info
             task.error_message = ""
             cls._append_log(task, "打包完成")
         except PackageTaskCanceledError:

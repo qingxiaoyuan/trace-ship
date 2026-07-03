@@ -1,11 +1,13 @@
-import { memo, useMemo } from 'react';
-import { Button } from 'antd';
-import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal } from 'lucide-react';
+import { memo, useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { App, Button } from 'antd';
+import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal, Upload } from 'lucide-react';
 import dayjs from 'dayjs';
 import type { PackageTask } from '@/types';
+import { packageApi } from '@/api/package';
 import { ArtifactPanel } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
-import { formatDuration, isRunning, stageLabels } from './utils';
+import { canPushSvn, formatDuration, isRunning, stageLabels } from './utils';
 import { StatusBadge } from './Shared';
 
 interface BuildViewProps {
@@ -16,12 +18,34 @@ interface BuildViewProps {
 }
 
 export const BuildView = memo(function BuildView({ task, logText, onBack, onCancel }: BuildViewProps) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const artifacts = task.artifact_info || [];
   const stageLabel = useMemo(() => {
     const stage = (task.stage_info as { stage?: string } | undefined)?.stage;
     return stage ? (stageLabels[stage] || stage) : '打包中';
   }, [task.stage_info]);
   const running = isRunning(task.status);
+  const [pushing, setPushing] = useState(false);
+
+  const pushSvnMutation = useMutation({
+    mutationFn: () => packageApi.pushSvn(task.id),
+    onSuccess: () => {
+      message.success('已推送到 SVN');
+      queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['package-task', task.id] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { message?: string })?.message || '推送 SVN 失败';
+      message.error(msg);
+    },
+    onSettled: () => setPushing(false),
+  });
+
+  const handlePushSvn = () => {
+    setPushing(true);
+    pushSvnMutation.mutate();
+  };
 
   return (
     <div className="space-y-5 page-fade-in">
@@ -98,7 +122,19 @@ export const BuildView = memo(function BuildView({ task, logText, onBack, onCanc
               <PackageIcon className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">打包产物</h3>
             </div>
-            <span className="text-[10px] text-slate-400">{artifacts.length} 个</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400">{artifacts.length} 个</span>
+              {canPushSvn(task) && (
+                <Button
+                  size="small"
+                  icon={<Upload className="h-3 w-3" strokeWidth={1.5} />}
+                  loading={pushing}
+                  onClick={handlePushSvn}
+                >
+                  推送 SVN
+                </Button>
+              )}
+            </div>
           </div>
           <ArtifactPanel artifacts={artifacts} taskId={task.id} />
         </div>

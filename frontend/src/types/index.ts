@@ -339,6 +339,12 @@ export interface PackageConfig {
   output_path?: string;
   env_vars?: Record<string, unknown>;
   auto_package_on_release?: boolean;
+  svn_push_enabled?: boolean;
+  svn_url?: string;
+  svn_credential?: string | null;
+  svn_credential_id?: string | null;
+  svn_credential_name?: string;
+  svn_path_template?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -367,6 +373,7 @@ export interface PackageTask {
   config_snapshot?: Record<string, unknown>;
   status: PackageTaskStatus;
   status_display?: string;
+  can_push_svn?: boolean;
   progress?: number;
   stage_info?: { stage?: string; progress?: number } | Record<string, unknown>;
   artifact_info?: PackageArtifact[];

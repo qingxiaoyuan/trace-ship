@@ -1,10 +1,12 @@
 import { memo, useCallback, useEffect, useState } from 'react';
-import { Button } from 'antd';
-import { ChevronRight, Package as PackageIcon, Plus, Settings2 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { App, Button } from 'antd';
+import { ChevronRight, Package as PackageIcon, Plus, Settings2, Upload } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
+import { packageApi } from '@/api/package';
 import { BuildHistory, ArtifactListPanel } from './BuildHistory';
 import { TerminalLog } from './TerminalLog';
-import { isRunning } from './utils';
+import { canPushSvn, isRunning } from './utils';
 import { StatusBadge } from './Shared';
 
 interface DetailViewProps {
@@ -32,9 +34,12 @@ export const DetailView = memo(function DetailView({
   onTriggerBuild,
   hideHeader,
 }: DetailViewProps) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'log' | 'artifacts'>('log');
   const [activeBuild, setActiveBuild] = useState<PackageTask>(task);
   const [activeLogText, setActiveLogText] = useState<string>(logText);
+  const [pushing, setPushing] = useState(false);
 
   const loadLog = useCallback(async (taskId: string) => {
     const { task: t, logText: text } = await onLoadTaskLog(taskId);
@@ -55,6 +60,25 @@ export const DetailView = memo(function DetailView({
   }, [activeBuild.id, activeBuild.status, loadLog]);
 
   const artifacts = activeBuild.artifact_info || [];
+
+  const pushSvnMutation = useMutation({
+    mutationFn: () => packageApi.pushSvn(activeBuild.id),
+    onSuccess: () => {
+      message.success('已推送到 SVN');
+      queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+      loadLog(activeBuild.id);
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { message?: string })?.message || '推送 SVN 失败';
+      message.error(msg);
+    },
+    onSettled: () => setPushing(false),
+  });
+
+  const handlePushSvn = () => {
+    setPushing(true);
+    pushSvnMutation.mutate();
+  };
 
   const handleSelectBuild = useCallback(
     (taskId: string) => {
@@ -120,6 +144,16 @@ export const DetailView = memo(function DetailView({
               </button>
             </div>
             <div className="flex items-center gap-2">
+              {activeTab === 'artifacts' && canPushSvn(activeBuild) && (
+                <Button
+                  size="small"
+                  icon={<Upload className="h-3 w-3" strokeWidth={1.5} />}
+                  loading={pushing}
+                  onClick={handlePushSvn}
+                >
+                  推送 SVN
+                </Button>
+              )}
               <span className="font-mono text-[12px] text-slate-500">{activeBuild.version}</span>
               <StatusBadge status={activeBuild.status} />
             </div>

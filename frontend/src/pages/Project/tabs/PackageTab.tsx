@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Form, Input, Modal, Select, Switch } from 'antd';
+import { App, Form, Input, Modal, Select, Switch, Typography } from 'antd';
 import {
   Plus,
   Search,
@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
+import { credentialApi } from '@/api/credential';
 import type { PackageBuildType, PackageConfig, PackageMode } from '@/types';
 
 interface PackageTabProps {
@@ -53,6 +54,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const [triggerForm] = Form.useForm<{ release_id: string }>();
   const mode = (Form.useWatch('mode', form) || 'simple') as PackageMode;
   const buildType = (Form.useWatch('build_type', form) || 'web') as PackageBuildType;
+  const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
 
   const { data, isLoading } = useQuery({
     queryKey: ['package-configs', projectId],
@@ -70,6 +72,18 @@ export function PackageTab({ projectId }: PackageTabProps) {
     queryKey: ['package-images', buildType],
     queryFn: () => packageApi.getImages({ build_type: buildType, is_active: true, page_size: 1000 }),
     enabled: mode === 'simple',
+  });
+
+  const { data: svnCredsData } = useQuery({
+    queryKey: ['svn-credentials', projectId],
+    queryFn: () =>
+      credentialApi.getCredentials({
+        cred_type: 'svn_password',
+        project: projectId,
+        is_active: true,
+        page_size: 1000,
+      }),
+    enabled: !!projectId && svnPushEnabled,
   });
 
   const { data: releasedData, isLoading: releasesLoading } = useQuery({
@@ -101,6 +115,8 @@ export function PackageTab({ projectId }: PackageTabProps) {
         env_vars: {},
         auto_package_on_release: true,
         is_active: true,
+        svn_push_enabled: false,
+        svn_path_template: '{version}',
       });
     }
   }, [editing, form, open, projectId]);
@@ -164,6 +180,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
     label: `${image.name} / ${image.image}`,
     value: image.id,
   }));
+  const svnCredentialOptions = (svnCredsData?.results || []).map((c) => ({ label: c.name, value: c.id }));
   const releaseOptions = (releasedData?.results || []).map((release) => ({
     label: `${release.version} / ${release.tag_name}`,
     value: release.id,
@@ -370,6 +387,40 @@ export function PackageTab({ projectId }: PackageTabProps) {
             <Form.Item name="is_active" label="启用" valuePropName="checked">
               <Switch />
             </Form.Item>
+          </div>
+          <div className="border-t border-slate-100 pt-3">
+            <Form.Item name="svn_push_enabled" label="启用 SVN 产物推送" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            {svnPushEnabled && (
+              <>
+                <Form.Item
+                  name="svn_url"
+                  label="SVN 仓库地址"
+                  rules={[{ required: true, message: '请输入 SVN 仓库地址' }]}
+                >
+                  <Input placeholder="svn://192.168.1.100/releases" />
+                </Form.Item>
+                <Form.Item
+                  name="svn_credential"
+                  label="SVN 凭证"
+                  rules={[{ required: true, message: '请选择 SVN 凭证' }]}
+                >
+                  <Select
+                    options={svnCredentialOptions}
+                    placeholder="选择 SVN 凭证"
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+                <Form.Item name="svn_path_template" label="SVN 目录模板">
+                  <Input placeholder="{version}" />
+                </Form.Item>
+                <Typography.Text type="secondary" className="text-xs">
+                  可用占位符:{'{version}'}、{'{tag_name}'}、{'{build_type}'}、{'{project_code}'},默认按版本号创建目录
+                </Typography.Text>
+              </>
+            )}
           </div>
         </Form>
       </Modal>

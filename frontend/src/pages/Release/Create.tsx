@@ -30,7 +30,9 @@ import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { releaseApi } from '@/api/release';
 import { useAppMessage } from '@/hooks/useAppMessage';
-import { parseMdTable, buildMdTable, type MdTableRow } from '@/utils/markdownTable';
+import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
+import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
+import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField';
 import type { Release, ReleaseType, Repository, ChangesPreview, ParsedUpdate } from '@/types';
 
 /** 关联变更清单条目 */
@@ -868,19 +870,28 @@ export default function ReleaseCreate() {
                         <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500">
                           {row.key}
                         </td>
-                        <td className="px-3 py-2">
-                          <textarea
-                            value={row.value}
-                            onChange={(e) => {
-                              const newVal = e.target.value;
-                              setDocRows((prev) =>
-                                prev.map((r, i) => (i === idx ? { ...r, value: newVal } : r))
-                              );
-                              setDocSaved(false);
-                            }}
-                            rows={Math.max(1, Math.ceil((row.value.length || 0) / 50))}
-                            className="input-field w-full resize-y rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
-                          />
+                        <td className="px-3 py-2 align-middle">
+                          {isCheckboxField(row.key) ? (
+                            <CheckboxField
+                              value={row.value}
+                              fieldKey={row.key}
+                              onChange={(value) => {
+                                setDocRows((prev) => applyCheckboxChange(prev, idx, value));
+                                setDocSaved(false);
+                              }}
+                            />
+                          ) : (
+                            <AutoResizeTextarea
+                              value={row.value}
+                              onChange={(newVal) => {
+                                setDocRows((prev) =>
+                                  prev.map((r, i) => (i === idx ? { ...r, value: newVal } : r))
+                                );
+                                setDocSaved(false);
+                              }}
+                              className="block w-full resize-none bg-transparent border-0 p-0 text-[13px] leading-[1.375] text-slate-700 outline-none focus:bg-white"
+                            />
+                          )}
                         </td>
                       </tr>
                     ))}

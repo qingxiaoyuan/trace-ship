@@ -5,9 +5,10 @@
 """
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -612,6 +613,21 @@ class ReleaseService:
     """
 
     @staticmethod
+    def empty_draft_filter() -> Q:
+        """返回可安全清理的空草稿条件。"""
+        return (
+            Q(release_doc="")
+            & Q(related_changes=[])
+            & Q(updates=[])
+            & Q(has_config_changes=False)
+            & Q(config_change_doc="")
+            & Q(impact_other=False)
+            & Q(impact_desc="")
+            & Q(self_test_passed=False)
+            & Q(retest_passed=False)
+        )
+
+    @staticmethod
     def _get_provider(repo: Repository, request_user=None) -> GitProvider:
         """
         根据仓库获取 GitProvider
@@ -744,6 +760,15 @@ class ReleaseService:
 
         git_hash = cls._resolve_branch_head_hash(repository, branch, publisher)
 
+        # 同一发布人反复创建同版本空草稿时清理旧草稿，避免临时草稿堆积。
+        ReleaseRecord.objects.filter(
+            project=project,
+            repository=repository,
+            version=version,
+            status="draft",
+            publisher=publisher,
+        ).filter(cls.empty_draft_filter()).delete()
+
         release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
@@ -800,7 +825,7 @@ class ReleaseService:
     @staticmethod
     def update_doc(release: ReleaseRecord, md_content: str) -> ReleaseRecord:
         """
-        手动更新发布说明 Markdown 文档（仅草稿状态允许）
+        手动更新发布说明 Markdown 文档
 
         Args:
             release: ReleaseRecord 实例
@@ -808,12 +833,7 @@ class ReleaseService:
 
         Returns:
             更新后的 ReleaseRecord
-
-        Raises:
-            serializers.ValidationError: 非草稿状态时抛出
         """
-        if release.status != "draft":
-            raise serializers.ValidationError({"status": "只有草稿状态才能编辑发布说明"})
         release.release_doc = md_content
         release.save(update_fields=["release_doc", "updated_at"])
         return release
@@ -827,7 +847,8 @@ class ReleaseService:
         """
         预览上个 Tag 到本次基线之间的 commits 与 MRs，并自动解析更新内容
 
-        不落库，供创建发布表单实时预览。
+        只拉取“本分支最新提交”到“本分支最新匹配 tag”之间的内容；
+        若无匹配 tag，则取本分支最新 100 条提交。
 
         Args:
             repository: 仓库实例
@@ -841,51 +862,63 @@ class ReleaseService:
         repo_identity = repository.external_identity
         project = repository.project
 
-        # 获取上个 Tag
+        # 获取分支最新提交，用于确定基线及 MR/commit 过滤
+        head_commit: Optional[CommitInfo] = None
+        try:
+            head_commits = provider.list_commits(repo_identity, branch, per_page=1)
+            if head_commits:
+                head_commit = head_commits[0]
+        except ProviderError:
+            head_commit = None
+
+        # 获取本分支最新匹配 tag（仅比较同分支上的 tag）
         last_tag: Optional[str] = None
+        tag_commit_hash: Optional[str] = None
+        tag_created_at: Optional[datetime] = None
         try:
             tags = provider.list_tags(repo_identity)
             calculator = VersionCalculator(project.version_rule or {})
             latest = calculator.find_latest_matching_tag(tags)
             if latest:
                 last_tag = latest[0].name
+                tag_commit_hash = latest[0].commit_hash
+                tag_created_at = latest[0].created_at
         except ProviderError:
             last_tag = None
 
-        # 拉取 commits：优先比较上个 tag 到分支；compare 失败或无 tag 时回退到分支全量
+        # 拉取 commits：从 last_tag 到分支 HEAD；无 tag 时回退到本分支最新 100 条
         commits: List[CommitInfo] = []
         try:
             if last_tag:
                 try:
                     commits = provider.compare_commits(repo_identity, base=last_tag, head=branch)
                 except ProviderError:
-                    commits = provider.list_commits(repo_identity, branch)
+                    commits = provider.list_commits(repo_identity, branch, per_page=100)
             else:
-                commits = provider.list_commits(repo_identity, branch)
+                commits = provider.list_commits(repo_identity, branch, per_page=100)
         except ProviderError:
             commits = []
 
         # 过滤非法提交：预览接口不落库，按 commit message 是否包含有效 A/F 行实时判断
         commits = [c for c in commits if extract_update_lines(c.message)]
 
-        # 拉取 MRs
+        # 拉取 MRs，并按 tag 时间过滤：只保留 tag 之后合并到本分支的 MR
         merge_requests: List[MergeRequestInfo] = []
         try:
-            merge_requests = provider.list_merge_requests(repo_identity, target_branch=branch)
+            merge_requests = provider.list_merge_requests(
+                repo_identity, target_branch=branch, since=tag_created_at
+            )
+            # 兜底过滤：merged_at 早于 tag 创建时间的 MR 不纳入本次发布
+            if tag_created_at:
+                merge_requests = [
+                    mr for mr in merge_requests
+                    if mr.merged_at and mr.merged_at >= tag_created_at
+                ]
         except ProviderError:
             merge_requests = []
 
         # 获取分支 HEAD
-        head_hash = ""
-        if commits:
-            head_hash = commits[0].hash
-        else:
-            try:
-                head_commits = provider.list_commits(repo_identity, branch, per_page=1)
-                if head_commits:
-                    head_hash = head_commits[0].hash
-            except ProviderError:
-                head_hash = ""
+        head_hash = head_commit.hash if head_commit else ""
 
         # 解析更新内容
         parsed_updates: List[Dict[str, str]] = []

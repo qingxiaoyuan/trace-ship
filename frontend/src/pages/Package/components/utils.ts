@@ -1,9 +1,10 @@
-import type { PackageTaskStatus } from '@/types';
+import type { PackageTask, PackageTaskStatus } from '@/types';
 
 export const stageLabels: Record<string, string> = {
   checkout: '拉取源码',
   build: '构建打包',
   artifacts: '扫描产物',
+  svn_push: '推送 SVN',
   done: '已完成',
 };
 
@@ -55,6 +56,18 @@ export function saveBlob(blob: Blob, filename: string) {
 
 export function isRunning(status: PackageTaskStatus): boolean {
   return status === 'running' || status === 'queued';
+}
+
+export function canPushSvn(task: PackageTask): boolean {
+  if (typeof task.can_push_svn === 'boolean') return task.can_push_svn;
+  const snapshot = task.config_snapshot || {};
+  return Boolean(
+    task.status === 'success' &&
+    (task.artifact_info || []).length > 0 &&
+    snapshot.svn_push_enabled &&
+    snapshot.svn_url &&
+    snapshot.svn_credential_id
+  );
 }
 
 export function formatRelativeTime(date: string | Date): string {

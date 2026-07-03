@@ -157,3 +157,49 @@ class SVNProvider:
     ) -> List[MergeRequestInfo]:
         """SVN 不支持 MR 概念，返回空列表"""
         return []
+
+    def remote_exists(self, url: str) -> bool:
+        """
+        检查远程路径是否已存在。
+
+        Args:
+            url: SVN 远程路径
+
+        Returns:
+            路径存在返回 True，否则返回 False
+        """
+        cmd = self._base_cmd() + ["info", url]
+        try:
+            self._run(cmd, timeout=30)
+            return True
+        except ConnectionError:
+            return False
+
+    def mkdir(self, remote_url: str, message: str = "") -> None:
+        """
+        在 SVN 仓库中远程创建目录。
+
+        Args:
+            remote_url: 要创建的远程目录地址
+            message: 提交说明
+
+        Raises:
+            ConnectionError: 命令执行失败
+        """
+        cmd = self._base_cmd() + ["mkdir", remote_url, "-m", message]
+        self._run(cmd, timeout=60)
+
+    def import_path(self, local_path: str, remote_url: str, message: str = "") -> None:
+        """
+        将本地文件或目录导入 SVN（无需工作副本）。
+
+        Args:
+            local_path: 本地文件或目录路径
+            remote_url: SVN 远程目标地址
+            message: 提交说明
+
+        Raises:
+            ConnectionError: 命令执行失败或超时
+        """
+        cmd = self._base_cmd() + ["import", local_path, remote_url, "-m", message]
+        self._run(cmd, timeout=300)
