@@ -53,26 +53,17 @@ echo ""
 echo "🚀 启动第三方服务..."
 ${COMPOSE_CMD} up -d --build
 
-# 等待 SVN 服务就绪并初始化仓库
+# 等待 SVN 服务就绪并初始化仓库（含账号配置）
 SVN_CONTAINER="${COMPOSE_PROJECT_NAME:-release-manager-dev}-svn"
 echo ""
 echo "⏳ 等待 SVN 服务就绪..."
 sleep 5
 
 if docker ps --format "{{.Names}}" | grep -q "^${SVN_CONTAINER}$"; then
-    echo "✅ 初始化 SVN 测试仓库..."
-    docker exec "${SVN_CONTAINER}" sh -c '
-        cd /var/svn
-        for repo in demo-project trace-ship; do
-            if [ ! -d "$repo" ]; then
-                svnadmin create "$repo"
-                svn mkdir -m "Init trunk/tags/branches" "file:///var/svn/$repo/trunk" "file:///var/svn/$repo/tags" "file:///var/svn/$repo/branches"
-                echo "创建仓库: $repo"
-            else
-                echo "仓库已存在: $repo"
-            fi
-        done
-    '
+    echo "✅ 初始化 SVN 测试仓库及账号配置..."
+    docker cp "${SCRIPT_DIR}/svn/create-repos.sh" "${SVN_CONTAINER}:/tmp/create-repos.sh"
+    docker exec "${SVN_CONTAINER}" sh /tmp/create-repos.sh
+    docker exec "${SVN_CONTAINER}" rm -f /tmp/create-repos.sh
 else
     echo "⚠️ SVN 容器未启动，跳过仓库初始化"
 fi
@@ -93,8 +84,14 @@ echo ""
 echo "🖥️  phpLDAPadmin:         http://localhost:${PHPLDAPADMIN_PORT:-8090}"
 echo "   Login DN: cn=admin,dc=$(echo ${LDAP_DOMAIN:-example.com} | sed 's/\./,dc=/g')"
 echo ""
-echo "📁 SVN 仓库:             svn://localhost:${SVN_PORT:-3690}/demo-project"
-echo "   本地轻量 SVN 服务，默认无认证"
+echo "📁 SVN 仓库:"
+echo "   svn 协议:    svn://localhost:${SVN_PORT:-3690}/trace-ship"
+echo "   http 协议:   http://localhost:${SVN_HTTP_PORT:-3691}/svn/trace-ship"
+echo "   仓库列表:    http://localhost:${SVN_HTTP_PORT:-3691}/repos/"
+echo "   模拟真实场景的三角色账号（svn/http 共用同一套）："
+echo "     admin     / ${SVN_ADMIN_PASSWORD:-SVNAdmin@2024}        （全权限 rw，可推 tag）"
+echo "     developer / ${SVN_DEV_PASSWORD:-Developer@2024}  （trunk/branches 读写，tag 只读）"
+echo "     viewer    / ${SVN_VIEWER_PASSWORD:-Viewer@2024}      （全只读）"
 echo ""
 echo "🐘 PostgreSQL:           localhost:${POSTGRES_PORT:-5432}"
 echo "   数据库: ${POSTGRES_DB:-release_manager}"
