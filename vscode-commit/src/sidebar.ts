@@ -60,6 +60,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _firstLoad: boolean = true; // 仅首次显示 loading 骨架，避免后续刷新闪烁
   private _debounceTimer: any = null; // 状态变化去抖定时器
   private _statusEnum?: any; // 缓存运行时 Git Status 枚举
+  private _aiAbortController?: AbortController; // 用于中断 AI 生成请求
+  private _isGenerating: boolean = false; // 是否正在生成 AI commit
 
   constructor(extensionUri: vscode.Uri) {
     this._extensionUri = extensionUri;
@@ -151,6 +153,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               break;
             case "insertTemplate":
               this._insertTemplate();
+              break;
+            case "stopGenerateCommit":
+              this.stopGenerateCommit();
               break;
           }
         } catch (err: any) {
@@ -987,6 +992,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         throw new Error("未找到 Git 仓库");
       }
 
+      // 初始化中断控制器并通知前端生成已开始
+      this._isGenerating = true;
+      this._aiAbortController = new AbortController();
+      this._view.webview.postMessage({ command: "generatingStarted" });
+
       await Promise.all(repos.map((r: any) => this._waitRepoStateReady(r)));
 
       // 校验：必须至少有一个仓库的暂存区有内容
@@ -1043,15 +1053,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         return !name || !this._isImageFile(name);
       });
       const summaries: string[] = [];
+      const signal = this._aiAbortController?.signal;
       for (const fileDiff of fileDiffs) {
-        if (!fileDiff.trim()) {
+        if (!fileDiff.trim() || signal?.aborted) {
           continue;
         }
         const prompt = this._buildFileSummaryPrompt(fileDiff);
-        const text = await this._callAi(apiEndpoint, apiKey, model, prompt);
+        const text = await this._callAi(apiEndpoint, apiKey, model, prompt, signal);
         if (text) {
           summaries.push(text);
         }
+      }
+
+      if (signal?.aborted) {
+        throw new Error("已取消生成");
       }
 
       if (summaries.length === 0) {
@@ -1065,6 +1080,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         apiKey,
         model,
         finalPrompt,
+        signal,
       );
 
       if (!commitText) {
@@ -1096,12 +1112,36 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         });
       }
     } catch (error: any) {
-      this._view.webview.postMessage({
-        command: "error",
-        error: error.message || "生成失败",
-      });
+      if (error?.name === "AbortError" || error?.message === "已取消生成") {
+        this._view.webview.postMessage({
+          command: "status",
+          message: "已停止生成",
+          type: "info",
+        });
+      } else {
+        this._view.webview.postMessage({
+          command: "error",
+          error: error.message || "生成失败",
+        });
+      }
     } finally {
+      this._isGenerating = false;
+      this._aiAbortController = undefined;
       this._view.webview.postMessage({ command: "generatingDone" });
+    }
+  }
+
+  /**
+   * 停止正在进行的 AI 生成
+   */
+  public stopGenerateCommit() {
+    if (this._isGenerating && this._aiAbortController) {
+      this._aiAbortController.abort();
+      this._view?.webview.postMessage({
+        command: "status",
+        message: "正在停止生成...",
+        type: "info",
+      });
     }
   }
 
@@ -1113,6 +1153,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     apiKey: string,
     model: string,
     prompt: string,
+    signal?: AbortSignal,
   ): Promise<string> {
     const isAnthropic = /\/anthropic/i.test(apiEndpoint);
     const url = isAnthropic
@@ -1143,6 +1184,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal,
     });
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
@@ -1449,6 +1491,30 @@ ${joined}
       color: var(--vscode-descriptionForeground);
       margin-bottom: 6px;
       text-transform: uppercase;
+    }
+    .label-actions {
+      position: relative;
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+    }
+    .more-btn {
+      padding: 2px 6px;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .more-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .more-dropdown {
+      right: 0;
+      min-width: 120px;
+    }
+    .dropdown-item.disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
     /* ===== 配置项勾选 ===== */
@@ -1866,7 +1932,15 @@ ${joined}
 
   <!-- Message 输入区 -->
   <div class="panel">
-    <div class="label-row">提交信息（Message）</div>
+    <div class="label-row">
+      <span>提交信息（Message）</span>
+      <div class="label-actions">
+        <button class="tool-btn more-btn" id="btnMore" type="button" aria-label="更多选项" disabled>⋯</button>
+        <div id="moreDropdown" class="dropdown more-dropdown">
+          <div class="dropdown-item disabled" id="itemStopGenerate">⏹ 停止生成</div>
+        </div>
+      </div>
+    </div>
     <div class="message-box">
       <textarea
         id="commitMessage"
@@ -1969,6 +2043,9 @@ ${joined}
       changesCollapseIcon: document.getElementById('changesCollapseIcon'),
       btnStageAll: document.getElementById('btnStageAll'),
       btnRefresh: document.getElementById('btnRefresh'),
+      btnMore: document.getElementById('btnMore'),
+      moreDropdown: document.getElementById('moreDropdown'),
+      itemStopGenerate: document.getElementById('itemStopGenerate'),
     };
 
     let toastTimer = null;
@@ -2122,7 +2199,22 @@ ${joined}
       });
     });
 
-    document.addEventListener('click', () => els.dropdown.classList.remove('show'));
+    document.addEventListener('click', () => {
+      els.dropdown.classList.remove('show');
+      els.moreDropdown.classList.remove('show');
+    });
+
+    els.btnMore.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!els.btnMore.disabled) {
+        els.moreDropdown.classList.toggle('show');
+      }
+    });
+
+    els.itemStopGenerate.addEventListener('click', () => {
+      els.moreDropdown.classList.remove('show');
+      vscode.postMessage({ command: 'stopGenerateCommit' });
+    });
 
     els.btnGenerate.addEventListener('click', () => {
       if (isGenerating) return;
@@ -2226,6 +2318,14 @@ ${joined}
         isGenerating = false;
         els.btnGenerate.disabled = false;
         els.btnGenerate.innerHTML = '✦ AI 生成 Commit';
+        els.btnMore.disabled = true;
+        els.itemStopGenerate.classList.add('disabled');
+        els.moreDropdown.classList.remove('show');
+      }
+
+      if (message.command === 'generatingStarted') {
+        els.btnMore.disabled = false;
+        els.itemStopGenerate.classList.remove('disabled');
       }
     });
 
