@@ -2,7 +2,7 @@
   "name": "commit-help",
   "displayName": "规范提交助手",
   "description": "AI驱动的代码提交规范助手，自动生成符合规范的commit信息",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "trace-ship",
   "engines": {
     "vscode": "^1.85.0"

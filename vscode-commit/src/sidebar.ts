@@ -62,9 +62,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _statusEnum?: any; // 缓存运行时 Git Status 枚举
   private _aiAbortController?: AbortController; // 用于中断 AI 生成请求
   private _isGenerating: boolean = false; // 是否正在生成 AI commit
+  private _outputChannel?: vscode.OutputChannel; // 日志输出通道
 
-  constructor(extensionUri: vscode.Uri) {
+  constructor(extensionUri: vscode.Uri, outputChannel?: vscode.OutputChannel) {
     this._extensionUri = extensionUri;
+    this._outputChannel = outputChannel;
+  }
+
+  /**
+   * 输出日志到 VS Code OutputChannel，同时保留 console.log 便于调试。
+   */
+  private _log(message: string) {
+    const line = `[规范提交助手] ${message}`;
+    this._outputChannel?.appendLine(line);
+    console.log(line);
   }
 
   /**
@@ -289,6 +300,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         command: "diffStats",
         additions: stats.additions,
         deletions: stats.deletions,
+        aiContextChars: stats.aiContextChars,
         files: changes.staged.length + changes.unstaged.length,
         changes,
       });
@@ -451,19 +463,34 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private async _calcStatsFromRepo(): Promise<{
     additions: number;
     deletions: number;
+    aiContextChars: number;
   }> {
     try {
       const gitApi = await this._getGitApi();
-      const repo = gitApi.repositories?.[0];
-      if (!repo) {
-        return { additions: 0, deletions: 0 };
+      const repos: any[] = gitApi.repositories || [];
+      if (repos.length === 0) {
+        return { additions: 0, deletions: 0, aiContextChars: 0 };
       }
 
-      // 复用 _getRepoDiff：含未跟踪文件，统计更准确
-      const diffContent = await this._getRepoDiff(repo);
-      return this._parseDiffStats(diffContent);
+      let additions = 0;
+      let deletions = 0;
+      let aiContextChars = 0;
+
+      for (const repo of repos) {
+        // 复用 _getRepoDiff：含未跟踪文件，统计新增/删除行更准确
+        const diffContent = await this._getRepoDiff(repo);
+        const stats = this._parseDiffStats(diffContent);
+        additions += stats.additions;
+        deletions += stats.deletions;
+
+        // 暂存区 diff 是 AI 生成 commit 时的主要上下文，按字符数估算大小
+        const stagedDiff = await this._getStagedDiff(repo);
+        aiContextChars += stagedDiff.length;
+      }
+
+      return { additions, deletions, aiContextChars };
     } catch {
-      return { additions: 0, deletions: 0 };
+      return { additions: 0, deletions: 0, aiContextChars: 0 };
     }
   }
 
@@ -577,7 +604,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 获取仓库暂存区 diff（git diff --cached / git diff --staged），仅含已暂存改动
+   * 获取仓库暂存区 diff（git diff --cached / git diff --staged），仅含已暂存改动。
+   * 过滤掉图片/二进制文件 diff 块，避免它们进入 AI 上下文字符统计。
    */
   private async _getStagedDiff(repo: any): Promise<string> {
     const root: string = repo.rootUri.fsPath;
@@ -586,7 +614,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         `git -C "${root}" --no-pager diff --cached --no-color --no-ext-diff`,
         { maxBuffer: 20 * 1024 * 1024 },
       );
-      return cached.stdout || "";
+      const raw = cached.stdout || "";
+      const filtered = this._splitDiffByFile(raw).filter((block) => {
+        const name = this._extractFilenameFromDiffBlock(block);
+        if (this._isBinaryDiffBlock(block)) {
+          if (name) {
+            this._log(`[_getStagedDiff] 跳过二进制文件: ${name}`);
+          }
+          return false;
+        }
+        if (name && this._isImageFile(name)) {
+          this._log(`[_getStagedDiff] 跳过图片/二进制文件: ${name}`);
+          return false;
+        }
+        return true;
+      });
+      return filtered.join("\n");
     } catch {
       return "";
     }
@@ -631,13 +674,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 从 diff 块中提取文件名（优先取 +++ b/<path>，删除文件回退到 --- a/<path>）。
+   * 从 diff 块中提取文件名。
+   * 优先取 +++ b/<path>，删除文件回退到 --- a/<path>，
+   * 二进制文件再从 "Binary files ... b/<path> differ" 中提取。
    * 用于按扩展名跳过图片等不希望进入 AI prompt 的文件。
    */
   private _extractFilenameFromDiffBlock(diffBlock: string): string | undefined {
     const m =
       diffBlock.match(/^\+\+\+ b\/(.+)$/m) ||
-      diffBlock.match(/^--- a\/(.+)$/m);
+      diffBlock.match(/^--- a\/(.+)$/m) ||
+      diffBlock.match(/Binary files.*\bb\/(.+?)\s+differ/i);
     if (!m) {
       return undefined;
     }
@@ -1048,39 +1094,75 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const MAX_FILE_DIFF_LENGTH = 50000; // 单个文件 diff 最大字符数，防止单文件撑爆 prompt
       const MAX_TOTAL_DIFF_LENGTH = 300000; // 所有文件 diff 总字符数上限（现代模型上下文普遍 128K+，可适当放宽）
       const rawFileDiffs = this._splitDiffByFile(diffToUse).filter((d) => {
+        const name = this._extractFilenameFromDiffBlock(d);
         if (this._isBinaryDiffBlock(d)) {
+          if (name) {
+            this._log(`[SidebarProvider] 跳过二进制文件: ${name}`);
+          }
           return false;
         }
-        const name = this._extractFilenameFromDiffBlock(d);
-        return !name || !this._isImageFile(name);
+        if (name && this._isImageFile(name)) {
+          this._log(`[SidebarProvider] 跳过图片/二进制文件: ${name}`);
+          return false;
+        }
+        return true;
       });
+
+      const LOG_PREFIX = "[CommitAI]";
+      this._log(
+        `${LOG_PREFIX} 原始 diff 总长度: ${diffToUse.length} 字符，拆分为 ${rawFileDiffs.length} 个文件块`,
+      );
 
       // 对超长单文件 diff 截断，并控制总体积
       const fileDiffs: string[] = [];
       let totalDiffLength = 0;
       let truncatedFileCount = 0;
+      let perFileFileLengthLimitCount = 0;
       for (const d of rawFileDiffs) {
+        const name = this._extractFilenameFromDiffBlock(d);
+        if (d.length > MAX_FILE_DIFF_LENGTH) {
+          perFileFileLengthLimitCount++;
+          this._log(
+            `${LOG_PREFIX} 单文件截断: ${name || "未知文件"} 原始 ${d.length} 字符 → ${MAX_FILE_DIFF_LENGTH} 字符`,
+          );
+        }
         const capped =
           d.length > MAX_FILE_DIFF_LENGTH
-            ? d.slice(0, MAX_FILE_DIFF_LENGTH) + "\n\n... (该文件 diff 过长，已截断)"
+            ? d.slice(0, MAX_FILE_DIFF_LENGTH) + "\n\n... (已截断)"
             : d;
         if (
           totalDiffLength + capped.length > MAX_TOTAL_DIFF_LENGTH &&
           fileDiffs.length > 0
         ) {
           truncatedFileCount++;
+          this._log(
+            `${LOG_PREFIX} 总量超限跳过: ${name || "未知文件"} 当前累计 ${totalDiffLength} 字符`,
+          );
           continue;
         }
         totalDiffLength += capped.length;
         fileDiffs.push(capped);
       }
 
-      if (truncatedFileCount > 0) {
+      this._log(
+        `${LOG_PREFIX} 进入 AI 生成: ${fileDiffs.length} 个文件，截断后总长度 ${totalDiffLength} 字符（单文件截断 ${perFileFileLengthLimitCount} 个，总量跳过 ${truncatedFileCount} 个）`,
+      );
+
+      if (truncatedFileCount > 0 || perFileFileLengthLimitCount > 0) {
         this._view.webview.postMessage({
           command: "status",
-          message: `diff 总量过大，已跳过 ${truncatedFileCount} 个文件以控制 prompt 长度，生成结果可能不完整`,
+          message: `已跳过 ${truncatedFileCount} 个文件（diff 过长），结果可能不完整`,
           type: "info",
         });
+      }
+
+      if (fileDiffs.length === 0) {
+        if (rawFileDiffs.length === 0 && diffToUse.trim()) {
+          throw new Error(
+            "当前暂存区仅包含图片或二进制文件，无法生成 commit 信息，请提交文本代码文件后再试",
+          );
+        }
+        throw new Error("AI 未返回有效 commit 条目");
       }
 
       const summaries: string[] = [];
@@ -1763,6 +1845,17 @@ ${joined}
     }
     .stat-chip.add .num { color: var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
     .stat-chip.del .num { color: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39); }
+    .stat-chip.ctx .num { color: var(--vscode-symbolIcon-variableForeground, #75beff); }
+    .stat-chip.ctx.warn {
+      background: var(--vscode-editorWarning-background, rgba(194,150,41,0.12));
+      border: 1px solid var(--vscode-editorWarning-border, rgba(194,150,41,0.3));
+    }
+    .stat-chip.ctx.warn .num { color: var(--vscode-editorWarning-foreground, #c29629); }
+    .stat-chip.ctx.danger {
+      background: var(--vscode-editorError-background, rgba(218,54,51,0.12));
+      border: 1px solid var(--vscode-editorError-border, rgba(218,54,51,0.3));
+    }
+    .stat-chip.ctx.danger .num { color: var(--vscode-editorError-foreground, #f14c4c); }
 
     /* ===== Changes 区 ===== */
     .section-header {
@@ -1958,6 +2051,7 @@ ${joined}
       <div class="stat-chip"><span class="num" id="statFiles">0</span><span class="lbl">文件</span></div>
       <div class="stat-chip add"><span class="num" id="statAdd">+0</span><span class="lbl">新增</span></div>
       <div class="stat-chip del"><span class="num" id="statDel">−0</span><span class="lbl">删除</span></div>
+      <div class="stat-chip ctx" id="aiContextChip" title="暂存区 diff 字符数，帮助判断 AI 上下文是否过大"><span class="num" id="statCtx">0</span><span class="lbl">AI 上下文</span></div>
     </div>
   </div>
 
@@ -2062,6 +2156,8 @@ ${joined}
       statFiles: document.getElementById('statFiles'),
       statAdd: document.getElementById('statAdd'),
       statDel: document.getElementById('statDel'),
+      statCtx: document.getElementById('statCtx'),
+      aiContextChip: document.getElementById('aiContextChip'),
       stagedFileList: document.getElementById('stagedFileList'),
       stagedCount: document.getElementById('stagedCount'),
       stagedHeader: document.getElementById('stagedHeader'),
@@ -2183,6 +2279,18 @@ ${joined}
       els.statFiles.textContent = totalFiles;
       els.statAdd.textContent = '+' + (stats ? (stats.additions || 0) : 0);
       els.statDel.textContent = '−' + (stats ? (stats.deletions || 0) : 0);
+
+      // 更新 AI 上下文大小：暂存区 diff 字符数，帮助判断提交是否过长
+      const ctxChars = stats ? (stats.aiContextChars || 0) : 0;
+      els.statCtx.textContent = ctxChars >= 10000 ? (ctxChars / 1000).toFixed(1) + 'k' : String(ctxChars);
+      if (els.aiContextChip) {
+        els.aiContextChip.classList.remove('warn', 'danger');
+        if (ctxChars > 20000) {
+          els.aiContextChip.classList.add('danger');
+        } else if (ctxChars > 8000) {
+          els.aiContextChip.classList.add('warn');
+        }
+      }
 
       if (stats && stats.loading) {
         const loading = '<div class="loading"><div class="spinner"></div>正在扫描 Git 变更...</div>';

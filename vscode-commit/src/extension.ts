@@ -5,7 +5,9 @@ import { SidebarProvider } from './sidebar';
  * 插件激活入口：注册侧边栏 Webview 视图与命令
  */
 export function activate(context: vscode.ExtensionContext) {
-  const sidebarProvider = new SidebarProvider(context.extensionUri);
+  const outputChannel = vscode.window.createOutputChannel('规范提交助手');
+  context.subscriptions.push(outputChannel);
+  const sidebarProvider = new SidebarProvider(context.extensionUri, outputChannel);
 
   // 注册侧边栏 Webview 视图
   context.subscriptions.push(
