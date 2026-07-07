@@ -205,8 +205,18 @@ class ReleaseViewSet(StandardModelViewSet):
             ReleaseValidator.validate_branch_and_suffix(
                 instance.release_type, instance.branch, instance.tag_name, rule, version_rule
             )
+            if "tag_name" in data or "version" in data:
+                ReleaseService.validate_tag_not_exists(instance.repository, instance.tag_name, request.user)
         except serializers.ValidationError as exc:
-            return error_response(40002, str(exc.detail[0]) if exc.detail else "校验失败")
+            detail = exc.detail
+            if isinstance(detail, dict):
+                first = next(iter(detail.values()), "校验失败")
+                message = str(first[0] if isinstance(first, list) and first else first)
+            elif isinstance(detail, list):
+                message = str(detail[0]) if detail else "校验失败"
+            else:
+                message = str(detail or "校验失败")
+            return error_response(40002, message)
 
         instance.save(update_fields=["branch", "version", "tag_name", "git_hash", "updated_at"])
         return success_response(self._serialize_release(instance), message="更新成功")

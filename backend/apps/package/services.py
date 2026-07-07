@@ -491,16 +491,36 @@ class PackageService:
         if provider.remote_exists(remote_url):
             raise RuntimeError(f"SVN 目录已存在: {remote_url}")
 
-        # 导入产物目录
         artifacts_dir = workspace / "artifacts"
-        message = f"Release {task.version} artifacts ({task.tag_name})"
-        provider.import_path(str(artifacts_dir), remote_url, message)
+        if not artifacts_dir.exists():
+            raise RuntimeError("产物目录不存在，无法推送")
 
-        artifact_names = [a.get("name", "") for a in (task.artifact_info or [])]
+        upload_dir = workspace / "tmp" / "svn_upload"
+        if upload_dir.exists():
+            shutil.rmtree(upload_dir)
+        shutil.copytree(artifacts_dir, upload_dir)
+
+        doc_name = f"release-{task.version}.md"
+        doc_path = upload_dir / doc_name
+        if doc_path.exists():
+            raise RuntimeError(f"SVN 上传目录已存在发布文档同名文件: {doc_name}")
+        release_doc = ""
+        if task.release_id:
+            release_doc = task.release.release_doc or ""
+        doc_path.write_text(release_doc, encoding="utf-8")
+
+        message = f"Release {task.version} artifacts ({task.tag_name})"
+        provider.import_path(str(upload_dir), remote_url, message)
+
+        uploaded_files = sorted(
+            file.relative_to(upload_dir).as_posix()
+            for file in upload_dir.rglob("*")
+            if file.is_file()
+        )
         return {
             "remote_url": remote_url,
-            "file_count": len(artifact_names),
-            "files": artifact_names,
+            "file_count": len(uploaded_files),
+            "files": uploaded_files,
         }
 
     @classmethod

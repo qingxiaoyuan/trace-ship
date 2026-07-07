@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 from rest_framework.test import APIClient
 
 from apps.release.models import ReleaseRecord
+from utils.provider.base import TagInfo
 
 
 from apps.workflow.models import WorkflowDefinition
@@ -134,6 +135,30 @@ class TestReleaseViews:
         )
         assert response.status_code == 400
         assert response.data["code"] == 40002
+
+    def test_update_draft_rejects_existing_tag(self, api_client, project, repository, patched_provider):
+        """草稿编辑版本时校验远端 tag 已存在。"""
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            branch="main",
+            release_type="formal",
+            status="draft",
+            publisher=api_client.handler._force_user,
+        )
+        patched_provider.tags = [TagInfo(name="VA.1.0.1", commit_hash="old")]
+
+        response = api_client.patch(
+            f"/api/releases/{release.id}/",
+            {"version": "VA.1.0.1"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert response.data["code"] == 40002
+        assert "Tag 已存在" in response.data["message"]
 
     def test_generate_doc(self, api_client, project, repository, commit, patched_provider):
         """生成发布说明"""

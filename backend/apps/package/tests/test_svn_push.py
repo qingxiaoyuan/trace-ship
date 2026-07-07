@@ -95,6 +95,7 @@ def release(project, repository, user):
         branch="main",
         release_type="formal",
         status="released",
+        release_doc="# 发布说明\n\n- 修复问题",
         publisher=user,
     )
 
@@ -316,10 +317,12 @@ class TestPushArtifactsToSVN:
             result = PackageService._push_artifacts_to_svn(task, workspace)
 
         assert result["remote_url"] == "svn://host/releases/V1.0.0"
-        assert result["file_count"] == 1
-        assert result["files"] == ["app.tar.gz"]
+        assert result["file_count"] == 2
+        assert result["files"] == ["app.tar.gz", "release-V1.0.0.md"]
         mock_provider.remote_exists.assert_called_once_with("svn://host/releases/V1.0.0")
-        mock_provider.import_path.assert_called_once()
+        import_path = mock_provider.import_path.call_args.args[0]
+        assert (workspace / "tmp" / "svn_upload" / "release-V1.0.0.md").read_text(encoding="utf-8") == release.release_doc
+        assert import_path == str(workspace / "tmp" / "svn_upload")
 
     def test_push_fails_when_directory_exists(self, project, repository, release, svn_credential, tmp_path):
         """SVN 版本目录已存在时推送失败。"""
@@ -402,6 +405,37 @@ class TestPushArtifactsToSVN:
 
         with pytest.raises(RuntimeError, match="SVN 推送配置不完整"):
             PackageService._push_artifacts_to_svn(task, workspace)
+
+    def test_push_fails_when_release_doc_filename_conflicts(self, project, repository, release, svn_credential, tmp_path):
+        """产物中已有同名发布文档时不能静默覆盖。"""
+        task = PackageTask.objects.create(
+            release=release,
+            project=project,
+            repository=repository,
+            name="打包任务",
+            mode="local",
+            build_type="web",
+            tag_name=release.tag_name,
+            version=release.version,
+            config_snapshot={
+                "svn_push_enabled": True,
+                "svn_url": "svn://host/releases",
+                "svn_credential_id": str(svn_credential.id),
+                "svn_path_template": "{version}",
+            },
+            artifact_info=[],
+        )
+        workspace = tmp_path / "workspace"
+        (workspace / "artifacts").mkdir(parents=True)
+        (workspace / "artifacts" / "release-V1.0.0.md").write_text("产物自带文档", encoding="utf-8")
+
+        mock_provider = MagicMock()
+        mock_provider.remote_exists.return_value = False
+
+        with patch("apps.package.services.get_provider", return_value=mock_provider):
+            with pytest.raises(RuntimeError, match="同名文件"):
+                PackageService._push_artifacts_to_svn(task, workspace)
+        mock_provider.import_path.assert_not_called()
 
     def test_push_with_custom_path_template(self, project, repository, release, svn_credential, tmp_path):
         """自定义路径模板正确渲染。"""

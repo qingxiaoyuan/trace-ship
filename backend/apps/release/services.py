@@ -28,6 +28,10 @@ from utils.provider.factory import get_provider
 logger = logging.getLogger(__name__)
 
 
+class ReleaseTagExistsError(serializers.ValidationError):
+    """远端已存在同名 tag。"""
+
+
 class VersionCalculator:
     """
     版本号计算器
@@ -670,6 +674,49 @@ class ReleaseService:
             raise serializers.ValidationError({"branch": f"分支 {branch} 无提交记录"})
         return commits[0].hash
 
+    @staticmethod
+    def _validate_tag_not_exists(
+        provider: GitProvider,
+        repository: Repository,
+        tag_name: str,
+        exists_message: str = "Tag 已存在，不能创建发布草稿",
+    ) -> None:
+        """
+        校验远端仓库不存在同名 tag。
+
+        Args:
+            provider: 仓库 Provider
+            repository: 目标仓库
+            tag_name: 最终要创建的 tag 名称
+
+        Raises:
+            serializers.ValidationError: tag 已存在或查询失败
+        """
+        try:
+            tags = provider.list_tags(repository.external_identity)
+        except ProviderError as exc:
+            raise serializers.ValidationError({"tag_name": f"校验 tag 是否存在失败: {exc}"})
+        if any(tag.name == tag_name for tag in tags):
+            raise ReleaseTagExistsError({"tag_name": exists_message})
+
+    @classmethod
+    def validate_tag_not_exists(
+        cls,
+        repository: Repository,
+        tag_name: str,
+        request_user=None,
+    ) -> None:
+        """
+        对外提供草稿编辑等场景使用的 tag 查重校验。
+
+        Args:
+            repository: 目标仓库
+            tag_name: 最终要创建的 tag 名称
+            request_user: 当前请求用户
+        """
+        provider = cls._get_provider(repository, request_user)
+        cls._validate_tag_not_exists(provider, repository, tag_name)
+
     @classmethod
     def create_release(
         cls,
@@ -717,6 +764,7 @@ class ReleaseService:
         version_rule = project.version_rule or {}
 
         provider = cls._get_provider(repository, publisher)
+        tags: Optional[List[TagInfo]] = None
 
         # 若未传 version 但传了 tag_name，从 tag_name 去后缀反推 version
         if not version and tag_name:
@@ -757,6 +805,10 @@ class ReleaseService:
             release_type, branch, tag_name, release_rule, version_rule
         )
         ReleaseValidator.validate_release_cycle(project, release_type, release_rule)
+        if tags is None:
+            cls._validate_tag_not_exists(provider, repository, tag_name)
+        elif any(tag.name == tag_name for tag in tags):
+            raise serializers.ValidationError({"tag_name": "Tag 已存在，不能创建发布草稿"})
 
         git_hash = cls._resolve_branch_head_hash(repository, branch, publisher)
 
@@ -1146,12 +1198,23 @@ class ReleaseService:
 
         provider = cls._get_provider(release.repository, request_user)
         try:
+            cls._validate_tag_not_exists(
+                provider,
+                release.repository,
+                release.tag_name,
+                exists_message="Tag 已存在，无法推送发布",
+            )
             tag_info = provider.create_tag(
                 repo_identity=release.repository.external_identity,
                 tag_name=release.tag_name,
                 commit_hash=release.git_hash,
                 message=f"Release {release.version}",
             )
+        except ReleaseTagExistsError as exc:
+            release.status = "rejected"
+            release.rejected_reason = f"推 tag 失败: {exc}"
+            release.save(update_fields=["status", "rejected_reason", "updated_at"])
+            raise
         except ProviderError as exc:
             release.status = "rejected"
             release.rejected_reason = f"推 tag 失败: {exc}"
