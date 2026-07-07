@@ -204,6 +204,119 @@ docker volume rm release-manager-dev_postgres_data release-manager-dev_redis_dat
 
 Gitea 用于轻量测试。如需测试 GitLab，可将 `docker-compose.yml` 中的 `gitea` 服务替换为 GitLab 镜像（注意 GitLab 需要 4GB+ 内存）。
 
+## 生产环境部署
+
+生产环境使用独立的 `docker-compose.prod.yml`，仅包含应用运行必需的服务：PostgreSQL / Redis / Backend / Frontend / Celery Worker / Celery Beat。开发用的第三方依赖（Gitea / OpenLDAP / phpLDAPadmin / SVN / Jenkins）不纳入，生产环境请按需接入外部服务。
+
+### 与开发环境的区别
+
+| 项 | 开发 (docker-compose.yml) | 生产 (docker-compose.prod.yml) |
+|----|---------------------------|--------------------------------|
+| 后端代码 | 挂载源码卷 `../backend:/app` | 镜像内打包（`COPY . .`） |
+| 第三方依赖 | 含 Gitea/LDAP/SVN 等 | 仅 PostgreSQL/Redis |
+| 端口暴露 | backend/postgres/redis 对外 | 仅前端 80 对外，其余内部网络 |
+| 配置文件 | `.env`（弱密码可接受） | `.env.prod`（强制强密钥） |
+| Django settings | `config.settings.dev` | `config.settings.prod` |
+
+### 生产部署步骤
+
+1. 进入 docker 目录：
+
+   ```bash
+   cd docker
+   ```
+
+2. 复制生产配置模板并填写真实值：
+
+   ```bash
+   cp .env.prod.example .env.prod
+   vi .env.prod
+   ```
+
+   **必须修改的项**（`prod.py` 启动时会校验，未修改将拒绝启动）：
+
+   - `DJANGO_SECRET_KEY`：随机 50+ 字符，生成方式：
+     ```bash
+     python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+     ```
+   - `CREDENTIAL_SECRET_KEY`：32 字节随机串，生成方式：
+     ```bash
+     python -c "import secrets; print(secrets.token_urlsafe(32))"
+     ```
+   - `POSTGRES_PASSWORD` / `REDIS_PASSWORD`：强密码
+   - `ALLOWED_HOSTS`：替换 `YOUR_SERVER_IP` 为真实服务器 IP，逗号分隔
+   - `CORS_ALLOWED_ORIGINS`：替换为 `http://真实服务器IP`（端口非 80 时带端口）
+
+3. 一键启动：
+
+   ```bash
+   ./start-prod.sh
+   ```
+
+   脚本会自动校验配置，构建镜像并启动所有服务。首次构建需要数分钟。
+
+4. 访问：浏览器打开 `http://服务器IP`（默认 80 端口，可在 `.env.prod` 的 `FRONTEND_PORT` 修改）。
+
+### 常用运维命令
+
+```bash
+# 查看服务状态
+docker compose -f docker-compose.prod.yml ps
+
+# 查看后端日志
+docker compose -f docker-compose.prod.yml logs -f backend
+
+# 查看所有日志
+docker compose -f docker-compose.prod.yml logs -f
+
+# 停止服务
+docker compose -f docker-compose.prod.yml down
+
+# 重新构建并启动（代码更新后）
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+
+# 进入后端容器执行命令
+docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
+```
+
+### 数据持久化
+
+生产环境使用 Docker Volume 持久化以下数据：
+
+| Volume / 挂载 | 类型 | 用途 |
+|---------------|------|------|
+| `postgres_data` | 命名卷 | PostgreSQL 数据 |
+| `redis_data` | 命名卷 | Redis 持久化 |
+| `backend_logs` | 命名卷 | 后端日志（`/var/log/trace-ship`） |
+| `${PACKAGE_WORKSPACE_ROOT}` | bind mount | 打包工作区（宿主机与容器同路径） |
+| `celerybeat_schedule` | 命名卷 | Celery Beat 调度状态 |
+
+完全重置（⚠️ 会删除命名卷数据，但不会删除 bind mount 的打包工作区）：
+
+```bash
+docker compose -f docker-compose.prod.yml down -v
+```
+
+### Docker 打包任务（DooD 方式）
+
+系统的打包能力（`apps.package`）通过在容器内调用 `docker run` 启动构建容器来执行打包。生产部署采用 **DooD（Docker out of Docker）** 方式实现：
+
+1. **backend / celery-worker 镜像内预装 docker CLI**（仅客户端，不含 daemon）。
+2. **挂载宿主机 `/var/run/docker.sock`** 到容器内，容器内的 `docker` 命令通过该 socket 由宿主机 dockerd 执行。
+3. **打包工作区用 bind mount 且宿主机/容器路径一致**（`PACKAGE_WORKSPACE_ROOT`）。
+
+> 为什么路径必须一致？打包时执行 `docker run -v {workspace}/source:/workspace/source ...`，这个 `-v` 挂载由宿主机 dockerd 执行，源路径必须是宿主机真实路径。若容器内路径与宿主机不一致，构建容器会挂载到空目录或失败。
+
+**前提条件**：宿主机已安装 Docker 并运行 dockerd，且 `/var/run/docker.sock` 可用。
+
+**安全提示**：挂载 docker.sock 等于赋予容器宿主机 root 权限，请确保部署环境受控。
+
+### 安全注意事项
+
+- `.env.prod` 含敏感密钥，已被 `.gitignore` 忽略，切勿提交。
+- 生产环境 backend / postgres / redis 仅在内部网络通信，不对外暴露端口；所有外部请求经前端 nginx 反代 `/api/` 访问后端。
+- `prod.py` 强制 `DEBUG=False`、`CORS_ALLOW_ALL_ORIGINS=False`、`SESSION_COOKIE_SECURE=True`，部署在 HTTPS 反向代理后效果最佳。
+
 ## 注意事项
 
 - 本环境仅用于开发/测试，**不要直接用于生产**。

@@ -1,0 +1,37 @@
+# Python 虚拟环境
+.venv
+venv
+.venv_new
+
+# 缓存与编译产物
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+
+# 运行时数据
+celerybeat-schedule
+celerybeat-schedule.db
+staticfiles
+package_workspaces
+db.sqlite3
+db.sqlite3-journal
+
+# 开发与测试配置
+.vscode
+.idea
+pytest.ini
+start_dev.sh
+
+# 文档与版本控制
+README.md
+.git
+.gitignore
+
+# 构建产物
+Dockerfile
+.dockerignore
+schema.yml

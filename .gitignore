@@ -198,6 +198,9 @@ desktop.ini
 # 如果你希望忽略 docker/.env，取消下面一行的注释
 # docker/.env
 
+# 生产环境配置文件含敏感密钥，必须忽略（仅保留 .env.prod.example 模板）
+docker/.env.prod
+
 # Docker volumes data (if mounted locally)
 volumes/
 data/

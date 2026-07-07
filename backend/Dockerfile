@@ -11,7 +11,19 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     postgresql-client \
     redis-tools \
+    ca-certificates \
+    curl \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# 安装 Docker CLI（用于在容器内调用宿主机 Docker daemon 执行打包任务）
+# 采用 DooD 方式：仅安装 CLI，通过挂载 /var/run/docker.sock 与宿主机通信
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://mirrors.aliyun.com/docker-ce/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && apt-get install -y docker-ce-cli && \
+    rm -rf /var/lib/apt/lists/*
 
 # 安装 Python 依赖
 COPY requirements.txt .
