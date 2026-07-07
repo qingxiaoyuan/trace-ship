@@ -51,6 +51,7 @@ services:
 
   # Trace Ship 后端（镜像内打包代码，不挂载源码卷）
   backend:
+    image: trace-ship/backend:latest
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -96,6 +97,7 @@ services:
 
   # Trace Ship 前端（nginx 提供静态资源并反代 /api/ 到 backend）
   frontend:
+    image: trace-ship/frontend:latest
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -112,9 +114,7 @@ services:
 
   # Celery Worker（使用与 backend 相同的镜像，执行异步任务）
   celery-worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    image: trace-ship/backend:latest
     container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-celery-worker
     restart: unless-stopped
     command: celery -A config worker -l info
@@ -148,9 +148,7 @@ services:
 
   # Celery Beat（定时任务调度）
   celery-beat:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    image: trace-ship/backend:latest
     container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-celery-beat
     restart: unless-stopped
     command: celery -A config beat -l info

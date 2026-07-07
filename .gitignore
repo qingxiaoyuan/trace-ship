@@ -201,6 +201,9 @@ desktop.ini
 # 生产环境配置文件含敏感密钥，必须忽略（仅保留 .env.prod.example 模板）
 docker/.env.prod
 
+# 离线镜像导出包
+docker/trace-ship-images.tar
+
 # Docker volumes data (if mounted locally)
 volumes/
 data/

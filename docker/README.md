@@ -311,6 +311,66 @@ docker compose -f docker-compose.prod.yml down -v
 
 **安全提示**：挂载 docker.sock 等于赋予容器宿主机 root 权限，请确保部署环境受控。
 
+### 离线部署（内网无网络）
+
+内网无法访问 Docker Hub / PyPI / npm 源时，可在**外网机器**构建并导出镜像，再拷到**内网机器**加载使用。镜像名已固定（`trace-ship/backend:latest`、`trace-ship/frontend:latest`），celery 复用 backend 镜像，无需在内网构建。
+
+**镜像清单**：
+
+| 镜像 | 说明 |
+|------|------|
+| `trace-ship/backend:latest` | 后端 + celery worker/beat 共用 |
+| `trace-ship/frontend:latest` | 前端 nginx |
+| `postgres:16` | 数据库 |
+| `redis:7` | 缓存/队列 |
+
+#### 外网机器操作
+
+1. 将项目代码拷到外网机器，配置 `.env.prod`（IP 填内网服务器 IP）。
+
+2. 构建镜像并启动一次（验证可跑通）：
+
+   ```bash
+   cd docker
+   cp .env.prod.example .env.prod
+   vi .env.prod                 # 填内网服务器 IP 和密钥
+   ./start-prod.sh              # 首次会自动构建镜像
+   ```
+
+3. 导出镜像为 tar 包：
+
+   ```bash
+   ./export-images.sh
+   ```
+
+   生成 `docker/trace-ship-images.tar`。
+
+4. 将以下文件拷到内网机器的 `docker/` 目录：
+
+   - `trace-ship-images.tar`（镜像包）
+   - `docker-compose.prod.yml`
+   - `.env.prod`、`.env.prod.example`
+   - `start-prod.sh`、`load-images.sh`
+
+#### 内网机器操作
+
+1. 加载镜像：
+
+   ```bash
+   cd docker
+   ./load-images.sh
+   ```
+
+2. 确认 `.env.prod` 里的 IP、密钥与内网环境匹配，然后启动：
+
+   ```bash
+   ./start-prod.sh
+   ```
+
+   `start-prod.sh` 会检测到镜像已存在，**不会触发构建**，直接启动。
+
+> 提示：`start-prod.sh` 在镜像不存在时自动构建；传入 `--build` 可强制重建（`./start-prod.sh --build`）。内网加载镜像后正常执行 `./start-prod.sh` 即可，切勿加 `--build`。
+
 ### 安全注意事项
 
 - `.env.prod` 含敏感密钥，已被 `.gitignore` 忽略，切勿提交。

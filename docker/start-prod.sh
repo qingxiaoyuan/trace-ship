@@ -67,8 +67,15 @@ echo "✅ 打包工作区目录: ${PACKAGE_WORKSPACE_ROOT}"
 
 echo "✅ 配置校验通过"
 echo ""
-echo "🚀 构建并启动生产服务（首次构建可能需要数分钟）..."
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+
+# 构建/启动：传入 --build 或镜像不存在时才构建；离线环境加载镜像后不会触发构建
+if [ "$1" = "--build" ] || ! docker image inspect trace-ship/backend:latest >/dev/null 2>&1; then
+    echo "🚀 构建镜像（首次构建需要数分钟）..."
+    docker compose --env-file .env.prod -f docker-compose.prod.yml build
+fi
+
+echo "🚀 启动生产服务..."
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 
 echo ""
 echo "====================================="
@@ -82,5 +89,5 @@ echo "  查看后端日志:   docker compose -f docker-compose.prod.yml logs -f 
 echo "  查看所有日志:   docker compose -f docker-compose.prod.yml logs -f"
 echo "  查看服务状态:   docker compose -f docker-compose.prod.yml ps"
 echo "  停止服务:       docker compose -f docker-compose.prod.yml down"
-echo "  重新构建并启动: docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build"
+echo "  重新构建并启动: ./start-prod.sh --build"
 echo "====================================="
