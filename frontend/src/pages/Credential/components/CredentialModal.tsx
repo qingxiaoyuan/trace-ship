@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useCallback } from 'react';
 import { ConfigProvider, Form, Input, Select, DatePicker, Button } from 'antd';
 import dayjs from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
@@ -6,8 +6,6 @@ import {
   KeyRound,
   ShieldCheck,
   Check,
-  Eye,
-  EyeOff,
   Lock,
   Calendar,
   ChevronDown,
@@ -111,47 +109,6 @@ function ScopeCards({ value, onChange }: ScopeCardsProps) {
   );
 }
 
-interface TokenInputProps {
-  value?: string;
-  onChange?: (value: string) => void;
-  credential: Credential | null;
-  authMode: string;
-}
-
-function TokenInput({ value, onChange, credential, authMode }: TokenInputProps) {
-  const [showToken, setShowToken] = useState(false);
-
-  const placeholder = credential
-    ? '留空表示不修改'
-    : authMode === 'password'
-      ? '请输入密码'
-      : '请输入 Token';
-
-  return (
-    <div className="relative">
-      <Input
-        type={showToken ? 'text' : 'password'}
-        value={value}
-        onChange={(e) => onChange?.(e.target.value)}
-        placeholder={placeholder}
-        className="h-9 rounded-lg border-slate-200 pr-9 font-mono-ui hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
-      />
-      <button
-        type="button"
-        tabIndex={-1}
-        onClick={() => setShowToken((v) => !v)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 outline-none"
-      >
-        {showToken ? (
-          <EyeOff className="h-4 w-4" strokeWidth={1.5} />
-        ) : (
-          <Eye className="h-4 w-4" strokeWidth={1.5} />
-        )}
-      </button>
-    </div>
-  );
-}
-
 export function CredentialModal({ open, credential, onCancel, onOk }: CredentialModalProps) {
   const [form] = Form.useForm();
 
@@ -214,7 +171,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
       const effectiveAuthMode = isTokenOnly ? 'token' : values.auth_mode;
       payload.auth_mode = effectiveAuthMode;
 
-      // 凭证内容映射为后端加密需要的 data 字段
+      // 凭证内容映射为后端加密需要的 data 字段；留空表示不修改
       if (values.token) {
         if (effectiveAuthMode === 'password') {
           payload.data = {
@@ -378,11 +335,22 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                     message: authMode === 'password' ? '请输入密码' : '请输入 Token',
                   },
                 ]}
+                extra={
+                  credential && (
+                    <p className="mt-1 mb-0 text-[11px] text-slate-400">留空表示不修改</p>
+                  )
+                }
               >
-                <TokenInput credential={credential} authMode={authMode} />
-                {credential && (
-                  <p className="mt-1 mb-0 text-[11px] text-slate-400">留空表示不修改</p>
-                )}
+                <Input.Password
+                  placeholder={
+                    credential
+                      ? '留空表示不修改'
+                      : authMode === 'password'
+                        ? '请输入密码'
+                        : '请输入 Token'
+                  }
+                  className="h-9 rounded-lg border-slate-200 font-mono-ui hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
+                />
               </Form.Item>
             </div>
 
