@@ -412,6 +412,7 @@ export interface Credential {
   masked_data: string;
   expires_at?: string;
   scope: CredentialScope;
+  project?: string;
   project_id?: string;
   project_name?: string;
   is_active: boolean;
@@ -421,7 +422,8 @@ export interface Credential {
 
 export interface Repository {
   id: string;
-  project_id: string;
+  project?: string;
+  project_id?: string;
   project_name?: string;
   repo_type: 'git' | 'svn';
   vendor: string;

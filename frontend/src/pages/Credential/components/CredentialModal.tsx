@@ -183,7 +183,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
     if (credential) {
       return {
         ...credential,
-        project: credential.project_id,
+        project: credential.project,
         expires_at: credential.expires_at ? dayjs(credential.expires_at) : undefined,
       };
     }

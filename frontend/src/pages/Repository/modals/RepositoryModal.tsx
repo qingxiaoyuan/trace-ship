@@ -92,7 +92,7 @@ export function RepositoryModal({
     if (open) {
       if (repo) {
         form.setFieldsValue({
-          project_id: repo.project_id,
+          project_id: repo.project || repo.project_id,
           repo_type: repo.repo_type,
           vendor: repo.vendor,
           name: repo.name,
