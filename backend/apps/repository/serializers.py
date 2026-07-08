@@ -177,6 +177,7 @@ class RepositoryListSerializer(serializers.ModelSerializer):
 
     project_name = serializers.CharField(source="project.name", read_only=True)
     clone_url = serializers.SerializerMethodField()
+    credential_id = serializers.UUIDField(source="credential.id", read_only=True)
     credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
     credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
     credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
@@ -186,7 +187,7 @@ class RepositoryListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "project", "project_name", "repo_type", "vendor",
             "name", "url", "clone_url", "external_identity", "default_branch",
-            "credential_mode", "credential_mode_display",
+            "credential_mode", "credential_mode_display", "credential_id",
             "credential_name", "credential_owner_name",
             "health_status", "last_sync_at", "created_at",
         ]
