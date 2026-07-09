@@ -55,7 +55,8 @@ function isAuthRequest(url?: string) {
 request.interceptors.request.use(
   async (config) => {
     const token = localStorage.getItem('accessToken');
-    if (token && config.headers) {
+    // 登录、刷新 Token 等认证接口本身不依赖旧的 access token，避免带上过期 token 导致 401
+    if (token && config.headers && !isAuthRequest(config.url)) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
