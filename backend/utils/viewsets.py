@@ -34,7 +34,8 @@ class StandardResponseMixin:
         """
         data = response.data
         # 已包装或二进制/空响应不重复处理（destroy 除外）
-        if isinstance(data, dict) and "code" in data:
+        # 必须同时存在 code / message / data 才认为是已包装，避免角色 code 等字段导致误判
+        if isinstance(data, dict) and {"code", "message", "data"}.issubset(data.keys()):
             return response
         if data is None and response.status_code == 204:
             return success_response(None, message)
