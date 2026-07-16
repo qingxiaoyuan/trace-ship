@@ -343,6 +343,8 @@ class PackageService:
         source_build_path = f"/workspace/source/{build_path}" if build_path != "." else "/workspace/source"
         command = [
             "docker", "run", "--rm",
+            # 使用宿主机网络，便于容器直接访问内网 npm 源等服务
+            "--network", "host",
             *cls._docker_env_args(env_vars),
             "-e", f"TAG_NAME={env['TAG_NAME']}",
             "-e", f"VERSION={env['VERSION']}",

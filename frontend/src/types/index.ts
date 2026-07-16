@@ -318,6 +318,24 @@ export interface PackageImage {
   updated_at: string;
 }
 
+export interface NexusRepository {
+  name: string;
+  format: string;
+  type: string;
+}
+
+export interface NexusImageItem {
+  name: string;
+  version: string;
+  repository: string;
+  image: string;
+}
+
+export interface NexusImageSearchResult {
+  items: NexusImageItem[];
+  continuation_token: string;
+}
+
 export interface PackageConfig {
   id: string;
   project: string;

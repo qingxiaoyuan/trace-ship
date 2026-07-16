@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Form, Input, Select, Switch } from 'antd';
+import { App, Form, Input, Modal, Select, Switch, Tabs } from 'antd';
 import {
   Plus,
   Search,
@@ -8,14 +8,43 @@ import {
   Box,
   Container,
   Save,
+  CloudDownload,
+  HardDrive,
+  RotateCw,
 } from 'lucide-react';
 import type { FormInstance } from 'antd';
 import { packageApi } from '@/api/package';
-import type { PackageImage } from '@/types';
+import type { NexusImageItem, PackageImage } from '@/types';
 
 const buildTypeOptions = [
   { label: 'Web', value: 'web' },
   { label: 'Qt', value: 'qt' },
+];
+
+/** 默认内置镜像：web-docker */
+const DEFAULT_BUILTIN_IMAGE = 'web-docker:latest';
+
+interface BuiltinImageOption {
+  buildType: string;
+  label: string;
+  value: string;
+  description: string;
+}
+
+/** 内置（本地）Docker 镜像选项 */
+const builtinImageOptions: BuiltinImageOption[] = [
+  {
+    buildType: 'web',
+    label: 'web-docker',
+    value: 'web-docker:latest',
+    description: '内置 Web 构建镜像（Node 22，默认）',
+  },
+  {
+    buildType: 'qt',
+    label: 'qt-docker',
+    value: 'qt-docker:latest',
+    description: '内置 Qt 构建镜像',
+  },
 ];
 
 const typeBadgeMap: Record<string, string> = {
@@ -52,6 +81,7 @@ export default function PackageImagePage() {
     } else {
       form.setFieldsValue({
         build_type: 'web',
+        image: DEFAULT_BUILTIN_IMAGE,
         script_entry: '/usr/local/bin/trace-ship-build',
         default_build_path: '.',
         default_output_path: 'dist',
@@ -219,6 +249,9 @@ interface ImageFormDrawerProps {
 }
 
 function ImageFormDrawer({ editing, form, saving, onCancel, onSubmit, onDelete }: ImageFormDrawerProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const buildType = Form.useWatch('build_type', form) || 'web';
+
   return (
     <>
       <div
@@ -250,7 +283,23 @@ function ImageFormDrawer({ editing, form, saving, onCancel, onSubmit, onDelete }
             <Form.Item name="build_type" label="打包类型" rules={[{ required: true }]}>
               <Select options={buildTypeOptions} />
             </Form.Item>
-            <Form.Item name="image" label="Docker 镜像" rules={[{ required: true, message: '请输入镜像地址' }]}>
+            <Form.Item
+              name="image"
+              label={
+                <div className="flex w-full items-center justify-between">
+                  <span>Docker 镜像</span>
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50/50 px-2 py-0.5 text-[12px] font-medium text-indigo-600 transition-colors hover:bg-indigo-100"
+                  >
+                    <Container className="h-3 w-3" strokeWidth={1.5} />
+                    选择镜像
+                  </button>
+                </div>
+              }
+              rules={[{ required: true, message: '请输入镜像地址' }]}
+            >
               <Input placeholder="registry.example.com/build/web:latest" />
             </Form.Item>
             <Form.Item name="script_entry" label="镜像脚本入口" rules={[{ required: true }]}>
@@ -297,6 +346,249 @@ function ImageFormDrawer({ editing, form, saving, onCancel, onSubmit, onDelete }
           </button>
         </div>
       </aside>
+
+      <ImagePickerModal
+        open={pickerOpen}
+        buildType={buildType}
+        value={form.getFieldValue('image') || DEFAULT_BUILTIN_IMAGE}
+        onCancel={() => setPickerOpen(false)}
+        onSelect={(image) => {
+          form.setFieldsValue({ image });
+          setPickerOpen(false);
+        }}
+      />
     </>
+  );
+}
+
+interface ImagePickerModalProps {
+  open: boolean;
+  buildType: string;
+  value: string;
+  onCancel: () => void;
+  onSelect: (image: string) => void;
+}
+
+/** 镜像选择弹框：默认镜像 / Nexus 镜像两个选项卡 */
+function ImagePickerModal({ open, buildType, value, onCancel, onSelect }: ImagePickerModalProps) {
+  const { message } = App.useApp();
+  // Modal 配置了 destroyOnClose，关闭后组件卸载，每次打开都会以最新 value 重新初始化
+  const [activeTab, setActiveTab] = useState<'builtin' | 'nexus'>('builtin');
+  const [selected, setSelected] = useState(value);
+
+  const builtinOptions = builtinImageOptions.filter((opt) => opt.buildType === buildType);
+
+  const tabItems = [
+    {
+      key: 'builtin',
+      label: (
+        <span className="inline-flex items-center gap-1.5">
+          <HardDrive className="h-3.5 w-3.5" strokeWidth={1.5} />
+          默认镜像
+        </span>
+      ),
+      children: (
+        <div className="space-y-2 py-1">
+          <p className="text-[12px] text-slate-400">选择系统默认的内置 Docker 镜像，当前默认 web-docker</p>
+          {builtinOptions.map((opt) => (
+            <div
+              key={opt.value}
+              onClick={() => setSelected(opt.value)}
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3.5 py-3 transition-colors ${
+                selected === opt.value
+                  ? 'border-indigo-400 bg-indigo-50/60'
+                  : 'border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/30'
+              }`}
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo">
+                <Container className="h-4 w-4" strokeWidth={1.5} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-slate-900">{opt.label}</div>
+                <div className="mt-0.5 font-mono text-[11px] text-slate-400">{opt.value}</div>
+                <div className="mt-0.5 text-[11px] text-slate-400">{opt.description}</div>
+              </div>
+              <span
+                className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
+                  selected === opt.value ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+                }`}
+              />
+            </div>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: 'nexus',
+      label: (
+        <span className="inline-flex items-center gap-1.5">
+          <CloudDownload className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Nexus 镜像
+        </span>
+      ),
+      children: (
+        <NexusImagePicker
+          active={open && activeTab === 'nexus'}
+          selected={selected}
+          onSelect={setSelected}
+          onError={(msg) => message.error(msg)}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <Modal
+      open={open}
+      title="选择 Docker 镜像（默认 / Nexus）"
+      width={560}
+      onCancel={onCancel}
+      onOk={() => onSelect(selected)}
+      okText="确定"
+      cancelText="取消"
+      destroyOnClose
+      zIndex={1100}
+    >
+      <Tabs activeKey={activeTab} onChange={(key) => setActiveTab(key as 'builtin' | 'nexus')} items={tabItems} />
+      <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+        <span className="text-[12px] text-slate-400">当前选择：</span>
+        <span className="font-mono text-[12px] text-slate-600">{selected || '未选择'}</span>
+      </div>
+    </Modal>
+  );
+}
+
+interface NexusImagePickerProps {
+  /** 选项卡是否激活，激活时才发起请求 */
+  active: boolean;
+  selected: string;
+  onSelect: (image: string) => void;
+  onError: (msg: string) => void;
+}
+
+/** Nexus 镜像选择面板：选择仓库后搜索镜像 */
+function NexusImagePicker({ active, selected, onSelect, onError }: NexusImagePickerProps) {
+  const [repository, setRepository] = useState<string>('');
+  const [keyword, setKeyword] = useState('');
+  const [items, setItems] = useState<NexusImageItem[]>([]);
+  const [continuationToken, setContinuationToken] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const { data: repositories, isLoading: reposLoading, error: reposError } = useQuery({
+    queryKey: ['nexus-repositories'],
+    queryFn: () => packageApi.getNexusRepositories(),
+    enabled: active,
+    retry: false,
+  });
+
+  const repoErrorMsg = reposError
+    ? ((reposError as { message?: string })?.message || '无法连接 Nexus，请检查系统 Nexus 配置')
+    : '';
+  const displayError = loadError || repoErrorMsg;
+
+  const search = async (append: boolean, token = '') => {
+    setSearching(true);
+    setLoadError('');
+    try {
+      const result = await packageApi.getNexusImages({
+        repository,
+        keyword: keyword.trim(),
+        continuation_token: token,
+      });
+      setItems((prev) => (append ? [...prev, ...result.items] : result.items));
+      setContinuationToken(result.continuation_token);
+    } catch (err) {
+      const msg = (err as { message?: string })?.message || 'Nexus 镜像搜索失败';
+      setLoadError(msg);
+      onError(msg);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 py-1">
+      <p className="text-[12px] text-slate-400">连接 Nexus（3.x）仓库，搜索并选择指定镜像地址</p>
+      <div className="flex gap-2">
+        <Select
+          className="flex-1"
+          placeholder={reposLoading ? '正在加载仓库…' : '选择 Nexus 仓库'}
+          loading={reposLoading}
+          value={repository || undefined}
+          onChange={(val) => {
+            setRepository(val);
+            setItems([]);
+            setContinuationToken('');
+          }}
+          options={(repositories || []).map((repo) => ({
+            label: `${repo.name}（${repo.type}）`,
+            value: repo.name,
+          }))}
+          showSearch
+          optionFilterProp="label"
+        />
+        <Input.Search
+          className="flex-1"
+          placeholder="镜像名称关键字"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          onSearch={() => search(false)}
+          loading={searching}
+          enterButton
+        />
+      </div>
+
+      {displayError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+          {displayError}
+        </div>
+      )}
+
+      <div className="max-h-[280px] divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
+        {items.length === 0 ? (
+          <div className="px-4 py-10 text-center text-[12px] text-slate-400">
+            {searching ? '搜索中…' : '选择仓库并输入关键字搜索镜像'}
+          </div>
+        ) : (
+          items.map((item) => (
+            <div
+              key={`${item.repository}/${item.name}:${item.version}`}
+              onClick={() => onSelect(item.image)}
+              className={`flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors ${
+                selected === item.image ? 'bg-indigo-50/60' : 'hover:bg-indigo-50/30'
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-slate-900">
+                  {item.name}
+                  <span className="ml-1.5 rounded border border-slate-200 bg-slate-50 px-1 py-px font-mono text-[10px] text-slate-500">
+                    {item.version}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate font-mono text-[11px] text-slate-400">{item.image}</div>
+              </div>
+              <span
+                className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
+                  selected === item.image ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+                }`}
+              />
+            </div>
+          ))
+        )}
+      </div>
+
+      {continuationToken && (
+        <button
+          type="button"
+          disabled={searching}
+          onClick={() => search(true, continuationToken)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-60"
+        >
+          <RotateCw className="h-3 w-3" strokeWidth={1.5} />
+          加载更多
+        </button>
+      )}
+    </div>
   );
 }

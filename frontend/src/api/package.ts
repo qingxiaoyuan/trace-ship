@@ -1,5 +1,13 @@
 import { get, post, put, patch, del } from './request';
-import type { PackageConfig, PackageImage, PackageTask, PaginatedData, PackageBuildType } from '@/types';
+import type {
+  NexusImageSearchResult,
+  NexusRepository,
+  PackageConfig,
+  PackageImage,
+  PackageTask,
+  PaginatedData,
+  PackageBuildType,
+} from '@/types';
 
 export interface PackageImageListParams {
   build_type?: PackageBuildType;
@@ -38,6 +46,10 @@ export const packageApi = {
   updateImage: (id: string, data: Partial<PackageImage>) =>
     put<PackageImage>(`/packages/images/${id}/`, data),
   deleteImage: (id: string) => del<null>(`/packages/images/${id}/`),
+
+  getNexusRepositories: () => get<NexusRepository[]>('/packages/images/nexus-repositories/'),
+  getNexusImages: (params: { repository?: string; keyword?: string; continuation_token?: string }) =>
+    get<NexusImageSearchResult>('/packages/images/nexus-images/', { params }),
 
   getConfigs: (params?: PackageConfigListParams) =>
     get<PaginatedData<PackageConfig>>('/packages/configs/', { params }),

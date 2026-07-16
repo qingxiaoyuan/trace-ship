@@ -81,6 +81,13 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       # 打包工作区根目录：宿主机与容器内必须路径一致，DooD 下构建容器才能正确挂载源码
       PACKAGE_WORKSPACE_ROOT: ${PACKAGE_WORKSPACE_ROOT:?PACKAGE_WORKSPACE_ROOT must be set}
+      # Nexus 仓库连接（打包镜像选择使用，可选）
+      NEXUS_BASE_URL: ${NEXUS_BASE_URL:-}
+      NEXUS_USERNAME: ${NEXUS_USERNAME:-}
+      NEXUS_PASSWORD: ${NEXUS_PASSWORD:-}
+      NEXUS_REGISTRY_HOST: ${NEXUS_REGISTRY_HOST:-}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - backend_logs:/var/log/trace-ship
       # 挂载宿主机 Docker socket，使容器内可调用宿主机 docker 执行打包任务

@@ -10,6 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from apps.package.models import PackageConfig, PackageImage, PackageTask
+from apps.package.nexus import NexusError, NexusService
 from apps.package.serializers import (
     PackageConfigSerializer,
     PackageImageSerializer,
@@ -38,6 +39,28 @@ class PackageImageViewSet(StandardModelViewSet):
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAuthenticated(), IsSuperUser()]
         return [IsAuthenticated()]
+
+    @action(detail=False, methods=["get"], url_path="nexus-repositories")
+    def nexus_repositories(self, request):
+        """列出 Nexus 中 docker 格式的仓库，供打包镜像选择。"""
+        try:
+            data = NexusService.list_docker_repositories()
+        except NexusError as exc:
+            return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+        return success_response(data)
+
+    @action(detail=False, methods=["get"], url_path="nexus-images")
+    def nexus_images(self, request):
+        """在 Nexus 中搜索 docker 镜像，返回可选择的镜像地址。"""
+        try:
+            data = NexusService.search_docker_images(
+                repository=request.query_params.get("repository", ""),
+                keyword=request.query_params.get("keyword", ""),
+                continuation_token=request.query_params.get("continuation_token", ""),
+            )
+        except NexusError as exc:
+            return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+        return success_response(data)
 
 
 class PackageConfigViewSet(StandardModelViewSet):

@@ -208,6 +208,15 @@ CELERY_BEAT_SCHEDULE = {
 # 系统内置打包工作区根目录
 PACKAGE_WORKSPACE_ROOT = os.getenv("PACKAGE_WORKSPACE_ROOT", str(BASE_DIR / "package_workspaces"))
 
+# Nexus 仓库（Nexus Repository Manager 3.x）连接配置，用于打包镜像选择
+NEXUS_BASE_URL = os.getenv("NEXUS_BASE_URL", "")
+NEXUS_USERNAME = os.getenv("NEXUS_USERNAME", "")
+NEXUS_PASSWORD = os.getenv("NEXUS_PASSWORD", "")
+NEXUS_TIMEOUT = int(os.getenv("NEXUS_TIMEOUT", "10"))
+# 镜像拉取地址（host:port），通常为 Nexus docker connector 端口；
+# 为空时从 NEXUS_BASE_URL 中提取
+NEXUS_REGISTRY_HOST = os.getenv("NEXUS_REGISTRY_HOST", "")
+
 # Django REST Framework 全局配置
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
