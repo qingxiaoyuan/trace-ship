@@ -85,14 +85,23 @@ class GiteaProvider(GitProvider):
             f"/repos/{owner}/{repo}/branches",
             params={"limit": 100},
         )
-        return [
-            BranchInfo(
-                name=b["name"],
-                is_default=b.get("default", False),
-                last_commit_hash=b.get("commit", {}).get("id"),
+        result: List[BranchInfo] = []
+        for b in resp.json():
+            commit = b.get("commit") or {}
+            # Gitea 分支接口的 commit 嵌套结构：commit.commit.author.name/date
+            inner = commit.get("commit") or {}
+            author = inner.get("author") or {}
+            result.append(
+                BranchInfo(
+                    name=b["name"],
+                    is_default=b.get("default", False),
+                    last_commit_hash=commit.get("id"),
+                    last_commit_author=author.get("name", "") or "",
+                    last_commit_message=inner.get("message", "") or "",
+                    last_commit_at=self._parse_datetime(author.get("date")),
+                )
             )
-            for b in resp.json()
-        ]
+        return result
 
     def list_commits(
         self,

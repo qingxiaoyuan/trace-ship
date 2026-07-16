@@ -194,7 +194,7 @@ export default function RepositoryDetail() {
         </div>
         <div className="p-5">
           {activeTab === 'commits' && <CommitsTab repoId={repo.id} />}
-          {activeTab === 'branches' && <BranchesTab repoId={repo.id} />}
+          {activeTab === 'branches' && <BranchesTab repoId={repo.id} repoType={repo.repo_type} vendor={repo.vendor} />}
           {activeTab === 'tags' && <TagsTab repoId={repo.id} repoType={repo.repo_type} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}
         </div>

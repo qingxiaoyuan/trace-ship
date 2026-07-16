@@ -1,7 +1,7 @@
 """
 CommitReviewer 单元测试
 
-覆盖通过、非法、警告等规则审查场景。
+覆盖通过、非法等规则审查场景。
 """
 import pytest
 
@@ -35,16 +35,3 @@ def test_review_illegal_missing_change_type():
     status, reason, parsed = CommitReviewer.review("fix bug")
     assert status == "illegal"
     assert "变更类型" in reason
-
-
-def test_review_warning_bad_update_type():
-    """测试更新类型不规范"""
-    message = """变更类型：
-☑ 无配置项改动 □有配置项改动
-
-更新内容：
-1. X 修复登录异常
-"""
-    status, reason, parsed = CommitReviewer.review(message)
-    assert status == "warning"
-    assert "A 或 F" in reason

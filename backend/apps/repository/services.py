@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from django.utils import timezone
 
-from apps.repository.models import CommitRecord, Repository
+from apps.repository.models import CommitRecord, Repository, RepositoryBranch
 from utils.commit_reviewer import CommitReviewer
 from utils.provider.base import CommitInfo
 from utils.provider.credential_resolver import resolve_credential
@@ -77,26 +77,88 @@ class RepositoryService:
     @staticmethod
     def list_branches(repo: Repository, request_user=None) -> List[dict]:
         """
-        获取仓库分支列表
+        获取仓库分支列表（从本地数据库读取）
+
+        分支数据需先调用 ``sync_branches`` 同步后才有。
+
+        Args:
+            repo: Repository 实例
+            request_user: 当前请求用户（保留兼容，读取本地无需使用）
+
+        Returns:
+            分支信息字典列表
+        """
+        branches = repo.branches.order_by("-is_default", "-last_commit_at", "name")
+        return [
+            {
+                "name": b.name,
+                "is_default": b.is_default,
+                "last_commit_hash": b.last_commit_hash,
+                "last_commit_author": b.last_commit_author,
+                "last_commit_message": b.last_commit_message,
+                "last_commit_at": b.last_commit_at.isoformat() if b.last_commit_at else None,
+            }
+            for b in branches
+        ]
+
+    @staticmethod
+    def sync_branches(repo: Repository, request_user=None) -> dict:
+        """
+        同步仓库所有分支到 RepositoryBranch 表
+
+        从远端拉取全部分支及其最新提交信息（作者、时间、信息、哈希）并落库，
+        远端已不存在的分支会从本地删除以保持一致。
+
+        仅 Git 类仓库支持；SVN 仓库直接返回提示。
 
         Args:
             repo: Repository 实例
             request_user: 当前请求用户
 
         Returns:
-            分支信息字典列表
+            {"synced_count": int, "total": int}
         """
+        if repo.repo_type != "git":
+            return {"synced_count": 0, "total": 0, "detail": "非 Git 仓库不支持分支同步"}
+
         cred_data = resolve_credential(repo, request_user)
         provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
         branches = provider.list_branches(repo.external_identity)
-        return [
-            {
-                "name": b.name,
-                "is_default": b.is_default,
-                "last_commit_hash": b.last_commit_hash,
-            }
-            for b in branches
-        ]
+
+        remote_names: set = set()
+        for b in branches:
+            remote_names.add(b.name)
+            author = b.last_commit_author
+            committed_at = b.last_commit_at
+            message = b.last_commit_message
+            # 部分平台（如低版本 Gitea）分支接口不返回作者/时间，按 hash 调 get_commit 补全
+            if (not author or not committed_at) and b.last_commit_hash:
+                try:
+                    ci = provider.get_commit(repo.external_identity, b.last_commit_hash)
+                    author = author or ci.author
+                    committed_at = committed_at or ci.committed_at
+                    message = message or ci.message
+                except Exception:
+                    pass
+            RepositoryBranch.objects.update_or_create(
+                repository=repo,
+                name=b.name,
+                defaults={
+                    "is_default": b.is_default,
+                    "last_commit_hash": b.last_commit_hash or "",
+                    "last_commit_author": author or "",
+                    "last_commit_message": message or "",
+                    "last_commit_at": committed_at,
+                },
+            )
+
+        # 删除远端已不存在的分支，保持与远端一致
+        if remote_names:
+            RepositoryBranch.objects.filter(repository=repo).exclude(name__in=remote_names).delete()
+        else:
+            RepositoryBranch.objects.filter(repository=repo).delete()
+
+        return {"synced_count": len(branches), "total": len(branches)}
 
     @staticmethod
     def list_tags(repo: Repository, request_user=None) -> List[dict]:

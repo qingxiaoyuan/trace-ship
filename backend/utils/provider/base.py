@@ -40,11 +40,17 @@ class BranchInfo:
         name: 分支名称
         is_default: 是否为默认分支
         last_commit_hash: 最新提交哈希
+        last_commit_author: 最新提交人姓名
+        last_commit_message: 最新提交信息
+        last_commit_at: 最新提交时间
     """
 
     name: str
     is_default: bool = False
     last_commit_hash: Optional[str] = None
+    last_commit_author: str = ""
+    last_commit_message: str = ""
+    last_commit_at: Optional[datetime] = None
 
 
 @dataclass
