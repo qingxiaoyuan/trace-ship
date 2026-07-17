@@ -33,6 +33,13 @@ log "app_dir=$APP_DIR"
 log "output_path=dist"
 log "artifacts_dir=$ARTIFACTS_DIR"
 
+# pnpm / yarn 不读取 npm_config_* 环境变量,将 registry 追加到项目 .npmrc 统一生效;
+# 追加在最后,优先级高于业务项目 .npmrc 中已有的 registry 配置
+if [ -n "${NPM_CONFIG_REGISTRY:-}" ]; then
+  log "npm registry: $NPM_CONFIG_REGISTRY"
+  printf 'registry=%s\n' "$NPM_CONFIG_REGISTRY" >> .npmrc
+fi
+
 if [ -f package.json ]; then
   if [ -f pnpm-lock.yaml ]; then
     log "install dependencies with pnpm"

@@ -1,0 +1,34 @@
+# 一体化镜像构建上下文排除项（docker/allinone/Dockerfile 以仓库根为 context）
+
+# 版本控制与文档
+.git
+docs
+feat
+ui-design
+
+# 前端依赖与构建产物
+frontend/node_modules
+frontend/dist
+
+# 后端虚拟环境与缓存
+backend/.venv
+backend/venv
+backend/.venv_new
+**/__pycache__
+**/*.pyc
+backend/.pytest_cache
+backend/htmlcov
+backend/.coverage
+
+# 运行时数据
+backend/package_workspaces
+backend/staticfiles
+backend/celerybeat-schedule*
+backend/db.sqlite3*
+
+# 离线镜像产物（体积大，无需进入构建上下文）
+**/*.tar
+
+# Docker 相关（按需复制，整体排除）
+docker/postgres-data
+docker/**/data

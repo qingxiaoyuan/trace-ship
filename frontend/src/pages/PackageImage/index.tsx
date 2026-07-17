@@ -21,8 +21,8 @@ const buildTypeOptions = [
   { label: 'Qt', value: 'qt' },
 ];
 
-/** 默认内置镜像：web-docker */
-const DEFAULT_BUILTIN_IMAGE = 'web-docker:latest';
+/** 默认内置镜像：docker/package/web 构建的 trace-ship/web-builder:node22 */
+const DEFAULT_BUILTIN_IMAGE = 'trace-ship/web-builder:node22';
 
 interface BuiltinImageOption {
   buildType: string;
@@ -31,19 +31,13 @@ interface BuiltinImageOption {
   description: string;
 }
 
-/** 内置（本地）Docker 镜像选项 */
+/** 内置（本地）Docker 镜像选项，与 docker/package 下的构建脚本保持一致 */
 const builtinImageOptions: BuiltinImageOption[] = [
   {
     buildType: 'web',
-    label: 'web-docker',
-    value: 'web-docker:latest',
+    label: 'web-builder',
+    value: 'trace-ship/web-builder:node22',
     description: '内置 Web 构建镜像（Node 22，默认）',
-  },
-  {
-    buildType: 'qt',
-    label: 'qt-docker',
-    value: 'qt-docker:latest',
-    description: '内置 Qt 构建镜像',
   },
 ];
 
@@ -389,7 +383,12 @@ function ImagePickerModal({ open, buildType, value, onCancel, onSelect }: ImageP
       ),
       children: (
         <div className="space-y-2 py-1">
-          <p className="text-[12px] text-slate-400">选择系统默认的内置 Docker 镜像，当前默认 web-docker</p>
+          <p className="text-[12px] text-slate-400">选择系统默认的内置 Docker 镜像，当前默认 trace-ship/web-builder</p>
+          {builtinOptions.length === 0 && (
+            <div className="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-[12px] text-slate-400">
+              当前打包类型暂无内置镜像，请切换到 Nexus 镜像或手动输入
+            </div>
+          )}
           {builtinOptions.map((opt) => (
             <div
               key={opt.value}
