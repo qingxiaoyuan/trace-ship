@@ -4,11 +4,11 @@
 
 ## 项目概览
 
-Trace Ship 是一个软件版本发布管理系统，围绕“项目”组织仓库、提交审查、发布申请、审批工作流、Jenkins 构建记录、凭证与通知等能力。
+Trace Ship 是一个软件版本发布管理系统，围绕“项目”组织仓库、提交审查、发布申请、审批工作流、打包推送（Docker 镜像 / 本地脚本 / SVN）、Jenkins 构建记录、凭证与通知等能力。
 
 仓库主要目录：
 
-- `backend/`：Django 5.0 + Django REST Framework 后端，包含账号、项目、仓库、提交、发布、工作流、Jenkins、凭证、通知、系统管理等模块。
+- `backend/`：Django 5.0 + Django REST Framework 后端，包含账号、项目、仓库、提交、发布、工作流、打包、Jenkins、凭证、通知、系统管理等模块。
 - `frontend/`：React + Vite + TypeScript 前端，已接入路由、布局、Ant Design、Zustand、Axios、React Query 及主要业务页面。
 - `docker/`：Docker Compose 编排 PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、phpLDAPadmin、SVN；`app` profile 可同时启动后端、前端、Celery。
 - `docs/`：接口、业务流程、设计文档与 Postman Collection。
@@ -101,6 +101,7 @@ npm run preview
 - `apps.repository`：代码仓库、提交记录、提交同步与提交规范审查。
 - `apps.release`：发布申请、版本号计算、发布说明、发布关联提交 / MR、推 tag。
 - `apps.workflow`：审批流程定义、流程实例、审批任务，支持串行审批、或签、会签、转交、回退、撤销。
+- `apps.package`：打包镜像、项目级打包配置、打包任务；支持 Docker 镜像打包、本地脚本打包、产物 SVN 推送、发布后自动触发。
 - `apps.jenkins`：Jenkins 任务配置、构建记录、构建状态刷新与日志读取。
 - `apps.credential`：凭证加密存储、脱敏展示、凭证解析。
 - `apps.notification`：站内通知，覆盖审批、构建、发布和系统消息。
@@ -116,7 +117,7 @@ npm run preview
 - `/api/repositories/`
 - `/api/commits/`
 - `/api/releases/`
-- `/api/jenkins/`
+- `/api/packages/`
 - `/api/credentials/`
 - `/api/system/`
 - `/api/workflow/`
@@ -124,7 +125,7 @@ npm run preview
 - `/api/schema/`、`/swagger/`、`/redoc/`
 - `/health/`
 
-新增 API 应按业务归属放入对应 app 的 `urls.py`，再由根路由 include。视图层保持薄封装，复杂业务逻辑优先放入 `services.py`。
+注意：`apps.jenkins` 仍在 `INSTALLED_APPS` 中保留模型与服务能力，但当前根路由未挂载 `/api/jenkins/`，前端 Jenkins 相关入口已重定向到打包看板。新增 API 应按业务归属放入对应 app 的 `urls.py`，再由根路由 include。视图层保持薄封装，复杂业务逻辑优先放入 `services.py`。
 
 ### 核心数据模型
 
@@ -137,6 +138,9 @@ npm run preview
 - `ReleaseRecord`：发布申请，当前状态为 `draft` / `pending` / `released` / `rejected`。
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：工作流定义、实例和审批任务。
+- `PackageImage`：系统级 Docker 打包镜像，区分 `web` / `qt` 两种构建类型，由超管维护。
+- `PackageConfig`：项目级打包配置，包含打包模式（`simple` 简易打包 / `local` 本地脚本）、构建类型、环境变量、发布后自动打包开关、SVN 推送配置。
+- `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。
 - `JenkinsJob`、`JenkinsBuild`：Jenkins 任务配置与构建记录。
 - `Credential`：凭证密文与凭证元数据。
 - `Notification`：站内通知。
@@ -151,7 +155,8 @@ npm run preview
 4. 提交审批：`ReleaseService.submit_audit` 要求发布处于 `draft` 且发布说明非空；按发布类型查找启用的 `WorkflowDefinition`，创建 `WorkflowInstance`，状态改为 `pending`。
 5. 审批流转：`WorkflowEngine` 根据 `node_config` 生成任务，支持通过、驳回、转交、回退、撤销。
 6. 审批完成：`ReleaseService.handle_workflow_completed` 调用 `push_tag`；推 tag 成功后发布状态变为 `released`，失败则变为 `rejected` 并写入 `rejected_reason`。
-7. 审批驳回：`ReleaseService.handle_workflow_rejected` 将发布状态改为 `rejected`；回退到初始节点时可恢复为 `draft` 并解除流程实例关联。
+7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。
+8. 审批驳回：`ReleaseService.handle_workflow_rejected` 将发布状态改为 `rejected`；回退到初始节点时可恢复为 `draft` 并解除流程实例关联。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
 
@@ -192,7 +197,7 @@ npm run preview
 - `src/api/`：按业务模块拆分接口封装。
 - `src/router/`：路由配置、鉴权守卫、懒加载页面。
 - `src/layouts/`：登录布局、主布局、系统子布局、侧边栏和顶部栏。
-- `src/pages/`：工作台、项目、仓库、提交审查、凭证、Jenkins、工作流、发布、通知、个人中心、系统管理等页面。
+- `src/pages/`：工作台、项目、仓库、提交审查、凭证、Jenkins、打包、打包镜像、工作流、发布、通知、个人中心、系统管理等页面。
 - `src/components/`：项目内通用组件，例如卡片、列表、弹窗、状态标签、搜索筛选栏、审批流预览。
 - `src/stores/`：Zustand store。
 - `src/types/`：全局类型。
@@ -207,11 +212,12 @@ npm run preview
 - `/repositories`、`/repositories/:id`
 - `/credentials`、`/credentials/:id`
 - `/commits`、`/commits/alerts`、`/commits/:id`
-- `/jenkins`、`/jenkins/logs/:buildId`
+- `/jenkins`（重定向到 `/packages`）
+- `/packages`、`/packages/:id`（打包看板）
 - `/workflows`
 - `/releases`、`/releases/create`、`/releases/:id`
 - `/notifications`
-- `/system/users`、`/system/roles`、`/system/configs`、`/system/logs`
+- `/system/users`、`/system/roles`、`/system/configs`、`/system/package-images`、`/system/logs`
 - `/profile`
 
 新增页面时优先沿用 `MainLayout`、`PageLoader`、现有 API 层与类型定义。
