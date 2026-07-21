@@ -77,18 +77,25 @@ class RepositoryService:
     @staticmethod
     def list_branches(repo: Repository, request_user=None) -> List[dict]:
         """
-        获取仓库分支列表（从本地数据库读取）
+        获取仓库分支列表（本地优先，为空时自动从远端同步）
 
-        分支数据需先调用 ``sync_branches`` 同步后才有。
+        分支数据正常由 ``sync_branches`` 同步落库；若本地无数据
+        （如仓库新建后尚未手动同步），自动从远端拉取一次并落库，
+        避免新建发布等场景分支下拉为空。
 
         Args:
             repo: Repository 实例
-            request_user: 当前请求用户（保留兼容，读取本地无需使用）
+            request_user: 当前请求用户（自动同步时用于解析凭证）
 
         Returns:
             分支信息字典列表
         """
         branches = repo.branches.order_by("-is_default", "-last_commit_at", "name")
+        if not branches.exists() and repo.repo_type == "git":
+            # 本地无分支数据，自动从远端同步一次；同步失败时异常向上抛出，
+            # 由视图层返回可读错误，而不是静默返回空列表
+            RepositoryService.sync_branches(repo, request_user)
+            branches = repo.branches.order_by("-is_default", "-last_commit_at", "name")
         return [
             {
                 "name": b.name,

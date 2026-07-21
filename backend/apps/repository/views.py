@@ -135,7 +135,8 @@ class RepositoryViewSet(StandardModelViewSet):
         """
         获取分支列表
 
-        从本地数据库读取，需先调用 ``sync-branches`` 同步后才有数据。
+        优先从本地数据库读取；本地无数据时自动从远端同步一次，
+        无需手动调用 ``sync-branches``。
 
         Args:
             request: DRF Request

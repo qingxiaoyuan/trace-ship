@@ -429,15 +429,20 @@ class WorkflowEngine:
             return
 
         current_idx = node_ids.index(current_node_id)
+
+        # 无论是否有下一节点，都先记录当前节点已通过，
+        # 否则最后一个审批节点在流程完成后 node_status 中始终缺失，前端会误显示为待处理
+        node_status = instance.node_status or {}
+        node_status[current_node_id] = "approved"
+        instance.node_status = node_status
+
         if current_idx >= len(node_config) - 1:
+            instance.save(update_fields=["node_status", "updated_at"])
             cls._finish_instance(instance, "completed")
             return
 
         next_node = node_config[current_idx + 1]
         instance.current_node_id = next_node["node_id"]
-        node_status = instance.node_status or {}
-        node_status[current_node_id] = "approved"
-        instance.node_status = node_status
         instance.save(update_fields=["current_node_id", "node_status", "updated_at"])
 
         cls._create_node_tasks(instance, next_node, instance.graph_data)

@@ -1097,14 +1097,26 @@ class ReleaseService:
         """
         release = ReleaseRecord.objects.filter(workflow_instance=instance).first()
         if not release:
+            logger.warning(
+                "审批完成回调未找到关联发布单: instance=%s biz_id=%s",
+                instance.id, instance.biz_id,
+            )
             return
 
         if release.status == "pending":
             try:
                 ReleaseService.push_tag(release)
             except Exception:
-                # push_tag 内部已设置 rejected 状态
-                pass
+                # push_tag 内部已设置 rejected 状态；此处记录堆栈便于排查
+                logger.exception(
+                    "审批通过后推 tag 失败: release=%s version=%s tag=%s",
+                    release.id, release.version, release.tag_name,
+                )
+        else:
+            logger.warning(
+                "审批完成时发布单状态非 pending，跳过推 tag: release=%s status=%s",
+                release.id, release.status,
+            )
 
     @staticmethod
     def handle_workflow_rejected(instance: WorkflowInstance, comment: str = "") -> None:
@@ -1196,6 +1208,11 @@ class ReleaseService:
                 {"workflow": "审批流程尚未结束，无法推 tag"}
             )
 
+        logger.info(
+            "开始推 tag: release=%s version=%s tag=%s repo=%s commit=%s",
+            release.id, release.version, release.tag_name,
+            release.repository.external_identity, release.git_hash,
+        )
         provider = cls._get_provider(release.repository, request_user)
         try:
             cls._validate_tag_not_exists(
@@ -1214,16 +1231,26 @@ class ReleaseService:
             release.status = "rejected"
             release.rejected_reason = f"推 tag 失败: {exc}"
             release.save(update_fields=["status", "rejected_reason", "updated_at"])
+            logger.warning("推 tag 失败(tag 已存在): release=%s tag=%s err=%s", release.id, release.tag_name, exc)
             raise
         except ProviderError as exc:
             release.status = "rejected"
             release.rejected_reason = f"推 tag 失败: {exc}"
             release.save(update_fields=["status", "rejected_reason", "updated_at"])
+            logger.warning("推 tag 失败(Provider 错误): release=%s tag=%s err=%s", release.id, release.tag_name, exc)
             raise serializers.ValidationError({"tag": f"推 tag 失败: {exc}"})
+        except Exception:
+            # 非 Provider 异常（凭证解密、网络等）不会进入上面两个分支，必须留痕
+            logger.exception(
+                "推 tag 出现未预期异常: release=%s version=%s tag=%s",
+                release.id, release.version, release.tag_name,
+            )
+            raise
 
         release.status = "released"
         release.released_at = timezone.now()
         release.save(update_fields=["status", "released_at", "updated_at"])
+        logger.info("推 tag 成功，发布完成: release=%s tag=%s", release.id, release.tag_name)
         NotificationService.notify_release_released(release)
         OperationLogService.log_release(
             user=request_user or release.publisher,
