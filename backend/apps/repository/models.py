@@ -106,6 +106,58 @@ class Repository(models.Model):
         return f"{self.project.name} - {self.name}"
 
 
+class RepositoryBranch(models.Model):
+    """
+    仓库分支模型
+
+    存储仓库每个分支的最新提交信息（作者、时间、信息、哈希），
+    通过「同步分支」按钮从远端拉取并落库，供分支界面展示。
+
+    Attributes:
+        id: UUID 主键
+        repository: 所属仓库
+        name: 分支名称
+        is_default: 是否为默认分支
+        last_commit_hash: 最新提交哈希
+        last_commit_author: 最新提交人
+        last_commit_message: 最新提交信息
+        last_commit_at: 最新提交时间
+        created_at: 创建时间
+        updated_at: 更新时间
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        Repository,
+        on_delete=models.CASCADE,
+        related_name="branches",
+        verbose_name="仓库",
+    )
+    name = models.CharField(max_length=200, verbose_name="分支名称")
+    is_default = models.BooleanField(default=False, verbose_name="是否默认分支")
+    last_commit_hash = models.CharField(max_length=100, blank=True, verbose_name="最新提交哈希")
+    last_commit_author = models.CharField(max_length=200, blank=True, verbose_name="最新提交人")
+    last_commit_message = models.TextField(blank=True, verbose_name="最新提交信息")
+    last_commit_at = models.DateTimeField(null=True, blank=True, verbose_name="最新提交时间")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "repo_branch"
+        verbose_name = "仓库分支"
+        verbose_name_plural = "仓库分支"
+        ordering = ["-is_default", "-last_commit_at"]
+        unique_together = [("repository", "name")]
+        indexes = [
+            models.Index(fields=["repository", "name"]),
+            models.Index(fields=["repository", "last_commit_at"]),
+        ]
+
+    def __str__(self) -> str:
+        """返回仓库名-分支名描述"""
+        return f"{self.repository.name} - {self.name}"
+
+
 class CommitRecord(models.Model):
     """
     提交记录模型

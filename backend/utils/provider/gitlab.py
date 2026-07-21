@@ -79,14 +79,20 @@ class GitLabProvider(GitProvider):
             f"/projects/{encoded}/repository/branches",
             params={"per_page": 100},
         )
-        return [
-            BranchInfo(
-                name=b["name"],
-                is_default=b.get("default", False),
-                last_commit_hash=b.get("commit", {}).get("id"),
+        result: List[BranchInfo] = []
+        for b in resp.json():
+            commit = b.get("commit") or {}
+            result.append(
+                BranchInfo(
+                    name=b["name"],
+                    is_default=b.get("default", False),
+                    last_commit_hash=commit.get("id"),
+                    last_commit_author=commit.get("author_name", "") or "",
+                    last_commit_message=commit.get("message", "") or "",
+                    last_commit_at=self._parse_datetime(commit.get("committed_date")),
+                )
             )
-            for b in resp.json()
-        ]
+        return result
 
     def list_commits(
         self,

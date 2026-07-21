@@ -33,6 +33,11 @@ export const repositoryApi = {
   testRepository: (id: string) =>
     post<{ connected: boolean; detail?: string }>(`/repositories/${id}/test/`, {}),
   syncCommits: (id: string) => post<unknown>(`/repositories/${id}/sync-commits/`, {}),
+  syncBranches: (id: string) =>
+    post<{ synced_count: number; total: number; detail?: string }>(
+      `/repositories/${id}/sync-branches/`,
+      {},
+    ),
   getVendors: () => get<{ value: string; label: string }[]>('/repositories/vendors/'),
   getBranches: (id: string) => get<RepositoryBranch[]>(`/repositories/${id}/branches/`),
   getTags: (id: string) => get<RepositoryTag[]>(`/repositories/${id}/tags/`),

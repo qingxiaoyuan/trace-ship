@@ -10,8 +10,12 @@ Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。
 
 - 统一用户认证：LDAP/AD 域账号 + 本地应急账号
 - RBAC 权限模型：角色、权限、项目成员角色
-- 项目全生命周期管理：代码仓库、外站绑定、成员、凭证、发布流程
+- 项目全生命周期管理：代码仓库、成员、凭证、发布流程
+- 代码仓库接入：Git（GitLab / Gitea / GitHub / Gitee）与 SVN，提交同步与提交规范审查
+- 发布管理：版本号自动计算、发布说明、审批工作流（串行 / 或签 / 会签 / 转交 / 回退 / 撤销）、审批通过后推 tag
+- 打包能力：Docker 镜像打包与本地脚本打包、打包任务执行与日志、产物 SVN 推送、发布后自动触发
 - 凭证安全托管：AES 加密存储、脱敏展示、使用审计
+- 站内通知：审批、构建、发布和系统消息
 - 操作日志：关键行为全程留痕
 - 标准化 API：RESTful API + Swagger/Redoc 文档 + Postman Collection
 
@@ -21,14 +25,15 @@ Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        前端 (frontend)                        │
-│                     Vue 3 / React（待实现）                    │
+│                      前端 (frontend)                          │
+│           React 19 + Vite + TypeScript + Ant Design 6         │
+│      工作台 / 项目 / 仓库 / 提交 / 发布 / 工作流 / 打包 / 系统  │
 └───────────────────────────┬─────────────────────────────────┘
                             │ HTTP / REST
 ┌───────────────────────────▼─────────────────────────────────┐
-│                      后端 (backend)                           │
+│                     后端 (backend)                            │
 │              Django 5.0 + Django REST Framework               │
-│  用户认证 · 权限管理 · 项目管理 · 凭证管理 · 系统参数 · 操作日志  │
+│  认证 · 权限 · 项目 · 仓库 · 发布 · 工作流 · 打包 · 凭证 · 通知  │
 └───────────────────────────┬─────────────────────────────────┘
                             │
         ┌───────────────────┼───────────────────┐
@@ -39,8 +44,8 @@ Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。
    OpenLDAP            Gitea             Jenkins
    域账号服务          Git 仓库           构建流水线
         ▼                   ▼                   ▼
-      SVN                                         
-   代码仓库                                        
+      SVN               打包工作区 (Docker 镜像 / 本地脚本)
+   代码仓库             产物 SVN 推送
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,6 +57,16 @@ Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。
 trace-ship/
 ├── backend/                # Django 后端服务
 │   ├── apps/               # 业务应用
+│   │   ├── account/        # 用户、角色、权限、认证
+│   │   ├── project/        # 项目与项目成员
+│   │   ├── repository/     # 仓库、提交记录与审查
+│   │   ├── release/        # 发布申请与发布流程
+│   │   ├── workflow/       # 审批工作流引擎
+│   │   ├── package/        # 打包镜像、打包配置、打包任务
+│   │   ├── jenkins/        # Jenkins 任务与构建记录
+│   │   ├── credential/     # 凭证加密托管
+│   │   ├── notification/   # 站内通知
+│   │   └── system/         # 系统参数与操作日志
 │   ├── config/             # Django 配置
 │   ├── utils/              # 公共工具
 │   ├── requirements.txt
@@ -59,8 +74,18 @@ trace-ship/
 │   ├── entrypoint.sh
 │   ├── pytest.ini
 │   └── manage.py
+├── frontend/               # React + Vite + TypeScript 前端
+│   └── src/
+│       ├── api/            # 接口封装（按业务模块拆分）
+│       ├── router/         # 路由与鉴权守卫
+│       ├── layouts/        # 主布局与子布局
+│       ├── pages/          # 工作台/项目/仓库/发布/打包/系统等页面
+│       ├── components/     # 通用组件
+│       ├── stores/         # Zustand 状态
+│       └── styles/         # 主题与样式
 ├── docker/                 # Docker Compose 基础设施编排
 │   ├── docker-compose.yml
+│   ├── docker-compose.prod.yml
 │   ├── .env
 │   ├── postgres/
 │   ├── jenkins/
@@ -70,7 +95,6 @@ trace-ship/
 │   ├── api-spec.md
 │   ├── business-process-analysis.md
 │   └── postman/
-├── frontend/               # 前端工程（待实现）
 ├── feat/                   # 需求文档
 ├── ui-design/              # UI 设计稿
 └── README.md
@@ -157,18 +181,15 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 
 ## 里程碑
 
-当前已完成 **Milestone 1：基础底座**，核心能力包括：
+当前已完成的核心能力包括：
 
-- Django + DRF + PostgreSQL + Redis + Celery 工程骨架
-- LDAP/AD + 本地账号 + JWT 认证
-- RBAC 权限模型
-- 项目管理、成员管理、外站绑定
-- 凭证管理（AES 加密、脱敏展示）
-- 系统参数、操作日志
-- Docker 一键部署
-- Swagger / Redoc / Postman Collection
+- **基础底座**：Django + DRF + PostgreSQL + Redis + Celery 工程骨架、LDAP/AD + 本地账号 + JWT 认证、RBAC 权限模型、凭证加密托管、系统参数与操作日志、Docker 一键部署。
+- **项目与仓库**：项目全生命周期管理、项目成员角色、Git/SVN 仓库接入、提交同步与提交规范审查。
+- **发布与工作流**：发布申请、版本号自动计算、发布说明生成、审批工作流（串行/或签/会签/转交/回退/撤销）、审批通过后推 tag。
+- **打包能力**：系统级打包镜像（Web / Qt）、项目级打包配置（Docker 镜像 / 本地脚本）、打包任务执行与日志、产物 SVN 推送、发布后自动触发打包。
+- **前端管理后台**：React + Ant Design 6 完整管理界面，覆盖工作台、项目、仓库、提交、发布、工作流、打包看板、系统管理等页面。
 
-后续里程碑规划可参考 `docs/business-process-analysis.md`。
+后续里程碑规划可参考 `docs/business-process-analysis.md`（注意该文档为阶段规划，与当前实现可能存在差异，以代码为准）。
 
 ---
 
@@ -224,15 +245,15 @@ python manage.py spectacular --file schema.yml
 
 ### 前端开发
 
-前端工程位于 `frontend/`，使用 React + Vite + TypeScript。
+前端工程位于 `frontend/`，技术栈为 React 19 + Vite + TypeScript + Ant Design 6，状态管理使用 Zustand，数据请求使用 Axios（统一封装 `{code, message, data}` 响应与 JWT 刷新）与 React Query，样式使用 Tailwind CSS 4。
 
 ```bash
 cd frontend
 
 npm install
 npm run dev       # 默认端口 5173，/api 代理到 localhost:8000
-npm run build
-npm run lint
+npm run build     # tsc -b && vite build
+npm run lint      # ESLint
 ```
 
 ---

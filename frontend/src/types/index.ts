@@ -492,6 +492,9 @@ export interface RepositoryBranch {
   name: string;
   is_default: boolean;
   last_commit_hash?: string;
+  last_commit_author?: string;
+  last_commit_message?: string;
+  last_commit_at?: string | null;
 }
 
 /** 仓库标签信息 */

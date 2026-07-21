@@ -82,7 +82,7 @@ class RepositoryViewSet(StandardModelViewSet):
         """
         if self.action in ["create", "update", "partial_update", "destroy"]:
             return [IsAuthenticated(), IsProjectManager()]
-        if self.action in ["test", "sync_commits"]:
+        if self.action in ["test", "sync_commits", "sync_branches"]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         return super().get_permissions()
 
@@ -135,6 +135,8 @@ class RepositoryViewSet(StandardModelViewSet):
         """
         获取分支列表
 
+        从本地数据库读取，需先调用 ``sync-branches`` 同步后才有数据。
+
         Args:
             request: DRF Request
             pk: 仓库主键
@@ -148,6 +150,30 @@ class RepositoryViewSet(StandardModelViewSet):
             return success_response(branches)
         except Exception as exc:
             return error_response(50000, f"获取分支失败: {exc}", status_code=500)
+
+    @action(detail=True, methods=["post"], url_path="sync-branches")
+    def sync_branches(self, request: Request, pk=None) -> Response:
+        """
+        同步仓库所有分支
+
+        从远端拉取全部分支及最新提交信息并落库，远端已删除的分支会从本地移除。
+        仅 Git 仓库支持。
+
+        Args:
+            request: DRF Request
+            pk: 仓库主键
+
+        Returns:
+            同步结果统计
+        """
+        repo = self.get_object()
+        if repo.repo_type != "git":
+            return error_response(40001, "非 Git 仓库不支持分支同步")
+        try:
+            result = RepositoryService.sync_branches(repo, request.user)
+            return success_response(result, message="分支同步成功")
+        except Exception as exc:
+            return error_response(50000, f"分支同步失败: {exc}", status_code=500)
 
     @action(detail=True, methods=["get"])
     def tags(self, request: Request, pk=None) -> Response:
