@@ -2,7 +2,7 @@
   "name": "commit-help",
   "displayName": "规范提交助手",
   "description": "AI驱动的代码提交规范助手，自动生成符合规范的commit信息",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "trace-ship",
   "engines": {
     "vscode": "^1.85.0"
@@ -58,18 +58,18 @@
       "properties": {
         "commit.apiEndpoint": {
           "type": "string",
-          "default": "https://api.minimaxi.com",
+          "default": "http://10.128.210.2:62202/os-ad06c73b05a05042fb/v1",
           "markdownDescription": "AI API 地址。若路径包含 `/anthropic`，使用 Anthropic Messages 协议（自动拼接 `/v1/messages`）；否则使用标准 OpenAI 协议（自动拼接 `/v1/chat/completions`）。兼容 MiniMax Anthropic / OpenAI / DeepSeek / 通义千问 / 本地 Ollama 等。"
         },
         "commit.apiKey": {
           "type": "string",
-          "default": "sk-cp-nYy5nC4VxYmznKTphv-Nw9mzhT6yRPhk4yhlt030KfSNmORvgtny7kGvxEry7u4F6mlf3GWxlG_w1K6qFH8RXRxS_bjyoz24RqQreqEaqVRM8taRSnbGp4M",
+          "default": "sk-d29fb3ed0f3eb0483c",
           "markdownDescription": "AI API 密钥（Bearer 鉴权）"
         },
         "commit.model": {
           "type": "string",
-          "default": "MiniMax-M3",
-          "markdownDescription": "使用的 AI 模型名称（如 `MiniMax-M2.7`、`MiniMax-M3`、`gpt-4o-mini`、`deepseek-chat` 等）"
+          "default": "deepseek-v4-flash",
+          "markdownDescription": "使用的 AI 模型名称（如 `deepseek-v4-flash`、`MiniMax-M3`、`gpt-4o-mini`、`deepseek-chat` 等）"
         }
       }
     }
