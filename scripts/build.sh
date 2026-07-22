@@ -61,6 +61,18 @@ GITEA_VERSION="${GITEA_VERSION:-1.21}"
 GITLAB_VERSION="${GITLAB_VERSION:-12.4.0-ce.0}"
 IMAGE_PREFIX="${IMAGE_PREFIX:-}"
 
+# compose 文件整体插值需要这些变量，构建阶段不实际使用，缺失时补占位默认值
+POSTGRES_DB="${POSTGRES_DB:-release_manager}"
+POSTGRES_USER="${POSTGRES_USER:-release_manager}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-build-placeholder}"
+REDIS_PASSWORD="${REDIS_PASSWORD:-build-placeholder}"
+DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY:-build-placeholder}"
+CREDENTIAL_SECRET_KEY="${CREDENTIAL_SECRET_KEY:-build-placeholder}"
+ALLOWED_HOSTS="${ALLOWED_HOSTS:-localhost}"
+PACKAGE_WORKSPACE_ROOT="${PACKAGE_WORKSPACE_ROOT:-/data/trace-ship/package_workspaces}"
+export POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD
+export DJANGO_SECRET_KEY CREDENTIAL_SECRET_KEY ALLOWED_HOSTS PACKAGE_WORKSPACE_ROOT
+
 # ---------- 1. 选择构建模式 ----------
 MODE="${1:-}"
 if [ -z "${MODE}" ]; then
