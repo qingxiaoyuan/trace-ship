@@ -2,7 +2,7 @@
   "name": "commit-help",
   "displayName": "规范提交助手",
   "description": "AI驱动的代码提交规范助手，自动生成符合规范的commit信息",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "publisher": "trace-ship",
   "engines": {
     "vscode": "^1.85.0"
@@ -56,10 +56,20 @@
     "configuration": {
       "title": "规范提交助手配置",
       "properties": {
+        "commit.apiProtocol": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "openai",
+            "anthropic"
+          ],
+          "default": "auto",
+          "markdownDescription": "AI API 协议类型。`auto` 按地址自动识别（路径包含 `/anthropic` 视为 Anthropic 协议，否则视为 OpenAI 协议）；当地址中不含 `/anthropic` 但使用 Anthropic 协议时（如 Kimi Code 的 `https://api.kimi.com/coding/`），请显式选择 `anthropic`。"
+        },
         "commit.apiEndpoint": {
           "type": "string",
           "default": "http://10.128.210.2:62202/os-ad06c73b05a05042fb/v1",
-          "markdownDescription": "AI API 地址。若路径包含 `/anthropic`，使用 Anthropic Messages 协议（自动拼接 `/v1/messages`）；否则使用标准 OpenAI 协议（自动拼接 `/v1/chat/completions`）。兼容 MiniMax Anthropic / OpenAI / DeepSeek / 通义千问 / 本地 Ollama 等。"
+          "markdownDescription": "AI API 地址。OpenAI 协议自动拼接 `/v1/chat/completions`，Anthropic 协议自动拼接 `/v1/messages`。示例：Kimi Code（OpenAI 兼容）`https://api.kimi.com/coding/v1`；Kimi Code（Anthropic 兼容）`https://api.kimi.com/coding/`（需将 `commit.apiProtocol` 设为 `anthropic`）。兼容 MiniMax Anthropic / OpenAI / DeepSeek / 通义千问 / 本地 Ollama 等。"
         },
         "commit.apiKey": {
           "type": "string",
@@ -69,7 +79,7 @@
         "commit.model": {
           "type": "string",
           "default": "deepseek-v4-flash",
-          "markdownDescription": "使用的 AI 模型名称（如 `deepseek-v4-flash`、`MiniMax-M3`、`gpt-4o-mini`、`deepseek-chat` 等）"
+          "markdownDescription": "使用的 AI 模型名称（如 `deepseek-v4-flash`、`kimi-k2`、`MiniMax-M3`、`gpt-4o-mini`、`deepseek-chat` 等）"
         }
       }
     }

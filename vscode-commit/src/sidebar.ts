@@ -1022,6 +1022,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const apiEndpoint = cfg.get("apiEndpoint") as string;
     const apiKey = cfg.get("apiKey") as string;
     const model = cfg.get("model") as string;
+    const apiProtocol = cfg.get("apiProtocol") as string;
 
     if (!apiKey) {
       this._view.webview.postMessage({
@@ -1172,7 +1173,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           continue;
         }
         const prompt = this._buildFileSummaryPrompt(fileDiff);
-        const text = await this._callAi(apiEndpoint, apiKey, model, prompt, signal);
+        const text = await this._callAi(apiEndpoint, apiKey, model, apiProtocol, prompt, signal);
         if (text) {
           summaries.push(text);
         }
@@ -1192,6 +1193,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         apiEndpoint,
         apiKey,
         model,
+        apiProtocol,
         finalPrompt,
         signal,
       );
@@ -1260,15 +1262,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   /**
    * 调用 AI 接口，返回清洗后的文本
+   * apiProtocol: "auto" | "openai" | "anthropic"
+   *  - auto：按地址自动识别（路径含 /anthropic 视为 Anthropic 协议，否则视为 OpenAI 协议）
+   *  - 显式指定 openai / anthropic 时直接生效；用于地址中不含 /anthropic 的 Anthropic 兼容端点
+   *    （如 Kimi Code Anthropic 兼容端点 https://api.kimi.com/coding/）
    */
   private async _callAi(
     apiEndpoint: string,
     apiKey: string,
     model: string,
+    apiProtocol: string,
     prompt: string,
     signal?: AbortSignal,
   ): Promise<string> {
-    const isAnthropic = /\/anthropic/i.test(apiEndpoint);
+    const isAnthropic =
+      apiProtocol === "anthropic" ||
+      (apiProtocol !== "openai" && /\/anthropic/i.test(apiEndpoint));
     const url = isAnthropic
       ? this._buildAnthropicUrl(apiEndpoint)
       : this._buildOpenAiUrl(apiEndpoint);
@@ -1278,6 +1287,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     };
     if (isAnthropic) {
       headers["anthropic-version"] = "2023-06-01";
+      // Anthropic 原生鉴权头是 x-api-key；同时携带 Bearer 以兼容两类网关（如 Kimi Code 使用 Bearer）
+      headers["x-api-key"] = apiKey;
     }
     const body: any = isAnthropic
       ? {
