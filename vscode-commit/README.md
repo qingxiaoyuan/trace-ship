@@ -57,39 +57,44 @@
 
 打开 VS Code 设置（`Ctrl+,` / `Cmd+,`），搜索 `commit`，按需填写以下项：
 
-| 配置项               | 必填 | 说明                                      |
-| -------------------- | ---- | ----------------------------------------- |
-| `commit.apiEndpoint` | 是   | AI 服务根地址，插件会根据路径自动识别协议 |
-| `commit.apiKey`      | 是   | 你的 API 密钥                             |
-| `commit.model`       | 是   | 使用的模型名称                            |
+| 配置项               | 必填 | 说明                                                         |
+| -------------------- | ---- | ------------------------------------------------------------ |
+| `commit.apiEndpoint` | 是   | AI 服务根地址，插件会根据路径自动识别协议                     |
+| `commit.apiKey`      | 是   | 你的 API 密钥                                                |
+| `commit.model`       | 是   | 使用的模型名称                                               |
+| `commit.apiProtocol` | 否   | 协议类型：`auto`（默认，按地址识别）/ `openai` / `anthropic` |
 
 ### 配置示例
 
 ```json
 {
-  "commit.apiEndpoint": "https://api.minimaxi.com/anthropic",
+  "commit.apiEndpoint": "https://api.kimi.com/coding/v1",
   "commit.apiKey": "your-api-key",
-  "commit.model": "MiniMax-M2.7"
+  "commit.model": "kimi-k2"
 }
 ```
 
-### 协议自动识别规则
+### 协议识别规则
 
-插件会根据 `apiEndpoint` 自动选择调用方式：
+默认（`commit.apiProtocol = auto`）下，插件根据 `apiEndpoint` 自动选择调用方式：
 
 - 路径包含 `/anthropic` → 使用 **Anthropic Messages API**（MiniMax 兼容模式）
 - 其他 → 使用标准 **OpenAI Chat Completions API**
+
+当地址中不含 `/anthropic` 但实际使用 Anthropic 协议时（如 Kimi Code 的 Anthropic 兼容端点 `https://api.kimi.com/coding/`），需将 `commit.apiProtocol` 显式设为 `anthropic`。
 
 `apiEndpoint` 填写到根路径即可，插件会自动拼接 `/v1/messages` 或 `/v1/chat/completions`；如果填写了完整路径，则直接使用。
 
 ### 常用服务速查
 
-| 服务                     | apiEndpoint                          | model           | 协议                    |
-| ------------------------ | ------------------------------------ | --------------- | ----------------------- |
-| MiniMax (Anthropic 兼容) | `https://api.minimaxi.com/anthropic` | `MiniMax-M2.7`  | Anthropic Messages      |
-| MiniMax (OpenAI 兼容)    | `https://api.minimaxi.com/v1`        | `MiniMax-M2.7`  | OpenAI Chat Completions |
-| OpenAI                   | `https://api.openai.com`             | `gpt-4o-mini`   | OpenAI Chat Completions |
-| DeepSeek                 | `https://api.deepseek.com`           | `deepseek-chat` | OpenAI Chat Completions |
+| 服务                     | apiEndpoint                          | apiProtocol           | model           |
+| ------------------------ | ------------------------------------ | --------------------- | --------------- |
+| Kimi Code (OpenAI 兼容)  | `https://api.kimi.com/coding/v1`     | `auto` 或 `openai`    | `kimi-k2`       |
+| Kimi Code (Anthropic 兼容) | `https://api.kimi.com/coding/`     | `anthropic`（必须）   | `kimi-k2`       |
+| MiniMax (Anthropic 兼容) | `https://api.minimaxi.com/anthropic` | `auto`                | `MiniMax-M2.7`  |
+| MiniMax (OpenAI 兼容)    | `https://api.minimaxi.com/v1`        | `auto`                | `MiniMax-M2.7`  |
+| OpenAI                   | `https://api.openai.com`             | `auto`                | `gpt-4o-mini`   |
+| DeepSeek                 | `https://api.deepseek.com`           | `auto`                | `deepseek-chat` |
 
 ---
 
@@ -208,11 +213,12 @@
 
 当前已验证可用的服务组合：
 
-| 服务     | 推荐模型        | 备注                                 |
-| -------- | --------------- | ------------------------------------ |
-| MiniMax  | `MiniMax-M2.7`  | 支持 Anthropic / OpenAI 两种兼容协议 |
-| OpenAI   | `gpt-4o-mini`   | 成本低、速度快                       |
-| DeepSeek | `deepseek-chat` | 国产大模型，中文理解较好             |
+| 服务      | 推荐模型        | 备注                                                     |
+| --------- | --------------- | -------------------------------------------------------- |
+| Kimi Code | `kimi-k2`       | 支持 OpenAI / Anthropic 两种兼容协议（Anthropic 需显式设置 `apiProtocol`） |
+| MiniMax   | `MiniMax-M2.7`  | 支持 Anthropic / OpenAI 两种兼容协议                      |
+| OpenAI    | `gpt-4o-mini`   | 成本低、速度快                                            |
+| DeepSeek  | `deepseek-chat` | 国产大模型，中文理解较好                                   |
 
 如使用其他兼容 OpenAI 接口的服务，通常只需替换 `apiEndpoint` 和 `apiKey` 即可。
 
@@ -243,7 +249,7 @@
 
 ### Q3：如何切换 AI 服务？
 
-直接修改 `commit.apiEndpoint`、`commit.apiKey`、`commit.model` 三项即可，插件会自动识别协议。
+直接修改 `commit.apiEndpoint`、`commit.apiKey`、`commit.model` 三项即可，插件默认自动识别协议。若新服务使用 Anthropic 协议但地址中不含 `/anthropic`（如 Kimi Code 的 `https://api.kimi.com/coding/`），还需将 `commit.apiProtocol` 设为 `anthropic`。
 
 ### Q4：支持哪些提交命令？
 
