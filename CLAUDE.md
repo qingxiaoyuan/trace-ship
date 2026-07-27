@@ -8,7 +8,7 @@ Trace Ship 是一个软件版本发布管理系统。仓库分为三个主要部
 
 - `backend/` — Django 5.0 + Django REST Framework 后端服务。
 - `frontend/` — React + Vite + TypeScript + Ant Design 6 前端工程，已完整接入业务页面。
-- `docker/` — Docker Compose 编排，包含 PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、SVN 等第三方依赖（backend / frontend / Celery 默认在本地启动）。
+- `docker/` — Docker Compose 编排，包含 PostgreSQL、Redis、GitLab 第三方依赖（`test` profile 可追加 OpenLDAP、SVN 模拟服务；backend / frontend / Celery 默认在本地启动）。生产编排拆分为 `docker-compose.deps.yml`（数据层，独立项目 `trace-ship-deps`）与 `docker-compose.prod.yml`（应用层，项目 `trace-ship`），经共享网络 `trace-ship-net` 通信。
 
 ## Language
 
@@ -16,34 +16,53 @@ Trace Ship 是一个软件版本发布管理系统。仓库分为三个主要部
 
 ## Common Commands
 
-### 启动第三方依赖（Docker）
+### 开发环境脚本（scripts/dev.sh）
 
-Trace Ship 的第三方依赖统一使用 Docker 部署；前端、后端、Celery 在本地启动以便调试。
+Trace Ship 的开发环境统一通过 `scripts/dev.sh` 管理：第三方依赖走 Docker，前端、后端在本地后台启动以便调试（PID/日志在 `scripts/.run/`）。
 
 ```bash
 cd /media/sangfor/vdb/front-workspace/trace-ship
 
-# 一键启动第三方依赖（PostgreSQL / Redis / Gitea / Jenkins / OpenLDAP / SVN）
-bash docker/start.sh
+# 启动第三方开发容器（PostgreSQL / Redis / GitLab）
+scripts/dev.sh deps
 
-# 或手动启动（默认不启动带 app profile 的应用服务）
-docker compose -f docker/docker-compose.yml up -d --build
+# 测试环境追加 OpenLDAP / SVN 模拟服务
+scripts/dev.sh deps --test
 
-# 查看 PostgreSQL 日志
-docker compose -f docker/docker-compose.yml logs postgres -f
+# 本地启动后端（自动迁移 + runserver，后台运行）
+scripts/dev.sh backend
 
-# 查看 Redis 日志
-docker compose -f docker/docker-compose.yml logs redis -f
+# 本地启动前端（Vite dev server，后台运行）
+scripts/dev.sh frontend
 
-# 如需一键启动完整应用服务（含 backend / frontend / celery-worker / celery-beat）
+# 查看状态 / 跟踪日志
+scripts/dev.sh status
+scripts/dev.sh logs backend        # 或 frontend / postgres / gitlab 等
+
+# 关闭所有（本地进程 + 全部第三方容器）
+scripts/dev.sh down
+
+# 如需容器内一键启动完整应用服务（含 backend / frontend / celery）
 docker compose -f docker/docker-compose.yml --profile app up -d --build
-
-# 查看后端日志（仅在启用 app profile 时可用）
-docker compose -f docker/docker-compose.yml logs backend -f
-
-# 查看 Celery Worker 日志（仅在启用 app profile 时可用）
-docker compose -f docker/docker-compose.yml logs celery-worker -f
 ```
+
+### 打包与部署脚本（scripts/build.sh + 包内 deploy.sh）
+
+```bash
+# 外网机构建发布包（产出 dist/trace-ship-release-<模式>-<时间戳>.tar.gz）
+scripts/build.sh --deps       # 第三方依赖包（postgres + redis + gitlab）
+scripts/build.sh --backend    # 后端更新包
+scripts/build.sh --frontend   # 前端更新包
+scripts/build.sh --app        # 前后端更新包
+
+# 内网侧解压后使用包内 deploy.sh 一键部署
+./deploy.sh --full            # 第一次部署：自动生成 .env.prod，先起依赖组再起应用
+./deploy.sh --backend         # 部署后端
+./deploy.sh --frontend        # 部署前端
+./deploy.sh --app             # 部署前后端
+```
+
+首次部署需将 `--deps` 与 `--app` 两个包解压到同一目录后执行 `./deploy.sh --full`。
 
 ### 后端本地开发
 
@@ -84,7 +103,7 @@ pytest
 pytest apps/release/tests/test_views.py::TestReleaseViews::test_create_release -v
 
 # 指定应用测试
-pytest apps/jenkins/tests
+pytest apps/release/tests
 ```
 
 测试使用 SQLite 内存数据库，`CELERY_TASK_ALWAYS_EAGER=True`，不会连接真实 Redis/PostgreSQL。
@@ -127,9 +146,8 @@ npm run lint
 - `apps.release.ReleaseRecord` 与 `ReleaseCommit`：发布记录与关联提交。
 - `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：审批工作流定义、实例与任务。
 - `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：系统级打包镜像、项目级打包配置、打包任务记录。
-- `apps.jenkins.JenkinsJob` 与 `JenkinsBuild`：Jenkins 任务配置与构建记录。
 
-注意：旧的 `ProjectIntegration` 模型已废弃，不要在新代码中恢复；仓库和 Jenkins 任务直接归属项目。
+注意：旧的 `ProjectIntegration` 模型已废弃，不要在新代码中恢复；`apps.jenkins` 模块已整体下线（Jenkins 能力移除），仅保留迁移 tombstone（空 models + 历史迁移），仓库直接归属项目并绑定凭证。
 
 ### 认证与权限
 
@@ -149,9 +167,8 @@ npm run lint
 
 - 凭证存储在 `apps.credential`，AES 加密；接口返回脱敏数据。
 - `utils.provider.credential_resolver.resolve_credential(source, request_user)` 根据 `credential_mode`（`fixed` / `global` / `current_user` / `specified_user`）解析出解密后的凭证 dict。
-- `utils.provider.factory.get_provider(vendor, server_url, credential_data)` 创建 GitLab / Gitea / SVN / Jenkins 适配器。
+- `utils.provider.factory.get_provider(vendor, server_url, credential_data)` 创建 GitLab / SVN 适配器。
 - Git 类 Provider 统一继承 `utils.provider.base.GitProvider`，实现 `list_branches`、`list_commits`、`list_tags`、`create_tag`、`compare_commits`。
-- Jenkins Provider 基于 `python-jenkins`，封装在 `utils.provider.jenkins`。
 
 ### 发布主流程
 
@@ -173,13 +190,12 @@ npm run lint
 - `PackageTask`：打包任务记录，状态 `queued` / `running` / `success` / `failure` / `canceled`，保存配置快照、工作区路径、日志路径、产物信息、SVN 推送结果。
 - 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 拉取源码 → 按模式执行 Docker 镜像构建或本地脚本 → 扫描产物 → 可选推送 SVN → 更新状态与耗时。
 - 手动能力：`PackageConfigViewSet.trigger` 手动触发某个已发布版本的打包；`PackageTaskViewSet.cancel` 取消任务、`push_svn` 手动推送产物、`logs` 读取日志、`download_artifact` 下载产物。
-- Jenkins 构建能力仍保留（`JenkinsService` 可触发构建、轮询状态、读取日志），但不再是新 Tag 发布流程的必经步骤；`trigger_build_for_release` / `handle_build_completed` 仅为历史兼容方法。
+- Jenkins 模块已整体下线（模型、服务、API、`python-jenkins` 依赖均已移除），打包统一走 `apps.package`；不要在新代码中恢复 Jenkins 相关逻辑。
 
 ### Celery
 
 - 应用入口：`config/celery.py`，使用 `app.autodiscover_tasks()` 自动发现各 app 的 `tasks.py`。
 - 当前主要任务：
-  - `apps.jenkins.tasks.poll_jenkins_build`：轮询 Jenkins 构建状态。
   - `apps.package.tasks.run_package_task`：执行打包任务（Docker 镜像构建 / 本地脚本 / SVN 推送）。
   - `apps.repository.tasks`：提交同步相关任务。
   - `apps.release.tasks`：发布相关异步任务。
@@ -187,7 +203,7 @@ npm run lint
 ## Code Conventions
 
 - 后端代码要求 **中文注释 + type hints**，与现有代码保持一致。
-- 模型字段应加 `verbose_name`；系统类模型表名常以 `sys_` 开头，业务类模型表名常按 app 命名（如 `release_record`、`jenkins_job`）。
+- 模型字段应加 `verbose_name`；系统类模型表名常以 `sys_` 开头，业务类模型表名常按 app 命名（如 `release_record`、`package_task`）。
 - 新增 API 应通过 `config/urls.py` 注册，统一以 `/api/<resource>/` 开头。
 - 新增业务逻辑优先放到 `services.py`，视图层保持薄封装。
 
@@ -199,7 +215,8 @@ npm run lint
   - `config.settings.prod`：Docker 部署使用。
 - 关键环境变量：`SECRET_KEY`、`CREDENTIAL_SECRET_KEY`、`DB_*`、`REDIS_*`、`LDAP_*`、`ALLOWED_HOSTS`、`CORS_ALLOW_ALL_ORIGINS`。
 - 默认管理员账号：`admin / admin@123`。
-- Docker 默认端口：后端 `8000`、前端 `8002`、Gitea `13000`、Jenkins `18080`、phpLDAPadmin `18090`、SVN `3690`。
+- Docker 默认端口：后端 `8000`、前端 `8002`、GitLab `18929`、phpLDAPadmin `18090`（test）、SVN `3690`（test）。
+- 数据卷统一显式命名 `trace-ship-*`（如 `trace-ship-postgres-data`），不随 compose 项目名变化。
 
 ## Important Notes
 

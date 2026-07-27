@@ -3,6 +3,7 @@
 
 提供发布记录 CRUD、生成发布说明、提交审批、推 tag、看板统计以及关联 commit 查询接口。
 """
+import logging
 from typing import Any, Dict, List
 
 from django.db.models import Count, Q
@@ -23,10 +24,59 @@ from apps.release.serializers import (
     ReleaseListSerializer,
     ReleaseRecordSerializer,
 )
-from apps.release.services import ReleaseService, ReleaseValidator
+from apps.release.services import ReleaseService, ReleaseTagExistsError, ReleaseValidator
 from apps.release.exporters import ReleaseDocExporter
 from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectMember
+from utils.provider.exceptions import ProviderError
 from utils.response import error_response, success_response
+
+logger = logging.getLogger(__name__)
+
+
+def _extract_validation_message(exc: Exception) -> str:
+    """
+    从 DRF ValidationError 中提取第一条可读错误信息
+
+    Args:
+        exc: serializers.ValidationError 实例
+
+    Returns:
+        错误描述字符串
+    """
+    detail = getattr(exc, "detail", exc)
+    if isinstance(detail, dict):
+        first = next(iter(detail.values()), "校验失败")
+        return str(first[0] if isinstance(first, list) and first else first)
+    if isinstance(detail, list):
+        return str(detail[0]) if detail else "校验失败"
+    return str(detail or "校验失败")
+
+
+def _handle_service_error(exc: Exception, action_desc: str) -> Response:
+    """
+    分类处理发布服务层抛出的异常，返回统一格式响应
+
+    - 远端 tag 已存在（ReleaseTagExistsError）：400 + 明确提示
+    - 业务校验错误（ValidationError）：400 + 具体原因
+    - Git 平台错误（ProviderError）：502 + 平台错误信息
+    - 未知异常：500 + 记录完整堆栈日志（不对客户端暴露内部细节）
+
+    Args:
+        exc: 异常实例
+        action_desc: 操作描述（用于日志与错误提示）
+
+    Returns:
+        统一格式错误响应
+    """
+    if isinstance(exc, ReleaseTagExistsError):
+        return error_response(40003, str(exc))
+    if isinstance(exc, serializers.ValidationError):
+        return error_response(40002, _extract_validation_message(exc))
+    if isinstance(exc, ProviderError):
+        logger.warning("%s失败（Git 平台错误）: %s", action_desc, exc, exc_info=True)
+        return error_response(50200, f"{action_desc}失败: {exc}", status_code=502)
+    logger.exception("%s失败（未预期异常）", action_desc)
+    return error_response(50000, f"{action_desc}失败，请联系管理员", status_code=500)
 
 
 class ReleaseFilter(filters.FilterSet):
@@ -147,7 +197,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 retest_passed=data.get("retest_passed", False),
             )
         except Exception as exc:
-            return error_response(40002, str(exc))
+            return _handle_service_error(exc, "创建发布")
         return success_response(self._serialize_release(release), message="创建成功", status=201)
 
     def update(self, request: Request, *args, **kwargs) -> Response:
@@ -177,10 +227,9 @@ class ReleaseViewSet(StandardModelViewSet):
                     instance.repository, instance.branch, request.user
                 )
             except Exception as exc:
-                return error_response(40002, str(exc))
+                return _handle_service_error(exc, "解析分支最新提交")
 
         # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
-        rule = ReleaseValidator.get_release_rule(instance.project)
         version_rule = instance.project.version_rule or {}
         if "tag_name" in data and data.get("tag_name"):
             instance.tag_name = data["tag_name"]
@@ -200,23 +249,15 @@ class ReleaseViewSet(StandardModelViewSet):
                 if suffix and not instance.tag_name.endswith(f"-{suffix}"):
                     instance.tag_name = f"{instance.tag_name}-{suffix}"
 
-        # 校验分支规则与 tag 后缀一致性
+        # 校验 tag 后缀一致性
         try:
-            ReleaseValidator.validate_branch_and_suffix(
-                instance.release_type, instance.branch, instance.tag_name, rule, version_rule
+            ReleaseValidator.validate_tag_suffix(
+                instance.release_type, instance.tag_name, version_rule
             )
             if "tag_name" in data or "version" in data:
                 ReleaseService.validate_tag_not_exists(instance.repository, instance.tag_name, request.user)
         except serializers.ValidationError as exc:
-            detail = exc.detail
-            if isinstance(detail, dict):
-                first = next(iter(detail.values()), "校验失败")
-                message = str(first[0] if isinstance(first, list) and first else first)
-            elif isinstance(detail, list):
-                message = str(detail[0]) if detail else "校验失败"
-            else:
-                message = str(detail or "校验失败")
-            return error_response(40002, message)
+            return error_response(40002, _extract_validation_message(exc))
 
         instance.save(update_fields=["branch", "version", "tag_name", "git_hash", "updated_at"])
         return success_response(self._serialize_release(instance), message="更新成功")
@@ -260,7 +301,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 request_user=request.user,
             )
         except Exception as exc:
-            return error_response(50000, f"生成发布说明失败: {exc}", status_code=500)
+            return _handle_service_error(exc, "生成发布说明")
         return success_response(doc, message="生成成功")
 
     @action(detail=True, methods=["post"], url_path="update-doc")
@@ -280,7 +321,7 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             ReleaseService.update_doc(release, md_content)
         except Exception as exc:
-            return error_response(40002, str(exc))
+            return _handle_service_error(exc, "保存发布说明")
         return success_response(self._serialize_release(release), message="保存成功")
 
     @action(detail=True, methods=["get"], url_path="export-md")
@@ -319,7 +360,7 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             ReleaseService.submit_audit(release, request.user)
         except Exception as exc:
-            return error_response(40002, str(exc))
+            return _handle_service_error(exc, "提交审批")
         return success_response({
             "id": str(release.id),
             "status": release.status,
@@ -342,7 +383,7 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             tag_info = ReleaseService.push_tag(release, request.user)
         except Exception as exc:
-            return error_response(50001, f"推 tag 失败: {exc}", status_code=500)
+            return _handle_service_error(exc, "推 tag")
         return success_response({
             "tag_name": tag_info.name,
             "git_hash": tag_info.commit_hash,
@@ -365,7 +406,7 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             pdf_bytes = ReleaseDocExporter.export_pdf(release)
         except Exception as exc:
-            return error_response(50001, f"导出 PDF 失败: {exc}", status_code=500)
+            return _handle_service_error(exc, "导出 PDF")
         response = Response(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="release-{release.version}.pdf"'
         return response
@@ -386,7 +427,7 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             word_bytes = ReleaseDocExporter.export_word(release)
         except Exception as exc:
-            return error_response(50001, f"导出 Word 失败: {exc}", status_code=500)
+            return _handle_service_error(exc, "导出 Word")
         response = Response(
             word_bytes,
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

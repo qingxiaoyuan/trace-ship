@@ -10,7 +10,6 @@ import {
   Save,
   Check,
   ShieldCheck,
-  FolderKanban,
   Code2,
   Bug,
   KeyRound,
@@ -37,14 +36,12 @@ const emptyForm: FormState = {
 
 const roleIconMap: Record<string, typeof ShieldCheck> = {
   admin: ShieldCheck,
-  project_manager: FolderKanban,
   developer: Code2,
   tester: Bug,
 };
 
 const roleIconClassMap: Record<string, string> = {
   admin: 'icon-violet',
-  project_manager: 'icon-indigo',
   developer: 'icon-emerald',
   tester: 'icon-amber',
 };
@@ -237,7 +234,7 @@ export default function SystemRoleList() {
                     type="text"
                     value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value })}
-                    placeholder="如：project_manager"
+                    placeholder="如：developer"
                     className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[13px] text-slate-700 placeholder-slate-400 outline-none"
                   />
                 </div>

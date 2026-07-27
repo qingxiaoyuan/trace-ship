@@ -30,7 +30,7 @@ def project(user):
         leader=user,
         status=1,
         version_rule={"prefix": "VA", "major": 1, "minor": 0, "patch": 0, "suffixes": {"rc": "rc", "beta": "alpha"}},
-        release_rule={"formal_branch": "main", "release_cycle_days": 3},
+        release_rule={"release_cycle_days": 3},
     )
     ProjectMember.objects.create(project=project, user=user, role="manager")
     return project
@@ -44,8 +44,6 @@ def credential(user, project):
         cred_type="gitlab_token",
         auth_mode="token",
         owner=user,
-        scope="project",
-        project=project,
     )
     cred.set_data({"token": "glpat-test"})
     cred.save()

@@ -20,6 +20,11 @@ class ConnectionError(ProviderError):
     pass
 
 
+class NotFoundError(ProviderError):
+    """资源不存在"""
+    pass
+
+
 class NotSupportedError(ProviderError):
     """不支持的 vendor 或操作"""
     pass

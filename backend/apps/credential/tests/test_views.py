@@ -1,7 +1,7 @@
 """
 凭证模块视图测试
 
-覆盖作用域校验、类型与认证模式一致性校验和删除前引用检查。
+覆盖可见性规则（个人凭证 + SVN 系统共享）、类型与认证模式一致性校验和删除前引用检查。
 """
 import pytest
 from rest_framework.test import APIClient
@@ -16,6 +16,12 @@ from apps.repository.models import Repository
 def user():
     """创建测试用户"""
     return User.objects.create_user(username="credential-user", password="pass")
+
+
+@pytest.fixture
+def other_user():
+    """创建另一个测试用户"""
+    return User.objects.create_user(username="credential-other", password="pass")
 
 
 @pytest.fixture
@@ -35,15 +41,13 @@ def project(user):
 
 
 @pytest.fixture
-def credential(user, project):
-    """创建测试凭证并设置加密数据"""
+def credential(user):
+    """创建个人测试凭证并设置加密数据"""
     cred = Credential.objects.create(
         name="GitLab Token",
         cred_type="gitlab_token",
         auth_mode="token",
         owner=user,
-        scope="project",
-        project=project,
     )
     cred.set_data({"token": "glpat-test"})
     cred.save()
@@ -51,24 +55,47 @@ def credential(user, project):
 
 
 @pytest.mark.django_db
-def test_project_scope_credential_requires_project(api_client):
+def test_personal_credential_invisible_to_others(api_client, credential, other_user):
     """
-    测试项目级凭证必须关联项目
+    测试个人凭证仅归属人可见
 
-    期望：未传 project 时返回 400，并提示 project 字段错误
+    期望：其他用户列表中不包含该凭证
     """
-    payload = {
-        "name": "Project Token",
-        "cred_type": "gitlab_token",
-        "auth_mode": "token",
-        "scope": "project",
-        "data": {"token": "glpat-test"},
-    }
+    client = APIClient()
+    client.force_authenticate(user=other_user)
 
-    response = api_client.post("/api/credentials/", payload, format="json")
+    response = client.get("/api/credentials/")
 
-    assert response.status_code == 400
-    assert "project" in response.data["data"]
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.data["data"]["results"]]
+    assert str(credential.id) not in ids
+
+
+@pytest.mark.django_db
+def test_svn_credential_shared_to_all_users(api_client, user, other_user):
+    """
+    测试 SVN 凭证全系统共享
+
+    期望：SVN 凭证对其他用户可见，且 is_system_shared 为 true
+    """
+    svn_cred = Credential.objects.create(
+        name="SVN 共享",
+        cred_type="svn_password",
+        auth_mode="password",
+        owner=user,
+    )
+    svn_cred.set_data({"username": "svn", "password": "secret"})
+    svn_cred.save()
+
+    client = APIClient()
+    client.force_authenticate(user=other_user)
+    response = client.get("/api/credentials/")
+
+    assert response.status_code == 200
+    results = response.data["data"]["results"]
+    shared = [item for item in results if item["id"] == str(svn_cred.id)]
+    assert len(shared) == 1
+    assert shared[0]["is_system_shared"] is True
 
 
 @pytest.mark.django_db
@@ -76,12 +103,11 @@ def test_project_scope_credential_requires_project(api_client):
     "cred_type,auth_mode,expected_error",
     [
         ("gitlab_token", "password", "auth_mode"),
-        ("gitea_token", "password", "auth_mode"),
         ("svn_password", "token", "auth_mode"),
         ("ldap_password", "token", "auth_mode"),
     ],
 )
-def test_cred_type_auth_mode_consistency(api_client, project, cred_type, auth_mode, expected_error):
+def test_cred_type_auth_mode_consistency(api_client, cred_type, auth_mode, expected_error):
     """
     测试凭证类型与认证模式必须匹配
 
@@ -91,8 +117,6 @@ def test_cred_type_auth_mode_consistency(api_client, project, cred_type, auth_mo
         "name": "Inconsistent Cred",
         "cred_type": cred_type,
         "auth_mode": auth_mode,
-        "scope": "project",
-        "project": str(project.id),
         "data": {"token": "test-token"},
     }
 

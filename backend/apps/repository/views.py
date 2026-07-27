@@ -411,10 +411,6 @@ class RepositoryViewSet(StandardModelViewSet):
         """
         return success_response([
             {"value": "gitlab", "label": "GitLab"},
-            {"value": "gitea", "label": "Gitea"},
-            {"value": "github", "label": "GitHub"},
-            {"value": "gitee", "label": "Gitee"},
-            {"value": "svn", "label": "SVN"},
         ])
 
 

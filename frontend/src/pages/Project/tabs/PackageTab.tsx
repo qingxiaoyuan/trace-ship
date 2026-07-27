@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Form, Input, Modal, Select, Switch, Typography } from 'antd';
+import { Button } from 'antd';
 import {
   Plus,
   Search,
@@ -14,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
+import { SvnTestButton } from '@/components/SvnTestButton';
 import { credentialApi } from '@/api/credential';
 import type { PackageBuildType, PackageConfig, PackageMode } from '@/types';
 
@@ -55,6 +57,10 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const mode = (Form.useWatch('mode', form) || 'simple') as PackageMode;
   const buildType = (Form.useWatch('build_type', form) || 'web') as PackageBuildType;
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
+
+  const svnUrl = Form.useWatch('svn_url', form);
+  const svnCredentialId = Form.useWatch('svn_credential', form);
+  const svnPathTemplate = Form.useWatch('svn_path_template', form);
 
   const { data, isLoading } = useQuery({
     queryKey: ['package-configs', projectId],
@@ -338,9 +344,23 @@ export function PackageTab({ projectId }: PackageTabProps) {
         open={open}
         width={720}
         onCancel={() => setOpen(false)}
-        onOk={() => form.submit()}
-        confirmLoading={saveMutation.isPending}
         destroyOnHidden
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setOpen(false)}>取消</Button>
+            {svnPushEnabled && (
+              <SvnTestButton
+                projectId={projectId}
+                svnUrl={svnUrl}
+                svnCredentialId={svnCredentialId}
+                svnPathTemplate={svnPathTemplate}
+              />
+            )}
+            <Button type="primary" loading={saveMutation.isPending} onClick={() => form.submit()}>
+              保存
+            </Button>
+          </div>
+        }
       >
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="name" label="配置名称" rules={[{ required: true }]}>

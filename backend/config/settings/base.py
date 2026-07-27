@@ -42,7 +42,8 @@ INSTALLED_APPS = [
     "apps.project.apps.ProjectConfig",
     "apps.repository.apps.RepositoryConfig",
     "apps.release.apps.ReleaseConfig",
-    # 历史迁移依赖保留，不再注册产品 API 入口
+    # Jenkins 模块已下线：仅保留迁移 tombstone（release.0001 历史迁移依赖），
+    # 无任何模型、API 与业务逻辑，详见 apps/jenkins/models.py
     "apps.jenkins.apps.JenkinsConfig",
     "apps.package.apps.PackageConfig",
     "apps.system.apps.SystemConfig",

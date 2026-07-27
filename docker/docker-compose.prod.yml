@@ -1,54 +1,19 @@
-# Trace Ship 生产环境 Compose 编排
-# 仅包含应用运行必需的服务：PostgreSQL / Redis / Backend / Frontend / Celery
-# 第三方开发依赖（Gitea / OpenLDAP / SVN / Jenkins）不纳入，生产环境请按需接入外部服务。
+# Trace Ship 生产环境 Compose 编排（应用层）
+# 仅包含应用服务：Backend / Frontend / Celery Worker / Celery Beat。
+# 第三方依赖（PostgreSQL / Redis / GitLab）在 docker-compose.deps.yml 中独立编排，
+# 本文件通过外部共享网络 trace-ship-net 以服务名（postgres / redis / gitlab）访问。
+#
+# 前置条件：先启动依赖并等待 PostgreSQL / Redis 健康
+#   docker compose --env-file .env.prod -f docker-compose.deps.yml up -d
+# （start-prod.sh / deploy.sh 已自动按此顺序执行，日常运维只需操作本文件）
 #
 # 使用方式：
 #   1. cp .env.prod.example .env.prod 并填写真实配置
 #   2. ./start-prod.sh  或  docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
+name: trace-ship
+
 services:
-  # PostgreSQL 主库（仅内部网络访问，不对外暴露端口）
-  postgres:
-    image: ${IMAGE_PREFIX:-}postgres:${POSTGRES_VERSION:-16}
-    container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-postgres
-    restart: unless-stopped
-    environment:
-      TZ: ${TIMEZONE:-Asia/Shanghai}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - trace_ship_net
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis 缓存/队列（仅内部网络访问，不对外暴露端口）
-  redis:
-    image: ${IMAGE_PREFIX:-}redis:${REDIS_VERSION:-7}
-    container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-redis
-    restart: unless-stopped
-    environment:
-      TZ: ${TIMEZONE:-Asia/Shanghai}
-    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --appendonly yes
-    volumes:
-      - redis_data:/data
-    networks:
-      - trace_ship_net
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Trace Ship 后端（镜像内打包代码，不挂载源码卷）
   backend:
     image: trace-ship/backend:latest
@@ -90,17 +55,15 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - backend_logs:/var/log/trace-ship
-      # 挂载宿主机 Docker socket，使容器内可调用宿主机 docker 执行打包任务
+      # 挂载宿主机 Docker socket，使容器内可调用宿主机 docker 执行打包任务。
+      # 注意：这等价于授予容器宿主机 root 能力，仅限受控内网环境使用。
       - /var/run/docker.sock:/var/run/docker.sock
-      # 打包工作区：bind mount 到与宿主机一致的路径，保证构建容器 -v 挂载路径有效
+      # 打包工作区：bind mount 到与宿主机一致的路径，保证构建容器 -v 挂载路径有效（DooD 硬性要求）
       - ${PACKAGE_WORKSPACE_ROOT}:${PACKAGE_WORKSPACE_ROOT}
     networks:
       - trace_ship_net
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # 注意：依赖服务在独立的 compose 项目中，无法使用 depends_on；
+    # 启动顺序与依赖健康等待由 start-prod.sh / deploy.sh 保证
 
   # Trace Ship 前端（nginx 提供静态资源并反代 /api/ 到 backend）
   frontend:
@@ -144,21 +107,21 @@ services:
       CORS_ALLOW_ALL_ORIGINS: "False"
       PACKAGE_WORKSPACE_ROOT: ${PACKAGE_WORKSPACE_ROOT:?PACKAGE_WORKSPACE_ROOT must be set}
     volumes:
-      # Celery worker 也会执行打包任务，需要 docker socket 和共享工作区
+      # Celery worker 也会执行打包任务，需要 docker socket 和共享工作区（DooD 硬性要求）
       - /var/run/docker.sock:/var/run/docker.sock
       - ${PACKAGE_WORKSPACE_ROOT}:${PACKAGE_WORKSPACE_ROOT}
     networks:
       - trace_ship_net
     depends_on:
       - backend
-      - redis
 
   # Celery Beat（定时任务调度）
   celery-beat:
     image: trace-ship/backend:latest
     container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-celery-beat
     restart: unless-stopped
-    command: celery -A config beat -l info
+    # 调度状态文件放在独立数据卷，严禁把卷直接挂到 /app（会覆盖应用代码导致无法启动）
+    command: celery -A config beat -l info -s /app/celerybeat-data/schedule
     env_file:
       - .env.prod
     environment:
@@ -177,19 +140,21 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS must be set}
       CORS_ALLOW_ALL_ORIGINS: "False"
     volumes:
-      - celerybeat_schedule:/app
+      - celerybeat_data:/app/celerybeat-data
     networks:
       - trace_ship_net
     depends_on:
       - backend
-      - redis
 
+# 应用层数据卷同样显式命名为 trace-ship-*
 volumes:
-  postgres_data:
-  redis_data:
   backend_logs:
-  celerybeat_schedule:
+    name: trace-ship-backend-logs
+  celerybeat_data:
+    name: trace-ship-celerybeat-data
 
+# 共享网络由 docker-compose.deps.yml 创建，本文件以 external 方式加入
 networks:
   trace_ship_net:
-    driver: bridge
+    external: true
+    name: trace-ship-net

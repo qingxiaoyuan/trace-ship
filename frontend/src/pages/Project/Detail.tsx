@@ -19,6 +19,7 @@ import { RuleTab } from './tabs/RuleTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
 import { ReleaseTab } from './tabs/ReleaseTab';
 import { PackageTab } from './tabs/PackageTab';
+import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { projectApi } from '@/api/project';
 import type { ProjectStatus } from '@/types';
 
@@ -29,6 +30,7 @@ const tabItems = [
   { key: 'members', label: '成员' },
   { key: 'workflows', label: '审批流' },
   { key: 'packages', label: '打包配置' },
+  { key: 'svn', label: 'SVN 制品' },
   { key: 'rules', label: '规则配置' },
   { key: 'releases', label: '发布版本' },
 ] as const;
@@ -180,6 +182,7 @@ export default function ProjectDetail() {
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
           {activeTab === 'workflows' && <WorkflowTab project={project} />}
           {activeTab === 'packages' && <PackageTab projectId={id || ''} />}
+          {activeTab === 'svn' && <SvnArtifactsTab projectId={id || ''} />}
           {activeTab === 'rules' && <RuleTab project={project} />}
           {activeTab === 'releases' && <ReleaseTab projectId={id || ''} />}
         </div>

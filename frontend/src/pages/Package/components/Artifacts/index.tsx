@@ -1,9 +1,82 @@
-import { memo, useCallback, useState } from 'react';
-import { App, Button } from 'antd';
-import { Download, FileArchive } from 'lucide-react';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { App, Button, Dropdown } from 'antd';
+import { ChevronDown, Download, FileArchive, Upload } from 'lucide-react';
 import type { PackageArtifact, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
-import { formatSize, saveBlob } from '../utils';
+import { canPushSvn, formatSize, saveBlob } from '../utils';
+
+
+export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
+  task,
+  pushing,
+  onPushSvn,
+}: {
+  task: PackageTask;
+  pushing?: boolean;
+  onPushSvn?: () => void;
+}) {
+  const { message } = App.useApp();
+  const [downloading, setDownloading] = useState(false);
+
+  const hasArtifacts = (task.artifact_info || []).length > 0;
+
+  const items = useMemo(() => {
+    if (!canPushSvn(task)) return [];
+    return [
+      {
+        key: 'push-svn',
+        label: pushing ? '推送 SVN 中…' : '推送 SVN',
+        icon: <Upload className="h-3 w-3" strokeWidth={1.5} />,
+        disabled: pushing,
+      },
+    ];
+  }, [task, pushing]);
+
+  const handleDownload = useCallback(async () => {
+    if (!hasArtifacts) {
+      message.warning('暂无可下载产物');
+      return;
+    }
+    setDownloading(true);
+    try {
+      const blob = await packageApi.downloadAllArtifacts(task.id);
+      const safeName = (task.name || 'artifacts').replace(/\s+/g, '_').replace(/\//g, '_');
+      saveBlob(blob, `${safeName}-${task.version}-artifacts.zip`);
+    } catch {
+      message.error('下载全部产物失败');
+    } finally {
+      setDownloading(false);
+    }
+  }, [task, hasArtifacts, message]);
+
+  const handleMenuClick = useCallback(
+    ({ key }: { key: string }) => {
+      if (key === 'push-svn') {
+        onPushSvn?.();
+      }
+    },
+    [onPushSvn]
+  );
+
+  if (!hasArtifacts && items.length === 0) return null;
+
+  return (
+    <Dropdown.Button
+      size="small"
+      type="default"
+      loading={downloading}
+      disabled={!hasArtifacts}
+      icon={<ChevronDown className="h-3 w-3" strokeWidth={1.5} />}
+      menu={{ items, onClick: handleMenuClick }}
+      onClick={handleDownload}
+    >
+      <span className="flex items-center gap-1">
+        <Download className="h-3 w-3" strokeWidth={1.5} />
+        下载全部
+      </span>
+    </Dropdown.Button>
+  );
+});
 
 export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { artifact: PackageArtifact; taskId: string }) {
   const { message } = App.useApp();

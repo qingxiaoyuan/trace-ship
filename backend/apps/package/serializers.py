@@ -127,14 +127,19 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             svn_credential = attrs.get("svn_credential", getattr(self.instance, "svn_credential", None))
             if not svn_url:
                 raise serializers.ValidationError({"svn_url": "启用 SVN 推送时必须填写 SVN 仓库地址"})
+            if not (
+                svn_url.startswith("svn://")
+                or svn_url.startswith("http://")
+                or svn_url.startswith("https://")
+            ):
+                raise serializers.ValidationError({"svn_url": "SVN 仓库地址必须以 svn://、http:// 或 https:// 开头"})
             if not svn_credential:
                 raise serializers.ValidationError({"svn_credential": "启用 SVN 推送时必须选择 SVN 凭证"})
             if svn_credential.cred_type != "svn_password":
                 raise serializers.ValidationError({"svn_credential": "SVN 凭证类型必须为 svn_password"})
             if not svn_credential.is_active:
                 raise serializers.ValidationError({"svn_credential": "SVN 凭证已停用"})
-            if svn_credential.project_id and project and svn_credential.project_id != project.id:
-                raise serializers.ValidationError({"svn_credential": "SVN 凭证必须属于当前项目"})
+            # SVN 凭证全系统共享，任意归属人的 SVN 凭证均可绑定，无需再校验项目归属
 
         return attrs
 

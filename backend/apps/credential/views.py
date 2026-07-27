@@ -24,14 +24,14 @@ class CredentialViewSet(StandardModelViewSet):
     """
     凭证管理视图集
 
-    支持按类型、作用范围、状态过滤和按名称/用户名搜索；
-    普通用户只能查看自己有权限的凭证，超管可查看全部。
+    支持按类型、状态过滤和按名称/用户名搜索；
+    普通用户只能查看自己的个人凭证与全系统共享的 SVN 凭证，超管可查看全部。
     """
 
     serializer_class = CredentialSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["cred_type", "scope", "is_active", "project"]
+    filterset_fields = ["cred_type", "is_active"]
     search_fields = ["name", "username"]
     ordering_fields = ["created_at", "last_used_at"]
     ordering = ["-created_at"]
@@ -136,7 +136,9 @@ class CredentialViewSet(StandardModelViewSet):
     @action(detail=False, methods=["get"])
     def types(self, request: Request) -> Response:
         """
-        支持的凭证类型、认证模式和作用范围枚举
+        支持的凭证类型与认证模式枚举
+
+        SVN 凭证（svn_password）全系统共享，其余类型均为个人凭证。
 
         Args:
             request: DRF Request
@@ -147,8 +149,7 @@ class CredentialViewSet(StandardModelViewSet):
         return success_response({
             "cred_types": [
                 {"value": "gitlab_token", "label": "GitLab Token"},
-                {"value": "gitea_token", "label": "Gitea Token"},
-                {"value": "svn_password", "label": "SVN 密码"},
+                {"value": "svn_password", "label": "SVN 密码（系统共享）"},
                 {"value": "ldap_password", "label": "LDAP 密码"},
                 {"value": "ai_api_key", "label": "AI API Key"},
             ],
@@ -156,8 +157,5 @@ class CredentialViewSet(StandardModelViewSet):
                 {"value": "token", "label": "Token"},
                 {"value": "password", "label": "用户名密码"},
             ],
-            "scopes": [
-                {"value": "personal", "label": "个人"},
-                {"value": "project", "label": "项目"},
-            ],
+            "system_shared_cred_types": sorted(Credential.SYSTEM_SHARED_CRED_TYPES),
         })

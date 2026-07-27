@@ -1,12 +1,13 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { App, Button } from 'antd';
-import { ChevronRight, Package as PackageIcon, Plus, Settings2, Upload } from 'lucide-react';
+import { ChevronRight, Package as PackageIcon, Plus, Settings2 } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { BuildHistory, ArtifactListPanel } from './BuildHistory';
 import { TerminalLog } from './TerminalLog';
-import { canPushSvn, isRunning } from './utils';
+import { ArtifactActionsDropdown } from './Artifacts';
+import { isRunning } from './utils';
 import { StatusBadge } from './Shared';
 
 interface DetailViewProps {
@@ -144,15 +145,8 @@ export const DetailView = memo(function DetailView({
               </button>
             </div>
             <div className="flex items-center gap-2">
-              {activeTab === 'artifacts' && canPushSvn(activeBuild) && (
-                <Button
-                  size="small"
-                  icon={<Upload className="h-3 w-3" strokeWidth={1.5} />}
-                  loading={pushing}
-                  onClick={handlePushSvn}
-                >
-                  推送 SVN
-                </Button>
+              {activeTab === 'artifacts' && artifacts.length > 0 && (
+                <ArtifactActionsDropdown task={activeBuild} pushing={pushing} onPushSvn={handlePushSvn} />
               )}
               <span className="font-mono text-[12px] text-slate-500">{activeBuild.version}</span>
               <StatusBadge status={activeBuild.status} />

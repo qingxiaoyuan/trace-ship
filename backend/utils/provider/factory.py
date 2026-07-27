@@ -5,17 +5,13 @@ Provider 工厂
 """
 from .exceptions import NotSupportedError
 from .gitlab import GitLabProvider
-from .gitea import GiteaProvider
 from .svn import SVNProvider
-from .jenkins import JenkinsProvider
 
 
 # vendor 到 Provider 类的映射
 PROVIDER_MAP = {
     "gitlab": GitLabProvider,
-    "gitea": GiteaProvider,
     "svn": SVNProvider,
-    "jenkins": JenkinsProvider,
 }
 
 
@@ -24,7 +20,7 @@ def get_provider(vendor: str, server_url: str, credential_data: dict):
     根据 vendor 返回对应的 Provider 实例
 
     Args:
-        vendor: 平台名称，如 gitlab/svn/jenkins
+        vendor: 平台名称，如 gitlab/svn
         server_url: 服务器地址
         credential_data: 解密后的凭证数据
 

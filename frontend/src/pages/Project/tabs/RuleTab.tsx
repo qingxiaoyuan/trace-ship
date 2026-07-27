@@ -35,7 +35,6 @@ interface RuleFormValues {
   rcSuffix: string;
   betaSuffix: string;
   releaseCycle: number;
-  formalBranch: string[];
   complianceThreshold: number;
 }
 
@@ -63,9 +62,6 @@ export function RuleTab({ project }: RuleTabProps) {
     rcSuffix: suffixes.rc || 'rc',
     betaSuffix: suffixes.beta || 'beta',
     releaseCycle: (releaseRule.release_cycle_days as number) || 3,
-    formalBranch: releaseRule.formal_branch
-      ? String(releaseRule.formal_branch).split(',')
-      : ['main', 'master'],
     complianceThreshold: (releaseRule.compliance_threshold as number) ?? 90,
   };
 
@@ -84,7 +80,6 @@ export function RuleTab({ project }: RuleTabProps) {
         },
         release_rule: {
           release_cycle_days: values.releaseCycle,
-          formal_branch: values.formalBranch.join(','),
           compliance_threshold: values.complianceThreshold,
         },
       };
@@ -146,32 +141,6 @@ export function RuleTab({ project }: RuleTabProps) {
         <div className="grid grid-cols-2 gap-x-8 gap-y-5">
           <Form.Item name="releaseCycle" label="发布周期">
             <Select options={releaseCycleOptions} />
-          </Form.Item>
-
-          <Form.Item
-            name="formalBranch"
-            label="正式发布分支限制"
-            className="col-span-2"
-          >
-            <Select
-              mode="tags"
-              placeholder="输入分支名称"
-              options={[
-                { label: 'master', value: 'master' },
-                { label: 'main', value: 'main' },
-              ]}
-              tagRender={(props) => (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm mr-2">
-                  {props.label}
-                  <span
-                    className="ml-1.5 cursor-pointer text-blue-400 hover:text-blue-600"
-                    onClick={props.onClose}
-                  >
-                    ×
-                  </span>
-                </span>
-              )}
-            />
           </Form.Item>
 
           <Form.Item name="complianceThreshold" label="Commit 合规率阈值（%）">

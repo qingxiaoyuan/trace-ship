@@ -34,14 +34,10 @@ class Repository(models.Model):
 
     REPO_TYPE_CHOICES = [
         ("git", "Git"),
-        ("svn", "SVN"),
     ]
+    # 代码仓库平台仅支持 GitLab；SVN 仅作为打包产物推送目标（见 apps.package）
     VENDOR_CHOICES = [
         ("gitlab", "GitLab"),
-        ("gitea", "Gitea"),
-        ("github", "GitHub"),
-        ("gitee", "Gitee"),
-        ("svn", "SVN"),
     ]
     HEALTH_STATUS_CHOICES = [
         ("healthy", "健康"),

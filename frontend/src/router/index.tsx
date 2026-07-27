@@ -73,7 +73,6 @@ const routes: AppRouteObject[] = [
             ],
           },
           { path: 'tags', element: <Navigate to="/releases/create" replace /> },
-          { path: 'jenkins', element: <Navigate to="/packages" replace /> },
           { path: 'packages', element: <PageLoader><PackageTask /></PageLoader>, handle: { title: '打包看板' } },
           { path: 'packages/:id', element: <PageLoader><PackageTask /></PageLoader>, handle: { title: '打包看板' } },
           { path: 'workflows', element: <PageLoader><Workflow /></PageLoader>, handle: { title: '工作流审批' } },

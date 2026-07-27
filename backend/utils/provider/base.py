@@ -75,7 +75,7 @@ class MergeRequestInfo:
     Merge Request / Pull Request 信息数据类
 
     Attributes:
-        number: MR 编号（GitLab 为 iid 如 42，Gitea 为 number 如 42）
+        number: MR 编号（GitLab 为 iid 如 42）
         title: MR 标题
         description: MR 描述正文（用于正则解析更新内容）
         author: MR 作者
@@ -99,7 +99,7 @@ class GitProvider(ABC):
     """
     Git 平台统一适配器抽象基类
 
-    所有 Git 类 Provider（GitLab/Gitea/GitHub/Gitee）应继承此类并实现抽象方法。
+    所有 Git 类 Provider（如 GitLab）应继承此类并实现抽象方法。
     """
 
     def __init__(self, server_url: str, credential_data: dict):
@@ -151,26 +151,6 @@ class GitProvider(ABC):
     @abstractmethod
     def compare_commits(self, repo_identity: str, base: str, head: str) -> List[CommitInfo]:
         """比较两个 ref 之间的差异"""
-        pass
-
-    @abstractmethod
-    def list_merge_requests(
-        self,
-        repo_identity: str,
-        target_branch: str,
-        since: Optional[datetime] = None,
-    ) -> List[MergeRequestInfo]:
-        """
-        拉取合并到目标分支的 MR 列表
-
-        Args:
-            repo_identity: 仓库标识
-            target_branch: 目标分支（MR 合入的分支）
-            since: 仅返回此时间之后合并的 MR
-
-        Returns:
-            MergeRequestInfo 列表
-        """
         pass
 
     @abstractmethod

@@ -118,7 +118,6 @@ class RepositorySerializer(serializers.ModelSerializer):
         """
         repo_type = attrs.get("repo_type", getattr(self.instance, "repo_type", None))
         vendor = attrs.get("vendor", getattr(self.instance, "vendor", None))
-        credential_mode = attrs.get("credential_mode", getattr(self.instance, "credential_mode", "project"))
         credential = attrs.get("credential", getattr(self.instance, "credential", None))
 
         if repo_type == "svn" and vendor != "svn":
@@ -126,24 +125,13 @@ class RepositorySerializer(serializers.ModelSerializer):
         if repo_type == "git" and vendor == "svn":
             raise serializers.ValidationError({"vendor": "Git 仓库不能使用 svn vendor"})
 
-        # 凭证必须显式绑定，并按来源校验 scope / owner / project 与 cred_type
+        # 凭证必须显式绑定；凭证统一为个人凭证（SVN 凭证全系统共享），
+        # 因此只允许绑定本人的凭证或系统共享凭证
         if credential is None:
             raise serializers.ValidationError({"credential": "必须选择凭证"})
-        if credential_mode not in ("personal", "project"):
-            raise serializers.ValidationError({"credential_mode": "凭证来源只能为 personal 或 project"})
-
-        if credential_mode == "personal":
-            if credential.scope != "personal":
-                raise serializers.ValidationError({"credential": "个人来源必须选择个人凭证"})
-            if credential.owner_id != self.context["request"].user.id:
-                raise serializers.ValidationError({"credential": "个人来源只能选择自己的凭证"})
-        else:  # project
-            project = attrs.get("project", getattr(self.instance, "project", None))
-            project_id = project.id if project else None
-            if credential.scope != "project":
-                raise serializers.ValidationError({"credential": "项目来源必须选择项目凭证"})
-            if credential.project_id != project_id:
-                raise serializers.ValidationError({"credential": "项目来源只能选择挂靠在当前项目下的凭证"})
+        request_user = self.context["request"].user
+        if not credential.is_system_shared and credential.owner_id != request_user.id:
+            raise serializers.ValidationError({"credential": "只能绑定本人的凭证（SVN 系统共享凭证除外）"})
 
         # 校验凭证类型与仓库平台一致
         expected_cred_type = VENDOR_TO_CRED_TYPE.get(vendor)

@@ -36,7 +36,6 @@ class ReleaseRecord(models.Model):
         self_test_passed: 自测试通过
         retest_passed: 研发测试复验通过
         publisher: 发布人
-        jenkins_build: 关联的 Jenkins 构建记录
         rejected_reason: 驳回/失败原因
         released_at: 实际发布时间
         created_at: 创建时间
@@ -108,14 +107,6 @@ class ReleaseRecord(models.Model):
         blank=True,
         related_name="releases",
         verbose_name="发布人",
-    )
-    jenkins_build = models.ForeignKey(
-        "jenkins.JenkinsBuild",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="releases",
-        verbose_name="Jenkins 构建记录",
     )
     workflow_instance = models.ForeignKey(
         "workflow.WorkflowInstance",

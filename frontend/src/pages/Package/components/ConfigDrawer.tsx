@@ -4,6 +4,7 @@ import { App, Button, Drawer, Form, Input, Select, Switch, Typography } from 'an
 import { Settings2 } from 'lucide-react';
 import type { PackageBuildType, PackageConfig, PackageMode } from '@/types';
 import { projectApi } from '@/api/project';
+import { SvnTestButton } from '@/components/SvnTestButton';
 import { repositoryApi } from '@/api/repository';
 import { packageApi } from '@/api/package';
 import { credentialApi } from '@/api/credential';
@@ -52,6 +53,10 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
   });
 
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
+
+  const svnUrl = Form.useWatch('svn_url', form);
+  const svnCredentialId = Form.useWatch('svn_credential', form);
+  const svnPathTemplate = Form.useWatch('svn_path_template', form);
 
   const { data: svnCredsData } = useQuery({
     queryKey: ['package-drawer-svn-creds', projectId],
@@ -139,6 +144,14 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
       extra={
         <div className="flex items-center gap-2">
           <Button onClick={onClose}>取消</Button>
+          {svnPushEnabled && (
+            <SvnTestButton
+              projectId={projectId}
+              svnUrl={svnUrl}
+              svnCredentialId={svnCredentialId}
+              svnPathTemplate={svnPathTemplate}
+            />
+          )}
           <Button type="primary" loading={saveMutation.isPending} onClick={() => form.submit()}>
             保存
           </Button>

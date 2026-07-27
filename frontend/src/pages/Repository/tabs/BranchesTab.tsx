@@ -7,11 +7,10 @@ import { repositoryApi } from '@/api/repository';
 interface BranchesTabProps {
   repoId: string;
   repoType: 'git' | 'svn';
-  vendor: string;
 }
 
 /** 分支 Tab：展示分支列表及最后提交人/时间，支持同步分支 */
-export function BranchesTab({ repoId, repoType, vendor }: BranchesTabProps) {
+export function BranchesTab({ repoId, repoType }: BranchesTabProps) {
   const queryClient = useQueryClient();
   const { message } = App.useApp();
 
@@ -91,7 +90,7 @@ export function BranchesTab({ repoId, repoType, vendor }: BranchesTabProps) {
                 ) : (
                   <span className="flex-1" />
                 )}
-                {vendor !== 'gitea' && b.last_commit_author ? (
+                {b.last_commit_author ? (
                   <>
                     <span className="shrink-0 text-[11px] text-slate-500">{b.last_commit_author}</span>
                     <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300" />

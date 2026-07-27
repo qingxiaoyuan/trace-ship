@@ -1,6 +1,7 @@
 #!/bin/bash
 # Trace Ship 生产环境一键部署脚本
-# 启动 backend / frontend / celery / postgres / redis，不含开发用第三方依赖
+# 分两段启动：先数据层（docker-compose.deps.yml: postgres / redis / gitlab），
+# 待 PostgreSQL / Redis 健康后再启动应用层（docker-compose.prod.yml: backend / frontend / celery）
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,6 +57,13 @@ if [[ "${POSTGRES_PASSWORD}" == ChangeMe_* ]] || [[ "${REDIS_PASSWORD}" == Chang
     echo "⚠️ 警告：POSTGRES_PASSWORD / REDIS_PASSWORD 仍为模板默认值，建议修改为强密码"
 fi
 
+if [[ -z "${GITLAB_ROOT_PASSWORD}" ]] || [[ "${GITLAB_ROOT_PASSWORD}" == ChangeMe_* ]]; then
+    echo "⚠️ 警告：GITLAB_ROOT_PASSWORD 未设置或仍为模板默认值，建议修改为强密码"
+fi
+if [[ "${GITLAB_EXTERNAL_URL}" == *YOUR_SERVER_IP* ]]; then
+    echo "⚠️ 警告：GITLAB_EXTERNAL_URL 仍包含占位符 YOUR_SERVER_IP，GitLab 克隆链接将无法正确使用"
+fi
+
 if [[ -z "${PACKAGE_WORKSPACE_ROOT}" ]]; then
     echo "❌ .env.prod 中 PACKAGE_WORKSPACE_ROOT 未设置"
     exit 1
@@ -74,7 +82,13 @@ if [ "$1" = "--build" ] || ! docker image inspect trace-ship/backend:latest >/de
     docker compose --env-file .env.prod -f docker-compose.prod.yml build
 fi
 
-echo "🚀 启动生产服务..."
+echo "🚀 [1/2] 启动第三方依赖（PostgreSQL / Redis / GitLab）..."
+docker compose --env-file .env.prod -f docker-compose.deps.yml up -d
+
+echo "⏳ 等待 PostgreSQL / Redis 健康检查通过..."
+docker compose --env-file .env.prod -f docker-compose.deps.yml up -d --wait postgres redis
+
+echo "🚀 [2/2] 启动应用服务（Backend / Frontend / Celery）..."
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 
 echo ""
@@ -84,10 +98,18 @@ echo "====================================="
 echo ""
 echo "🌐 前端访问地址: http://${ALLOWED_HOSTS%%,*}:${FRONTEND_PORT:-80}"
 echo ""
-echo "常用命令："
+echo "🦊 GitLab 访问地址: http://${ALLOWED_HOSTS%%,*}:${GITLAB_HTTP_PORT:-18929}"
+echo "   注意: GitLab 首次启动需等待数分钟，可执行以下命令观察："
+echo "   docker compose -f docker-compose.deps.yml logs -f gitlab"
+echo ""
+echo "常用命令（应用层，日常运维主要操作这个）："
 echo "  查看后端日志:   docker compose -f docker-compose.prod.yml logs -f backend"
 echo "  查看所有日志:   docker compose -f docker-compose.prod.yml logs -f"
 echo "  查看服务状态:   docker compose -f docker-compose.prod.yml ps"
-echo "  停止服务:       docker compose -f docker-compose.prod.yml down"
+echo "  停止应用服务:   docker compose -f docker-compose.prod.yml down"
 echo "  重新构建并启动: ./start-prod.sh --build"
+echo ""
+echo "数据层命令（改动极少，谨慎操作）："
+echo "  查看依赖状态:   docker compose -f docker-compose.deps.yml ps"
+echo "  停止依赖服务:   docker compose -f docker-compose.deps.yml down"
 echo "====================================="

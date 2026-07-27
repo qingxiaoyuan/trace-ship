@@ -27,8 +27,6 @@ const variantClasses: Record<Variant, string> = {
 
 const typeVariantMap: Record<CredentialType, Variant> = {
   gitlab_token: 'indigo',
-  gitea_token: 'cyan',
-  github_token: 'slate',
   svn_password: 'amber',
   ldap_password: 'rose',
   ai_api_key: 'emerald',

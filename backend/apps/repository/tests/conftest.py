@@ -42,8 +42,6 @@ def credential(user, project):
         cred_type="gitlab_token",
         auth_mode="token",
         owner=user,
-        scope="project",
-        project=project,
     )
     cred.set_data({"token": "glpat-test"})
     cred.save()

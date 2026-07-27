@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Boxes, Package as PackageIcon, Play, Search, Settings2, Trash2 } from 'lucide-react';
+import { Boxes, FolderOpen, Package as PackageIcon, Play, Search, Settings2, Trash2 } from 'lucide-react';
 import type { PackageBuildType, PackageConfig, PackageMode, PackageTask } from '@/types';
+import { SvnBrowserDrawer } from '@/components/SvnBrowserDrawer';
 import { useLatestTaskByConfig } from './useLatestTaskByConfig';
 import { formatRelativeTime, iconColors } from './utils';
 import { StatusBadge } from './Shared';
@@ -27,6 +28,7 @@ export const ConfigList = memo(function ConfigList({
   const [keyword, setKeyword] = useState('');
   const [modeFilter, setModeFilter] = useState<PackageMode | ''>('');
   const [typeFilter, setTypeFilter] = useState<PackageBuildType | ''>('');
+  const [browsing, setBrowsing] = useState<PackageConfig | null>(null);
 
   const latestTaskByConfig = useLatestTaskByConfig(tasks);
 
@@ -105,11 +107,13 @@ export const ConfigList = memo(function ConfigList({
                 onDelete={onDelete}
                 onTrigger={onTrigger}
                 onOpenHistory={onOpenHistory}
+                onBrowseSvn={setBrowsing}
               />
             );
           })}
         </div>
       )}
+      <SvnBrowserDrawer open={!!browsing} config={browsing} onClose={() => setBrowsing(null)} />
     </div>
   );
 });
@@ -122,6 +126,7 @@ interface ConfigRowProps {
   onDelete: (config: PackageConfig) => void;
   onTrigger: (config: PackageConfig) => void;
   onOpenHistory: (config: PackageConfig) => void;
+  onBrowseSvn: (config: PackageConfig) => void;
 }
 
 const ConfigRow = memo(function ConfigRow({
@@ -132,6 +137,7 @@ const ConfigRow = memo(function ConfigRow({
   onDelete,
   onTrigger,
   onOpenHistory,
+  onBrowseSvn,
 }: ConfigRowProps) {
   const handleClick = useCallback(() => {
     onOpenHistory(config);
@@ -161,6 +167,17 @@ const ConfigRow = memo(function ConfigRow({
     [config, onDelete]
   );
 
+  const handleBrowseSvn = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onBrowseSvn(config);
+    },
+    [config, onBrowseSvn]
+  );
+
+  // 是否启用了 SVN 产物推送（展示「浏览 SVN」入口）
+  const svnEnabled = Boolean(config.svn_push_enabled && config.svn_url);
+
   return (
     <div
       className="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer"
@@ -175,6 +192,7 @@ const ConfigRow = memo(function ConfigRow({
           <div className="text-[10px] text-slate-400">
             {config.is_active ? '已启用' : '已停用'}
             {config.auto_package_on_release && <span className="ml-2 text-indigo-500">发布自动打包</span>}
+            {svnEnabled && <span className="ml-2 text-amber-500">SVN 推送</span>}
           </div>
         </div>
       </div>
@@ -195,6 +213,15 @@ const ConfigRow = memo(function ConfigRow({
         )}
       </div>
       <div className="col-span-12 md:col-span-1 flex items-center justify-end gap-1">
+        {svnEnabled && (
+          <button
+            title="浏览 SVN 制品目录"
+            className="rounded-md p-1.5 text-slate-400 hover:bg-amber-100 hover:text-amber-600"
+            onClick={handleBrowseSvn}
+          >
+            <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+        )}
         <button
           title="触发打包"
           className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"

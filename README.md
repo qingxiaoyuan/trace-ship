@@ -11,7 +11,7 @@ Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。
 - 统一用户认证：LDAP/AD 域账号 + 本地应急账号
 - RBAC 权限模型：角色、权限、项目成员角色
 - 项目全生命周期管理：代码仓库、成员、凭证、发布流程
-- 代码仓库接入：Git（GitLab / Gitea / GitHub / Gitee）与 SVN，提交同步与提交规范审查
+- 代码仓库接入：GitLab，提交同步与提交规范审查
 - 发布管理：版本号自动计算、发布说明、审批工作流（串行 / 或签 / 会签 / 转交 / 回退 / 撤销）、审批通过后推 tag
 - 打包能力：Docker 镜像打包与本地脚本打包、打包任务执行与日志、产物 SVN 推送、发布后自动触发
 - 凭证安全托管：AES 加密存储、脱敏展示、使用审计
@@ -41,11 +41,10 @@ Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。
    PostgreSQL           Redis             Celery Worker
    关系型数据          缓存/会话/队列        异步任务
         ▼                   ▼                   ▼
-   OpenLDAP            Gitea             Jenkins
-   域账号服务          Git 仓库           构建流水线
-        ▼                   ▼                   ▼
-      SVN               打包工作区 (Docker 镜像 / 本地脚本)
-   代码仓库             产物 SVN 推送
+   GitLab              OpenLDAP                SVN
+   代码仓库            域账号服务（测试模拟）   打包产物推送
+        ▼
+   打包工作区 (Docker 镜像 / 本地脚本)
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,7 +62,7 @@ trace-ship/
 │   │   ├── release/        # 发布申请与发布流程
 │   │   ├── workflow/       # 审批工作流引擎
 │   │   ├── package/        # 打包镜像、打包配置、打包任务
-│   │   ├── jenkins/        # Jenkins 任务与构建记录
+│   │   ├── jenkins/        # （已下线）仅保留迁移 tombstone，无业务逻辑
 │   │   ├── credential/     # 凭证加密托管
 │   │   ├── notification/   # 站内通知
 │   │   └── system/         # 系统参数与操作日志
@@ -84,12 +83,12 @@ trace-ship/
 │       ├── stores/         # Zustand 状态
 │       └── styles/         # 主题与样式
 ├── docker/                 # Docker Compose 基础设施编排
-│   ├── docker-compose.yml
-│   ├── docker-compose.prod.yml
+│   ├── docker-compose.yml        # 开发/测试第三方依赖（PostgreSQL/Redis/GitLab，test profile 含 LDAP/SVN）
+│   ├── docker-compose.deps.yml   # 生产数据层编排（PostgreSQL/Redis/GitLab，独立项目）
+│   ├── docker-compose.prod.yml   # 生产应用层编排（Backend/Frontend/Celery）
 │   ├── .env
-│   ├── postgres/
-│   ├── jenkins/
 │   ├── openldap/
+│   ├── package/
 │   └── svn/
 ├── docs/                   # 项目文档
 │   ├── api-spec.md
@@ -113,19 +112,26 @@ trace-ship/
 
 ### 1. 启动第三方依赖（Docker）
 
-Trace Ship 的第三方依赖统一使用 Docker 部署，包括 PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、SVN。
+Trace Ship 的第三方依赖统一使用 Docker 部署，包括 PostgreSQL、Redis、GitLab；测试环境可通过 `--test` 追加 OpenLDAP、SVN 模拟服务。开发环境统一使用 `scripts/dev.sh` 管理：
 
 ```bash
 cd /media/sangfor/vdb/front-workspace/trace-ship
 
-# 启动全部第三方服务
-bash docker/start.sh
+# 启动第三方开发容器
+scripts/dev.sh deps
 
-# 或手动启动（不构建应用服务）
-docker compose -f docker/docker-compose.yml up -d --build
+# 或追加测试模拟服务（LDAP / SVN）
+scripts/dev.sh deps --test
 ```
 
 ### 2. 本地启动后端
+
+```bash
+# 自动执行数据库迁移并后台启动 runserver（http://localhost:8000）
+scripts/dev.sh backend
+```
+
+也可以手动启动（便于断点调试）：
 
 ```bash
 cd backend
@@ -139,20 +145,19 @@ python manage.py init_base_data
 python manage.py runserver 0.0.0.0:8000
 ```
 
-也可以使用后端自带的开发启动脚本：
-
-```bash
-cd backend
-bash start_dev.sh
-```
-
 ### 3. 本地启动前端
 
 ```bash
-cd frontend
+# 后台启动 Vite 开发服务器（http://localhost:5173，/api 代理到 8000）
+scripts/dev.sh frontend
+```
 
-npm install
-npm run dev
+### 4. 查看状态与关闭
+
+```bash
+scripts/dev.sh status        # 查看本地进程与容器状态
+scripts/dev.sh logs backend  # 跟踪后端日志（也可跟 frontend / postgres 等）
+scripts/dev.sh down          # 关闭所有（本地进程 + 第三方容器）
 ```
 
 ### 默认访问地址
@@ -164,8 +169,7 @@ npm run dev
 | Swagger UI | http://localhost:8000/swagger/ | - |
 | Redoc | http://localhost:8000/redoc/ | - |
 | 健康检查 | http://localhost:8000/health/ | - |
-| Gitea | http://localhost:13000/ | admin / admin |
-| Jenkins | http://localhost:18080/ | admin / admin |
+| GitLab | http://localhost:18929/ | admin / admin123（`scripts/dev.sh gitlab-admin` 创建） |
 | phpLDAPadmin | http://localhost:18090/ | cn=admin,dc=example,dc=com / admin |
 | SVN | svn://localhost:3690/ | - |
 
@@ -210,9 +214,10 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 
 Trace Ship 采用「本地运行应用服务 + Docker 运行第三方依赖」的开发模式：
 
-- **前端**和**后端**在本地启动，便于热重载、断点调试和快速迭代。
-- **第三方依赖**（PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、SVN）统一通过 `docker/start.sh` 启动，保持环境一致性。
-- 如需一键启动完整应用服务（含 backend、frontend、celery），可使用 `docker compose --profile app up -d --build`。
+- **前端**和**后端**在本地启动（`scripts/dev.sh backend` / `scripts/dev.sh frontend`，后台运行，日志在 `scripts/.run/`），便于热重载、断点调试和快速迭代。
+- **第三方依赖**（PostgreSQL、Redis、GitLab）统一通过 `scripts/dev.sh deps` 启动，保持环境一致性；测试模拟服务（OpenLDAP、SVN）使用 `scripts/dev.sh deps --test` 启动。
+- 如需一键启动完整应用服务（含 backend、frontend、celery），可使用 `docker compose -f docker/docker-compose.yml --profile app up -d --build`。
+- 离线发布包构建与内网部署见 `scripts/build.sh` 与发布包内的 `deploy.sh`（详见 [docker/README.md](docker/README.md)）。
 
 ### 后端开发
 

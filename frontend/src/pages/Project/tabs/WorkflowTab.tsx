@@ -51,7 +51,7 @@ const FLOW_META: Record<FlowType, {
   desc: string;
   title: string;
 }> = {
-  formal: { name: '正式发布审批', icon: Rocket, iconCls: 'icon-emerald', desc: '从 main / master 发布，无前缀 Tag', title: '审批链 · 正式发布' },
+  formal: { name: '正式发布审批', icon: Rocket, iconCls: 'icon-emerald', desc: '无前缀 Tag', title: '审批链 · 正式发布' },
   rc: { name: 'RC 发布审批', icon: GitPullRequest, iconCls: 'icon-cyan', desc: 'Tag 自动加 rc- 前缀', title: '审批链 · RC 发布' },
   beta: { name: 'Beta 发布审批', icon: FlaskConical, iconCls: 'icon-amber', desc: 'Tag 自动加 beta- 前缀', title: '审批链 · Beta 发布' },
 };
@@ -158,6 +158,14 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
     enabled: editOpen,
   });
 
+ /** 切换节点时清空待添加审批人状态，避免右侧表单项停留在上一节点 */
+  const selectNode = (idx: number) => {
+    setSelIdx(idx);
+    setPendingAprRole('');
+    setPendingAprUserId('');
+    setPendingAprType('leader');
+  };
+
   const sortedData = useMemo(
     () => [...(data?.results || [])].sort(
       (a, b) => FLOW_ORDER.indexOf(a.release_type as FlowType) - FLOW_ORDER.indexOf(b.release_type as FlowType)
@@ -169,14 +177,14 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
   const curMeta = editingDef ? (FLOW_META[editingDef.release_type as FlowType] || FLOW_META.formal) : FLOW_META.formal;
 
   /** 打开编辑弹窗：拷贝该流程的 node_config 到本地 */
-  const openEdit = (def: WorkflowDefinition) => {
-    const snap = def.node_config?.length
+ const openEdit = (def: WorkflowDefinition) => {
+    const snap = Array.isArray(def.node_config)
       ? def.node_config.map((n) => ({ ...n, approvers: (n.approvers || []).map((a) => ({ ...a })) }))
       : [defaultNode()];
     setNodes(snap);
     setOrigNodes(JSON.parse(JSON.stringify(snap)));
     setEditingDef(def);
-    setSelIdx(0);
+    selectNode(0);
     setEditOpen(true);
   };
 
@@ -201,23 +209,22 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
     if (target < 0 || target >= next.length) return;
     [next[idx], next[target]] = [next[target], next[idx]];
     setNodes(next);
-    setSelIdx(target);
+    selectNode(target);
   };
 
   /** 添加节点 */
   const addNode = () => {
     const next = [...nodes, defaultNode()];
     setNodes(next);
-    setSelIdx(next.length - 1);
+    selectNode(next.length - 1);
   };
 
   /** 删除节点 */
   const delNode = () => {
-    if (nodes.length <= 1) return;
     const next = [...nodes];
     next.splice(selIdx, 1);
     setNodes(next);
-    setSelIdx((s) => Math.max(0, s - 1));
+    selectNode(Math.max(0, selIdx - 1));
   };
 
   /** 添加审批人 */
@@ -394,7 +401,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                   return (
                     <div key={node.node_id || idx}>
                       <div
-                        onClick={() => setSelIdx(idx)}
+                        onClick={() => selectNode(idx)}
                         className={`cursor-pointer rounded-xl border p-3.5 transition-all ${
                           active
                             ? 'border-indigo-300 bg-indigo-50/40 ring-1 ring-indigo-200'
@@ -611,10 +618,9 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                     {/* 删除节点 */}
                     {canManage && (
                       <div className="flex items-center justify-between border-t border-indigo-50 pt-4">
-                        <button
-                          onClick={delNode}
-                          disabled={nodes.length <= 1}
-                          className="inline-flex items-center gap-1.5 text-[12px] font-medium text-rose-500 transition-colors hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                       <button
+                         onClick={delNode}
+                         className="inline-flex items-center gap-1.5 text-[12px] font-medium text-rose-500 transition-colors hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <Trash2 className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                           删除节点

@@ -135,6 +135,7 @@ backend/.pytest_cache/
 backend/celerybeat-schedule
 backend/celerybeat-schedule.db
 backend/db.sqlite3
+backend/package_workspaces/
 
 # Django migrations (optional: keep if you want to ignore all migrations)
 # **/migrations/*.py
@@ -226,3 +227,6 @@ temp/
 .claude/
 .codegraph/
 .codebase-memory/
+
+# 开发脚本运行时状态（PID / 日志）
+scripts/.run/

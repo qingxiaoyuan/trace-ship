@@ -6,7 +6,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from django.db.models import Q
 from django.utils import timezone
@@ -221,7 +221,6 @@ class ReleaseValidator:
         """
         rule = project.release_rule or {}
         return {
-            "formal_branch": rule.get("formal_branch", ["main", "master"]),
             "release_cycle_days": int(rule.get("release_cycle_days", 3)),
         }
 
@@ -271,33 +270,22 @@ class ReleaseValidator:
             raise serializers.ValidationError({"project": "项目已停用，禁止创建发布"})
 
     @staticmethod
-    def validate_branch_and_suffix(
+    def validate_tag_suffix(
         release_type: str,
-        branch: str,
         tag_name: str,
-        release_rule: dict,
         version_rule: dict,
     ) -> None:
         """
-        校验分支规则与 tag 后缀
+        校验 tag 后缀
 
         Args:
             release_type: 发布类型
-            branch: 发布分支
             tag_name: tag 名称
-            release_rule: 发布规则
             version_rule: 版本规则
 
         Raises:
             serializers.ValidationError: 校验失败
         """
-        formal_branches = ReleaseValidator._normalize_formal_branches(
-            release_rule.get("formal_branch", ["main", "master"])
-        )
-        if release_type == "formal" and branch not in formal_branches:
-            raise serializers.ValidationError(
-                {"branch": f"正式版本只能从 {', '.join(formal_branches)} 分支发布"}
-            )
         if release_type in ("rc", "beta"):
             suffixes = (version_rule or {}).get("suffixes") or ReleaseValidator.get_default_suffixes()
             suffix = (suffixes.get(release_type, "") or "").strip("-")
@@ -305,24 +293,6 @@ class ReleaseValidator:
                 raise serializers.ValidationError(
                     {"tag_name": f"{release_type} 版本 tag 必须以 -{suffix} 结尾"}
                 )
-
-    @staticmethod
-    def _normalize_formal_branches(value: Any) -> List[str]:
-        """
-        将正式发布分支规则归一化为分支名列表。
-
-        Args:
-            value: 字符串、逗号分隔字符串或列表
-
-        Returns:
-            分支名列表
-        """
-        if isinstance(value, (list, tuple, set)):
-            branches = [str(item).strip() for item in value]
-        else:
-            branches = [item.strip() for item in str(value or "").split(",")]
-        branches = [branch for branch in branches if branch]
-        return branches or ["main", "master"]
 
     @staticmethod
     def validate_release_cycle(project: Project, release_type: str, release_rule: dict) -> None:
@@ -801,9 +771,7 @@ class ReleaseService:
         else:
             tag_name = auto_tag_name
 
-        ReleaseValidator.validate_branch_and_suffix(
-            release_type, branch, tag_name, release_rule, version_rule
-        )
+        ReleaseValidator.validate_tag_suffix(release_type, tag_name, version_rule)
         ReleaseValidator.validate_release_cycle(project, release_type, release_rule)
         if tags is None:
             cls._validate_tag_not_exists(provider, repository, tag_name)
@@ -1069,6 +1037,12 @@ class ReleaseService:
                 {"workflow": f"项目未配置 {release.release_type} 发布审批流程"}
             )
 
+        # 若流程定义没有中间审批节点，直接推 tag 发布
+        if not definition.node_config:
+            release.status = "pending"
+            release.save(update_fields=["status", "updated_at"])
+            return ReleaseService.push_tag(release, request_user=user)
+
         instance = WorkflowEngine.create_instance(
             definition=definition,
             biz_type="release",
@@ -1159,31 +1133,6 @@ class ReleaseService:
         release.save(update_fields=[
             "status", "workflow_instance", "rejected_reason", "updated_at",
         ])
-
-    @staticmethod
-    def trigger_build_for_release(release: ReleaseRecord) -> None:
-        """
-        为发布触发打包（历史兼容方法，新流程由 push_tag 自动触发）。
-
-        Args:
-            release: ReleaseRecord 实例
-        """
-        from apps.package.services import PackageService
-
-        PackageService.trigger_auto_packages_for_release(release, request_user=release.publisher)
-        pass
-
-    @staticmethod
-    def handle_build_completed(build, success: bool, error_msg: str = "") -> None:
-        """
-        历史构建完成回调兼容方法。
-
-        Args:
-            build: 历史构建实例
-            success: 是否成功
-            error_msg: 失败原因
-        """
-        return
 
     @classmethod
     def push_tag(cls, release: ReleaseRecord, request_user=None) -> TagInfo:

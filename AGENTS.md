@@ -4,36 +4,60 @@
 
 ## 项目概览
 
-Trace Ship 是一个软件版本发布管理系统，围绕“项目”组织仓库、提交审查、发布申请、审批工作流、打包推送（Docker 镜像 / 本地脚本 / SVN）、Jenkins 构建记录、凭证与通知等能力。
+Trace Ship 是一个软件版本发布管理系统，围绕“项目”组织仓库、提交审查、发布申请、审批工作流、打包推送（Docker 镜像 / 本地脚本 / SVN）、凭证与通知等能力。
 
 仓库主要目录：
 
-- `backend/`：Django 5.0 + Django REST Framework 后端，包含账号、项目、仓库、提交、发布、工作流、打包、Jenkins、凭证、通知、系统管理等模块。
+- `backend/`：Django 5.0 + Django REST Framework 后端，包含账号、项目、仓库、提交、发布、工作流、打包、凭证、通知、系统管理等模块（Jenkins 模块已下线，仅保留迁移 tombstone）。
 - `frontend/`：React + Vite + TypeScript 前端，已接入路由、布局、Ant Design、Zustand、Axios、React Query 及主要业务页面。
-- `docker/`：Docker Compose 编排 PostgreSQL、Redis、Gitea、Jenkins、OpenLDAP、phpLDAPadmin、SVN；`app` profile 可同时启动后端、前端、Celery。
+- `docker/`：Docker Compose 编排 PostgreSQL、Redis、GitLab；`test` profile 追加 OpenLDAP、phpLDAPadmin、SVN 模拟服务；`app` profile 可同时启动后端、前端、Celery。生产编排拆分为 `docker-compose.deps.yml`（数据层，独立项目 `trace-ship-deps`）与 `docker-compose.prod.yml`（应用层，项目 `trace-ship`），经共享网络 `trace-ship-net` 通信。
 - `docs/`：接口、业务流程、设计文档与 Postman Collection。
 - `feat/`、`ui-design/`：需求和 UI 设计相关资料。
 
 ## 常用命令
 
-### 启动第三方依赖
+### 开发环境脚本（scripts/dev.sh）
 
-开发模式默认本地启动前端、后端、Celery，第三方依赖通过 Docker 启动。
+开发模式默认本地启动前端、后端，第三方依赖通过 Docker 启动。统一入口为 `scripts/dev.sh`（后台进程 PID/日志在 `scripts/.run/`）：
 
 ```bash
 cd /media/sangfor/vdb/front-workspace/trace-ship
 
-# 一键启动 PostgreSQL / Redis / Gitea / Jenkins / OpenLDAP / SVN 等依赖
-bash docker/start.sh
+# 启动第三方开发容器（PostgreSQL / Redis / GitLab）
+scripts/dev.sh deps
 
-# 或手动启动基础设施服务
+# 测试环境追加 OpenLDAP / SVN 模拟服务
+scripts/dev.sh deps --test
+
+# 本地启动后端（自动迁移）/ 前端（Vite）
+scripts/dev.sh backend
+scripts/dev.sh frontend
+
+# 查看状态 / 日志 / 关闭所有
+scripts/dev.sh status
+scripts/dev.sh logs backend
+scripts/dev.sh down
+
+# 或手动操作依赖编排
 docker compose -f docker/docker-compose.yml up -d --build
-
-# 查看日志
 docker compose -f docker/docker-compose.yml logs postgres -f
-docker compose -f docker/docker-compose.yml logs redis -f
-docker compose -f docker/docker-compose.yml logs jenkins -f
+docker compose -f docker/docker-compose.yml logs gitlab -f
 ```
+
+### 打包与部署（scripts/build.sh + 包内 deploy.sh）
+
+```bash
+scripts/build.sh --deps       # 第三方依赖包（postgres + redis + gitlab，首次部署用）
+scripts/build.sh --backend    # 后端更新包
+scripts/build.sh --frontend   # 前端更新包
+scripts/build.sh --app        # 前后端更新包
+
+# 内网侧解压后使用包内 deploy.sh
+./deploy.sh --full            # 第一次部署（生成 .env.prod，先起依赖组再起应用）
+./deploy.sh --backend | --frontend | --app   # 增量部署
+```
+
+首次部署需将 `--deps` 与 `--app` 两个包解压到同一目录后执行 `./deploy.sh --full`。
 
 如需容器内启动完整应用服务：
 
@@ -102,7 +126,7 @@ npm run preview
 - `apps.release`：发布申请、版本号计算、发布说明、发布关联提交 / MR、推 tag。
 - `apps.workflow`：审批流程定义、流程实例、审批任务，支持串行审批、或签、会签、转交、回退、撤销。
 - `apps.package`：打包镜像、项目级打包配置、打包任务；支持 Docker 镜像打包、本地脚本打包、产物 SVN 推送、发布后自动触发。
-- `apps.jenkins`：Jenkins 任务配置、构建记录、构建状态刷新与日志读取。
+- `apps.jenkins`：已下线，仅保留迁移 tombstone（空 models + 历史迁移），无 API 与业务逻辑。
 - `apps.credential`：凭证加密存储、脱敏展示、凭证解析。
 - `apps.notification`：站内通知，覆盖审批、构建、发布和系统消息。
 - `apps.system`：系统参数、操作日志等系统管理能力。
@@ -125,7 +149,7 @@ npm run preview
 - `/api/schema/`、`/swagger/`、`/redoc/`
 - `/health/`
 
-注意：`apps.jenkins` 仍在 `INSTALLED_APPS` 中保留模型与服务能力，但当前根路由未挂载 `/api/jenkins/`，前端 Jenkins 相关入口已重定向到打包看板。新增 API 应按业务归属放入对应 app 的 `urls.py`，再由根路由 include。视图层保持薄封装，复杂业务逻辑优先放入 `services.py`。
+注意：`apps.jenkins` 已整体下线（模型、服务、API、`python-jenkins` 依赖均已移除），仅在 `INSTALLED_APPS` 中保留迁移 tombstone（`release.0001` 历史迁移依赖），打包统一走 `apps.package`。新增 API 应按业务归属放入对应 app 的 `urls.py`，再由根路由 include。视图层保持薄封装，复杂业务逻辑优先放入 `services.py`。
 
 ### 核心数据模型
 
@@ -133,7 +157,7 @@ npm run preview
 
 - `Project`：项目主体，包含 `version_rule`、`release_rule`、负责人和启停状态。
 - `ProjectMember`：项目成员角色，角色值为 `developer` / `tester` / `manager` / `auditor` / `viewer`。
-- `Repository`：项目下代码仓库，支持 `git` / `svn`，平台包含 GitLab、Gitea、GitHub、Gitee、SVN。
+- `Repository`：项目下代码仓库，仅支持 Git（GitLab）；SVN 仅作为打包产物推送目标（见 `PackageConfig` 的 SVN 推送配置）。
 - `CommitRecord`：提交记录与提交规范审查结果。
 - `ReleaseRecord`：发布申请，当前状态为 `draft` / `pending` / `released` / `rejected`。
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
@@ -141,13 +165,12 @@ npm run preview
 - `PackageImage`：系统级 Docker 打包镜像，区分 `web` / `qt` 两种构建类型，由超管维护。
 - `PackageConfig`：项目级打包配置，包含打包模式（`simple` 简易打包 / `local` 本地脚本）、构建类型、环境变量、发布后自动打包开关、SVN 推送配置。
 - `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。
-- `JenkinsJob`、`JenkinsBuild`：Jenkins 任务配置与构建记录。
 - `Credential`：凭证密文与凭证元数据。
 - `Notification`：站内通知。
 
 ### 发布主流程
 
-当前代码中的发布流程以“审批通过后推 tag”为主，Jenkins 构建能力仍保留但不再是新 Tag 流程的必经步骤。
+当前代码中的发布流程以“审批通过后推 tag”为主，打包统一由 `apps.package` 承担。
 
 1. 创建发布：`ReleaseService.create_release` 校验项目状态、分支规则与 tag 后缀；如未传版本号，会基于仓库 tag 和 `Project.version_rule` 自动计算。
 2. 预览变更：`ReleaseService.preview_changes` 拉取上个 tag 到目标分支之间的 commits / MRs，并解析 A/F 类更新内容。
@@ -160,18 +183,16 @@ npm run preview
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
 
-### Jenkins 能力边界
+### Jenkins 模块状态
 
-`JenkinsService` 可以触发构建、轮询队列号 / 构建号、刷新构建状态、读取日志、保存产物信息。`JenkinsBuild.status` 为 `queue` / `running` / `success` / `failure` / `aborted`。
-
-发布服务中仍保留 `trigger_build_for_release` 和 `handle_build_completed` 兼容方法，但当前新 Tag 发布流程不主动触发 Jenkins 构建。涉及 Jenkins 的需求应先确认是“独立打包任务管理”还是要重新纳入发布状态机。
+Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_models`），服务、任务、API、`python-jenkins` 依赖与 `utils/provider/jenkins.py` 均已移除；`apps.jenkins` 仅保留空壳（apps.py + 空 models.py + 历史迁移）以维持迁移链。不要在新代码中恢复 Jenkins 相关逻辑；打包需求一律走 `apps.package`。
 
 ### Provider 与凭证
 
 - 凭证通过 `apps.credential` 加密存储，接口返回时应脱敏。
 - 使用 `utils.provider.credential_resolver.resolve_credential(source, request_user)` 解析凭证。
-- 使用 `utils.provider.factory.get_provider(vendor, server_url, credential_data)` 创建 Git / SVN / Jenkins provider。
-- Git 类 provider 统一提供分支、提交、tag、MR、compare、create tag 等能力；Jenkins provider 基于 `python-jenkins`。
+- 使用 `utils.provider.factory.get_provider(vendor, server_url, credential_data)` 创建 GitLab / SVN provider。
+- Git 类 provider 统一提供分支、提交、tag、MR、compare、create tag 等能力；SVN provider 用于打包产物推送。
 
 ### 统一响应、异常与权限
 
@@ -197,7 +218,7 @@ npm run preview
 - `src/api/`：按业务模块拆分接口封装。
 - `src/router/`：路由配置、鉴权守卫、懒加载页面。
 - `src/layouts/`：登录布局、主布局、系统子布局、侧边栏和顶部栏。
-- `src/pages/`：工作台、项目、仓库、提交审查、凭证、Jenkins、打包、打包镜像、工作流、发布、通知、个人中心、系统管理等页面。
+- `src/pages/`：工作台、项目、仓库、提交审查、凭证、打包、打包镜像、工作流、发布、通知、个人中心、系统管理等页面。
 - `src/components/`：项目内通用组件，例如卡片、列表、弹窗、状态标签、搜索筛选栏、审批流预览。
 - `src/stores/`：Zustand store。
 - `src/types/`：全局类型。
@@ -212,7 +233,6 @@ npm run preview
 - `/repositories`、`/repositories/:id`
 - `/credentials`、`/credentials/:id`
 - `/commits`、`/commits/alerts`、`/commits/:id`
-- `/jenkins`（重定向到 `/packages`）
 - `/packages`、`/packages/:id`（打包看板）
 - `/workflows`
 - `/releases`、`/releases/create`、`/releases/:id`
@@ -231,7 +251,7 @@ npm run preview
 - 新业务逻辑优先放在 `services.py`，视图只做参数、权限、序列化和响应封装。
 - 修改模型后必须考虑迁移文件、测试数据和序列化器。
 - 涉及发布、工作流、凭证、权限的改动要补充或更新测试。
-- 不要恢复旧的 `ProjectIntegration` 设计；当前仓库和 Jenkins 任务直接归属项目并各自绑定凭证。
+- 不要恢复旧的 `ProjectIntegration` 设计；当前仓库直接归属项目并各自绑定凭证。
 
 ### 前端
 
@@ -249,7 +269,8 @@ npm run preview
   - `config.settings.prod`：Docker / 生产配置。
 - 关键环境变量：`SECRET_KEY`、`CREDENTIAL_SECRET_KEY`、`DB_*`、`REDIS_*`、`LDAP_*`、`ALLOWED_HOSTS`、`CORS_ALLOW_ALL_ORIGINS`。
 - 默认后端账号：`admin / admin@123`。
-- Docker 默认值以 `docker/docker-compose.yml` 和 `docker/.env` 为准；常见端口包括后端 `8000`、前端容器 `8002`、Vite `5173`、Gitea、Jenkins、phpLDAPadmin、SVN 等。
+- Docker 默认值以 `docker/docker-compose.yml` 和 `docker/.env` 为准；常见端口包括后端 `8000`、前端容器 `8002`、Vite `5173`、GitLab `18929`、phpLDAPadmin `18090`（test）、SVN `3690`（test）等。
+- 数据卷统一显式命名 `trace-ship-*`（如 `trace-ship-postgres-data`），不随 compose 项目名变化。
 
 ## 重要注意事项
 

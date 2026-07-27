@@ -121,8 +121,8 @@ class TestReleaseViews:
         assert data["tag_name"] == "VA.1.0.0"
         assert data["status"] == "draft"
 
-    def test_create_formal_release_rejects_non_main_branch(self, api_client, project, repository, patched_provider):
-        """正式版本非主分支被拒绝"""
+    def test_create_formal_release_allows_non_main_branch(self, api_client, project, repository, patched_provider):
+        """正式版本不限制发布分支"""
         response = api_client.post(
             "/api/releases/",
             {
@@ -133,8 +133,9 @@ class TestReleaseViews:
             },
             format="json",
         )
-        assert response.status_code == 400
-        assert response.data["code"] == 40002
+        assert response.status_code == 201
+        assert response.data["code"] == 0
+        assert response.data["data"]["branch"] == "develop"
 
     def test_update_draft_rejects_existing_tag(self, api_client, project, repository, patched_provider):
         """草稿编辑版本时校验远端 tag 已存在。"""
@@ -223,6 +224,36 @@ class TestReleaseViews:
         response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
         assert response.status_code == 200
         assert response.data["data"]["status"] == "pending"
+
+    def test_submit_audit_with_empty_node_config_pushes_tag(
+        self, api_client, project, repository, commit, patched_provider, user
+    ):
+        """无中间审批节点时提交后直接推 tag 发布"""
+        WorkflowDefinition.objects.create(
+            project=project,
+            name="发布审批",
+            biz_type="release",
+            release_type="formal",
+            is_active=True,
+            node_config=[],
+            graph_data={"nodes": [], "edges": []},
+            created_by=user,
+        )
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            branch="develop",
+            release_type="formal",
+            publisher=api_client.handler._force_user,
+            release_doc="| 项目 | 内容 |\n|------|------|\n| 变更类型 | 无配置项改动 |",
+            git_hash="head001",
+        )
+        response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
+        assert response.status_code == 200
+        assert response.data["data"]["status"] == "released"
+        assert response.data["data"]["workflow_instance_id"] is None
 
     def test_push_tag(self, api_client, project, repository, patched_provider):
         """推 tag"""

@@ -67,8 +67,6 @@ def svn_credential(user, project):
         cred_type="svn_password",
         auth_mode="password",
         owner=user,
-        scope="project",
-        project=project,
         is_active=True,
     )
     cred.set_data({"username": "svnuser", "password": "svnpass"})
@@ -206,8 +204,6 @@ class TestPackageConfigSVNValidation:
             cred_type="gitlab_token",
             auth_mode="token",
             owner=user,
-            scope="project",
-            project=project,
             is_active=True,
         )
         cred.set_data({"token": "glpat-test"})

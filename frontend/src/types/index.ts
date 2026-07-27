@@ -411,15 +411,28 @@ export interface PackageArtifact {
   sha256: string;
 }
 
+/** SVN 目录条目（svn list 实时查询结果） */
+export interface SvnEntry {
+  name: string;
+  kind: 'dir' | 'file';
+  size: number;
+  revision: string;
+  author: string;
+  date?: string | null;
+}
+
+/** SVN 目录浏览接口返回数据 */
+export interface SvnEntriesData {
+  base_url: string;
+  path: string;
+  entries: SvnEntry[];
+}
+
 export type CredentialType =
   | 'gitlab_token'
-  | 'gitea_token'
-  | 'github_token'
   | 'svn_password'
   | 'ldap_password'
   | 'ai_api_key';
-
-export type CredentialScope = 'personal' | 'project';
 
 export interface Credential {
   id: string;
@@ -429,10 +442,10 @@ export interface Credential {
   username?: string;
   masked_data: string;
   expires_at?: string;
-  scope: CredentialScope;
-  project?: string;
-  project_id?: string;
-  project_name?: string;
+  owner?: string;
+  owner_name?: string;
+  /** SVN 凭证为 true：全系统共享，所有用户可用；其余为个人凭证 */
+  is_system_shared: boolean;
   is_active: boolean;
   last_used_at?: string;
   created_at: string;

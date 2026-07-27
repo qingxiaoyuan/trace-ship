@@ -150,11 +150,61 @@ def test_branches_action_reads_db(api_client, repository):
 
 
 @pytest.mark.django_db
-def test_branches_action_empty_when_not_synced(api_client, repository):
-    """测试未同步时分支列表为空"""
-    response = api_client.get(f"/api/repositories/{repository.id}/branches/")
+def test_branches_action_auto_syncs_when_empty(api_client, repository):
+    """测试本地无分支数据时自动从远端同步一次并落库"""
+    branches = [
+        BranchInfo(name="main", is_default=True, last_commit_hash="h1", last_commit_author="张三",
+                   last_commit_message="feat: 初始化", last_commit_at=_dt(2026, 7, 10, 10, 0, 0)),
+    ]
+    mock_provider = _make_provider(branches)
+    with patch("apps.repository.services.get_provider", return_value=mock_provider):
+        response = api_client.get(f"/api/repositories/{repository.id}/branches/")
+
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    data = response.data["data"]
+    assert len(data) == 1
+    assert data[0]["name"] == "main"
+    mock_provider.list_branches.assert_called_once()
+    # 自动同步结果已落库
+    assert RepositoryBranch.objects.filter(repository=repository, name="main").exists()
+
+
+@pytest.mark.django_db
+def test_branches_action_auto_sync_failure_returns_error(api_client, repository):
+    """测试自动同步失败时返回可读错误而非静默空列表"""
+    mock_provider = _make_provider([])
+    mock_provider.list_branches.side_effect = RuntimeError("远端连接失败")
+    with patch("apps.repository.services.get_provider", return_value=mock_provider):
+        response = api_client.get(f"/api/repositories/{repository.id}/branches/")
+
+    assert response.status_code == 500
+    assert response.data["code"] == 50000
+    assert "远端连接失败" in response.data["message"]
+
+
+@pytest.mark.django_db
+def test_branches_action_svn_returns_empty_without_sync(api_client, project, credential):
+    """测试 SVN 仓库分支列表为空且不触发远端同步"""
+    from apps.repository.models import Repository
+
+    svn_repo = Repository.objects.create(
+        project=project,
+        repo_type="svn",
+        vendor="svn",
+        name="SVN 仓库",
+        url="http://svn.example.com/svn/test",
+        external_identity="test",
+        default_branch="trunk",
+        credential=credential,
+        credential_mode="project",
+    )
+    with patch("apps.repository.services.get_provider") as mock_factory:
+        response = api_client.get(f"/api/repositories/{svn_repo.id}/branches/")
+
     assert response.status_code == 200
     assert response.data["data"] == []
+    mock_factory.assert_not_called()
 
 
 @pytest.mark.django_db

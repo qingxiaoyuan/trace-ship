@@ -19,11 +19,7 @@ import { CreateTagModal } from '@/pages/Project/modals/CreateTagModal';
 import type { Repository } from '@/types';
 
 const vendorMap: Record<string, { label: string; status: 'primary' | 'info' | 'neutral' }> = {
-  gitlab: { label: 'GitLab', status: 'primary' },
-  gitea: { label: 'Gitea', status: 'info' },
-  github: { label: 'GitHub', status: 'info' },
-  gitee: { label: 'Gitee', status: 'info' },
-  svn: { label: 'SVN', status: 'neutral' },
+  gitlab: { label: 'GitLab', status: 'info' },
 };
 
 interface RepoTabProps {

@@ -15,18 +15,9 @@ interface RepositoryModalProps {
   onOk: (values: Partial<Repository>) => void | Promise<void>;
 }
 
-const credentialModeOptions = [
-  { label: "项目凭证", value: "project" },
-  { label: "个人凭证", value: "personal" },
-];
-
 // 仓库平台与凭证类型的对应关系，与后端 VENDOR_TO_CRED_TYPE 保持一致
 const VENDOR_TO_CRED_TYPE: Record<string, CredentialType> = {
   gitlab: "gitlab_token",
-  gitea: "gitea_token",
-  github: "github_token",
-  gitee: "gitea_token",
-  svn: "svn_password",
 };
 
 export function RepositoryModal({
@@ -44,28 +35,18 @@ export function RepositoryModal({
     enabled: open,
   });
 
-  const credentialMode = (Form.useWatch("credential_mode", form) || "project") as string;
   const vendor = Form.useWatch("vendor", form) as string;
-  const watchedProjectId = (Form.useWatch("project_id", form) || projectId) as
-    | string
-    | undefined;
   const expectedCredType = VENDOR_TO_CRED_TYPE[vendor || ""] || undefined;
 
-  // 按凭证来源拉取可选凭证：个人来源取自己的个人凭证，项目来源取挂靠在当前项目下的项目凭证
+  // 凭证均为个人凭证（SVN 类型全系统共享），按平台对应的凭证类型过滤
   const { data: credentialData, isLoading: credentialsLoading } = useQuery({
-    queryKey: ["repo-credentials", credentialMode, watchedProjectId, expectedCredType],
+    queryKey: ["repo-credentials", expectedCredType],
     queryFn: () =>
       credentialApi.getCredentials({
         page_size: 1000,
-        scope: credentialMode,
         cred_type: expectedCredType || undefined,
-        project: credentialMode === "project" ? watchedProjectId : undefined,
       }),
-    enabled:
-      open &&
-      !!credentialMode &&
-      (credentialMode === "personal" || !!watchedProjectId) &&
-      !!expectedCredType,
+    enabled: open && !!expectedCredType,
   });
 
   const projectOptions =
@@ -98,7 +79,6 @@ export function RepositoryModal({
           name: repo.name,
           url: repo.url,
           default_branch: repo.default_branch,
-          credential_mode: repo.credential_mode || "project",
           credential_id: repo.credential_id,
         });
       } else {
@@ -108,7 +88,6 @@ export function RepositoryModal({
           repo_type: "git",
           vendor: "gitlab",
           default_branch: "main",
-          credential_mode: "project",
         });
       }
     }
@@ -123,6 +102,8 @@ export function RepositoryModal({
         ...values,
         project: projectId || values.project_id,
         credential: values.credential_id,
+        // 凭证统一为个人凭证（SVN 凭证全系统共享），credential_mode 固定为 personal
+        credential_mode: "personal",
       };
       // 删除前端字段，避免污染后端
       delete (payload as Record<string, unknown>).project_id;
@@ -220,7 +201,6 @@ export function RepositoryModal({
                   <Select
                     options={[
                       { label: "Git", value: "git" },
-                      { label: "SVN", value: "svn" },
                     ]}
                   />
                 </Form.Item>
@@ -234,10 +214,6 @@ export function RepositoryModal({
                   <Select
                     options={[
                       { label: "GitLab", value: "gitlab" },
-                      { label: "Gitea", value: "gitea" },
-                      { label: "GitHub", value: "github" },
-                      { label: "Gitee", value: "gitee" },
-                      { label: "SVN", value: "svn" },
                     ]}
                   />
                 </Form.Item>
@@ -248,7 +224,7 @@ export function RepositoryModal({
                   label="仓库地址"
                   rules={[{ required: true, message: "请输入仓库地址" }]}
                 >
-                  <Input placeholder="https://gitea.example.com/owner/repo.git" />
+                  <Input placeholder="https://gitlab.example.com/owner/repo.git" />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -267,15 +243,6 @@ export function RepositoryModal({
             <Row gutter={[24, 16]}>
               <Col span={12}>
                 <Form.Item
-                  name="credential_mode"
-                  label="凭证来源"
-                  rules={[{ required: true, message: "请选择凭证来源" }]}
-                >
-                  <Select options={credentialModeOptions} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
                   name="credential_id"
                   label="凭证"
                   rules={[{ required: true, message: "请选择凭证" }]}
@@ -286,11 +253,7 @@ export function RepositoryModal({
                     loading={credentialsLoading}
                     options={credentialOptions}
                     optionFilterProp="label"
-                    notFoundContent={
-                      credentialMode === "personal"
-                        ? "暂无可用的个人凭证"
-                        : "暂无可用的项目凭证"
-                    }
+                    notFoundContent="暂无可用的凭证"
                   />
                 </Form.Item>
               </Col>

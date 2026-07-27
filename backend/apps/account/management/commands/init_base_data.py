@@ -55,15 +55,7 @@ class Command(BaseCommand):
 
         # 创建基础角色及权限绑定关系
         roles_data: List[Dict[str, any]] = [
-            {"name": "超级管理员", "code": "super_admin", "perms": list(permission_map.keys())},
-            {"name": "项目管理员", "code": "project_manager", "perms": [
-                "project.view", "project.create", "project.edit", "project.member",
-                "repository.view", "repository.manage",
-                "credential.view", "credential.manage",
-                "release.view", "release.create",
-                "package.trigger", "package.manage",
-                "commit.view", "workflow.view",
-            ]},
+           {"name": "超级管理员", "code": "super_admin", "perms": list(permission_map.keys())},
             {"name": "开发人员", "code": "developer", "perms": [
                 "project.view", "repository.view",
                 "credential.view",

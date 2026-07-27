@@ -5,33 +5,19 @@ from django.db import migrations, models
 
 def convert_credential_mode(apps, schema_editor):
     """
-    将旧凭证模式转换为 personal / project：
-    - fixed：按绑定凭证的 scope 转为 project / personal
-    - current_user / specified_user / global：开发环境直接重置，解绑凭证并置为 project（需重新绑定）
+    将旧凭证模式归一为 personal。
+
+    注意：credential.0007 已将凭证统一为个人凭证并删除 scope 字段（拓扑序上可能先于
+    本迁移执行），此处不能再按 credential__scope 查询，直接按绑定状态归一。
     """
     Repository = apps.get_model("repository", "Repository")
-    Credential = apps.get_model("credential", "Credential")
 
-    for repo in Repository.objects.exclude(credential__isnull=True):
-        cred = repo.credential
-        if cred and cred.scope == "project":
-            repo.credential_mode = "project"
-        else:
-            repo.credential_mode = "personal"
-        repo.save(update_fields=["credential_mode"])
-
-    # 未绑定凭证或旧自动解析模式：重置为 project 默认值并解绑凭证
-    Repository.objects.filter(
-        credential_mode__in=["current_user", "specified_user", "global", "fixed"]
-    ).exclude(credential__isnull=False, credential__scope__in=["project", "personal"]).update(
-        credential=None,
-        credential_mode="project",
-    )
-    # 仍残留旧模式枚举值的行统一归一到 project
-    Repository.objects.exclude(credential_mode__in=["personal", "project"]).update(
-        credential=None,
-        credential_mode="project",
-    )
+    # 已绑定凭证的仓库：来源归一为 personal
+    Repository.objects.exclude(credential__isnull=True).update(credential_mode="personal")
+    # 未绑定凭证或残留旧模式枚举值的行：同样归一到 personal（凭证来源选择已随个人凭证化收敛）
+    Repository.objects.filter(credential__isnull=True).exclude(
+        credential_mode="personal"
+    ).update(credential=None, credential_mode="personal")
 
 
 class Migration(migrations.Migration):

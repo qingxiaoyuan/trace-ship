@@ -12,6 +12,7 @@ import { CommitsTab } from './tabs/CommitsTab';
 import { BranchesTab } from './tabs/BranchesTab';
 import { TagsTab } from './tabs/TagsTab';
 import { CredentialTab } from './tabs/CredentialTab';
+import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import type { Repository } from '@/types';
 
 /** 详情 Tab */
@@ -19,6 +20,7 @@ const tabs = [
   { key: 'commits', label: '最近提交' },
   { key: 'branches', label: '分支' },
   { key: 'tags', label: '标签' },
+  { key: 'svn', label: 'SVN 制品' },
   { key: 'credential', label: '凭证配置' },
 ] as const;
 
@@ -194,8 +196,9 @@ export default function RepositoryDetail() {
         </div>
         <div className="p-5">
           {activeTab === 'commits' && <CommitsTab repoId={repo.id} />}
-          {activeTab === 'branches' && <BranchesTab repoId={repo.id} repoType={repo.repo_type} vendor={repo.vendor} />}
+          {activeTab === 'branches' && <BranchesTab repoId={repo.id} repoType={repo.repo_type} />}
           {activeTab === 'tags' && <TagsTab repoId={repo.id} repoType={repo.repo_type} />}
+          {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}
         </div>
       </TsCard>

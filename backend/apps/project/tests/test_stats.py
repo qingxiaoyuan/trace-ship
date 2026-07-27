@@ -27,7 +27,7 @@ def project(manager):
         leader=manager,
         status=1,
         version_rule={"format": "V.{major}.{minor}.{patch}", "initial": "V.1.0.0"},
-        release_rule={"formal_branch": "main", "test_prefix": "test", "release_cycle_days": 3},
+        release_rule={"test_prefix": "test", "release_cycle_days": 3},
     )
     ProjectMember.objects.create(project=project, user=manager, role="manager")
     Repository.objects.create(project=project, repo_type="git", name="repo-a", url="https://a")

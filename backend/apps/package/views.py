@@ -1,6 +1,9 @@
 """
 系统内置打包视图
 """
+import os
+import tempfile
+import zipfile
 from pathlib import Path
 
 from django.http import FileResponse, Http404, HttpResponse
@@ -17,11 +20,30 @@ from apps.package.serializers import (
     PackageTaskSerializer,
 )
 from apps.package.services import PackageService
+from apps.credential.models import Credential
+from apps.project.models import Project
 from apps.project.models import ProjectMember
 from apps.release.models import ReleaseRecord
 from utils.permissions import IsProjectManager, IsProjectMember, IsSuperUser
+from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
+from utils.provider.factory import get_provider
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+
+class _TempFileResponse(FileResponse):
+    """下载完成后自动删除临时 zip 文件的响应。"""
+
+    def __init__(self, temp_path: str, *args, **kwargs):
+        self._temp_path = temp_path
+        super().__init__(open(temp_path, "rb"), *args, **kwargs)
+
+    def close(self):
+        super().close()
+        try:
+            os.remove(self._temp_path)
+        except FileNotFoundError:
+            pass
+
 
 
 class PackageImageViewSet(StandardModelViewSet):
@@ -102,6 +124,99 @@ class PackageConfigViewSet(StandardModelViewSet):
         task = PackageService.create_task_for_release(config, release, request_user=request.user)
         data = PackageTaskSerializer(task, context={"request": request}).data
         return success_response(data, "已创建打包任务", status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path="svn-entries")
+    def svn_entries(self, request, pk=None):
+        """实时浏览该配置 SVN 制品目录下的内容（svn list，不递归）。"""
+        config = self.get_object()
+        if not config.svn_push_enabled or not config.svn_url:
+            return error_response(40000, "该配置未启用 SVN 推送", status_code=status.HTTP_400_BAD_REQUEST)
+        if not config.svn_credential or not config.svn_credential.is_active:
+            return error_response(40000, "SVN 凭证未配置或已停用", status_code=status.HTTP_400_BAD_REQUEST)
+
+        # 相对子路径安全校验：拒绝 .. 与绝对路径，防止跳出 svn_url 根目录
+        sub_path = request.query_params.get("path", "").strip("/")
+        if sub_path and (sub_path.startswith("/") or any(part == ".." for part in sub_path.split("/"))):
+            return error_response(40000, "非法的目录路径", status_code=status.HTTP_400_BAD_REQUEST)
+
+        base_url = config.svn_url.rstrip("/")
+        target_url = f"{base_url}/{sub_path}" if sub_path else base_url
+        provider = get_provider("svn", base_url, config.svn_credential.get_data())
+        try:
+            entries = provider.list_dir(target_url)
+        except ProviderError as exc:
+            return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+        return success_response({"base_url": base_url, "path": sub_path, "entries": entries})
+
+    @action(detail=False, methods=["post"], url_path="test-svn")
+    def test_svn(self, request):
+        """
+        测试 SVN 推送配置连通性
+
+        支持未保存配置，通过 project_id / svn_url / svn_credential_id 临时验证。
+        """
+        data = request.data or {}
+        project_id = data.get("project_id")
+        svn_url = (data.get("svn_url") or "").strip()
+        svn_credential_id = data.get("svn_credential_id")
+        svn_path_template = (data.get("svn_path_template") or "").strip()
+
+        if not project_id:
+            return error_response(40000, "必须指定项目", status_code=status.HTTP_400_BAD_REQUEST)
+        if not svn_url:
+            return error_response(40000, "请输入 SVN 仓库地址", status_code=status.HTTP_400_BAD_REQUEST)
+        if not svn_credential_id:
+            return error_response(40000, "请选择 SVN 凭证", status_code=status.HTTP_400_BAD_REQUEST)
+        if not (
+            svn_url.startswith("svn://")
+            or svn_url.startswith("http://")
+            or svn_url.startswith("https://")
+        ):
+            return error_response(40000, "SVN 仓库地址必须以 svn://、http:// 或 https:// 开头", status_code=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return error_response(40400, "项目不存在", status_code=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if not user.is_superuser:
+            is_manager = ProjectMember.objects.filter(
+                project=project, user=user, role="manager"
+            ).exists()
+            is_leader = str(project.leader_id) == str(user.id)
+            if not is_manager and not is_leader:
+                return error_response(
+                    40300, "只有项目管理员可测试 SVN 配置", status_code=status.HTTP_403_FORBIDDEN
+                )
+
+        try:
+            credential = Credential.objects.get(
+                id=svn_credential_id, is_active=True, cred_type="svn_password"
+            )
+        except Credential.DoesNotExist:
+            return error_response(40000, "SVN 凭证不存在或已停用", status_code=status.HTTP_400_BAD_REQUEST)
+
+        target_url = svn_url.rstrip("/")
+        if svn_path_template and "{" not in svn_path_template and "}" not in svn_path_template:
+            target_url = f"{target_url}/{svn_path_template.strip('/')}"
+
+        provider = get_provider("svn", target_url, credential.get_data())
+        try:
+            entries = provider.list_dir(target_url)
+        except AuthenticationError as exc:
+            return error_response(40100, f"SVN 账号或密码错误: {exc}", status_code=status.HTTP_401_UNAUTHORIZED)
+        except NotFoundError as exc:
+            return error_response(40400, f"SVN 路径不存在: {exc}", status_code=status.HTTP_404_NOT_FOUND)
+        except ConnectionError as exc:
+            return error_response(50200, f"无法连接 SVN 服务器: {exc}", status_code=status.HTTP_502_BAD_GATEWAY)
+        except ProviderError as exc:
+            return error_response(50000, f"SVN 测试失败: {exc}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return success_response(
+            {"ok": True, "entries": entries, "message": "连接成功"},
+            message="SVN 连接测试成功",
+        )
 
 
 class PackageTaskViewSet(StandardReadOnlyModelViewSet):
@@ -189,3 +304,45 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         if not file_path.exists() or not file_path.is_file():
             raise Http404("产物文件不存在")
         return FileResponse(open(file_path, "rb"), as_attachment=True, filename=artifact.get("name") or file_path.name)
+
+    @action(detail=True, methods=["get"], url_path="download-all")
+    def download_all(self, request, pk=None):
+        """将任务全部产物打包为 zip 一键下载。"""
+        task = self.get_object()
+        workspace = Path(task.workspace_path).resolve() if task.workspace_path else None
+        workspace_root = PackageService.workspace_root().resolve()
+        if not workspace or (workspace != workspace_root and workspace_root not in workspace.parents):
+            raise Http404("工作区路径非法")
+
+        artifacts = task.artifact_info or []
+        if not artifacts:
+            raise Http404("没有可下载产物")
+
+        root = workspace / "artifacts"
+        if not root.exists() or not root.is_dir():
+            raise Http404("产物目录不存在")
+
+        fd, zip_path = tempfile.mkstemp(suffix=".zip", prefix=f"task_{task.id}_")
+        os.close(fd)
+        try:
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for artifact in artifacts:
+                    rel_path = (artifact.get("path") or "").strip().replace("\\", "/")
+                    if not rel_path or any(part == ".." for part in rel_path.split("/")):
+                        continue
+                    file_path = (root / rel_path).resolve()
+                    if root.resolve() not in file_path.parents and file_path != root.resolve():
+                        continue
+                    if not file_path.exists() or not file_path.is_file():
+                        continue
+                    zf.write(file_path, rel_path)
+            if os.path.getsize(zip_path) == 0:
+                os.remove(zip_path)
+                raise Http404("没有可下载的有效产物文件")
+            safe_name = str(task.name).replace(" ", "_").replace("/", "_") or "artifacts"
+            filename = f"{safe_name}-{task.version}-artifacts.zip"
+            return _TempFileResponse(zip_path, as_attachment=True, filename=filename)
+        except Exception:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            raise

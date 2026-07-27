@@ -15,7 +15,6 @@ import {
   Tag,
   GitCompare,
   Trash2,
-  Folder,
 } from "lucide-react";
 import { credentialApi } from "@/api/credential";
 import { repositoryApi } from "@/api/repository";
@@ -23,7 +22,7 @@ import type { Credential, Repository } from "@/types";
 import { CredentialIcon } from "./components/CredentialIcon";
 import { StatusBadge } from "./components/StatusBadge";
 import { CredentialModal } from "./components/CredentialModal";
-import { credentialTypeMap, credentialScopeMap } from "./constants";
+import { credentialTypeMap, credentialShareMap, getCredentialShare } from "./constants";
 import { formatDate, fromNow, getCredentialStatus } from "./utils";
 
 type TabKey = "info" | "usage" | "resources";
@@ -133,10 +132,8 @@ export default function CredentialDetail() {
     credential.is_active,
     credential.expires_at,
   );
-  const subText =
-    credential.scope === "project"
-      ? `${credentialScopeMap[credential.scope]}凭证 · ${credential.project_name || "-"}`
-      : `${credentialScopeMap[credential.scope]}凭证 · ${credential.username || "-"}`;
+  const share = getCredentialShare(credential.cred_type);
+  const subText = `${credentialShareMap[share]}凭证 · ${credential.owner_name || credential.username || "-"}`;
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "info", label: "凭证信息" },
@@ -230,9 +227,9 @@ export default function CredentialDetail() {
         <div className="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-violet-500" strokeWidth={1.5} />
-            <span className="text-[12px] text-slate-500">作用域</span>
+            <span className="text-[12px] text-slate-500">范围</span>
             <span className="text-[13px] font-semibold text-slate-900">
-              {credentialScopeMap[credential.scope]}
+              {credentialShareMap[share]}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -291,8 +288,8 @@ export default function CredentialDetail() {
                   },
                   { label: "认证方式", value: credential.auth_mode || "-" },
                   {
-                    label: "作用域",
-                    value: `${credentialScopeMap[credential.scope]}（${credential.scope}）`,
+                    label: "范围",
+                    value: credentialShareMap[share],
                   },
                   {
                     label: "创建时间",
@@ -433,22 +430,6 @@ export default function CredentialDetail() {
 
           {activeTab === "resources" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {credential.scope === "project" && credential.project_id ? (
-                <div className="rounded-lg border border-indigo-100 bg-white p-3 flex items-center gap-3 tech-card-hover transition-colors cursor-pointer" onClick={() => navigate(`/projects/${credential.project_id}`)}>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo">
-                    <Folder className="h-4 w-4" strokeWidth={1.5} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-[13px] font-medium text-slate-900">
-                      {credential.project_name || "未命名项目"}
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      项目 · 凭证作用域：项目
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
               {relatedRepos.map((repo) => (
                 <div
                   key={repo.id}
@@ -469,7 +450,7 @@ export default function CredentialDetail() {
                 </div>
               ))}
 
-              {credential.scope !== "project" && relatedRepos.length === 0 && (
+              {relatedRepos.length === 0 && (
                 <div className="col-span-full text-center text-[13px] text-slate-400 py-8">
                   该凭证暂未绑定仓库资源
                 </div>

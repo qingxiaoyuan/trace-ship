@@ -1,126 +1,139 @@
-# Release Manager 第三方服务 Docker 一键部署
+# Trace Ship 第三方服务 Docker 一键部署
 
-本目录用于集中管理 Release Manager 项目依赖的所有第三方外部系统的本地 Docker 开发/测试环境。
+本目录用于集中管理 Trace Ship 项目依赖的第三方系统的 Docker 编排，以及生产环境部署。
 
-包含服务：
+## 服务构成
+
+### 基础依赖（默认启动，与生产环境对齐）
 
 | 服务 | 用途 | 默认端口 |
 |-----|------|---------|
 | PostgreSQL | 主数据库 | 5432 |
 | Redis | 缓存 / 会话 / 任务队列 | 6379 |
-| Gitea | Git 仓库（GitLab 轻量替代） | 13000 |
-| OpenLDAP | 域账号认证 | 389 |
+| GitLab | 代码仓库（分支/提交/MR/tag，发布推 tag 目标） | 18929（HTTP）/ 2224（SSH） |
+
+### 测试环境模拟服务（`--profile test` 启动）
+
+| 服务 | 用途 | 默认端口 |
+|-----|------|---------|
+| OpenLDAP | 域账号认证模拟 | 389 |
 | phpLDAPadmin | LDAP 管理界面 | 18090 |
-| SVN Server | SVN 仓库 | 3690 |
+| SVN Server | 打包产物推送模拟目标 | 3690（svn）/ 3691（http） |
+
+### 应用服务（`--profile app`，一般本地开发不使用）
+
+backend / frontend / celery-worker / celery-beat。开发时建议在本地启动应用，便于热重载和断点调试。
 
 ## 目录结构
 
 ```
 docker/
-├── .env                          # 环境变量/密码配置
+├── .env                          # 环境变量/密码配置（本地开发）
 ├── .env.example                  # 环境变量模板
-├── docker-compose.yml            # 服务编排
-├── start.sh                      # 一键启动
-├── stop.sh                       # 一键停止
-├── restart.sh                    # 一键重启
+├── .env.prod.example             # 生产环境变量模板
+├── docker-compose.yml            # 开发/测试第三方依赖编排
+├── docker-compose.deps.yml       # 生产数据层编排（PostgreSQL/Redis/GitLab，独立项目 trace-ship-deps）
+├── docker-compose.prod.yml       # 生产应用层编排（Backend/Frontend/Celery，项目 trace-ship）
+├── start-prod.sh                 # 本地生产模式一键部署（构建镜像 + 分层启动）
 ├── setup-docker-mirror.sh        # Docker 镜像加速器配置脚本
 ├── README.md                     # 本文件
-├── openldap/
-│   ├── Dockerfile                # OpenLDAP 本地构建文件
-│   ├── slapd.conf                # OpenLDAP 配置
-│   ├── init.sh                   # OpenLDAP 启动初始化脚本
-│   └── init/                     # LDAP 初始化数据
-├── postgres/
-│   └── init/                     # PostgreSQL 初始化脚本
-└── svn/
-    ├── Dockerfile                # SVN 本地构建文件
-    └── create-repos.sh           # SVN 仓库初始化脚本（备用）
+├── openldap/                     # OpenLDAP 本地构建（test profile）
+│   ├── Dockerfile
+│   ├── slapd.conf
+│   ├── init.sh
+│   └── init/
+├── svn/                          # SVN 本地构建（test profile）
+│   ├── Dockerfile
+│   ├── svn-entrypoint.sh
+│   └── create-repos.sh           # 测试仓库与三角色账号初始化
+└── package/                      # 打包构建镜像（DooD 构建容器）
+    └── web/
 ```
+
+## 数据卷命名
+
+所有数据卷统一显式命名为 `trace-ship-*`（在 compose 文件 volumes 块中用 `name:` 指定），不依赖 compose 项目名前缀：
+
+| 卷名 | 用途 |
+|------|------|
+| `trace-ship-postgres-data` | PostgreSQL 数据 |
+| `trace-ship-redis-data` | Redis 持久化 |
+| `trace-ship-gitlab-config` | GitLab 配置 |
+| `trace-ship-gitlab-logs` | GitLab 日志 |
+| `trace-ship-gitlab-data` | GitLab 数据（仓库等） |
+| `trace-ship-ldap-data` | OpenLDAP 数据（test） |
+| `trace-ship-svn-data` | SVN 仓库数据（test） |
+| `trace-ship-backend-logs` | 后端日志（生产） |
+| `trace-ship-celerybeat-data` | Celery Beat 调度状态（生产） |
+
+> ⚠️ 从旧版（`release-manager-dev_*` 前缀卷 / Gitea）迁移的注意：
+> - 显式卷名后旧卷不会被复用，如需保留旧 PostgreSQL 数据，先 `pg_dump` 备份再恢复
+> - Gitea 已移除，代码仓库统一使用 GitLab；原 Gitea 中的仓库需迁移到 GitLab
+> - GitLab 12.4 → 17.x 无法直接升级复用旧 `gitlab_data` 卷，新环境使用全新卷初始化
 
 ## 前置要求
 
 - Docker 20.10+
 - Docker Compose 2.0+
-- Linux/macOS/Windows(WSL2)
+- GitLab 需要 4GB+ 可用内存
 
-## 快速开始
+## 快速开始（本地开发）
 
-### 1. 进入目录
-
-```bash
-cd docker
-```
-
-### 2. 修改配置（可选）
+开发环境统一使用根目录的 `scripts/dev.sh` 管理（首次使用会自动从 `.env.example` 生成 `docker/.env`）：
 
 ```bash
-cp .env.example .env
-# 编辑 .env 修改密码和端口
-```
+cd /media/sangfor/vdb/front-workspace/trace-ship
 
-### 3. 一键启动
+# 启动基础依赖（PostgreSQL / Redis / GitLab）
+scripts/dev.sh deps
 
-```bash
-./start.sh
-```
+# 需要 LDAP / SVN 模拟时（测试环境）：追加 OpenLDAP / phpLDAPadmin / SVN，
+# 并自动初始化 SVN 测试仓库与三角色账号
+scripts/dev.sh deps --test
 
-脚本会自动：
-- 检查 Docker 环境
-- 创建持久化目录
-- 拉取/构建镜像并启动所有服务
-- 初始化 SVN 测试仓库
-- 初始化 OpenLDAP 测试用户
-- 打印各服务访问地址和账号
+# 本地启动后端 / 前端（后台运行，日志在 scripts/.run/）
+scripts/dev.sh backend
+scripts/dev.sh frontend
 
-### 4. 一键停止
-
-```bash
-./stop.sh
-```
-
-### 5. 一键重启
-
-```bash
-./restart.sh
+# 查看状态 / 停止全部（本地进程 + 容器）
+scripts/dev.sh status
+scripts/dev.sh down
 ```
 
 ## 默认访问地址
 
-### Gitea（Git 仓库）
+### GitLab（代码仓库）
 
-- 地址：http://localhost:13000
-- 管理员：`gitea_admin` / `GiteaAdmin@2024`
+使用 GitLab 社区版（`gitlab/gitlab-ce`，14.x 经典界面）。
 
-首次使用需要登录后创建仓库和 Token，然后在 Release Manager 中配置 Gitea 仓库。
-
-### OpenLDAP（域账号）
-
-- 地址：`ldap://localhost:389`
-- Base DN：`dc=example,dc=com`
-- 管理员：`cn=admin,dc=example,dc=com` / `LDAPAdmin@2024`
-
-### phpLDAPadmin
-
-- 地址：http://localhost:18090
-- Login DN：`cn=admin,dc=example,dc=com`
-
-### SVN
-
-- 地址：`svn://localhost:3690/demo-project`
-- 本地轻量 SVN 服务（基于 Alpine 本地构建），默认无认证
-- 启动时会自动创建 `demo-project` 和 `trace-ship` 两个测试仓库
-- 如需认证，可修改 `svn/Dockerfile` 或接入 `svnserve.conf` 配置
+- 地址：http://localhost:18929
+- 管理员：`admin` / `admin123`（首次启动后执行 `scripts/dev.sh gitlab-admin` 创建/重置，幂等）
+- 内置 `root` 账号保留为兜底，密码见 `.env` 中 `GITLAB_ROOT_PASSWORD`
+- 首次启动需等待数分钟：`docker logs trace-ship-dev-gitlab -f`
 
 ### PostgreSQL
 
 - 地址：`localhost:5432`
 - 数据库：`release_manager`
-- 用户：`release_manager` / `ReleaseManager@2024`
+- 用户：`release_manager` / `.env` 中 `POSTGRES_PASSWORD`
 
 ### Redis
 
 - 地址：`localhost:6379`
-- 密码：`ReleaseManager@2024`
+- 密码：`.env` 中 `REDIS_PASSWORD`
+
+### OpenLDAP（test profile）
+
+- 地址：`ldap://localhost:389`
+- Base DN：`dc=example,dc=com`
+- 管理员：`cn=admin,dc=example,dc=com` / `.env` 中 `LDAP_ADMIN_PASSWORD`
+- phpLDAPadmin：http://localhost:18090
+
+### SVN（test profile，打包产物模拟目标）
+
+- svn 协议：`svn://localhost:3690/trace-ship`
+- http 协议：`http://localhost:3691/svn/trace-ship`
+- 三角色账号：`admin` / `developer` / `viewer`（密码见 `svn/create-repos.sh`）
 
 ## 测试账号（LDAP）
 
@@ -131,254 +144,136 @@ cp .env.example .env
 | lisi | password123 | 测试人员 |
 | wangwu | password123 | 审核人 |
 
-## 常见问题
-
-### 1. 无法拉取 Docker 镜像 / Docker Hub 访问超时
-
-当前环境可能无法直接访问 Docker Hub。可通过以下任一方式解决：
-
-**方式一：配置 Docker 镜像加速器（推荐）**
-
-编辑 `/etc/docker/daemon.json`，添加国内镜像加速器（以阿里云为例）：
-
-```json
-{
-  "registry-mirrors": [
-    "https://your-id.mirror.aliyuncs.com",
-    "https://hub-mirror.c.163.com",
-    "https://mirror.baidubce.com"
-  ]
-}
-```
-
-然后重启 Docker：
-
-```bash
-sudo systemctl restart docker
-```
-
-**方式二：使用私有镜像仓库前缀**
-
-在 `.env` 中设置镜像前缀：
-
-```bash
-IMAGE_PREFIX=registry.cn-hangzhou.aliyuncs.com/your-namespace/
-```
-
-需提前将所需镜像推送到该私有仓库。
-
-**方式三：手动导入离线镜像包**
-
-在能访问 Docker Hub 的机器上导出镜像：
-
-```bash
-docker pull postgres:16 redis:7 gitea/gitea:1.21 osixia/phpldapadmin:latest
-docker save -o release-manager-images.tar postgres:16 redis:7 gitea/gitea:1.21 osixia/phpldapadmin:latest
-```
-
-拷贝到目标机器后导入：
-
-```bash
-docker load -i release-manager-images.tar
-```
-
-### 2. 端口冲突
-
-如果本地已有服务占用端口，修改 `.env` 文件中的对应端口，然后重启。
-
-### 3. 数据持久化
-
-所有数据都通过 Docker Volume 持久化，停止服务不会丢失数据。如需完全重置：
-
-```bash
-./stop.sh
-docker volume rm release-manager-dev_postgres_data release-manager-dev_redis_data release-manager-dev_gitea_data release-manager-dev_ldap_data release-manager-dev_svn_data
-./start.sh
-```
-
-### 4. 放到单独机器部署
-
-将整个 `docker` 目录复制到目标机器，修改 `.env` 中的端口和 IP，执行 `./start.sh` 即可。其他机器访问时把 `localhost` 换成目标机器 IP。
-
-### 5. 切换 GitLab
-
-Gitea 用于轻量测试。如需测试 GitLab，可将 `docker-compose.yml` 中的 `gitea` 服务替换为 GitLab 镜像（注意 GitLab 需要 4GB+ 内存）。
-
 ## 生产环境部署
 
-生产环境使用独立的 `docker-compose.prod.yml`，仅包含应用运行必需的服务：PostgreSQL / Redis / Backend / Frontend / Celery Worker / Celery Beat。开发用的第三方依赖（Gitea / OpenLDAP / phpLDAPadmin / SVN / Jenkins）不纳入，生产环境请按需接入外部服务。
+生产环境拆分为**两个独立 compose 项目**，通过共享网络 `trace-ship-net` 通信：
+
+| 文件 | 项目名 | 内容 | 变更频率 |
+|------|--------|------|---------|
+| `docker-compose.deps.yml` | `trace-ship-deps` | 数据层：PostgreSQL / Redis / GitLab | 极低（部署后基本不动） |
+| `docker-compose.prod.yml` | `trace-ship` | 应用层：Backend / Frontend / Celery Worker / Celery Beat | 高（每次发版重建） |
+
+拆分原因：应用每次发版都要重建，而数据层几乎不变；独立编排后应用更新/误操作（如 `down -v`）不会触碰数据库与 GitLab 数据，重量级 GitLab 也不会被应用更新波及。日常运维只需操作 `docker-compose.prod.yml`。
+
+OpenLDAP / SVN 等模拟服务不纳入生产编排，如需 LDAP 或 SVN 产物仓库，请接入外部服务并在 `.env.prod` 中配置。
 
 ### 与开发环境的区别
 
-| 项 | 开发 (docker-compose.yml) | 生产 (docker-compose.prod.yml) |
+| 项 | 开发 (docker-compose.yml) | 生产 (deps + prod 双文件) |
 |----|---------------------------|--------------------------------|
 | 后端代码 | 挂载源码卷 `../backend:/app` | 镜像内打包（`COPY . .`） |
-| 第三方依赖 | 含 Gitea/LDAP/SVN 等 | 仅 PostgreSQL/Redis |
-| 端口暴露 | backend/postgres/redis 对外 | 仅前端 80 对外，其余内部网络 |
+| 第三方依赖 | PostgreSQL/Redis/GitLab（+ test profile 模拟服务） | PostgreSQL/Redis/GitLab（独立 compose 项目 trace-ship-deps） |
+| 端口暴露 | 各服务端口均映射到宿主机，便于调试 | 仅前端 80 与 GitLab 对外，DB/Redis 内部网络 |
 | 配置文件 | `.env`（弱密码可接受） | `.env.prod`（强制强密钥） |
-| Django settings | `config.settings.dev` | `config.settings.prod` |
+| Django settings | `config.settings.dev`（本地开发） | `config.settings.prod` |
 
 ### 生产部署步骤
 
-1. 进入 docker 目录：
+1. 复制生产配置模板并填写真实值：
 
    ```bash
    cd docker
-   ```
-
-2. 复制生产配置模板并填写真实值：
-
-   ```bash
    cp .env.prod.example .env.prod
    vi .env.prod
    ```
 
    **必须修改的项**（`prod.py` 启动时会校验，未修改将拒绝启动）：
 
-   - `DJANGO_SECRET_KEY`：随机 50+ 字符，生成方式：
-     ```bash
-     python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
-     ```
-   - `CREDENTIAL_SECRET_KEY`：32 字节随机串，生成方式：
-     ```bash
-     python -c "import secrets; print(secrets.token_urlsafe(32))"
-     ```
-   - `POSTGRES_PASSWORD` / `REDIS_PASSWORD`：强密码
-   - `ALLOWED_HOSTS`：替换 `YOUR_SERVER_IP` 为真实服务器 IP，逗号分隔
-   - `CORS_ALLOWED_ORIGINS`：替换为 `http://真实服务器IP`（端口非 80 时带端口）
+   - `DJANGO_SECRET_KEY`：随机 50+ 字符
+   - `CREDENTIAL_SECRET_KEY`：32 字节随机串
+   - `POSTGRES_PASSWORD` / `REDIS_PASSWORD` / `GITLAB_ROOT_PASSWORD`：强密码
+   - `ALLOWED_HOSTS`：替换 `YOUR_SERVER_IP` 为真实服务器 IP
+   - `CORS_ALLOWED_ORIGINS`：`http://真实服务器IP`（端口非 80 时带端口）
+   - `GITLAB_EXTERNAL_URL`：`http://真实服务器IP:18929`
 
-3. 一键启动：
+2. 一键启动（自动按「先数据层、等健康、再应用层」顺序启动）：
 
    ```bash
    ./start-prod.sh
    ```
 
-   脚本会自动校验配置，构建镜像并启动所有服务。首次构建需要数分钟。
+   手动分步执行（一般不需要）：
 
-4. 访问：浏览器打开 `http://服务器IP`（默认 80 端口，可在 `.env.prod` 的 `FRONTEND_PORT` 修改）。
+   ```bash
+   # 先启动数据层并等待 PostgreSQL / Redis 健康
+   docker compose --env-file .env.prod -f docker-compose.deps.yml up -d
+   docker compose --env-file .env.prod -f docker-compose.deps.yml up -d --wait postgres redis
+   # 再启动应用层
+   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+   ```
 
-### 常用运维命令
+3. 访问：
+   - 前端：`http://服务器IP`（默认 80）
+   - GitLab：`http://服务器IP:18929`（首次启动需等待数分钟）
 
-```bash
-# 查看服务状态
-docker compose -f docker-compose.prod.yml ps
+### 数据持久化（生产）
 
-# 查看后端日志
-docker compose -f docker-compose.prod.yml logs -f backend
+生产环境数据全部使用命名卷（见上文「数据卷命名」），唯二的 bind mount 是 DooD 打包的硬性要求：
 
-# 查看所有日志
-docker compose -f docker-compose.prod.yml logs -f
+| 挂载 | 类型 | 用途 |
+|------|------|------|
+| `/var/run/docker.sock` | bind mount | 容器内调用宿主机 dockerd 执行打包（等价宿主机 root，仅限受控环境） |
+| `${PACKAGE_WORKSPACE_ROOT}` | bind mount | 打包工作区（宿主机与容器同路径，DooD 挂载需要） |
 
-# 停止服务
-docker compose -f docker-compose.prod.yml down
-
-# 重新构建并启动（代码更新后）
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
-
-# 进入后端容器执行命令
-docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
-```
-
-### 数据持久化
-
-生产环境使用 Docker Volume 持久化以下数据：
-
-| Volume / 挂载 | 类型 | 用途 |
-|---------------|------|------|
-| `postgres_data` | 命名卷 | PostgreSQL 数据 |
-| `redis_data` | 命名卷 | Redis 持久化 |
-| `backend_logs` | 命名卷 | 后端日志（`/var/log/trace-ship`） |
-| `${PACKAGE_WORKSPACE_ROOT}` | bind mount | 打包工作区（宿主机与容器同路径） |
-| `celerybeat_schedule` | 命名卷 | Celery Beat 调度状态 |
-
-完全重置（⚠️ 会删除命名卷数据，但不会删除 bind mount 的打包工作区）：
+完全重置（⚠️ 以下命令会删除命名卷数据，不会删除打包工作区；两个文件需分别操作）：
 
 ```bash
-docker compose -f docker-compose.prod.yml down -v
+# 重置应用层（无状态，安全）
+docker compose --env-file .env.prod -f docker-compose.prod.yml down -v
+# 重置数据层（⚠️ 会删除 PostgreSQL / Redis / GitLab 全部数据，谨慎执行）
+docker compose --env-file .env.prod -f docker-compose.deps.yml down -v
 ```
-
-### Docker 打包任务（DooD 方式）
-
-系统的打包能力（`apps.package`）通过在容器内调用 `docker run` 启动构建容器来执行打包。生产部署采用 **DooD（Docker out of Docker）** 方式实现：
-
-1. **backend / celery-worker 镜像内预装 docker CLI**（仅客户端，不含 daemon）。
-2. **挂载宿主机 `/var/run/docker.sock`** 到容器内，容器内的 `docker` 命令通过该 socket 由宿主机 dockerd 执行。
-3. **打包工作区用 bind mount 且宿主机/容器路径一致**（`PACKAGE_WORKSPACE_ROOT`）。
-
-> 为什么路径必须一致？打包时执行 `docker run -v {workspace}/source:/workspace/source ...`，这个 `-v` 挂载由宿主机 dockerd 执行，源路径必须是宿主机真实路径。若容器内路径与宿主机不一致，构建容器会挂载到空目录或失败。
-
-**前提条件**：宿主机已安装 Docker 并运行 dockerd，且 `/var/run/docker.sock` 可用。
-
-**安全提示**：挂载 docker.sock 等于赋予容器宿主机 root 权限，请确保部署环境受控。
 
 ### 离线部署（内网无网络）
 
-内网无法访问 Docker Hub / PyPI / npm 源时，可在**外网机器**构建并导出镜像，再拷到**内网机器**加载使用。镜像名已固定（`trace-ship/backend:latest`、`trace-ship/frontend:latest`），celery 复用 backend 镜像，无需在内网构建。
+使用根目录 `scripts/` 下的构建/部署脚本。发布包按内容分四种：`--deps`（第三方依赖：postgres + redis + gitlab）、`--backend`、`--frontend`、`--app`（前后端）；每个包都自带双 compose 编排、`.env.prod.example` 和一键部署脚本 `deploy.sh`。
 
-**镜像清单**：
+```bash
+# 外网机器：构建首次部署所需的两个包（GitLab 镜像约 2.5GB+，注意磁盘与带宽）
+scripts/build.sh --deps
+scripts/build.sh --app
+# 产出 dist/trace-ship-release-<模式>-<时间戳>.tar.gz
 
-| 镜像 | 说明 |
-|------|------|
-| `trace-ship/backend:latest` | 后端 + celery worker/beat 共用 |
-| `trace-ship/frontend:latest` | 前端 nginx |
-| `postgres:16` | 数据库 |
-| `redis:7` | 缓存/队列 |
+# 内网机器：两个包解压到同一目录（部署材料相同、镜像互补），一键第一次部署
+tar -xzf trace-ship-release-deps-*.tar.gz
+tar -xzf trace-ship-release-app-*.tar.gz -C trace-ship-release
+cd trace-ship-release
+./deploy.sh --full     # 自动加载镜像、生成随机密钥的 .env.prod、先起依赖组再起应用并健康检查
+```
 
-#### 外网机器操作
+增量更新（复用已有 `.env.prod`）：外网侧 `scripts/build.sh --backend` / `--frontend` / `--app`，内网侧解压后 `./deploy.sh` 选对应模式（`--backend` / `--frontend` / `--app`）。
 
-1. 将项目代码拷到外网机器，配置 `.env.prod`（IP 填内网服务器 IP）。
+## 常见问题
 
-2. 构建镜像并启动一次（验证可跑通）：
+### 1. 无法拉取 Docker 镜像 / Docker Hub 访问超时
 
-   ```bash
-   cd docker
-   cp .env.prod.example .env.prod
-   vi .env.prod                 # 填内网服务器 IP 和密钥
-   ./start-prod.sh              # 首次会自动构建镜像
-   ```
+**方式一：配置镜像加速器** —— 执行 `./setup-docker-mirror.sh` 或手动编辑 `/etc/docker/daemon.json` 后 `sudo systemctl restart docker`。
 
-3. 导出镜像为 tar 包：
+**方式二：私有镜像仓库前缀** —— 在 `.env` 中设置 `IMAGE_PREFIX=registry.cn-hangzhou.aliyuncs.com/your-namespace/`（需提前推送镜像）。
 
-   ```bash
-   ./export-images.sh
-   ```
+**方式三：离线镜像包** —— 见上文「离线部署」。
 
-   生成 `docker/trace-ship-images.tar`。
+### 2. 端口冲突
 
-4. 将以下文件拷到内网机器的 `docker/` 目录：
+修改 `.env` 中对应端口后重启。GitLab HTTP 端口修改时需同步调整 `GITLAB_EXTERNAL_URL`。
 
-   - `trace-ship-images.tar`（镜像包）
-   - `docker-compose.prod.yml`
-   - `.env.prod`、`.env.prod.example`
-   - `start-prod.sh`、`load-images.sh`
+### 3. GitLab 启动慢或内存不足
 
-#### 内网机器操作
+GitLab 首次初始化需数分钟且要求 4GB+ 可用内存。资源紧张时可在 compose 中进一步收敛（如 `puma['worker_processes'] = 0`、关闭 `sidekiq` 监控项），或改用外部 GitLab 服务（从编排中移除 gitlab 服务，在 Trace Ship 中配置外部 GitLab 仓库地址即可）。
 
-1. 加载镜像：
+### 4. 数据重置
 
-   ```bash
-   cd docker
-   ./load-images.sh
-   ```
+```bash
+scripts/dev.sh down
+docker volume rm trace-ship-postgres-data trace-ship-redis-data \
+  trace-ship-gitlab-config trace-ship-gitlab-logs trace-ship-gitlab-data \
+  trace-ship-ldap-data trace-ship-svn-data
+scripts/dev.sh deps --test
+```
 
-2. 确认 `.env.prod` 里的 IP、密钥与内网环境匹配，然后启动：
+## 安全注意事项
 
-   ```bash
-   ./start-prod.sh
-   ```
-
-   `start-prod.sh` 会检测到镜像已存在，**不会触发构建**，直接启动。
-
-> 提示：`start-prod.sh` 在镜像不存在时自动构建；传入 `--build` 可强制重建（`./start-prod.sh --build`）。内网加载镜像后正常执行 `./start-prod.sh` 即可，切勿加 `--build`。
-
-### 安全注意事项
-
+- 本目录 `.env` 仅用于开发/测试，**不要直接用于生产**；生产必须使用 `.env.prod` 并修改全部默认密码。
 - `.env.prod` 含敏感密钥，已被 `.gitignore` 忽略，切勿提交。
 - 生产环境 backend / postgres / redis 仅在内部网络通信，不对外暴露端口；所有外部请求经前端 nginx 反代 `/api/` 访问后端。
-- `prod.py` 强制 `DEBUG=False`、`CORS_ALLOW_ALL_ORIGINS=False`、`SESSION_COOKIE_SECURE=True`，部署在 HTTPS 反向代理后效果最佳。
-
-## 注意事项
-
-- 本环境仅用于开发/测试，**不要直接用于生产**。
-- 默认密码较弱，请在真实环境中修改 `.env` 中的密码。
-- LDAP、SVN 等配置为最小可用配置，生产环境请按安全规范加固。
+- `prod.py` 强制 `DEBUG=False`、`CORS_ALLOW_ALL_ORIGINS=False`，建议生产部署在 HTTPS 反向代理之后。

@@ -1,13 +1,13 @@
 import { memo, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { App, Button } from 'antd';
-import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal, Upload } from 'lucide-react';
+import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal } from 'lucide-react';
 import dayjs from 'dayjs';
 import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
-import { ArtifactPanel } from './Artifacts';
+import { ArtifactPanel, ArtifactActionsDropdown } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
-import { canPushSvn, formatDuration, isRunning, stageLabels } from './utils';
+import { formatDuration, isRunning, stageLabels } from './utils';
 import { StatusBadge } from './Shared';
 
 interface BuildViewProps {
@@ -122,18 +122,8 @@ export const BuildView = memo(function BuildView({ task, logText, onBack, onCanc
               <PackageIcon className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">打包产物</h3>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-400">{artifacts.length} 个</span>
-              {canPushSvn(task) && (
-                <Button
-                  size="small"
-                  icon={<Upload className="h-3 w-3" strokeWidth={1.5} />}
-                  loading={pushing}
-                  onClick={handlePushSvn}
-                >
-                  推送 SVN
-                </Button>
-              )}
+           <div className="flex items-center gap-2">
+              <ArtifactActionsDropdown task={task} pushing={pushing} onPushSvn={handlePushSvn} />
             </div>
           </div>
           <ArtifactPanel artifacts={artifacts} taskId={task.id} />

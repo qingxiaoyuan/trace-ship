@@ -1,7 +1,7 @@
 """
 凭证解析器
 
-根据 Repository 或 JenkinsJob 绑定的 credential 直接解析出实际可用的凭证数据。
+根据 Repository 绑定的 credential 直接解析出实际可用的凭证数据。
 绑定阶段已在序列化器校验凭证来源（个人 / 项目）与类型，运行时只需读取绑定的凭证。
 
 每次成功解析后更新凭证的 last_used_at 并写入一条使用记录（操作日志），供凭证详情页
@@ -13,36 +13,27 @@ from .exceptions import ProviderError
 
 
 # vendor 与凭证类型的对应关系（供序列化器绑定时校验）
+# svn 保留：打包产物推送（PackageConfig.svn_credential）仍使用 svn_password 凭证
 VENDOR_TO_CRED_TYPE = {
     "gitlab": "gitlab_token",
-    "gitea": "gitea_token",
-    "github": "github_token",
-    "gitee": "gitee_token",
     "svn": "svn_password",
-    "jenkins": "jenkins_token",
 }
 
 
 def _module_for_source(source) -> str:
     """根据 source 类型返回使用记录模块名。"""
     from apps.repository.models import Repository
-    from apps.jenkins.models import JenkinsJob
 
     if isinstance(source, Repository):
         return "代码仓库"
-    if isinstance(source, JenkinsJob):
-        return "Jenkins"
     return "未知模块"
 
 
 def _resource_display(source) -> str:
     """生成资源展示名称。"""
     from apps.repository.models import Repository
-    from apps.jenkins.models import JenkinsJob
 
     if isinstance(source, Repository):
-        return f"{source.project.name if source.project else '-'} / {source.name}"
-    if isinstance(source, JenkinsJob):
         return f"{source.project.name if source.project else '-'} / {source.name}"
     return str(source)
 
@@ -55,7 +46,7 @@ def resolve_credential(source, request_user=None) -> dict:
     返回解密后的 dict，例如 {"token": "xxx"} 或 {"username": "x", "password": "y"}。
 
     Args:
-        source: Repository 或 JenkinsJob 实例
+        source: Repository 实例
         request_user: 当前请求用户（保留形参以减少调用点改动，当前未使用）
 
     Returns:

@@ -7,6 +7,7 @@ import type {
   PackageTask,
   PaginatedData,
   PackageBuildType,
+  SvnEntriesData,
 } from '@/types';
 
 export interface PackageImageListParams {
@@ -62,6 +63,19 @@ export const packageApi = {
   deleteConfig: (id: string) => del<null>(`/packages/configs/${id}/`),
   triggerConfig: (id: string, releaseId: string) =>
     post<PackageTask>(`/packages/configs/${id}/trigger/`, { release_id: releaseId }),
+ /** 实时浏览打包配置的 SVN 制品目录（path 为相对 svn_url 的子路径） */
+ listSvnEntries: (id: string, path?: string) =>
+   get<SvnEntriesData>(`/packages/configs/${id}/svn-entries/`, { params: { path: path || '' } }),
+  /** 测试 SVN 推送配置连通性（支持未保存配置） */
+  testSvn: (data: {
+    project_id: string;
+    svn_url: string;
+    svn_credential_id: string;
+    svn_path_template?: string;
+  }) => post<{ ok: boolean; entries: Array<{ name: string; kind: string }>; message: string }>(
+    '/packages/configs/test-svn/',
+    data
+  ),
 
   getTasks: (params?: PackageTaskListParams) =>
     get<PaginatedData<PackageTask>>('/packages/tasks/', { params }),
@@ -70,5 +84,7 @@ export const packageApi = {
   pushSvn: (id: string) => post<PackageTask>(`/packages/tasks/${id}/push-svn/`),
   getTaskLog: (id: string) => get<Blob>(`/packages/tasks/${id}/logs/`, { responseType: 'blob' }),
   downloadArtifact: (taskId: string, artifactId: string) =>
-    get<Blob>(`/packages/tasks/${taskId}/artifacts/${artifactId}/download/`, { responseType: 'blob' }),
+   get<Blob>(`/packages/tasks/${taskId}/artifacts/${artifactId}/download/`, { responseType: 'blob' }),
+  downloadAllArtifacts: (taskId: string) =>
+    get<Blob>(`/packages/tasks/${taskId}/download-all/`, { responseType: 'blob' }),
 };

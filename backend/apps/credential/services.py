@@ -1,7 +1,7 @@
 """
 凭证业务服务
 
-封装凭证的查询范围控制、作用域校验和删除前引用检查等业务规则。
+封装凭证的可见范围控制和删除前引用检查等业务规则。
 """
 from django.db import models
 from rest_framework import serializers
@@ -24,7 +24,7 @@ class CredentialService:
         规则：
         - 未登录：无数据
         - 超管：全部
-        - 普通用户：自己拥有的、或所在项目的项目级凭证
+        - 普通用户：自己的个人凭证 + 全系统共享的 SVN 凭证
 
         Args:
             user: 当前请求用户
@@ -32,41 +32,15 @@ class CredentialService:
         Returns:
             Credential QuerySet
         """
-        queryset = Credential.objects.select_related("owner", "project")
+        queryset = Credential.objects.select_related("owner")
         if not user or not user.is_authenticated:
             return queryset.none()
         if user.is_superuser:
             return queryset.all()
         return queryset.filter(
             models.Q(owner=user)
-            | models.Q(scope="project", project__members__user=user)
+            | models.Q(cred_type__in=Credential.SYSTEM_SHARED_CRED_TYPES)
         ).distinct()
-
-    @staticmethod
-    def validate_scope(data: dict, instance: Credential = None) -> dict:
-        """
-        校验凭证作用范围与项目的一致性
-
-        Args:
-            data: 待校验的数据字典
-            instance: 更新的目标实例（可选）
-
-        Returns:
-            校验通过的数据字典
-
-        Raises:
-            ValidationError: 作用范围与项目冲突时抛出
-        """
-        scope = data.get("scope", getattr(instance, "scope", "personal"))
-        project = data.get("project", getattr(instance, "project", None))
-
-        if scope == "project" and project is None:
-            raise serializers.ValidationError({"project": "项目级凭证必须关联项目"})
-        if scope != "project" and project is not None:
-            raise serializers.ValidationError({"project": "非项目级凭证不能关联项目"})
-        # global 作用域已退役，强制 is_global 保持 False
-        data["is_global"] = False
-        return data
 
     @staticmethod
     def ensure_can_delete(credential: Credential) -> None:

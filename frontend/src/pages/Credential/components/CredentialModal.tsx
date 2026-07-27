@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useCallback } from 'react';
 import { ConfigProvider, Form, Input, Select, DatePicker, Button } from 'antd';
 import dayjs from 'dayjs';
-import { useQuery } from '@tanstack/react-query';
 import {
   KeyRound,
   ShieldCheck,
@@ -9,18 +8,16 @@ import {
   Lock,
   Calendar,
   ChevronDown,
+  Users,
 } from 'lucide-react';
 import { TsModal } from '@/components/TsModal';
 import { FormSection } from '@/components/FormSection';
-import { projectApi } from '@/api/project';
 import {
   credentialTypeOptions,
-  credentialScopeOptions,
   credentialTypeIconMap,
-  credentialScopeIconMap,
   credentialTypeColorMap,
 } from '../constants';
-import type { Credential, CredentialType, CredentialScope } from '@/types';
+import type { Credential, CredentialType } from '@/types';
 
 interface CredentialModalProps {
   open: boolean;
@@ -31,19 +28,8 @@ interface CredentialModalProps {
 
 const tokenOnlyTypes: CredentialType[] = [
   'gitlab_token',
-  'gitea_token',
   'ai_api_key',
 ];
-
-const scopeDescMap: Record<CredentialScope, string> = {
-  personal: '仅当前用户可用',
-  project: '关联指定项目',
-};
-
-const scopeIconClassMap: Record<CredentialScope, string> = {
-  personal: 'icon-violet',
-  project: 'icon-indigo',
-};
 
 const selectCommonProps = {
   suffixIcon: <ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />,
@@ -65,86 +51,28 @@ function FieldLabel({ text, required }: FieldLabelProps) {
   );
 }
 
-interface ScopeCardsProps {
-  value?: CredentialScope;
-  onChange?: (value: CredentialScope) => void;
-}
-
-function ScopeCards({ value, onChange }: ScopeCardsProps) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {credentialScopeOptions.map(([scopeValue, label]) => {
-        const isActive = value === scopeValue;
-        const Icon = credentialScopeIconMap[scopeValue];
-
-        return (
-          <button
-            type="button"
-            key={scopeValue}
-            onClick={() => onChange?.(scopeValue)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onChange?.(scopeValue);
-              }
-            }}
-            className={['scope-card text-left', isActive ? 'on' : ''].filter(Boolean).join(' ')}
-          >
-            <div className="flex items-center justify-between">
-              <div className={`ic ${scopeIconClassMap[scopeValue]}`}>
-                <Icon className="h-4 w-4" strokeWidth={1.5} />
-              </div>
-              {isActive ? (
-                <Check className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
-              ) : (
-                <div className="h-4 w-4 rounded-full border-2 border-slate-300" />
-              )}
-            </div>
-            <div className="text-[13px] font-semibold text-slate-900 mt-1">{label}</div>
-            <div className="text-[11px] text-slate-400">{scopeDescMap[scopeValue]}</div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function CredentialModal({ open, credential, onCancel, onOk }: CredentialModalProps) {
   const [form] = Form.useForm();
 
-  const { data: projectData, isLoading: projectsLoading } = useQuery({
-    queryKey: ['projects-all'],
-    queryFn: () => projectApi.getProjects({ page_size: 1000 }),
-    enabled: open,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-
-  const scope = Form.useWatch('scope', form);
   const authMode = Form.useWatch('auth_mode', form);
   const credType = Form.useWatch('cred_type', form);
 
   const isTokenOnly = tokenOnlyTypes.includes(credType);
+  const isSystemShared = credType === 'svn_password';
 
   const typeLabelMap = useMemo(
     () => Object.fromEntries(credentialTypeOptions) as Record<CredentialType, string>,
     [],
   );
 
-  const projectOptions = useMemo(
-    () => projectData?.results.map((p) => ({ label: p.name, value: p.id })) || [],
-    [projectData],
-  );
-
   const initialValues = useMemo(() => {
     if (credential) {
       return {
         ...credential,
-        project: credential.project,
         expires_at: credential.expires_at ? dayjs(credential.expires_at) : undefined,
       };
     }
-    return { is_active: true, scope: 'project' };
+    return { is_active: true };
   }, [credential]);
 
   // Token 类凭证自动锁定认证模式为 token
@@ -164,7 +92,6 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
       const payload: Partial<Credential> & { data?: Record<string, string> } = {
         ...credential,
         ...values,
-        project: values.scope === 'project' ? values.project : undefined,
         expires_at: values.expires_at ? values.expires_at.format() : undefined,
       };
 
@@ -241,7 +168,6 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
               type="primary"
               className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white h-auto border-0"
               onClick={handleOk}
-              loading={projectsLoading}
             >
               <Check className="h-3.5 w-3.5" strokeWidth={2} />
               确认
@@ -292,6 +218,13 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                 />
               </Form.Item>
             </div>
+            {/* 共享范围说明：默认个人凭证，SVN 凭证全系统共享 */}
+            {isSystemShared && (
+              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-[12px] text-indigo-600">
+                <Users className="h-3.5 w-3.5" strokeWidth={1.5} />
+                SVN 凭证全系统共享，所有用户可见可用；其余类型均为个人凭证
+              </div>
+            )}
           </FormSection>
 
           <FormSection
@@ -396,38 +329,6 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                   className="min-h-[36px] rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500"
                 />
               </Form.Item>
-            </div>
-          </FormSection>
-
-          <FormSection title="作用范围" compact>
-            <Form.Item name="scope" rules={[{ required: true, message: '请选择作用范围' }]}>
-              <ScopeCards />
-            </Form.Item>
-
-            {/* 关联项目（项目作用域） */}
-            <div
-              className={[
-                'overflow-hidden transition-all duration-300',
-                scope === 'project' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
-              ].join(' ')}
-            >
-              <div className="w-1/2 pr-2.5">
-                <Form.Item
-                  name="project"
-                  label={<FieldLabel text="关联项目" required />}
-                  rules={[
-                    { required: scope === 'project', message: '项目级凭证必须关联项目' },
-                  ]}
-                >
-                  <Select
-                    showSearch
-                    placeholder="选择项目"
-                    loading={projectsLoading}
-                    options={projectOptions}
-                    {...selectCommonProps}
-                  />
-                </Form.Item>
-              </div>
             </div>
           </FormSection>
         </Form>

@@ -98,7 +98,6 @@ export function TopHeader() {
 
   const roleMap: Record<string, string> = {
     super_admin: "超级管理员",
-    project_manager: "项目管理员",
     developer: "开发人员",
     tester: "测试人员",
     auditor: "审核人",

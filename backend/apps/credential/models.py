@@ -13,8 +13,10 @@ class Credential(models.Model):
     """
     凭证模型
 
-    支持多种凭证类型（GitLab/Gitea/SVN/LDAP/AI）和认证模式（Token/用户名密码），
-    通过 scope 控制可见范围：个人、项目。
+    支持多种凭证类型（GitLab/SVN/LDAP）和认证模式（Token/用户名密码）。
+    可见性规则（录入时无需选择范围）：
+    - 默认均为个人凭证，仅归属用户与超管可见可用
+    - SVN 凭证（svn_password）全系统共享，所有登录用户可见可用
 
     Attributes:
         id: UUID 主键
@@ -24,10 +26,7 @@ class Credential(models.Model):
         encrypted_data: 加密后的凭证数据（JSON 字符串）
         username: 用户名或备注
         expires_at: 过期时间
-        scope: 作用范围
         owner: 归属用户
-        project: 关联项目（项目级凭证必填）
-        is_global: 是否全局可见
         is_active: 是否启用
         last_used_at: 最后使用时间
         created_by: 创建人
@@ -37,7 +36,6 @@ class Credential(models.Model):
 
     CRED_TYPE_CHOICES = [
         ("gitlab_token", "GitLab Token"),
-        ("gitea_token", "Gitea Token"),
         ("svn_password", "SVN 密码"),
         ("ldap_password", "LDAP 密码"),
     ]
@@ -45,10 +43,8 @@ class Credential(models.Model):
         ("token", "Token"),
         ("password", "用户名密码"),
     ]
-    SCOPE_CHOICES = [
-        ("personal", "个人"),
-        ("project", "项目"),
-    ]
+    # 全系统共享的凭证类型：所有登录用户可见可用
+    SYSTEM_SHARED_CRED_TYPES = {"svn_password"}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name="凭证名称")
@@ -57,22 +53,12 @@ class Credential(models.Model):
     encrypted_data = models.TextField(verbose_name="加密数据")
     username = models.CharField(max_length=200, blank=True, verbose_name="用户名/备注")
     expires_at = models.DateTimeField(null=True, blank=True, verbose_name="过期时间")
-    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default="personal", verbose_name="作用范围")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="credentials",
         verbose_name="归属用户",
     )
-    project = models.ForeignKey(
-        "project.Project",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="credentials",
-        verbose_name="关联项目",
-    )
-    is_global = models.BooleanField(default=False, verbose_name="是否全局")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     last_used_at = models.DateTimeField(null=True, blank=True, verbose_name="最后使用时间")
     created_by = models.ForeignKey(
@@ -94,6 +80,11 @@ class Credential(models.Model):
     def __str__(self) -> str:
         """返回凭证名称"""
         return self.name
+
+    @property
+    def is_system_shared(self) -> bool:
+        """是否全系统共享（SVN 凭证共享给所有登录用户）"""
+        return self.cred_type in self.SYSTEM_SHARED_CRED_TYPES
 
     def set_data(self, data: Dict[str, str]) -> None:
         """

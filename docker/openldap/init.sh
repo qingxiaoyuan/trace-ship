@@ -17,16 +17,11 @@ chown -R "${LDAP_USER}:${LDAP_GROUP}" "$DATA_DIR" /run/openldap /etc/openldap
 ADMIN_PASSWORD_HASH=$(/usr/sbin/slappasswd -s "$ADMIN_PASSWORD")
 
 # 生成运行时配置文件（替换密码占位符）
+rm -f "$RUNTIME_CONFIG"
 sed "s|__LDAP_ADMIN_PASSWORD__|${ADMIN_PASSWORD_HASH}|g" "$CONFIG_FILE" > "$RUNTIME_CONFIG"
 chown "${LDAP_USER}:${LDAP_GROUP}" "$RUNTIME_CONFIG"
 
-# 如果数据目录为空，初始化数据库
-if [ -z "$(ls -A "$DATA_DIR" 2>/dev/null)" ]; then
-    echo "✅ 初始化 OpenLDAP 数据库..."
-    su "$LDAP_USER" -s /bin/sh -c "/usr/sbin/slaptest -f '$RUNTIME_CONFIG' -F '$DATA_DIR'"
-fi
-
-# 启动 slapd 后台运行（以 ldap 用户运行）
+# 启动 slapd 后台运行（以 ldap 用户运行；mdb 数据库在首次启动时自动创建，无需预初始化）
 su "$LDAP_USER" -s /bin/sh -c "/usr/sbin/slapd -f '$RUNTIME_CONFIG' -d 256" &
 SLAPD_PID=$!
 

@@ -132,7 +132,7 @@
             "url": "{{base_url}}/api/projects/",
             "body": {
               "mode": "raw",
-              "raw": "{\"code\":\"DEMO\",\"name\":\"演示项目\",\"description\":\"这是一个演示项目\",\"version_rule\":{\"format\":\"VA.{major}.{minor}.{patch}\",\"initial\":\"VA.1.0.0\"},\"release_rule\":{\"formal_branch\":\"main\",\"test_prefix\":\"test\",\"release_cycle_days\":3},\"status\":1}"
+              "raw": "{\"code\":\"DEMO\",\"name\":\"演示项目\",\"description\":\"这是一个演示项目\",\"version_rule\":{\"format\":\"VA.{major}.{minor}.{patch}\",\"initial\":\"VA.1.0.0\"},\"release_rule\":{\"test_prefix\":\"test\",\"release_cycle_days\":3},\"status\":1}"
             }
           }
         },

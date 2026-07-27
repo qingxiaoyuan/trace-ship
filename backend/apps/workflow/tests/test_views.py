@@ -90,8 +90,6 @@ class TestWorkflowInstanceViews:
             cred_type="gitlab_token",
             auth_mode="token",
             owner=user,
-            scope="project",
-            project=project,
         )
         repository = Repository.objects.create(
             project=project,

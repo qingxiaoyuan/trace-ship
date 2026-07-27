@@ -27,8 +27,8 @@ class RepositoryService:
         解析仓库服务端地址
 
         支持两种录入方式：
-        - 服务器根地址，如 http://gitea.example.com
-        - 仓库克隆地址，如 http://gitea.example.com/owner/repo.git
+        - 服务器根地址，如 http://gitlab.example.com
+        - 仓库克隆地址，如 http://gitlab.example.com/owner/repo.git
 
         Args:
             repo: Repository 实例
@@ -138,7 +138,7 @@ class RepositoryService:
             author = b.last_commit_author
             committed_at = b.last_commit_at
             message = b.last_commit_message
-            # 部分平台（如低版本 Gitea）分支接口不返回作者/时间，按 hash 调 get_commit 补全
+            # 部分平台分支接口不返回作者/时间，按 hash 调 get_commit 补全
             if (not author or not committed_at) and b.last_commit_hash:
                 try:
                     ci = provider.get_commit(repo.external_identity, b.last_commit_hash)
@@ -302,7 +302,7 @@ class RepositoryService:
             tags = []
         sortable = [t for t in tags if t.created_at]
         sortable.sort(key=lambda t: t.created_at, reverse=True)
-        # 无 created_at 的 tag（如 Gitea 默认不返回时间）按名称中版本号降序补充到前面
+        # 无 created_at 的 tag 按名称中版本号降序补充到前面
         seen = {t.name for t in sortable}
         def _tag_version_key(name: str) -> tuple:
             import re

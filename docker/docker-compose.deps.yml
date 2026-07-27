@@ -1,0 +1,113 @@
+# Trace Ship 生产环境 - 第三方依赖编排（数据层）
+# 包含 PostgreSQL / Redis / GitLab，数据全部使用 trace-ship-* 命名卷。
+# 应用服务（Backend / Frontend / Celery）在 docker-compose.prod.yml 中独立编排，
+# 通过外部共享网络 trace-ship-net 访问本文件中的服务。
+#
+# 本文件使用独立项目名 trace-ship-deps，与应用编排生命周期隔离：
+#   - 应用更新/重建/误删不会触碰数据层容器与卷
+#   - 数据层改动极少，日常运维只需操作 docker-compose.prod.yml
+#
+# 使用方式（一般由 start-prod.sh / deploy.sh 自动执行，无需手动）：
+#   docker compose --env-file .env.prod -f docker-compose.deps.yml up -d
+
+name: trace-ship-deps
+
+services:
+  # PostgreSQL 主库（仅内部网络访问，不对外暴露端口）
+  postgres:
+    image: ${IMAGE_PREFIX:-}postgres:${POSTGRES_VERSION:-16}
+    container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-postgres
+    restart: unless-stopped
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - trace_ship_net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存/队列（仅内部网络访问，不对外暴露端口）
+  redis:
+    image: ${IMAGE_PREFIX:-}redis:${REDIS_VERSION:-7}
+    container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-redis
+    restart: unless-stopped
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - trace_ship_net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a '${REDIS_PASSWORD}' --no-auth-warning ping | grep -q PONG",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # GitLab 代码仓库（分支/提交/MR/tag，发布流程推 tag 目标）
+  # 注意：GitLab 较重量级（建议 4GB+ 可用内存），首次启动需等待数分钟
+  gitlab:
+    image: ${GITLAB_IMAGE:-gitlab/gitlab-ce}:${GITLAB_VERSION:-14.10.5-ce.0}
+    container_name: ${COMPOSE_PROJECT_NAME:-trace-ship}-gitlab
+    restart: unless-stopped
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+      GITLAB_ROOT_PASSWORD: ${GITLAB_ROOT_PASSWORD:?GITLAB_ROOT_PASSWORD must be set}
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url '${GITLAB_EXTERNAL_URL:-http://localhost:18929}'
+        nginx['listen_port'] = 80
+        gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SSH_PORT:-2224}
+        # 生产默认资源收敛，可按服务器规格调大
+        puma['worker_processes'] = 2
+        sidekiq['concurrency'] = 10
+        prometheus['enable'] = false
+    ports:
+      - "${GITLAB_HTTP_PORT:-18929}:80"
+      - "${GITLAB_SSH_PORT:-2224}:22"
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    networks:
+      - trace_ship_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/-/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+
+# 数据卷统一显式命名为 trace-ship-*，不依赖 compose 项目名前缀
+volumes:
+  postgres_data:
+    name: trace-ship-postgres-data
+  redis_data:
+    name: trace-ship-redis-data
+  gitlab_config:
+    name: trace-ship-gitlab-config
+  gitlab_logs:
+    name: trace-ship-gitlab-logs
+  gitlab_data:
+    name: trace-ship-gitlab-data
+
+# 共享网络显式命名为 trace-ship-net，应用编排（docker-compose.prod.yml）以
+# external 方式加入同一网络，通过服务名（postgres / redis / gitlab）访问数据层
+networks:
+  trace_ship_net:
+    name: trace-ship-net
+    driver: bridge

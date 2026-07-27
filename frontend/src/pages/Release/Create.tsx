@@ -247,11 +247,11 @@ export default function ReleaseCreate() {
     }
   };
 
-  const steps = [
-    { title: '创建发布' },
-    { title: '生成说明' },
-    { title: '提交审批' },
-  ];
+ const steps = [
+   { title: '创建发布' },
+   { title: '生成说明' },
+   { title: '提交审批' },
+ ];
 
   // 步骤 1 表单字段是否就绪
   const formReady = !!watchProject && !!watchRepository && !!watchBranch;

@@ -102,24 +102,3 @@ class OperationLogService:
             result=result,
             detail=detail,
         )
-
-    @staticmethod
-    def log_jenkins_build(user, build, action: str, result: str = "success", detail: Optional[Dict[str, Any]] = None) -> OperationLog:
-        """
-        记录 Jenkins 构建相关操作
-        """
-        action_map = {
-            "trigger": "触发构建",
-            "success": "构建成功",
-            "failure": "构建失败",
-        }
-        return OperationLogService.log(
-            user=user,
-            module="Jenkins",
-            action=action,
-            resource_type="jenkins_build",
-            resource_id=str(build.id),
-            description=f"{action_map.get(action, action)} #{build.build_number or build.queue_id}",
-            result=result,
-            detail=detail,
-        )

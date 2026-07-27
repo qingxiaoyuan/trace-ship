@@ -1,13 +1,13 @@
-import { credentialScopeMap, credentialScopeIconMap, credentialScopeColorMap } from '../constants';
-import type { CredentialScope } from '@/types';
+import { credentialShareMap, credentialShareIconMap, credentialShareColorMap } from '../constants';
+import type { CredentialShare } from '../constants';
 
 interface ScopeTagProps {
-  scope: CredentialScope;
+  share: CredentialShare;
 }
 
-export function ScopeTag({ scope }: ScopeTagProps) {
-  const Icon = credentialScopeIconMap[scope];
-  const colors = credentialScopeColorMap[scope];
+export function ScopeTag({ share }: ScopeTagProps) {
+  const Icon = credentialShareIconMap[share];
+  const colors = credentialShareColorMap[share];
   return (
     <span
       className={[
@@ -18,7 +18,7 @@ export function ScopeTag({ scope }: ScopeTagProps) {
       ].join(' ')}
     >
       <Icon className="h-3 w-3" strokeWidth={1.5} />
-      {credentialScopeMap[scope]}
+      {credentialShareMap[share]}
     </span>
   );
 }

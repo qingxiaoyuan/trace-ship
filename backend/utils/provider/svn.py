@@ -11,7 +11,7 @@ from typing import List, Optional
 from django.utils.dateparse import parse_datetime
 
 from .base import CommitInfo, MergeRequestInfo
-from .exceptions import ConnectionError, ProviderError
+from .exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 
 
 class SVNProvider:
@@ -70,8 +70,54 @@ class SVNProvider:
         if result.returncode != 0:
             # 避免将密码输出到日志
             safe_stderr = result.stderr.replace(self.password, "***") if self.password else result.stderr
-            raise ConnectionError(f"SVN 命令失败: {safe_stderr}")
+            raise self._classify_error(safe_stderr)
         return result.stdout
+
+    @staticmethod
+    def _classify_error(stderr: str) -> ProviderError:
+        """根据 svn stderr 内容分类异常。"""
+        lower = stderr.lower()
+        # 认证失败优先判定
+        auth_hints = [
+            "authorization failed",
+            "authentication failed",
+            "could not authenticate",
+            "username not found",
+            "password not found",
+            "e170001",
+            "e215004",
+            "authentication error",
+        ]
+        if any(h in lower for h in auth_hints):
+            return AuthenticationError(f"SVN 认证失败: {stderr}")
+        # 路径/仓库不存在
+        not_found_hints = [
+            "e160013",
+            "e170000",
+            "url not found",
+            "path not found",
+            "non-existent in that revision",
+            "w160013",
+            "w170000",
+            "doesn't exist",
+        ]
+        if any(h in lower for h in not_found_hints):
+            return NotFoundError(f"SVN 路径不存在: {stderr}")
+        # 网络/连接问题
+        conn_hints = [
+            "could not resolve hostname",
+            "could not connect to server",
+            "connection timed out",
+            "connection refused",
+            "no route to host",
+            "e730053",
+            "e120002",
+            "e000111",
+            "network is unreachable",
+        ]
+        if any(h in lower for h in conn_hints):
+            return ConnectionError(f"SVN 连接失败: {stderr}")
+        return ConnectionError(f"SVN 命令失败: {stderr}")
 
     def test_connection(self) -> bool:
         """测试 SVN 仓库连通性"""
@@ -158,6 +204,62 @@ class SVNProvider:
         """SVN 不支持 MR 概念，返回空列表"""
         return []
 
+    def list_dir(self, url: str = None) -> List[dict]:
+        """
+        列出 SVN 远程目录的直接子项（不递归）。
+
+        Args:
+            url: 要列出的远程目录地址，缺省为仓库根地址
+
+        Returns:
+            条目列表，每项包含 name / kind(dir|file) / size / revision / author / date
+
+        Raises:
+            ConnectionError: 命令执行失败或路径不存在
+            ProviderError: XML 解析失败
+        """
+        target = (url or self.repo_url).rstrip("/")
+        cmd = self._base_cmd() + ["list", "--xml", target]
+        xml_data = self._run(cmd, timeout=60)
+        return self._parse_xml_list(xml_data)
+
+    def _parse_xml_list(self, xml_data: str) -> List[dict]:
+        """
+        解析 svn list --xml 输出
+
+        Args:
+            xml_data: svn list --xml 输出
+
+        Returns:
+            目录条目列表
+
+        Raises:
+            ProviderError: XML 解析失败
+        """
+        try:
+            root = ET.fromstring(xml_data)
+        except ET.ParseError as exc:
+            raise ProviderError(f"无法解析 SVN list XML: {exc}") from exc
+
+        entries = []
+        for entry in root.iter("entry"):
+            kind = entry.get("kind", "")
+            commit = entry.find("commit")
+            size_text = entry.findtext("size", default="")
+            entries.append(
+                {
+                    "name": entry.findtext("name", default=""),
+                    "kind": kind,
+                    "size": int(size_text) if size_text.isdigit() else 0,
+                    "revision": commit.get("revision", "") if commit is not None else "",
+                    "author": commit.findtext("author", default="") if commit is not None else "",
+                    "date": self._parse_svn_date(
+                        commit.findtext("date", default="") if commit is not None else ""
+                    ),
+                }
+            )
+        return entries
+
     def remote_exists(self, url: str) -> bool:
         """
         检查远程路径是否已存在。
@@ -170,9 +272,9 @@ class SVNProvider:
         """
         cmd = self._base_cmd() + ["info", url]
         try:
-            self._run(cmd, timeout=30)
-            return True
-        except ConnectionError:
+           self._run(cmd, timeout=30)
+           return True
+        except ProviderError:
             return False
 
     def mkdir(self, remote_url: str, message: str = "") -> None:

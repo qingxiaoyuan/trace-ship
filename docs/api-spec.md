@@ -332,7 +332,6 @@
     "initial": "VA.1.0.0"
   },
   "release_rule": {
-    "formal_branch": "main",
     "test_prefix": "test",
     "release_cycle_days": 3
   },
