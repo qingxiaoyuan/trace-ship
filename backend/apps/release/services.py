@@ -5,6 +5,7 @@
 """
 import logging
 import re
+import traceback
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -1163,6 +1164,7 @@ class ReleaseService:
             release.repository.external_identity, release.git_hash,
         )
         provider = cls._get_provider(release.repository, request_user)
+        user = request_user or release.publisher
         try:
             cls._validate_tag_not_exists(
                 provider,
@@ -1174,22 +1176,43 @@ class ReleaseService:
                 repo_identity=release.repository.external_identity,
                 tag_name=release.tag_name,
                 commit_hash=release.git_hash,
-                message=f"Release {release.version}",
+                message="",
             )
         except ReleaseTagExistsError as exc:
             release.status = "rejected"
             release.rejected_reason = f"推 tag 失败: {exc}"
             release.save(update_fields=["status", "rejected_reason", "updated_at"])
             logger.warning("推 tag 失败(tag 已存在): release=%s tag=%s err=%s", release.id, release.tag_name, exc)
+            OperationLogService.log_release(
+                user=user,
+                release=release,
+                action="push_tag",
+                result="failure",
+                detail={"error": str(exc), "traceback": traceback.format_exc()},
+            )
             raise
         except ProviderError as exc:
             release.status = "rejected"
             release.rejected_reason = f"推 tag 失败: {exc}"
             release.save(update_fields=["status", "rejected_reason", "updated_at"])
             logger.warning("推 tag 失败(Provider 错误): release=%s tag=%s err=%s", release.id, release.tag_name, exc)
+            OperationLogService.log_release(
+                user=user,
+                release=release,
+                action="push_tag",
+                result="failure",
+                detail={"error": str(exc), "traceback": traceback.format_exc()},
+            )
             raise serializers.ValidationError({"tag": f"推 tag 失败: {exc}"})
         except Exception:
             # 非 Provider 异常（凭证解密、网络等）不会进入上面两个分支，必须留痕
+            OperationLogService.log_release(
+                user=user,
+                release=release,
+                action="push_tag",
+                result="failure",
+                detail={"error": "推 tag 出现未预期异常", "traceback": traceback.format_exc()},
+            )
             logger.exception(
                 "推 tag 出现未预期异常: release=%s version=%s tag=%s",
                 release.id, release.version, release.tag_name,
@@ -1201,22 +1224,17 @@ class ReleaseService:
         release.save(update_fields=["status", "released_at", "updated_at"])
         logger.info("推 tag 成功，发布完成: release=%s tag=%s", release.id, release.tag_name)
         NotificationService.notify_release_released(release)
-        OperationLogService.log_release(
-            user=request_user or release.publisher,
-            release=release,
-            action="push_tag",
-        )
         try:
             from apps.package.services import PackageService
 
             PackageService.trigger_auto_packages_for_release(release, request_user=request_user or release.publisher)
         except Exception as exc:
             OperationLogService.log_release(
-                user=request_user or release.publisher,
+                user=user,
                 release=release,
                 action="auto_package_trigger",
                 result="failure",
-                detail={"error": str(exc)},
+                detail={"error": str(exc), "traceback": traceback.format_exc()},
             )
         return tag_info
 
