@@ -19,6 +19,10 @@ ENV NPM_CONFIG_REGISTRY="${NPM_REGISTRY}"
 COPY trace-ship-build /usr/local/bin/trace-ship-build
 RUN chmod +x /usr/local/bin/trace-ship-build
 
+# 预置依赖/脚本目录，可由基础镜像构建时填充；
+# 运行时通过软链挂到 /workspace/deploy 和 /workspace/scripts
+RUN mkdir -p /opt/trace-ship/deploy /opt/trace-ship/scripts
+
 WORKDIR /workspace/source
 
 ENTRYPOINT ["/usr/local/bin/trace-ship-build"]

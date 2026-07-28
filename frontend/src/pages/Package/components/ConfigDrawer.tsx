@@ -2,17 +2,12 @@ import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Drawer, Form, Input, Select, Switch, Typography } from 'antd';
 import { Settings2 } from 'lucide-react';
-import type { PackageBuildType, PackageConfig, PackageMode } from '@/types';
+import type { PackageBuildType, PackageConfig } from '@/types';
 import { projectApi } from '@/api/project';
 import { SvnTestButton } from '@/components/SvnTestButton';
 import { repositoryApi } from '@/api/repository';
 import { packageApi } from '@/api/package';
 import { credentialApi } from '@/api/credential';
-
-const modeOptions = [
-  { label: '简易打包', value: 'simple' },
-  { label: '本地脚本', value: 'local' },
-];
 
 const buildTypeOptions = [
   { label: 'Web', value: 'web' },
@@ -29,7 +24,6 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [form] = Form.useForm<Partial<PackageConfig>>();
-  const mode = (Form.useWatch('mode', form) || 'simple') as PackageMode;
   const buildType = (Form.useWatch('build_type', form) || 'web') as PackageBuildType;
 
   const { data: projectsData } = useQuery({
@@ -49,7 +43,7 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
   const { data: imagesData } = useQuery({
     queryKey: ['package-drawer-images', buildType],
     queryFn: () => packageApi.getImages({ build_type: buildType, is_active: true, page_size: 1000 }),
-    enabled: open && mode === 'simple',
+    enabled: open,
   });
 
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
@@ -76,7 +70,6 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
       form.setFieldsValue({ ...editing, image: editing.image_id || editing.image || undefined });
     } else {
       form.setFieldsValue({
-        mode: 'simple',
         build_type: 'web',
         build_path: '.',
         output_path: 'dist',
@@ -174,23 +167,15 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
             optionFilterProp="label"
           />
         </Form.Item>
-        <div className="grid grid-cols-2 gap-3">
-          <Form.Item name="mode" label="打包模式" rules={[{ required: true }]}>
-            <Select options={modeOptions} />
-          </Form.Item>
-          <Form.Item name="build_type" label="打包类型" rules={[{ required: true }]}>
-            <Select options={buildTypeOptions} />
-          </Form.Item>
-        </div>
-        {mode === 'simple' ? (
-          <Form.Item name="image" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
-            <Select options={imageOptions} placeholder="按打包类型选择镜像" showSearch optionFilterProp="label" />
-          </Form.Item>
-        ) : (
-          <Form.Item name="local_script" label="本地打包脚本" rules={[{ required: true, message: '请填写打包脚本' }]}>
-            <Input.TextArea rows={4} placeholder="npm ci && npm run build" />
-          </Form.Item>
-        )}
+        <Form.Item name="build_type" label="打包类型" rules={[{ required: true }]}>
+          <Select options={buildTypeOptions} />
+        </Form.Item>
+        <Form.Item name="image" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
+          <Select options={imageOptions} placeholder="按打包类型选择镜像" showSearch optionFilterProp="label" />
+        </Form.Item>
+        <Form.Item name="custom_script" label="自定义打包脚本" extra="留空则执行镜像内置脚本；填写后直接在 /workspace/source 目录执行">
+          <Input.TextArea rows={4} placeholder="cd /workspace/source && ./scripts/custom-build.sh" />
+        </Form.Item>
         <Form.Item name="build_path" label="构建目录" rules={[{ required: true }]}>
           <Input />
         </Form.Item>

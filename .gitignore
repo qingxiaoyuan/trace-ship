@@ -136,6 +136,8 @@ backend/celerybeat-schedule
 backend/celerybeat-schedule.db
 backend/db.sqlite3
 backend/package_workspaces/
+package-workspaces/
+package_workspaces/
 
 # Django migrations (optional: keep if you want to ignore all migrations)
 # **/migrations/*.py

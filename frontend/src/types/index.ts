@@ -135,7 +135,6 @@ export interface ReleasePackageTaskSummary {
   name: string;
   status: PackageTaskStatus;
   status_display?: string;
-  mode: PackageMode;
   build_type: PackageBuildType;
   artifact_count: number;
   created_at?: string;
@@ -300,7 +299,6 @@ export interface CommitAlertRecord extends CommitRecord {
   alert_status: AlertStatus;
 }
 
-export type PackageMode = 'simple' | 'local';
 export type PackageBuildType = 'web' | 'qt';
 export type PackageTaskStatus = 'queued' | 'running' | 'success' | 'failure' | 'canceled';
 
@@ -345,14 +343,12 @@ export interface PackageConfig {
   repository_id?: string;
   repository_name?: string;
   name: string;
-  mode: PackageMode;
-  mode_display?: string;
   build_type: PackageBuildType;
   build_type_display?: string;
   image?: string | null;
   image_id?: string | null;
   image_name?: string;
-  local_script?: string;
+  custom_script?: string;
   build_path?: string;
   output_path?: string;
   env_vars?: Record<string, unknown>;
@@ -381,8 +377,6 @@ export interface PackageTask {
   triggered_by?: string | null;
   triggered_by_name?: string;
   name: string;
-  mode: PackageMode;
-  mode_display?: string;
   build_type: PackageBuildType;
   build_type_display?: string;
   tag_name: string;

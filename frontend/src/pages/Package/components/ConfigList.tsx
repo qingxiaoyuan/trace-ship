@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Boxes, FolderOpen, Package as PackageIcon, Play, Search, Settings2, Trash2 } from 'lucide-react';
-import type { PackageBuildType, PackageConfig, PackageMode, PackageTask } from '@/types';
+import type { PackageBuildType, PackageConfig, PackageTask } from '@/types';
 import { SvnBrowserDrawer } from '@/components/SvnBrowserDrawer';
 import { useLatestTaskByConfig } from './useLatestTaskByConfig';
 import { formatRelativeTime, iconColors } from './utils';
@@ -26,7 +26,6 @@ export const ConfigList = memo(function ConfigList({
   onOpenHistory,
 }: ConfigListProps) {
   const [keyword, setKeyword] = useState('');
-  const [modeFilter, setModeFilter] = useState<PackageMode | ''>('');
   const [typeFilter, setTypeFilter] = useState<PackageBuildType | ''>('');
   const [browsing, setBrowsing] = useState<PackageConfig | null>(null);
 
@@ -39,11 +38,10 @@ export const ConfigList = memo(function ConfigList({
         const txt = `${c.name} ${c.project_name || ''} ${c.repository_name || ''}`.toLowerCase();
         if (!txt.includes(kw)) return false;
       }
-      if (modeFilter && c.mode !== modeFilter) return false;
       if (typeFilter && c.build_type !== typeFilter) return false;
       return true;
     });
-  }, [configs, keyword, modeFilter, typeFilter]);
+  }, [configs, keyword, typeFilter]);
 
   return (
     <div className="tech-card rounded-xl overflow-hidden">
@@ -59,15 +57,6 @@ export const ConfigList = memo(function ConfigList({
           />
         </div>
         <select
-          value={modeFilter}
-          onChange={(e) => setModeFilter(e.target.value as PackageMode | '')}
-          className="rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 outline-none hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer"
-        >
-          <option value="">全部模式</option>
-          <option value="simple">简易打包</option>
-          <option value="local">本地脚本</option>
-        </select>
-        <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value as PackageBuildType | '')}
           className="rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 outline-none hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer"
@@ -82,7 +71,7 @@ export const ConfigList = memo(function ConfigList({
         <div className="col-span-3">配置名称</div>
         <div className="col-span-2">所属项目</div>
         <div className="col-span-2">关联仓库</div>
-        <div className="col-span-2">模式 / 类型</div>
+        <div className="col-span-2">类型</div>
         <div className="col-span-2">最近打包</div>
         <div className="col-span-1 text-right">操作</div>
       </div>

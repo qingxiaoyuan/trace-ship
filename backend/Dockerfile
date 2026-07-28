@@ -2,7 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖（包含 LDAP、PostgreSQL 客户端库）
+# 安装系统依赖
+# - 编译/LDAP/PostgreSQL 库
+# - postgresql-client / redis-tools：entrypoint 等待依赖就绪
+# - git：打包任务在 worker 内克隆仓库
+# - subversion：打包产物推送 SVN
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
@@ -11,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     postgresql-client \
     redis-tools \
+    git \
+    subversion \
     ca-certificates \
     curl \
     gnupg \

@@ -58,6 +58,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
   const credType = Form.useWatch('cred_type', form);
 
   const isTokenOnly = tokenOnlyTypes.includes(credType);
+  const isGitlabToken = credType === 'gitlab_token';
   const isSystemShared = credType === 'svn_password';
 
   const typeLabelMap = useMemo(
@@ -107,6 +108,9 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           };
         } else {
           payload.data = { token: values.token };
+          if (isGitlabToken) {
+            payload.data.username = values.username || '';
+          }
         }
       }
 
@@ -241,8 +245,23 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           >
             <div
               className="grid gap-x-4 gap-y-3"
-              style={{ gridTemplateColumns: isTokenOnly ? '1fr' : 'repeat(2, 1fr)' }}
+              style={{ gridTemplateColumns: (isTokenOnly && !isGitlabToken) ? '1fr' : 'repeat(2, 1fr)' }}
             >
+              {/* GitLab Token 用户名与 Token 放在同一行，用户名在前 */}
+              {isGitlabToken && (
+                <Form.Item
+                  name="username"
+                  label={<FieldLabel text="用户名" />}
+                  extra={
+                    <p className="mt-1 mb-0 text-[11px] text-slate-400">默认 oauth2</p>
+                  }
+                >
+                  <Input
+                    placeholder="默认 oauth2"
+                    className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
+                  />
+                </Form.Item>
+              )}
               {!isTokenOnly && (
                 <Form.Item
                   name="auth_mode"
@@ -298,9 +317,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                 <Form.Item
                   name="username"
                   label={<FieldLabel text="用户名" required />}
-                  rules={[
-                    { required: authMode === 'password', message: '密码模式必须填写用户名' },
-                  ]}
+                  rules={[{ required: authMode === 'password', message: '密码模式必须填写用户名' }]}
                 >
                   <Input
                     placeholder="请输入用户名"

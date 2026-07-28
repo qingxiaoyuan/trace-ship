@@ -17,16 +17,12 @@ import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
 import { SvnTestButton } from '@/components/SvnTestButton';
 import { credentialApi } from '@/api/credential';
-import type { PackageBuildType, PackageConfig, PackageMode } from '@/types';
+import type { PackageBuildType, PackageConfig } from '@/types';
 
 interface PackageTabProps {
   projectId: string;
 }
 
-const modeOptions = [
-  { label: '简易打包', value: 'simple' },
-  { label: '本地脚本', value: 'local' },
-];
 
 const buildTypeOptions = [
   { label: 'Web', value: 'web' },
@@ -54,7 +50,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const [keyword, setKeyword] = useState('');
   const [form] = Form.useForm<Partial<PackageConfig>>();
   const [triggerForm] = Form.useForm<{ release_id: string }>();
-  const mode = (Form.useWatch('mode', form) || 'simple') as PackageMode;
   const buildType = (Form.useWatch('build_type', form) || 'web') as PackageBuildType;
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
 
@@ -77,7 +72,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const { data: imagesData } = useQuery({
     queryKey: ['package-images', buildType],
     queryFn: () => packageApi.getImages({ build_type: buildType, is_active: true, page_size: 1000 }),
-    enabled: mode === 'simple',
+    enabled: true,
   });
 
   const { data: svnCredsData } = useQuery({
@@ -114,7 +109,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
     } else {
       form.setFieldsValue({
         project: projectId,
-        mode: 'simple',
         build_type: 'web',
         build_path: '.',
         output_path: 'dist',
@@ -278,7 +272,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
                   </span>
                 </div>
                 <div className="col-span-12 text-[12px] text-slate-500 truncate font-mono md:col-span-2">
-                  {config.image_name || (config.mode === 'local' ? '本地脚本' : '-')}
+                  {config.image_name || (config.custom_script ? '自定义脚本' : '-')}
                 </div>
                 <div className="col-span-3 flex items-center justify-center md:col-span-1">
                   {config.auto_package_on_release ? (
@@ -377,17 +371,13 @@ export function PackageTab({ projectId }: PackageTabProps) {
               <Select options={buildTypeOptions} />
             </Form.Item>
           </div>
-          {mode === 'simple' ? (
-            <Form.Item name="image" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
-              <Select options={imageOptions} placeholder="按打包类型选择镜像" showSearch optionFilterProp="label" />
-            </Form.Item>
-          ) : (
-            <Form.Item name="local_script" label="本地打包脚本" rules={[{ required: true, message: '请填写打包脚本' }]}>
-              <Input.TextArea rows={6} placeholder="npm ci && npm run build && cp -r dist/* $ARTIFACTS_DIR/" />
-            </Form.Item>
-          )}
-          {mode === 'simple' ? (
-            <Form.Item name="build_path" label="构建目录" rules={[{ required: true }]}>
+          <Form.Item name="image" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
+            <Select options={imageOptions} placeholder="按打包类型选择镜像" showSearch optionFilterProp="label" />
+          </Form.Item>
+          <Form.Item name="custom_script" label="自定义打包脚本" extra="留空则执行镜像内置脚本；填写后直接在 /workspace/source 目录执行">
+            <Input.TextArea rows={6} placeholder="cd /workspace/source && ./scripts/custom-build.sh" />
+          </Form.Item>
+          <Form.Item name="build_path" label="构建目录" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
           ) : (

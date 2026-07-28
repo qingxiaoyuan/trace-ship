@@ -19,11 +19,19 @@ class Command(BaseCommand):
 
     help = "初始化基础数据：超管账号、基础角色和权限"
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--reset-admin",
+            action="store_true",
+            help="强制重置 admin 账号密码为 admin@123（用于本地部署或密码丢失恢复）",
+        )
+
     def handle(self, *args, **options) -> None:
         """
         命令入口
         """
         self.stdout.write("开始初始化基础数据...")
+        reset_admin = options.get("reset_admin", False)
 
         # 创建基础权限
         permissions_data = [
@@ -104,8 +112,29 @@ class Command(BaseCommand):
             admin.set_password("admin@123")
             admin.save()
             self.stdout.write(self.style.SUCCESS("创建超管账号：admin / admin@123"))
+        elif reset_admin:
+            admin.set_password("admin@123")
+            admin.save()
+            self.stdout.write(self.style.WARNING("已重置超管账号密码：admin / admin@123"))
         else:
-            self.stdout.write("超管账号已存在")
+            self.stdout.write("超管账号已存在，跳过密码重置（使用 --reset-admin 可强制重置）")
+
+        # 每次执行都确保 admin 状态正确，防止历史脏数据导致无法登录
+        needs_save = False
+        if not admin.is_active:
+            admin.is_active = True
+            needs_save = True
+        if not admin.is_superuser:
+            admin.is_superuser = True
+            needs_save = True
+        if not admin.is_staff:
+            admin.is_staff = True
+            needs_save = True
+        if admin.source != "local":
+            admin.source = "local"
+            needs_save = True
+        if needs_save:
+            admin.save()
 
         # 为超管绑定 super_admin 角色
         UserRole.objects.get_or_create(

@@ -32,7 +32,7 @@ export function ReleasePackages({ release }: { release: Release }) {
                 <div className="flex items-center gap-2">
                   <Icon className={`h-4 w-4 ${info.cls}`} strokeWidth={1.5} />
                   <span className="font-medium text-slate-900">{task.name}</span>
-                  <Tag>{task.mode === 'simple' ? '简易打包' : '本地脚本'}</Tag>
+                  <Tag>{task.config_name || '打包'}</Tag>
                   <Tag color={task.build_type === 'web' ? 'blue' : 'purple'}>{task.build_type === 'web' ? 'Web' : 'Qt'}</Tag>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[12px] text-slate-500">

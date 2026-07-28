@@ -61,11 +61,21 @@ class PackageService:
 
     @staticmethod
     def _build_auth_env(repo, request_user=None) -> dict[str, str]:
-        """解析仓库凭证为 Git 可用的环境变量。"""
+        """解析仓库凭证为 Git 可用的环境变量。
+
+        GitLab Token 通过 HTTP(S) 克隆时，git 需要用户名+密码做 Basic 认证。
+        GitLab 个人访问令牌的默认用户名为 ``oauth2``；部署令牌/项目访问令牌
+        可在凭证 username 字段填写对应用户名覆盖默认值。
+        """
         data = resolve_credential(repo, request_user)
         env: dict[str, str] = {}
         username = data.get("username") or ""
         token = data.get("token") or data.get("password") or ""
+
+        # GitLab Token 通过 HTTP 克隆时，默认用户名为 oauth2
+        if not username and token:
+            username = "oauth2"
+
         if username:
             env["TRACE_SHIP_GIT_USERNAME"] = str(username)
         if token:
@@ -80,12 +90,11 @@ class PackageService:
         return {
             "config_id": str(config.id),
             "name": config.name,
-            "mode": config.mode,
             "build_type": config.build_type,
             "image": image.image if image else "",
             "image_name": image.name if image else "",
             "script_entry": image.script_entry if image else "",
-            "local_script": config.local_script,
+            "custom_script": config.custom_script,
             "build_path": cls._safe_rel_path(
                 config.build_path,
                 image.default_build_path if image else ".",
@@ -119,7 +128,6 @@ class PackageService:
             repository=release.repository,
             triggered_by=request_user,
             name=f"{config.name} / {release.version}",
-            mode=config.mode,
             build_type=config.build_type,
             tag_name=release.tag_name,
             version=release.version,
@@ -315,6 +323,8 @@ class PackageService:
             "WORKSPACE": str(workspace),
             "SOURCE_DIR": str(workspace / "source"),
             "ARTIFACTS_DIR": str(workspace / "artifacts"),
+            "DEPLOY_DIR": str(workspace / "deploy"),
+            "SCRIPTS_DIR": str(workspace / "scripts"),
             "TMPDIR": str(workspace / "tmp"),
         }
 
@@ -330,50 +340,50 @@ class PackageService:
         return args
 
     @classmethod
-    def _run_simple(cls, task: PackageTask, workspace: Path) -> None:
-        """执行简易容器打包。"""
+    def _run_container(cls, task: PackageTask, workspace: Path) -> None:
+        """在容器内执行打包。
+
+        统一流程：选择基础镜像 -> 拉源码 -> 挂载整个 workspace -> 执行镜像内置脚本
+        或打包配置中指定的自定义脚本。自定义脚本直接在工作目录 /workspace/source 下运行。
+        """
         snapshot = task.config_snapshot or {}
         image = snapshot.get("image")
-        script_entry = snapshot.get("script_entry")
-        if not image or not script_entry:
-            raise RuntimeError("简易打包缺少镜像或脚本入口")
+        script_entry = snapshot.get("script_entry") or "/usr/local/bin/trace-ship-build"
+        custom_script = (snapshot.get("custom_script") or "").strip()
+        if not image:
+            raise RuntimeError("打包配置缺少镜像")
+
         env = cls._task_env(task, workspace)
         env_vars = snapshot.get("env_vars") if isinstance(snapshot.get("env_vars"), dict) else {}
         build_path = env["BUILD_PATH"]
         source_build_path = f"/workspace/source/{build_path}" if build_path != "." else "/workspace/source"
+
+        output_path = env["OUTPUT_PATH"]
         command = [
             "docker", "run", "--rm",
             # 使用宿主机网络，便于容器直接访问内网 npm 源等服务
             "--network", "host",
             *cls._docker_env_args(env_vars),
+            "-e", "WORKSPACE=/workspace",
+            "-e", "SOURCE_DIR=/workspace/source",
+            "-e", "ARTIFACTS_DIR=/workspace/artifacts",
+            "-e", "DEPLOY_DIR=/workspace/deploy",
+            "-e", "SCRIPTS_DIR=/workspace/scripts",
             "-e", f"TAG_NAME={env['TAG_NAME']}",
             "-e", f"VERSION={env['VERSION']}",
             "-e", f"BUILD_TYPE={env['BUILD_TYPE']}",
             "-e", f"BUILD_PATH={build_path}",
-            "-e", "OUTPUT_PATH=dist",
-            "-e", "ARTIFACTS_DIR=/workspace/artifacts",
+            "-e", f"OUTPUT_PATH={output_path}",
             "-e", f"PROJECT_CODE={env['PROJECT_CODE']}",
-            "-e", "WORKSPACE=/workspace",
-            "-v", f"{workspace / 'source'}:/workspace/source",
-            "-v", f"{workspace / 'artifacts'}:/workspace/artifacts",
+            "-v", f"{workspace}:/workspace",
             "-w", source_build_path,
-            str(image),
-            str(script_entry),
         ]
+        if custom_script:
+            command.extend(["-e", f"CUSTOM_SCRIPT={custom_script}"])
+        command.append(str(image))
+        if not custom_script:
+            command.append(str(script_entry))
         cls._run_command(task, command, workspace, env)
-
-    @classmethod
-    def _run_local(cls, task: PackageTask, workspace: Path) -> None:
-        """执行本地脚本打包。"""
-        snapshot = task.config_snapshot or {}
-        script = (snapshot.get("local_script") or "").strip()
-        if not script:
-            raise RuntimeError("本地打包缺少脚本")
-        env = cls._task_env(task, workspace)
-        build_path = env["BUILD_PATH"]
-        cwd = workspace / "source" / build_path if build_path != "." else workspace / "source"
-        cwd.mkdir(parents=True, exist_ok=True)
-        cls._run_command(task, [script], cwd, env, shell=True)
 
     @classmethod
     def _scan_artifacts(cls, workspace: Path) -> list[dict[str, Any]]:
@@ -606,10 +616,7 @@ class PackageService:
             cls._ensure_task_not_canceled(task)
             build_progress = 25 if svn_push_enabled else 30
             cls._update_stage(task, "build", build_progress, "开始执行打包…")
-            if task.mode == "simple":
-                cls._run_simple(task, workspace)
-            else:
-                cls._run_local(task, workspace)
+            cls._run_container(task, workspace)
             cls._ensure_task_not_canceled(task)
             artifacts_progress = 65 if svn_push_enabled else 80
             cls._update_stage(task, "artifacts", artifacts_progress, "正在扫描产物…")

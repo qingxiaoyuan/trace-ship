@@ -58,8 +58,8 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         fields = [
             "id", "project", "project_id", "project_name",
             "repository", "repository_id", "repository_name",
-            "name", "mode", "mode_display", "build_type", "build_type_display",
-            "image", "image_id", "image_name", "local_script",
+            "name", "build_type", "build_type_display",
+            "image", "image_id", "image_name", "custom_script",
             "build_path", "output_path", "env_vars",
             "auto_package_on_release", "is_active",
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
@@ -69,7 +69,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "project_id", "project_name", "repository_id", "repository_name",
             "image_id", "image_name", "svn_credential_id", "svn_credential_name",
-            "mode_display", "build_type_display",
+            "build_type_display",
             "created_at", "updated_at",
         ]
 
@@ -90,17 +90,14 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         return validate_safe_rel_path(value, "output_path")
 
     def validate(self, attrs: dict) -> dict:
-        """校验模式、仓库、镜像和脚本约束。"""
+        """校验仓库、镜像和脚本约束。"""
         project = attrs.get("project", getattr(self.instance, "project", None))
         repository = attrs.get("repository", getattr(self.instance, "repository", None))
-        mode = attrs.get("mode", getattr(self.instance, "mode", "simple"))
         build_type = attrs.get("build_type", getattr(self.instance, "build_type", "web"))
         image = attrs.get("image", getattr(self.instance, "image", None))
-        local_script = attrs.get("local_script", getattr(self.instance, "local_script", ""))
+        custom_script = attrs.get("custom_script", getattr(self.instance, "custom_script", ""))
         env_vars = attrs.get("env_vars", getattr(self.instance, "env_vars", {}))
 
-        if mode not in ("simple", "local"):
-            raise serializers.ValidationError({"mode": "打包模式只能为 simple 或 local"})
         if build_type not in ("web", "qt"):
             raise serializers.ValidationError({"build_type": "第一阶段打包类型只能为 web 或 qt"})
         if repository and project and repository.project_id != project.id:
@@ -110,15 +107,12 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         if not isinstance(env_vars, dict):
             raise serializers.ValidationError({"env_vars": "环境变量必须为 JSON 对象"})
 
-        if mode == "simple":
-            if image is None:
-                raise serializers.ValidationError({"image": "简易打包必须选择打包镜像"})
-            if not image.is_active:
-                raise serializers.ValidationError({"image": "打包镜像已停用"})
-            if image.build_type != build_type:
-                raise serializers.ValidationError({"image": "打包镜像类型与配置类型不匹配"})
-        if mode == "local" and not (local_script or "").strip():
-            raise serializers.ValidationError({"local_script": "本地打包必须填写打包脚本"})
+        if image is None:
+            raise serializers.ValidationError({"image": "必须选择打包镜像"})
+        if not image.is_active:
+            raise serializers.ValidationError({"image": "打包镜像已停用"})
+        if image.build_type != build_type:
+            raise serializers.ValidationError({"image": "打包镜像类型与配置类型不匹配"})
 
         # SVN 推送配置校验
         svn_push_enabled = attrs.get("svn_push_enabled", getattr(self.instance, "svn_push_enabled", False))
@@ -163,7 +157,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "id", "config", "config_name", "release", "release_version",
             "project", "project_name", "repository", "repository_name",
             "triggered_by", "triggered_by_name", "name",
-            "mode", "mode_display", "build_type", "build_type_display",
+            "build_type", "build_type_display",
             "tag_name", "version", "commit_hash", "config_snapshot",
             "status", "status_display", "progress", "stage_info", "can_push_svn",
             "artifact_info", "duration", "error_message",

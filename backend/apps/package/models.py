@@ -48,10 +48,6 @@ class PackageImage(models.Model):
 class PackageConfig(models.Model):
     """项目级打包配置。"""
 
-    MODE_CHOICES = [
-        ("simple", "简易打包"),
-        ("local", "本地脚本"),
-    ]
     BUILD_TYPE_CHOICES = PackageImage.BUILD_TYPE_CHOICES
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -68,7 +64,6 @@ class PackageConfig(models.Model):
         verbose_name="关联仓库",
     )
     name = models.CharField(max_length=200, verbose_name="配置名称")
-    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default="simple", verbose_name="打包模式")
     build_type = models.CharField(max_length=20, choices=BUILD_TYPE_CHOICES, default="web", verbose_name="打包类型")
     image = models.ForeignKey(
         PackageImage,
@@ -78,7 +73,7 @@ class PackageConfig(models.Model):
         related_name="package_configs",
         verbose_name="打包镜像",
     )
-    local_script = models.TextField(blank=True, verbose_name="本地打包脚本")
+    custom_script = models.TextField(blank=True, verbose_name="自定义打包脚本")
     build_path = models.CharField(max_length=300, default=".", blank=True, verbose_name="构建目录")
     output_path = models.CharField(max_length=300, default="dist", blank=True, verbose_name="产物目录")
     env_vars = models.JSONField(default=dict, blank=True, verbose_name="环境变量")
@@ -106,7 +101,7 @@ class PackageConfig(models.Model):
         verbose_name_plural = "打包配置"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["project", "mode", "is_active"], name="package_con_project_7598ec_idx"),
+            models.Index(fields=["project", "is_active"], name="package_con_project_7598ec_idx"),
             models.Index(fields=["repository", "auto_package_on_release"], name="package_con_reposit_137631_idx"),
         ]
 
@@ -161,7 +156,6 @@ class PackageTask(models.Model):
         verbose_name="触发人",
     )
     name = models.CharField(max_length=200, verbose_name="任务名称")
-    mode = models.CharField(max_length=20, choices=PackageConfig.MODE_CHOICES, verbose_name="打包模式")
     build_type = models.CharField(max_length=20, choices=PackageImage.BUILD_TYPE_CHOICES, verbose_name="打包类型")
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
     version = models.CharField(max_length=100, verbose_name="版本号")

@@ -1,15 +1,39 @@
 #!/bin/sh
 set -eu
 
+# Trace Ship Web 打包入口脚本
+# 约定目录：
+#   /workspace/source     业务源码
+#   /workspace/artifacts   产物输出
+#   /workspace/deploy      预制依赖（可选，由基础镜像预置）
+#   /workspace/scripts     预制脚本（可选，由基础镜像预置）
+#   /opt/trace-ship/deploy   镜像内置依赖
+#   /opt/trace-ship/scripts  镜像内置脚本
+#
+# 环境变量：
+#   CUSTOM_SCRIPT         自定义脚本（优先执行）
+#   WORKSPACE             默认 /workspace
+#   SOURCE_DIR            默认 $WORKSPACE/source
+#   ARTIFACTS_DIR         默认 $WORKSPACE/artifacts
+#   DEPLOY_DIR            默认 $WORKSPACE/deploy
+#   SCRIPTS_DIR           默认 $WORKSPACE/scripts
+#   BUILD_PATH            源码内构建目录（相对 SOURCE_DIR）
+#   OUTPUT_PATH           产物目录（相对 APP_DIR）
+#   NPM_CONFIG_REGISTRY   npm registry（可选）
+
 log() {
   printf '[trace-ship-web] %s\n' "$*"
 }
 
 WORKSPACE="${WORKSPACE:-/workspace}"
 SOURCE_DIR="${SOURCE_DIR:-$WORKSPACE/source}"
-ARTIFACTS_DIR="$WORKSPACE/artifacts"
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-$WORKSPACE/artifacts}"
+DEPLOY_DIR="${DEPLOY_DIR:-$WORKSPACE/deploy}"
+SCRIPTS_DIR="${SCRIPTS_DIR:-$WORKSPACE/scripts}"
+BUILTIN_DEPLOY="${BUILTIN_DEPLOY:-/opt/trace-ship/deploy}"
+BUILTIN_SCRIPTS="${BUILTIN_SCRIPTS:-/opt/trace-ship/scripts}"
 BUILD_PATH="${BUILD_PATH:-.}"
-OUTPUT_PATH="dist"
+OUTPUT_PATH="${OUTPUT_PATH:-dist}"
 
 case "$BUILD_PATH" in
   ""|".") APP_DIR="$SOURCE_DIR" ;;
@@ -25,41 +49,63 @@ case "$OUTPUT_PATH" in
   *) BUILD_OUTPUT_DIR="$APP_DIR/$OUTPUT_PATH" ;;
 esac
 
+# 把镜像内置的依赖/脚本链接到 workspace
+setup_builtin() {
+  if [ -d "$BUILTIN_DEPLOY" ] && [ ! -e "$DEPLOY_DIR" ]; then
+    log "link builtin deploy: $BUILTIN_DEPLOY -> $DEPLOY_DIR"
+    ln -sf "$BUILTIN_DEPLOY" "$DEPLOY_DIR"
+  fi
+  if [ -d "$BUILTIN_SCRIPTS" ] && [ ! -e "$SCRIPTS_DIR" ]; then
+    log "link builtin scripts: $BUILTIN_SCRIPTS -> $SCRIPTS_DIR"
+    ln -sf "$BUILTIN_SCRIPTS" "$SCRIPTS_DIR"
+  fi
+}
+
+# 自定义脚本模式：直接执行打包配置里的脚本文本
+if [ -n "${CUSTOM_SCRIPT:-}" ]; then
+  setup_builtin
+  cd "$APP_DIR"
+  log "run custom script"
+  printf '%s\n' "$CUSTOM_SCRIPT" > /tmp/trace-ship-custom.sh
+  chmod +x /tmp/trace-ship-custom.sh
+  exec sh /tmp/trace-ship-custom.sh
+fi
+
+# 内置脚本模式
+setup_builtin
 cd "$APP_DIR"
 
 log "tag=${TAG_NAME:-}"
 log "version=${VERSION:-}"
 log "app_dir=$APP_DIR"
-log "output_path=dist"
+log "output_path=$OUTPUT_PATH"
 log "artifacts_dir=$ARTIFACTS_DIR"
 
-# pnpm / yarn 不读取 npm_config_* 环境变量,将 registry 追加到项目 .npmrc 统一生效;
-# 追加在最后,优先级高于业务项目 .npmrc 中已有的 registry 配置
 if [ -n "${NPM_CONFIG_REGISTRY:-}" ]; then
   log "npm registry: $NPM_CONFIG_REGISTRY"
   printf 'registry=%s\n' "$NPM_CONFIG_REGISTRY" >> .npmrc
 fi
 
+# 优先使用镜像预置的依赖，不主动联网安装
+if [ -d "$DEPLOY_DIR" ]; then
+  if [ -d "$DEPLOY_DIR/node_modules" ] && [ ! -e node_modules ]; then
+    log "link prebuilt node_modules from $DEPLOY_DIR/node_modules"
+    ln -sf "$DEPLOY_DIR/node_modules" node_modules
+  fi
+fi
+
 if [ -f package.json ]; then
   if [ -f pnpm-lock.yaml ]; then
-    log "install dependencies with pnpm"
-    pnpm install --frozen-lockfile
     log "run pnpm build"
     pnpm run build
   elif [ -f yarn.lock ]; then
-    log "install dependencies with yarn"
-    yarn install --frozen-lockfile
     log "run yarn build"
     yarn build
   elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-    log "install dependencies with npm ci"
-    npm ci
-    log "run npm build"
+    log "run npm run build"
     npm run build
   else
-    log "install dependencies with npm install"
-    npm install
-    log "run npm build"
+    log "run npm run build"
     npm run build
   fi
 else

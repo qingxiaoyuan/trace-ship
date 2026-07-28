@@ -30,6 +30,9 @@
 # 可选环境变量：
 #   SERVER_IP=192.168.x.x    第一次部署时指定服务器 IP（默认自动探测）
 #   FRONTEND_PORT=80         前端对外端口（默认 80）
+#
+# 清理环境（会删除容器、命名卷、.env.prod，数据不可恢复）：
+#   ./deploy.sh --clean [--force]
 # ============================================================
 set -e
 
@@ -81,6 +84,7 @@ if [ -z "${MODE}" ]; then
     echo "  2) 部署后端（复用已有环境变量）"
     echo "  3) 部署前端（复用已有环境变量）"
     echo "  4) 部署前后端（复用已有环境变量）"
+    echo "  5) 清理环境（删除容器、卷、.env.prod）"
     echo "  0) 退出"
     echo ""
     read -rp "请输入编号 [0-4]: " choice
@@ -89,17 +93,64 @@ if [ -z "${MODE}" ]; then
         2) MODE="--backend" ;;
         3) MODE="--frontend" ;;
         4) MODE="--app" ;;
+        5) MODE="--clean" ;;
         0) echo "👋 已取消"; exit 0 ;;
         *) echo "❌ 无效选择"; exit 1 ;;
     esac
 fi
 
 case "${MODE}" in
-    --full|--backend|--frontend|--app) ;;
-    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app）"; exit 1 ;;
+    --full|--backend|--frontend|--app|--clean) ;;
+    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app/--clean）"; exit 1 ;;
 esac
 
-# ---------- 2. 加载镜像 ----------
+# ---------- 2. 清理环境 ----------
+clean_env() {
+    local force="$1"
+    echo "====================================="
+    echo "⚠️  即将清理 Trace Ship 部署环境"
+    echo "====================================="
+    echo ""
+    echo "本次操作将删除以下内容（数据不可恢复）："
+    echo "  - 应用层容器（backend / frontend / celery-worker / celery-beat）"
+    echo "  - 数据层容器（postgres / redis / gitlab）"
+    echo "  - 命名数据卷（trace-ship-postgres-data / trace-ship-redis-data / trace-ship-gitlab-*）"
+    echo "  - 配置文件 .env.prod"
+    echo ""
+
+    if [ "${force}" != "--force" ]; then
+        read -rp "确认清理? 输入 yes 继续: " confirm
+        if [ "${confirm}" != "yes" ]; then
+            echo "👋 已取消清理"
+            exit 0
+        fi
+    fi
+
+    echo "🧹 停止并移除应用层服务..."
+    compose down --volumes --remove-orphans 2>/dev/null || true
+
+    echo "🧹 停止并移除数据层服务..."
+    compose_deps down --volumes --remove-orphans 2>/dev/null || true
+
+    echo "🧹 删除命名数据卷..."
+    for vol in trace-ship-postgres-data trace-ship-redis-data trace-ship-gitlab-config trace-ship-gitlab-logs trace-ship-gitlab-data trace-ship-backend-logs trace-ship-celerybeat-data; do
+        if docker volume inspect "${vol}" >/dev/null 2>&1; then
+            docker volume rm "${vol}" 2>/dev/null || true
+            echo "  已删除卷: ${vol}"
+        fi
+    done
+
+    if [ -f "${ENV_FILE}" ]; then
+        rm -f "${ENV_FILE}"
+        echo "🧹 已删除 .env.prod"
+    fi
+
+    echo ""
+    echo "✅ 清理完成，可重新执行 ./deploy.sh --full 进行全新部署"
+    exit 0
+}
+
+# ---------- 3. 加载镜像 ----------
 load_tar() {
     local tar="$1"
     if [ -f "images/${tar}" ]; then
@@ -108,7 +159,11 @@ load_tar() {
     fi
 }
 
-echo "📦 [1/3] 加载离线镜像..."
+if [ "${MODE}" = "--clean" ]; then
+    clean_env "${2:-}"
+fi
+
+echo "📦 [1/4] 加载离线镜像..."
 case "${MODE}" in
     --full)
         for tar in images/*.tar; do
@@ -142,9 +197,9 @@ detect_ip() {
 
 if [ -f "${ENV_FILE}" ]; then
     # 已有配置：直接复用（保证分包首次部署、重复执行 --full 时幂等，不会重置数据库密码）
-    echo "🔧 [2/3] 复用已有 .env.prod"
+    echo "🔧 [2/4] 复用已有 .env.prod"
 elif [ "${MODE}" = "--full" ]; then
-    echo "🔧 [2/3] 第一次部署：自动生成全新 .env.prod ..."
+    echo "🔧 [2/4] 第一次部署：自动生成全新 .env.prod ..."
     echo ""
 
     # 交互终端下引导确认关键参数（环境变量已指定时跳过，回车即取默认值）
@@ -246,7 +301,7 @@ mkdir -p "${PACKAGE_WORKSPACE_ROOT:-/data/trace-ship/package_workspaces}"
 
 # ---------- 4. 启动/更新服务 ----------
 echo ""
-echo "🚀 [3/3] 启动服务..."
+echo "🚀 [3/4] 启动服务..."
 
 # 启动第三方依赖组（PostgreSQL / Redis / GitLab）并等待数据库健康
 start_deps() {
