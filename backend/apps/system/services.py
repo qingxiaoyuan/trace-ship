@@ -5,7 +5,31 @@
 """
 from typing import Any, Dict, Optional
 
-from apps.system.models import OperationLog
+from apps.system.models import OperationLog, SystemConfig
+
+
+class SystemConfigService:
+    """系统参数读取服务，供各业务模块读取「系统配置」页面维护的 key-value。"""
+
+    @staticmethod
+    def get_many(keys: list[str]) -> dict[str, str]:
+        """
+        批量读取系统配置值，返回 {key: value}（不存在的键不出现）。
+
+        数据库不可用（如迁移阶段）时返回空字典，由调用方回退默认值。
+        """
+        if not keys:
+            return {}
+        try:
+            rows = SystemConfig.objects.filter(key__in=keys).values_list("key", "value")
+            return dict(rows)
+        except Exception:
+            return {}
+
+    @classmethod
+    def get(cls, key: str, default: str = "") -> str:
+        """读取单个系统配置值，不存在或异常时返回 default。"""
+        return cls.get_many([key]).get(key) or default
 
 
 class OperationLogService:

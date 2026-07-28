@@ -10,20 +10,24 @@ from django.db import models
 
 
 class PackageImage(models.Model):
-    """系统级 Docker 打包镜像配置。"""
+    """打包镜像配置（来源：本地 Docker / Nexus）。"""
 
-    BUILD_TYPE_CHOICES = [
-        ("web", "Web"),
-        ("qt", "Qt"),
+    SOURCE_CHOICES = [
+        ("nexus", "Nexus"),
+        ("local", "本地"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name="镜像名称")
-    build_type = models.CharField(max_length=20, choices=BUILD_TYPE_CHOICES, verbose_name="打包类型")
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="nexus", verbose_name="镜像来源")
+    registry_host = models.CharField(max_length=300, blank=True, verbose_name="镜像拉取地址")
+    repository = models.CharField(max_length=300, blank=True, verbose_name="Nexus 仓库名")
+    image_name = models.CharField(max_length=300, blank=True, verbose_name="镜像名")
+    image_tag = models.CharField(max_length=300, blank=True, verbose_name="镜像标签")
     image = models.CharField(max_length=500, verbose_name="Docker 镜像")
     script_entry = models.CharField(
         max_length=500,
-        default="/usr/local/bin/trace-ship-build",
+        default="/workspace/scripts/pack.sh",
         verbose_name="镜像脚本入口",
     )
     default_build_path = models.CharField(max_length=300, default=".", verbose_name="默认构建目录")
@@ -36,19 +40,51 @@ class PackageImage(models.Model):
         db_table = "package_image"
         verbose_name = "打包镜像"
         verbose_name_plural = "打包镜像"
-        ordering = ["build_type", "-created_at"]
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "registry_host", "repository", "image_name", "image_tag"],
+                name="package_image_unique_source_coord",
+            ),
+        ]
         indexes = [
-            models.Index(fields=["build_type", "is_active"], name="package_ima_build_t_0ac7d6_idx"),
+            models.Index(fields=["source", "is_active"], name="package_ima_source_2f3b1e_idx"),
         ]
 
     def __str__(self) -> str:
         return self.name
 
+    def save(self, *args, **kwargs):
+        """根据 source/registry/repository/name/tag 拼出完整镜像地址。"""
+        if self.image_name and self.image_tag:
+            if self.source == "nexus":
+                host = self.registry_host or self._default_registry_host()
+                if self.repository:
+                    self.image = f"{host}/{self.repository}/{self.image_name}:{self.image_tag}"
+                else:
+                    self.image = f"{host}/{self.image_name}:{self.image_tag}"
+                if not self.registry_host:
+                    self.registry_host = host
+            else:
+                # 本地镜像：不带 registry 前缀，直接使用 name:tag
+                self.image = f"{self.image_name}:{self.image_tag}"
+                self.registry_host = ""
+                self.repository = ""
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def _default_registry_host() -> str:
+        """默认拉取地址：与 NexusService 同一配置来源（系统配置页面优先）。"""
+        from apps.package.nexus import NexusError, NexusService
+
+        try:
+            return NexusService.registry_host()
+        except NexusError:
+            return ""
+
 
 class PackageConfig(models.Model):
     """项目级打包配置。"""
-
-    BUILD_TYPE_CHOICES = PackageImage.BUILD_TYPE_CHOICES
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(
@@ -64,7 +100,6 @@ class PackageConfig(models.Model):
         verbose_name="关联仓库",
     )
     name = models.CharField(max_length=200, verbose_name="配置名称")
-    build_type = models.CharField(max_length=20, choices=BUILD_TYPE_CHOICES, default="web", verbose_name="打包类型")
     image = models.ForeignKey(
         PackageImage,
         on_delete=models.SET_NULL,
@@ -156,7 +191,8 @@ class PackageTask(models.Model):
         verbose_name="触发人",
     )
     name = models.CharField(max_length=200, verbose_name="任务名称")
-    build_type = models.CharField(max_length=20, choices=PackageImage.BUILD_TYPE_CHOICES, verbose_name="打包类型")
+    # 历史保留字段：早期按 web/qt 区分打包类型，现已取消分类，新任务写入空串
+    build_type = models.CharField(max_length=20, blank=True, default="", verbose_name="打包类型")
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
     version = models.CharField(max_length=100, verbose_name="版本号")
     commit_hash = models.CharField(max_length=100, blank=True, verbose_name="提交哈希")

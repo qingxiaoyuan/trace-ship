@@ -1,4 +1,4 @@
-import { get, post, put, del } from './request';
+import { get, post, put, patch, del } from './request';
 import type { PaginatedData } from '@/types';
 
 export interface SystemConfig {
@@ -56,6 +56,8 @@ export const systemApi = {
   createConfig: (data: Partial<SystemConfig>) => post<SystemConfig>('/system/configs/', data),
   updateConfig: (key: string, data: Partial<SystemConfig>) =>
     put<SystemConfig>(`/system/configs/${key}/`, data),
+  patchConfig: (key: string, data: Partial<SystemConfig>) =>
+    patch<SystemConfig>(`/system/configs/${key}/`, data),
   deleteConfig: (key: string) => del<null>(`/system/configs/${key}/`),
   getLogs: (params?: LogListParams) =>
     get<PaginatedData<SystemLog>>('/system/logs/', { params }),

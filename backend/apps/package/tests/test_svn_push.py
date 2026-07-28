@@ -78,7 +78,6 @@ def svn_credential(user, project):
 def image():
     return PackageImage.objects.create(
         name="Web 镜像",
-        build_type="web",
         image="trace-ship/web:latest",
     )
 
@@ -164,7 +163,6 @@ class TestPackageConfigSVNValidation:
                 "repository": str(repository.id),
                 "name": "测试配置",
                 "mode": "simple",
-                "build_type": "web",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -185,7 +183,6 @@ class TestPackageConfigSVNValidation:
                 "repository": str(repository.id),
                 "name": "测试配置",
                 "mode": "simple",
-                "build_type": "web",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -215,7 +212,6 @@ class TestPackageConfigSVNValidation:
                 "repository": str(repository.id),
                 "name": "测试配置",
                 "mode": "simple",
-                "build_type": "web",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -237,7 +233,6 @@ class TestPackageConfigSVNValidation:
                 "repository": str(repository.id),
                 "name": "测试配置",
                 "mode": "simple",
-                "build_type": "web",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -257,7 +252,6 @@ class TestPackageConfigSVNValidation:
                 "repository": str(repository.id),
                 "name": "SVN 推送配置",
                 "mode": "simple",
-                "build_type": "web",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -290,7 +284,6 @@ class TestPushArtifactsToSVN:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="local",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,
@@ -327,7 +320,6 @@ class TestPushArtifactsToSVN:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="local",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,
@@ -359,7 +351,6 @@ class TestPushArtifactsToSVN:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="local",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,
@@ -384,7 +375,6 @@ class TestPushArtifactsToSVN:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="local",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,
@@ -409,7 +399,6 @@ class TestPushArtifactsToSVN:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="local",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,
@@ -440,7 +429,6 @@ class TestPushArtifactsToSVN:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="local",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,
@@ -476,9 +464,7 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
         project=project,
         repository=repository,
         name="SVN 打包配置",
-        mode="local",
-        build_type="web",
-        local_script="echo build",
+        custom_script="echo build",
         svn_push_enabled=True,
         svn_url="svn://host/releases",
         svn_credential=svn_credential,
@@ -490,7 +476,6 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
         project=project,
         repository=repository,
         name="SVN 打包任务",
-        mode="local",
         build_type="web",
         tag_name=release.tag_name,
         version=release.version,
@@ -498,7 +483,7 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
     )
 
     monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
-    monkeypatch.setattr(PackageService, "_run_local", lambda task, workspace: None)
+    monkeypatch.setattr(PackageService, "_run_container", lambda task, workspace: None)
     monkeypatch.setattr(
         PackageService,
         "_scan_artifacts",
@@ -527,9 +512,7 @@ def test_run_task_with_svn_push_failure_marks_task_failed(project, repository, r
         project=project,
         repository=repository,
         name="SVN 打包配置",
-        mode="local",
-        build_type="web",
-        local_script="echo build",
+        custom_script="echo build",
         svn_push_enabled=True,
         svn_url="svn://host/releases",
         svn_credential=svn_credential,
@@ -541,7 +524,6 @@ def test_run_task_with_svn_push_failure_marks_task_failed(project, repository, r
         project=project,
         repository=repository,
         name="SVN 打包任务",
-        mode="local",
         build_type="web",
         tag_name=release.tag_name,
         version=release.version,
@@ -549,7 +531,7 @@ def test_run_task_with_svn_push_failure_marks_task_failed(project, repository, r
     )
 
     monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
-    monkeypatch.setattr(PackageService, "_run_local", lambda task, workspace: None)
+    monkeypatch.setattr(PackageService, "_run_container", lambda task, workspace: None)
     monkeypatch.setattr(
         PackageService,
         "_scan_artifacts",
@@ -577,9 +559,7 @@ def test_run_task_without_svn_push_has_no_svn_stage(project, repository, release
         project=project,
         repository=repository,
         name="普通打包配置",
-        mode="local",
-        build_type="web",
-        local_script="echo build",
+        custom_script="echo build",
         svn_push_enabled=False,
     )
     task = PackageTask.objects.create(
@@ -588,7 +568,6 @@ def test_run_task_without_svn_push_has_no_svn_stage(project, repository, release
         project=project,
         repository=repository,
         name="普通打包任务",
-        mode="local",
         build_type="web",
         tag_name=release.tag_name,
         version=release.version,
@@ -596,7 +575,7 @@ def test_run_task_without_svn_push_has_no_svn_stage(project, repository, release
     )
 
     monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
-    monkeypatch.setattr(PackageService, "_run_local", lambda task, workspace: None)
+    monkeypatch.setattr(PackageService, "_run_container", lambda task, workspace: None)
     monkeypatch.setattr(
         PackageService,
         "_scan_artifacts",
@@ -625,9 +604,7 @@ class TestManualPushSvn:
             project=project,
             repository=repository,
             name="SVN 配置",
-            mode="local",
-            build_type="web",
-            local_script="echo build",
+            custom_script="echo build",
             svn_push_enabled=True,
             svn_url="svn://host/releases",
             svn_credential=svn_credential,
@@ -641,7 +618,6 @@ class TestManualPushSvn:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="local",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,
@@ -667,12 +643,12 @@ class TestManualPushSvn:
         from rest_framework import serializers as drf_serializers
 
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置", mode="local", build_type="web",
+            project=project, repository=repository, name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
         )
         task = PackageTask.objects.create(
             config=config, release=release, project=project, repository=repository,
-            name="任务", mode="local", build_type="web", tag_name=release.tag_name, version=release.version,
+            name="任务", build_type="web", tag_name=release.tag_name, version=release.version,
             status="failure", config_snapshot=PackageService._snapshot(config),
         )
         with pytest.raises(drf_serializers.ValidationError):
@@ -683,12 +659,12 @@ class TestManualPushSvn:
         from rest_framework import serializers as drf_serializers
 
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置", mode="local", build_type="web",
+            project=project, repository=repository, name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
         )
         task = PackageTask.objects.create(
             config=config, release=release, project=project, repository=repository,
-            name="任务", mode="local", build_type="web", tag_name=release.tag_name, version=release.version,
+            name="任务", build_type="web", tag_name=release.tag_name, version=release.version,
             status="success", artifact_info=[], config_snapshot=PackageService._snapshot(config),
         )
         with pytest.raises(drf_serializers.ValidationError):
@@ -697,14 +673,14 @@ class TestManualPushSvn:
     def test_manual_push_fails_when_svn_not_configured(self, project, repository, release, tmp_path):
         """配置未启用 SVN 推送时手动推送失败。"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置", mode="local", build_type="web",
+            project=project, repository=repository, name="配置",
             svn_push_enabled=False,
         )
         workspace = tmp_path / "workspace"
         (workspace / "artifacts").mkdir(parents=True)
         task = PackageTask.objects.create(
             config=config, release=release, project=project, repository=repository,
-            name="任务", mode="local", build_type="web", tag_name=release.tag_name, version=release.version,
+            name="任务", build_type="web", tag_name=release.tag_name, version=release.version,
             status="success", workspace_path=str(workspace),
             artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
             config_snapshot=PackageService._snapshot(config),
@@ -715,7 +691,7 @@ class TestManualPushSvn:
     def test_manual_push_fallback_to_config(self, project, repository, release, svn_credential, tmp_path):
         """快照缺少 SVN 配置时回退到 config 当前配置。"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置", mode="local", build_type="web",
+            project=project, repository=repository, name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
         )
         workspace = tmp_path / "workspace"
@@ -724,10 +700,9 @@ class TestManualPushSvn:
         # 快照中不含 SVN 配置（模拟旧任务）
         task = PackageTask.objects.create(
             config=config, release=release, project=project, repository=repository,
-            name="任务", mode="local", build_type="web", tag_name=release.tag_name, version=release.version,
+            name="任务", build_type="web", tag_name=release.tag_name, version=release.version,
             status="success", workspace_path=str(workspace),
             artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
-            config_snapshot={"mode": "local", "build_type": "web", "local_script": "echo build"},
         )
 
         mock_provider = MagicMock()
@@ -747,9 +722,7 @@ def test_package_task_serializer_can_push_svn(project, repository, release, svn_
         project=project,
         repository=repository,
         name="SVN 配置",
-        mode="local",
-        build_type="web",
-        local_script="echo build",
+        custom_script="echo build",
         svn_push_enabled=True,
         svn_url="svn://host/releases",
         svn_credential=svn_credential,
@@ -760,7 +733,6 @@ def test_package_task_serializer_can_push_svn(project, repository, release, svn_
         project=project,
         repository=repository,
         name="任务",
-        mode="local",
         build_type="web",
         tag_name=release.tag_name,
         version=release.version,

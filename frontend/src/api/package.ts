@@ -1,17 +1,18 @@
 import { get, post, put, patch, del } from './request';
 import type {
+  AvailableImageResult,
   NexusImageSearchResult,
   NexusRepository,
   PackageConfig,
   PackageImage,
+  PackageImageSource,
   PackageTask,
   PaginatedData,
-  PackageBuildType,
   SvnEntriesData,
 } from '@/types';
 
 export interface PackageImageListParams {
-  build_type?: PackageBuildType;
+  source?: PackageImageSource;
   is_active?: boolean;
   page?: number;
   page_size?: number;
@@ -21,7 +22,6 @@ export interface PackageConfigListParams {
   project?: string;
   repository?: string;
   mode?: string;
-  build_type?: PackageBuildType;
   is_active?: boolean;
   auto_package_on_release?: boolean;
   page?: number;
@@ -35,7 +35,6 @@ export interface PackageTaskListParams {
   config?: string;
   status?: string;
   mode?: string;
-  build_type?: PackageBuildType;
   page?: number;
   page_size?: number;
 }
@@ -51,6 +50,19 @@ export const packageApi = {
   getNexusRepositories: () => get<NexusRepository[]>('/packages/images/nexus-repositories/'),
   getNexusImages: (params: { repository?: string; keyword?: string; continuation_token?: string }) =>
     get<NexusImageSearchResult>('/packages/images/nexus-images/', { params }),
+  /** 聚合列出可选打包镜像（本地 Docker + Nexus） */
+  getAvailableImages: (params?: { source?: PackageImageSource; keyword?: string }) =>
+    get<AvailableImageResult>('/packages/images/available/', { params }),
+  /** 上传镜像 tar 包导入本地 Docker */
+  importImage: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return post<{ loaded: string[] }>('/packages/images/import/', formData, {
+      headers: { 'Content-Type': undefined },
+      // 镜像包通常较大，放宽超时到 10 分钟
+      timeout: 600_000,
+    });
+  },
 
   getConfigs: (params?: PackageConfigListParams) =>
     get<PaginatedData<PackageConfig>>('/packages/configs/', { params }),

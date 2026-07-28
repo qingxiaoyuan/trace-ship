@@ -308,7 +308,6 @@ class TestReleaseViews:
             project=project,
             repository=repository,
             name="打包任务",
-            mode="simple",
             build_type="web",
             tag_name=release.tag_name,
             version=release.version,

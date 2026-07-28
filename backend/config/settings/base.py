@@ -238,6 +238,11 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "utils.exceptions.custom_exception_handler",
 }
 
+# 文件上传大小限制
+# 镜像 tar 包导入（apps.package.views.PackageImageViewSet.import_image）等大文件上传场景，
+# 关闭请求体大小检查：nginx 侧通过 client_max_body_size 放开，后端 import_image 流式写盘，不会整包读入内存
+DATA_UPLOAD_MAX_MEMORY_SIZE = None
+
 # JWT 认证配置
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_TOKEN_LIFETIME_MINUTES", "60"))),

@@ -77,9 +77,7 @@ def svn_config(project, repository, svn_credential):
         project=project,
         repository=repository,
         name="SVN 浏览配置",
-        mode="local",
-        build_type="web",
-        local_script="echo build",
+        custom_script="echo build",
         svn_push_enabled=True,
         svn_url="svn://host/releases",
         svn_credential=svn_credential,
@@ -208,7 +206,7 @@ class TestSvnEntriesView:
     def test_reject_when_svn_not_enabled(self, api_client, project, repository):
         """未启用 SVN 推送的配置返回 400。"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="普通配置", mode="local", build_type="web",
+            project=project, repository=repository, name="普通配置",
         )
         response = api_client.get(self._url(config.id))
         assert response.status_code == 400

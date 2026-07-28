@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Boxes, FolderOpen, Package as PackageIcon, Play, Search, Settings2, Trash2 } from 'lucide-react';
-import type { PackageBuildType, PackageConfig, PackageTask } from '@/types';
+import type { PackageConfig, PackageTask } from '@/types';
 import { SvnBrowserDrawer } from '@/components/SvnBrowserDrawer';
 import { useLatestTaskByConfig } from './useLatestTaskByConfig';
 import { formatRelativeTime, iconColors } from './utils';
@@ -26,7 +26,6 @@ export const ConfigList = memo(function ConfigList({
   onOpenHistory,
 }: ConfigListProps) {
   const [keyword, setKeyword] = useState('');
-  const [typeFilter, setTypeFilter] = useState<PackageBuildType | ''>('');
   const [browsing, setBrowsing] = useState<PackageConfig | null>(null);
 
   const latestTaskByConfig = useLatestTaskByConfig(tasks);
@@ -38,10 +37,9 @@ export const ConfigList = memo(function ConfigList({
         const txt = `${c.name} ${c.project_name || ''} ${c.repository_name || ''}`.toLowerCase();
         if (!txt.includes(kw)) return false;
       }
-      if (typeFilter && c.build_type !== typeFilter) return false;
       return true;
     });
-  }, [configs, keyword, typeFilter]);
+  }, [configs, keyword]);
 
   return (
     <div className="tech-card rounded-xl overflow-hidden">
@@ -56,22 +54,13 @@ export const ConfigList = memo(function ConfigList({
             className="w-[240px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
         </div>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as PackageBuildType | '')}
-          className="rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[13px] text-slate-600 outline-none hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer"
-        >
-          <option value="">全部类型</option>
-          <option value="web">Web</option>
-          <option value="qt">Qt</option>
-        </select>
         <div className="ml-auto text-[12px] text-slate-400">共 {filtered.length} 条</div>
       </div>
       <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
         <div className="col-span-3">配置名称</div>
         <div className="col-span-2">所属项目</div>
         <div className="col-span-2">关联仓库</div>
-        <div className="col-span-2">类型</div>
+        <div className="col-span-2">脚本</div>
         <div className="col-span-2">最近打包</div>
         <div className="col-span-1 text-right">操作</div>
       </div>
@@ -188,8 +177,7 @@ const ConfigRow = memo(function ConfigRow({
       <div className="col-span-6 md:col-span-2 text-[12px] text-slate-600 truncate">{config.project_name || '-'}</div>
       <div className="col-span-6 md:col-span-2 font-mono text-[11px] text-slate-500 truncate">{config.repository_name || '-'}</div>
       <div className="col-span-6 md:col-span-2 text-[12px] text-slate-600">
-        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">{config.mode_display || config.mode}</span>
-        <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-600">{config.build_type_display || config.build_type}</span>
+        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">{config.custom_script ? "自定义脚本" : "内置脚本"}</span>
       </div>
       <div className="col-span-6 md:col-span-2">
         {latest ? (

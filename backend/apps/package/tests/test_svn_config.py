@@ -73,8 +73,6 @@ def svn_config(project, repository, svn_credential):
         project=project,
         repository=repository,
         name="SVN 推送配置",
-        mode="local",
-        build_type="web",
         svn_push_enabled=True,
         svn_url="svn://svn.example.com/releases",
         svn_credential=svn_credential,
@@ -239,15 +237,12 @@ class TestSVNConfigSerializerValidation:
 
         image = PackageImage.objects.create(
             name="Web 构建镜像",
-            build_type="web",
             image="trace-ship/web-builder:node22",
         )
         data = {
             "project": project.id,
             "repository": repository.id,
             "name": "测试配置",
-            "mode": "simple",
-            "build_type": "web",
             "image": image.id,
             "svn_push_enabled": True,
             "svn_url": "ssh://svn.example.com/releases",
@@ -267,15 +262,12 @@ class TestSVNConfigSerializerValidation:
 
         image = PackageImage.objects.create(
             name="Web 构建镜像",
-            build_type="web",
             image="trace-ship/web-builder:node22",
         )
         data = {
             "project": project.id,
             "repository": repository.id,
             "name": "测试配置",
-            "mode": "simple",
-            "build_type": "web",
             "image": image.id,
             "svn_push_enabled": True,
             "svn_url": "ssh://svn.example.com/releases",

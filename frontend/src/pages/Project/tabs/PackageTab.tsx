@@ -16,28 +16,15 @@ import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
 import { SvnTestButton } from '@/components/SvnTestButton';
+import { ImagePickerField } from '@/components/ImagePickerField';
+import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
 import { credentialApi } from '@/api/credential';
-import type { PackageBuildType, PackageConfig } from '@/types';
+import type { PackageConfig } from '@/types';
 
 interface PackageTabProps {
   projectId: string;
 }
 
-
-const buildTypeOptions = [
-  { label: 'Web', value: 'web' },
-  { label: 'Qt', value: 'qt' },
-];
-
-const typeBadgeMap: Record<string, string> = {
-  web: 'border-indigo-200 bg-indigo-50 text-indigo-600',
-  qt: 'border-violet-200 bg-violet-50 text-violet-700',
-};
-
-const modeBadgeMap: Record<string, string> = {
-  simple: 'border-cyan-200 bg-cyan-50 text-cyan-700',
-  local: 'border-amber-200 bg-amber-50 text-amber-700',
-};
 
 export function PackageTab({ projectId }: PackageTabProps) {
   const { message, modal } = App.useApp();
@@ -50,7 +37,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const [keyword, setKeyword] = useState('');
   const [form] = Form.useForm<Partial<PackageConfig>>();
   const [triggerForm] = Form.useForm<{ release_id: string }>();
-  const buildType = (Form.useWatch('build_type', form) || 'web') as PackageBuildType;
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
 
   const svnUrl = Form.useWatch('svn_url', form);
@@ -69,11 +55,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
     enabled: !!projectId,
   });
 
-  const { data: imagesData } = useQuery({
-    queryKey: ['package-images', buildType],
-    queryFn: () => packageApi.getImages({ build_type: buildType, is_active: true, page_size: 1000 }),
-    enabled: true,
-  });
+  const { items: imageItems } = useAvailableImages();
 
   const { data: svnCredsData } = useQuery({
     queryKey: ['svn-credentials', projectId],
@@ -104,12 +86,11 @@ export function PackageTab({ projectId }: PackageTabProps) {
     if (editing) {
       form.setFieldsValue({
         ...editing,
-        image: editing.image_id || editing.image || undefined,
+        image_ref: editing.image_ref || undefined,
       });
     } else {
       form.setFieldsValue({
         project: projectId,
-        build_type: 'web',
         build_path: '.',
         output_path: 'dist',
         env_vars: {},
@@ -124,6 +105,11 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const saveMutation = useMutation({
     mutationFn: (values: Partial<PackageConfig>) => {
       const payload = { ...values, project: projectId };
+      const ref = values.image_ref;
+      const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
+      if (item) {
+        payload.image_info = toImageInfo(item);
+      }
       if (editing) return packageApi.updateConfig(editing.id, payload);
       return packageApi.createConfig(payload);
     },
@@ -176,10 +162,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
   }, [data, keyword]);
 
   const repoOptions = (reposData?.results || []).map((repo) => ({ label: repo.name, value: repo.id }));
-  const imageOptions = (imagesData?.results || []).map((image) => ({
-    label: `${image.name} / ${image.image}`,
-    value: image.id,
-  }));
   const svnCredentialOptions = (svnCredsData?.results || []).map((c) => ({ label: c.name, value: c.id }));
   const releaseOptions = (releasedData?.results || []).map((release) => ({
     label: `${release.version} / ${release.tag_name}`,
@@ -228,8 +210,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
           <div className="col-span-3">配置名称</div>
           <div className="col-span-2">仓库</div>
           <div className="col-span-1">模式</div>
-          <div className="col-span-1">类型</div>
-          <div className="col-span-2">镜像</div>
+          <div className="col-span-3">镜像</div>
           <div className="col-span-1 text-center">自动</div>
           <div className="col-span-1 text-center">状态</div>
           <div className="col-span-1 text-right">操作</div>
@@ -262,17 +243,12 @@ export function PackageTab({ projectId }: PackageTabProps) {
                 </div>
                 <div className="col-span-6 text-[12px] text-slate-600 truncate md:col-span-2">{config.repository_name || '-'}</div>
                 <div className="col-span-3 md:col-span-1">
-                  <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${modeBadgeMap[config.mode] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-                    {config.mode_display || config.mode}
+                  <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${config.custom_script ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-cyan-200 bg-cyan-50 text-cyan-700'}`}>
+                    {config.custom_script ? '自定义脚本' : '内置脚本'}
                   </span>
                 </div>
-                <div className="col-span-3 md:col-span-1">
-                  <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${typeBadgeMap[config.build_type] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-                    {config.build_type === 'web' ? 'Web' : 'Qt'}
-                  </span>
-                </div>
-                <div className="col-span-12 text-[12px] text-slate-500 truncate font-mono md:col-span-2">
-                  {config.image_name || (config.custom_script ? '自定义脚本' : '-')}
+                <div className="col-span-12 text-[12px] text-slate-500 truncate font-mono md:col-span-3">
+                  {config.image_ref || (config.custom_script ? '自定义脚本' : '-')}
                 </div>
                 <div className="col-span-3 flex items-center justify-center md:col-span-1">
                   {config.auto_package_on_release ? (
@@ -363,33 +339,20 @@ export function PackageTab({ projectId }: PackageTabProps) {
           <Form.Item name="repository" label="关联仓库" rules={[{ required: true }]}>
             <Select options={repoOptions} />
           </Form.Item>
-          <div className="grid grid-cols-2 gap-3">
-            <Form.Item name="mode" label="打包模式" rules={[{ required: true }]}>
-              <Select options={modeOptions} />
-            </Form.Item>
-            <Form.Item name="build_type" label="打包类型" rules={[{ required: true }]}>
-              <Select options={buildTypeOptions} />
-            </Form.Item>
-          </div>
-          <Form.Item name="image" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
-            <Select options={imageOptions} placeholder="按打包类型选择镜像" showSearch optionFilterProp="label" />
+          <Form.Item name="image_ref" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
+            <ImagePickerField />
           </Form.Item>
           <Form.Item name="custom_script" label="自定义打包脚本" extra="留空则执行镜像内置脚本；填写后直接在 /workspace/source 目录执行">
             <Input.TextArea rows={6} placeholder="cd /workspace/source && ./scripts/custom-build.sh" />
           </Form.Item>
-          <Form.Item name="build_path" label="构建目录" rules={[{ required: true }]}>
+          <div className="grid grid-cols-2 gap-3">
+            <Form.Item name="build_path" label="构建目录" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <Form.Item name="build_path" label="构建目录" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item name="output_path" label="产物目录" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-            </div>
-          )}
+            <Form.Item name="output_path" label="产物目录" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Form.Item name="auto_package_on_release" label="发布后自动打包" valuePropName="checked">
               <Switch />
@@ -427,7 +390,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
                   <Input placeholder="{version}" />
                 </Form.Item>
                 <Typography.Text type="secondary" className="text-xs">
-                  可用占位符:{'{version}'}、{'{tag_name}'}、{'{build_type}'}、{'{project_code}'},默认按版本号创建目录
+                  可用占位符:{'{version}'}、{'{tag_name}'}、{'{project_code}'},默认按版本号创建目录
                 </Typography.Text>
               </>
             )}

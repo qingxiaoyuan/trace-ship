@@ -1,593 +1,274 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Form, Input, Modal, Select, Switch, Tabs } from 'antd';
-import {
-  Plus,
-  Search,
-  ChevronRight,
-  Box,
-  Container,
-  Save,
-  CloudDownload,
-  HardDrive,
-  RotateCw,
-} from 'lucide-react';
-import type { FormInstance } from 'antd';
+import { App, Modal } from 'antd';
+import { AlertTriangle, Box, Container, HardDrive, RefreshCw, Search, Upload } from 'lucide-react';
 import { packageApi } from '@/api/package';
-import type { NexusImageItem, PackageImage } from '@/types';
+import type { AvailableImageItem, PackageImageSource } from '@/types';
 
-const buildTypeOptions = [
-  { label: 'Web', value: 'web' },
-  { label: 'Qt', value: 'qt' },
+type SourceFilter = '' | PackageImageSource;
+
+const sourceTabs: { label: string; value: SourceFilter }[] = [
+  { label: '全部', value: '' },
+  { label: '本地', value: 'local' },
+  { label: 'Nexus', value: 'nexus' },
 ];
 
-/** 默认内置镜像：docker/package/web 构建的 trace-ship/web-builder:node22 */
-const DEFAULT_BUILTIN_IMAGE = 'trace-ship/web-builder:node22';
-
-interface BuiltinImageOption {
-  buildType: string;
-  label: string;
-  value: string;
-  description: string;
-}
-
-/** 内置（本地）Docker 镜像选项，与 docker/package 下的构建脚本保持一致 */
-const builtinImageOptions: BuiltinImageOption[] = [
-  {
-    buildType: 'web',
-    label: 'web-builder',
-    value: 'trace-ship/web-builder:node22',
-    description: '内置 Web 构建镜像（Node 22，默认）',
-  },
-];
-
-const typeBadgeMap: Record<string, string> = {
-  web: 'border-indigo-200 bg-indigo-50 text-indigo-600',
-  qt: 'border-violet-200 bg-violet-50 text-violet-700',
+const sourceBadgeMap: Record<PackageImageSource, string> = {
+  local: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  nexus: 'border-indigo-200 bg-indigo-50 text-indigo-600',
 };
 
-const typeIconClassMap: Record<string, string> = {
-  web: 'icon-indigo',
-  qt: 'icon-violet',
+const sourceLabelMap: Record<PackageImageSource, string> = {
+  local: '本地',
+  nexus: 'Nexus',
 };
-
-function typeLabel(type: string): string {
-  return type === 'web' ? 'Web' : 'Qt';
-}
 
 export default function PackageImagePage() {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<PackageImage | null>(null);
+  const [source, setSource] = useState<SourceFilter>('');
   const [keyword, setKeyword] = useState('');
-  const [form] = Form.useForm<Partial<PackageImage>>();
+  const [search, setSearch] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<string[] | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['package-images'],
-    queryFn: () => packageApi.getImages({ page_size: 1000 }),
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['available-images', source, search],
+    queryFn: () => packageApi.getAvailableImages({ source: source || undefined, keyword: search || undefined }),
   });
 
-  useEffect(() => {
-    if (!open) return;
-    if (editing) {
-      form.setFieldsValue(editing);
-    } else {
-      form.setFieldsValue({
-        build_type: 'web',
-        image: DEFAULT_BUILTIN_IMAGE,
-        script_entry: '/usr/local/bin/trace-ship-build',
-        default_build_path: '.',
-        default_output_path: 'dist',
-        is_active: true,
-      });
-    }
-  }, [editing, form, open]);
+  const items = data?.items || [];
+  const errors = data?.errors || {};
 
-  const saveMutation = useMutation({
-    mutationFn: (values: Partial<PackageImage>) =>
-      editing ? packageApi.updateImage(editing.id, values) : packageApi.createImage(values),
-    onSuccess: () => {
-      message.success('保存成功');
-      setOpen(false);
-      setEditing(null);
-      queryClient.invalidateQueries({ queryKey: ['package-images'] });
+  const importMutation = useMutation({
+    mutationFn: (file: File) => packageApi.importImage(file),
+    onSuccess: (result) => {
+      setImportResult(result.loaded);
+      if (result.loaded.length > 0) {
+        message.success(`已导入 ${result.loaded.length} 个镜像`);
+      } else {
+        message.warning('导入完成，但镜像包中未包含命名镜像');
+      }
+      queryClient.invalidateQueries({ queryKey: ['available-images'] });
     },
-    onError: () => message.error('保存失败'),
+    onError: (err) => message.error((err as { message?: string })?.message || '导入失败'),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => packageApi.deleteImage(id),
-    onSuccess: () => {
-      message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['package-images'] });
-    },
-    onError: () => message.error('删除失败'),
-  });
-
-  const rows = data?.results || [];
-
-  const filtered = keyword.trim()
-    ? rows.filter((r) => {
-        const kw = keyword.toLowerCase();
-        return r.name.toLowerCase().includes(kw) || r.image.toLowerCase().includes(kw);
-      })
-    : rows;
+  const closeImport = () => {
+    setImportOpen(false);
+    setImportFile(null);
+    setImportResult(null);
+  };
 
   return (
     <div className="space-y-5 page-fade-in">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">打包镜像</h1>
-          <p className="mt-1 text-[13px] text-slate-500">维护简易打包可选的 Docker 镜像和脚本入口</p>
+          <p className="mt-1 text-[13px] text-slate-500">实时列出本机 Docker 与已配置 Nexus 仓库中可用于打包的镜像</p>
         </div>
-        <button
-          type="button"
-          onClick={() => { setEditing(null); setOpen(true); }}
-          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          新增镜像
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+          >
+            <Upload className="h-3.5 w-3.5" strokeWidth={1.5} />
+            导入镜像
+          </button>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+            刷新
+          </button>
+        </div>
       </div>
+
+      {(errors.local || errors.nexus) && (
+        <div className="space-y-1.5">
+          {errors.local && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              本地 Docker：{errors.local}
+            </div>
+          )}
+          {errors.nexus && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              Nexus：{errors.nexus}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+          <div className="flex rounded-lg border border-indigo-100 bg-slate-50 p-0.5">
+            {sourceTabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setSource(tab.value)}
+                className={`rounded-md px-3 py-1 text-[12px] font-medium transition-colors ${
+                  source === tab.value ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索名称 / 镜像"
-              className="w-[200px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              onKeyDown={(e) => e.key === 'Enter' && setSearch(keyword.trim())}
+              placeholder="搜索镜像名，回车确认"
+              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
-          <div className="ml-auto text-[12px] text-slate-400">共 {filtered.length} 个镜像</div>
+          <div className="ml-auto text-[12px] text-slate-400">共 {items.length} 个镜像</div>
         </div>
 
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
-          <div className="col-span-3">名称</div>
-          <div className="col-span-1">类型</div>
-          <div className="col-span-3">镜像</div>
-          <div className="col-span-2">脚本入口</div>
-          <div className="col-span-1">构建目录</div>
-          <div className="col-span-1">产物目录</div>
-          <div className="col-span-1 text-center">状态</div>
+          <div className="col-span-5">镜像地址</div>
+          <div className="col-span-2">镜像名 / 标签</div>
+          <div className="col-span-2">仓库</div>
+          <div className="col-span-1">大小</div>
+          <div className="col-span-1">镜像 ID</div>
+          <div className="col-span-1 text-center">来源</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-300px)] overflow-y-auto">
+        <div className="max-h-[calc(100vh-300px)] divide-y divide-indigo-50/50 overflow-y-auto">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
-          ) : filtered.length === 0 ? (
+          ) : items.length === 0 ? (
             <div className="px-5 py-12 text-center">
               <Box className="mx-auto h-10 w-10 text-slate-300" strokeWidth={1.5} />
-              <p className="mt-3 text-[13px] text-slate-400">暂无镜像数据</p>
+              <p className="mt-3 text-[13px] text-slate-400">暂无可用镜像</p>
             </div>
           ) : (
-            filtered.map((img) => (
-              <div
-                key={img.id}
-                onClick={() => { setEditing(img); setOpen(true); }}
-                className="grid grid-cols-12 cursor-pointer items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30"
-              >
-                <div className="col-span-12 flex items-center gap-2 md:col-span-3">
-                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${typeIconClassMap[img.build_type] || 'icon-indigo'}`}>
-                    <Container className="h-4 w-4" strokeWidth={1.5} />
-                  </div>
-                  <span className="text-[13px] font-medium text-slate-900">{img.name}</span>
-                </div>
-                <div className="col-span-6 md:col-span-1">
-                  <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${typeBadgeMap[img.build_type] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-                    {typeLabel(img.build_type)}
-                  </span>
-                </div>
-                <div className="col-span-12 font-mono text-[11px] text-slate-500 truncate md:col-span-3">
-                  {img.image}
-                </div>
-                <div className="col-span-6 font-mono text-[11px] text-slate-500 truncate md:col-span-2">
-                  {img.script_entry}
-                </div>
-                <div className="col-span-3 text-[12px] text-slate-600 md:col-span-1">{img.default_build_path}</div>
-                <div className="col-span-3 text-[12px] text-slate-600 md:col-span-1">{img.default_output_path}</div>
-                <div className="col-span-6 flex items-center justify-center md:col-span-1">
-                  {img.is_active ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      启用
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
-                      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                      停用
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))
+            items.map((item) => <ImageRow key={`${item.source}:${item.image}`} item={item} />)
           )}
         </div>
       </div>
 
-      {open && (
-        <ImageFormDrawer
-          editing={editing}
-          form={form}
-          saving={saveMutation.isPending}
-          onCancel={() => { setOpen(false); setEditing(null); }}
-          onSubmit={(values) => saveMutation.mutate(values)}
-          onDelete={editing ? (id) => {
-            modal.confirm({
-              title: '删除镜像',
-              content: `确定删除「${editing.name}」吗？`,
-              onOk: () => {
-                deleteMutation.mutate(id);
-                setOpen(false);
-                setEditing(null);
-              },
-            });
-          } : undefined}
-        />
-      )}
+      <details className="tech-card rounded-xl px-5 py-4 text-[12px] text-slate-500">
+        <summary className="cursor-pointer text-[13px] font-medium text-slate-700">镜像接入规范</summary>
+        <div className="mt-3 space-y-2">
+          <p className="font-medium">目录约定</p>
+          <pre className="rounded bg-slate-50 p-2 font-mono text-[11px] text-slate-600">
+{`/workspace/
+  source/        # 平台挂载：源码目录（工作目录）
+  artifacts/     # 平台挂载：产物输出目录
+  tmp/           # 平台挂载：临时目录
+  scripts/       # 镜像提供：预制脚本，必须包含 pack.sh 入口
+  deploy/        # 镜像提供：预制依赖（可选）`}
+          </pre>
+          <p className="font-medium">镜像必须满足</p>
+          <ul className="list-disc pl-4 text-[11px]">
+            <li>/workspace/scripts/pack.sh：内置打包入口脚本</li>
+            <li>容器内存在 /bin/sh（平台统一以 --entrypoint /bin/sh 启动，镜像 ENTRYPOINT 不生效）</li>
+          </ul>
+          <p className="font-medium">执行逻辑</p>
+          <ol className="list-decimal pl-4 text-[11px]">
+            <li>未填写自定义脚本：执行镜像的 /workspace/scripts/pack.sh</li>
+            <li>填写了自定义脚本：在 /workspace/source（或 BUILD_PATH 指定目录）以 sh -c 直接执行，不经过 pack.sh</li>
+            <li>环境变量：WORKSPACE、SOURCE_DIR、ARTIFACTS_DIR、DEPLOY_DIR、SCRIPTS_DIR、BUILD_PATH、OUTPUT_PATH、TAG_NAME、VERSION、PROJECT_CODE</li>
+            <li>产物统一写入 /workspace/artifacts，不主动从互联网拉取依赖</li>
+          </ol>
+        </div>
+      </details>
+
+      <Modal
+        open={importOpen}
+        title="导入本地镜像"
+        width={520}
+        onCancel={closeImport}
+        okText="开始导入"
+        cancelText="关闭"
+        confirmLoading={importMutation.isPending}
+        okButtonProps={{ disabled: !importFile || importMutation.isPending }}
+        onOk={() => importFile && importMutation.mutate(importFile)}
+        destroyOnClose
+      >
+        <div className="space-y-3 py-1">
+          <p className="text-[12px] text-slate-400">
+            上传 docker save 导出的镜像包（.tar / .tar.gz / .tar.bz2 / .tar.xz），导入到本机 Docker
+          </p>
+          <label
+            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 transition-colors ${
+              importFile ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20'
+            }`}
+          >
+            <Upload className="h-6 w-6 text-slate-400" strokeWidth={1.5} />
+            <span className="text-[13px] text-slate-600">
+              {importFile ? importFile.name : '点击选择镜像包文件'}
+            </span>
+            {importFile && (
+              <span className="text-[11px] text-slate-400">{(importFile.size / 1024 / 1024).toFixed(1)} MB</span>
+            )}
+            <input
+              type="file"
+              accept=".tar,.tar.gz,.tgz,.tar.bz2,.tar.xz"
+              className="hidden"
+              onChange={(e) => {
+                setImportFile(e.target.files?.[0] || null);
+                setImportResult(null);
+              }}
+            />
+          </label>
+          {importResult && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <div className="text-[12px] font-medium text-emerald-700">导入成功：</div>
+              <div className="mt-1 space-y-0.5">
+                {importResult.map((image) => (
+                  <div key={image} className="font-mono text-[12px] text-emerald-800">{image}</div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
 
-interface ImageFormDrawerProps {
-  editing: PackageImage | null;
-  form: FormInstance<Partial<PackageImage>>;
-  saving: boolean;
-  onCancel: () => void;
-  onSubmit: (values: Partial<PackageImage>) => void;
-  onDelete?: (id: string) => void;
-}
-
-function ImageFormDrawer({ editing, form, saving, onCancel, onSubmit, onDelete }: ImageFormDrawerProps) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const buildType = Form.useWatch('build_type', form) || 'web';
-
+function ImageRow({ item }: { item: AvailableImageItem }) {
   return (
-    <>
-      <div
-        className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-sm"
-        onClick={onCancel}
-      />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-indigo">
-              <Container className="h-3.5 w-3.5" strokeWidth={1.5} />
-            </div>
-            <h3 className="text-[15px] font-semibold tracking-tight text-slate-900">
-              {editing ? '编辑打包镜像' : '新增打包镜像'}
-            </h3>
-          </div>
-          <button
-            onClick={onCancel}
-            className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"
-          >
-            <ChevronRight className="h-4 w-4 rotate-180" strokeWidth={1.5} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <Form form={form} layout="vertical" onFinish={onSubmit}>
-            <Form.Item name="name" label="镜像名称" rules={[{ required: true, message: '请输入镜像名称' }]}>
-              <Input placeholder="如：Web 构建镜像" />
-            </Form.Item>
-            <Form.Item name="build_type" label="打包类型" rules={[{ required: true }]}>
-              <Select options={buildTypeOptions} />
-            </Form.Item>
-            <Form.Item
-              name="image"
-              label={
-                <div className="flex w-full items-center justify-between">
-                  <span>Docker 镜像</span>
-                  <button
-                    type="button"
-                    onClick={() => setPickerOpen(true)}
-                    className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50/50 px-2 py-0.5 text-[12px] font-medium text-indigo-600 transition-colors hover:bg-indigo-100"
-                  >
-                    <Container className="h-3 w-3" strokeWidth={1.5} />
-                    选择镜像
-                  </button>
-                </div>
-              }
-              rules={[{ required: true, message: '请输入镜像地址' }]}
-            >
-              <Input placeholder="registry.example.com/build/web:latest" />
-            </Form.Item>
-            <Form.Item name="script_entry" label="镜像脚本入口" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <div className="grid grid-cols-2 gap-3">
-              <Form.Item name="default_build_path" label="默认构建目录" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item name="default_output_path" label="默认产物目录" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-            </div>
-            <Form.Item name="is_active" label="启用" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          </Form>
-        </div>
-        <div className="flex items-center gap-2 border-t border-indigo-50 px-5 py-3.5">
-          {editing && onDelete && (
-            <button
-              type="button"
-              onClick={() => onDelete(editing.id)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[13px] font-medium text-rose-600 transition-colors hover:bg-rose-50"
-            >
-              删除
-            </button>
+    <div className="grid grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30">
+      <div className="col-span-12 flex items-center gap-2 md:col-span-5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-indigo">
+          {item.source === 'local' ? (
+            <HardDrive className="h-4 w-4" strokeWidth={1.5} />
+          ) : (
+            <Container className="h-4 w-4" strokeWidth={1.5} />
           )}
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-indigo-50"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => form.submit()}
-            className="btn-glow flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white disabled:opacity-60"
-          >
-            <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
-            保存
-          </button>
         </div>
-      </aside>
-
-      <ImagePickerModal
-        open={pickerOpen}
-        buildType={buildType}
-        value={form.getFieldValue('image') || DEFAULT_BUILTIN_IMAGE}
-        onCancel={() => setPickerOpen(false)}
-        onSelect={(image) => {
-          form.setFieldsValue({ image });
-          setPickerOpen(false);
-        }}
-      />
-    </>
-  );
-}
-
-interface ImagePickerModalProps {
-  open: boolean;
-  buildType: string;
-  value: string;
-  onCancel: () => void;
-  onSelect: (image: string) => void;
-}
-
-/** 镜像选择弹框：默认镜像 / Nexus 镜像两个选项卡 */
-function ImagePickerModal({ open, buildType, value, onCancel, onSelect }: ImagePickerModalProps) {
-  const { message } = App.useApp();
-  // Modal 配置了 destroyOnClose，关闭后组件卸载，每次打开都会以最新 value 重新初始化
-  const [activeTab, setActiveTab] = useState<'builtin' | 'nexus'>('builtin');
-  const [selected, setSelected] = useState(value);
-
-  const builtinOptions = builtinImageOptions.filter((opt) => opt.buildType === buildType);
-
-  const tabItems = [
-    {
-      key: 'builtin',
-      label: (
-        <span className="inline-flex items-center gap-1.5">
-          <HardDrive className="h-3.5 w-3.5" strokeWidth={1.5} />
-          默认镜像
+        <span className="truncate font-mono text-[12px] text-slate-700">{item.image}</span>
+      </div>
+      <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
+        {item.name}
+        <span className="ml-1.5 rounded border border-slate-200 bg-slate-50 px-1 py-px font-mono text-[10px] text-slate-500">
+          {item.version}
         </span>
-      ),
-      children: (
-        <div className="space-y-2 py-1">
-          <p className="text-[12px] text-slate-400">选择系统默认的内置 Docker 镜像，当前默认 trace-ship/web-builder</p>
-          {builtinOptions.length === 0 && (
-            <div className="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-[12px] text-slate-400">
-              当前打包类型暂无内置镜像，请切换到 Nexus 镜像或手动输入
-            </div>
-          )}
-          {builtinOptions.map((opt) => (
-            <div
-              key={opt.value}
-              onClick={() => setSelected(opt.value)}
-              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3.5 py-3 transition-colors ${
-                selected === opt.value
-                  ? 'border-indigo-400 bg-indigo-50/60'
-                  : 'border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/30'
-              }`}
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo">
-                <Container className="h-4 w-4" strokeWidth={1.5} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-slate-900">{opt.label}</div>
-                <div className="mt-0.5 font-mono text-[11px] text-slate-400">{opt.value}</div>
-                <div className="mt-0.5 text-[11px] text-slate-400">{opt.description}</div>
-              </div>
-              <span
-                className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
-                  selected === opt.value ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
-                }`}
-              />
-            </div>
-          ))}
-        </div>
-      ),
-    },
-    {
-      key: 'nexus',
-      label: (
-        <span className="inline-flex items-center gap-1.5">
-          <CloudDownload className="h-3.5 w-3.5" strokeWidth={1.5} />
-          Nexus 镜像
-        </span>
-      ),
-      children: (
-        <NexusImagePicker
-          active={open && activeTab === 'nexus'}
-          selected={selected}
-          onSelect={setSelected}
-          onError={(msg) => message.error(msg)}
-        />
-      ),
-    },
-  ];
-
-  return (
-    <Modal
-      open={open}
-      title="选择 Docker 镜像（默认 / Nexus）"
-      width={560}
-      onCancel={onCancel}
-      onOk={() => onSelect(selected)}
-      okText="确定"
-      cancelText="取消"
-      destroyOnClose
-      zIndex={1100}
-    >
-      <Tabs activeKey={activeTab} onChange={(key) => setActiveTab(key as 'builtin' | 'nexus')} items={tabItems} />
-      <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-        <span className="text-[12px] text-slate-400">当前选择：</span>
-        <span className="font-mono text-[12px] text-slate-600">{selected || '未选择'}</span>
       </div>
-    </Modal>
-  );
-}
-
-interface NexusImagePickerProps {
-  /** 选项卡是否激活，激活时才发起请求 */
-  active: boolean;
-  selected: string;
-  onSelect: (image: string) => void;
-  onError: (msg: string) => void;
-}
-
-/** Nexus 镜像选择面板：选择仓库后搜索镜像 */
-function NexusImagePicker({ active, selected, onSelect, onError }: NexusImagePickerProps) {
-  const [repository, setRepository] = useState<string>('');
-  const [keyword, setKeyword] = useState('');
-  const [items, setItems] = useState<NexusImageItem[]>([]);
-  const [continuationToken, setContinuationToken] = useState('');
-  const [searching, setSearching] = useState(false);
-  const [loadError, setLoadError] = useState('');
-
-  const { data: repositories, isLoading: reposLoading, error: reposError } = useQuery({
-    queryKey: ['nexus-repositories'],
-    queryFn: () => packageApi.getNexusRepositories(),
-    enabled: active,
-    retry: false,
-  });
-
-  const repoErrorMsg = reposError
-    ? ((reposError as { message?: string })?.message || '无法连接 Nexus，请检查系统 Nexus 配置')
-    : '';
-  const displayError = loadError || repoErrorMsg;
-
-  const search = async (append: boolean, token = '') => {
-    setSearching(true);
-    setLoadError('');
-    try {
-      const result = await packageApi.getNexusImages({
-        repository,
-        keyword: keyword.trim(),
-        continuation_token: token,
-      });
-      setItems((prev) => (append ? [...prev, ...result.items] : result.items));
-      setContinuationToken(result.continuation_token);
-    } catch (err) {
-      const msg = (err as { message?: string })?.message || 'Nexus 镜像搜索失败';
-      setLoadError(msg);
-      onError(msg);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3 py-1">
-      <p className="text-[12px] text-slate-400">连接 Nexus（3.x）仓库，搜索并选择指定镜像地址</p>
-      <div className="flex gap-2">
-        <Select
-          className="flex-1"
-          placeholder={reposLoading ? '正在加载仓库…' : '选择 Nexus 仓库'}
-          loading={reposLoading}
-          value={repository || undefined}
-          onChange={(val) => {
-            setRepository(val);
-            setItems([]);
-            setContinuationToken('');
-          }}
-          options={(repositories || []).map((repo) => ({
-            label: `${repo.name}（${repo.type}）`,
-            value: repo.name,
-          }))}
-          showSearch
-          optionFilterProp="label"
-        />
-        <Input.Search
-          className="flex-1"
-          placeholder="镜像名称关键字"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          onSearch={() => search(false)}
-          loading={searching}
-          enterButton
-        />
-      </div>
-
-      {displayError && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
-          {displayError}
-        </div>
-      )}
-
-      <div className="max-h-[280px] divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
-        {items.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[12px] text-slate-400">
-            {searching ? '搜索中…' : '选择仓库并输入关键字搜索镜像'}
-          </div>
-        ) : (
-          items.map((item) => (
-            <div
-              key={`${item.repository}/${item.name}:${item.version}`}
-              onClick={() => onSelect(item.image)}
-              className={`flex cursor-pointer items-center gap-3 px-3.5 py-2.5 transition-colors ${
-                selected === item.image ? 'bg-indigo-50/60' : 'hover:bg-indigo-50/30'
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-slate-900">
-                  {item.name}
-                  <span className="ml-1.5 rounded border border-slate-200 bg-slate-50 px-1 py-px font-mono text-[10px] text-slate-500">
-                    {item.version}
-                  </span>
-                </div>
-                <div className="mt-0.5 truncate font-mono text-[11px] text-slate-400">{item.image}</div>
-              </div>
-              <span
-                className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
-                  selected === item.image ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
-                }`}
-              />
-            </div>
-          ))
-        )}
-      </div>
-
-      {continuationToken && (
-        <button
-          type="button"
-          disabled={searching}
-          onClick={() => search(true, continuationToken)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-60"
+      <div className="col-span-6 truncate text-[12px] text-slate-500 md:col-span-2">{item.repository || '-'}</div>
+      <div className="col-span-4 text-[12px] text-slate-500 md:col-span-1">{item.size || '-'}</div>
+      <div className="col-span-4 font-mono text-[11px] text-slate-400 md:col-span-1">{item.image_id || '-'}</div>
+      <div className="col-span-4 flex items-center justify-center md:col-span-1">
+        <span
+          className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${sourceBadgeMap[item.source]}`}
         >
-          <RotateCw className="h-3 w-3" strokeWidth={1.5} />
-          加载更多
-        </button>
-      )}
+          {sourceLabelMap[item.source]}
+        </span>
+      </div>
     </div>
   );
 }

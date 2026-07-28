@@ -135,7 +135,7 @@ export interface ReleasePackageTaskSummary {
   name: string;
   status: PackageTaskStatus;
   status_display?: string;
-  build_type: PackageBuildType;
+  build_type?: string;
   artifact_count: number;
   created_at?: string;
   started_at?: string | null;
@@ -299,14 +299,18 @@ export interface CommitAlertRecord extends CommitRecord {
   alert_status: AlertStatus;
 }
 
-export type PackageBuildType = 'web' | 'qt';
 export type PackageTaskStatus = 'queued' | 'running' | 'success' | 'failure' | 'canceled';
+export type PackageImageSource = 'nexus' | 'local';
 
 export interface PackageImage {
   id: string;
   name: string;
-  build_type: PackageBuildType;
-  build_type_display?: string;
+  source: PackageImageSource;
+  source_display?: string;
+  registry_host?: string;
+  repository?: string;
+  image_name?: string;
+  image_tag?: string;
   image: string;
   script_entry: string;
   default_build_path: string;
@@ -334,6 +338,32 @@ export interface NexusImageSearchResult {
   continuation_token: string;
 }
 
+/** 可选打包镜像条目（本地 Docker / Nexus 聚合列表） */
+export interface AvailableImageItem {
+  source: PackageImageSource;
+  image: string;
+  name: string;
+  version: string;
+  repository: string;
+  registry_host: string;
+  image_id?: string;
+  size?: string;
+}
+
+export interface AvailableImageResult {
+  items: AvailableImageItem[];
+  errors: Partial<Record<PackageImageSource, string>>;
+}
+
+/** 打包配置提交时携带的镜像坐标 */
+export interface PackageImageInfo {
+  source: PackageImageSource;
+  registry_host?: string;
+  repository?: string;
+  image_name: string;
+  image_tag: string;
+}
+
 export interface PackageConfig {
   id: string;
   project: string;
@@ -343,11 +373,12 @@ export interface PackageConfig {
   repository_id?: string;
   repository_name?: string;
   name: string;
-  build_type: PackageBuildType;
-  build_type_display?: string;
   image?: string | null;
   image_id?: string | null;
   image_name?: string;
+  image_ref?: string;
+  image_source?: PackageImageSource;
+  image_info?: PackageImageInfo;
   custom_script?: string;
   build_path?: string;
   output_path?: string;
@@ -377,8 +408,7 @@ export interface PackageTask {
   triggered_by?: string | null;
   triggered_by_name?: string;
   name: string;
-  build_type: PackageBuildType;
-  build_type_display?: string;
+  build_type?: string;
   tag_name: string;
   version: string;
   commit_hash?: string;

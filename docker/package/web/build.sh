@@ -4,28 +4,12 @@
 #   ./build.sh                              构建默认镜像 trace-ship/web-builder:node22
 #   ./build.sh <镜像名:标签>                自定义镜像名，如 registry.internal/trace-ship/web-builder:node22
 #   ./build.sh --export [镜像名:标签]       构建并导出为离线 tar 包（用于分发到内网打包机）
-# 环境变量：
-#   NPM_REGISTRY   构建时写入镜像的默认 npm 源，默认官方源 https://registry.npmjs.org/
-#                  示例: NPM_REGISTRY=http://127.0.0.1:28081/repository/npm-group/ ./build.sh
-#   也可在同目录 .env 文件中配置(参照 .env.example)，环境变量优先级高于 .env
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
-# 记录命令行传入的环境变量（优先级最高，不被 .env 覆盖）
-CLI_NPM_REGISTRY="${NPM_REGISTRY:-}"
-
-# 加载同目录 .env 文件（不存在则跳过）
-if [ -f .env ]; then
-    set -a
-    source .env
-    set +a
-fi
-
-# 优先级: 命令行环境变量 > .env > 内置默认值
 IMAGE="trace-ship/web-builder:node22"
-NPM_REGISTRY="${CLI_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmjs.org/}}"
 EXPORT=0
 
 usage() {
@@ -58,8 +42,7 @@ if ! command -v docker &> /dev/null; then
 fi
 
 echo "🚀 构建镜像: ${IMAGE}"
-echo "   默认 npm 源: ${NPM_REGISTRY}"
-docker build --build-arg NPM_REGISTRY="${NPM_REGISTRY}" -t "${IMAGE}" "${SCRIPT_DIR}"
+docker build -t "${IMAGE}" "${SCRIPT_DIR}"
 
 echo ""
 echo "✅ 构建完成: ${IMAGE}"

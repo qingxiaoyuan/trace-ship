@@ -58,7 +58,6 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
                 "name": task.name,
                 "status": task.status,
                 "status_display": task.get_status_display(),
-                "mode": task.mode,
                 "build_type": task.build_type,
                 "artifact_count": len(task.artifact_info or []),
                 "started_at": task.started_at,

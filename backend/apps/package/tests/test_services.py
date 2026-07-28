@@ -62,15 +62,12 @@ def test_trigger_auto_packages_creates_task(project, repository, user, monkeypat
     """发布成功后为启用的自动打包配置创建任务。"""
     image = PackageImage.objects.create(
         name="Web 镜像",
-        build_type="web",
         image="trace-ship/web:latest",
     )
     config = PackageConfig.objects.create(
         project=project,
         repository=repository,
         name="Web 打包",
-        mode="simple",
-        build_type="web",
         image=image,
         auto_package_on_release=True,
     )
@@ -98,11 +95,10 @@ def test_package_images_readable_for_authenticated_user(api_client):
     """项目配置选择镜像时，普通登录用户可以读取启用镜像列表。"""
     PackageImage.objects.create(
         name="Web 镜像",
-        build_type="web",
         image="trace-ship/web:latest",
     )
 
-    response = api_client.get("/api/packages/images/", {"build_type": "web", "is_active": True})
+    response = api_client.get("/api/packages/images/", {"is_active": True})
 
     assert response.status_code == 200
     assert response.data["data"]["total"] == 1
@@ -115,7 +111,6 @@ def test_package_images_write_requires_superuser(api_client):
         "/api/packages/images/",
         {
             "name": "Web 镜像",
-            "build_type": "web",
             "image": "trace-ship/web:latest",
         },
         format="json",
@@ -129,15 +124,12 @@ def test_create_task_falls_back_to_local_worker_when_celery_broker_unavailable(p
     """Celery 投递失败时不让手动触发接口 500，而是降级为本地后台执行。"""
     image = PackageImage.objects.create(
         name="Web 镜像",
-        build_type="web",
         image="trace-ship/web:latest",
     )
     config = PackageConfig.objects.create(
         project=project,
         repository=repository,
         name="Web 打包",
-        mode="simple",
-        build_type="web",
         image=image,
     )
     release = ReleaseRecord.objects.create(
@@ -206,8 +198,6 @@ def test_prepare_workspace_isolated(project, repository, user, settings, tmp_pat
         project=project,
         repository=repository,
         name="打包任务",
-        mode="local",
-        build_type="web",
         tag_name=release.tag_name,
         version=release.version,
     )
@@ -238,13 +228,11 @@ def test_simple_package_does_not_precreate_source_output_dir(project, repository
         project=project,
         repository=repository,
         name="打包任务",
-        mode="simple",
-        build_type="web",
         tag_name=release.tag_name,
         version=release.version,
         config_snapshot={
             "image": "trace-ship/web-builder:node22",
-            "script_entry": "/usr/local/bin/trace-ship-build",
+            "script_entry": "/workspace/scripts/pack.sh",
             "build_path": ".",
             "output_path": "artifacts",
         },
@@ -255,14 +243,14 @@ def test_simple_package_does_not_precreate_source_output_dir(project, repository
 
     monkeypatch.setattr(PackageService, "_run_command", lambda *args, **kwargs: None)
 
-    PackageService._run_simple(task, workspace)
+    PackageService._run_container(task, workspace)
 
     assert not (workspace / "source" / "artifacts").exists()
 
 
 @pytest.mark.django_db
-def test_simple_package_uses_fixed_dist_and_artifacts_dir(project, repository, user, tmp_path, monkeypatch):
-    """Web 简易打包固定从 dist 收集产物到 /workspace/artifacts。"""
+def test_container_package_uses_workspace_and_overrides_env(project, repository, user, tmp_path, monkeypatch):
+    """容器打包使用 /workspace 挂载，系统环境变量覆盖用户自定义。"""
     release = ReleaseRecord.objects.create(
         project=project,
         repository=repository,
@@ -278,13 +266,11 @@ def test_simple_package_uses_fixed_dist_and_artifacts_dir(project, repository, u
         project=project,
         repository=repository,
         name="打包任务",
-        mode="simple",
-        build_type="web",
         tag_name=release.tag_name,
         version=release.version,
         config_snapshot={
             "image": "trace-ship/web-builder:node22",
-            "script_entry": "/usr/local/bin/trace-ship-build",
+            "script_entry": "/workspace/scripts/pack.sh",
             "build_path": ".",
             "output_path": "custom-output",
             "env_vars": {"ARTIFACTS_DIR": "/custom/artifacts"},
@@ -300,15 +286,88 @@ def test_simple_package_uses_fixed_dist_and_artifacts_dir(project, repository, u
 
     monkeypatch.setattr(PackageService, "_run_command", capture_command)
 
-    PackageService._run_simple(task, workspace)
+    PackageService._run_container(task, workspace)
 
     command = captured["command"]
     assert "-e" in command
-    assert "OUTPUT_PATH=dist" in command
+    assert "OUTPUT_PATH=custom-output" in command
     assert "ARTIFACTS_DIR=/workspace/artifacts" in command
-    assert f"{workspace / 'artifacts'}:/workspace/artifacts" in command
+    assert f"{workspace}/source:/workspace/source" in command
+    assert f"{workspace}/artifacts:/workspace/artifacts" in command
+    assert "--entrypoint" in command
     assert "ARTIFACTS_DIR=/custom/artifacts" in command
     assert command.index("ARTIFACTS_DIR=/workspace/artifacts") > command.index("ARTIFACTS_DIR=/custom/artifacts")
+
+
+def _make_container_task(project, repository, user, snapshot):
+    """构造容器打包任务及已发布版本。"""
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+    )
+    return PackageTask.objects.create(
+        release=release,
+        project=project,
+        repository=repository,
+        name="打包任务",
+        tag_name=release.tag_name,
+        version=release.version,
+        config_snapshot=snapshot,
+    )
+
+
+@pytest.mark.django_db
+def test_container_custom_script_bypasses_pack_sh(project, repository, user, tmp_path, monkeypatch):
+    """自定义脚本直接用镜像内 shell 执行，不依赖 pack.sh。"""
+    task = _make_container_task(project, repository, user, {
+        "image": "node:22",
+        "custom_script": "echo build",
+        "build_path": ".",
+        "output_path": "dist",
+    })
+    workspace = tmp_path / "workspace"
+    (workspace / "source").mkdir(parents=True)
+    (workspace / "artifacts").mkdir(parents=True)
+    captured = {}
+
+    def capture_command(task, command, cwd, env=None, shell=False):
+        captured["command"] = command
+
+    monkeypatch.setattr(PackageService, "_run_command", capture_command)
+
+    PackageService._run_container(task, workspace)
+
+    command = captured["command"]
+    assert command[-2:] == ["-c", "echo build"]
+    assert "/workspace/scripts/pack.sh" not in command
+    assert "--entrypoint" in command
+
+
+@pytest.mark.django_db
+def test_container_missing_pack_sh_hint(project, repository, user, tmp_path, monkeypatch):
+    """内置入口缺失（退出码 127）时给出接入规范提示。"""
+    task = _make_container_task(project, repository, user, {
+        "image": "node:22",
+        "build_path": ".",
+        "output_path": "dist",
+    })
+    workspace = tmp_path / "workspace"
+    (workspace / "source").mkdir(parents=True)
+    (workspace / "artifacts").mkdir(parents=True)
+
+    def fail_command(task, command, cwd, env=None, shell=False):
+        raise RuntimeError("命令执行失败，退出码 127")
+
+    monkeypatch.setattr(PackageService, "_run_command", fail_command)
+
+    with pytest.raises(RuntimeError, match="不符合镜像接入规范"):
+        PackageService._run_container(task, workspace)
 
 
 @pytest.mark.django_db
@@ -330,11 +389,9 @@ def test_package_failure_does_not_rollback_release(project, repository, user, se
         project=project,
         repository=repository,
         name="打包任务",
-        mode="local",
-        build_type="web",
         tag_name=release.tag_name,
         version=release.version,
-        config_snapshot={"local_script": "exit 1"},
+        config_snapshot={"custom_script": "exit 1"},
     )
     monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
 
@@ -365,18 +422,16 @@ def test_cancel_running_task_keeps_canceled_status(project, repository, user, se
         project=project,
         repository=repository,
         name="打包任务",
-        mode="local",
-        build_type="web",
         tag_name=release.tag_name,
         version=release.version,
-        config_snapshot={"local_script": "echo test"},
+        config_snapshot={"custom_script": "echo test"},
     )
     monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
 
-    def fake_run_local(task, workspace):
+    def fake_run_container(task, workspace):
         PackageService.cancel_task(task)
 
-    monkeypatch.setattr(PackageService, "_run_local", fake_run_local)
+    monkeypatch.setattr(PackageService, "_run_container", fake_run_container)
     monkeypatch.setattr(PackageService, "_scan_artifacts", lambda workspace: [{"id": "artifact", "name": "a.zip", "path": "a.zip", "size": 1, "sha256": "x"}])
 
     PackageService.run_task(task)
@@ -406,8 +461,6 @@ def test_run_command_terminates_process_group_when_task_canceled(project, reposi
         project=project,
         repository=repository,
         name="打包任务",
-        mode="local",
-        build_type="web",
         tag_name=release.tag_name,
         version=release.version,
         log_path="/tmp/package-build.log",

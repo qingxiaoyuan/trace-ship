@@ -162,8 +162,8 @@ npm run preview
 - `ReleaseRecord`：发布申请，当前状态为 `draft` / `pending` / `released` / `rejected`。
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：工作流定义、实例和审批任务。
-- `PackageImage`：系统级 Docker 打包镜像，区分 `web` / `qt` 两种构建类型，由超管维护。
-- `PackageConfig`：项目级打包配置，包含打包模式（`simple` 简易打包 / `local` 本地脚本）、构建类型、环境变量、发布后自动打包开关、SVN 推送配置。
+- `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
+- `PackageConfig`：项目级打包配置，包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置。
 - `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。
 - `Credential`：凭证密文与凭证元数据。
 - `Notification`：站内通知。
@@ -182,6 +182,32 @@ npm run preview
 8. 审批驳回：`ReleaseService.handle_workflow_rejected` 将发布状态改为 `rejected`；回退到初始节点时可恢复为 `draft` 并解除流程实例关联。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
+
+### 打包流程
+
+打包统一由 `apps.package` 执行，镜像可来自本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键）：
+
+1. 「打包镜像」页面实时聚合本地与 Nexus 镜像列表，支持上传 tar 包导入本地（`docker load`）。
+2. 项目管理员在「打包配置」中直接选择镜像（按坐标 get_or_create 镜像记录）、构建目录、产物目录，可选填写自定义脚本。
+3. 打包任务执行流程：
+   - 准备 `workspace/{source,artifacts,tmp}`；
+   - `git clone` 源码到 `workspace/source`；
+   - 只挂载 `source` / `artifacts` / `tmp` 到容器 `/workspace` 对应目录，`scripts` / `deploy` 使用镜像自身内容；
+   - 容器内工作目录为 `/workspace/source`，通过环境变量传入 `DEPLOY_DIR`、`SCRIPTS_DIR` 等；
+   - 统一以 `--entrypoint /bin/sh` 启动，镜像自身 ENTRYPOINT 不生效；
+   - 若配置 `custom_script`，则以 `sh -c` 直接执行该脚本；
+   - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`）；
+   - 打包产物写入 `/workspace/artifacts`；
+   - 扫描 `workspace/artifacts`，可选推 SVN。
+4. 镜像必须满足目录、环境变量、入口脚本约定（详见「镜像接入规范」或 `docker/package/web/README.md`）。
+
+### 镜像接入规范
+
+所有打包镜像必须满足：
+
+- 平台挂载目录：`/workspace/source`、`/workspace/artifacts`、`/workspace/tmp`；
+- 镜像内提供：`/workspace/scripts/pack.sh`（内置打包入口）、可选 `/workspace/deploy`（预制依赖）、容器内存在 `/bin/sh`；
+- 入口脚本负责读取环境变量、执行打包、输出产物、不主动联网安装依赖。
 
 ### Jenkins 模块状态
 

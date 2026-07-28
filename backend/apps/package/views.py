@@ -13,6 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from apps.package.models import PackageConfig, PackageImage, PackageTask
+from apps.package.docker_local import LocalDockerError, LocalDockerService
 from apps.package.nexus import NexusError, NexusService
 from apps.package.serializers import (
     PackageConfigSerializer,
@@ -52,15 +53,51 @@ class PackageImageViewSet(StandardModelViewSet):
     queryset = PackageImage.objects.all()
     serializer_class = PackageImageSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["build_type", "is_active"]
+    filterset_fields = ["source", "is_active"]
     search_fields = ["name", "image"]
-    ordering_fields = ["created_at", "build_type"]
-    ordering = ["build_type", "-created_at"]
+    ordering_fields = ["created_at"]
+    ordering = ["-created_at"]
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
+        if self.action in ("create", "update", "partial_update", "destroy", "import_image"):
             return [IsAuthenticated(), IsSuperUser()]
         return [IsAuthenticated()]
+
+    # 允许导入的镜像包格式（docker load 支持 tar 及常见压缩格式）
+    IMPORT_FILE_SUFFIXES = (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")
+
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_image(self, request):
+        """上传镜像 tar 包并导入本地 Docker（docker load），仅超管可操作。"""
+        upload = request.FILES.get("file")
+        if not upload:
+            return error_response(40000, "请上传镜像 tar 文件", status_code=status.HTTP_400_BAD_REQUEST)
+        filename = (upload.name or "").lower()
+        if not filename.endswith(self.IMPORT_FILE_SUFFIXES):
+            return error_response(
+                40000,
+                "文件格式不支持，请上传 .tar / .tar.gz / .tar.bz2 / .tar.xz 镜像包",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 落盘到临时文件供 docker load 读取，导入完成后删除
+        fd, temp_path = tempfile.mkstemp(suffix=".tar", prefix="image_import_")
+        try:
+            with os.fdopen(fd, "wb") as temp_file:
+                for chunk in upload.chunks():
+                    temp_file.write(chunk)
+            loaded = LocalDockerService.load_image(temp_path)
+        except LocalDockerError as exc:
+            return error_response(50000, str(exc), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            try:
+                os.remove(temp_path)
+            except FileNotFoundError:
+                pass
+
+        if not loaded:
+            return success_response({"loaded": []}, "导入完成，但镜像包中未包含命名镜像")
+        return success_response({"loaded": loaded}, f"已导入 {len(loaded)} 个镜像")
 
     @action(detail=False, methods=["get"], url_path="nexus-repositories")
     def nexus_repositories(self, request):
@@ -84,6 +121,42 @@ class PackageImageViewSet(StandardModelViewSet):
             return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
         return success_response(data)
 
+    @action(detail=False, methods=["get"], url_path="available")
+    def available(self, request):
+        """
+        聚合列出可选打包镜像：本地 Docker + 已配置 Nexus。
+
+        任一来源失败不影响另一来源返回，失败原因放在 errors 中。
+        返回结构：{"items": [...], "errors": {"local": str, "nexus": str}}
+        """
+        keyword = request.query_params.get("keyword", "")
+        source_filter = request.query_params.get("source", "")
+
+        items: list[dict] = []
+        errors: dict[str, str] = {}
+
+        if source_filter in ("", "local"):
+            try:
+                items.extend(LocalDockerService.list_images(keyword=keyword))
+            except LocalDockerError as exc:
+                errors["local"] = str(exc)
+
+        if source_filter in ("", "nexus"):
+            try:
+                # 跨全部 docker 仓库搜索，最多翻 10 页防止结果过大
+                token = ""
+                for _ in range(10):
+                    result = NexusService.search_docker_images(keyword=keyword, continuation_token=token)
+                    for item in result["items"]:
+                        items.append({**item, "source": "nexus"})
+                    token = result["continuation_token"]
+                    if not token:
+                        break
+            except NexusError as exc:
+                errors["nexus"] = str(exc)
+
+        return success_response({"items": items, "errors": errors})
+
 
 class PackageConfigViewSet(StandardModelViewSet):
     """项目级打包配置视图集。"""
@@ -91,7 +164,7 @@ class PackageConfigViewSet(StandardModelViewSet):
     queryset = PackageConfig.objects.all()
     serializer_class = PackageConfigSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repository", "build_type", "is_active", "auto_package_on_release"]
+    filterset_fields = ["project", "repository", "is_active", "auto_package_on_release"]
     search_fields = ["name", "repository__name"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]

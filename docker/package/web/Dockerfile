@@ -9,20 +9,15 @@ RUN apt-get update \
       rsync \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable
-# npm 源地址：默认为官方源，构建时可用 --build-arg NPM_REGISTRY=... 定制，
-# 运行时可用 -e NPM_CONFIG_REGISTRY=... 覆盖（系统打包配置的 env_vars 即走此方式）。
-# 注意：地址指向宿主机服务（如 127.0.0.1:28081 的 Nexus）时，
-# 运行此镜像需加 --network host 才能访问（系统打包已默认开启 host 网络）。
-ARG NPM_REGISTRY="https://registry.npmjs.org/"
-ENV NPM_CONFIG_REGISTRY="${NPM_REGISTRY}"
 
-COPY trace-ship-build /usr/local/bin/trace-ship-build
-RUN chmod +x /usr/local/bin/trace-ship-build
+# 镜像接入约定：/workspace/scripts 内置 pack.sh 打包入口；
+# 平台运行时只挂载 /workspace/source、/workspace/artifacts、/workspace/tmp，
+# scripts / deploy 目录使用镜像自身内容
+COPY scripts/ /workspace/scripts/
+RUN chmod +x /workspace/scripts/pack.sh \
+    && mkdir -p /workspace/source /workspace/artifacts /workspace/tmp
 
-# 预置依赖/脚本目录，可由基础镜像构建时填充；
-# 运行时通过软链挂到 /workspace/deploy 和 /workspace/scripts
-RUN mkdir -p /opt/trace-ship/deploy /opt/trace-ship/scripts
+# 可选：预置依赖目录（如 node_modules 缓存），按需向 /workspace/deploy 放置
+# COPY deploy/ /workspace/deploy/
 
 WORKDIR /workspace/source
-
-ENTRYPOINT ["/usr/local/bin/trace-ship-build"]

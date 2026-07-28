@@ -289,4 +289,5 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/16
+        # 注意避开 172.28.0.0/16：生产数据层编排的 trace-ship-net 会占用该网段
+        - subnet: 172.29.0.0/16

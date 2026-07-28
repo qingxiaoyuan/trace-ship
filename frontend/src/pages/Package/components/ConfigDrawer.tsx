@@ -2,17 +2,14 @@ import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Drawer, Form, Input, Select, Switch, Typography } from 'antd';
 import { Settings2 } from 'lucide-react';
-import type { PackageBuildType, PackageConfig } from '@/types';
+import type { PackageConfig } from '@/types';
 import { projectApi } from '@/api/project';
 import { SvnTestButton } from '@/components/SvnTestButton';
+import { ImagePickerField } from '@/components/ImagePickerField';
+import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
 import { repositoryApi } from '@/api/repository';
 import { packageApi } from '@/api/package';
 import { credentialApi } from '@/api/credential';
-
-const buildTypeOptions = [
-  { label: 'Web', value: 'web' },
-  { label: 'Qt', value: 'qt' },
-];
 
 interface ConfigDrawerProps {
   open: boolean;
@@ -24,7 +21,6 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [form] = Form.useForm<Partial<PackageConfig>>();
-  const buildType = (Form.useWatch('build_type', form) || 'web') as PackageBuildType;
 
   const { data: projectsData } = useQuery({
     queryKey: ['package-drawer-projects'],
@@ -40,11 +36,7 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
     enabled: open && !!projectId,
   });
 
-  const { data: imagesData } = useQuery({
-    queryKey: ['package-drawer-images', buildType],
-    queryFn: () => packageApi.getImages({ build_type: buildType, is_active: true, page_size: 1000 }),
-    enabled: open,
-  });
+  const { items: imageItems } = useAvailableImages();
 
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
 
@@ -67,10 +59,9 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
   useEffect(() => {
     if (!open) return;
     if (editing) {
-      form.setFieldsValue({ ...editing, image: editing.image_id || editing.image || undefined });
+      form.setFieldsValue({ ...editing, image_ref: editing.image_ref || undefined });
     } else {
       form.setFieldsValue({
-        build_type: 'web',
         build_path: '.',
         output_path: 'dist',
         env_vars: {},
@@ -104,10 +95,6 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
     () => (reposData?.results || []).map((r) => ({ label: r.name, value: r.id })),
     [reposData]
   );
-  const imageOptions = useMemo(
-    () => (imagesData?.results || []).map((img) => ({ label: `${img.name} / ${img.image}`, value: img.id })),
-    [imagesData]
-  );
   const svnCredentialOptions = useMemo(
     () => (svnCredsData?.results || []).map((c) => ({ label: c.name, value: c.id })),
     [svnCredsData]
@@ -115,9 +102,15 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
 
   const handleFinish = useCallback(
     (values: Partial<PackageConfig>) => {
-      saveMutation.mutate(values);
+      const payload: Partial<PackageConfig> = { ...values };
+      const ref = values.image_ref;
+      const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
+      if (item) {
+        payload.image_info = toImageInfo(item);
+      }
+      saveMutation.mutate(payload);
     },
-    [saveMutation]
+    [saveMutation, imageItems]
   );
 
   return (
@@ -167,11 +160,8 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
             optionFilterProp="label"
           />
         </Form.Item>
-        <Form.Item name="build_type" label="打包类型" rules={[{ required: true }]}>
-          <Select options={buildTypeOptions} />
-        </Form.Item>
-        <Form.Item name="image" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
-          <Select options={imageOptions} placeholder="按打包类型选择镜像" showSearch optionFilterProp="label" />
+        <Form.Item name="image_ref" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
+          <ImagePickerField />
         </Form.Item>
         <Form.Item name="custom_script" label="自定义打包脚本" extra="留空则执行镜像内置脚本；填写后直接在 /workspace/source 目录执行">
           <Input.TextArea rows={4} placeholder="cd /workspace/source && ./scripts/custom-build.sh" />
@@ -220,7 +210,7 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
                 <Input placeholder="{version}" />
               </Form.Item>
               <Typography.Text type="secondary" className="text-xs">
-                可用占位符:{'{version}'}、{'{tag_name}'}、{'{build_type}'}、{'{project_code}'},默认按版本号创建目录
+                可用占位符:{'{version}'}、{'{tag_name}'}、{'{project_code}'},默认按版本号创建目录
               </Typography.Text>
             </>
           )}

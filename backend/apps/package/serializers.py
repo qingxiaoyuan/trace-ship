@@ -19,18 +19,37 @@ def validate_safe_rel_path(value: str, field: str = "path") -> str:
 
 
 class PackageImageSerializer(serializers.ModelSerializer):
-    """系统级打包镜像序列化器。"""
+    """打包镜像序列化器。"""
 
-    build_type_display = serializers.CharField(source="get_build_type_display", read_only=True)
+    source_display = serializers.CharField(source="get_source_display", read_only=True)
 
     class Meta:
         model = PackageImage
         fields = [
-            "id", "name", "build_type", "build_type_display",
-            "image", "script_entry", "default_build_path", "default_output_path",
+            "id", "name",
+            "source", "source_display", "registry_host", "repository",
+            "image_name", "image_tag", "image",
+            "script_entry", "default_build_path", "default_output_path",
             "is_active", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "build_type_display", "created_at", "updated_at"]
+        read_only_fields = ["id", "source_display", "image", "created_at", "updated_at"]
+
+    def validate_source(self, value: str) -> str:
+        if value not in ("nexus", "local"):
+            raise serializers.ValidationError("镜像来源仅支持 nexus / local")
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        source = attrs.get("source", getattr(self.instance, "source", "nexus"))
+        if source not in ("nexus", "local"):
+            raise serializers.ValidationError({"source": "镜像来源仅支持 nexus / local"})
+        image_name = attrs.get("image_name", getattr(self.instance, "image_name", ""))
+        image_tag = attrs.get("image_tag", getattr(self.instance, "image_tag", ""))
+        if not image_name:
+            raise serializers.ValidationError({"image_name": "必须填写镜像名"})
+        if not image_tag:
+            raise serializers.ValidationError({"image_tag": "必须填写镜像标签"})
+        return attrs
 
     def validate_default_build_path(self, value: str) -> str:
         return validate_safe_rel_path(value, "default_build_path")
@@ -48,18 +67,20 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
     image_id = serializers.UUIDField(source="image.id", read_only=True)
     image_name = serializers.CharField(source="image.name", read_only=True, default="")
+    image_ref = serializers.CharField(source="image.image", read_only=True, default="")
+    image_source = serializers.CharField(source="image.source", read_only=True, default="")
+    # 写入镜像坐标（本地 / Nexus 可选列表中的条目），后端按坐标 get_or_create 镜像记录
+    image_info = serializers.DictField(write_only=True, required=False)
     svn_credential_id = serializers.UUIDField(source="svn_credential.id", read_only=True)
     svn_credential_name = serializers.CharField(source="svn_credential.name", read_only=True, default="")
-    mode_display = serializers.CharField(source="get_mode_display", read_only=True)
-    build_type_display = serializers.CharField(source="get_build_type_display", read_only=True)
 
     class Meta:
         model = PackageConfig
         fields = [
             "id", "project", "project_id", "project_name",
             "repository", "repository_id", "repository_name",
-            "name", "build_type", "build_type_display",
-            "image", "image_id", "image_name", "custom_script",
+            "name",
+            "image", "image_id", "image_name", "image_ref", "image_source", "image_info", "custom_script",
             "build_path", "output_path", "env_vars",
             "auto_package_on_release", "is_active",
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
@@ -68,10 +89,39 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id", "project_id", "project_name", "repository_id", "repository_name",
-            "image_id", "image_name", "svn_credential_id", "svn_credential_name",
-            "build_type_display",
+            "image_id", "image_name", "image_ref", "image_source",
+            "svn_credential_id", "svn_credential_name",
             "created_at", "updated_at",
         ]
+
+    @staticmethod
+    def _resolve_image_info(image_info: dict) -> PackageImage:
+        """按镜像坐标查找或创建打包镜像记录。"""
+        source = (image_info.get("source") or "").strip()
+        if source not in ("nexus", "local"):
+            raise serializers.ValidationError({"image_info": "镜像来源仅支持 nexus / local"})
+        image_name = (image_info.get("image_name") or "").strip()
+        image_tag = (image_info.get("image_tag") or "").strip()
+        if not image_name or not image_tag:
+            raise serializers.ValidationError({"image_info": "镜像信息缺少镜像名或标签"})
+        if len(image_name) > 300 or len(image_tag) > 300:
+            raise serializers.ValidationError({"image_info": "镜像名或标签过长"})
+        if source == "nexus":
+            registry_host = (image_info.get("registry_host") or "").strip()[:300]
+            repository = (image_info.get("repository") or "").strip()[:300]
+        else:
+            # 本地镜像坐标固定为空，保证唯一约束稳定
+            registry_host = ""
+            repository = ""
+        image, _created = PackageImage.objects.get_or_create(
+            source=source,
+            registry_host=registry_host,
+            repository=repository,
+            image_name=image_name,
+            image_tag=image_tag,
+            defaults={"name": f"{image_name}:{image_tag}"[:200]},
+        )
+        return image
 
     def validate_project(self, value):
         """校验项目管理员权限。"""
@@ -93,13 +143,13 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         """校验仓库、镜像和脚本约束。"""
         project = attrs.get("project", getattr(self.instance, "project", None))
         repository = attrs.get("repository", getattr(self.instance, "repository", None))
-        build_type = attrs.get("build_type", getattr(self.instance, "build_type", "web"))
+        image_info = attrs.pop("image_info", None)
+        if image_info:
+            attrs["image"] = self._resolve_image_info(image_info)
         image = attrs.get("image", getattr(self.instance, "image", None))
         custom_script = attrs.get("custom_script", getattr(self.instance, "custom_script", ""))
         env_vars = attrs.get("env_vars", getattr(self.instance, "env_vars", {}))
 
-        if build_type not in ("web", "qt"):
-            raise serializers.ValidationError({"build_type": "第一阶段打包类型只能为 web 或 qt"})
         if repository and project and repository.project_id != project.id:
             raise serializers.ValidationError({"repository": "关联仓库必须属于当前项目"})
         if repository and repository.repo_type != "git":
@@ -111,8 +161,6 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"image": "必须选择打包镜像"})
         if not image.is_active:
             raise serializers.ValidationError({"image": "打包镜像已停用"})
-        if image.build_type != build_type:
-            raise serializers.ValidationError({"image": "打包镜像类型与配置类型不匹配"})
 
         # SVN 推送配置校验
         svn_push_enabled = attrs.get("svn_push_enabled", getattr(self.instance, "svn_push_enabled", False))
@@ -146,8 +194,6 @@ class PackageTaskSerializer(serializers.ModelSerializer):
     repository_name = serializers.CharField(source="repository.name", read_only=True)
     release_version = serializers.CharField(source="release.version", read_only=True)
     triggered_by_name = serializers.CharField(source="triggered_by.nickname", read_only=True, default="")
-    mode_display = serializers.CharField(source="get_mode_display", read_only=True)
-    build_type_display = serializers.CharField(source="get_build_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     can_push_svn = serializers.SerializerMethodField()
 
@@ -157,7 +203,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "id", "config", "config_name", "release", "release_version",
             "project", "project_name", "repository", "repository_name",
             "triggered_by", "triggered_by_name", "name",
-            "build_type", "build_type_display",
+            "build_type",
             "tag_name", "version", "commit_hash", "config_snapshot",
             "status", "status_display", "progress", "stage_info", "can_push_svn",
             "artifact_info", "duration", "error_message",

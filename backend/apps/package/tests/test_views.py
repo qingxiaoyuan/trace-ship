@@ -81,15 +81,12 @@ def release(project, repository, user):
 def package_config(project, repository):
     image = PackageImage.objects.create(
         name="Web 镜像",
-        build_type="web",
         image="trace-ship/web:latest",
     )
     return PackageConfig.objects.create(
         project=project,
         repository=repository,
         name="Web 打包",
-        mode="simple",
-        build_type="web",
         image=image,
     )
 
@@ -111,7 +108,6 @@ def task_with_artifacts(package_config, release, project, repository, user, tmp_
         repository=repository,
         triggered_by=user,
         name="Web 打包 / V1.0.0",
-        mode="simple",
         build_type="web",
         tag_name="V1.0.0",
         version="V1.0.0",
@@ -170,7 +166,6 @@ def test_download_all_404_when_no_artifacts(
         repository=repository,
         triggered_by=user,
         name="无产物打包",
-        mode="simple",
         build_type="web",
         tag_name="V1.0.0",
         version="V1.0.0",

@@ -90,7 +90,6 @@ class PackageService:
         return {
             "config_id": str(config.id),
             "name": config.name,
-            "build_type": config.build_type,
             "image": image.image if image else "",
             "image_name": image.name if image else "",
             "script_entry": image.script_entry if image else "",
@@ -128,7 +127,6 @@ class PackageService:
             repository=release.repository,
             triggered_by=request_user,
             name=f"{config.name} / {release.version}",
-            build_type=config.build_type,
             tag_name=release.tag_name,
             version=release.version,
             commit_hash=release.git_hash,
@@ -316,7 +314,6 @@ class PackageService:
             **{str(k): str(v) for k, v in env_vars.items()},
             "TAG_NAME": task.tag_name,
             "VERSION": task.version,
-            "BUILD_TYPE": task.build_type,
             "BUILD_PATH": cls._safe_rel_path(snapshot.get("build_path", "."), "."),
             "OUTPUT_PATH": output_path,
             "PROJECT_CODE": task.project.code or task.project.name,
@@ -343,12 +340,14 @@ class PackageService:
     def _run_container(cls, task: PackageTask, workspace: Path) -> None:
         """在容器内执行打包。
 
-        统一流程：选择基础镜像 -> 拉源码 -> 挂载整个 workspace -> 执行镜像内置脚本
-        或打包配置中指定的自定义脚本。自定义脚本直接在工作目录 /workspace/source 下运行。
+        镜像目录约定：平台只挂载 /workspace/source、/workspace/artifacts、/workspace/tmp；
+        /workspace/scripts（含 pack.sh 入口）与 /workspace/deploy（可选）由镜像提供。
+        有自定义脚本时用镜像内 shell 直接执行，否则执行镜像的 /workspace/scripts/pack.sh。
+        统一通过 --entrypoint /bin/sh 启动，避免镜像自身 ENTRYPOINT 干扰。
         """
         snapshot = task.config_snapshot or {}
         image = snapshot.get("image")
-        script_entry = snapshot.get("script_entry") or "/usr/local/bin/trace-ship-build"
+        script_entry = snapshot.get("script_entry") or "/workspace/scripts/pack.sh"
         custom_script = (snapshot.get("custom_script") or "").strip()
         if not image:
             raise RuntimeError("打包配置缺少镜像")
@@ -371,19 +370,28 @@ class PackageService:
             "-e", "SCRIPTS_DIR=/workspace/scripts",
             "-e", f"TAG_NAME={env['TAG_NAME']}",
             "-e", f"VERSION={env['VERSION']}",
-            "-e", f"BUILD_TYPE={env['BUILD_TYPE']}",
             "-e", f"BUILD_PATH={build_path}",
             "-e", f"OUTPUT_PATH={output_path}",
             "-e", f"PROJECT_CODE={env['PROJECT_CODE']}",
-            "-v", f"{workspace}:/workspace",
+            "-v", f"{workspace / 'source'}:/workspace/source",
+            "-v", f"{workspace / 'artifacts'}:/workspace/artifacts",
+            "-v", f"{workspace / 'tmp'}:/workspace/tmp",
             "-w", source_build_path,
+            "--entrypoint", "/bin/sh",
         ]
         if custom_script:
-            command.extend(["-e", f"CUSTOM_SCRIPT={custom_script}"])
-        command.append(str(image))
-        if not custom_script:
-            command.append(str(script_entry))
-        cls._run_command(task, command, workspace, env)
+            command.extend([str(image), "-c", custom_script])
+        else:
+            command.extend([str(image), str(script_entry)])
+        try:
+            cls._run_command(task, command, workspace, env)
+        except RuntimeError as exc:
+            if "退出码 127" in str(exc) and not custom_script:
+                raise RuntimeError(
+                    f"镜像缺少打包入口脚本 {script_entry}，不符合镜像接入规范；"
+                    "请更换符合规范的镜像，或在打包配置中填写自定义打包脚本"
+                ) from exc
+            raise
 
     @classmethod
     def _scan_artifacts(cls, workspace: Path) -> list[dict[str, Any]]:

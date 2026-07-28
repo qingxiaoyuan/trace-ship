@@ -7,7 +7,6 @@
 from typing import Dict, List
 from django.core.management.base import BaseCommand
 from apps.account.models import User, Role, Permission, UserRole, RolePermission
-from apps.package.models import PackageImage
 
 
 class Command(BaseCommand):
@@ -141,20 +140,5 @@ class Command(BaseCommand):
             user=admin,
             role=role_map["super_admin"],
         )
-
-        # 登记默认内置 Web 打包镜像（对应 docker/package/web 构建的 trace-ship/web-builder:node22）
-        _, image_created = PackageImage.objects.get_or_create(
-            image="trace-ship/web-builder:node22",
-            defaults={
-                "name": "Web 构建镜像（内置）",
-                "build_type": "web",
-                "script_entry": "/usr/local/bin/trace-ship-build",
-                "default_build_path": ".",
-                "default_output_path": "dist",
-                "is_active": True,
-            },
-        )
-        if image_created:
-            self.stdout.write(self.style.SUCCESS("登记默认内置打包镜像：trace-ship/web-builder:node22"))
 
         self.stdout.write(self.style.SUCCESS("基础数据初始化完成"))

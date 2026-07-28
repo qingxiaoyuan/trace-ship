@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { systemApi } from '@/api/system';
 import type { SystemConfig } from '@/api/system';
+import { NexusIntegrationCard } from './NexusIntegrationCard';
 
 interface FormState {
   key: string;
@@ -153,6 +154,8 @@ export default function SystemConfigPage() {
         </button>
       </div>
 
+      <NexusIntegrationCard />
+
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
           <div className="relative">
@@ -278,7 +281,7 @@ export default function SystemConfigPage() {
       {modalOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(15,23,42,.3)', backdropFilter: 'blur(2px)' }}
+          style={{ background: 'rgba(15,23,42,.4)' }}
           onClick={() => setModalOpen(false)}
         >
           <div
