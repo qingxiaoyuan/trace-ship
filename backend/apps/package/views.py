@@ -91,7 +91,7 @@ class PackageConfigViewSet(StandardModelViewSet):
     queryset = PackageConfig.objects.all()
     serializer_class = PackageConfigSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repository", "mode", "build_type", "is_active", "auto_package_on_release"]
+    filterset_fields = ["project", "repository", "build_type", "is_active", "auto_package_on_release"]
     search_fields = ["name", "repository__name"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
@@ -225,7 +225,7 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
     queryset = PackageTask.objects.all()
     serializer_class = PackageTaskSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repository", "release", "config", "status", "mode", "build_type"]
+    filterset_fields = ["project", "repository", "release", "config", "status", "build_type"]
     search_fields = ["name", "version", "tag_name", "project__name", "repository__name"]
     ordering_fields = ["created_at", "started_at", "finished_at"]
     ordering = ["-created_at"]
