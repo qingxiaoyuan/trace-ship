@@ -501,3 +501,43 @@ def test_run_command_terminates_process_group_when_task_canceled(project, reposi
 
     assert popen_calls["start_new_session"] is True
     assert signal_calls == [(fake_process.pid, signal.SIGTERM)]
+
+
+def test_sanitize_log_line_strips_ansi():
+    """
+    测试剥离 ANSI 颜色与光标控制序列
+
+    期望：颜色码、光标移动序列被移除，纯文本保留
+    """
+    raw = "\x1b[32m✓\x1b[0m 编译成功 \x1b[1G\x1b[K"
+    assert PackageService._sanitize_log_line(raw) == "✓ 编译成功 "
+
+
+def test_sanitize_log_line_keeps_last_segment_after_cr():
+    """
+    测试 \\r 进度覆盖只保留最后一段
+
+    期望：进度条中间帧被丢弃，保留最终文本
+    """
+    raw = "下载中 10%\r下载中 60%\r下载完成"
+    assert PackageService._sanitize_log_line(raw) == "下载完成"
+
+
+def test_sanitize_log_line_removes_control_chars():
+    """
+    测试剔除其他控制字符但保留制表符
+
+    期望：\\x00-\\x08 等控制字符被移除，\\t 保留
+    """
+    raw = "col1\x00\tcol2\x07\x0b"
+    assert PackageService._sanitize_log_line(raw) == "col1\tcol2"
+
+
+def test_sanitize_log_line_plain_text_unchanged():
+    """
+    测试普通文本不受影响
+
+    期望：中英文与常用符号原样保留
+    """
+    raw = "added 128 packages in 3s（含中文）"
+    assert PackageService._sanitize_log_line(raw) == raw

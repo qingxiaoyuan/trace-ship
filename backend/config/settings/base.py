@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.system.apps.SystemConfig",
     "apps.workflow.apps.WorkflowConfig",
     "apps.notification.apps.NotificationConfig",
+    "apps.feedback.apps.FeedbackConfig",
 ]
 
 # 中间件：请求/响应依次经过下列中间件处理
@@ -141,6 +142,22 @@ if AUTH_LDAP_SERVER_URI and AUTH_LDAP_USER_SEARCH_BASE:
         ldap.SCOPE_SUBTREE,
         "(uid=%(user)s)",
     )
+    # ldaps 证书校验策略与 CA 证书（环境变量方式接入时使用，
+    # 「系统配置」页面的 ldap_* 键由 apps.account.ldap_config 在登录时动态应用）
+    _tls_reqcert_map = {
+        "demand": ldap.OPT_X_TLS_DEMAND,
+        "allow": ldap.OPT_X_TLS_ALLOW,
+        "never": ldap.OPT_X_TLS_NEVER,
+        "try": ldap.OPT_X_TLS_TRY,
+    }
+    _tls_reqcert = os.getenv("LDAP_TLS_REQCERT", "").lower()
+    _ca_cert_path = os.getenv("LDAP_CA_CERT_PATH", "")
+    if _tls_reqcert in _tls_reqcert_map or _ca_cert_path:
+        AUTH_LDAP_CONNECTION_OPTIONS = {}
+        if _tls_reqcert in _tls_reqcert_map:
+            AUTH_LDAP_CONNECTION_OPTIONS[ldap.OPT_X_TLS_REQUIRE_CERT] = _tls_reqcert_map[_tls_reqcert]
+        if _ca_cert_path:
+            AUTH_LDAP_CONNECTION_OPTIONS[ldap.OPT_X_TLS_CACERTFILE] = _ca_cert_path
     AUTHENTICATION_BACKENDS = [
         "django_auth_ldap.backend.LDAPBackend",
         "django.contrib.auth.backends.ModelBackend",

@@ -33,10 +33,15 @@ scripts/dev.sh deps --test
 scripts/dev.sh backend
 scripts/dev.sh frontend
 
+# 一键启动依赖 + 后端 + 前端
+scripts/dev.sh all [--test]
+
 # 查看状态 / 日志 / 关闭所有
 scripts/dev.sh status
 scripts/dev.sh logs backend
 scripts/dev.sh down
+
+# 其他：无参数进入交互菜单；scripts/dev.sh gitlab-admin 获取 GitLab 管理员信息
 
 # 或手动操作依赖编排
 docker compose -f docker/docker-compose.yml up -d --build
@@ -44,7 +49,9 @@ docker compose -f docker/docker-compose.yml logs postgres -f
 docker compose -f docker/docker-compose.yml logs gitlab -f
 ```
 
-### 打包与部署（scripts/build.sh + 包内 deploy.sh）
+### 打包与部署（scripts/build.sh + scripts/deploy.sh）
+
+`scripts/deploy.sh` 是部署脚本源文件，`build.sh` 打包时会将其拷入发布包，内网侧解压后直接执行。
 
 ```bash
 scripts/build.sh --deps       # 第三方依赖包（postgres + redis + gitlab，首次部署用）
@@ -238,6 +245,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - Axios 封装在 `src/api/request.ts`，统一处理 `{code, message, data}` 响应、JWT Header、401 刷新 token。
 - React Query 已引入，按页面需要使用。
 - Tailwind CSS 4 已接入，主题变量位于 `src/styles/theme.ts` 和样式文件中。
+- 图表使用 chart.js（Dashboard）；日期处理使用 dayjs。
 
 ### 主要目录
 
@@ -248,7 +256,8 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - `src/components/`：项目内通用组件，例如卡片、列表、弹窗、状态标签、搜索筛选栏、审批流预览。
 - `src/stores/`：Zustand store。
 - `src/types/`：全局类型。
-- `src/mock/`：页面开发用 mock 数据；接真实接口时注意逐步清理或隔离。
+
+注意：`src/pages/TagGenerator/` 是未注册到路由的历史遗留页面（`/tags` 已重定向到 `/releases/create`），不要在其基础上继续开发；mock 目录已彻底清理，页面一律对接真实接口。
 
 ### 已有路由页面
 
@@ -296,6 +305,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - 关键环境变量：`SECRET_KEY`、`CREDENTIAL_SECRET_KEY`、`DB_*`、`REDIS_*`、`LDAP_*`、`ALLOWED_HOSTS`、`CORS_ALLOW_ALL_ORIGINS`。
 - 默认后端账号：`admin / admin@123`。
 - Docker 默认值以 `docker/docker-compose.yml` 和 `docker/.env` 为准；常见端口包括后端 `8000`、前端容器 `8002`、Vite `5173`、GitLab `18929`、phpLDAPadmin `18090`（test）、SVN `3690`（test）等。
+- `docker/` 下另有 `start-prod.sh`（本地生产模式一键部署）与 `setup-docker-mirror.sh`（镜像加速器配置）辅助脚本。
 - 数据卷统一显式命名 `trace-ship-*`（如 `trace-ship-postgres-data`），不随 compose 项目名变化。
 
 ## 重要注意事项
@@ -303,5 +313,6 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - 根目录 README 和部分文档可能滞后于代码，例如前端不再是“待实现”，发布流程也已从旧的构建状态链调整为审批后推 tag。实现前优先以代码为准。
 - `docs/business-process-analysis.md` 是阶段规划，不等同于当前实现。处理需求时要区分“已实现能力”和“规划能力”。
 - 工作区可能已有用户改动。不要回滚未由自己产生的改动；如遇冲突，先读懂现状再最小化修改。
+- 前端 `src/mock/` 已彻底清理，页面一律对接真实接口；`src/pages/TagGenerator/` 为未注册的历史遗留页面，不要在路由或新代码中引用。
 - 不要使用破坏性 git 命令。提交、部署、重置等操作必须在用户明确要求后进行。
 - 网络受限；安装依赖、访问外部服务或远程仓库前需要确认是否真的必要。

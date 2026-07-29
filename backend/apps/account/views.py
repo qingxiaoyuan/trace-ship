@@ -116,30 +116,29 @@ class AuthViewSet(viewsets.GenericViewSet):
         user: Optional[User] = None
         error_msg = ""
 
-        # 1. 尝试 LDAP 认证（仅在 settings 中显式启用 LDAPBackend 时）
-        if "django_auth_ldap.backend.LDAPBackend" in settings.AUTHENTICATION_BACKENDS:
-            try:
-                from django_auth_ldap.backend import LDAPBackend
-                ldap_backend = LDAPBackend()
-                ldap_user = ldap_backend.authenticate(request, username=username, password=password)
-                if ldap_user and isinstance(ldap_user, User):
-                    # 同步/更新本地用户记录
-                    local_user, created = User.objects.get_or_create(
-                        username=username,
-                        defaults={
-                            "source": "ldap",
-                            "nickname": getattr(ldap_user, "first_name", username) or username,
-                            "email": getattr(ldap_user, "email", ""),
-                        },
-                    )
-                    if not created:
-                        local_user.source = "ldap"
-                        local_user.nickname = getattr(ldap_user, "first_name", username) or username
-                        local_user.last_login = timezone.now()
-                        local_user.save(update_fields=["source", "nickname", "last_login"])
-                    user = local_user
-            except Exception as e:
-                error_msg = str(e)
+        # 1. 尝试 LDAP 认证（配置来源：「系统配置」页面 ldap_* 键优先，环境变量兜底）
+        from apps.account.ldap_config import authenticate_ldap
+
+        try:
+            ldap_user = authenticate_ldap(request, username, password)
+            if ldap_user and isinstance(ldap_user, User):
+                # 同步/更新本地用户记录
+                local_user, created = User.objects.get_or_create(
+                    username=username,
+                    defaults={
+                        "source": "ldap",
+                        "nickname": getattr(ldap_user, "first_name", username) or username,
+                        "email": getattr(ldap_user, "email", ""),
+                    },
+                )
+                if not created:
+                    local_user.source = "ldap"
+                    local_user.nickname = getattr(ldap_user, "first_name", username) or username
+                    local_user.last_login = timezone.now()
+                    local_user.save(update_fields=["source", "nickname", "last_login"])
+                user = local_user
+        except Exception as e:
+            error_msg = str(e)
 
         # 2. LDAP 失败或未启用，尝试本地认证
         if not user:
@@ -250,6 +249,8 @@ class AuthViewSet(viewsets.GenericViewSet):
             {"id": "releases", "name": "发布看板", "path": "/releases", "icon": "RocketOutlined", "modules": ["release"]},
             {"id": "workflows", "name": "工作流审批", "path": "/workflows", "icon": "ProfileOutlined", "modules": ["workflow"]},
             {"id": "notifications", "name": "通知中心", "path": "/notifications", "icon": "BellOutlined", "modules": []},
+            {"id": "guide", "name": "使用说明", "path": "/guide", "icon": "ReadOutlined", "modules": []},
+            {"id": "feedback", "name": "使用反馈", "path": "/feedback", "icon": "MessageOutlined", "modules": []},
             {"id": "projects", "name": "项目管理", "path": "/projects", "icon": "FolderOutlined", "modules": ["project"]},
             {"id": "repositories", "name": "仓库管理", "path": "/repositories", "icon": "DatabaseOutlined", "modules": ["repository"]},
             {"id": "credentials", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined", "modules": ["credential"]},

@@ -11,6 +11,8 @@ import {
   CredentialDetail,
   CredentialList,
   Dashboard,
+  Feedback,
+  Guide,
   PackageImage,
   PackageTask,
   Notification,
@@ -80,6 +82,8 @@ const routes: AppRouteObject[] = [
           { path: 'releases/create', element: <PageLoader><ReleaseCreate /></PageLoader>, handle: { title: '新建发布' } },
           { path: 'releases/:id', element: <PageLoader><ReleaseDetail /></PageLoader>, handle: { title: '发布详情' } },
           { path: 'notifications', element: <PageLoader><Notification /></PageLoader>, handle: { title: '通知中心' } },
+          { path: 'guide', element: <PageLoader><Guide /></PageLoader>, handle: { title: '使用说明' } },
+          { path: 'feedback', element: <PageLoader><Feedback /></PageLoader>, handle: { title: '使用反馈' } },
           {
             path: 'system',
             handle: { title: '系统管理' },

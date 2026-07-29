@@ -13,6 +13,7 @@ import {
 import { systemApi } from '@/api/system';
 import type { SystemConfig } from '@/api/system';
 import { NexusIntegrationCard } from './NexusIntegrationCard';
+import { LdapIntegrationCard } from './LdapIntegrationCard';
 
 interface FormState {
   key: string;
@@ -155,6 +156,8 @@ export default function SystemConfigPage() {
       </div>
 
       <NexusIntegrationCard />
+
+      <LdapIntegrationCard />
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">

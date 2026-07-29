@@ -59,6 +59,7 @@ export const systemApi = {
   patchConfig: (key: string, data: Partial<SystemConfig>) =>
     patch<SystemConfig>(`/system/configs/${key}/`, data),
   deleteConfig: (key: string) => del<null>(`/system/configs/${key}/`),
+  testLdapConnection: () => post<{ detail: string }>('/system/configs/ldap-test/', {}),
   getLogs: (params?: LogListParams) =>
     get<PaginatedData<SystemLog>>('/system/logs/', { params }),
 };

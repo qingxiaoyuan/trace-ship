@@ -696,3 +696,18 @@ export interface Notification {
   related_id: string;
   created_at: string;
 }
+
+export type FeedbackCategory = 'suggestion' | 'bug' | 'experience' | 'other';
+
+export interface Feedback {
+  id: string;
+  title: string;
+  content: string;
+  category: FeedbackCategory;
+  created_by: string;
+  created_by_name: string;
+  like_count: number;
+  liked: boolean;
+  created_at: string;
+  updated_at: string;
+}

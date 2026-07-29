@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import { useMemo } from 'react';
 import {
   Bell,
+  BookOpen,
   ChevronsUpDown,
   FileText,
   FolderKanban,
@@ -10,6 +11,7 @@ import {
   Hammer,
   KeyRound,
   LayoutDashboard,
+  MessageSquareText,
   Rocket,
   ScanSearch,
   ScrollText,
@@ -46,6 +48,8 @@ const fallbackMenus: MenuItem[] = [
   { id: 'releases', name: '发布看板', path: '/releases', icon: 'RocketOutlined' },
   { id: 'workflows', name: '工作流审批', path: '/workflows', icon: 'ProfileOutlined' },
   { id: 'notifications', name: '通知', path: '/notifications', icon: 'BellOutlined' },
+  { id: 'guide', name: '使用说明', path: '/guide', icon: 'ReadOutlined' },
+  { id: 'feedback', name: '使用反馈', path: '/feedback', icon: 'MessageOutlined' },
   { id: 'projects', name: '项目管理', path: '/projects', icon: 'FolderOutlined' },
   { id: 'repositories', name: '仓库管理', path: '/repositories', icon: 'DatabaseOutlined' },
   { id: 'credentials', name: '凭证管理', path: '/credentials', icon: 'KeyOutlined' },
@@ -72,6 +76,8 @@ const pathIconMap: Record<string, LucideIcon> = {
   '/releases': Rocket,
   '/workflows': GitPullRequestArrow,
   '/notifications': Bell,
+  '/guide': BookOpen,
+  '/feedback': MessageSquareText,
   '/projects': FolderKanban,
   '/repositories': GitFork,
   '/credentials': KeyRound,
@@ -86,7 +92,7 @@ const pathIconMap: Record<string, LucideIcon> = {
 };
 
 const groupRules = [
-  { title: '概览', paths: ['/dashboard', '/releases', '/workflows', '/notifications'] },
+  { title: '概览', paths: ['/dashboard', '/releases', '/workflows', '/notifications', '/guide', '/feedback'] },
   { title: '资源', paths: ['/projects', '/repositories', '/credentials', '/packages'] },
   { title: '质量', paths: ['/commits', '/releases/create'] },
   { title: '系统', paths: ['/system/users', '/system/roles', '/system/configs', '/system/package-images', '/system/logs'] },

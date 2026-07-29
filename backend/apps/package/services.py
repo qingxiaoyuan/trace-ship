@@ -210,6 +210,27 @@ class PackageService:
             if content and not content.endswith("\n"):
                 f.write("\n")
 
+    # ANSI 转义序列：CSI（颜色/光标控制）、OSC（标题等）、单字符序列
+    ANSI_ESCAPE_RE = re.compile(
+        r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])"
+    )
+
+    @classmethod
+    def _sanitize_log_line(cls, line: str) -> str:
+        """
+        清理打包输出中的乱码来源
+
+        容器以伪终端（-t）运行时，npm/vite 等工具会输出 ANSI 颜色与
+        光标控制序列、以及 \r 进度覆盖，直接写入日志会显示为乱码：
+        - \r 进度覆盖：只保留最后一段有效文本
+        - ANSI 转义序列：整体剥离
+        - 其他控制字符：剔除（保留 \t 与 \n）
+        """
+        if "\r" in line:
+            line = line.split("\r")[-1]
+        line = cls.ANSI_ESCAPE_RE.sub("", line)
+        return "".join(ch for ch in line if ch in ("\t", "\n") or ch >= " ")
+
     @classmethod
     def _run_command(
         cls,
@@ -228,6 +249,8 @@ class PackageService:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             shell=shell,
             start_new_session=True,
         )
@@ -239,7 +262,8 @@ class PackageService:
                 if ready:
                     line = process.stdout.readline()
                     if line:
-                        cls._append_log(task, line.rstrip("\n"))
+                        # TTY 模式下输出为 \r\n，剥离回车与 ANSI 转义避免日志乱码
+                        cls._append_log(task, cls._sanitize_log_line(line.rstrip("\r\n")))
                         continue
                 code = process.poll()
                 if code is not None:
@@ -360,6 +384,8 @@ class PackageService:
         output_path = env["OUTPUT_PATH"]
         command = [
             "docker", "run", "--rm",
+            # 分配伪终端：避免容器内进程因 stdout 非 TTY 退化为块缓冲，保证打包日志实时输出
+            "-t",
             # 使用宿主机网络，便于容器直接访问内网 npm 源等服务
             "--network", "host",
             *cls._docker_env_args(env_vars),
