@@ -30,6 +30,7 @@
 - 登录成功后直接使用 django-auth-ldap 落库的用户对象同步 `source`/`nickname`/`department`/`last_login`，**禁止再按原始输入 get_or_create**。
 - 显示名支持 `<部门>姓名` 前缀解析（`parse_ldap_display_name`），部门与姓名分字段入库。
 - LDAP 用户无任何角色时自动赋予 `developer` 角色（幂等）。
+- 项目创建接口的权限由硬编码 `is_superuser` 改为 RBAC 权限码 `project.create`（`HasPermission`，超管默认放行），LDAP 用户在「角色管理」绑定含该权限码的角色后即可创建项目；权限拒绝时返回中文提示"没有执行该操作的权限，请联系管理员分配对应角色"，前端创建失败时直接展示后端 message。
 - 菜单：`/system/package-images` 对 `system` 与 `package` 模块均可见（打包镜像列表接口本身仅需登录）；「系统管理」父级菜单改为按子项权限过滤。
 - `deploy.sh --clear-ldap-users` 提供 LDAP 用户一键清理（含 Token 黑名单、角色关联，操作日志置空保留）。
 

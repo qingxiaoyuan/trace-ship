@@ -2,6 +2,7 @@
 发布服务单元测试
 """
 import pytest
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.release.services import ReleaseService
@@ -11,10 +12,12 @@ from utils.provider.base import TagInfo
 
 pytestmark = pytest.mark.django_db
 
+TODAY = timezone.now().strftime("%Y%m%d")
+
 
 def test_create_release_rejects_existing_tag(repository, project, user, mock_git_provider, monkeypatch):
-    """创建发布草稿前校验远端同名 tag。"""
-    mock_git_provider.tags = [TagInfo(name="VA.1.0.0", commit_hash="old")]
+    """创建发布草稿前校验远端同名 tag（含日期段）。"""
+    mock_git_provider.tags = [TagInfo(name=f"VA.1.0.0_{TODAY}", commit_hash="old")]
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
     monkeypatch.setattr(ReleaseService, "_resolve_branch_head_hash", lambda repo, branch, request_user=None: "head")
 
@@ -36,8 +39,8 @@ def test_create_release_rejects_existing_tag_after_suffix_normalized(
     mock_git_provider,
     monkeypatch,
 ):
-    """rc/beta 自动补齐后缀后按最终 tag 查重。"""
-    mock_git_provider.tags = [TagInfo(name="VA.1.0.0-alpha", commit_hash="old")]
+    """rc/beta 自动补齐后缀与日期段后按最终 tag 查重。"""
+    mock_git_provider.tags = [TagInfo(name=f"VA.1.0.0-alpha_{TODAY}", commit_hash="old")]
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
     monkeypatch.setattr(ReleaseService, "_resolve_branch_head_hash", lambda repo, branch, request_user=None: "head")
 

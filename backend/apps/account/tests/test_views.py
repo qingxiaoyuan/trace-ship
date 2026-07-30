@@ -71,3 +71,103 @@ def test_user_info():
     response = client.get("/api/auth/user-info/")
     assert response.status_code == 200
     assert response.data["data"]["username"] == "testuser"
+
+
+def _make_user(username: str, **kwargs) -> User:
+    """创建测试用户"""
+    return User.objects.create_user(
+        username=username,
+        password="testpass123",
+        source="local",
+        is_active=True,
+        **kwargs,
+    )
+
+
+@pytest.mark.django_db
+def test_user_list_open_to_all_users():
+    """
+    测试人员查询全员可用：普通用户可列出全部用户，但仅返回精简字段
+
+    期望：HTTP 200，列表包含其他用户，且不包含邮箱等敏感字段
+    """
+    _make_user("picker_target", nickname="目标用户", email="target@example.com")
+    viewer = _make_user("picker_viewer")
+    client = APIClient()
+    client.force_authenticate(user=viewer)
+    response = client.get("/api/account/users/")
+    assert response.status_code == 200
+    results = response.data["data"]["results"]
+    assert len(results) == 2
+    target = next(u for u in results if u["username"] == "picker_target")
+    assert target["nickname"] == "目标用户"
+    assert "email" not in target
+    assert "is_superuser" not in target
+
+
+@pytest.mark.django_db
+def test_user_retrieve_self_returns_full_fields():
+    """
+    测试普通用户查看自己详情仍返回完整字段
+
+    期望：HTTP 200，包含 email 字段
+    """
+    user = _make_user("self_viewer", email="self@example.com")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get(f"/api/account/users/{user.id}/")
+    assert response.status_code == 200
+    assert response.data["data"]["email"] == "self@example.com"
+
+
+@pytest.mark.django_db
+def test_user_retrieve_other_returns_brief_fields():
+    """
+    测试普通用户查看他人详情仅返回精简字段
+
+    期望：HTTP 200，不包含 email 字段
+    """
+    other = _make_user("other_user", email="other@example.com")
+    viewer = _make_user("brief_viewer")
+    client = APIClient()
+    client.force_authenticate(user=viewer)
+    response = client.get(f"/api/account/users/{other.id}/")
+    assert response.status_code == 200
+    assert "email" not in response.data["data"]
+
+
+@pytest.mark.django_db
+def test_user_update_other_forbidden():
+    """
+    测试普通用户不能修改他人信息
+
+    期望：HTTP 404（写操作查询集仅包含自己）
+    """
+    other = _make_user("update_target")
+    viewer = _make_user("update_viewer")
+    client = APIClient()
+    client.force_authenticate(user=viewer)
+    response = client.patch(f"/api/account/users/{other.id}/", {"nickname": "篡改"})
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_user_update_self_cannot_escalate_privileges():
+    """
+    测试普通用户修改自己时管理字段被忽略，无法提权
+
+    期望：HTTP 200，但 is_superuser/role_ids 等字段不生效
+    """
+    user = _make_user("escalate_user")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.patch(f"/api/account/users/{user.id}/", {
+        "nickname": "新昵称",
+        "is_superuser": True,
+        "is_active": False,
+    })
+    assert response.status_code == 200
+    user.refresh_from_db()
+    assert user.nickname == "新昵称"
+    assert user.is_superuser is False
+    assert user.is_active is True

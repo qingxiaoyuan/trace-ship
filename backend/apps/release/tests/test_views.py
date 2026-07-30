@@ -4,10 +4,13 @@
 import pytest
 from unittest.mock import MagicMock
 
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.release.models import ReleaseRecord
 from utils.provider.base import TagInfo
+
+TODAY = timezone.now().strftime("%Y%m%d")
 
 
 from apps.workflow.models import WorkflowDefinition
@@ -118,7 +121,7 @@ class TestReleaseViews:
         assert response.data["code"] == 0
         data = response.data["data"]
         assert data["version"] == "VA.1.0.0"
-        assert data["tag_name"] == "VA.1.0.0"
+        assert data["tag_name"] == f"VA.1.0.0_{TODAY}"
         assert data["status"] == "draft"
 
     def test_create_formal_release_allows_non_main_branch(self, api_client, project, repository, patched_provider):
@@ -149,7 +152,7 @@ class TestReleaseViews:
             status="draft",
             publisher=api_client.handler._force_user,
         )
-        patched_provider.tags = [TagInfo(name="VA.1.0.1", commit_hash="old")]
+        patched_provider.tags = [TagInfo(name=f"VA.1.0.1_{TODAY}", commit_hash="old")]
 
         response = api_client.patch(
             f"/api/releases/{release.id}/",

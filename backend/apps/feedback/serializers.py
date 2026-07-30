@@ -16,6 +16,7 @@ class FeedbackSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     like_count = serializers.SerializerMethodField()
     liked = serializers.SerializerMethodField()
+    processed_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Feedback
@@ -23,13 +24,23 @@ class FeedbackSerializer(serializers.ModelSerializer):
             "id", "title", "content", "category",
             "created_by", "created_by_name",
             "like_count", "liked",
+            "status", "processed_by", "processed_by_name", "processed_at",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_by", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "created_by", "status", "processed_by", "processed_at",
+            "created_at", "updated_at",
+        ]
 
     def get_created_by_name(self, obj: Feedback) -> str:
         """提交人显示名，优先昵称"""
         return obj.created_by.nickname or obj.created_by.username
+
+    def get_processed_by_name(self, obj: Feedback) -> str:
+        """处理人显示名，未处理时返回空串"""
+        if not obj.processed_by:
+            return ""
+        return obj.processed_by.nickname or obj.processed_by.username
 
     def get_like_count(self, obj: Feedback) -> int:
         """点赞数：列表/详情走 annotate 聚合值，创建响应兜底实时统计"""

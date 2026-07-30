@@ -163,3 +163,57 @@ def test_filter_by_category():
     results = response.data["data"]["results"]
     assert len(results) == 1
     assert results[0]["category"] == "bug"
+
+
+@pytest.mark.django_db
+def test_process_feedback_only_superuser():
+    """
+    测试标记已处理权限：普通用户不可操作，超管可标记并记录处理人
+
+    期望：普通用户返回 40301；超管标记成功后状态、处理人、处理时间落库
+    """
+    author = _make_user("fb_proc_author")
+    admin = _make_user("fb_proc_admin", is_superuser=True)
+    feedback = Feedback.objects.create(
+        title="待处理反馈",
+        content="内容",
+        category="bug",
+        created_by=author,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=author)
+    response = client.post(f"/api/feedback/{feedback.id}/process/")
+    assert response.status_code == 400
+    assert response.data["code"] == 40301
+
+    client.force_authenticate(user=admin)
+    response = client.post(f"/api/feedback/{feedback.id}/process/")
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    feedback.refresh_from_db()
+    assert feedback.status == "processed"
+    assert feedback.processed_by == admin
+    assert feedback.processed_at is not None
+
+
+@pytest.mark.django_db
+def test_process_feedback_already_processed():
+    """
+    测试重复标记已处理返回业务错误
+
+    期望：HTTP 400，code 为 40001
+    """
+    admin = _make_user("fb_proc_admin2", is_superuser=True)
+    feedback = Feedback.objects.create(
+        title="已处理反馈",
+        content="内容",
+        category="other",
+        created_by=admin,
+        status="processed",
+    )
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    response = client.post(f"/api/feedback/{feedback.id}/process/")
+    assert response.status_code == 400
+    assert response.data["code"] == 40001

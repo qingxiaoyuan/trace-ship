@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message, Popconfirm } from 'antd';
 import {
   Bug,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Lightbulb,
@@ -18,7 +19,7 @@ import dayjs from 'dayjs';
 import { feedbackApi } from '@/api/feedback';
 import { TsModal } from '@/components/TsModal';
 import { useAuthStore } from '@/stores/authStore';
-import type { FeedbackCategory } from '@/types';
+import type { FeedbackCategory, FeedbackStatus } from '@/types';
 
 const categoryTabs: { key: string; label: string }[] = [
   { key: '', label: '全部' },
@@ -33,6 +34,11 @@ const categoryMeta: Record<FeedbackCategory, { label: string; tagClass: string }
   bug: { label: '问题反馈', tagClass: 'border-rose-200 bg-rose-50 text-rose-600' },
   experience: { label: '体验优化', tagClass: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
   other: { label: '其他', tagClass: 'border-slate-200 bg-slate-50 text-slate-500' },
+};
+
+const statusMeta: Record<FeedbackStatus, { label: string; tagClass: string }> = {
+  open: { label: '待处理', tagClass: 'border-amber-200 bg-amber-50 text-amber-600' },
+  processed: { label: '已处理', tagClass: 'border-emerald-200 bg-emerald-50 text-emerald-600' },
 };
 
 const categoryOptions: { value: FeedbackCategory; label: string; icon: typeof Bug; iconClass: string }[] = [
@@ -112,6 +118,15 @@ export default function Feedback() {
       invalidate();
     },
     onError: () => message.error('删除失败，仅提交人本人可删除'),
+  });
+
+  const processMutation = useMutation({
+    mutationFn: feedbackApi.processFeedback,
+    onSuccess: () => {
+      message.success('已标记为已处理');
+      invalidate();
+    },
+    onError: (err: { message?: string }) => message.error(err?.message || '操作失败'),
   });
 
   return (
@@ -195,7 +210,9 @@ export default function Feedback() {
           ) : (
             feedbacks.map((item) => {
               const meta = categoryMeta[item.category] || categoryMeta.other;
+              const statusInfo = statusMeta[item.status] || statusMeta.open;
               const canDelete = user && (user.id === item.created_by || user.is_superuser);
+              const canProcess = user?.is_superuser && item.status === 'open';
               return (
                 <div key={item.id} className="px-5 py-4 transition-colors hover:bg-indigo-50/30">
                   <div className="flex items-start gap-3">
@@ -208,11 +225,20 @@ export default function Feedback() {
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.tagClass}`}>
                           {meta.label}
                         </span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo.tagClass}`}>
+                          {statusInfo.label}
+                        </span>
                       </div>
                       <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-5 text-slate-600">{item.content}</p>
                       <div className="mt-2.5 flex items-center gap-3 text-[11px] text-slate-400">
                         <span className="font-medium text-slate-500">{item.created_by_name}</span>
                         <span>{dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}</span>
+                        {item.status === 'processed' && item.processed_by_name ? (
+                          <span>
+                            由 {item.processed_by_name} 处理
+                            {item.processed_at ? ` · ${dayjs(item.processed_at).format('YYYY-MM-DD HH:mm')}` : ''}
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => likeMutation.mutate(item.id)}
@@ -226,6 +252,23 @@ export default function Feedback() {
                           <ThumbsUp className="h-3 w-3" strokeWidth={1.5} />
                           <span>{item.like_count}</span>
                         </button>
+                        {canProcess ? (
+                          <Popconfirm
+                            title="标记为已处理？"
+                            description="处理后状态不可恢复"
+                            okText="确认"
+                            cancelText="取消"
+                            onConfirm={() => processMutation.mutate(item.id)}
+                          >
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-slate-300 transition-colors hover:text-emerald-500"
+                            >
+                              <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} />
+                              <span>设为已处理</span>
+                            </button>
+                          </Popconfirm>
+                        ) : null}
                         {canDelete ? (
                           <Popconfirm
                             title="确定删除该反馈？"

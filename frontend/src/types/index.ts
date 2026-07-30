@@ -699,6 +699,8 @@ export interface Notification {
 
 export type FeedbackCategory = 'suggestion' | 'bug' | 'experience' | 'other';
 
+export type FeedbackStatus = 'open' | 'processed';
+
 export interface Feedback {
   id: string;
   title: string;
@@ -708,6 +710,10 @@ export interface Feedback {
   created_by_name: string;
   like_count: number;
   liked: boolean;
+  status: FeedbackStatus;
+  processed_by: string | null;
+  processed_by_name: string;
+  processed_at: string | null;
   created_at: string;
   updated_at: string;
 }

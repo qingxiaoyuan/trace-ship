@@ -62,6 +62,30 @@ def test_list_branches(provider):
 
 
 @responses.activate
+def test_list_branches_paginates_all_pages(provider):
+    """测试分支列表自动翻页，突破单页 100 条限制"""
+    encoded = quote("group/project", safe="")
+    url = f"https://gitlab.example.com/api/v4/projects/{encoded}/repository/branches"
+    responses.add(
+        responses.GET,
+        url,
+        json=[{"name": f"feature-{i}", "default": False, "commit": {"id": f"h{i}"}} for i in range(100)],
+        headers={"X-Next-Page": "2"},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        url,
+        json=[{"name": "main", "default": True, "commit": {"id": "abc123"}}],
+        status=200,
+    )
+    branches = provider.list_branches("group/project")
+    assert len(branches) == 101
+    assert responses.calls[0].request.params["page"] == "1"
+    assert responses.calls[1].request.params["page"] == "2"
+
+
+@responses.activate
 def test_list_commits(provider):
     """测试 commit 列表"""
     encoded = quote("group/project", safe="")

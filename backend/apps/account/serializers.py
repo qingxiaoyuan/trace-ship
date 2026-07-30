@@ -20,6 +20,20 @@ class RoleBriefSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "code"]
 
 
+class UserBriefSerializer(serializers.ModelSerializer):
+    """
+    用户简要序列化器
+
+    面向人员查询/选择器场景，仅暴露必要公开字段，
+    不包含邮箱、手机、LDAP DN、登录时间等敏感信息。
+    """
+
+    class Meta:
+        model = User
+        fields = ["id", "username", "nickname", "department", "is_active"]
+        read_only_fields = fields
+
+
 class UserSerializer(serializers.ModelSerializer):
     """
     用户只读序列化器
@@ -98,6 +112,11 @@ class UserCreateSerializer(serializers.ModelSerializer):
         if self.instance is not None and self.instance.source == "ldap":
             attrs.pop("password", None)
             attrs.pop("username", None)
+        # 非超管更新（仅允许改自己）时剔除管理字段，防止提权
+        request = self.context.get("request")
+        if self.instance is not None and request and not request.user.is_superuser:
+            for field in ("is_superuser", "is_active", "role_ids", "source", "username"):
+                attrs.pop(field, None)
         return attrs
 
     def create(self, validated_data: dict) -> User:

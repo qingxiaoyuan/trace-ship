@@ -19,7 +19,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.account.models import User, Role, Permission, UserRole
 from apps.account.serializers import (
-    UserSerializer, UserCreateSerializer, RoleSerializer,
+    UserSerializer, UserBriefSerializer, UserCreateSerializer, RoleSerializer,
     PermissionSerializer, LoginSerializer, UserInfoSerializer,
 )
 from utils.permissions import IsSuperUser
@@ -341,7 +341,8 @@ class UserViewSet(StandardModelViewSet):
     """
     用户管理视图集
 
-    提供用户的增删改查；普通用户只能查看/修改自己，超管可操作全部。
+    人员查询（列表/详情）全员可查：普通用户返回精简字段，超管返回完整字段；
+    创建/删除需超管，普通用户仅可修改自己。
     """
 
     serializer_class = UserSerializer
@@ -349,28 +350,34 @@ class UserViewSet(StandardModelViewSet):
 
     def get_queryset(self):
         """
-        根据当前用户身份返回查询集
+        根据当前用户身份与操作返回查询集
 
-        超管返回全部用户，普通用户仅返回自己；预加载角色关联以避免 N+1 查询。
+        超管返回全部用户；普通用户读操作（人员查询）返回全部用户，
+        写操作仅返回自己；预加载角色关联以避免 N+1 查询。
 
         Returns:
-            超管返回全部用户，普通用户仅返回自己
+            当前身份与操作可见的用户查询集
         """
         if getattr(self, "swagger_fake_view", False):
             return User.objects.none()
-        if self.request.user.is_superuser:
+        if self.request.user.is_superuser or self.action in ["list", "retrieve"]:
             return User.objects.all().prefetch_related("user_roles__role")
         return User.objects.filter(id=self.request.user.id).prefetch_related("user_roles__role")
 
     def get_serializer_class(self):
         """
-        写操作使用 UserCreateSerializer，读操作使用 UserSerializer
+        写操作使用 UserCreateSerializer；读操作超管使用 UserSerializer，
+        普通用户查询他人时使用 UserBriefSerializer（查看自己仍返回完整字段）
 
         Returns:
             当前 action 对应的 Serializer 类
         """
         if self.action in ["create", "update", "partial_update"]:
             return UserCreateSerializer
+        if not self.request.user.is_superuser:
+            if self.action == "retrieve" and str(self.kwargs.get("pk")) == str(self.request.user.id):
+                return UserSerializer
+            return UserBriefSerializer
         return UserSerializer
 
     def get_permissions(self):

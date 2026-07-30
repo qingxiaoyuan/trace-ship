@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from rest_framework.test import APIClient
 
-from apps.repository.models import RepositoryBranch
-from utils.provider.base import BranchInfo
+from apps.repository.models import RepositoryBranch, RepositoryTag
+from utils.provider.base import BranchInfo, TagInfo
 
 
 def _dt(*args):
@@ -26,10 +26,11 @@ def api_client(user):
     return client
 
 
-def _make_provider(branches):
-    """构造 mock provider，list_branches 返回指定分支列表"""
+def _make_provider(branches, tags=None):
+    """构造 mock provider，list_branches/list_tags 返回指定列表"""
     mock = MagicMock()
     mock.list_branches.return_value = branches
+    mock.list_tags.return_value = tags or []
     mock.get_commit.return_value = MagicMock(
         author="兜底作者", committed_at=_dt(2026, 7, 1, 10, 0, 0), message="兜底信息"
     )
@@ -103,6 +104,33 @@ def test_sync_branches_removes_deleted_remote_branch(api_client, repository):
     # main 的 hash 更新为最新
     main = RepositoryBranch.objects.get(repository=repository, name="main")
     assert main.last_commit_hash == "h3"
+
+
+@pytest.mark.django_db
+def test_sync_branches_skips_stale_branches(api_client, repository):
+    """测试同步时跳过 3 个月无提交的 stale 分支，默认分支不受限"""
+    branches = [
+        BranchInfo(name="main", is_default=True, last_commit_hash="h1", last_commit_author="张三",
+                   last_commit_message="m1", last_commit_at=_dt(2026, 1, 1)),
+        BranchInfo(name="feature/active", is_default=False, last_commit_hash="h2", last_commit_author="李四",
+                   last_commit_message="m2", last_commit_at=_dt(2026, 7, 20)),
+        BranchInfo(name="feature/stale", is_default=False, last_commit_hash="h3", last_commit_author="王五",
+                   last_commit_message="m3", last_commit_at=_dt(2026, 1, 15)),
+    ]
+    # 预置一条本地 stale 分支，验证同步后会被清除
+    RepositoryBranch.objects.create(
+        repository=repository, name="feature/stale", last_commit_hash="h3",
+        last_commit_author="王五", last_commit_message="m3", last_commit_at=_dt(2026, 1, 15),
+    )
+    with patch("apps.repository.services.get_provider", return_value=_make_provider(branches)):
+        response = api_client.post(f"/api/repositories/{repository.id}/sync-branches/")
+
+    assert response.status_code == 200
+    assert response.data["data"]["synced_count"] == 2
+    assert response.data["data"]["total"] == 3
+    names = set(RepositoryBranch.objects.filter(repository=repository).values_list("name", flat=True))
+    # stale 非默认分支被过滤；默认分支即使超过 3 个月也保留
+    assert names == {"main", "feature/active"}
 
 
 @pytest.mark.django_db
@@ -205,6 +233,65 @@ def test_branches_action_svn_returns_empty_without_sync(api_client, project, cre
     assert response.status_code == 200
     assert response.data["data"] == []
     mock_factory.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_sync_branches_also_scans_tags(api_client, repository):
+    """测试同步分支时按版本规则扫描 tag，仅正则匹配的入库"""
+    repository.project.version_rule = {"prefix": "VB", "suffixes": {"rc": "rc", "beta": "beta"}}
+    repository.project.save(update_fields=["version_rule"])
+    branches = [
+        BranchInfo(name="main", is_default=True, last_commit_hash="h1", last_commit_author="张三",
+                   last_commit_message="m1", last_commit_at=_dt(2026, 7, 10)),
+    ]
+    tags = [
+        TagInfo(name="VB.1.1.1_20251014", commit_hash="t1"),
+        TagInfo(name="VB.1.1.2-rc_20260816", commit_hash="t2"),
+        TagInfo(name="v1.0.0", commit_hash="t3"),
+        TagInfo(name="VB.1.1.3_20251340", commit_hash="t4"),
+    ]
+    with patch("apps.repository.services.get_provider", return_value=_make_provider(branches, tags)):
+        response = api_client.post(f"/api/repositories/{repository.id}/sync-branches/")
+
+    assert response.status_code == 200
+    assert response.data["data"]["tag_synced_count"] == 2
+    assert response.data["data"]["tag_total"] == 4
+
+    saved = {t.name: t for t in RepositoryTag.objects.filter(repository=repository)}
+    # 无日期段的 v1.0.0 与非法日期 20251340 均不入库
+    assert set(saved) == {"VB.1.1.1_20251014", "VB.1.1.2-rc_20260816"}
+    formal = saved["VB.1.1.1_20251014"]
+    assert (formal.major, formal.minor, formal.patch) == (1, 1, 1)
+    assert formal.suffix == ""
+    assert formal.tag_date.isoformat() == "2025-10-14"
+    assert formal.commit_hash == "t1"
+    rc = saved["VB.1.1.2-rc_20260816"]
+    assert rc.suffix == "rc"
+    assert rc.tag_date.isoformat() == "2026-08-16"
+
+
+@pytest.mark.django_db
+def test_sync_tags_removes_stale_local_tags(api_client, repository):
+    """测试再次同步时清除远端已不存在或不再匹配规则的本地 tag"""
+    repository.project.version_rule = {"prefix": "VB", "suffixes": {"rc": "rc", "beta": "beta"}}
+    repository.project.save(update_fields=["version_rule"])
+    RepositoryTag.objects.create(
+        repository=repository, name="VB.9.9.9_20250101", commit_hash="old",
+        major=9, minor=9, patch=9, tag_date="2025-01-01",
+    )
+    RepositoryTag.objects.create(
+        repository=repository, name="legacy-tag", commit_hash="old",
+    )
+    branches = [
+        BranchInfo(name="main", is_default=True, last_commit_hash="h1", last_commit_author="张三",
+                   last_commit_message="m1", last_commit_at=_dt(2026, 7, 10)),
+    ]
+    tags = [TagInfo(name="VB.1.0.0_20260701", commit_hash="t1")]
+    with patch("apps.repository.services.get_provider", return_value=_make_provider(branches, tags)):
+        api_client.post(f"/api/repositories/{repository.id}/sync-branches/")
+
+    names = set(RepositoryTag.objects.filter(repository=repository).values_list("name", flat=True))
+    assert names == {"VB.1.0.0_20260701"}
 
 
 @pytest.mark.django_db
