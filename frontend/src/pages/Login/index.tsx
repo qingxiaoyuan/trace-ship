@@ -52,7 +52,7 @@ export default function Login() {
   const hydrated = useAuthStore((state) => state.hydrated);
 
   const [activeTab, setActiveTab] = useState<LoginTab>("domain");
-  const [username, setUsername] = useState("zhangsan");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);

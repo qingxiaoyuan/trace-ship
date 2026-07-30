@@ -17,7 +17,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.account.models import User, Role, Permission
+from apps.account.models import User, Role, Permission, UserRole
 from apps.account.serializers import (
     UserSerializer, UserCreateSerializer, RoleSerializer,
     PermissionSerializer, LoginSerializer, UserInfoSerializer,
@@ -117,26 +117,26 @@ class AuthViewSet(viewsets.GenericViewSet):
         error_msg = ""
 
         # 1. 尝试 LDAP 认证（配置来源：「系统配置」页面 ldap_* 键优先，环境变量兜底）
-        from apps.account.ldap_config import authenticate_ldap
+        from apps.account.ldap_config import authenticate_ldap, parse_ldap_display_name
 
         try:
             ldap_user = authenticate_ldap(request, username, password)
             if ldap_user and isinstance(ldap_user, User):
-                # 同步/更新本地用户记录
-                local_user, created = User.objects.get_or_create(
-                    username=username,
-                    defaults={
-                        "source": "ldap",
-                        "nickname": getattr(ldap_user, "first_name", username) or username,
-                        "email": getattr(ldap_user, "email", ""),
-                    },
-                )
-                if not created:
-                    local_user.source = "ldap"
-                    local_user.nickname = getattr(ldap_user, "first_name", username) or username
-                    local_user.last_login = timezone.now()
-                    local_user.save(update_fields=["source", "nickname", "last_login"])
-                user = local_user
+                # django-auth-ldap 已完成建用户（username 按 iexact 匹配、统一小写落库），
+                # 此处仅同步附加字段，切勿再按原始输入 get_or_create，否则大小写差异会产生重复用户
+                display_name = getattr(ldap_user, "first_name", "") or ""
+                department, real_name = parse_ldap_display_name(display_name)
+                ldap_user.source = "ldap"
+                ldap_user.nickname = real_name or ldap_user.username
+                ldap_user.department = department
+                ldap_user.last_login = timezone.now()
+                ldap_user.save(update_fields=["source", "nickname", "department", "last_login"])
+                # LDAP 用户没有任何角色时默认赋予开发人员角色
+                if not ldap_user.user_roles.exists():
+                    developer_role = Role.objects.filter(code="developer").first()
+                    if developer_role:
+                        UserRole.objects.get_or_create(user=ldap_user, role=developer_role)
+                user = ldap_user
         except Exception as e:
             error_msg = str(e)
 
@@ -262,12 +262,14 @@ class AuthViewSet(viewsets.GenericViewSet):
                 "name": "系统管理",
                 "path": "/system",
                 "icon": "SettingOutlined",
-                "modules": ["system"],
+                # 父级不限制模块，按子菜单权限过滤（子项全不可见时父级自动隐藏）
+                "modules": [],
                 "children": [
                     {"id": "system_users", "name": "用户管理", "path": "/system/users", "icon": "TeamOutlined", "modules": ["system"]},
                     {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined", "modules": ["system"]},
                     {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined", "modules": ["system"]},
-                    {"id": "system_package_images", "name": "打包镜像", "path": "/system/package-images", "icon": "BoxPlotOutlined", "modules": ["system"]},
+                    # 打包镜像对 system 与 package 模块均可见（开发人员可选择打包镜像）
+                    {"id": "system_package_images", "name": "打包镜像", "path": "/system/package-images", "icon": "BoxPlotOutlined", "modules": ["system", "package"]},
                     {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined", "modules": ["system"]},
                 ],
             },

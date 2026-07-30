@@ -33,6 +33,9 @@
 #
 # 清理环境（会删除容器、命名卷、.env.prod，数据不可恢复）：
 #   ./deploy.sh --clean [--force]
+#
+# 清空 LDAP 用户（删除 source=ldap 的账号及其角色关联，下次登录重新建档）：
+#   ./deploy.sh --clear-ldap-users
 # ============================================================
 set -e
 
@@ -85,23 +88,25 @@ if [ -z "${MODE}" ]; then
     echo "  3) 部署前端（复用已有环境变量）"
     echo "  4) 部署前后端（复用已有环境变量）"
     echo "  5) 清理环境（删除容器、卷、.env.prod）"
+    echo "  6) 清空 LDAP 用户（重新建档用）"
     echo "  0) 退出"
     echo ""
-    read -rp "请输入编号 [0-4]: " choice
+    read -rp "请输入编号 [0-6]: " choice
     case "${choice}" in
         1) MODE="--full" ;;
         2) MODE="--backend" ;;
         3) MODE="--frontend" ;;
         4) MODE="--app" ;;
         5) MODE="--clean" ;;
+        6) MODE="--clear-ldap-users" ;;
         0) echo "👋 已取消"; exit 0 ;;
         *) echo "❌ 无效选择"; exit 1 ;;
     esac
 fi
 
 case "${MODE}" in
-    --full|--backend|--frontend|--app|--clean) ;;
-    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app/--clean）"; exit 1 ;;
+    --full|--backend|--frontend|--app|--clean|--clear-ldap-users) ;;
+    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app/--clean/--clear-ldap-users）"; exit 1 ;;
 esac
 
 # ---------- 2. 清理环境 ----------
@@ -149,6 +154,52 @@ clean_env() {
     echo "✅ 清理完成，可重新执行 ./deploy.sh --full 进行全新部署"
     exit 0
 }
+
+# ---------- 2.5 清空 LDAP 用户 ----------
+clear_ldap_users() {
+    echo "====================================="
+    echo "⚠️  即将清空所有 LDAP 来源用户"
+    echo "====================================="
+    echo ""
+
+    local deps_container="${COMPOSE_PROJECT_NAME:-trace-ship}-postgres"
+    if ! docker ps --format '{{.Names}}' | grep -qx "${deps_container}"; then
+        echo "❌ PostgreSQL 容器 ${deps_container} 未运行，请先启动数据层（./deploy.sh --full）"
+        exit 1
+    fi
+
+    local db_name db_user
+    db_name="$(grep '^POSTGRES_DB=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2)"
+    db_user="$(grep '^POSTGRES_USER=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2)"
+    db_name="${db_name:-release_manager}"
+    db_user="${db_user:-release_manager}"
+
+    echo "以下 LDAP 用户将被删除（角色关联、登录 Token 一并清理，操作日志保留并置空用户）："
+    echo ""
+    docker exec "${deps_container}" psql -U "${db_user}" -d "${db_name}" -c \
+        "SELECT username, nickname, department, created_at FROM sys_user WHERE source = 'ldap';"
+
+    read -rp "确认删除? 输入 yes 继续: " confirm
+    if [ "${confirm}" != "yes" ]; then
+        echo "👋 已取消"
+        exit 0
+    fi
+
+    docker exec "${deps_container}" psql -U "${db_user}" -d "${db_name}" -c \
+        "DELETE FROM token_blacklist_blacklistedtoken WHERE token_id IN (SELECT id FROM token_blacklist_outstandingtoken WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap'));
+         DELETE FROM token_blacklist_outstandingtoken WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap');
+         UPDATE sys_operation_log SET user_id = NULL WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap');
+         DELETE FROM sys_user_role WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap');
+         DELETE FROM sys_user WHERE source = 'ldap';"
+
+    echo ""
+    echo "✅ LDAP 用户已清空，域账号下次登录将重新建档并默认赋予开发人员角色"
+    exit 0
+}
+
+if [ "${MODE}" = "--clear-ldap-users" ]; then
+    clear_ldap_users
+fi
 
 # ---------- 3. 加载镜像 ----------
 load_tar() {

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Modal } from 'antd';
-import { AlertTriangle, Box, Container, HardDrive, RefreshCw, Search, Upload } from 'lucide-react';
+import { AlertTriangle, Box, Container, HardDrive, RefreshCw, Search, Sparkles, Upload } from 'lucide-react';
 import { packageApi } from '@/api/package';
+import { openAiAgent } from '@/utils/browserCheck';
 import type { AvailableImageItem, PackageImageSource } from '@/types';
 
 type SourceFilter = '' | PackageImageSource;
@@ -69,6 +70,15 @@ export default function PackageImagePage() {
           <p className="mt-1 text-[13px] text-slate-500">实时列出本机 Docker 与已配置 Nexus 仓库中可用于打包的镜像</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openAiAgent}
+            title="在新标签页打开 AI 生成镜像"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+          >
+            <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
+            AI 生成镜像
+          </button>
           <button
             type="button"
             onClick={() => setImportOpen(true)}

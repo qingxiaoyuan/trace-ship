@@ -5,6 +5,7 @@ import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
 import { AuthGuard, PageLoader } from './components';
 import {
+  BrowserUpgrade,
   CommitAlertDetail,
   CommitDetail,
   CommitList,
@@ -47,6 +48,14 @@ const routes: AppRouteObject[] = [
       <AuthLayout>
         <Login />
       </AuthLayout>
+    ),
+  },
+  {
+    path: '/browser-upgrade',
+    element: (
+      <PageLoader>
+        <BrowserUpgrade />
+      </PageLoader>
     ),
   },
   {

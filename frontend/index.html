@@ -8,6 +8,29 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // ES5 语法编写的低版本浏览器兜底检测：必须能被老浏览器解析执行。
+      // 本站 bundle 含 ES2020+ 语法，老浏览器会直接白屏且无法执行任何 React 逻辑，
+      // 因此在加载 bundle 前用字符串代码探测语法支持度，不达标则跳转静态升级页。
+      (function () {
+        function canParse(code) {
+          try {
+            new Function(code);
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+        var modern =
+          canParse("var f = (a) => a;") &&
+          canParse("var a = {}; a?.b ?? 1;") &&
+          typeof window.fetch === "function" &&
+          typeof window.Promise === "function";
+        if (!modern) {
+          window.location.replace("/browser-upgrade.html");
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

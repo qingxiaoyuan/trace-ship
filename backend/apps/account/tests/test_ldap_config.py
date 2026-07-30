@@ -43,6 +43,7 @@ def _make_fake_ldap(fail_bind: bool = False, empty_search: bool = False) -> Modu
     """构造 fake python-ldap 模块"""
     fake = ModuleType("ldap")
     fake.SCOPE_SUBTREE = 2
+    fake.SCOPE_BASE = 0
     fake.OPT_NETWORK_TIMEOUT = 1
     fake.OPT_TIMEOUT = 2
     fake.OPT_X_TLS_REQUIRE_CERT = 3
@@ -74,10 +75,11 @@ def _make_fake_ldap(fail_bind: bool = False, empty_search: bool = False) -> Modu
             if fail_bind:
                 raise INVALID_CREDENTIALS("invalid credentials")
 
-        def search_s(self, *args, **kwargs):
+        def search_s(self, base, scope, *args, **kwargs):
+            assert scope == fake.SCOPE_BASE
             if empty_search:
                 return []
-            return [("uid=demo,ou=users,dc=example,dc=com", {})]
+            return [("ou=users,dc=example,dc=com", {})]
 
         def unbind_s(self):
             pass
@@ -230,3 +232,107 @@ def test_ldap_test_api_with_fake_ldap():
         response = client.post("/api/system/configs/ldap-test/")
     assert response.status_code == 200
     assert response.data["code"] == 0
+
+
+@pytest.mark.django_db
+def test_parse_display_name_with_department():
+    """
+    测试 <部门>姓名 格式拆分
+
+    期望：部门与姓名分别返回
+    """
+    from apps.account.ldap_config import parse_ldap_display_name
+
+    assert parse_ldap_display_name("<研发部>张三") == ("研发部", "张三")
+    assert parse_ldap_display_name("<信息办> 李四") == ("信息办", "李四")
+
+
+@pytest.mark.django_db
+def test_parse_display_name_without_department():
+    """
+    测试无部门前缀时原样返回姓名
+
+    期望：部门为空字符串
+    """
+    from apps.account.ldap_config import parse_ldap_display_name
+
+    assert parse_ldap_display_name("张三") == ("", "张三")
+    assert parse_ldap_display_name("") == ("", "")
+    assert parse_ldap_display_name("<研发部>") == ("", "<研发部>")
+
+
+@pytest.mark.django_db
+def test_ldap_first_login_assigns_developer_role():
+    """
+    测试 LDAP 首次登录自动赋予开发人员角色并拆分部门姓名
+
+    期望：同步附加字段到 django-auth-ldap 落库的用户，绑定 developer 角色
+    """
+    from apps.account.models import Role, UserRole
+
+    role = Role.objects.create(name="开发人员", code="developer")
+    ldap_user = User.objects.create_user(
+        username="ldap_new_user", password="", source="ldap", first_name="<研发部>张三", email="zs@example.com"
+    )
+    client = APIClient()
+    with mock.patch("apps.account.ldap_config.authenticate_ldap", return_value=ldap_user):
+        response = client.post("/api/auth/login/", {"username": "ldap_new_user", "password": "anypass"})
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    user = User.objects.get(username="ldap_new_user")
+    assert user.source == "ldap"
+    assert user.nickname == "张三"
+    assert user.department == "研发部"
+    assert UserRole.objects.filter(user=user, role=role).exists()
+
+
+@pytest.mark.django_db
+def test_ldap_repeated_login_idempotent():
+    """
+    测试重复 LDAP 登录不会重复建用户、重复绑角色
+
+    期望：两次登录后用户仅一条记录，角色仅一条关联
+    """
+    from apps.account.models import Role, UserRole
+
+    Role.objects.create(name="开发人员", code="developer")
+    ldap_user = User.objects.create_user(username="ldap_repeat", password="", source="ldap", first_name="李四")
+    client = APIClient()
+    with mock.patch("apps.account.ldap_config.authenticate_ldap", return_value=ldap_user):
+        for _ in range(2):
+            response = client.post("/api/auth/login/", {"username": "ldap_repeat", "password": "anypass"})
+            assert response.status_code == 200
+    assert User.objects.filter(username="ldap_repeat").count() == 1
+    assert UserRole.objects.filter(user=ldap_user).count() == 1
+
+
+@pytest.mark.django_db
+def test_menus_package_image_visible_to_developer_modules():
+    """
+    测试打包镜像菜单对 package 模块角色可见
+
+    期望：仅有 package 模块权限的用户菜单中包含 /system/package-images，
+    且不包含其他系统管理子菜单
+    """
+    from apps.account.models import Permission, Role, UserRole
+
+    perm = Permission.objects.create(name="触发打包", code="package.trigger", module="package")
+    role = Role.objects.create(name="开发人员", code="developer")
+    role.permissions.add(perm)
+    user = User.objects.create_user(username="menu_dev_user", password="pass12345", source="local", is_active=True)
+    UserRole.objects.create(user=user, role=role)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get("/api/auth/menus/")
+    assert response.status_code == 200
+    paths = []
+
+    def collect(items):
+        for item in items:
+            paths.append(item["path"])
+            collect(item.get("children", []))
+
+    collect(response.data["data"])
+    assert "/system/package-images" in paths
+    assert "/system/users" not in paths
+    assert "/system/configs" not in paths

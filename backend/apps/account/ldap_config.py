@@ -18,12 +18,33 @@ LDAP 连接配置与认证辅助
 import hashlib
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Optional
 
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+# 域账号显示名中的部门前缀，如 <研发部>张三
+DEPARTMENT_PREFIX_RE = re.compile(r"^<([^<>]+)>\s*(.*)$")
+
+
+def parse_ldap_display_name(raw: str) -> tuple[str, str]:
+    """
+    解析 LDAP 返回的显示名，拆分部门与姓名
+
+    形如 <研发部>张三 的显示名拆为 (研发部, 张三)；
+    无部门前缀时返回 ("", 原始显示名)。
+
+    Returns:
+        (部门, 姓名) 二元组
+    """
+    raw = (raw or "").strip()
+    match = DEPARTMENT_PREFIX_RE.match(raw)
+    if match and match.group(2).strip():
+        return match.group(1).strip(), match.group(2).strip()
+    return "", raw
 
 CONFIG_KEY_ENABLED = "ldap_enabled"
 CONFIG_KEY_SERVER_URI = "ldap_server_uri"
@@ -225,12 +246,12 @@ def test_ldap_connection() -> str:
         conn.protocol_version = 3
         # 配置了服务账号则验证绑定，否则匿名绑定验证服务可达
         conn.simple_bind_s(cfg["bind_dn"], cfg["bind_password"])
+        # BASE 范围搜索仅验证基准 DN 存在，避免 SUBTREE 触发服务端 size limit
         results = conn.search_s(
             cfg["user_search_base"],
-            ldap.SCOPE_SUBTREE,
+            ldap.SCOPE_BASE,
             "(objectClass=*)",
             ["dn"],
-            sizelimit=1,
         )
         conn.unbind_s()
     except ldap.INVALID_CREDENTIALS as exc:
@@ -239,6 +260,8 @@ def test_ldap_connection() -> str:
         raise LdapConfigError("用户搜索基准 DN 不存在，请检查 ldap_user_search_base") from exc
     except ldap.LDAPError as exc:
         raise LdapConfigError(f"连接 LDAP 失败：{exc}") from exc
+    except Exception as exc:
+        raise LdapConfigError(f"LDAP 测试连接异常：{exc}") from exc
 
     if not results:
         raise LdapConfigError("连接成功，但搜索基准 DN 下未找到任何条目")

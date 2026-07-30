@@ -104,13 +104,16 @@ export default function Dashboard() {
   const pendingAuditCount = overview?.pending_audit_count || pendingReleases.length;
   const rejectedCount = overview?.rejected_count || releases.filter((r) => normalizeStatus(r) === 'rejected').length;
   const successRate = Math.round((overview?.success_rate || 0) * 1000) / 10;
+  // 合规率统计口径：仅统计已审查（pass/warning/illegal）的提交，
+  // 未审查（unreviewed）不计入分母，避免全合规时因含未审查数据导致合规率低于 100%
+  const reviewedCommits = commits.filter((c) => c.review_status !== 'unreviewed');
   const passCommits = commits.filter((c) => c.review_status === 'pass').length;
   const warningCommits = commits.filter((c) => c.review_status === 'warning').length;
   const illegalCommits = commits.filter((c) => c.review_status === 'illegal').length;
-  const complianceRate = commits.length ? Math.round((passCommits / commits.length) * 1000) / 10 : 0;
+  const complianceRate = reviewedCommits.length ? Math.round((passCommits / reviewedCommits.length) * 1000) / 10 : 0;
   const displayName = user?.nickname || user?.username || '用户';
-  const warningRate = commits.length ? Math.round((warningCommits / commits.length) * 1000) / 10 : 0;
-  const illegalRate = commits.length ? Math.round((illegalCommits / commits.length) * 1000) / 10 : 0;
+  const warningRate = reviewedCommits.length ? Math.round((warningCommits / reviewedCommits.length) * 1000) / 10 : 0;
+  const illegalRate = reviewedCommits.length ? Math.round((illegalCommits / reviewedCommits.length) * 1000) / 10 : 0;
   const pendingPublishers = pendingReleases
     .map((release) => release.publisher)
     .filter((publisher): publisher is string => Boolean(publisher));
@@ -317,7 +320,7 @@ export default function Dashboard() {
           <span className="text-[18px] text-slate-400">%</span>
         </span>
       ),
-      description: `本批 ${commits.length} 条提交，${illegalCommits} 条不合规`,
+      description: `本批 ${reviewedCommits.length} 条已审查提交，${illegalCommits} 条不合规`,
       icon: ScanSearch,
       iconClass: 'icon-violet',
       action: <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">合规</span>,
@@ -325,7 +328,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-1">
           <div
             className="h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"
-            style={{ flex: Math.max(complianceRate, commits.length ? 1 : 0) }}
+            style={{ flex: Math.max(complianceRate, reviewedCommits.length ? 1 : 0) }}
           />
           {warningCommits > 0 ? (
             <div

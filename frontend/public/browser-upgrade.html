@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>浏览器版本过低 - TraceShip</title>
+    <!--
+      纯静态页面：不依赖任何构建产物与 JS 框架，
+      老浏览器（无法运行本站 SPA）也能正常渲染。
+      由 index.html 中的 ES5 内联检测脚本在低版本浏览器下重定向到此页。
+    -->
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f6f7fb;
+        font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+        color: #0f172a;
+      }
+      .card {
+        width: 100%;
+        max-width: 480px;
+        margin: 16px;
+        padding: 40px 32px;
+        background: #fff;
+        border: 1px solid rgba(99, 102, 241, 0.15);
+        border-radius: 16px;
+        box-shadow: 0 12px 40px -12px rgba(30, 27, 75, 0.15);
+        text-align: center;
+      }
+      .badge {
+        width: 56px; height: 56px;
+        margin: 0 auto;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 16px;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        color: #d97706;
+        font-size: 28px;
+        font-weight: 700;
+      }
+      h1 { margin-top: 20px; font-size: 20px; font-weight: 600; }
+      p { margin-top: 10px; font-size: 13px; line-height: 1.8; color: #64748b; }
+      .download {
+        display: inline-block;
+        margin-top: 24px;
+        padding: 12px 24px;
+        width: 100%;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #4f46e5, #06b6d4);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        text-decoration: none;
+      }
+      .download:hover { opacity: 0.92; }
+      .meta { margin-top: 14px; font-size: 11px; color: #94a3b8; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="badge">!</div>
+      <h1>浏览器版本过低</h1>
+      <p>
+        当前浏览器无法运行本平台（缺少必要的现代 JavaScript 特性），<br />
+        请下载安装最新版谷歌浏览器后重新访问。
+      </p>
+      <a class="download" href="http://10.128.89.202:8660/get/ChromeStandaloneSetup64.exe">
+        下载最新版 Chrome（离线安装包）
+      </a>
+      <div class="meta">Windows 64 位 · ChromeStandaloneSetup64.exe</div>
+    </div>
+  </body>
+</html>
