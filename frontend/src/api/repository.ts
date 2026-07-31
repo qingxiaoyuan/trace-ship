@@ -1,4 +1,4 @@
-import { get, post, put, del } from './request';
+import { get, post, patch, del } from './request';
 import type {
   ChangesPreview,
   CommitRecord,
@@ -28,7 +28,7 @@ export const repositoryApi = {
   getComplianceStats: () => get<RepoComplianceStat[]>('/repositories/compliance-stats/'),
   createRepository: (data: Partial<Repository>) => post<Repository>('/repositories/', data),
   updateRepository: (id: string, data: Partial<Repository>) =>
-    put<Repository>(`/repositories/${id}/`, data),
+    patch<Repository>(`/repositories/${id}/`, data),
   deleteRepository: (id: string) => del<null>(`/repositories/${id}/`),
   testRepository: (id: string) =>
     post<{ connected: boolean; detail?: string }>(`/repositories/${id}/test/`, {}),

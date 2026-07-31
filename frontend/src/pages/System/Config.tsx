@@ -91,7 +91,6 @@ export default function SystemConfigPage() {
       setSaving(false);
     },
     onError: () => {
-      message.error('保存失败');
       setSaving(false);
     },
   });
@@ -102,7 +101,6 @@ export default function SystemConfigPage() {
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['system-configs'] });
     },
-    onError: () => message.error('删除失败'),
   });
 
   const openCreate = () => {

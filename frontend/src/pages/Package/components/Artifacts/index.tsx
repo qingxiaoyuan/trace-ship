@@ -43,7 +43,7 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
       const safeName = (task.name || 'artifacts').replace(/\s+/g, '_').replace(/\//g, '_');
       saveBlob(blob, `${safeName}-${task.version}-artifacts.zip`);
     } catch {
-      message.error('下载全部产物失败');
+      // 下载失败由全局拦截器统一提示
     } finally {
       setDownloading(false);
     }
@@ -79,7 +79,6 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
 });
 
 export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { artifact: PackageArtifact; taskId: string }) {
-  const { message } = App.useApp();
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -88,11 +87,11 @@ export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { art
       const blob = await packageApi.downloadArtifact(taskId, artifact.id);
       saveBlob(blob, artifact.name);
     } catch {
-      message.error('下载失败');
+      // 下载失败由全局拦截器统一提示
     } finally {
       setDownloading(false);
     }
-  }, [artifact, message, taskId]);
+  }, [artifact, taskId]);
 
   return (
     <div className="flex items-center gap-2.5 rounded-lg border border-indigo-100 px-3 py-2.5 hover:bg-indigo-50/30">
@@ -121,7 +120,6 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
   artifact: PackageArtifact;
   taskId: string;
 }) {
-  const { message } = App.useApp();
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -130,11 +128,11 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
       const blob = await packageApi.downloadArtifact(taskId, artifact.id);
       saveBlob(blob, artifact.name);
     } catch {
-      message.error('下载失败');
+      // 下载失败由全局拦截器统一提示
     } finally {
       setDownloading(false);
     }
-  }, [artifact, message, taskId]);
+  }, [artifact, taskId]);
 
   return (
     <button

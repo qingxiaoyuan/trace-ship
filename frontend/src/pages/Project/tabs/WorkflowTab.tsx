@@ -26,6 +26,7 @@ import {
 import { TsModal } from '@/components/TsModal';
 import { Dropdown } from '@/components/Dropdown';
 import { ApprovalFlowPreview } from '@/components/ApprovalFlowPreview';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { workflowApi } from '@/api/workflow';
 import { accountApi } from '@/api/account';
 import { useAuthStore } from '@/stores/authStore';
@@ -146,7 +147,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
   /** 原始快照用于 diff */
   const [origNodes, setOrigNodes] = useState<WorkflowNodeConfig[]>([]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['workflow-definitions-tab', project.id],
     queryFn: () => workflowApi.getDefinitions({ project: project.id, page_size: 1000 }),
     enabled: !!project.id,
@@ -266,8 +267,8 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
       message.success('保存成功');
       queryClient.invalidateQueries({ queryKey: ['workflow-definitions-tab'] });
       closeEdit();
-    } catch (e) {
-      message.error((e as { message?: string })?.message || '保存失败');
+    } catch {
+      // 保存失败由全局拦截器统一提示
     } finally {
       setSaving(false);
     }
@@ -277,6 +278,8 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
 
   return (
     <div className="space-y-4">
+      <PermissionAlert error={error} className="rounded-xl" />
+
       {/* 流程列表 */}
       <div className="space-y-3">
         {isLoading ? (

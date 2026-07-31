@@ -55,13 +55,101 @@ def test_project_manager_can_list_members(project, manager):
 
 
 @pytest.mark.django_db
-def test_project_developer_cannot_list_members(project, developer):
+def test_project_developer_can_list_members(project, developer):
     """
-    普通开发人员不能查看成员列表
+    项目普通成员（开发人员）可以查看成员列表
+
+    权限设计：读操作对项目全体成员开放，仅限制增删改
     """
     response = auth_client(developer).get(f"/api/projects/{project.id}/members/")
 
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+
+
+@pytest.mark.django_db
+def test_outsider_cannot_list_members(project, outsider):
+    """
+    非项目成员不能查看成员列表
+    """
+    response = auth_client(outsider).get(f"/api/projects/{project.id}/members/")
+
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_project_developer_cannot_add_member(project, developer, outsider):
+    """
+    项目普通成员不能添加成员（写操作仅项目管理员）
+    """
+    response = auth_client(developer).post(f"/api/projects/{project.id}/members/", {
+        "user": str(outsider.id),
+        "role": "developer",
+    })
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_project_developer_cannot_remove_member(project, developer, manager):
+    """
+    项目普通成员不能移除成员（写操作仅项目管理员）
+    """
+    member = ProjectMember.objects.get(project=project, user=manager)
+    response = auth_client(developer).delete(
+        f"/api/projects/{project.id}/members/{member.id}/"
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_manager_can_batch_add_members(project, manager):
+    """
+    项目管理员可批量添加成员（user_ids），重复用户自动跳过
+    """
+    user_a = User.objects.create_user(username="batch_a", password="pass")
+    user_b = User.objects.create_user(username="batch_b", password="pass")
+
+    response = auth_client(manager).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(user_a.id), str(user_b.id), str(manager.id)],
+        "role": "developer",
+    }, format="json")
+
+    assert response.status_code == 201
+    assert response.data["code"] == 0
+    assert len(response.data["data"]["created"]) == 2
+    assert response.data["data"]["skipped"] == 1
+    assert ProjectMember.objects.filter(project=project, user=user_a, role="developer").exists()
+    assert ProjectMember.objects.filter(project=project, user=user_b, role="developer").exists()
+
+
+@pytest.mark.django_db
+def test_batch_add_members_rejects_empty_list(project, manager):
+    """
+    批量添加成员时 user_ids 为空返回参数错误
+    """
+    response = auth_client(manager).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [],
+        "role": "developer",
+    }, format="json")
+
+    assert response.status_code == 400
+    assert response.data["code"] == 40001
+
+
+@pytest.mark.django_db
+def test_batch_add_members_rejects_invalid_role(project, manager, outsider):
+    """
+    批量添加成员时角色非法返回参数错误
+    """
+    response = auth_client(manager).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(outsider.id)],
+        "role": "not_a_role",
+    }, format="json")
+
+    assert response.status_code == 400
+    assert response.data["code"] == 40001
 
 
 @pytest.mark.django_db

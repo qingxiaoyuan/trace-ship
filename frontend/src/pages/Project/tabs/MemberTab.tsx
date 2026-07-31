@@ -10,6 +10,8 @@ import {
   type ProjectMemberRole,
 } from '@/api/projectMember';
 import { getAvatarColor } from '@/utils/avatar';
+import { useAuthStore } from '@/stores/authStore';
+import { PermissionAlert } from '@/components/PermissionAlert';
 
 const roleMap: Record<ProjectMemberRole, string> = {
   manager: '项目负责人',
@@ -31,15 +33,25 @@ interface MemberTabProps {
 export function MemberTab({ projectId }: MemberTabProps) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [form] = Form.useForm();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['project-members', projectId],
     queryFn: () => projectMemberApi.getMembers(projectId),
     enabled: !!projectId,
   });
+
+  // 仅项目管理员（或超管）可增删改成员，普通成员只读
+  const canManage = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.is_superuser) return true;
+    return (data?.results || []).some(
+      (m) => String(m.user_id) === String(currentUser.id) && m.role === 'manager'
+    );
+  }, [currentUser, data]);
 
   const { data: usersData, isLoading: usersLoading } = useQuery({
     queryKey: ['account-users-all'],
@@ -48,15 +60,18 @@ export function MemberTab({ projectId }: MemberTabProps) {
   });
 
   const addMutation = useMutation({
-    mutationFn: (values: { user_id: string; role: ProjectMemberRole }) =>
-      projectMemberApi.addMember(projectId, values),
-    onSuccess: () => {
-      message.success('添加成功');
+    mutationFn: (values: { user_ids: string[]; role: ProjectMemberRole }) =>
+      projectMemberApi.addMembers(projectId, values),
+    onSuccess: (result) => {
+      message.success(
+        result.skipped > 0
+          ? `已添加 ${result.created.length} 位成员，${result.skipped} 位已在项目中自动跳过`
+          : '添加成功'
+      );
       setIsModalOpen(false);
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] });
     },
-    onError: () => message.error('添加失败'),
   });
 
   const updateMutation = useMutation({
@@ -71,7 +86,6 @@ export function MemberTab({ projectId }: MemberTabProps) {
       message.success('更新成功');
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] });
     },
-    onError: () => message.error('更新失败'),
   });
 
   const removeMutation = useMutation({
@@ -80,7 +94,6 @@ export function MemberTab({ projectId }: MemberTabProps) {
       message.success('移除成功');
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] });
     },
-    onError: () => message.error('移除失败'),
   });
 
   const handleRemove = useCallback(
@@ -97,14 +110,16 @@ export function MemberTab({ projectId }: MemberTabProps) {
     [modal, removeMutation]
   );
 
-  const userOptions = useMemo(
-    () =>
-      (usersData?.results || []).map((u: AccountUser) => ({
+  const userOptions = useMemo(() => {
+    // 过滤掉已在项目中的用户，避免重复添加
+    const existingIds = new Set((data?.results || []).map((m) => String(m.user_id)));
+    return (usersData?.results || [])
+      .filter((u: AccountUser) => !existingIds.has(String(u.id)))
+      .map((u: AccountUser) => ({
         value: u.id,
         label: `${u.nickname || u.username} (${u.username})`,
-      })),
-    [usersData]
-  );
+      }));
+  }, [usersData, data]);
 
   const filteredMembers = useMemo(() => {
     const members = data?.results || [];
@@ -123,17 +138,23 @@ export function MemberTab({ projectId }: MemberTabProps) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">项目成员</h1>
-          <p className="mt-1 text-[13px] text-slate-500">管理项目成员、角色与权限</p>
+          <p className="mt-1 text-[13px] text-slate-500">
+            {canManage ? '管理项目成员、角色与权限' : '项目成员与角色（仅项目管理员可调整）'}
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsModalOpen(true)}
-          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          添加成员
-        </button>
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            添加成员
+          </button>
+        )}
       </div>
+
+      <PermissionAlert error={error} className="rounded-xl" />
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
@@ -191,6 +212,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
                     <Select
                       value={member.role}
                       options={roleOptions}
+                      disabled={!canManage}
                       onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
                       loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
                       style={{ width: 140 }}
@@ -200,15 +222,17 @@ export function MemberTab({ projectId }: MemberTabProps) {
                     {dayjs(member.created_at).format('YYYY-MM-DD HH:mm')}
                   </div>
                   <div className="col-span-1 flex justify-end">
-                    <button
-                      type="button"
-                      disabled={removeMutation.isPending && removeMutation.variables === member.id}
-                      onClick={() => handleRemove(member)}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40"
-                      title="移除"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
+                    {canManage && (
+                      <button
+                        type="button"
+                        disabled={removeMutation.isPending && removeMutation.variables === member.id}
+                        onClick={() => handleRemove(member)}
+                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40"
+                        title="移除"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -229,16 +253,18 @@ export function MemberTab({ projectId }: MemberTabProps) {
       >
         <Form form={form} layout="vertical" onFinish={(values) => addMutation.mutate(values)}>
           <Form.Item
-            name="user_id"
-            label="选择用户"
+            name="user_ids"
+            label="选择用户（可多选）"
             rules={[{ required: true, message: '请选择用户' }]}
           >
             <Select
+              mode="multiple"
               showSearch
-              placeholder="请选择用户"
+              placeholder="请选择用户，支持搜索与多选"
               loading={usersLoading}
               options={userOptions}
               virtual
+              maxTagCount="responsive"
               filterOption={(input, option) =>
                 String(option?.label ?? '')
                   .toLowerCase()

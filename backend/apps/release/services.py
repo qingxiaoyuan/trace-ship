@@ -342,7 +342,7 @@ class ReleaseDocGenerator:
             tags = self.provider.list_tags(self.release.repository.external_identity)
         except ProviderError:
             return None
-        calculator = VersionCalculator(self.release.project.version_rule or {})
+        calculator = VersionCalculator(self.release.repository.get_version_rule())
         return calculator.find_latest_tag_by_type(tags, "formal")
 
     def _fetch_commits(self) -> List[CommitInfo]:
@@ -733,7 +733,7 @@ class ReleaseService:
         """
         ReleaseValidator.validate_project_status(project)
         release_rule = ReleaseValidator.get_release_rule(project)
-        version_rule = project.version_rule or {}
+        version_rule = repository.get_version_rule()
 
         provider = cls._get_provider(repository, publisher)
         tags: Optional[List[TagInfo]] = None
@@ -905,7 +905,7 @@ class ReleaseService:
         tag_created_at: Optional[datetime] = None
         try:
             tags = provider.list_tags(repo_identity)
-            calculator = VersionCalculator(project.version_rule or {})
+            calculator = VersionCalculator(repository.get_version_rule())
             latest = calculator.find_latest_matching_tag(tags)
             if latest:
                 last_tag = latest[0].name

@@ -84,7 +84,6 @@ export const ConfigDrawer = memo(function ConfigDrawer({ open, editing, onClose 
       queryClient.invalidateQueries({ queryKey: ['package-configs'] });
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
     },
-    onError: () => message.error('保存失败'),
   });
 
   const projectOptions = useMemo(

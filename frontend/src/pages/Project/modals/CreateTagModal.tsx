@@ -100,13 +100,11 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
       setCurrentStep(1);
       generateDocMutation.mutate(release.id);
     },
-    onError: (err: { message?: string }) => message.error(err?.message || '创建发布失败'),
   });
 
   const generateDocMutation = useMutation({
     mutationFn: (id: string) => releaseApi.generateDoc(id),
     onSuccess: (doc) => setReleaseDoc(doc as ReleaseDoc),
-    onError: () => message.error('生成发布说明失败'),
   });
 
   const submitMutation = useMutation({
@@ -116,7 +114,6 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
       setCurrentStep(2);
       onSuccess();
     },
-    onError: (err: { message?: string }) => message.error(err?.message || '提交审批失败'),
   });
 
   const handleReleaseTypeChange = (value: ReleaseType) => {

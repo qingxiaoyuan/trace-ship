@@ -4,6 +4,7 @@ import { ArrowRight, Rocket } from 'lucide-react';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
 import { getAvatarColor } from '@/utils/avatar';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { tabItems, releaseTypeText } from '../constants';
 import type { TabKey } from '../constants';
 import type { DetailSource } from '../types';
@@ -101,6 +102,8 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
           </button>
         ))}
       </div>
+
+      <PermissionAlert error={activeQuery.error} className="rounded-xl" />
 
       {/* 列表卡片 */}
       <div className="tech-card overflow-hidden rounded-xl">

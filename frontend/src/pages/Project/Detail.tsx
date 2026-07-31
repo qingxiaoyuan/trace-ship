@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { OverviewTab } from './tabs/OverviewTab';
 import { RepoTab } from './tabs/RepoTab';
 import { MemberTab } from './tabs/MemberTab';
@@ -65,7 +66,7 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(tab);
 
-  const { data: project, isLoading } = useQuery({
+  const { data: project, isLoading, error } = useQuery({
     queryKey: ['project', id],
     queryFn: () => projectApi.getProject(id || ''),
     enabled: !!id,
@@ -78,6 +79,14 @@ export default function ProjectDetail() {
 
   if (isLoading) {
     return <div className="p-6 text-center text-[13px] text-slate-400">加载中…</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-5 ts-fade-in-up">
+        <PermissionAlert error={error} className="rounded-xl" />
+      </div>
+    );
   }
 
   if (!project) {

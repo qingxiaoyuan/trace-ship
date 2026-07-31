@@ -19,6 +19,7 @@ import { RunningTab } from './components/RunningTab';
 import { DetailView } from './components/DetailView';
 import { BuildView } from './components/BuildView';
 import { ConfigDrawer } from './components/ConfigDrawer';
+import { PermissionAlert } from '@/components/PermissionAlert';
 
 const pageSize = 100;
 const page = 1;
@@ -43,12 +44,12 @@ export default function PackageTaskPage() {
   const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
   const [triggerForm] = Form.useForm<{ release_id: string }>();
 
-  const { data: configsData, isLoading: configsLoading } = useQuery({
+  const { data: configsData, isLoading: configsLoading, error: configsError } = useQuery({
     queryKey: ['package-configs', page],
     queryFn: () => packageApi.getConfigs({ page, page_size: pageSize }),
   });
 
-  const { data: tasksData, isLoading: tasksLoading } = useQuery({
+  const { data: tasksData, isLoading: tasksLoading, error: tasksError } = useQuery({
     queryKey: ['package-tasks', page],
     queryFn: () => packageApi.getTasks({ page, page_size: 20 }),
   });
@@ -98,17 +99,12 @@ export default function PackageTaskPage() {
 
   useEffect(() => {
     if (!routeTaskId) return;
-    let ignore = false;
     const timer = window.setTimeout(() => {
-      loadTaskDetail(routeTaskId).catch(() => {
-        if (!ignore) message.error('加载任务失败');
-      });
+      // 加载失败由全局拦截器统一提示，这里仅避免未处理的 Promise 拒绝
+      loadTaskDetail(routeTaskId).catch(() => {});
     }, 0);
-    return () => {
-      ignore = true;
-      window.clearTimeout(timer);
-    };
-  }, [routeTaskId, loadTaskDetail, message]);
+    return () => window.clearTimeout(timer);
+  }, [routeTaskId, loadTaskDetail]);
 
   useEffect(() => {
     if (!selectedTaskId || !shouldPoll) return;
@@ -141,7 +137,6 @@ export default function PackageTaskPage() {
       triggerForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
     },
-    onError: () => message.error('触发打包失败'),
   });
 
   const cancelMutation = useMutation({
@@ -151,7 +146,6 @@ export default function PackageTaskPage() {
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
       if (selectedTaskId) loadTaskDetail(selectedTaskId);
     },
-    onError: () => message.error('取消失败'),
   });
 
   const deleteConfigMutation = useMutation({
@@ -160,7 +154,6 @@ export default function PackageTaskPage() {
       message.success('已删除打包配置');
       queryClient.invalidateQueries({ queryKey: ['package-configs'] });
     },
-    onError: () => message.error('删除失败'),
   });
 
   const refreshAll = useCallback(() => {
@@ -333,6 +326,8 @@ export default function PackageTaskPage() {
               </button>
             </div>
           </div>
+
+          <PermissionAlert error={configsError || tasksError} className="rounded-xl" />
 
           {activeTab === 'configs' && (
             <ConfigList

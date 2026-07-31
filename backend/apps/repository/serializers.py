@@ -61,7 +61,7 @@ class RepositorySerializer(serializers.ModelSerializer):
         fields = [
             "id", "project", "project_name",
             "repo_type", "vendor", "name", "url", "clone_url", "external_identity",
-            "default_branch", "credential", "credential_id", "credential_mode",
+            "default_branch", "version_rule", "credential", "credential_id", "credential_mode",
             "credential_mode_display", "credential_name", "credential_owner_name",
             "health_status", "last_sync_at", "created_at", "updated_at",
         ]

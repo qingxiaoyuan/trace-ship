@@ -231,7 +231,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 return _handle_service_error(exc, "解析分支最新提交")
 
         # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
-        version_rule = instance.project.version_rule or {}
+        version_rule = instance.repository.get_version_rule()
         if "tag_name" in data and data.get("tag_name"):
             instance.tag_name = data["tag_name"]
             # rc/beta 类型自动补后缀（后缀位于日期段之前）

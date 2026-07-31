@@ -45,7 +45,6 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
       message.success('发布说明已生成');
       queryClient.invalidateQueries({ queryKey: ['release', release.id] });
     },
-    onError: () => message.error('生成失败'),
   });
 
   const updateDocMutation = useMutation({
@@ -56,7 +55,6 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
       setDocSaved(true);
       setEditOpen(false);
     },
-    onError: () => message.error('保存失败'),
   });
 
   const openEdit = () => {
@@ -96,7 +94,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
       downloadBlob(blob, `${release.version}_发布单.pdf`);
       message.success('PDF 导出成功');
     } catch {
-      message.error('PDF 导出失败');
+      // 导出失败由全局拦截器统一提示
     }
   };
 
@@ -106,7 +104,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
       downloadBlob(blob, `${release.version}_发布单.docx`);
       message.success('Word 导出成功');
     } catch {
-      message.error('Word 导出失败');
+      // 导出失败由全局拦截器统一提示
     }
   };
 
@@ -116,7 +114,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
       downloadBlob(blob, `${release.version}_发布单.md`);
       message.success('Markdown 导出成功');
     } catch {
-      message.error('Markdown 导出失败');
+      // 导出失败由全局拦截器统一提示
     }
   };
 

@@ -17,6 +17,32 @@ def test_repository_create(repository):
 
 
 @pytest.mark.django_db
+def test_get_version_rule_fallback_to_project(repository, project):
+    """仓库未配置版本规则时回退到项目规则（兼容历史数据）"""
+    project.version_rule = {"prefix": "VA", "major": 1, "minor": 0, "patch": 0}
+    project.save(update_fields=["version_rule"])
+
+    assert repository.get_version_rule() == project.version_rule
+
+
+@pytest.mark.django_db
+def test_get_version_rule_prefers_repository(repository, project):
+    """仓库级版本规则优先于项目规则"""
+    project.version_rule = {"prefix": "VA", "major": 1, "minor": 0, "patch": 0}
+    project.save(update_fields=["version_rule"])
+    repository.version_rule = {"prefix": "VB", "major": 4, "minor": 1, "patch": 0}
+    repository.save(update_fields=["version_rule"])
+
+    assert repository.get_version_rule()["prefix"] == "VB"
+
+
+@pytest.mark.django_db
+def test_get_version_rule_empty_when_neither_configured(repository):
+    """仓库与项目均未配置时返回空字典"""
+    assert repository.get_version_rule() == {}
+
+
+@pytest.mark.django_db
 def test_commit_record_create(commit, repository):
     """测试提交记录创建"""
     assert commit.commit_hash == "abc123"

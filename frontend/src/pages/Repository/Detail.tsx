@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Empty, Button, App } from 'antd';
 import { ChevronRight, GitBranch, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { TsCard } from '@/components/TsCard';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { RepositoryModal } from './modals/RepositoryModal';
 import { repositoryApi } from '@/api/repository';
 import { useAppMessage } from '@/hooks/useAppMessage';
@@ -13,6 +14,7 @@ import { BranchesTab } from './tabs/BranchesTab';
 import { TagsTab } from './tabs/TagsTab';
 import { CredentialTab } from './tabs/CredentialTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
+import { VersionRuleTab } from './tabs/VersionRuleTab';
 import type { Repository } from '@/types';
 
 /** 详情 Tab */
@@ -22,6 +24,7 @@ const tabs = [
   { key: 'tags', label: '标签' },
   { key: 'svn', label: 'SVN 制品' },
   { key: 'credential', label: '凭证配置' },
+  { key: 'versionRule', label: '版本规则' },
 ] as const;
 
 export default function RepositoryDetail() {
@@ -33,7 +36,7 @@ export default function RepositoryDetail() {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('commits');
   const [modalOpen, setModalOpen] = useState(false);
 
-  const { data: repo, isLoading } = useQuery({
+  const { data: repo, isLoading, error } = useQuery({
     queryKey: ['repository', id],
     queryFn: () => repositoryApi.getRepository(id || ''),
     enabled: !!id,
@@ -46,7 +49,6 @@ export default function RepositoryDetail() {
       queryClient.invalidateQueries({ queryKey: ['repository', id] });
       queryClient.invalidateQueries({ queryKey: ['repository-commits', id] });
     },
-    onError: () => message.error('同步失败'),
   });
 
   const handleDelete = () => {
@@ -62,7 +64,7 @@ export default function RepositoryDetail() {
           message.success('删除成功');
           navigate('/repositories');
         } catch {
-          message.error('删除失败');
+          // 删除失败由全局拦截器统一提示
         }
       },
     });
@@ -75,12 +77,20 @@ export default function RepositoryDetail() {
       setModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ['repository', id] });
     } catch {
-      message.error('保存失败');
+      // 保存失败由全局拦截器统一提示
     }
   };
 
   if (isLoading) {
     return <div className="p-6 text-center text-[13px] text-slate-400">加载中…</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-5 ts-fade-in-up">
+        <PermissionAlert error={error} className="rounded-xl" />
+      </div>
+    );
   }
 
   if (!repo) {
@@ -200,6 +210,7 @@ export default function RepositoryDetail() {
           {activeTab === 'tags' && <TagsTab repoId={repo.id} repoType={repo.repo_type} />}
           {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}
+          {activeTab === 'versionRule' && <VersionRuleTab repo={repo} />}
         </div>
       </TsCard>
 

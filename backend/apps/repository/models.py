@@ -24,6 +24,7 @@ class Repository(models.Model):
         url: 仓库地址
         external_identity: 外部唯一标识
         default_branch: 默认分支
+        version_rule: 版本号规则（JSON），未配置时回退到项目的 version_rule
         credential: 关联凭证
         credential_mode: 凭证来源（个人 / 项目）
         health_status: 健康状态
@@ -62,6 +63,7 @@ class Repository(models.Model):
     url = models.CharField(max_length=500, verbose_name="仓库地址")
     external_identity = models.CharField(max_length=500, blank=True, verbose_name="外部唯一标识")
     default_branch = models.CharField(max_length=200, default="main", verbose_name="默认分支")
+    version_rule = models.JSONField(default=dict, verbose_name="版本号规则")
     credential = models.ForeignKey(
         "credential.Credential",
         on_delete=models.SET_NULL,
@@ -100,6 +102,15 @@ class Repository(models.Model):
     def __str__(self) -> str:
         """返回项目-仓库名称描述"""
         return f"{self.project.name} - {self.name}"
+
+    def get_version_rule(self) -> dict:
+        """
+        获取生效的版本号规则
+
+        版本号规则跟着仓库走：优先使用仓库自身配置，
+        未配置时回退到所属项目的 version_rule（兼容历史数据）。
+        """
+        return self.version_rule or getattr(self.project, "version_rule", None) or {}
 
 
 class RepositoryBranch(models.Model):

@@ -103,7 +103,6 @@ export default function Feedback() {
       setPage(1);
       invalidate();
     },
-    onError: () => message.error('提交失败，请稍后重试'),
   });
 
   const likeMutation = useMutation({
@@ -117,7 +116,6 @@ export default function Feedback() {
       message.success('删除成功');
       invalidate();
     },
-    onError: () => message.error('删除失败，仅提交人本人可删除'),
   });
 
   const processMutation = useMutation({
@@ -126,7 +124,6 @@ export default function Feedback() {
       message.success('已标记为已处理');
       invalidate();
     },
-    onError: (err: { message?: string }) => message.error(err?.message || '操作失败'),
   });
 
   return (

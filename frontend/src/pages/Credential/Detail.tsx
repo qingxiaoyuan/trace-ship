@@ -89,7 +89,6 @@ export default function CredentialDetail() {
       setModalOpen(false);
       refetch();
     } catch (error) {
-      message.error("保存失败");
       console.error(error);
     }
   };
@@ -100,7 +99,6 @@ export default function CredentialDetail() {
       message.success("删除成功");
       navigate("/credentials");
     } catch (error) {
-      message.error("删除失败");
       console.error(error);
     }
   };

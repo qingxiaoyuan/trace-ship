@@ -59,7 +59,6 @@ export default function CredentialList() {
       message.success('删除成功');
       refetch();
     } catch (error) {
-      message.error('删除失败');
       console.error(error);
     }
   };
@@ -76,7 +75,6 @@ export default function CredentialList() {
       setEditingCredential(null);
       refetch();
     } catch (error) {
-      message.error('保存失败');
       console.error(error);
     }
   };

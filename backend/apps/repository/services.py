@@ -217,7 +217,7 @@ class RepositoryService:
             provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
         tags = provider.list_tags(repo.external_identity)
 
-        scan_regex = VersionCalculator(repo.project.version_rule or {}).build_scan_regex()
+        scan_regex = VersionCalculator(repo.get_version_rule()).build_scan_regex()
         remote_names: set = set()
         synced_count = 0
         for t in tags:

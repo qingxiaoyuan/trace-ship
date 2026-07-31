@@ -14,6 +14,7 @@ import {
 import dayjs from 'dayjs';
 import { repositoryApi } from '@/api/repository';
 import { StatusTag } from '@/components/StatusTag';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { RepositoryModal } from '@/pages/Repository/modals/RepositoryModal';
 import { CreateTagModal } from '@/pages/Project/modals/CreateTagModal';
 import type { Repository } from '@/types';
@@ -35,7 +36,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
   const [tagModalOpen, setTagModalOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['repositories', projectId],
     queryFn: () =>
       repositoryApi.getRepositories({ project: projectId, page_size: 1000 }),
@@ -47,7 +48,6 @@ export function RepoTab({ projectId }: RepoTabProps) {
     onSuccess: (result) => {
       message.success(result.connected ? `连接成功：${result.detail || ''}` : `连接失败：${result.detail || ''}`);
     },
-    onError: () => message.error('测试失败'),
   });
 
   const syncMutation = useMutation({
@@ -56,7 +56,6 @@ export function RepoTab({ projectId }: RepoTabProps) {
       message.success('同步提交成功');
       queryClient.invalidateQueries({ queryKey: ['repositories', projectId] });
     },
-    onError: () => message.error('同步失败'),
   });
 
   const deleteMutation = useMutation({
@@ -65,7 +64,6 @@ export function RepoTab({ projectId }: RepoTabProps) {
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['repositories', projectId] });
     },
-    onError: () => message.error('删除失败'),
   });
 
   const saveMutation = useMutation({
@@ -81,7 +79,6 @@ export function RepoTab({ projectId }: RepoTabProps) {
       setEditingRepo(null);
       queryClient.invalidateQueries({ queryKey: ['repositories', projectId] });
     },
-    onError: () => message.error('保存失败'),
   });
 
   const handleDelete = (record: Repository) => {
@@ -150,6 +147,8 @@ export function RepoTab({ projectId }: RepoTabProps) {
           添加仓库
         </button>
       </div>
+
+      <PermissionAlert error={error} className="rounded-xl" />
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">

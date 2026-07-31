@@ -17,5 +17,11 @@ export async function refreshAccessToken(refresh: string): Promise<RefreshResult
     `${baseURL}/auth/token/refresh/`,
     { refresh }
   );
-  return res.data.data;
+  const body = res.data;
+  // 后端约定返回 {code, message, data} 信封；遇到 HTML 错误页、空响应等
+  // 非信封数据时主动抛错，由调用方走重新登录流程，避免解析崩掉
+  if (!body || typeof body !== 'object' || body.code !== 0 || !body.data?.access) {
+    throw new Error('登录状态已失效，请重新登录');
+  }
+  return body.data;
 }

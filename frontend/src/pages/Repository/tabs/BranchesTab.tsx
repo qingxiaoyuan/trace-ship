@@ -25,7 +25,6 @@ export function BranchesTab({ repoId, repoType }: BranchesTabProps) {
       message.success(data.detail ? data.detail : `同步成功，共 ${data.synced_count} 个分支`);
       queryClient.invalidateQueries({ queryKey: ['repository-branches', repoId] });
     },
-    onError: () => message.error('分支同步失败'),
   });
 
   if (repoType === 'svn') {

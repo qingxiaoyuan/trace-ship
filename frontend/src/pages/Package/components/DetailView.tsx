@@ -69,10 +69,6 @@ export const DetailView = memo(function DetailView({
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
       loadLog(activeBuild.id);
     },
-    onError: (err: unknown) => {
-      const msg = (err as { message?: string })?.message || '推送 SVN 失败';
-      message.error(msg);
-    },
     onSettled: () => setPushing(false),
   });
 

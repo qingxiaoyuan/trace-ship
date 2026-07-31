@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { router } from '@/router';
 import { antdTheme } from '@/styles/theme';
 import { useAuthStore } from '@/stores/authStore';
-import { registerAuthHandlers } from '@/api/request';
+import { registerAuthHandlers, registerErrorNotifier } from '@/api/request';
 
 // 注册认证回调处理器，避免 request.ts 与 authStore/authApi 形成循环依赖。
 registerAuthHandlers({
@@ -45,11 +45,23 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ConfigProvider theme={{ ...antdTheme, algorithm: theme.defaultAlgorithm }}>
         <AntApp>
+          <GlobalErrorNotifier />
           <RouterProvider router={router} />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>
   );
+}
+
+/** 在 AntApp 上下文中注册全局错误 toast，使拦截器提示复用主题化的 message 实例 */
+function GlobalErrorNotifier() {
+  const { message: appMessage } = AntApp.useApp();
+
+  useEffect(() => {
+    registerErrorNotifier((content) => appMessage.error(content));
+  }, [appMessage]);
+
+  return null;
 }
 
 export default App;

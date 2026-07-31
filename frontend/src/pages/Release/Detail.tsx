@@ -5,6 +5,7 @@ import { Empty, Button } from 'antd';
 import { ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, Rocket, Tag } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { releaseApi } from '@/api/release';
 import { releaseTypeText, releaseTypeBadge, statusBadge, releaseStatusText } from './constants';
 import { ReleaseTimeline } from './components/ReleaseTimeline';
@@ -25,7 +26,7 @@ export default function ReleaseDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('commits');
 
-  const { data: release, isLoading } = useQuery({
+  const { data: release, isLoading, error } = useQuery({
     queryKey: ['release', id],
     queryFn: () => releaseApi.getRelease(id || ''),
     enabled: !!id,
@@ -33,6 +34,14 @@ export default function ReleaseDetail() {
 
   if (isLoading) {
     return <div className="p-6 text-center text-[13px] text-slate-400">加载中…</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-5 ts-fade-in-up">
+        <PermissionAlert error={error} className="rounded-xl" />
+      </div>
+    );
   }
 
   if (!release) {

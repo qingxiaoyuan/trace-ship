@@ -53,7 +53,6 @@ export default function PackageImagePage() {
       }
       queryClient.invalidateQueries({ queryKey: ['available-images'] });
     },
-    onError: (err) => message.error((err as { message?: string })?.message || '导入失败'),
   });
 
   const closeImport = () => {

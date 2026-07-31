@@ -35,10 +35,6 @@ export const BuildView = memo(function BuildView({ task, logText, onBack, onCanc
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['package-task', task.id] });
     },
-    onError: (err: unknown) => {
-      const msg = (err as { message?: string })?.message || '推送 SVN 失败';
-      message.error(msg);
-    },
     onSettled: () => setPushing(false),
   });
 

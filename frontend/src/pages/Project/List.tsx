@@ -87,7 +87,6 @@ export default function ProjectList() {
       setPage(1);
       refetch();
     } catch (error) {
-      message.error((error as { message?: string })?.message || '新增失败');
       console.error(error);
     }
   };
@@ -105,7 +104,6 @@ export default function ProjectList() {
           message.success('删除成功');
           refetch();
         } catch (error) {
-          message.error((error as { message?: string })?.message || '删除失败');
           console.error(error);
         }
       },

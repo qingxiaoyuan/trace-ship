@@ -99,13 +99,11 @@ export function LdapIntegrationCard() {
       setEdited({});
       queryClient.invalidateQueries({ queryKey: ['system-configs'] });
     },
-    onError: () => message.error('保存失败'),
   });
 
   const testMutation = useMutation({
     mutationFn: () => systemApi.testLdapConnection(),
     onSuccess: (res) => message.success(res.detail || '连接成功'),
-    onError: (err) => message.error((err as { message?: string })?.message || '连接失败'),
   });
 
   const setText =

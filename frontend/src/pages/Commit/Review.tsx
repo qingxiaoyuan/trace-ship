@@ -24,6 +24,7 @@ import { projectApi } from '@/api/project';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
 import { parseMdTable } from '@/utils/markdownTable';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import type {
   MdTableRow,
 } from '@/utils/markdownTable';
@@ -191,6 +192,8 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
 
   return (
     <div className="space-y-5">
+      <PermissionAlert error={releasesQ.error} className="rounded-xl" />
+
       <div className="tech-card overflow-hidden rounded-xl">
         {/* 筛选栏 */}
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">

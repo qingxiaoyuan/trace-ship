@@ -236,6 +236,9 @@ class AuthViewSet(viewsets.GenericViewSet):
         获取当前用户侧边栏菜单
 
         根据用户角色拥有的权限模块动态过滤菜单项。超管返回全部菜单。
+        只要用户是任一项目的成员，即放开全部业务菜单（项目/仓库/发布/
+        工作流/提交审查/打包），写操作仍由接口按项目角色拦截；
+        凭证管理菜单维持按系统角色权限过滤。
 
         Args:
             request: 已认证的 DRF Request
@@ -285,6 +288,13 @@ class AuthViewSet(viewsets.GenericViewSet):
         user_modules = set(
             user.user_roles.values_list("role__permissions__module", flat=True)
         )
+
+        # 项目成员放开业务菜单（写操作仍由接口按项目角色拦截）；
+        # credential 模块不在放开范围内，凭证菜单维持按权限过滤
+        from apps.project.models import ProjectMember
+
+        if ProjectMember.objects.filter(user=user).exists():
+            user_modules |= {"project", "repository", "release", "workflow", "commit", "package"}
 
         # 按模块过滤菜单
         def filter_menu(menu: dict) -> dict | None:

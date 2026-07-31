@@ -198,7 +198,6 @@ export default function ReleaseCreate() {
       setCurrentStep(1);
       generateDocMutation.mutate(release.id);
     },
-    onError: (err: { message?: string }) => message.error(err?.message || '创建发布失败'),
   });
 
   const generateDocMutation = useMutation({
@@ -208,7 +207,6 @@ export default function ReleaseCreate() {
       setDocRows(parseMdTable(mdStr));
       setDocSaved(true);
     },
-    onError: (err: { message?: string }) => message.error(err?.message || '生成发布说明失败'),
   });
 
   const updateDocMutation = useMutation({
@@ -217,7 +215,6 @@ export default function ReleaseCreate() {
       message.success('发布说明已保存');
       setDocSaved(true);
     },
-    onError: (err: { message?: string }) => message.error(err?.message || '保存失败'),
   });
 
   const submitMutation = useMutation({
@@ -226,7 +223,6 @@ export default function ReleaseCreate() {
       message.success('提交审批成功');
       setCurrentStep(2);
     },
-    onError: (err: { message?: string }) => message.error(err?.message || '提交审批失败'),
   });
 
   const handleProjectChange = () => {

@@ -53,6 +53,19 @@ class TestVersionCalculator:
         version, tag_name = calculator.calculate(tags, release_type="formal")
         assert version == "VA.1.2.4"
 
+    def test_calculate_considers_legacy_tags_before_system_introduced(self):
+        """系统接入前仓库已有的历史 tag 参与计算（如 VB.4.1.5_20250715）"""
+        rule = {"prefix": "VB", "major": 1, "minor": 0, "patch": 0, "suffixes": {"rc": "rc", "beta": "beta"}}
+        calculator = VersionCalculator(rule)
+        tags = [
+            _tag("VB.4.1.5_20250715"),
+            _tag("VB.4.1.3_20250601", "b"),
+            _tag("some-random-tag", "c"),
+        ]
+        version, tag_name = calculator.calculate(tags, release_type="formal")
+        assert version == "VB.4.1.6"
+        assert tag_name == f"VB.4.1.6_{TODAY}"
+
     def test_calculate_beta_no_existing_returns_initial(self, rule):
         """Beta 无已有 tag 时返回初始版本"""
         calculator = VersionCalculator(rule)

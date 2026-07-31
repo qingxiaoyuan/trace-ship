@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Form, Input, InputNumber, Select, Button, App } from 'antd';
+import { Form, InputNumber, Select, Button, App } from 'antd';
 import { projectApi } from '@/api/project';
 import type { Project } from '@/types';
 
@@ -28,12 +28,6 @@ interface RuleTabProps {
 }
 
 interface RuleFormValues {
-  prefix: string;
-  major: number;
-  minor: number;
-  patch: number;
-  rcSuffix: string;
-  betaSuffix: string;
   releaseCycle: number;
   complianceThreshold: number;
 }
@@ -50,17 +44,9 @@ export function RuleTab({ project }: RuleTabProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
 
-  const versionRule = (project.version_rule as Record<string, unknown>) || {};
   const releaseRule = (project.release_rule as Record<string, unknown>) || {};
-  const suffixes = (versionRule.suffixes as Record<string, string>) || {};
 
   const initialValues: RuleFormValues = {
-    prefix: (versionRule.prefix as string) || 'VA',
-    major: (versionRule.major as number) ?? 1,
-    minor: (versionRule.minor as number) ?? 0,
-    patch: (versionRule.patch as number) ?? 0,
-    rcSuffix: suffixes.rc || 'rc',
-    betaSuffix: suffixes.beta || 'beta',
     releaseCycle: (releaseRule.release_cycle_days as number) || 3,
     complianceThreshold: (releaseRule.compliance_threshold as number) ?? 90,
   };
@@ -68,16 +54,6 @@ export function RuleTab({ project }: RuleTabProps) {
   const mutation = useMutation({
     mutationFn: (values: RuleFormValues) => {
       const payload = {
-        version_rule: {
-          prefix: values.prefix,
-          major: values.major,
-          minor: values.minor,
-          patch: values.patch,
-          suffixes: {
-            rc: values.rcSuffix,
-            beta: values.betaSuffix,
-          },
-        },
         release_rule: {
           release_cycle_days: values.releaseCycle,
           compliance_threshold: values.complianceThreshold,
@@ -89,7 +65,6 @@ export function RuleTab({ project }: RuleTabProps) {
       message.success('保存成功');
       queryClient.invalidateQueries({ queryKey: ['project', project.id] });
     },
-    onError: () => message.error('保存失败'),
   });
 
   return (
@@ -99,44 +74,15 @@ export function RuleTab({ project }: RuleTabProps) {
       initialValues={initialValues}
       onFinish={(values) => mutation.mutate(values as RuleFormValues)}
     >
-      {/* 版本号规则 */}
-      <div className="mb-6">
-        <div className="mb-3 text-[13px] font-semibold text-slate-700">版本号规则</div>
-        <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-          <Form.Item name="prefix" label="版本前缀">
-            <Input placeholder="VA" />
-          </Form.Item>
-          <div className="hidden" />
-
-          <Form.Item name="major" label="主版本（初始值）">
-            <InputNumber min={0} className="w-full" />
-          </Form.Item>
-          <Form.Item name="minor" label="次版本（初始值）">
-            <InputNumber min={0} className="w-full" />
-          </Form.Item>
-          <Form.Item name="patch" label="修订号（初始值）">
-            <InputNumber min={0} className="w-full" />
-          </Form.Item>
-          <div className="hidden" />
-
-          <Form.Item name="rcSuffix" label="RC 后缀">
-            <Input placeholder="rc" />
-          </Form.Item>
-          <Form.Item name="betaSuffix" label="Beta 后缀">
-            <Input placeholder="beta" />
-          </Form.Item>
-        </div>
-        <div className="mt-2 rounded-lg border border-indigo-50 bg-indigo-50/30 px-4 py-2.5 text-[12px] text-slate-500">
-          格式预览：<span className="font-mono text-indigo-600">{form.getFieldValue('prefix') || 'VA'}.{form.getFieldValue('major') ?? 1}.{form.getFieldValue('minor') ?? 0}.{form.getFieldValue('patch') ?? 0}</span>
-          <span className="mx-1 text-slate-300">|</span>
-          RC: <span className="font-mono text-indigo-600">{form.getFieldValue('prefix') || 'VA'}.{form.getFieldValue('major') ?? 1}.{form.getFieldValue('minor') ?? 0}.{form.getFieldValue('patch') ?? 0}-{form.getFieldValue('rcSuffix') || 'rc'}</span>
-          <span className="mx-1 text-slate-300">|</span>
-          Beta: <span className="font-mono text-indigo-600">{form.getFieldValue('prefix') || 'VA'}.{form.getFieldValue('major') ?? 1}.{form.getFieldValue('minor') ?? 0}.{form.getFieldValue('patch') ?? 0}-{form.getFieldValue('betaSuffix') || 'beta'}</span>
-        </div>
+      {/* 版本号规则已迁移到仓库 */}
+      <div className="mb-6 rounded-lg border border-indigo-50 bg-indigo-50/30 px-4 py-2.5 text-[12px] text-slate-500">
+        版本号规则（前缀 / 初始版本 / 后缀）跟着仓库走，请到
+        <span className="mx-1 font-medium text-indigo-600">仓库详情 → 版本规则</span>
+        标签页配置；推荐版本号时会扫描仓库远端全部 tag（含系统接入前的历史 tag）参与递增。
       </div>
 
       {/* 发布规则 */}
-      <div className="mb-6 border-t border-slate-100 pt-5">
+      <div className="mb-6">
         <div className="mb-3 text-[13px] font-semibold text-slate-700">发布规则</div>
         <div className="grid grid-cols-2 gap-x-8 gap-y-5">
           <Form.Item name="releaseCycle" label="发布周期">

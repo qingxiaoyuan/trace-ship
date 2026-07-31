@@ -16,6 +16,7 @@ import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
 import { SvnTestButton } from '@/components/SvnTestButton';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { ImagePickerField } from '@/components/ImagePickerField';
 import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
 import { credentialApi } from '@/api/credential';
@@ -43,7 +44,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const svnCredentialId = Form.useWatch('svn_credential', form);
   const svnPathTemplate = Form.useWatch('svn_path_template', form);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['package-configs', projectId],
     queryFn: () => packageApi.getConfigs({ project: projectId, page_size: 1000 }),
     enabled: !!projectId,
@@ -119,7 +120,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
       setEditing(null);
       queryClient.invalidateQueries({ queryKey: ['package-configs', projectId] });
     },
-    onError: () => message.error('保存失败'),
   });
 
   const deleteMutation = useMutation({
@@ -128,7 +128,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['package-configs', projectId] });
     },
-    onError: () => message.error('删除失败'),
   });
 
   const triggerMutation = useMutation({
@@ -146,7 +145,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
       triggerForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
     },
-    onError: () => message.error('触发打包失败'),
   });
 
   const rows = useMemo(() => {
@@ -190,6 +188,8 @@ export function PackageTab({ projectId }: PackageTabProps) {
           新增配置
         </button>
       </div>
+
+      <PermissionAlert error={error} className="rounded-xl" />
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">

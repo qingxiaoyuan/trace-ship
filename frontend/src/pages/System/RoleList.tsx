@@ -112,7 +112,6 @@ export default function SystemRoleList() {
       setSaving(false);
     },
     onError: () => {
-      message.error('保存失败');
       setSaving(false);
     },
   });

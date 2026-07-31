@@ -3,7 +3,8 @@ import type { RouteObject } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
-import { AuthGuard, PageLoader } from './components';
+import { AuthGuard, PageLoader, SystemGuard } from './components';
+import Forbidden from '@/pages/Error/Forbidden';
 import {
   BrowserUpgrade,
   CommitAlertDetail,
@@ -95,6 +96,7 @@ const routes: AppRouteObject[] = [
           { path: 'feedback', element: <PageLoader><Feedback /></PageLoader>, handle: { title: '使用反馈' } },
           {
             path: 'system',
+            element: <SystemGuard />,
             handle: { title: '系统管理' },
             children: [
               { path: 'users', element: <PageLoader><SystemUserList /></PageLoader>, handle: { title: '用户管理' } },
@@ -105,6 +107,7 @@ const routes: AppRouteObject[] = [
             ],
           },
           { path: 'profile', element: <PageLoader><Profile /></PageLoader>, handle: { title: '个人中心' } },
+          { path: '403', element: <PageLoader><Forbidden /></PageLoader>, handle: { title: '没有访问权限' } },
         ],
       },
     ],

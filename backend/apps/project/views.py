@@ -4,6 +4,7 @@
 提供项目 CRUD、项目成员管理接口。
 """
 from django_filters.rest_framework import DjangoFilterBackend
+from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, status
@@ -18,7 +19,7 @@ from apps.project.serializers import (
     ProjectSerializer, ProjectListSerializer, ProjectMemberSerializer,
 )
 from apps.project.services import ProjectService
-from utils.permissions import HasPermission, IsProjectManager
+from utils.permissions import HasPermission, IsProjectManager, IsProjectMember
 from utils.response import success_response, error_response
 
 
@@ -218,12 +219,23 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):
     """
     项目成员视图集
 
-    提供项目成员的增删改查，仅项目管理员可操作。
+    查询（列表/详情）对项目全体成员开放，增删改仅项目管理员可操作。
     """
 
     queryset = ProjectMember.objects.all()
     serializer_class = ProjectMemberSerializer
-    permission_classes = [IsAuthenticated, IsProjectManager]
+    permission_classes = [IsAuthenticated, IsProjectMember]
+
+    def get_permissions(self):
+        """
+        写操作需项目管理员，读操作项目成员即可
+
+        Returns:
+            权限实例列表
+        """
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAuthenticated(), IsProjectManager()]
+        return [IsAuthenticated(), IsProjectMember()]
 
     def get_queryset(self):
         """
@@ -242,11 +254,65 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):
         )
 
     def create(self, request: Request, *args, **kwargs) -> Response:
-        """添加成员并返回统一格式响应"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return success_response(serializer.data, "添加成功", status=status.HTTP_201_CREATED)
+        """添加成员并返回统一格式响应（支持 user_ids 批量添加）"""
+        user_ids = request.data.get("user_ids")
+        if user_ids is None:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return success_response(serializer.data, "添加成功", status=status.HTTP_201_CREATED)
+        return self._create_members_batch(request, user_ids)
+
+    def _create_members_batch(self, request: Request, user_ids) -> Response:
+        """
+        批量添加成员
+
+        已在项目中的用户自动跳过，返回新增成员列表与跳过数量。
+
+        Args:
+            request: DRF Request，body 含 user_ids 与 role
+            user_ids: 用户 ID 列表
+
+        Returns:
+            统一成功响应，data 含 created / skipped
+        """
+        if not isinstance(user_ids, list) or not user_ids:
+            return error_response(40001, "请选择要添加的用户")
+        role = request.data.get("role", "developer")
+        if role not in dict(ProjectMember.ROLE_CHOICES):
+            return error_response(40001, "无效的角色")
+
+        from apps.account.models import User
+
+        project = self.get_parent_project()
+        try:
+            users = list(User.objects.filter(id__in=user_ids))
+        except (ValidationError, ValueError):
+            return error_response(40001, "存在无效的用户 ID")
+        if not users:
+            return error_response(40001, "所选用户不存在")
+
+        existing_user_ids = set(
+            ProjectMember.objects.filter(project=project, user__in=users)
+            .values_list("user_id", flat=True)
+        )
+        new_members = [
+            ProjectMember(project=project, user=user, role=role)
+            for user in users
+            if user.id not in existing_user_ids
+        ]
+        ProjectMember.objects.bulk_create(new_members)
+
+        skipped = len(users) - len(new_members)
+        serializer = self.get_serializer(new_members, many=True)
+        message = f"已添加 {len(new_members)} 位成员"
+        if skipped:
+            message += f"，{skipped} 位已在项目中，自动跳过"
+        return success_response(
+            {"created": serializer.data, "skipped": skipped},
+            message,
+            status=status.HTTP_201_CREATED,
+        )
 
     def retrieve(self, request: Request, *args, **kwargs) -> Response:
         """查询单个成员详情"""

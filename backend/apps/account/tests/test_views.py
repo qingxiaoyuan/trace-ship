@@ -171,3 +171,59 @@ def test_user_update_self_cannot_escalate_privileges():
     assert user.nickname == "新昵称"
     assert user.is_superuser is False
     assert user.is_active is True
+
+
+def _menu_ids(response) -> set:
+    """提取菜单响应中的全部菜单 id（含子菜单）"""
+    ids = set()
+    for menu in response.data["data"]:
+        ids.add(menu["id"])
+        for child in menu.get("children", []):
+            ids.add(child["id"])
+    return ids
+
+
+@pytest.mark.django_db
+def test_menus_project_member_sees_business_menus():
+    """
+    测试项目成员即使没有任何系统角色，也能看到全部业务菜单
+
+    期望：项目/仓库/发布/工作流/提交审查/打包菜单可见，凭证与系统管理菜单不可见
+    """
+    from apps.project.models import Project, ProjectMember
+
+    leader = _make_user("menu_leader")
+    member = _make_user("menu_member")
+    project = Project.objects.create(code="MENU", name="菜单项目", leader=leader)
+    ProjectMember.objects.create(project=project, user=member, role="developer")
+
+    client = APIClient()
+    client.force_authenticate(user=member)
+    response = client.get("/api/auth/menus/")
+
+    assert response.status_code == 200
+    ids = _menu_ids(response)
+    assert {"projects", "repositories", "releases", "workflows", "commits", "packages"} <= ids
+    assert "credentials" not in ids
+    # 打包镜像对 package 模块可见，但用户/角色/配置/日志等系统管理子菜单不可见
+    assert "system_package_images" in ids
+    assert not {"system_users", "system_roles", "system_configs", "system_logs"} & ids
+
+
+@pytest.mark.django_db
+def test_menus_non_member_without_role_sees_no_business_menus():
+    """
+    测试无系统角色且未加入任何项目的用户看不到业务菜单
+
+    期望：仅保留无需权限的菜单（工作台/通知/指南/反馈）
+    """
+    user = _make_user("menu_isolated")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get("/api/auth/menus/")
+
+    assert response.status_code == 200
+    ids = _menu_ids(response)
+    assert {"dashboard", "notifications", "guide", "feedback"} <= ids
+    assert "projects" not in ids
+    assert "repositories" not in ids

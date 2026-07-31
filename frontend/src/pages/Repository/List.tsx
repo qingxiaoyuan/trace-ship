@@ -94,7 +94,6 @@ export default function RepositoryList() {
       setPage(1);
       refetch();
     } catch (error) {
-      message.error('保存失败');
       console.error(error);
     }
   };

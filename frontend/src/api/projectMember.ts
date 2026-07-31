@@ -28,6 +28,16 @@ export interface AddProjectMemberData {
   role: ProjectMemberRole;
 }
 
+export interface BatchAddProjectMemberData {
+  user_ids: string[];
+  role: ProjectMemberRole;
+}
+
+export interface BatchAddProjectMemberResult {
+  created: ProjectMember[];
+  skipped: number;
+}
+
 export const projectMemberApi = {
   getMembers: (projectId: string) =>
     get<PaginatedData<ProjectMember>>(`/projects/${projectId}/members/`, {
@@ -35,6 +45,8 @@ export const projectMemberApi = {
     }),
   addMember: (projectId: string, data: AddProjectMemberData) =>
     post<ProjectMember>(`/projects/${projectId}/members/`, data),
+  addMembers: (projectId: string, data: BatchAddProjectMemberData) =>
+    post<BatchAddProjectMemberResult>(`/projects/${projectId}/members/`, data),
   updateMember: (
     projectId: string,
     memberId: string,

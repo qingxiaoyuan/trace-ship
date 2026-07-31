@@ -244,8 +244,9 @@ class RepositoryViewSet(StandardModelViewSet):
         """
         获取下一个建议版本号与 Tag 名称
 
-        基于仓库现有 Tag 列表和项目 version_rule 自动计算，
-        无匹配 Tag 时返回项目初始版本号。
+        基于仓库现有 Tag 列表和仓库 version_rule（未配置时回退项目规则）自动计算，
+        系统接入前仓库已存在的历史 tag 只要匹配规则同样参与计算，
+        无匹配 Tag 时返回初始版本号。
 
         Args:
             request: DRF Request，query 参数 release_type
@@ -267,7 +268,7 @@ class RepositoryViewSet(StandardModelViewSet):
         except Exception as exc:
             return error_response(50000, f"计算版本号失败: {exc}", status_code=500)
 
-        version_rule = repo.project.version_rule or {}
+        version_rule = repo.get_version_rule()
         calculator = VersionCalculator(version_rule)
 
         # 计算三类发布类型各自的结果

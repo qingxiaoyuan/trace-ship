@@ -72,13 +72,11 @@ export function NexusIntegrationCard() {
       setEdited({});
       queryClient.invalidateQueries({ queryKey: ['system-configs'] });
     },
-    onError: () => message.error('保存失败'),
   });
 
   const testMutation = useMutation({
     mutationFn: () => packageApi.getNexusRepositories(),
     onSuccess: (repos) => message.success(`连接成功，共 ${repos.length} 个 Docker 仓库`),
-    onError: (err) => message.error((err as { message?: string })?.message || '连接失败'),
   });
 
   const set = (field: keyof NexusFormState) => (e: React.ChangeEvent<HTMLInputElement>) =>

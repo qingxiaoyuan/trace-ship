@@ -46,6 +46,18 @@ export interface MenuItem {
 
 export type ProjectStatus = 'active' | 'inactive' | number;
 
+/** 版本号规则：{prefix}.主.次.修(-后缀)?_YYYYMMDD */
+export interface VersionRule {
+  prefix?: string;
+  major?: number;
+  minor?: number;
+  patch?: number;
+  suffixes?: {
+    rc?: string;
+    beta?: string;
+  };
+}
+
 export interface Project {
   id: string;
   code?: string;
@@ -487,6 +499,7 @@ export interface Repository {
   clone_url?: string;
   external_identity: string;
   default_branch: string;
+  version_rule?: VersionRule;
   credential_id?: string;
   credential_mode?: string;
   credential_mode_display?: string;
