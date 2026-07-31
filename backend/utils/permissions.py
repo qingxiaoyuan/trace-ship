@@ -23,6 +23,7 @@ class HasPermission(permissions.BasePermission):
             permission_code: 权限编码，如 "project.view"
         """
         self.permission_code = permission_code
+        self.message = "没有执行该操作的权限，请联系管理员分配对应角色"
 
     def has_permission(self, request, view) -> bool:
         """检查用户是否拥有指定功能权限"""

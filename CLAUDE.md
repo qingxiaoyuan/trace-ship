@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Trace Ship 是一个软件版本发布管理系统。仓库分为三个主要部分：
+Trace Ship 是一个软件版本发布管理系统。仓库主要部分：
 
 - `backend/` — Django 5.0 + Django REST Framework 后端服务。
-- `frontend/` — React + Vite + TypeScript + Ant Design 6 前端工程，已完整接入业务页面。
+- `frontend/` — React + Vite + TypeScript + Ant Design 6 前端工程，已完整接入业务页面（含使用指南、使用反馈、浏览器升级引导）。
 - `docker/` — Docker Compose 编排，包含 PostgreSQL、Redis、GitLab 第三方依赖（`test` profile 可追加 OpenLDAP、SVN 模拟服务；backend / frontend / Celery 默认在本地启动）。生产编排拆分为 `docker-compose.deps.yml`（数据层，独立项目 `trace-ship-deps`）与 `docker-compose.prod.yml`（应用层，项目 `trace-ship`），经共享网络 `trace-ship-net` 通信。
+- `scripts/` — 开发环境管理（`dev.sh`）、发布包构建（`build.sh`）与内网部署（`deploy.sh`）脚本。
+- `vscode-commit/` — VS Code 规范提交助手插件子项目，AI 自动生成规范 commit 信息；默认本地 DeepSeek 接口，`commit.apiProtocol`（auto / openai / anthropic）兼容更多 AI 服务。
 
 ## Language
 
@@ -81,6 +83,9 @@ python manage.py migrate
 # 初始化基础数据（超管、角色、权限）
 python manage.py init_base_data
 
+# 重置管理员密码（密码丢失恢复，默认恢复为 admin@123）
+python manage.py reset_admin_password
+
 # 启动开发服务器
 python manage.py runserver 0.0.0.0:8000
 
@@ -142,16 +147,18 @@ npm run lint
 
 - `apps.project.Project`：项目主体，包含 `version_rule` 和 `release_rule` JSON 规则。
 - `apps.project.ProjectMember`：用户与项目的关联，角色为 `developer` / `tester` / `manager` / `auditor` / `viewer`。
-- `apps.repository.Repository` 与 `CommitRecord`：代码仓库（Git / SVN，直接归属项目并各自绑定凭证）与提交记录。
+- `apps.repository.Repository` 与 `CommitRecord`：代码仓库（仅 Git/GitLab，直接归属项目并各自绑定凭证；SVN 仅作为打包产物推送目标）与提交记录。
 - `apps.release.ReleaseRecord` 与 `ReleaseCommit`：发布记录与关联提交。
 - `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：审批工作流定义、实例与任务。
-- `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：系统级打包镜像、项目级打包配置、打包任务记录。
+- `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：打包镜像记录（来源为本地 Docker 或 Nexus）、项目级打包配置、打包任务记录。
+- `apps.feedback.Feedback`：使用反馈，全员可提交/点赞/查看，删除仅限本人或超管；超管可将反馈标记为已处理（`open` / `processed` 状态流转，记录处理人与处理时间）。
 
 注意：旧的 `ProjectIntegration` 模型已废弃，不要在新代码中恢复；`apps.jenkins` 模块已整体下线（Jenkins 能力移除），仅保留迁移 tombstone（空 models + 历史迁移），仓库直接归属项目并绑定凭证。
 
 ### 认证与权限
 
 - 认证：JWT（`rest_framework_simplejwt`）为主；LDAP/AD（`django-auth-ldap`）可选，未配置时回退到 Django 本地认证。
+- LDAP 连接参数可在「系统配置」页面维护（`apps.account.ldap_config`，页面配置优先、环境变量 `LDAP_*` 兜底），`apps.system` 提供 LDAP 连接测试接口；LDAP 首次登录会自动创建用户并赋予默认角色。
 - 权限类在 `utils.permissions`：
   - `IsProjectMember`：对象级，检查用户是否属于 `obj.project`。
   - `IsProjectManager` / `IsProjectDeveloper` 等：检查 `ProjectMember.role`。
@@ -185,10 +192,10 @@ npm run lint
 
 ### 打包能力（apps.package）
 
-- `PackageImage`：系统级 Docker 打包镜像（Web / Qt），由超管维护，定义镜像、脚本入口、默认构建/产物目录。
-- `PackageConfig`：项目级打包配置，模式为 `simple`（Docker 镜像打包）或 `local`（本地脚本打包），支持环境变量、构建/产物目录覆盖、发布后自动打包开关、SVN 推送配置（svn_url / svn_credential / svn_path_template）。
+- `PackageImage`：打包镜像记录，来源为本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键），按镜像坐标唯一，由选择时自动创建，定义镜像、`script_entry` 入口、默认构建/产物目录。
+- `PackageConfig`：项目级打包配置，包含镜像引用、可选 `custom_script` 自定义脚本、环境变量、构建/产物目录、发布后自动打包开关、SVN 推送配置（svn_url / svn_credential / svn_path_template）。
 - `PackageTask`：打包任务记录，状态 `queued` / `running` / `success` / `failure` / `canceled`，保存配置快照、工作区路径、日志路径、产物信息、SVN 推送结果。
-- 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 拉取源码 → 按模式执行 Docker 镜像构建或本地脚本 → 扫描产物 → 可选推送 SVN → 更新状态与耗时。
+- 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 准备 `workspace/{source,artifacts,tmp}` → `git clone` 源码 → 以 `--entrypoint /bin/sh` 启动容器（只挂载 source / artifacts / tmp，容器内工作目录 `/workspace/source`）→ 有 `custom_script` 则以 `sh -c` 执行，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`）→ 扫描 `workspace/artifacts` 产物 → 可选推送 SVN → 更新状态与耗时。
 - 手动能力：`PackageConfigViewSet.trigger` 手动触发某个已发布版本的打包；`PackageTaskViewSet.cancel` 取消任务、`push_svn` 手动推送产物、`logs` 读取日志、`download_artifact` 下载产物。
 - Jenkins 模块已整体下线（模型、服务、API、`python-jenkins` 依赖均已移除），打包统一走 `apps.package`；不要在新代码中恢复 Jenkins 相关逻辑。
 

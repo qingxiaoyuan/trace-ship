@@ -20,6 +20,9 @@ class Feedback(models.Model):
         category: 反馈分类
         created_by: 提交人
         likes: 点赞用户集合
+        status: 处理状态
+        processed_by: 处理人
+        processed_at: 处理时间
         created_at: 创建时间
         updated_at: 更新时间
     """
@@ -29,6 +32,11 @@ class Feedback(models.Model):
         ("bug", "问题反馈"),
         ("experience", "体验优化"),
         ("other", "其他"),
+    ]
+
+    STATUS_CHOICES = [
+        ("open", "待处理"),
+        ("processed", "已处理"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -52,6 +60,21 @@ class Feedback(models.Model):
         blank=True,
         verbose_name="点赞用户",
     )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="open",
+        verbose_name="处理状态",
+    )
+    processed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="processed_feedbacks",
+        null=True,
+        blank=True,
+        verbose_name="处理人",
+    )
+    processed_at = models.DateTimeField(null=True, blank=True, verbose_name="处理时间")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 

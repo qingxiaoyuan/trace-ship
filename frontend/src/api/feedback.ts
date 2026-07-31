@@ -12,5 +12,6 @@ export const feedbackApi = {
     get<PaginatedData<Feedback>>('/feedback/', { params }),
   createFeedback: (data: CreateFeedbackParams) => post<Feedback>('/feedback/', data),
   toggleLike: (id: string) => post<{ liked: boolean; like_count: number }>(`/feedback/${id}/like/`, {}),
+  processFeedback: (id: string) => post<Feedback>(`/feedback/${id}/process/`, {}),
   deleteFeedback: (id: string) => del<null>(`/feedback/${id}/`),
 };

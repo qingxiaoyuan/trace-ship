@@ -18,7 +18,7 @@ from apps.project.serializers import (
     ProjectSerializer, ProjectListSerializer, ProjectMemberSerializer,
 )
 from apps.project.services import ProjectService
-from utils.permissions import IsSuperUser, IsProjectManager
+from utils.permissions import HasPermission, IsProjectManager
 from utils.response import success_response, error_response
 
 
@@ -26,7 +26,7 @@ class ProjectViewSet(StandardModelViewSet):
     """
     项目管理视图集
 
-    - 超管可创建项目
+    - 拥有 project.create 权限（含超管）可创建项目
     - 项目管理员可修改/删除项目
     - 普通成员仅可查看自己参与的项目
     """
@@ -91,13 +91,13 @@ class ProjectViewSet(StandardModelViewSet):
 
     def get_permissions(self):
         """
-        创建需超管权限，修改/删除需项目管理员权限
+        创建需 project.create 功能权限（超管默认放行），修改/删除需项目管理员权限
 
         Returns:
             权限实例列表
         """
         if self.action == "create":
-            return [IsAuthenticated(), IsSuperUser()]
+            return [IsAuthenticated(), HasPermission("project.create")]
         elif self.action in ["update", "partial_update", "destroy"]:
             return [IsAuthenticated(), IsProjectManager()]
         return super().get_permissions()

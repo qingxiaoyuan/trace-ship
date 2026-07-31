@@ -38,11 +38,15 @@ class VersionCalculator:
     版本号计算器
 
     基于结构化 version_rule（prefix / major / minor / patch / suffixes）解析最新 tag 并递增修订号。
-    版本格式：{prefix}.{major}.{minor}.{patch}，rc/beta 追加后缀 -{suffix}。
+    tag 格式：{prefix}.{major}.{minor}.{patch}(-{suffix})?_{YYYYMMDD}，
+    前缀仅在配置时出现，rc/beta 在修订号后追加 -{suffix}，日期段为 tag 的强制组成部分。
     """
 
     # 默认后缀映射：beta → beta，rc → rc
     DEFAULT_SUFFIXES: Dict[str, str] = {"rc": "rc", "beta": "beta"}
+
+    # tag 末尾日期段（年月日 8 位数字）
+    DATE_PATTERN = r"(?P<date>\d{8})"
 
     def __init__(self, version_rule: dict):
         """
@@ -56,64 +60,59 @@ class VersionCalculator:
         self.patch: int = int(rule.get("patch", 0))
         self.suffixes: Dict[str, str] = rule.get("suffixes") or dict(self.DEFAULT_SUFFIXES)
 
+    @staticmethod
+    def today_str() -> str:
+        """当天日期串（年月日），用于生成 tag 日期段"""
+        return timezone.now().strftime("%Y%m%d")
+
     @property
     def initial_version(self) -> str:
-        """初始版本号（不含后缀）"""
+        """初始版本号（不含后缀与日期）"""
         return self._format_version(self.major, self.minor, self.patch)
 
     def _format_version(self, major: int, minor: int, patch: int) -> str:
-        """格式化纯版本号"""
+        """格式化纯版本号（不含日期段）"""
         base = f"{major}.{minor}.{patch}"
         return f"{self.prefix}.{base}" if self.prefix else base
 
+    def _prefix_pattern(self) -> str:
+        """前缀正则片段：配置了前缀则强制匹配"""
+        if not self.prefix:
+            return ""
+        return f"{re.escape(self.prefix)}\\."
+
+    def build_scan_regex(self) -> re.Pattern:
+        """
+        构建 tag 扫描正则（匹配全部发布类型）
+
+        规则：{prefix}.主版本.次版本.修订版本(-后缀)?_日期，
+        后缀限定为版本规则中配置的后缀值，未配置时使用默认 rc/beta。
+        只有匹配该正则的 tag 才允许入库。
+        """
+        suffix_values = [re.escape(s.strip("-")) for s in self.suffixes.values() if s and s.strip("-")]
+        suffix_part = f"(?:-(?P<suffix>{'|'.join(suffix_values)}))?" if suffix_values else r"(?:-(?P<suffix>[A-Za-z0-9]+))?"
+        pattern = (
+            f"^{self._prefix_pattern()}"
+            r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
+            f"{suffix_part}_{self.DATE_PATTERN}$"
+        )
+        return re.compile(pattern)
+
     def _build_regex(self, release_type: str = "formal") -> re.Pattern:
         """
-        构建匹配 tag 的正则（仅新格式）
+        构建匹配指定发布类型 tag 的正则
 
-        formal：({prefix}.)?{major}.{minor}.{patch}（无后缀）
-        rc/beta：({prefix}.)?{major}.{minor}.{patch}-{suffix}
-        旧前缀格式（rc-/beta-）由调用方手动兼容。
+        formal：{prefix}.主.次.修_日期（无后缀）
+        rc/beta：{prefix}.主.次.修-{suffix}_日期
         """
-        prefix_escaped = re.escape(self.prefix) if self.prefix else ""
-        prefix_part = f"(?:{prefix_escaped}\\.)?" if prefix_escaped else ""
-        version_core = f"(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+        version_core = r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
         if release_type in ("rc", "beta"):
-            suffix = self.suffixes.get(release_type, "")
+            suffix = (self.suffixes.get(release_type, "") or "").strip("-")
             suffix_part = f"-{re.escape(suffix)}" if suffix else ""
-            pattern = f"^{prefix_part}{version_core}{suffix_part}$"
+            pattern = f"^{self._prefix_pattern()}{version_core}{suffix_part}_{self.DATE_PATTERN}$"
         else:
-            pattern = f"^{prefix_part}{version_core}$"
+            pattern = f"^{self._prefix_pattern()}{version_core}_{self.DATE_PATTERN}$"
         return re.compile(pattern)
-
-    def _build_version_regex(self) -> re.Pattern:
-        """构建匹配纯版本号（不含后缀）的正则，prefix 可选"""
-        prefix_escaped = re.escape(self.prefix) if self.prefix else ""
-        prefix_part = f"(?:{prefix_escaped}\\.)?" if prefix_escaped else ""
-        pattern = f"^{prefix_part}(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)$"
-        return re.compile(pattern)
-
-    def find_latest_matching_tag(self, tags: List[TagInfo]) -> Optional[Tuple[TagInfo, Dict[str, int]]]:
-        """
-        从 tag 列表中找到匹配纯版本号的最新版本（不含后缀）
-
-        Args:
-            tags: TagInfo 列表
-
-        Returns:
-            最新匹配 tag 及其字段值字典，无匹配时返回 None
-        """
-        regex = self._build_version_regex()
-        candidates: List[Tuple[TagInfo, Dict[str, int], Tuple[int, ...]]] = []
-        for tag in tags:
-            match = regex.match(tag.name)
-            if not match:
-                continue
-            values = {f: int(match.group(f)) for f in ("major", "minor", "patch")}
-            candidates.append((tag, values, tuple(values.values())))
-        if not candidates:
-            return None
-        candidates.sort(key=lambda item: item[2], reverse=True)
-        return candidates[0][0], candidates[0][1]
 
     def find_latest_tag_by_type(
         self,
@@ -153,52 +152,40 @@ class VersionCalculator:
         """
         计算下一个版本号和 tag 名称
 
-        按发布类型独立过滤 tag：仅匹配该类型的 tag（formal 无后缀 / rc 带 -rc / beta 带 -beta），
+        按发布类型独立过滤 tag：仅匹配该类型的新格式 tag
+        （formal 无后缀 / rc 带 -rc / beta 带 -beta，均含 _日期 段），
         找到最大版本号后修订号 +1，无匹配时使用初始版本。
+        生成的 tag 名称自动拼接当天日期段 _YYYYMMDD。
 
         Args:
             tags: 当前仓库的 tag 列表
             release_type: 发布类型 formal/rc/beta
 
         Returns:
-            (version, tag_name) 元组，version 为纯版本号，tag_name 含后缀
+            (version, tag_name) 元组，version 为纯版本号，tag_name 含后缀与日期段
         """
-        # 按类型匹配 tag（formal 匹配无后缀，rc/beta 匹配新后缀或旧前缀格式）
         type_regex = self._build_regex(release_type)
-        version_regex = self._build_version_regex()
-        old_prefix = release_type if release_type in ("rc", "beta") else None
-        matched_tags: List[TagInfo] = []
+        best: Optional[Tuple[int, int, int]] = None
         for t in tags:
-            name = t.name
-            if type_regex.match(name):
-                # 新后缀格式：去除后缀
-                all_suffixes = set(self.suffixes.values())
-                for s in all_suffixes:
-                    if s and name.endswith(f"-{s}"):
-                        name = name[: -(len(s) + 1)]
-                        break
-            elif old_prefix and name.startswith(f"{old_prefix}-"):
-                # 旧前缀格式：去除前缀
-                name = name[len(old_prefix) + 1:]
-            else:
+            match = type_regex.match(t.name)
+            if not match:
                 continue
-            if version_regex.match(name):
-                matched_tags.append(TagInfo(name=name, commit_hash=t.commit_hash, created_at=t.created_at))
+            values = (int(match.group("major")), int(match.group("minor")), int(match.group("patch")))
+            if best is None or values > best:
+                best = values
 
-        latest = self.find_latest_matching_tag(matched_tags)
-        if latest is None:
+        if best is None:
             version = self.initial_version
         else:
-            _, values = latest
-            values["patch"] = values["patch"] + 1
-            version = self._format_version(values["major"], values["minor"], values["patch"])
+            version = self._format_version(best[0], best[1], best[2] + 1)
 
-        # 按发布类型追加后缀
+        # 按发布类型追加后缀，并拼接当天日期段
         if release_type in ("rc", "beta"):
-            suffix = self.suffixes.get(release_type, "")
+            suffix = (self.suffixes.get(release_type, "") or "").strip("-")
             tag_name = f"{version}-{suffix}" if suffix else version
         else:
             tag_name = version
+        tag_name = f"{tag_name}_{self.today_str()}"
         return version, tag_name
 
 
@@ -238,23 +225,39 @@ class ReleaseValidator:
     @staticmethod
     def strip_suffix(tag_name: str, version_rule: dict) -> str:
         """
-        从 tag 名去除后缀，反推出纯版本号
+        从 tag 名去除日期段与类型后缀，反推出纯版本号
 
         Args:
-            tag_name: tag 名称
+            tag_name: tag 名称，如 VA.1.0.3-rc_20260816
             version_rule: 版本规则
 
         Returns:
-            去除后缀后的版本号
+            去除后缀与日期段后的版本号，如 VA.1.0.3
         """
         suffixes = (version_rule or {}).get("suffixes") or ReleaseValidator.get_default_suffixes()
         all_suffixes = set((s or "").strip("-") for s in suffixes.values() if (s or "").strip("-"))
-        version = tag_name
+        # 先去掉末尾 _YYYYMMDD 日期段
+        version = re.sub(r"_\d{8}$", "", tag_name)
         for s in all_suffixes:
             if s and version.endswith(f"-{s}"):
                 version = version[: -(len(s) + 1)]
                 break
         return version
+
+    @staticmethod
+    def ensure_tag_date(tag_name: str) -> str:
+        """
+        确保 tag 名称带 _YYYYMMDD 日期段，缺失时拼接当天日期
+
+        Args:
+            tag_name: tag 名称
+
+        Returns:
+            带日期段的 tag 名称
+        """
+        if re.search(r"_\d{8}$", tag_name):
+            return tag_name
+        return f"{tag_name}_{VersionCalculator.today_str()}"
 
     @staticmethod
     def validate_project_status(project: Project) -> None:
@@ -290,9 +293,10 @@ class ReleaseValidator:
         if release_type in ("rc", "beta"):
             suffixes = (version_rule or {}).get("suffixes") or ReleaseValidator.get_default_suffixes()
             suffix = (suffixes.get(release_type, "") or "").strip("-")
-            if suffix and not tag_name.endswith(f"-{suffix}"):
+            # 兼容带不带 _日期 段两种形态，后缀需位于日期段之前
+            if suffix and not re.search(f"-{re.escape(suffix)}(?:_\\d{{8}})?$", tag_name):
                 raise serializers.ValidationError(
-                    {"tag_name": f"{release_type} 版本 tag 必须以 -{suffix} 结尾"}
+                    {"tag_name": f"{release_type} 版本 tag 必须以 -{suffix} 结尾（日期段之前）"}
                 )
 
     @staticmethod
@@ -339,10 +343,7 @@ class ReleaseDocGenerator:
         except ProviderError:
             return None
         calculator = VersionCalculator(self.release.project.version_rule or {})
-        latest = calculator.find_latest_matching_tag(tags)
-        if latest is None:
-            return None
-        return latest[0].name
+        return calculator.find_latest_tag_by_type(tags, "formal")
 
     def _fetch_commits(self) -> List[CommitInfo]:
         """
@@ -752,7 +753,7 @@ class ReleaseService:
                 release_type=release_type,
             )
         else:
-            # 手动传 version 时按 release_type 追加后缀
+            # 手动传 version 时按 release_type 追加后缀，并拼接日期段
             if release_type in ("rc", "beta"):
                 suffixes = version_rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
                 suffix = (suffixes.get(release_type, "") or "").strip("-")
@@ -761,14 +762,20 @@ class ReleaseService:
                     auto_tag_name = f"{auto_tag_name}-{suffix}"
             else:
                 auto_tag_name = version
+            auto_tag_name = ReleaseValidator.ensure_tag_date(auto_tag_name)
 
-        # tag_name 优先使用传入值，rc/beta 类型自动补后缀
+        # tag_name 优先使用传入值，rc/beta 类型自动补后缀，统一补齐日期段
         if tag_name:
             if release_type in ("rc", "beta"):
                 suffixes = version_rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
                 suffix = (suffixes.get(release_type, "") or "").strip("-")
-                if suffix and not tag_name.endswith(f"-{suffix}"):
-                    tag_name = f"{tag_name}-{suffix}"
+                if suffix and not re.search(f"-{re.escape(suffix)}(?:_\\d{{8}})?$", tag_name):
+                    if re.search(r"_\d{8}$", tag_name):
+                        # 已带日期段但缺后缀：在日期段前插入后缀
+                        tag_name = f"{tag_name[:-9]}-{suffix}{tag_name[-9:]}"
+                    else:
+                        tag_name = f"{tag_name}-{suffix}"
+            tag_name = ReleaseValidator.ensure_tag_date(tag_name)
         else:
             tag_name = auto_tag_name
 

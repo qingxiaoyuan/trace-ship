@@ -72,26 +72,37 @@ class GitLabProvider(GitProvider):
         return resp.status_code == 200
 
     def list_branches(self, repo_identity: str) -> List[BranchInfo]:
-        """列出仓库分支"""
+        """
+        列出仓库全部分支
+
+        GitLab 分支接口单页最多 100 条，按 X-Next-Page 响应头翻页
+        拉取全部，保证同步时不会因截断误删本地分支。
+        """
         encoded = self._encode_identity(repo_identity)
-        resp = self._request(
-            "GET",
-            f"/projects/{encoded}/repository/branches",
-            params={"per_page": 100},
-        )
         result: List[BranchInfo] = []
-        for b in resp.json():
-            commit = b.get("commit") or {}
-            result.append(
-                BranchInfo(
-                    name=b["name"],
-                    is_default=b.get("default", False),
-                    last_commit_hash=commit.get("id"),
-                    last_commit_author=commit.get("author_name", "") or "",
-                    last_commit_message=commit.get("message", "") or "",
-                    last_commit_at=self._parse_datetime(commit.get("committed_date")),
-                )
+        page = 1
+        while True:
+            resp = self._request(
+                "GET",
+                f"/projects/{encoded}/repository/branches",
+                params={"per_page": 100, "page": page},
             )
+            for b in resp.json():
+                commit = b.get("commit") or {}
+                result.append(
+                    BranchInfo(
+                        name=b["name"],
+                        is_default=b.get("default", False),
+                        last_commit_hash=commit.get("id"),
+                        last_commit_author=commit.get("author_name", "") or "",
+                        last_commit_message=commit.get("message", "") or "",
+                        last_commit_at=self._parse_datetime(commit.get("committed_date")),
+                    )
+                )
+            next_page = resp.headers.get("X-Next-Page")
+            if not next_page:
+                break
+            page = int(next_page)
         return result
 
     def list_commits(
@@ -143,20 +154,32 @@ class GitLabProvider(GitProvider):
         )
 
     def list_tags(self, repo_identity: str) -> List[TagInfo]:
-        """列出仓库 tag"""
+        """
+        列出仓库全部 tag
+
+        单页最多 100 条，按 X-Next-Page 响应头翻页拉取全部。
+        """
         encoded = self._encode_identity(repo_identity)
-        resp = self._request(
-            "GET",
-            f"/projects/{encoded}/repository/tags",
-            params={"per_page": 100},
-        )
-        return [
-            TagInfo(
-                name=t["name"],
-                commit_hash=t.get("commit", {}).get("id"),
+        result: List[TagInfo] = []
+        page = 1
+        while True:
+            resp = self._request(
+                "GET",
+                f"/projects/{encoded}/repository/tags",
+                params={"per_page": 100, "page": page},
             )
-            for t in resp.json()
-        ]
+            for t in resp.json():
+                result.append(
+                    TagInfo(
+                        name=t["name"],
+                        commit_hash=t.get("commit", {}).get("id"),
+                    )
+                )
+            next_page = resp.headers.get("X-Next-Page")
+            if not next_page:
+                break
+            page = int(next_page)
+        return result
 
     def create_tag(self, repo_identity: str, tag_name: str, commit_hash: str, message: str = "") -> TagInfo:
         """创建 tag"""

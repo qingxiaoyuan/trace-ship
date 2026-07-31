@@ -4,16 +4,20 @@
 封装仓库连通性测试、分支/commit 查询、提交同步等业务逻辑。
 """
 from typing import List, Optional
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from django.utils import timezone
 
-from apps.repository.models import CommitRecord, Repository, RepositoryBranch
+from apps.repository.models import CommitRecord, Repository, RepositoryBranch, RepositoryTag
 from utils.commit_reviewer import CommitReviewer
 from utils.provider.base import CommitInfo
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.exceptions import ProviderError
 from utils.provider.factory import get_provider
+
+# GitLab UI 判定 stale（不活跃）分支的口径：最近 3 个月无提交
+STALE_BRANCH_DAYS = 90
 
 
 class RepositoryService:
@@ -116,6 +120,9 @@ class RepositoryService:
         从远端拉取全部分支及其最新提交信息（作者、时间、信息、哈希）并落库，
         远端已不存在的分支会从本地删除以保持一致。
 
+        只同步活跃分支：最近 3 个月无提交的 stale 分支（GitLab UI 口径）
+        会被跳过并从本地清除；默认分支不受此限制，始终保留。
+
         仅 Git 类仓库支持；SVN 仓库直接返回提示。
 
         Args:
@@ -132,9 +139,16 @@ class RepositoryService:
         provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
         branches = provider.list_branches(repo.external_identity)
 
+        stale_before = timezone.now() - timedelta(days=STALE_BRANCH_DAYS)
         remote_names: set = set()
+        synced_count = 0
         for b in branches:
+            # 跳过 stale 分支（默认分支始终保留），与 GitLab「活跃分支」口径一致；
+            # 被跳过的分支不进入 remote_names，会随下方清理逻辑从本地删除
+            if not b.is_default and b.last_commit_at and b.last_commit_at < stale_before:
+                continue
             remote_names.add(b.name)
+            synced_count += 1
             author = b.last_commit_author
             committed_at = b.last_commit_at
             message = b.last_commit_message
@@ -165,7 +179,79 @@ class RepositoryService:
         else:
             RepositoryBranch.objects.filter(repository=repo).delete()
 
-        return {"synced_count": len(branches), "total": len(branches)}
+        # 同步扫描 tag：仅版本规则正则匹配上的入库
+        tag_result = RepositoryService.sync_tags(repo, provider=provider)
+
+        return {
+            "synced_count": synced_count,
+            "total": len(branches),
+            "tag_synced_count": tag_result["synced_count"],
+            "tag_total": tag_result["total"],
+        }
+
+    @staticmethod
+    def sync_tags(repo: Repository, request_user=None, provider=None) -> dict:
+        """
+        扫描远端 tag 并按版本规则正则过滤入库
+
+        只有匹配「{prefix}.主.次.修(-后缀)?_YYYYMMDD」规则的 tag 才解析入库，
+        解析出主/次/修订版本号、类型后缀与日期段；远端已不存在或不再匹配
+        规则的本地 tag 会被清除。
+
+        Args:
+            repo: Repository 实例
+            request_user: 当前请求用户（provider 为空时用于解析凭证）
+            provider: 可选的已构造 provider，为空时按仓库凭证创建
+
+        Returns:
+            {"synced_count": int, "total": int}，total 为远端 tag 总数
+        """
+        # 延迟导入避免 apps.release 与 apps.repository 之间的模块级耦合
+        from apps.release.services import VersionCalculator
+
+        if repo.repo_type != "git":
+            return {"synced_count": 0, "total": 0, "detail": "非 Git 仓库不支持 Tag 同步"}
+
+        if provider is None:
+            cred_data = resolve_credential(repo, request_user)
+            provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
+        tags = provider.list_tags(repo.external_identity)
+
+        scan_regex = VersionCalculator(repo.project.version_rule or {}).build_scan_regex()
+        remote_names: set = set()
+        synced_count = 0
+        for t in tags:
+            match = scan_regex.match(t.name)
+            if not match:
+                continue
+            # 日期段必须是合法年月日，否则视为不匹配
+            try:
+                tag_date = datetime.strptime(match.group("date"), "%Y%m%d").date()
+            except ValueError:
+                continue
+            remote_names.add(t.name)
+            synced_count += 1
+            RepositoryTag.objects.update_or_create(
+                repository=repo,
+                name=t.name,
+                defaults={
+                    "commit_hash": t.commit_hash or "",
+                    "major": int(match.group("major")),
+                    "minor": int(match.group("minor")),
+                    "patch": int(match.group("patch")),
+                    "suffix": match.groupdict().get("suffix") or "",
+                    "tag_date": tag_date,
+                    "remote_created_at": t.created_at,
+                },
+            )
+
+        # 清除远端已不存在或不再匹配规则的本地 tag
+        if remote_names:
+            RepositoryTag.objects.filter(repository=repo).exclude(name__in=remote_names).delete()
+        else:
+            RepositoryTag.objects.filter(repository=repo).delete()
+
+        return {"synced_count": synced_count, "total": len(tags)}
 
     @staticmethod
     def list_tags(repo: Repository, request_user=None) -> List[dict]:

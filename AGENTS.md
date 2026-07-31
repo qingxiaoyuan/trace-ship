@@ -8,9 +8,11 @@ Trace Ship 是一个软件版本发布管理系统，围绕“项目”组织仓
 
 仓库主要目录：
 
-- `backend/`：Django 5.0 + Django REST Framework 后端，包含账号、项目、仓库、提交、发布、工作流、打包、凭证、通知、系统管理等模块（Jenkins 模块已下线，仅保留迁移 tombstone）。
-- `frontend/`：React + Vite + TypeScript 前端，已接入路由、布局、Ant Design、Zustand、Axios、React Query 及主要业务页面。
+- `backend/`：Django 5.0 + Django REST Framework 后端，包含账号、项目、仓库、提交、发布、工作流、打包、凭证、通知、反馈、系统管理等模块（Jenkins 模块已下线，仅保留迁移 tombstone）。
+- `frontend/`：React + Vite + TypeScript 前端，已接入路由、布局、Ant Design、Zustand、Axios、React Query 及主要业务页面（含使用指南、使用反馈、浏览器升级引导）。
 - `docker/`：Docker Compose 编排 PostgreSQL、Redis、GitLab；`test` profile 追加 OpenLDAP、phpLDAPadmin、SVN 模拟服务；`app` profile 可同时启动后端、前端、Celery。生产编排拆分为 `docker-compose.deps.yml`（数据层，独立项目 `trace-ship-deps`）与 `docker-compose.prod.yml`（应用层，项目 `trace-ship`），经共享网络 `trace-ship-net` 通信。
+- `vscode-commit/`：VS Code 规范提交助手插件子项目，通过 AI 自动生成规范 commit 信息；默认本地 DeepSeek 接口，`commit.apiProtocol` 配置（auto / openai / anthropic）兼容更多 AI 服务。
+- `scripts/`：开发环境管理（`dev.sh`）、发布包构建（`build.sh`）与内网部署（`deploy.sh`）脚本。
 - `docs/`：接口、业务流程、设计文档与 Postman Collection。
 - `feat/`、`ui-design/`：需求和 UI 设计相关资料。
 
@@ -87,6 +89,8 @@ python manage.py init_base_data
 python manage.py runserver 0.0.0.0:8000
 ```
 
+管理员密码丢失恢复：`python manage.py reset_admin_password`（默认恢复为 `admin@123`，支持 `--username` / `--password` 参数）；`init_base_data --reset-admin` 也可强制重置。
+
 常用检查：
 
 ```bash
@@ -136,7 +140,8 @@ npm run preview
 - `apps.jenkins`：已下线，仅保留迁移 tombstone（空 models + 历史迁移），无 API 与业务逻辑。
 - `apps.credential`：凭证加密存储、脱敏展示、凭证解析。
 - `apps.notification`：站内通知，覆盖审批、构建、发布和系统消息。
-- `apps.system`：系统参数、操作日志等系统管理能力。
+- `apps.feedback`：使用反馈，全员可提交/点赞/查看，删除仅限本人或超管；超管可将反馈标记为已处理（记录处理人与处理时间）。
+- `apps.system`：系统参数、操作日志等系统管理能力；LDAP 连接参数也可在「系统配置」页面维护（页面配置优先，环境变量兜底），并提供 LDAP 连接测试接口。
 
 ### 路由入口
 
@@ -153,6 +158,7 @@ npm run preview
 - `/api/system/`
 - `/api/workflow/`
 - `/api/notifications/`
+- `/api/feedback/`
 - `/api/schema/`、`/swagger/`、`/redoc/`
 - `/health/`
 
@@ -174,6 +180,7 @@ npm run preview
 - `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。
 - `Credential`：凭证密文与凭证元数据。
 - `Notification`：站内通知。
+- `Feedback`：使用反馈，包含分类、点赞用户集合、处理状态（`open` / `processed`）、处理人与处理时间。
 
 ### 发布主流程
 
@@ -252,7 +259,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - `src/api/`：按业务模块拆分接口封装。
 - `src/router/`：路由配置、鉴权守卫、懒加载页面。
 - `src/layouts/`：登录布局、主布局、系统子布局、侧边栏和顶部栏。
-- `src/pages/`：工作台、项目、仓库、提交审查、凭证、打包、打包镜像、工作流、发布、通知、个人中心、系统管理等页面。
+- `src/pages/`：工作台、项目、仓库、提交审查、凭证、打包、打包镜像、工作流、发布、通知、使用指南、使用反馈、个人中心、系统管理等页面。
 - `src/components/`：项目内通用组件，例如卡片、列表、弹窗、状态标签、搜索筛选栏、审批流预览。
 - `src/stores/`：Zustand store。
 - `src/types/`：全局类型。
@@ -272,8 +279,11 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - `/workflows`
 - `/releases`、`/releases/create`、`/releases/:id`
 - `/notifications`
+- `/guide`（使用说明）
+- `/feedback`（使用反馈）
 - `/system/users`、`/system/roles`、`/system/configs`、`/system/package-images`、`/system/logs`
 - `/profile`
+- `/browser-upgrade`（浏览器升级引导页，无需登录）
 
 新增页面时优先沿用 `MainLayout`、`PageLoader`、现有 API 层与类型定义。
 

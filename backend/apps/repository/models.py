@@ -154,6 +154,63 @@ class RepositoryBranch(models.Model):
         return f"{self.repository.name} - {self.name}"
 
 
+class RepositoryTag(models.Model):
+    """
+    仓库 Tag 模型
+
+    同步分支时从远端扫描 tag，仅符合版本规则
+    （{prefix}.主.次.修(-后缀)?_YYYYMMDD）的 tag 才会解析并入库，
+    供版本计算与展示查询。
+
+    Attributes:
+        id: UUID 主键
+        repository: 所属仓库
+        name: tag 原始名称
+        commit_hash: 指向的提交哈希
+        major: 主版本号（正则解析）
+        minor: 次版本号（正则解析）
+        patch: 修订版本号（正则解析）
+        suffix: 类型后缀（rc/beta，正式版为空）
+        tag_date: tag 日期段（年月日）
+        remote_created_at: 远端 tag 创建时间
+        created_at: 创建时间
+        updated_at: 更新时间
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        Repository,
+        on_delete=models.CASCADE,
+        related_name="tags",
+        verbose_name="仓库",
+    )
+    name = models.CharField(max_length=200, verbose_name="Tag 名称")
+    commit_hash = models.CharField(max_length=100, blank=True, verbose_name="提交哈希")
+    major = models.IntegerField(null=True, blank=True, verbose_name="主版本号")
+    minor = models.IntegerField(null=True, blank=True, verbose_name="次版本号")
+    patch = models.IntegerField(null=True, blank=True, verbose_name="修订版本号")
+    suffix = models.CharField(max_length=50, blank=True, verbose_name="类型后缀")
+    tag_date = models.DateField(null=True, blank=True, verbose_name="Tag 日期")
+    remote_created_at = models.DateTimeField(null=True, blank=True, verbose_name="远端创建时间")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "repo_tag"
+        verbose_name = "仓库 Tag"
+        verbose_name_plural = "仓库 Tag"
+        ordering = ["-major", "-minor", "-patch", "-tag_date"]
+        unique_together = [("repository", "name")]
+        indexes = [
+            models.Index(fields=["repository", "name"]),
+            models.Index(fields=["repository", "tag_date"]),
+        ]
+
+    def __str__(self) -> str:
+        """返回仓库名-Tag 名描述"""
+        return f"{self.repository.name} - {self.name}"
+
+
 class CommitRecord(models.Model):
     """
     提交记录模型
