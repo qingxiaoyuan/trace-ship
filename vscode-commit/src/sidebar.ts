@@ -48,6 +48,17 @@ interface RepoChange {
   isStaged: boolean;
   isImage: boolean; // 是否为图片文件，用于在列表中显示图片图标
   originalFullPath?: string; // 重命名文件的原路径，打开 diff 时需要
+  repoName: string; // 所属仓库名（多仓库场景用于分组展示）
+}
+
+/**
+ * 单个仓库的变更分组（多仓库/子模块场景：主仓库 + 各子仓库各占一组）
+ */
+interface RepoGroup {
+  repoName: string;
+  repoRoot: string;
+  staged: RepoChange[];
+  unstaged: RepoChange[];
 }
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -60,8 +71,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _firstLoad: boolean = true; // 仅首次显示 loading 骨架，避免后续刷新闪烁
   private _debounceTimer: any = null; // 状态变化去抖定时器
   private _statusEnum?: any; // 缓存运行时 Git Status 枚举
-  private _aiAbortController?: AbortController; // 用于中断 AI 生成请求
-  private _isGenerating: boolean = false; // 是否正在生成 AI commit
+  private _aiAbortControllers: Map<string, AbortController> = new Map(); // 按仓库隔离的 AI 生成中断控制器
   private _outputChannel?: vscode.OutputChannel; // 日志输出通道
 
   constructor(extensionUri: vscode.Uri, outputChannel?: vscode.OutputChannel) {
@@ -123,7 +133,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         try {
           switch (message.command) {
             case "generateCommit":
-              await this.generateCommit();
+              await this.generateCommit(message.repoRoot);
               break;
             case "copyCommit":
               await this.copyCommit(message.commit);
@@ -148,25 +158,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               await this.stageFile(message.filepath);
               break;
             case "stageAll":
-              await this.stageAll();
+              await this.stageAll(message.repoRoot);
               break;
             case "unstageFile":
               await this.unstageFile(message.filepath);
               break;
             case "unstageAll":
-              await this.unstageAll();
+              await this.unstageAll(message.repoRoot);
               break;
             case "discardFile":
               await this.discardFile(message.filepath, message.status);
               break;
             case "commit":
-              await this.commit(message.message, message.mode);
+              await this.commit(message.message, message.mode, message.repoRoot);
               break;
             case "insertTemplate":
-              this._insertTemplate();
+              this._insertTemplate(message.repoRoot);
               break;
             case "stopGenerateCommit":
-              this.stopGenerateCommit();
+              this.stopGenerateCommit(message.repoRoot);
               break;
           }
         } catch (err: any) {
@@ -199,7 +209,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           }
           if (typeof gitApi.onDidOpenRepository === "function") {
             this._disposables.push(
-              gitApi.onDidOpenRepository((repo: any) => this._bindRepo(repo)),
+              gitApi.onDidOpenRepository((repo: any) => {
+                this._bindRepo(repo);
+                // 关键：VS Code 异步打开仓库（子模块检测尤其慢），
+                // 新仓库打开后必须主动触发一次刷新，否则它永远不会出现在面板中
+                this._scheduleRefresh();
+              }),
             );
           }
           if (typeof gitApi.onDidCloseRepository === "function") {
@@ -296,6 +311,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const changes = this._collectChanges(gitApi);
       const stats = await this._calcStatsFromRepo();
 
+      // 输出每个仓库扫描到的变更数，便于排查多仓库识别问题
+      this._log(
+        `[扫描] 共 ${changes.groups.length} 个仓库：` +
+          changes.groups
+            .map(
+              (g) =>
+                `${g.repoName}(暂存 ${g.staged.length}/未暂存 ${g.unstaged.length})`,
+            )
+            .join("，"),
+      );
+
       this._view.webview.postMessage({
         command: "diffStats",
         additions: stats.additions,
@@ -360,10 +386,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _collectChanges(gitApi: any): {
     staged: RepoChange[];
     unstaged: RepoChange[];
+    groups: RepoGroup[];
   } {
     const repos: any[] = gitApi.repositories || [];
     const staged: RepoChange[] = [];
     const unstaged: RepoChange[] = [];
+    const groups: RepoGroup[] = [];
     const Status = this._getStatusEnum(gitApi);
 
     const map = (
@@ -385,22 +413,34 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         isStaged,
         isImage: this._isPreviewableImageFile(filename),
         originalFullPath: change.originalUri?.fsPath,
+        repoName: path.basename(repoRoot),
       };
     };
 
     for (const repo of repos) {
       const rootPath = repo.rootUri.fsPath;
-      (repo.state.indexChanges || []).forEach((c: GitChange) =>
-        staged.push(map(c, rootPath, true)),
-      );
-      (repo.state.workingTreeChanges || []).forEach((c: GitChange) =>
-        unstaged.push(map(c, rootPath, false)),
-      );
+      const repoStaged: RepoChange[] = (
+        (repo.state.indexChanges || []) as GitChange[]
+      ).map((c) => map(c, rootPath, true));
+      const repoUnstaged: RepoChange[] = (
+        (repo.state.workingTreeChanges || []) as GitChange[]
+      ).map((c) => map(c, rootPath, false));
+      repoStaged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
+      repoUnstaged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
+      staged.push(...repoStaged);
+      unstaged.push(...repoUnstaged);
+      groups.push({
+        repoName: path.basename(rootPath),
+        repoRoot: rootPath,
+        staged: repoStaged,
+        unstaged: repoUnstaged,
+      });
     }
 
     staged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
     unstaged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
-    return { staged, unstaged };
+    groups.sort((a, b) => a.repoRoot.localeCompare(b.repoRoot));
+    return { staged, unstaged, groups };
   }
 
   private _statusToLetter(status: GitStatus, Status: any): string {
@@ -705,11 +745,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    // 找到文件所属的仓库（多仓库场景下不能只用 repositories[0]）
-    const repo = (gitApi.repositories || []).find((r: any) => {
-      const root = r.rootUri?.fsPath || "";
-      return filepath === root || filepath.startsWith(root + path.sep);
-    });
+    // 找到文件所属的仓库（多仓库/子模块场景取根路径最深的匹配，不能只用 repositories[0]）
+    const repo = this._findRepoForPath(gitApi, filepath);
     if (!repo) {
       vscode.window.showErrorMessage("未找到文件所属的 Git 仓库");
       return;
@@ -844,39 +881,73 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * 按文件路径定位其所属的 Git 仓库（多仓库/子模块场景）。
+   * 当主仓库与子仓库（子模块）嵌套时，一个路径可能同时匹配多个仓库根目录，
+   * 这里选择根路径最深的那个，确保命中实际管理该文件的子仓库。
+   * 注意：不匹配"路径恰好等于仓库根"的情况——那是父仓库中的子模块条目（gitlink），
+   * 其暂存/取消暂存必须通过父仓库执行（git add <子模块路径> 是更新指针）。
+   */
+  private _findRepoForPath(gitApi: any, filepath: string): any {
+    const repos: any[] = gitApi?.repositories || [];
+    let best: any = null;
+    for (const repo of repos) {
+      const root: string = repo.rootUri?.fsPath || "";
+      if (!root) {
+        continue;
+      }
+      if (filepath.startsWith(root + path.sep)) {
+        if (!best || root.length > best.rootUri.fsPath.length) {
+          best = repo;
+        }
+      }
+    }
+    return best;
+  }
+
   private async stageFile(filepath: string) {
     const gitApi = await this._getGitApi().catch(() => null);
-    const repo = gitApi?.repositories?.[0];
+    const repo = gitApi ? this._findRepoForPath(gitApi, filepath) : null;
     if (!repo) {
+      this._log(`[暂存] 未找到文件所属仓库: ${filepath}`);
       return;
     }
+    // 注意：vscode.git API 的 add/revert 形参类型虽标注为 Uri[]，
+    // 但实际实现是内部自己做 Uri.file(e) 转换（add(e){return this.#i.add(e.map(e=>Uri.file(e)))}），
+    // 必须传字符串路径；传 Uri 对象会被二次转换产出非法路径导致操作失败
     await repo.add([filepath]);
     await this._refreshChanges();
   }
 
   /**
-   * 暂存所有未暂存文件
+   * 暂存所有未暂存文件（遍历所有仓库：主仓库 + 子仓库）
+   * 传入 repoRoot 时只暂存该仓库的变更（多仓库分组界面中按仓库操作）
    */
-  private async stageAll() {
+  private async stageAll(repoRoot?: string) {
     const gitApi = await this._getGitApi().catch(() => null);
-    const repo = gitApi?.repositories?.[0];
-    if (!repo) {
+    let repos: any[] = gitApi?.repositories || [];
+    if (repos.length === 0) {
       return;
+    }
+    if (repoRoot) {
+      repos = repos.filter((r: any) => r.rootUri?.fsPath === repoRoot);
     }
     const Status = this._getStatusEnum(gitApi);
-    const paths = (repo.state.workingTreeChanges || [])
-      .filter((c: GitChange) => c.status !== Status.UNMERGED)
-      .map((c: GitChange) => c.uri.fsPath);
-    if (paths.length === 0) {
-      return;
+    for (const repo of repos) {
+      const paths = (repo.state.workingTreeChanges || [])
+        .filter((c: GitChange) => c.status !== Status.UNMERGED)
+        .map((c: GitChange) => c.uri.fsPath);
+      if (paths.length === 0) {
+        continue;
+      }
+      await repo.add(paths);
     }
-    await repo.add(paths);
     await this._refreshChanges();
   }
 
   private async unstageFile(filepath: string) {
     const gitApi = await this._getGitApi().catch(() => null);
-    const repo = gitApi?.repositories?.[0];
+    const repo = gitApi ? this._findRepoForPath(gitApi, filepath) : null;
     if (!repo) {
       return;
     }
@@ -888,23 +959,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 取消暂存所有已暂存文件
+   * 取消暂存所有已暂存文件（遍历所有仓库：主仓库 + 子仓库）
+   * 传入 repoRoot 时只取消该仓库的暂存（多仓库分组界面中按仓库操作）
    */
-  private async unstageAll() {
+  private async unstageAll(repoRoot?: string) {
     const gitApi = await this._getGitApi().catch(() => null);
-    const repo = gitApi?.repositories?.[0];
-    if (!repo) {
+    let repos: any[] = gitApi?.repositories || [];
+    if (repos.length === 0) {
       return;
     }
-    const root = repo.rootUri.fsPath;
-    await execAsync(`git -C "${root}" reset HEAD -- .`);
-    await repo.status();
+    if (repoRoot) {
+      repos = repos.filter((r: any) => r.rootUri?.fsPath === repoRoot);
+    }
+    for (const repo of repos) {
+      if ((repo.state.indexChanges?.length ?? 0) === 0) {
+        continue;
+      }
+      const root = repo.rootUri.fsPath;
+      await execAsync(`git -C "${root}" reset HEAD -- .`);
+      await repo.status();
+    }
     await this._refreshChanges();
   }
 
   private async discardFile(filepath: string, status: GitStatus) {
     const gitApi = await this._getGitApi().catch(() => null);
-    const repo = gitApi?.repositories?.[0];
+    const repo = gitApi ? this._findRepoForPath(gitApi, filepath) : null;
     if (!repo) {
       return;
     }
@@ -928,7 +1008,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     await this._refreshChanges();
   }
 
-  private async commit(message: string, mode: "commit" | "push" | "sync") {
+  private async commit(
+    message: string,
+    mode: "commit" | "push" | "sync",
+    repoRoot?: string,
+  ) {
     if (!message.trim()) {
       this._view?.webview.postMessage({
         command: "error",
@@ -947,52 +1031,91 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
       return;
     }
-    const repo = gitApi.repositories[0];
-    if (!repo) {
+    let repos: any[] = gitApi.repositories || [];
+    if (repos.length === 0) {
       this._view?.webview.postMessage({
         command: "error",
         error: "未找到 Git 仓库",
       });
       return;
     }
+    // 多仓库场景：指定 repoRoot 时只提交该仓库；未指定时提交所有有暂存内容的仓库
+    if (repoRoot) {
+      repos = repos.filter((r: any) => r.rootUri?.fsPath === repoRoot);
+      if (repos.length === 0) {
+        this._view?.webview.postMessage({
+          command: "error",
+          error: "未找到指定的 Git 仓库",
+        });
+        return;
+      }
+    }
 
     try {
-      try {
-        await repo.status();
-      } catch {}
+      await Promise.all(
+        repos.map((r: any) =>
+          Promise.resolve()
+            .then(() => r.status())
+            .catch(() => {}),
+        ),
+      );
 
-      const hasStaged = (repo.state.indexChanges?.length ?? 0) > 0;
-      if (!hasStaged) {
-        const paths = (repo.state.workingTreeChanges || []).map(
-          (c: GitChange) => c.uri.fsPath,
-        );
-        if (paths.length === 0) {
+      // 多仓库（主仓库 + 子仓库）场景：对所有有暂存内容的仓库分别提交
+      let targetRepos = repos.filter(
+        (r: any) => (r.state.indexChanges?.length ?? 0) > 0,
+      );
+      if (targetRepos.length === 0) {
+        // 没有任何仓库暂存内容：把所有仓库的工作区变更全部暂存后提交
+        // 注意：repo.add() 后 state.indexChanges 依赖文件事件异步刷新，
+        // 不能立刻用 state 判断，这里显式记录成功暂存的仓库
+        const stagedRepos: any[] = [];
+        for (const repo of repos) {
+          const paths = (repo.state.workingTreeChanges || []).map(
+            (c: GitChange) => c.uri.fsPath,
+          );
+          if (paths.length === 0) {
+            continue;
+          }
+          await repo.add(paths);
+          stagedRepos.push(repo);
+        }
+        if (stagedRepos.length === 0) {
           this._view?.webview.postMessage({
             command: "error",
             error: "没有可提交的变更",
           });
           return;
         }
-        await repo.add(paths);
+        targetRepos = stagedRepos;
       }
 
-      await repo.commit(message);
+      // 逐仓库提交（同一提交信息应用到每个有变更的仓库）
+      for (const repo of targetRepos) {
+        await repo.commit(message);
+      }
       this._view?.webview.postMessage({
         command: "status",
-        message: "提交成功",
+        message:
+          targetRepos.length > 1
+            ? `提交成功（${targetRepos.length} 个仓库）`
+            : "提交成功",
         type: "success",
       });
 
       if (mode === "push") {
-        await repo.push();
+        for (const repo of targetRepos) {
+          await repo.push();
+        }
         this._view?.webview.postMessage({
           command: "status",
           message: "已提交并推送",
           type: "success",
         });
       } else if (mode === "sync") {
-        await repo.pull();
-        await repo.push();
+        for (const repo of targetRepos) {
+          await repo.pull();
+          await repo.push();
+        }
         this._view?.webview.postMessage({
           command: "status",
           message: "已同步",
@@ -1001,7 +1124,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
 
       await this._refreshChanges();
-      this._view?.webview.postMessage({ command: "clearMessage" });
+      this._view?.webview.postMessage({ command: "clearMessage", repoRoot });
     } catch (err: any) {
       this._view?.webview.postMessage({
         command: "error",
@@ -1011,9 +1134,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 生成 AI commit 信息并填入 Message 输入框
+   * 生成 AI commit 信息并填入对应仓库的 Message 输入框
+   * 多仓库场景：传入 repoRoot 时只基于该仓库的暂存区生成
    */
-  public async generateCommit() {
+  public async generateCommit(repoRoot?: string) {
     if (!this._view) {
       return;
     }
@@ -1032,17 +1156,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    let targetRoot: string | undefined;
+
     try {
       const gitApi = await this._getGitApi();
-      const repos: any[] = gitApi.repositories || [];
+      let repos: any[] = gitApi.repositories || [];
       if (repos.length === 0) {
         throw new Error("未找到 Git 仓库");
       }
+      // 多仓库场景：指定 repoRoot 时只基于该仓库的暂存区生成
+      if (repoRoot) {
+        repos = repos.filter((r: any) => r.rootUri?.fsPath === repoRoot);
+        if (repos.length === 0) {
+          throw new Error("未找到指定的 Git 仓库");
+        }
+        targetRoot = repoRoot;
+      } else {
+        // 未指定时取第一个仓库（单仓库兼容）
+        targetRoot = repos[0].rootUri.fsPath;
+      }
+
+      if (!targetRoot) {
+        return;
+      }
+
+      // 按仓库隔离：同一仓库防重入，不同仓库可并发
+      if (this._aiAbortControllers.has(targetRoot)) {
+        return;
+      }
 
       // 初始化中断控制器并通知前端生成已开始
-      this._isGenerating = true;
-      this._aiAbortController = new AbortController();
-      this._view.webview.postMessage({ command: "generatingStarted" });
+      const controller = new AbortController();
+      this._aiAbortControllers.set(targetRoot, controller);
+      this._view.webview.postMessage({ command: "generatingStarted", repoRoot: targetRoot });
 
       await Promise.all(repos.map((r: any) => this._waitRepoStateReady(r)));
 
@@ -1056,7 +1202,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           command: "error",
           error: "暂存区没有内容，请先将变更添加到暂存区",
         });
-        this._view.webview.postMessage({ command: "generatingDone" });
+        this._view.webview.postMessage({ command: "generatingDone", repoRoot: targetRoot });
         return;
       }
 
@@ -1075,7 +1221,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           command: "error",
           error: "暂存区没有内容，请先将变更添加到暂存区",
         });
-        this._view.webview.postMessage({ command: "generatingDone" });
+        this._view.webview.postMessage({ command: "generatingDone", repoRoot: targetRoot });
         return;
       }
 
@@ -1167,9 +1313,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
 
       const summaries: string[] = [];
-      const signal = this._aiAbortController?.signal;
+      const signal = controller.signal;
       for (const fileDiff of fileDiffs) {
-        if (!fileDiff.trim() || signal?.aborted) {
+        if (!fileDiff.trim() || signal.aborted) {
           continue;
         }
         const prompt = this._buildFileSummaryPrompt(fileDiff);
@@ -1179,7 +1325,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
       }
 
-      if (signal?.aborted) {
+      if (signal.aborted) {
         throw new Error("已取消生成");
       }
 
@@ -1195,7 +1341,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         model,
         apiProtocol,
         finalPrompt,
-        signal,
+        controller.signal,
       );
 
       if (!commitText) {
@@ -1210,6 +1356,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       this._view.webview.postMessage({
         command: "commitGenerated",
         commit: finalCommit,
+        repoRoot: targetRoot,
       });
 
       if (!ok) {
@@ -1240,18 +1387,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         });
       }
     } finally {
-      this._isGenerating = false;
-      this._aiAbortController = undefined;
-      this._view.webview.postMessage({ command: "generatingDone" });
+      if (targetRoot) {
+        this._aiAbortControllers.delete(targetRoot);
+        this._view.webview.postMessage({
+          command: "generatingDone",
+          repoRoot: targetRoot,
+        });
+      }
     }
   }
 
   /**
    * 停止正在进行的 AI 生成
+   * 按仓库隔离：停止指定仓库的生成任务
    */
-  public stopGenerateCommit() {
-    if (this._isGenerating && this._aiAbortController) {
-      this._aiAbortController.abort();
+  public stopGenerateCommit(repoRoot?: string) {
+    const controller = repoRoot
+      ? this._aiAbortControllers.get(repoRoot)
+      : this._aiAbortControllers.values().next().value;
+    if (controller) {
+      controller.abort();
       this._view?.webview.postMessage({
         command: "status",
         message: "正在停止生成...",
@@ -1525,9 +1680,9 @@ ${joined}
   }
 
   /**
-   * 在 message 框中插入简化规范模板，供用户手动填写
+   * 在对应仓库的 message 框中插入简化规范模板，供用户手动填写
    */
-  private _insertTemplate() {
+  private _insertTemplate(repoRoot?: string) {
     if (!this._view) {
       return;
     }
@@ -1541,7 +1696,11 @@ ${joined}
 
 1. A 具体功能描述
 2. F 具体修复描述`;
-    this._view.webview.postMessage({ command: "templateInserted", template });
+    this._view.webview.postMessage({
+      command: "templateInserted",
+      template,
+      repoRoot,
+    });
   }
 
   /**
@@ -1589,17 +1748,20 @@ ${joined}
       font-size: 12px;
       line-height: 1.4;
       display: none;
-      border: 1px solid transparent;
-      backdrop-filter: blur(6px);
+      border: 1px solid var(--vscode-widget-border, transparent);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
       transform: translateY(-6px);
       opacity: 0;
       transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
+      /* notifications 系列变量在 Webview 中可能未定义，必须给出回退值，否则背景/文字色不可控 */
+      background: var(--vscode-notifications-background, var(--vscode-editorWidget-background, var(--vscode-sideBar-background)));
+      color: var(--vscode-notifications-foreground, var(--vscode-foreground));
     }
     #statusToast.show { display: block; }
     #statusToast.in { transform: translateY(0); opacity: 1; }
-    .status-success { background: var(--vscode-notifications-background); color: var(--vscode-notifications-foreground); border-color: var(--vscode-notifications-border); border-left: 3px solid var(--vscode-testing-iconPassed, #3fb950); }
-    .status-error { background: var(--vscode-notifications-background); color: var(--vscode-notifications-foreground); border-color: var(--vscode-notifications-border); border-left: 3px solid var(--vscode-notificationsErrorIcon-foreground, #f14c4c); }
-    .status-info { background: var(--vscode-notifications-background); color: var(--vscode-notifications-foreground); border-color: var(--vscode-notifications-border); border-left: 3px solid var(--vscode-notificationsInfoIcon-foreground, #0078d4); }
+    .status-success { border-left: 3px solid var(--vscode-testing-iconPassed, #3fb950); }
+    .status-error { border-left: 3px solid var(--vscode-notificationsErrorIcon-foreground, var(--vscode-errorForeground, #f14c4c)); }
+    .status-info { border-left: 3px solid var(--vscode-notificationsInfoIcon-foreground, var(--vscode-focusBorder, #0078d4)); }
 
     /* ===== 区块通用 ===== */
     .panel { padding: 0 12px; }
@@ -1903,7 +2065,8 @@ ${joined}
       opacity: 0;
       transition: opacity var(--dur) var(--ease);
     }
-    .section-header:hover .section-actions { opacity: 1; }
+    .section-header:hover .section-actions,
+    .sub-header:hover .section-actions { opacity: 1; }
     .section-action-btn {
       width: 20px;
       height: 20px;
@@ -1920,6 +2083,25 @@ ${joined}
     }
     .section-action-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
     .section-action-btn:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: -1px; }
+
+    /* ===== 仓库分组（多仓库/子模块场景，每个仓库一组） ===== */
+    .repo-name { font-size: 12px; font-weight: 600; }
+    .repo-icon { margin-right: 4px; font-size: 12px; line-height: 1; }
+    .repo-body.collapsed { display: none; }
+    .sub-header {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 12px 2px 22px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* ===== 仓库内提交区（每个仓库独立的消息框与操作按钮） ===== */
+    .repo-commit-area { padding: 8px 12px 6px; }
+    .repo-message { min-height: 90px; max-height: 50vh; }
 
     /* ===== 文件列表 ===== */
     .file-list { padding: 2px 0; }
@@ -2066,125 +2248,73 @@ ${joined}
     </div>
   </div>
 
-  <!-- Message 输入区 -->
-  <div class="panel">
-    <div class="label-row">
-      <span>提交信息（Message）</span>
-      <div class="label-actions">
-        <button class="tool-btn more-btn" id="btnMore" type="button" aria-label="更多选项" disabled>⋯</button>
-        <div id="moreDropdown" class="dropdown more-dropdown">
-          <div class="dropdown-item disabled" id="itemStopGenerate">⏹ 停止生成</div>
-        </div>
-      </div>
-    </div>
-    <div class="message-box">
-      <textarea
-        id="commitMessage"
-        class="message-textarea"
-        spellcheck="false"
-        placeholder="点击下方「AI 生成」自动填充，或点击「模板」手动填写规范 commit..."
-        aria-label="提交信息"
-      ></textarea>
-    </div>
-    <div class="message-meta">
-      <span><span id="charCount">0</span> 字符 · Ctrl+Enter 提交</span>
-      <div class="msg-tools">
-        <button class="tool-btn" id="btnTemplate" type="button">模板</button>
-        <button class="tool-btn" id="btnClear" type="button">清空</button>
-      </div>
-    </div>
-
-    <!-- AI 生成 + 复制 -->
-    <div class="actions-row">
-      <button id="btnGenerate" class="ai-btn" type="button">✦ AI 生成 Commit</button>
-      <button id="btnCopy" class="copy-btn" title="复制到剪贴板" type="button" aria-label="复制">⧉</button>
-    </div>
-
-    <!-- Commit 按钮组 -->
-    <div class="commit-actions">
-      <div class="commit-btn-group disabled" id="commitGroup">
-        <button id="btnCommit" class="btn-commit-main" type="button" disabled>✓ Commit</button>
-        <button id="btnCommitDropdown" class="btn-commit-dropdown" type="button" aria-label="更多提交选项">▼</button>
-      </div>
-      <!-- Commit 下拉菜单 -->
-      <div id="commitDropdown" class="dropdown">
-        <div class="dropdown-item" data-mode="commit">✓ Commit</div>
-        <div class="dropdown-item" data-mode="push">↑ Commit &amp; Push</div>
-        <div class="dropdown-item" data-mode="sync">⇅ Commit &amp; Sync</div>
-      </div>
-    </div>
+  <!-- 按仓库分组的变更列表（多仓库/子模块场景：每个仓库一张卡片，独立消息框与提交按钮） -->
+  <div id="repoGroups">
+    <div class="empty-state"><span class="glyph">◌</span>暂无变更</div>
   </div>
-
-  <!-- Staged Changes 列表 -->
-  <section class="changes-section">
-    <div class="section-header" id="stagedHeader">
-      <span class="collapse-icon" id="stagedCollapseIcon">▼</span>
-      <span>Staged Changes</span>
-      <span class="change-count" id="stagedCount">0</span>
-      <span class="section-actions">
-        <button class="section-action-btn" title="全部取消暂存" id="btnUnstageAll" type="button">−</button>
-        <button class="section-action-btn" title="刷新" id="btnRefresh2" type="button">↻</button>
-      </span>
-    </div>
-    <div class="file-list" id="stagedFileList">
-      <div class="empty-state"><span class="glyph">◌</span>暂无已暂存变更</div>
-    </div>
-  </section>
-
-  <!-- Changes 列表 -->
-  <section class="changes-section">
-    <div class="section-header" id="changesHeader">
-      <span class="collapse-icon" id="changesCollapseIcon">▼</span>
-      <span>Changes</span>
-      <span class="change-count" id="changesCount">0</span>
-      <span class="section-actions">
-        <button class="section-action-btn" title="全部暂存" id="btnStageAll" type="button">+</button>
-        <button class="section-action-btn" title="刷新" id="btnRefresh" type="button">↻</button>
-      </span>
-    </div>
-    <div class="file-list" id="fileList">
-      <div class="empty-state"><span class="glyph">◌</span>暂无变更</div>
-    </div>
-  </section>
 
   <script>
     const vscode = acquireVsCodeApi();
-    let isGenerating = false;
-    let hasConfig = false;
+
+    // 每个仓库独立的状态：消息文本 / 是否正在生成 / 是否折叠（跨刷新保留）
+    const repoState = {};
 
     const els = {
       toast: document.getElementById('statusToast'),
-      message: document.getElementById('commitMessage'),
-      charCount: document.getElementById('charCount'),
-      btnCommit: document.getElementById('btnCommit'),
-      btnDropdown: document.getElementById('btnCommitDropdown'),
-      commitGroup: document.getElementById('commitGroup'),
-      dropdown: document.getElementById('commitDropdown'),
-      btnGenerate: document.getElementById('btnGenerate'),
-      btnCopy: document.getElementById('btnCopy'),
-      btnTemplate: document.getElementById('btnTemplate'),
-      btnClear: document.getElementById('btnClear'),
       statFiles: document.getElementById('statFiles'),
       statAdd: document.getElementById('statAdd'),
       statDel: document.getElementById('statDel'),
       statCtx: document.getElementById('statCtx'),
       aiContextChip: document.getElementById('aiContextChip'),
-      stagedFileList: document.getElementById('stagedFileList'),
-      stagedCount: document.getElementById('stagedCount'),
-      stagedHeader: document.getElementById('stagedHeader'),
-      stagedCollapseIcon: document.getElementById('stagedCollapseIcon'),
-      btnUnstageAll: document.getElementById('btnUnstageAll'),
-      btnRefresh2: document.getElementById('btnRefresh2'),
-      fileList: document.getElementById('fileList'),
-      changesCount: document.getElementById('changesCount'),
-      changesHeader: document.getElementById('changesHeader'),
-      changesCollapseIcon: document.getElementById('changesCollapseIcon'),
-      btnStageAll: document.getElementById('btnStageAll'),
-      btnRefresh: document.getElementById('btnRefresh'),
-      btnMore: document.getElementById('btnMore'),
-      moreDropdown: document.getElementById('moreDropdown'),
-      itemStopGenerate: document.getElementById('itemStopGenerate'),
+      repoGroups: document.getElementById('repoGroups'),
     };
+
+    function getRepoState(root) {
+      if (!repoState[root]) {
+        repoState[root] = { message: '', generating: false, collapsed: false };
+      }
+      return repoState[root];
+    }
+
+    function findRepoSection(root) {
+      const secs = els.repoGroups.querySelectorAll('.repo-group');
+      for (const sec of secs) {
+        if (sec.dataset.repoRoot === root) {
+          return sec;
+        }
+      }
+      return null;
+    }
+
+    function firstRepoRoot() {
+      const sec = els.repoGroups.querySelector('.repo-group');
+      return sec ? sec.dataset.repoRoot : null;
+    }
+
+    // 设置指定仓库的消息文本并联动 UI（repoRoot 缺省时取第一个仓库）
+    function setRepoMessage(root, text) {
+      const target = root || firstRepoRoot();
+      if (!target) { return; }
+      const st = getRepoState(target);
+      st.message = text;
+      const sec = findRepoSection(target);
+      if (!sec) { return; }
+      const ta = sec.querySelector('.repo-message');
+      ta.value = text;
+      ta.dispatchEvent(new Event('input'));
+    }
+
+    // 更新指定仓库的 AI 生成按钮状态（生成中 → 按钮变为"停止生成"）
+    function setRepoGenerating(root, generating) {
+      const target = root || firstRepoRoot();
+      if (!target) { return; }
+      const st = getRepoState(target);
+      st.generating = generating;
+      const sec = findRepoSection(target);
+      if (!sec) { return; }
+      const btn = sec.querySelector('.btn-generate');
+      btn.innerHTML = generating ? '⏹ 停止生成' : '✦ AI 生成 Commit';
+    }
 
     let toastTimer = null;
     function showToast(message, type) {
@@ -2203,26 +2333,6 @@ ${joined}
       return String(str).replace(/[&<>"']/g, function(m) {
         return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m];
       });
-    }
-
-    // message 框自适应高度：按内容增长，最多 70vh，确保能查看大部分提交内容
-    function autoResize() {
-      const ta = els.message;
-      ta.style.height = 'auto';
-      const maxH = Math.round(window.innerHeight * 0.7);
-      const h = Math.min(Math.max(ta.scrollHeight, 240), maxH);
-      ta.style.height = h + 'px';
-    }
-
-    function updateCommitButton() {
-      const hasText = els.message.value.trim().length > 0;
-      els.btnCommit.disabled = !hasText;
-      els.btnDropdown.disabled = !hasText;
-      els.commitGroup.classList.toggle('disabled', !hasText);
-    }
-
-    function updateCharCount() {
-      els.charCount.textContent = els.message.value.length;
     }
 
     function renderFileList(container, files, emptyText) {
@@ -2280,19 +2390,20 @@ ${joined}
       });
     }
 
-    function renderChanges(changes, stats) {
-      const staged = changes ? (changes.staged || []) : [];
-      const unstaged = changes ? (changes.unstaged || []) : [];
+    // 渲染变更列表（按仓库分组：多仓库/子模块场景每个仓库一组，各自带 Staged/Changes 与操作按钮）
+    function renderChanges(payload) {
+      const changes = payload.changes || { staged: [], unstaged: [] };
+      const groups = payload.groups || changes.groups || [];
+      const staged = changes.staged || [];
+      const unstaged = changes.unstaged || [];
       const totalFiles = staged.length + unstaged.length;
 
-      els.changesCount.textContent = unstaged.length;
-      els.stagedCount.textContent = staged.length;
       els.statFiles.textContent = totalFiles;
-      els.statAdd.textContent = '+' + (stats ? (stats.additions || 0) : 0);
-      els.statDel.textContent = '−' + (stats ? (stats.deletions || 0) : 0);
+      els.statAdd.textContent = '+' + (payload.additions || 0);
+      els.statDel.textContent = '−' + (payload.deletions || 0);
 
       // 更新 AI 上下文大小：暂存区 diff 字符数，帮助判断提交是否过长
-      const ctxChars = stats ? (stats.aiContextChars || 0) : 0;
+      const ctxChars = payload.aiContextChars || 0;
       els.statCtx.textContent = ctxChars >= 10000 ? (ctxChars / 1000).toFixed(1) + 'k' : String(ctxChars);
       if (els.aiContextChip) {
         els.aiContextChip.classList.remove('warn', 'danger');
@@ -2303,132 +2414,243 @@ ${joined}
         }
       }
 
-      if (stats && stats.loading) {
-        const loading = '<div class="loading"><div class="spinner"></div>正在扫描 Git 变更...</div>';
-        els.stagedFileList.innerHTML = loading;
-        els.fileList.innerHTML = loading;
+      if (payload.loading) {
+        els.repoGroups.innerHTML = '<div class="loading"><div class="spinner"></div>正在扫描 Git 变更...</div>';
         return;
       }
 
-      renderFileList(els.stagedFileList, staged, '暂无已暂存变更');
-      renderFileList(els.fileList, unstaged, '暂无变更\\n修改文件后将自动显示');
+      renderRepoGroups(groups);
     }
 
-    // ===== 事件绑定 =====
-    els.message.addEventListener('input', () => {
-      updateCommitButton();
-      updateCharCount();
-      autoResize();
-    });
+    // 按仓库分组渲染：每个仓库一张卡片，包含独立的 Staged/Changes 列表、消息框、AI 生成与提交按钮
+    function renderRepoGroups(groups) {
+      // 保存当前滚动位置，重渲染后恢复，避免列表闪烁/跳动
+      const savedScrollTop = els.repoGroups.scrollTop;
 
-    els.message.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === 'Enter' && els.message.value.trim()) {
-        vscode.postMessage({ command: 'commit', message: els.message.value, mode: 'commit' });
-      }
-    });
-
-    els.btnCommit.addEventListener('click', () => {
-      if (els.message.value.trim()) {
-        vscode.postMessage({ command: 'commit', message: els.message.value, mode: 'commit' });
-      }
-    });
-
-    els.btnDropdown.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!els.btnDropdown.disabled) {
-        els.dropdown.classList.toggle('show');
-      }
-    });
-
-    els.dropdown.querySelectorAll('.dropdown-item').forEach(item => {
-      item.addEventListener('click', () => {
-        els.dropdown.classList.remove('show');
-        if (els.message.value.trim()) {
-          vscode.postMessage({ command: 'commit', message: els.message.value, mode: item.dataset.mode });
+      // 渲染前先保存当前各仓库的输入，避免自动刷新后丢失
+      els.repoGroups.querySelectorAll('.repo-group').forEach(sec => {
+        const root = sec.dataset.repoRoot;
+        const ta = sec.querySelector('.repo-message');
+        if (root && ta) {
+          getRepoState(root).message = ta.value;
         }
       });
-    });
 
+      els.repoGroups.innerHTML = '';
+      if (!groups || groups.length === 0) {
+        els.repoGroups.innerHTML = '<div class="empty-state"><span class="glyph">◌</span>暂无变更</div>';
+        els.repoGroups.scrollTop = savedScrollTop;
+        return;
+      }
+
+      // 多仓库场景：根路径最浅的仓库为主仓库，其余为子仓库（子模块/嵌套仓库）
+      const isMultiRepo = groups.length > 1;
+      const mainRepoRoot = isMultiRepo
+        ? groups.reduce((min, g) => {
+            const depth = (g.repoRoot.match(/[\\/]/g) || []).length;
+            const minDepth = (min.repoRoot.match(/[\\/]/g) || []).length;
+            return depth < minDepth ? g : min;
+          }, groups[0]).repoRoot
+        : null;
+
+      groups.forEach((g) => {
+        const stagedFiles = g.staged || [];
+        const unstagedFiles = g.unstaged || [];
+        const total = stagedFiles.length + unstagedFiles.length;
+        const st = getRepoState(g.repoRoot);
+        const isMainRepo = g.repoRoot === mainRepoRoot;
+        const repoIcon = isMultiRepo ? (isMainRepo ? '🏠' : '📁') : '';
+        const repoTitle = isMultiRepo ? (isMainRepo ? '主仓库' : '子仓库') : '';
+
+        const section = document.createElement('section');
+        section.className = 'changes-section repo-group';
+        section.dataset.repoRoot = g.repoRoot;
+        // 暂存区为空时不显示 Staged Changes 区域，避免无效空区块占位
+        const stagedSectionHtml = stagedFiles.length > 0
+          ? '<div class="sub-header">Staged Changes<span class="change-count">' + stagedFiles.length + '</span>' +
+              '<span class="section-actions">' +
+                '<button class="section-action-btn" title="全部取消暂存" data-action="unstageAll" type="button">−</button>' +
+              '</span>' +
+            '</div>' +
+            '<div class="file-list staged-list"></div>'
+          : '';
+        section.innerHTML =
+          '<div class="section-header repo-header">' +
+            '<span class="collapse-icon">▼</span>' +
+            (repoIcon ? '<span class="repo-icon" title="' + repoTitle + '">' + repoIcon + '</span>' : '') +
+            '<span class="repo-name">' + escapeHtml(g.repoName) + '</span>' +
+            '<span class="change-count">' + total + '</span>' +
+            '<span class="section-actions">' +
+              '<button class="section-action-btn" title="刷新" data-action="refreshDiff" type="button">↻</button>' +
+            '</span>' +
+          '</div>' +
+          '<div class="repo-body">' +
+            stagedSectionHtml +
+            '<div class="sub-header">Changes<span class="change-count">' + unstagedFiles.length + '</span>' +
+              '<span class="section-actions">' +
+                '<button class="section-action-btn" title="全部暂存" data-action="stageAll" type="button">+</button>' +
+              '</span>' +
+            '</div>' +
+            '<div class="file-list unstaged-list"></div>' +
+            '<div class="repo-commit-area">' +
+              '<textarea class="message-textarea repo-message" spellcheck="false" placeholder="点击「AI 生成」自动填充，或点击「模板」手动填写规范 commit..." aria-label="提交信息"></textarea>' +
+              '<div class="message-meta">' +
+                '<span><span class="char-count">0</span> 字符 · Ctrl+Enter 提交</span>' +
+                '<div class="msg-tools">' +
+                  '<button class="tool-btn btn-template" type="button">模板</button>' +
+                  '<button class="tool-btn btn-clear" type="button">清空</button>' +
+                '</div>' +
+              '</div>' +
+              '<div class="actions-row">' +
+                '<button class="ai-btn btn-generate" type="button">✦ AI 生成 Commit</button>' +
+                '<button class="copy-btn btn-copy" title="复制到剪贴板" type="button" aria-label="复制">⧉</button>' +
+              '</div>' +
+              '<div class="commit-actions">' +
+                '<div class="commit-btn-group disabled">' +
+                  '<button class="btn-commit-main" type="button" disabled>✓ Commit</button>' +
+                  '<button class="btn-commit-dropdown" type="button" aria-label="更多提交选项">▼</button>' +
+                '</div>' +
+                '<div class="dropdown commit-dropdown">' +
+                  '<div class="dropdown-item" data-mode="commit">✓ Commit</div>' +
+                  '<div class="dropdown-item" data-mode="push">↑ Commit &amp; Push</div>' +
+                  '<div class="dropdown-item" data-mode="sync">⇅ Commit &amp; Sync</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        els.repoGroups.appendChild(section);
+
+        if (stagedFiles.length > 0) {
+          renderFileList(section.querySelector('.staged-list'), stagedFiles, '暂无已暂存变更');
+        }
+        renderFileList(section.querySelector('.unstaged-list'), unstagedFiles, '暂无变更\\n修改文件后将自动显示');
+
+        const header = section.querySelector('.repo-header');
+        const body = section.querySelector('.repo-body');
+        const icon = section.querySelector('.collapse-icon');
+        const ta = section.querySelector('.repo-message');
+        const charCount = section.querySelector('.char-count');
+        const commitGroup = section.querySelector('.commit-btn-group');
+        const btnCommitMain = section.querySelector('.btn-commit-main');
+        const btnDropdown = section.querySelector('.btn-commit-dropdown');
+        const dropdown = section.querySelector('.commit-dropdown');
+        const btnGenerate = section.querySelector('.btn-generate');
+
+        function refreshCommitUI() {
+          const hasText = ta.value.trim().length > 0;
+          btnCommitMain.disabled = !hasText;
+          btnDropdown.disabled = !hasText;
+          commitGroup.classList.toggle('disabled', !hasText);
+          charCount.textContent = ta.value.length;
+        }
+
+        function autoResizeTa() {
+          ta.style.height = 'auto';
+          const h = Math.min(Math.max(ta.scrollHeight, 90), Math.round(window.innerHeight * 0.5));
+          ta.style.height = h + 'px';
+        }
+
+        // 恢复跨刷新保留的状态（消息文本 / 折叠 / 生成中）
+        ta.value = st.message;
+        if (st.collapsed) {
+          body.classList.add('collapsed');
+          icon.classList.add('collapsed');
+        }
+        if (st.generating) {
+          btnGenerate.innerHTML = '⏹ 停止生成';
+        }
+        refreshCommitUI();
+        autoResizeTa();
+
+        // 仓库分组折叠
+        header.addEventListener('click', (e) => {
+          if (e.target.closest('.section-actions')) { return; }
+          st.collapsed = !st.collapsed;
+          body.classList.toggle('collapsed', st.collapsed);
+          icon.classList.toggle('collapsed', st.collapsed);
+        });
+
+        // 仓库级批量操作：Staged 区「全部取消暂存」、Changes 区「全部暂存」、组头「刷新」（只作用于该仓库）
+        section.querySelectorAll('[data-action]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({ command: btn.dataset.action, repoRoot: g.repoRoot });
+          });
+        });
+
+        // 消息输入
+        ta.addEventListener('input', () => {
+          st.message = ta.value;
+          refreshCommitUI();
+          autoResizeTa();
+        });
+        ta.addEventListener('keydown', (e) => {
+          if (e.ctrlKey && e.key === 'Enter' && ta.value.trim()) {
+            vscode.postMessage({ command: 'commit', message: ta.value, mode: 'commit', repoRoot: g.repoRoot });
+          }
+        });
+
+        // AI 生成 / 停止（只基于该仓库的暂存区）
+        btnGenerate.addEventListener('click', () => {
+          if (st.generating) {
+            vscode.postMessage({ command: 'stopGenerateCommit' });
+            return;
+          }
+          vscode.postMessage({ command: 'generateCommit', repoRoot: g.repoRoot });
+        });
+
+        // 复制
+        section.querySelector('.btn-copy').addEventListener('click', () => {
+          if (ta.value.trim()) {
+            vscode.postMessage({ command: 'copyCommit', commit: ta.value });
+            showToast('已复制到剪贴板', 'success');
+          }
+        });
+
+        // 模板 / 清空
+        section.querySelector('.btn-template').addEventListener('click', () => {
+          vscode.postMessage({ command: 'insertTemplate', repoRoot: g.repoRoot });
+        });
+        section.querySelector('.btn-clear').addEventListener('click', () => {
+          ta.value = '';
+          st.message = '';
+          refreshCommitUI();
+          autoResizeTa();
+          ta.focus();
+        });
+
+        // 提交按钮组（只提交该仓库）
+        btnCommitMain.addEventListener('click', () => {
+          if (ta.value.trim()) {
+            vscode.postMessage({ command: 'commit', message: ta.value, mode: 'commit', repoRoot: g.repoRoot });
+          }
+        });
+        btnDropdown.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!btnDropdown.disabled) {
+            dropdown.classList.toggle('show');
+          }
+        });
+        dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+          item.addEventListener('click', () => {
+            dropdown.classList.remove('show');
+            if (ta.value.trim()) {
+              vscode.postMessage({ command: 'commit', message: ta.value, mode: item.dataset.mode, repoRoot: g.repoRoot });
+            }
+          });
+        });
+      });
+
+      // 恢复之前保存的滚动位置
+      els.repoGroups.scrollTop = savedScrollTop;
+    }
+
+    // ===== 全局事件 =====
+    // 点击空白处关闭所有仓库的提交方式下拉菜单
     document.addEventListener('click', () => {
-      els.dropdown.classList.remove('show');
-      els.moreDropdown.classList.remove('show');
-    });
-
-    els.btnMore.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!els.btnMore.disabled) {
-        els.moreDropdown.classList.toggle('show');
-      }
-    });
-
-    els.itemStopGenerate.addEventListener('click', () => {
-      els.moreDropdown.classList.remove('show');
-      vscode.postMessage({ command: 'stopGenerateCommit' });
-    });
-
-    els.btnGenerate.addEventListener('click', () => {
-      if (isGenerating) return;
-      isGenerating = true;
-      els.btnGenerate.disabled = true;
-      els.btnGenerate.innerHTML = '<div class="spinner"></div> AI 生成中...';
-      vscode.postMessage({ command: 'generateCommit' });
-    });
-
-    els.btnCopy.addEventListener('click', () => {
-      if (els.message.value.trim()) {
-        vscode.postMessage({ command: 'copyCommit', commit: els.message.value });
-        showToast('已复制到剪贴板', 'success');
-      }
-    });
-
-    els.btnTemplate.addEventListener('click', () => {
-      vscode.postMessage({ command: 'insertTemplate' });
-    });
-
-    els.btnClear.addEventListener('click', () => {
-      els.message.value = '';
-      updateCommitButton();
-      updateCharCount();
-      autoResize();
-      els.message.focus();
-    });
-
-    // Staged Changes 折叠
-    let stagedCollapsed = false;
-    els.stagedHeader.addEventListener('click', (e) => {
-      if (e.target.closest('.section-actions')) return;
-      stagedCollapsed = !stagedCollapsed;
-      els.stagedFileList.classList.toggle('collapsed', stagedCollapsed);
-      els.stagedCollapseIcon.classList.toggle('collapsed', stagedCollapsed);
-    });
-
-    // Changes 折叠
-    let changesCollapsed = false;
-    els.changesHeader.addEventListener('click', (e) => {
-      if (e.target.closest('.section-actions')) return;
-      changesCollapsed = !changesCollapsed;
-      els.fileList.classList.toggle('collapsed', changesCollapsed);
-      els.changesCollapseIcon.classList.toggle('collapsed', changesCollapsed);
-    });
-
-    // Staged 区 action：全部取消暂存、刷新
-    els.btnUnstageAll.addEventListener('click', (e) => {
-      e.stopPropagation();
-      vscode.postMessage({ command: 'unstageAll' });
-    });
-    els.btnRefresh2.addEventListener('click', (e) => {
-      e.stopPropagation();
-      vscode.postMessage({ command: 'refreshDiff' });
-    });
-
-    // Changes 区 action：全部暂存、刷新
-    els.btnStageAll.addEventListener('click', (e) => {
-      e.stopPropagation();
-      vscode.postMessage({ command: 'stageAll' });
-    });
-    els.btnRefresh.addEventListener('click', (e) => {
-      e.stopPropagation();
-      vscode.postMessage({ command: 'refreshDiff' });
+      els.repoGroups
+        .querySelectorAll('.commit-dropdown.show')
+        .forEach((d) => d.classList.remove('show'));
     });
 
     // 接收扩展消息
@@ -2436,54 +2658,36 @@ ${joined}
       const message = event.data;
 
       if (message.command === 'commitGenerated') {
-        els.message.value = (message.commit || '').trim();
-        updateCommitButton();
-        updateCharCount();
-        autoResize();
+        setRepoMessage(message.repoRoot, (message.commit || '').trim());
         showToast('AI 生成完成', 'success');
       } else if (message.command === 'templateInserted') {
-        els.message.value = message.template;
-        updateCommitButton();
-        updateCharCount();
-        autoResize();
-        els.message.focus();
-        els.message.setSelectionRange(0, 0);
+        setRepoMessage(message.repoRoot, message.template || '');
         showToast('已插入规范模板', 'info');
       } else if (message.command === 'error') {
         showToast(message.error, 'error');
       } else if (message.command === 'status') {
         showToast(message.message, message.type);
       } else if (message.command === 'clearMessage') {
-        els.message.value = '';
-        updateCommitButton();
-        updateCharCount();
-        autoResize();
+        setRepoMessage(message.repoRoot, '');
       } else if (message.command === 'diffStats') {
-        renderChanges(message.changes, message);
-      }
-
-      if (message.command === 'commitGenerated' ||
-          message.command === 'error' ||
-          message.command === 'generatingDone') {
-        isGenerating = false;
-        els.btnGenerate.disabled = false;
-        els.btnGenerate.innerHTML = '✦ AI 生成 Commit';
-        els.btnMore.disabled = true;
-        els.itemStopGenerate.classList.add('disabled');
-        els.moreDropdown.classList.remove('show');
-      }
-
-      if (message.command === 'generatingStarted') {
-        els.btnMore.disabled = false;
-        els.itemStopGenerate.classList.remove('disabled');
+        renderChanges(message);
+      } else if (message.command === 'generatingStarted') {
+        setRepoGenerating(message.repoRoot, true);
+      } else if (message.command === 'generatingDone') {
+        setRepoGenerating(message.repoRoot, false);
+      } else if (message.command === 'triggerCopy') {
+        // 命令面板触发复制：复制第一个非空的仓库消息
+        for (const root in repoState) {
+          if (repoState[root].message.trim()) {
+            vscode.postMessage({ command: 'copyCommit', commit: repoState[root].message });
+            showToast('已复制到剪贴板', 'success');
+            break;
+          }
+        }
       }
     });
 
     // 初始化
-    updateCommitButton();
-    updateCharCount();
-    autoResize();
-    window.addEventListener('resize', autoResize);
     vscode.postMessage({ command: 'refreshDiff' });
   </script>
 </body>
