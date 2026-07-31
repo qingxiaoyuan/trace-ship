@@ -43,15 +43,15 @@ class TestVersionCalculator:
         assert tag_name == f"VA.1.0.11_{TODAY}"
 
     def test_calculate_ignores_non_matching_tags(self, rule):
-        """忽略不符合版本规则的 tag（缺日期段、错前缀均不匹配）"""
+        """忽略不符合版本规则的 tag（错前缀不匹配；无日期段的历史 tag 正常参与）"""
         calculator = VersionCalculator(rule)
         tags = [
             _tag("v1.0.0_20251014"),
-            _tag("VA.1.2.3"),
+            _tag("VA.1.2.4"),
             _tag("VA.1.2.3_20251014", "b"),
         ]
         version, tag_name = calculator.calculate(tags, release_type="formal")
-        assert version == "VA.1.2.4"
+        assert version == "VA.1.2.5"
 
     def test_calculate_considers_legacy_tags_before_system_introduced(self):
         """系统接入前仓库已有的历史 tag 参与计算（如 VB.4.1.5_20250715）"""
@@ -65,6 +65,25 @@ class TestVersionCalculator:
         version, tag_name = calculator.calculate(tags, release_type="formal")
         assert version == "VB.4.1.6"
         assert tag_name == f"VB.4.1.6_{TODAY}"
+
+    def test_calculate_considers_legacy_tags_without_date(self):
+        """无日期段的历史 tag（如 VB.4.1.5）同样参与计算，新 tag 仍拼接当天日期段"""
+        rule = {"prefix": "VB", "major": 1, "minor": 0, "patch": 0, "suffixes": {"rc": "rc", "beta": "beta"}}
+        calculator = VersionCalculator(rule)
+        tags = [
+            _tag("VB.4.1.5"),
+            _tag("VB.4.1.2_20250601", "b"),
+        ]
+        version, tag_name = calculator.calculate(tags, release_type="formal")
+        assert version == "VB.4.1.6"
+        assert tag_name == f"VB.4.1.6_{TODAY}"
+
+    def test_calculate_rc_considers_rc_tag_without_date(self, rule):
+        """无日期段的 rc 历史 tag 参与 rc 版本递增"""
+        calculator = VersionCalculator(rule)
+        version, tag_name = calculator.calculate([_tag("VA.1.0.8-rc")], release_type="rc")
+        assert version == "VA.1.0.9"
+        assert tag_name == f"VA.1.0.9-rc_{TODAY}"
 
     def test_calculate_beta_no_existing_returns_initial(self, rule):
         """Beta 无已有 tag 时返回初始版本"""
@@ -145,6 +164,21 @@ class TestFindLatestTagByType:
         latest = calculator.find_latest_tag_by_type(mixed_tags, "formal")
         assert latest == "VA.1.0.5_20251014"
 
+    def test_find_latest_matching_tag_returns_tag_info_and_values(self, rule, mixed_tags):
+        """find_latest_matching_tag 返回最新正式版 TagInfo 与版本字段"""
+        calculator = VersionCalculator(rule)
+        latest = calculator.find_latest_matching_tag(mixed_tags)
+        assert latest is not None
+        tag, values = latest
+        assert tag.name == "VA.1.0.5_20251014"
+        assert tag.commit_hash == "b"
+        assert values == {"major": 1, "minor": 0, "patch": 5}
+
+    def test_find_latest_matching_tag_returns_none_when_no_match(self, rule):
+        """无匹配 tag 时 find_latest_matching_tag 返回 None"""
+        calculator = VersionCalculator(rule)
+        assert calculator.find_latest_matching_tag([_tag("v1.0.0_20251014")]) is None
+
     def test_rc_returns_latest_rc_suffixed(self, rule, mixed_tags):
         """rc 仅取 -rc 后缀的最新 tag"""
         calculator = VersionCalculator(rule)
@@ -183,10 +217,12 @@ class TestBuildScanRegex:
         assert regex.match("VB.2.0.0-beta_20260101")
 
     def test_scan_regex_rejects_invalid(self):
-        """扫描正则拒绝缺日期段、错前缀、未知后缀的 tag"""
+        """扫描正则拒绝错前缀、未知后缀、缺段数的 tag；无日期段的历史 tag 允许入库"""
         calculator = VersionCalculator({"prefix": "VB", "suffixes": {"rc": "rc", "beta": "beta"}})
         regex = calculator.build_scan_regex()
-        assert not regex.match("VB.1.1.1")
+        # 无日期段的历史 tag 可匹配，date 分组为 None
+        no_date = regex.match("VB.1.1.1")
+        assert no_date and no_date.group("date") is None
         assert not regex.match("VA.1.1.1_20251014")
         assert not regex.match("VB.1.1.1-alpha_20251014")
         assert not regex.match("VB.1.1_20251014")

@@ -224,11 +224,14 @@ class RepositoryService:
             match = scan_regex.match(t.name)
             if not match:
                 continue
-            # 日期段必须是合法年月日，否则视为不匹配
-            try:
-                tag_date = datetime.strptime(match.group("date"), "%Y%m%d").date()
-            except ValueError:
-                continue
+            # 日期段可选（兼容历史无日期 tag）；存在时必须是合法年月日，否则视为不匹配
+            date_str = match.groupdict().get("date")
+            tag_date = None
+            if date_str:
+                try:
+                    tag_date = datetime.strptime(date_str, "%Y%m%d").date()
+                except ValueError:
+                    continue
             remote_names.add(t.name)
             synced_count += 1
             RepositoryTag.objects.update_or_create(

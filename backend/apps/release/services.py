@@ -38,8 +38,9 @@ class VersionCalculator:
     版本号计算器
 
     基于结构化 version_rule（prefix / major / minor / patch / suffixes）解析最新 tag 并递增修订号。
-    tag 格式：{prefix}.{major}.{minor}.{patch}(-{suffix})?_{YYYYMMDD}，
-    前缀仅在配置时出现，rc/beta 在修订号后追加 -{suffix}，日期段为 tag 的强制组成部分。
+    tag 格式：{prefix}.{major}.{minor}.{patch}(-{suffix})?(_{YYYYMMDD})?，
+    前缀仅在配置时出现，rc/beta 在修订号后追加 -{suffix}；
+    日期段在匹配时可选（兼容系统接入前的无日期历史 tag），新生成的 tag 仍强制拼接日期段。
     """
 
     # 默认后缀映射：beta → beta，rc → rc
@@ -85,8 +86,9 @@ class VersionCalculator:
         """
         构建 tag 扫描正则（匹配全部发布类型）
 
-        规则：{prefix}.主版本.次版本.修订版本(-后缀)?_日期，
-        后缀限定为版本规则中配置的后缀值，未配置时使用默认 rc/beta。
+        规则：{prefix}.主版本.次版本.修订版本(-后缀)?(_日期)?，
+        后缀限定为版本规则中配置的后缀值，未配置时使用默认 rc/beta；
+        日期段可选，以兼容系统接入前仓库已有的无日期历史 tag。
         只有匹配该正则的 tag 才允许入库。
         """
         suffix_values = [re.escape(s.strip("-")) for s in self.suffixes.values() if s and s.strip("-")]
@@ -94,7 +96,7 @@ class VersionCalculator:
         pattern = (
             f"^{self._prefix_pattern()}"
             r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
-            f"{suffix_part}_{self.DATE_PATTERN}$"
+            f"{suffix_part}(?:_{self.DATE_PATTERN})?$"
         )
         return re.compile(pattern)
 
@@ -102,16 +104,18 @@ class VersionCalculator:
         """
         构建匹配指定发布类型 tag 的正则
 
-        formal：{prefix}.主.次.修_日期（无后缀）
-        rc/beta：{prefix}.主.次.修-{suffix}_日期
+        formal：{prefix}.主.次.修(_日期)?
+        rc/beta：{prefix}.主.次.修-{suffix}(_日期)?
+        日期段可选，兼容系统接入前的无日期历史 tag。
         """
         version_core = r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
+        date_part = f"(?:_{self.DATE_PATTERN})?"
         if release_type in ("rc", "beta"):
             suffix = (self.suffixes.get(release_type, "") or "").strip("-")
             suffix_part = f"-{re.escape(suffix)}" if suffix else ""
-            pattern = f"^{self._prefix_pattern()}{version_core}{suffix_part}_{self.DATE_PATTERN}$"
+            pattern = f"^{self._prefix_pattern()}{version_core}{suffix_part}{date_part}$"
         else:
-            pattern = f"^{self._prefix_pattern()}{version_core}_{self.DATE_PATTERN}$"
+            pattern = f"^{self._prefix_pattern()}{version_core}{date_part}$"
         return re.compile(pattern)
 
     def find_latest_tag_by_type(
@@ -144,6 +148,33 @@ class VersionCalculator:
         candidates.sort(key=lambda item: item[1], reverse=True)
         return candidates[0][0]
 
+    def find_latest_matching_tag(
+        self,
+        tags: List[TagInfo],
+    ) -> Optional[Tuple[TagInfo, Dict[str, int]]]:
+        """
+        从 tag 列表中找到最新正式版 tag（无类型后缀，含日期段）
+
+        Args:
+            tags: TagInfo 列表
+
+        Returns:
+            (TagInfo, 版本字段字典) 元组，无匹配时返回 None
+        """
+        regex = self._build_regex("formal")
+        candidates: List[Tuple[TagInfo, Tuple[int, int, int]]] = []
+        for tag in tags:
+            match = regex.match(tag.name)
+            if not match:
+                continue
+            values = (int(match.group("major")), int(match.group("minor")), int(match.group("patch")))
+            candidates.append((tag, values))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[1], reverse=True)
+        tag, values = candidates[0]
+        return tag, {"major": values[0], "minor": values[1], "patch": values[2]}
+
     def calculate(
         self,
         tags: List[TagInfo],
@@ -152,8 +183,8 @@ class VersionCalculator:
         """
         计算下一个版本号和 tag 名称
 
-        按发布类型独立过滤 tag：仅匹配该类型的新格式 tag
-        （formal 无后缀 / rc 带 -rc / beta 带 -beta，均含 _日期 段），
+        按发布类型独立过滤 tag：匹配该类型的 tag
+        （formal 无后缀 / rc 带 -rc / beta 带 -beta，日期段可选），
         找到最大版本号后修订号 +1，无匹配时使用初始版本。
         生成的 tag 名称自动拼接当天日期段 _YYYYMMDD。
 
