@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "trace-ship-v1",
     "name": "Trace Ship API V1",
-    "description": "软件版本发布管理系统 API V1",
+    "description": "软件版本发布管理系统 API V1。登录接口同时支持本地账号与 LDAP 账号（LDAP 参数在「系统配置」页面维护，环境变量兜底）。除登录、刷新 Token、健康检查外，其余接口均需携带 Authorization: Bearer {{access_token}}。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -10,7 +10,7 @@
       "name": "认证",
       "item": [
         {
-          "name": "登录",
+          "name": "登录（本地 / LDAP）",
           "request": {
             "method": "POST",
             "header": [{"key": "Content-Type", "value": "application/json"}],
@@ -93,6 +93,21 @@
           }
         },
         {
+          "name": "管理员重置用户密码",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/account/users/{{user_id}}/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"password\":\"newpass456\"}"
+            }
+          }
+        },
+        {
           "name": "角色列表",
           "request": {
             "method": "GET",
@@ -137,6 +152,14 @@
           }
         },
         {
+          "name": "项目统计",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/projects/stats/"
+          }
+        },
+        {
           "name": "项目成员列表",
           "request": {
             "method": "GET",
@@ -156,6 +179,165 @@
             "body": {
               "mode": "raw",
               "raw": "{\"user_id\":\"{{user_id}}\",\"role\":\"developer\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "仓库管理",
+      "item": [
+        {
+          "name": "仓库列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/"
+          }
+        },
+        {
+          "name": "创建仓库",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/repositories/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"project\":\"{{project_id}}\",\"repo_type\":\"git\",\"vendor\":\"gitlab\",\"name\":\"demo-repo\",\"url\":\"http://localhost:18929/demo/demo-repo.git\",\"external_identity\":\"demo/demo-repo\",\"default_branch\":\"master\",\"credential\":\"{{credential_id}}\",\"credential_mode\":\"specified\"}"
+            }
+          }
+        },
+        {
+          "name": "测试仓库连接",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/test/"
+          }
+        },
+        {
+          "name": "分支列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/branches/"
+          }
+        },
+        {
+          "name": "同步分支",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/sync-branches/"
+          }
+        },
+        {
+          "name": "Tag 列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/tags/"
+          }
+        },
+        {
+          "name": "提交列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/commits/"
+          }
+        },
+        {
+          "name": "同步提交",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/sync-commits/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"branch\":\"master\"}"
+            }
+          }
+        },
+        {
+          "name": "下一版本号",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/next-version/"
+          }
+        },
+        {
+          "name": "变更预览",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/{{repository_id}}/changes-preview/?branch=master"
+          }
+        },
+        {
+          "name": "仓库统计",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/stats/"
+          }
+        },
+        {
+          "name": "提交合规统计",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/compliance-stats/"
+          }
+        },
+        {
+          "name": "支持的 Vendor 列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/repositories/vendors/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "提交审查",
+      "item": [
+        {
+          "name": "提交记录列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/commits/"
+          }
+        },
+        {
+          "name": "提交记录详情",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/commits/{{commit_id}}/"
+          }
+        },
+        {
+          "name": "人工复核提交",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/commits/{{commit_id}}/review/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"review_status\":\"pass\",\"reason\":\"确认合规\"}"
             }
           }
         }
@@ -188,11 +370,565 @@
           }
         },
         {
+          "name": "测试凭证连通性",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/credentials/{{credential_id}}/test/"
+          }
+        },
+        {
+          "name": "凭证引用情况",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/credentials/{{credential_id}}/usage/"
+          }
+        },
+        {
           "name": "凭证类型",
           "request": {
             "method": "GET",
             "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
             "url": "{{base_url}}/api/credentials/types/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "发布管理",
+      "item": [
+        {
+          "name": "发布列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/"
+          }
+        },
+        {
+          "name": "创建发布",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/releases/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"project\":\"{{project_id}}\",\"repository\":\"{{repository_id}}\",\"branch\":\"master\",\"release_type\":\"formal\",\"version\":\"\",\"tag_name\":\"\"}"
+            }
+          }
+        },
+        {
+          "name": "发布详情",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/{{release_id}}/"
+          }
+        },
+        {
+          "name": "生成发布说明",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/releases/{{release_id}}/generate-doc/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"commit_ids\":[],\"merge_similar\":true}"
+            }
+          }
+        },
+        {
+          "name": "更新发布说明",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/releases/{{release_id}}/update-doc/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"release_doc\":\"# 发布说明\\n\\n## 新增功能\\n- 示例\"}"
+            }
+          }
+        },
+        {
+          "name": "导出发布说明 Markdown",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/{{release_id}}/export-md/"
+          }
+        },
+        {
+          "name": "提交审批",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/{{release_id}}/submit-audit/"
+          }
+        },
+        {
+          "name": "推 Tag",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/{{release_id}}/push-tag/"
+          }
+        },
+        {
+          "name": "导出发布说明 PDF",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/{{release_id}}/export-pdf/"
+          }
+        },
+        {
+          "name": "导出发布说明 Word",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/{{release_id}}/export-word/"
+          }
+        },
+        {
+          "name": "发布关联提交",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/{{release_id}}/commits/"
+          }
+        },
+        {
+          "name": "发布目录",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/catalog/"
+          }
+        },
+        {
+          "name": "工作台总览",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/dashboard/overview/"
+          }
+        },
+        {
+          "name": "发布趋势",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/dashboard/trend/"
+          }
+        },
+        {
+          "name": "项目发布分布",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/dashboard/projects/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "工作流审批",
+      "item": [
+        {
+          "name": "流程定义列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/workflow/definitions/"
+          }
+        },
+        {
+          "name": "流程实例列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/workflow/instances/"
+          }
+        },
+        {
+          "name": "我发起的流程",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/workflow/instances/initiated/"
+          }
+        },
+        {
+          "name": "撤销流程实例",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/workflow/instances/{{workflow_instance_id}}/revoke/"
+          }
+        },
+        {
+          "name": "待办任务",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/workflow/tasks/todo/"
+          }
+        },
+        {
+          "name": "已办任务",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/workflow/tasks/done/"
+          }
+        },
+        {
+          "name": "审批通过",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/workflow/tasks/{{workflow_task_id}}/approve/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"comment\":\"同意发布\"}"
+            }
+          }
+        },
+        {
+          "name": "审批驳回",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/workflow/tasks/{{workflow_task_id}}/reject/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"comment\":\"请补充发布说明\"}"
+            }
+          }
+        },
+        {
+          "name": "转交他人",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/workflow/tasks/{{workflow_task_id}}/transfer/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"to_user_id\":\"{{user_id}}\",\"comment\":\"请代为审批\"}"
+            }
+          }
+        },
+        {
+          "name": "回退节点",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/workflow/tasks/{{workflow_task_id}}/rollback/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"comment\":\"回退到上一节点\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "打包管理",
+      "item": [
+        {
+          "name": "打包镜像列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/images/"
+          }
+        },
+        {
+          "name": "导入本地镜像（tar 包）",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/images/import/",
+            "body": {
+              "mode": "formdata",
+              "formdata": [{"key": "file", "type": "file", "src": ""}]
+            }
+          }
+        },
+        {
+          "name": "可用镜像聚合（本地 + Nexus）",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/images/available/"
+          }
+        },
+        {
+          "name": "Nexus 仓库列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/images/nexus-repositories/"
+          }
+        },
+        {
+          "name": "Nexus 镜像搜索",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/images/nexus-images/?keyword=web"
+          }
+        },
+        {
+          "name": "打包配置列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/configs/"
+          }
+        },
+        {
+          "name": "创建打包配置（含自定义脚本）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/packages/configs/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"project\":\"{{project_id}}\",\"repository\":\"{{repository_id}}\",\"name\":\"演示打包\",\"image_info\":{\"source\":\"local\",\"image_name\":\"trace-ship/pack-web\",\"image_tag\":\"latest\"},\"custom_script\":\"\",\"build_path\":\".\",\"output_path\":\"dist\",\"env_vars\":{},\"auto_package_on_release\":false,\"is_active\":true,\"svn_push_enabled\":false}"
+            }
+          }
+        },
+        {
+          "name": "手动触发打包",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/packages/configs/{{package_config_id}}/trigger/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"release_id\":\"{{release_id}}\"}"
+            }
+          }
+        },
+        {
+          "name": "SVN 推送目录条目",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/configs/{{package_config_id}}/svn-entries/"
+          }
+        },
+        {
+          "name": "测试 SVN 连接",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/packages/configs/test-svn/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"project_id\":\"{{project_id}}\",\"svn_url\":\"svn://localhost:3690/repo\",\"svn_credential_id\":\"{{credential_id}}\"}"
+            }
+          }
+        },
+        {
+          "name": "打包任务列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/tasks/"
+          }
+        },
+        {
+          "name": "打包任务详情",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/tasks/{{package_task_id}}/"
+          }
+        },
+        {
+          "name": "取消打包任务",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/tasks/{{package_task_id}}/cancel/"
+          }
+        },
+        {
+          "name": "推送产物到 SVN",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/tasks/{{package_task_id}}/push-svn/"
+          }
+        },
+        {
+          "name": "打包任务日志",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/tasks/{{package_task_id}}/logs/"
+          }
+        },
+        {
+          "name": "下载单个产物",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/tasks/{{package_task_id}}/artifacts/{{artifact_id}}/download/"
+          }
+        },
+        {
+          "name": "下载全部产物",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/packages/tasks/{{package_task_id}}/download-all/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "通知中心",
+      "item": [
+        {
+          "name": "通知列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/notifications/"
+          }
+        },
+        {
+          "name": "未读数",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/notifications/unread-count/"
+          }
+        },
+        {
+          "name": "标记已读",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/notifications/{{notification_id}}/read/"
+          }
+        },
+        {
+          "name": "全部已读",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/notifications/read-all/"
+          }
+        },
+        {
+          "name": "清除已读通知",
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/notifications/clear/"
+          }
+        },
+        {
+          "name": "清空全部通知",
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/notifications/clear-all/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "使用反馈",
+      "item": [
+        {
+          "name": "反馈列表",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/feedback/?category=suggestion&status=open"
+          }
+        },
+        {
+          "name": "提交反馈",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/feedback/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"title\":\"建议增加批量操作\",\"content\":\"希望在打包看板支持批量取消任务\",\"category\":\"suggestion\"}"
+            }
+          }
+        },
+        {
+          "name": "反馈详情",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/feedback/{{feedback_id}}/"
+          }
+        },
+        {
+          "name": "点赞 / 取消点赞",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/feedback/{{feedback_id}}/like/"
+          }
+        },
+        {
+          "name": "标记为已处理（超管）",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/feedback/{{feedback_id}}/process/"
+          }
+        },
+        {
+          "name": "删除反馈（本人或超管）",
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/feedback/{{feedback_id}}/"
           }
         }
       ]
@@ -206,6 +942,29 @@
             "method": "GET",
             "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
             "url": "{{base_url}}/api/system/configs/"
+          }
+        },
+        {
+          "name": "保存系统参数（含 LDAP / Nexus 配置）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/system/configs/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"key\":\"ldap_enabled\",\"value\":\"true\",\"description\":\"是否启用 LDAP 登录\"}"
+            }
+          }
+        },
+        {
+          "name": "LDAP 连接测试（超管）",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/system/configs/ldap-test/"
           }
         },
         {
@@ -245,6 +1004,17 @@
     {"key": "access_token", "value": "", "type": "string"},
     {"key": "refresh_token", "value": "", "type": "string"},
     {"key": "project_id", "value": "", "type": "string"},
-    {"key": "user_id", "value": "", "type": "string"}
+    {"key": "user_id", "value": "", "type": "string"},
+    {"key": "repository_id", "value": "", "type": "string"},
+    {"key": "credential_id", "value": "", "type": "string"},
+    {"key": "commit_id", "value": "", "type": "string"},
+    {"key": "release_id", "value": "", "type": "string"},
+    {"key": "workflow_instance_id", "value": "", "type": "string"},
+    {"key": "workflow_task_id", "value": "", "type": "string"},
+    {"key": "package_config_id", "value": "", "type": "string"},
+    {"key": "package_task_id", "value": "", "type": "string"},
+    {"key": "artifact_id", "value": "", "type": "string"},
+    {"key": "notification_id", "value": "", "type": "string"},
+    {"key": "feedback_id", "value": "", "type": "string"}
   ]
 }

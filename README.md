@@ -8,16 +8,21 @@ Trace Ship 是一款软件版本发布管理系统，目标是通过统一的平
 
 Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。系统提供：
 
-- 统一用户认证：LDAP/AD 域账号 + 本地应急账号
+- 统一用户认证：LDAP/AD 域账号 + 本地应急账号（支持页面化 LDAP 配置与连接测试，环境变量兜底）
 - RBAC 权限模型：角色、权限、项目成员角色
 - 项目全生命周期管理：代码仓库、成员、凭证、发布流程
 - 代码仓库接入：GitLab，提交同步与提交规范审查
 - 发布管理：版本号自动计算、发布说明、审批工作流（串行 / 或签 / 会签 / 转交 / 回退 / 撤销）、审批通过后推 tag
-- 打包能力：Docker 镜像打包与本地脚本打包、打包任务执行与日志、产物 SVN 推送、发布后自动触发
+- 打包能力：统一容器打包流程（本地 Docker / Nexus 镜像选择）、自定义脚本与镜像内置入口、打包任务执行与日志、产物 SVN 推送、发布后自动触发
 - 凭证安全托管：AES 加密存储、脱敏展示、使用审计
 - 站内通知：审批、构建、发布和系统消息
+- 使用反馈：全员可提交/点赞的反馈模块，管理员处理状态流转
+- 使用指南：内置平台使用说明页面，浏览器兼容性检测与升级引导
+- 规范提交助手：vscode-commit/ VS Code 插件，AI 自动生成规范 commit 信息（默认本地 DeepSeek 接口，apiProtocol 兼容 OpenAI / Anthropic 等更多 AI 服务）
+- 管理员密码重置：`python manage.py reset_admin_password` 支持密码丢失恢复
 - 操作日志：关键行为全程留痕
 - 标准化 API：RESTful API + Swagger/Redoc 文档 + Postman Collection
+- 离线交付：外网构建离线发布包（scripts/build.sh），内网一键部署（包内 deploy.sh）
 
 ---
 
@@ -27,13 +32,13 @@ Trace Ship 围绕“项目”维度组织资源，支持多项目并行管理。
 ┌─────────────────────────────────────────────────────────────┐
 │                      前端 (frontend)                          │
 │           React 19 + Vite + TypeScript + Ant Design 6         │
-│      工作台 / 项目 / 仓库 / 提交 / 发布 / 工作流 / 打包 / 系统  │
+│      工作台 / 项目 / 仓库 / 提交 / 发布 / 工作流 / 打包 / 指南 / 反馈 / 系统  │
 └───────────────────────────┬─────────────────────────────────┘
                             │ HTTP / REST
 ┌───────────────────────────▼─────────────────────────────────┐
 │                     后端 (backend)                            │
 │              Django 5.0 + Django REST Framework               │
-│  认证 · 权限 · 项目 · 仓库 · 发布 · 工作流 · 打包 · 凭证 · 通知  │
+│  认证 · 权限 · 项目 · 仓库 · 发布 · 工作流 · 打包 · 凭证 · 通知 · 反馈  │
 └───────────────────────────┬─────────────────────────────────┘
                             │
         ┌───────────────────┼───────────────────┐
@@ -65,6 +70,7 @@ trace-ship/
 │   │   ├── jenkins/        # （已下线）仅保留迁移 tombstone，无业务逻辑
 │   │   ├── credential/     # 凭证加密托管
 │   │   ├── notification/   # 站内通知
+│   │   ├── feedback/       # 使用反馈（提交、点赞、处理状态流转）
 │   │   └── system/         # 系统参数与操作日志
 │   ├── config/             # Django 配置
 │   ├── utils/              # 公共工具
@@ -78,7 +84,7 @@ trace-ship/
 │       ├── api/            # 接口封装（按业务模块拆分）
 │       ├── router/         # 路由与鉴权守卫
 │       ├── layouts/        # 主布局与子布局
-│       ├── pages/          # 工作台/项目/仓库/发布/打包/系统等页面
+│       ├── pages/          # 工作台/项目/仓库/发布/打包/指南/反馈/系统等页面
 │       ├── components/     # 通用组件
 │       ├── stores/         # Zustand 状态
 │       └── styles/         # 主题与样式
@@ -96,6 +102,8 @@ trace-ship/
 │   └── postman/
 ├── feat/                   # 需求文档
 ├── ui-design/              # UI 设计稿
+├── scripts/                # dev.sh（开发环境管理）/ build.sh（发布包构建）/ deploy.sh（内网部署）
+├── vscode-commit/          # VS Code 规范提交助手插件（AI 生成规范 commit 信息）
 └── README.md
 ```
 
@@ -187,11 +195,12 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 
 当前已完成的核心能力包括：
 
-- **基础底座**：Django + DRF + PostgreSQL + Redis + Celery 工程骨架、LDAP/AD + 本地账号 + JWT 认证、RBAC 权限模型、凭证加密托管、系统参数与操作日志、Docker 一键部署。
-- **项目与仓库**：项目全生命周期管理、项目成员角色、Git/SVN 仓库接入、提交同步与提交规范审查。
+- **基础底座**：Django + DRF + PostgreSQL + Redis + Celery 工程骨架、LDAP/AD + 本地账号 + JWT 认证（页面化 LDAP 配置与连接测试）、RBAC 权限模型、凭证加密托管、系统参数与操作日志、Docker 一键部署、管理员密码重置。
+- **项目与仓库**：项目全生命周期管理、项目成员角色、GitLab 仓库接入（SVN 仅作为打包产物推送目标）、提交同步与提交规范审查。
 - **发布与工作流**：发布申请、版本号自动计算、发布说明生成、审批工作流（串行/或签/会签/转交/回退/撤销）、审批通过后推 tag。
-- **打包能力**：系统级打包镜像（Web / Qt）、项目级打包配置（Docker 镜像 / 本地脚本）、打包任务执行与日志、产物 SVN 推送、发布后自动触发打包。
-- **前端管理后台**：React + Ant Design 6 完整管理界面，覆盖工作台、项目、仓库、提交、发布、工作流、打包看板、系统管理等页面。
+- **打包能力**：本地 Docker / Nexus 打包镜像选择、项目级打包配置（镜像 + 自定义脚本或镜像内置入口）、统一容器打包流程（workspace/source|artifacts|tmp 挂载约定）、打包任务执行与日志、产物 SVN 推送、发布后自动触发打包。
+- **前端管理后台**：React + Ant Design 6 完整管理界面，覆盖工作台、项目、仓库、提交、发布、工作流、打包看板、使用指南、使用反馈、系统管理等页面，并内置浏览器兼容性检测与升级引导。
+- **周边工具**：vscode-commit VS Code 规范提交助手（AI 生成规范 commit 信息，apiProtocol 兼容多种 AI 服务）；scripts/build.sh + deploy.sh 离线构建与内网一键部署。
 
 后续里程碑规划可参考 `docs/business-process-analysis.md`（注意该文档为阶段规划，与当前实现可能存在差异，以代码为准）。
 
@@ -207,6 +216,7 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 | [docs/postman/trace-ship-v1.postman_collection.json](docs/postman/trace-ship-v1.postman_collection.json) | Postman 接口集合 |
 | [feat/后台需求.md](feat/后台需求.md) | 后台需求文档 |
 | [docs/后台设计.md](docs/后台设计.md) | 后台设计文档 |
+| [vscode-commit/README.md](vscode-commit/README.md) | VS Code 规范提交助手插件说明 |
 
 ---
 
@@ -237,6 +247,9 @@ python manage.py migrate
 
 # 初始化基础数据
 python manage.py init_base_data
+
+# 重置管理员密码（密码丢失恢复，默认恢复为 admin@123）
+python manage.py reset_admin_password
 
 # 启动开发服务器
 python manage.py runserver 0.0.0.0:8000
