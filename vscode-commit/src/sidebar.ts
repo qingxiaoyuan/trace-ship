@@ -1165,14 +1165,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     mode: "commit" | "push" | "sync",
     repoRoot?: string,
   ) {
-    if (!message.trim()) {
-      this._view?.webview.postMessage({
-        command: "error",
-        error: "请输入提交信息",
-      });
-      return;
-    }
-
     let gitApi: any;
     try {
       gitApi = await this._getGitApi();
@@ -1224,11 +1216,38 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         return;
       }
 
+      // 判断是否为纯同步：sync 模式且无本地变更时无需提交信息；有本地变更则必须先提交
+      const hasLocalChanges = repos.some(
+        (r: any) =>
+          (r.state.indexChanges?.length ?? 0) > 0 ||
+          (r.state.workingTreeChanges?.length ?? 0) > 0,
+      );
+      const isPureSync = mode === "sync" && !hasLocalChanges;
+      if (!isPureSync && !message.trim()) {
+        this._view?.webview.postMessage({
+          command: "error",
+          error: "请输入提交信息",
+        });
+        return;
+      }
+
       // 多仓库（主仓库 + 子仓库）场景：对所有有暂存内容的仓库分别提交
       let targetRepos = repos.filter(
         (r: any) => (r.state.indexChanges?.length ?? 0) > 0,
       );
-      if (targetRepos.length === 0) {
+      if (targetRepos.length === 0 && isPureSync) {
+        // 纯同步：无本地变更，仅对有上游分支的仓库执行 pull/push
+        targetRepos = repos.filter(
+          (r: any) => Boolean(r?.state?.HEAD?.upstream),
+        );
+        if (targetRepos.length === 0) {
+          this._view?.webview.postMessage({
+            command: "error",
+            error: "没有可同步的仓库",
+          });
+          return;
+        }
+      } else if (targetRepos.length === 0) {
         // 没有任何仓库暂存内容：把所有仓库的工作区变更全部暂存后提交
         // 注意：repo.add() 后 state.indexChanges 依赖文件事件异步刷新，
         // 不能立刻用 state 判断，这里显式记录成功暂存的仓库
@@ -1272,18 +1291,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         });
       }
 
-      // 逐仓库提交（同一提交信息应用到每个有变更的仓库）
-      for (const repo of targetRepos) {
-        await repo.commit(message);
+      // 逐仓库提交（同一提交信息应用到每个有变更的仓库）；纯同步无本地变更时不提交
+      if (!isPureSync) {
+        for (const repo of targetRepos) {
+          await repo.commit(message);
+        }
+        this._view?.webview.postMessage({
+          command: "status",
+          message:
+            targetRepos.length > 1
+              ? `提交成功（${targetRepos.length} 个仓库）`
+              : "提交成功",
+          type: "success",
+        });
       }
-      this._view?.webview.postMessage({
-        command: "status",
-        message:
-          targetRepos.length > 1
-            ? `提交成功（${targetRepos.length} 个仓库）`
-            : "提交成功",
-        type: "success",
-      });
 
       if (effectiveMode === "push") {
         for (const repo of targetRepos) {
@@ -2688,11 +2709,19 @@ ${joined}
         const repoTitle = isMultiRepo ? (isMainRepo ? '主仓库' : '子仓库') : '';
         const behindCount = typeof g.behind === 'number' ? g.behind : 0;
         const needsSync = Boolean(g.needsSync) || behindCount > 0;
+        const hasLocalChanges = stagedFiles.length + unstagedFiles.length > 0;
+        const isPureSync = needsSync && !hasLocalChanges;
         const mainCommitMode = needsSync ? 'sync' : 'commit';
-        const mainCommitText = needsSync ? '⇅ 同步' : '✓ Commit';
-        const mainCommitTitle = needsSync
+        const mainCommitText = isPureSync
+          ? '⇅ 同步'
+          : needsSync
+            ? '⇅ Commit & Sync'
+            : '✓ Commit';
+        const mainCommitTitle = isPureSync
           ? '远端有 ' + behindCount + ' 个提交需要同步'
-          : '提交';
+          : needsSync
+            ? '远端有 ' + behindCount + ' 个提交需要同步，提交后同步'
+            : '提交';
 
         const section = document.createElement('section');
         section.className = 'changes-section repo-group';
@@ -2780,7 +2809,7 @@ ${joined}
         function refreshCommitUI() {
           const hasText = ta.value.trim().length > 0;
           const hasConflict = conflictFiles.length > 0;
-          const canCommit = hasText && !hasConflict;
+          const canCommit = !hasConflict && (hasText || isPureSync);
           btnCommitMain.disabled = !canCommit;
           btnCommitMain.dataset.mode = mainCommitMode;
           if (hasConflict) {
@@ -2872,7 +2901,7 @@ ${joined}
 
         // 提交按钮组（只提交该仓库）
         btnCommitMain.addEventListener('click', () => {
-          if (ta.value.trim()) {
+          if (ta.value.trim() || btnCommitMain.dataset.mode === 'sync') {
             vscode.postMessage({ command: 'commit', message: ta.value, mode: btnCommitMain.dataset.mode || 'commit', repoRoot: g.repoRoot });
           }
         });
@@ -2885,7 +2914,7 @@ ${joined}
         dropdown.querySelectorAll('.dropdown-item').forEach(item => {
           item.addEventListener('click', () => {
             dropdown.classList.remove('show');
-            if (ta.value.trim()) {
+            if (ta.value.trim() || item.dataset.mode === 'sync') {
               vscode.postMessage({ command: 'commit', message: ta.value, mode: item.dataset.mode, repoRoot: g.repoRoot });
             }
           });
