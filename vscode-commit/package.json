@@ -15,6 +15,9 @@
     "Scanners"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -51,6 +54,26 @@
         "command": "commit.refreshDiff",
         "title": "刷新Diff",
         "category": "规范提交"
+      },
+      {
+        "command": "commit.acceptCurrentChange",
+        "title": "接受当前更改",
+        "category": "合并冲突"
+      },
+      {
+        "command": "commit.acceptIncomingChange",
+        "title": "接受传入的更改",
+        "category": "合并冲突"
+      },
+      {
+        "command": "commit.acceptBothChanges",
+        "title": "接受两个更改",
+        "category": "合并冲突"
+      },
+      {
+        "command": "commit.compareChange",
+        "title": "比较变更",
+        "category": "合并冲突"
       }
     ],
     "configuration": {
