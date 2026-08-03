@@ -102,3 +102,4 @@ class ProjectMember(models.Model):
     def __str__(self) -> str:
         """返回项目-用户-角色描述"""
         return f"{self.project.name} - {self.user.username} ({self.role})"
+

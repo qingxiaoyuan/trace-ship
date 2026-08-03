@@ -35,7 +35,7 @@ class HasPermission(permissions.BasePermission):
 
 
 class IsProjectMember(permissions.BasePermission):
-    """检查用户是否为项目成员"""
+    """检查用户是否为项目成员（项目负责人视为隐含成员）"""
 
     def has_object_permission(self, request, view, obj) -> bool:
         """对象级权限检查"""
@@ -46,34 +46,66 @@ class IsProjectMember(permissions.BasePermission):
         project = obj if hasattr(obj, "members") else getattr(obj, "project", None)
         if not project:
             return False
+        if str(getattr(project, "leader_id", "")) == str(request.user.id):
+            return True
         return ProjectMember.objects.filter(project=project, user=request.user).exists()
 
 
 class ProjectRolePermission(permissions.BasePermission):
-    """项目角色权限检查基类"""
+    """项目角色权限检查基类（项目负责人在角色判断上视同 manager）"""
 
     required_roles = []
 
+    @staticmethod
+    def _effective_role(project, user) -> str | None:
+        """
+        计算用户在项目中的有效角色
+
+        项目负责人（leader）视同 manager；否则取成员记录的角色，
+        非成员返回 None。
+        """
+        if project is None:
+            return None
+        if str(getattr(project, "leader_id", "")) == str(user.id):
+            return "manager"
+        from apps.project.models import ProjectMember
+
+        member = ProjectMember.objects.filter(project=project, user=user).first()
+        return member.role if member else None
+
+    def _check(self, project, user) -> bool:
+        """按有效角色校验"""
+        role = self._effective_role(project, user)
+        if role is None:
+            return False
+        if not self.required_roles:
+            return True
+        return role in self.required_roles
+
     def has_permission(self, request, view) -> bool:
-        # 项目角色权限主要在对象级别判断，视图级别默认放行
-        return True
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        # create 等无对象阶段，从请求体 project 字段做角色预检；
+        # project 不在请求体时（如 project 由 URL/服务端推断的嵌套资源）
+        # 此处放行，须由对象级检查（如 NestedProjectPermissionMixin）兜底
+        project_id = request.data.get("project") if hasattr(request, "data") else None
+        if not project_id:
+            return True
+        from apps.project.models import Project
+
+        project = Project.objects.filter(id=project_id).first()
+        return self._check(project, request.user)
 
     def has_object_permission(self, request, view, obj) -> bool:
         """对象级权限检查"""
         if request.user.is_superuser:
             return True
-        from apps.project.models import ProjectMember
-
         project = obj if hasattr(obj, "members") else getattr(obj, "project", None)
         if not project:
             return False
-
-        member = ProjectMember.objects.filter(project=project, user=request.user).first()
-        if not member:
-            return False
-        if not self.required_roles:
-            return True
-        return member.role in self.required_roles
+        return self._check(project, request.user)
 
 
 class IsProjectManager(ProjectRolePermission):
@@ -96,29 +128,7 @@ class IsProjectAuditor(ProjectRolePermission):
     required_roles = ["manager", "auditor"]
 
 
-class IsProjectLeader(permissions.BasePermission):
-    """项目负责人权限
+class IsProjectPackager(ProjectRolePermission):
+    """项目打包触发权限（管理员/开发/测试）"""
+    required_roles = ["manager", "developer", "tester"]
 
-    校验当前用户是否为项目 leader。create 时从请求体读取 project，
-    update/destroy 时从对象上读取 project。
-    """
-
-    def has_permission(self, request, view) -> bool:
-        if not request.user or not request.user.is_authenticated:
-            return False
-        if request.user.is_superuser:
-            return True
-        project_id = request.data.get("project")
-        if not project_id:
-            return False
-        from apps.project.models import Project
-
-        return Project.objects.filter(id=project_id, leader=request.user).exists()
-
-    def has_object_permission(self, request, view, obj) -> bool:
-        if request.user.is_superuser:
-            return True
-        project = obj if hasattr(obj, "members") else getattr(obj, "project", None)
-        if not project:
-            return False
-        return str(project.leader_id) == str(request.user.id)

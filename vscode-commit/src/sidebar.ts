@@ -1448,7 +1448,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const body: any = isAnthropic
       ? {
           model,
-          max_tokens: 512,
+          max_tokens: 8192,
           temperature: 0,
           messages: [{ role: "user", content: prompt }],
         }

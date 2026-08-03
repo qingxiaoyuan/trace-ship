@@ -229,7 +229,10 @@ class TestSvnEntriesView:
         assert response.status_code == 502
 
     def test_non_member_cannot_browse(self, api_client, svn_config, user, project):
-        """非项目成员无法浏览（queryset 过滤后返回 404）。"""
+        """与项目无关联（非成员且非 leader）的用户无法浏览（queryset 过滤后返回 404）。"""
         ProjectMember.objects.filter(project=project, user=user).delete()
+        # leader 视同隐含成员，需将项目 leader 换为他人才能构造「无关联」场景
+        project.leader = User.objects.create_user(username="svn_browse_leader", password="pass")
+        project.save(update_fields=["leader"])
         response = api_client.get(self._url(svn_config.id))
         assert response.status_code == 404

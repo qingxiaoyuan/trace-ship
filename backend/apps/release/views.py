@@ -18,7 +18,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
-from apps.project.models import ProjectMember
+from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
 from apps.release.serializers import (
     ReleaseCommitSerializer,
@@ -27,7 +27,7 @@ from apps.release.serializers import (
 )
 from apps.release.services import ReleaseService, ReleaseTagExistsError, ReleaseValidator
 from apps.release.exporters import ReleaseDocExporter
-from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectMember
+from utils.permissions import IsProjectDeveloper, IsProjectManager
 from utils.provider.exceptions import ProviderError
 from utils.response import error_response, success_response
 
@@ -138,19 +138,20 @@ class ReleaseViewSet(StandardModelViewSet):
         queryset = ReleaseRecord.objects.select_related("project", "repository", "publisher").prefetch_related("package_tasks")
         if user.is_superuser:
             return queryset.all()
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
         """
-        写操作需项目成员，生成说明/提交审批/推 tag 需项目开发者
+        写操作（创建/编辑/删除/生成说明/提交审批/推 tag）需项目开发及以上角色
 
         Returns:
             权限实例列表
         """
-        if self.action in ["create", "update", "partial_update", "destroy"]:
-            return [IsAuthenticated(), IsProjectMember()]
-        if self.action in ["generate_doc", "update_doc", "submit_audit", "push_tag"]:
+        if self.action in [
+            "create", "update", "partial_update", "destroy",
+            "generate_doc", "update_doc", "submit_audit", "push_tag",
+        ]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         return super().get_permissions()
 
@@ -272,6 +273,8 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         删除发布申请
 
+        项目管理员可删除草稿/已驳回记录；开发人员仅可删除本人创建的草稿。
+
         Args:
             request: DRF Request
 
@@ -281,6 +284,15 @@ class ReleaseViewSet(StandardModelViewSet):
         instance = self.get_object()
         if instance.status not in ["draft", "rejected"]:
             return error_response(40002, "仅草稿或已驳回状态可删除")
+        # 项目负责人视同 manager，复用权限类的统一判定，避免 leader 等价逻辑走样
+        is_manager = request.user.is_superuser or IsProjectManager().has_object_permission(
+            request, self, instance.project
+        )
+        if not is_manager:
+            if str(instance.publisher_id) != str(request.user.id) or instance.status != "draft":
+                return error_response(
+                    40300, "仅可删除本人创建的草稿", status_code=403
+                )
         instance.delete()
         return success_response(None, message="删除成功")
 

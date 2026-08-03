@@ -4,6 +4,7 @@
 封装项目创建者自动加入项目等逻辑。
 """
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.project.models import Project, ProjectMember
@@ -61,3 +62,20 @@ class ProjectService:
             user=user,
             defaults={"role": "manager"},
         )
+
+
+def visible_project_ids(user):
+    """
+    用户可见的项目 ID 查询集
+
+    项目成员或项目负责人（leader 视为隐含成员）均可见，
+    供各业务视图的 get_queryset 统一过滤使用。
+
+    Args:
+        user: 当前请求用户
+
+    Returns:
+        可见项目的 id 子查询集
+    """
+    member_ids = ProjectMember.objects.filter(user=user).values("project_id")
+    return Project.objects.filter(Q(leader=user) | Q(id__in=member_ids)).values("id")

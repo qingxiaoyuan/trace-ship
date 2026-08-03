@@ -15,6 +15,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.project.models import Project, ProjectMember
+from apps.project.services import visible_project_ids
 from apps.project.serializers import (
     ProjectSerializer, ProjectListSerializer, ProjectMemberSerializer,
 )
@@ -70,7 +71,7 @@ class ProjectViewSet(StandardModelViewSet):
         )
         if user.is_superuser:
             return queryset.all()
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(id__in=project_ids)
 
     @action(detail=False, methods=["get"], url_path="stats")

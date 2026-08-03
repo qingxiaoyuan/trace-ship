@@ -24,8 +24,9 @@ from apps.package.services import PackageService
 from apps.credential.models import Credential
 from apps.project.models import Project
 from apps.project.models import ProjectMember
+from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
-from utils.permissions import IsProjectManager, IsProjectMember, IsSuperUser
+from utils.permissions import IsProjectManager, IsProjectMember, IsProjectPackager, IsProjectDeveloper, IsSuperUser
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 from utils.provider.factory import get_provider
 from utils.response import error_response, success_response
@@ -176,12 +177,15 @@ class PackageConfigViewSet(StandardModelViewSet):
         queryset = PackageConfig.objects.select_related("project", "repository", "image", "svn_credential")
         if user.is_superuser:
             return queryset
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAuthenticated(), IsProjectManager()]
+        if self.action == "trigger":
+            # 手动触发打包：管理员/开发/测试均可
+            return [IsAuthenticated(), IsProjectPackager()]
         return [IsAuthenticated(), IsProjectMember()]
 
     @action(detail=True, methods=["post"], url_path="trigger")
@@ -310,12 +314,13 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         queryset = PackageTask.objects.select_related("config", "release", "project", "repository", "triggered_by")
         if user.is_superuser:
             return queryset
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
         if self.action in ("cancel", "push_svn"):
-            return [IsAuthenticated(), IsProjectManager()]
+            # 取消任务 / 手动推 SVN：管理员/开发可操作
+            return [IsAuthenticated(), IsProjectDeveloper()]
         return [IsAuthenticated(), IsProjectMember()]
 
     @action(detail=True, methods=["post"], url_path="cancel")

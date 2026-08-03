@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Form, InputNumber, Select, Button, App } from 'antd';
 import { projectApi } from '@/api/project';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import type { Project } from '@/types';
 
 interface PercentInputProps {
@@ -43,6 +44,7 @@ export function RuleTab({ project }: RuleTabProps) {
   const [form] = Form.useForm();
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const { canManage } = useProjectRole(project);
 
   const releaseRule = (project.release_rule as Record<string, unknown>) || {};
 
@@ -95,11 +97,15 @@ export function RuleTab({ project }: RuleTabProps) {
         </div>
       </div>
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex items-center justify-end gap-3">
+        {!canManage && (
+          <span className="text-[12px] text-slate-400">仅项目管理员可修改发布规则</span>
+        )}
         <Button
           type="primary"
           htmlType="submit"
           loading={mutation.isPending}
+          disabled={!canManage}
         >
           保存规则
         </Button>

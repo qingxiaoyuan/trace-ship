@@ -13,10 +13,12 @@ import {
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { repositoryApi } from '@/api/repository';
+import { projectApi } from '@/api/project';
 import { StatusTag } from '@/components/StatusTag';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { RepositoryModal } from '@/pages/Repository/modals/RepositoryModal';
 import { CreateTagModal } from '@/pages/Project/modals/CreateTagModal';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import type { Repository } from '@/types';
 
 const vendorMap: Record<string, { label: string; status: 'primary' | 'info' | 'neutral' }> = {
@@ -42,6 +44,14 @@ export function RepoTab({ projectId }: RepoTabProps) {
       repositoryApi.getRepositories({ project: projectId, page_size: 1000 }),
     enabled: !!projectId,
   });
+
+  // 项目内操作权限：按当前用户的项目成员角色控制按钮可见性
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => projectApi.getProject(projectId),
+    enabled: !!projectId,
+  });
+  const { canManage, canDevelop } = useProjectRole(project);
 
   const testMutation = useMutation({
     mutationFn: (id: string) => repositoryApi.testRepository(id),
@@ -138,14 +148,16 @@ export function RepoTab({ projectId }: RepoTabProps) {
           <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">仓库管理</h1>
           <p className="mt-1 text-[13px] text-slate-500">管理项目下的代码仓库、同步状态与访问凭证</p>
         </div>
-        <button
-          type="button"
-          onClick={handleAdd}
-          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          添加仓库
-        </button>
+        {canManage && (
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            添加仓库
+          </button>
+        )}
       </div>
 
       <PermissionAlert error={error} className="rounded-xl" />
@@ -234,49 +246,57 @@ export function RepoTab({ projectId }: RepoTabProps) {
                     {record.last_sync_at ? dayjs(record.last_sync_at).format('YYYY-MM-DD HH:mm') : '-'}
                   </div>
                   <div className="col-span-1 flex items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      onClick={() => testMutation.mutate(record.id)}
-                      disabled={testMutation.isPending && testMutation.variables === record.id}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
-                      title="测试"
-                    >
-                      <PlayCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => syncMutation.mutate(record.id)}
-                      disabled={syncMutation.isPending && syncMutation.variables === record.id}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
-                      title="同步提交"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCreateTag(record)}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                      title="新建 Tag"
-                    >
-                      <Tag className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(record)}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                      title="编辑"
-                    >
-                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(record)}
-                      disabled={deleteMutation.isPending && deleteMutation.variables === record.id}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
-                      title="删除"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
+                    {canDevelop && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => testMutation.mutate(record.id)}
+                          disabled={testMutation.isPending && testMutation.variables === record.id}
+                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                          title="测试"
+                        >
+                          <PlayCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => syncMutation.mutate(record.id)}
+                          disabled={syncMutation.isPending && syncMutation.variables === record.id}
+                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                          title="同步提交"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCreateTag(record)}
+                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                          title="新建 Tag"
+                        >
+                          <Tag className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                      </>
+                    )}
+                    {canManage && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(record)}
+                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                          title="编辑"
+                        >
+                          <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(record)}
+                          disabled={deleteMutation.isPending && deleteMutation.variables === record.id}
+                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                          title="删除"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );

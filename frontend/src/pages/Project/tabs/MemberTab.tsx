@@ -4,13 +4,14 @@ import { Plus, Search, User, Trash2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { accountApi, type AccountUser } from '@/api/account';
+import { projectApi } from '@/api/project';
 import {
   projectMemberApi,
   type ProjectMember,
   type ProjectMemberRole,
 } from '@/api/projectMember';
 import { getAvatarColor } from '@/utils/avatar';
-import { useAuthStore } from '@/stores/authStore';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import { PermissionAlert } from '@/components/PermissionAlert';
 
 const roleMap: Record<ProjectMemberRole, string> = {
@@ -33,7 +34,6 @@ interface MemberTabProps {
 export function MemberTab({ projectId }: MemberTabProps) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
-  const currentUser = useAuthStore((state) => state.user);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [form] = Form.useForm();
@@ -44,14 +44,13 @@ export function MemberTab({ projectId }: MemberTabProps) {
     enabled: !!projectId,
   });
 
-  // 仅项目管理员（或超管）可增删改成员，普通成员只读
-  const canManage = useMemo(() => {
-    if (!currentUser) return false;
-    if (currentUser.is_superuser) return true;
-    return (data?.results || []).some(
-      (m) => String(m.user_id) === String(currentUser.id) && m.role === 'manager'
-    );
-  }, [currentUser, data]);
+  // 仅项目管理员（含项目 leader / 超管）可增删改成员，普通成员只读
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => projectApi.getProject(projectId),
+    enabled: !!projectId,
+  });
+  const { canManage } = useProjectRole(project);
 
   const { data: usersData, isLoading: usersLoading } = useQuery({
     queryKey: ['account-users-all'],
