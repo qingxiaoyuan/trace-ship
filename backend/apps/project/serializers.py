@@ -70,6 +70,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
     package_count = serializers.SerializerMethodField()
     release_count = serializers.SerializerMethodField()
+    my_role = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -77,6 +78,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "id", "code", "name", "leader_id", "leader_name", "description",
             "version_rule", "release_rule", "status", "created_at", "updated_at",
             "repo_count", "member_count", "package_count", "release_count",
+            "my_role",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -99,6 +101,22 @@ class ProjectSerializer(serializers.ModelSerializer):
     def get_release_count(self, obj: Project) -> int:
         """累计发布数"""
         return self._count(obj, "release_count")
+
+    def get_my_role(self, obj: Project) -> str | None:
+        """
+        当前请求用户在该项目中的有效角色
+
+        超管与项目负责人（leader）均视为 manager，非成员返回 None，
+        前端据此控制操作按钮可见性。
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        if user.is_superuser or str(obj.leader_id) == str(user.id):
+            return "manager"
+        member = obj.members.filter(user=user).only("role").first()
+        return member.role if member else None
 
     def create(self, validated_data: dict) -> Project:
         """

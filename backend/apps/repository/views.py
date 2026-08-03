@@ -14,7 +14,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
-from apps.project.models import ProjectMember
+from apps.project.services import visible_project_ids
 from apps.repository.models import CommitRecord, Repository
 from apps.repository.serializers import (
     CommitRecordSerializer,
@@ -70,7 +70,7 @@ class RepositoryViewSet(StandardModelViewSet):
         queryset = Repository.objects.select_related("project", "credential")
         if user.is_superuser:
             return queryset.all()
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
@@ -443,7 +443,7 @@ class CommitRecordViewSet(StandardReadOnlyModelViewSet):
         queryset = CommitRecord.objects.select_related("project", "repository")
         if user.is_superuser:
             return queryset.all()
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):

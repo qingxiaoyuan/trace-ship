@@ -153,6 +153,51 @@ def test_batch_add_members_rejects_invalid_role(project, manager, outsider):
 
 
 @pytest.mark.django_db
+def test_leader_without_membership_can_manage_members(manager):
+    """
+    项目负责人（leader）即使没有成员记录，也视同 manager 可管理成员
+    """
+    project = Project.objects.create(code="LEAD", name="Leader 项目", leader=manager)
+    new_user = User.objects.create_user(username="lead_new", password="pass")
+
+    list_response = auth_client(manager).get(f"/api/projects/{project.id}/members/")
+    assert list_response.status_code == 200
+
+    add_response = auth_client(manager).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(new_user.id)],
+        "role": "developer",
+    }, format="json")
+    assert add_response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_leader_without_membership_sees_project_in_list(manager):
+    """
+    项目负责人（leader）即使没有成员记录，项目列表也可见
+    """
+    Project.objects.create(code="LEAD2", name="Leader 可见项目", leader=manager)
+
+    response = auth_client(manager).get("/api/projects/")
+
+    assert response.status_code == 200
+    names = [p["name"] for p in response.data["data"]["results"]]
+    assert "Leader 可见项目" in names
+
+
+@pytest.mark.django_db
+def test_my_role_returns_manager_for_leader(manager):
+    """
+    项目详情 my_role 对 leader（无成员记录）返回 manager
+    """
+    project = Project.objects.create(code="LEAD3", name="Leader 角色项目", leader=manager)
+
+    response = auth_client(manager).get(f"/api/projects/{project.id}/")
+
+    assert response.status_code == 200
+    assert response.data["data"]["my_role"] == "manager"
+
+
+@pytest.mark.django_db
 def test_create_project_requires_project_create_permission(outsider):
     """
     无 project.create 权限的用户不能创建项目

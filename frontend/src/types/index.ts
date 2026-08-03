@@ -73,6 +73,8 @@ export interface Project {
   created_at: string;
   version_rule?: unknown;
   release_rule?: unknown;
+  /** 当前用户在该项目的成员角色（详情接口返回，超管为 manager，非成员为 null） */
+  my_role?: 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | null;
 }
 
 /** 项目统计聚合数据（/projects/stats/） */

@@ -29,8 +29,8 @@ import { ApprovalFlowPreview } from '@/components/ApprovalFlowPreview';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { workflowApi } from '@/api/workflow';
 import { accountApi } from '@/api/account';
-import { useAuthStore } from '@/stores/authStore';
 import { useAppMessage } from '@/hooks/useAppMessage';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import type {
   Project,
   WorkflowDefinition,
@@ -128,10 +128,10 @@ function approverDisplay(apr: WorkflowApproverConfig, usersData?: { results: { i
 
 export function WorkflowTab({ project }: WorkflowTabProps) {
   const queryClient = useQueryClient();
-  const { user } = useAuthStore();
   const { message } = useAppMessage();
 
-  const canManage = Boolean(user?.is_superuser || user?.id === project.leader_id);
+  // 审批节点编辑：manager 成员角色（与后端 IsProjectManager 对齐）
+  const { canManage } = useProjectRole(project);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingDef, setEditingDef] = useState<WorkflowDefinition | null>(null);

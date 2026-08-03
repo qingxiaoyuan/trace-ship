@@ -291,9 +291,9 @@ class AuthViewSet(viewsets.GenericViewSet):
 
         # 项目成员放开业务菜单（写操作仍由接口按项目角色拦截）；
         # credential 模块不在放开范围内，凭证菜单维持按权限过滤
-        from apps.project.models import ProjectMember
+        from apps.project.services import visible_project_ids
 
-        if ProjectMember.objects.filter(user=user).exists():
+        if visible_project_ids(user).exists():
             user_modules |= {"project", "repository", "release", "workflow", "commit", "package"}
 
         # 按模块过滤菜单

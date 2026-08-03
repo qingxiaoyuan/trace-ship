@@ -15,11 +15,13 @@ import { useNavigate } from 'react-router-dom';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
+import { projectApi } from '@/api/project';
 import { SvnTestButton } from '@/components/SvnTestButton';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { ImagePickerField } from '@/components/ImagePickerField';
 import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
 import { credentialApi } from '@/api/credential';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import type { PackageConfig } from '@/types';
 
 interface PackageTabProps {
@@ -49,6 +51,14 @@ export function PackageTab({ projectId }: PackageTabProps) {
     queryFn: () => packageApi.getConfigs({ project: projectId, page_size: 1000 }),
     enabled: !!projectId,
   });
+
+  // 项目内操作权限：配置增删改需 manager，触发打包需 tester/developer/manager
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => projectApi.getProject(projectId),
+    enabled: !!projectId,
+  });
+  const { canManage, canTriggerPackage } = useProjectRole(project);
 
   const { data: reposData } = useQuery({
     queryKey: ['repositories', projectId],
@@ -179,14 +189,16 @@ export function PackageTab({ projectId }: PackageTabProps) {
           <div className="text-[15px] font-semibold text-slate-900">打包配置</div>
           <div className="mt-1 text-[12px] text-slate-500">配置发布成功后的自动打包流程</div>
         </div>
-        <button
-          type="button"
-          onClick={() => { setEditing(null); setOpen(true); }}
-          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          新增配置
-        </button>
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => { setEditing(null); setOpen(true); }}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            新增配置
+          </button>
+        )}
       </div>
 
       <PermissionAlert error={error} className="rounded-xl" />
@@ -273,35 +285,41 @@ export function PackageTab({ projectId }: PackageTabProps) {
                   )}
                 </div>
                 <div className="col-span-6 flex items-center justify-end gap-1 md:col-span-1">
-                  <button
-                    type="button"
-                    disabled={!config.is_active}
-                    onClick={() => openTrigger(config)}
-                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-100 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="立即打包"
-                  >
-                    <Hammer className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEditing(config); setOpen(true); }}
-                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-100 hover:text-indigo-600"
-                    title="编辑"
-                  >
-                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => modal.confirm({
-                      title: '删除打包配置',
-                      content: `确定删除「${config.name}」吗？`,
-                      onOk: () => deleteMutation.mutate(config.id),
-                    })}
-                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-100 hover:text-rose-600"
-                    title="删除"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  </button>
+                  {canTriggerPackage && (
+                    <button
+                      type="button"
+                      disabled={!config.is_active}
+                      onClick={() => openTrigger(config)}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-100 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="立即打包"
+                    >
+                      <Hammer className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                  )}
+                  {canManage && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { setEditing(config); setOpen(true); }}
+                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-100 hover:text-indigo-600"
+                        title="编辑"
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => modal.confirm({
+                          title: '删除打包配置',
+                          content: `确定删除「${config.name}」吗？`,
+                          onOk: () => deleteMutation.mutate(config.id),
+                        })}
+                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-100 hover:text-rose-600"
+                        title="删除"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))

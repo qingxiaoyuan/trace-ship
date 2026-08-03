@@ -12,7 +12,7 @@ from rest_framework.response import Response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.account.models import User
-from apps.project.models import ProjectMember
+from apps.project.services import visible_project_ids
 from apps.release.services import ReleaseService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 from apps.workflow.serializers import (
@@ -23,7 +23,7 @@ from apps.workflow.serializers import (
     WorkflowTaskSerializer,
 )
 from apps.workflow.services import WorkflowEngine
-from utils.permissions import IsProjectDeveloper, IsProjectLeader
+from utils.permissions import IsProjectDeveloper, IsProjectManager
 from utils.response import error_response, success_response
 
 
@@ -57,13 +57,13 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
         queryset = WorkflowDefinition.objects.select_related("project", "created_by")
         if user.is_superuser:
             return queryset.all()
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
-        """写操作需项目负责人"""
+        """写操作需项目管理员（manager 成员角色）"""
         if self.action in ["update", "partial_update"]:
-            return [IsAuthenticated(), IsProjectLeader()]
+            return [IsAuthenticated(), IsProjectManager()]
         return super().get_permissions()
 
     def perform_create(self, serializer):
@@ -122,7 +122,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         queryset = WorkflowInstance.objects.select_related("definition", "created_by").prefetch_related("tasks")
         if user.is_superuser:
             return queryset.all()
-        project_ids = ProjectMember.objects.filter(user=user).values_list("project_id", flat=True)
+        project_ids = visible_project_ids(user)
         return queryset.filter(definition__project_id__in=project_ids)
 
     def get_permissions(self):
