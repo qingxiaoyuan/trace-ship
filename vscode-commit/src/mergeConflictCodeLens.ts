@@ -318,6 +318,13 @@ export class MergeConflictCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    const mode = vscode.workspace
+      .getConfiguration("commit")
+      .get<string>("conflictResolutionMode");
+    if (mode !== "inline") {
+      return [];
+    }
+
     const blocks = parseConflicts(document);
     if (blocks.length === 0) {
       return [];

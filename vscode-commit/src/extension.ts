@@ -22,7 +22,7 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // 注册合并冲突内联 CodeLens（Accept Current / Incoming / Both / Compare）
+  // 注册合并冲突内联 CodeLens（接受当前更改 / 接受传入的更改 / 接受两个更改 / 比较变更）
   const conflictProvider = new MergeConflictCodeLensProvider();
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
@@ -35,6 +35,15 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument(() => {
       conflictProvider.refresh();
+    }),
+  );
+
+  // 冲突解决模式变化时刷新 CodeLens，使已打开的编辑器立即响应
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("commit.conflictResolutionMode")) {
+        conflictProvider.refresh();
+      }
     }),
   );
 
@@ -61,6 +70,29 @@ export function activate(context: vscode.ExtensionContext) {
       await sidebarProvider.refreshDiff();
     })
   );
-}
 
-export function deactivate() {}
+  // 命令：切换冲突解决模式（inline / mergeEditor）
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "commit.toggleConflictResolutionMode",
+      async () => {
+        const cfg = vscode.workspace.getConfiguration("commit");
+        const current = cfg.get<string>("conflictResolutionMode");
+        const next = current === "mergeEditor" ? "inline" : "mergeEditor";
+
+        const inspect = cfg.inspect<string>("conflictResolutionMode");
+        let target = vscode.ConfigurationTarget.Global;
+        if (inspect?.workspaceFolderValue !== undefined) {
+          target = vscode.ConfigurationTarget.WorkspaceFolder;
+        } else if (inspect?.workspaceValue !== undefined) {
+          target = vscode.ConfigurationTarget.Workspace;
+        }
+
+        await cfg.update("conflictResolutionMode", next, target);
+        const label =
+          next === "inline" ? "内联 CodeLens" : "原生合并编辑器";
+        vscode.window.showInformationMessage(`已切换到 ${label} 模式`);
+      },
+    ),
+  );
+}

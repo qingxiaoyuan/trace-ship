@@ -160,8 +160,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 message.originalFilepath,
               );
               break;
+            case "openConflictFile":
+              await this.openConflictFile(message.filepath);
+              break;
             case "openMergeEditor":
-              await this.openMergeEditor(message.filepath);
+              await this.openNativeMergeEditor(message.filepath);
               break;
             case "resolveConflict":
               await this.resolveConflict(message.filepath, message.strategy);
@@ -182,7 +185,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               await this.discardFile(message.filepath, message.status);
               break;
             case "commit":
-              await this.commit(message.message, message.mode, message.repoRoot);
+              await this.commit(
+                message.message,
+                message.mode,
+                message.repoRoot,
+              );
               break;
             case "insertTemplate":
               this._insertTemplate(message.repoRoot);
@@ -484,7 +491,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     for (const repo of repos) {
       const rootPath = repo.rootUri.fsPath;
-      const workingChanges = (repo.state.workingTreeChanges || []) as GitChange[];
+      const workingChanges = (repo.state.workingTreeChanges ||
+        []) as GitChange[];
       const conflictChanges = this._getRepoConflicts(repo, Status);
       const conflictPaths = new Set(conflictChanges.map((c) => c.uri.fsPath));
 
@@ -772,13 +780,53 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    */
   private _isImageFile(filename: string): boolean {
     const imageExts = new Set([
-      "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "svg",
-      "tiff", "tif", "raw", "cr2", "nef", "heic", "heif",
-      "psd", "ai", "eps", "sketch", "fig", "xd",
-      "mp3", "mp4", "avi", "mov", "wmv", "flv", "mkv",
-      "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-      "zip", "rar", "7z", "tar", "gz", "bz2",
-      "exe", "dll", "so", "dylib", "bin", "dat",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "bmp",
+      "webp",
+      "ico",
+      "svg",
+      "tiff",
+      "tif",
+      "raw",
+      "cr2",
+      "nef",
+      "heic",
+      "heif",
+      "psd",
+      "ai",
+      "eps",
+      "sketch",
+      "fig",
+      "xd",
+      "mp3",
+      "mp4",
+      "avi",
+      "mov",
+      "wmv",
+      "flv",
+      "mkv",
+      "pdf",
+      "doc",
+      "docx",
+      "xls",
+      "xlsx",
+      "ppt",
+      "pptx",
+      "zip",
+      "rar",
+      "7z",
+      "tar",
+      "gz",
+      "bz2",
+      "exe",
+      "dll",
+      "so",
+      "dylib",
+      "bin",
+      "dat",
     ]);
     const ext = filename.split(".").pop()?.toLowerCase() || "";
     return imageExts.has(ext);
@@ -789,8 +837,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    */
   private _isPreviewableImageFile(filename: string): boolean {
     const imageExts = new Set([
-      "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "svg",
-      "tiff", "tif",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "bmp",
+      "webp",
+      "ico",
+      "svg",
+      "tiff",
+      "tif",
     ]);
     const ext = filename.split(".").pop()?.toLowerCase() || "";
     return imageExts.has(ext);
@@ -873,9 +929,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         if (relPath) {
           // 先用 git cat-file 检查该文件在指定 ref 中是否存在
           const escaped = relPath.replace(/"/g, '\\"');
-          await execAsync(`git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`, {
-            maxBuffer: 10 * 1024 * 1024,
-          });
+          await execAsync(
+            `git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`,
+            {
+              maxBuffer: 10 * 1024 * 1024,
+            },
+          );
         }
         await vscode.commands.executeCommand(
           "vscode.diff",
@@ -903,14 +962,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       try {
         const query = JSON.parse(gitUri.query || "{}");
         const absPath = query.path || gitUri.fsPath;
-        const relPath = path
-          .relative(rootPath, absPath)
-          .replace(/\\/g, "/");
+        const relPath = path.relative(rootPath, absPath).replace(/\\/g, "/");
         if (relPath) {
           const escaped = relPath.replace(/"/g, '\\"');
-          await execAsync(`git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`, {
-            maxBuffer: 10 * 1024 * 1024,
-          });
+          await execAsync(
+            `git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`,
+            {
+              maxBuffer: 10 * 1024 * 1024,
+            },
+          );
         }
         await vscode.commands.executeCommand("vscode.open", gitUri, {
           preview: true,
@@ -965,7 +1025,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     } catch (err: any) {
       console.error("[openFileInDiffView] 打开文件失败:", err);
       const rawMessage = err?.message || "";
-      const isBinaryTextError = /binary|cannot be opened as text/i.test(rawMessage);
+      const isBinaryTextError = /binary|cannot be opened as text/i.test(
+        rawMessage,
+      );
       const hint = isBinaryTextError
         ? `VS Code 把 ${filename} 当作文本文件打开失败。请检查：1) 该文件是否真的是有效图片；2) settings.json 中 workbench.editorAssociations 是否把 *.png 绑定到了文本编辑器。`
         : rawMessage || `无法打开文件 ${filename}`;
@@ -1015,7 +1077,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    * 打开冲突文件的合并编辑器（Source Control 同款入口）。
    * 优先走 Git 扩展的 openMergeEditor；老版本退化为 mergeEditor/openWith，最后直接打开文件。
    */
-  private async openMergeEditor(filepath: string) {
+  private async openNativeMergeEditor(filepath: string) {
     const uri = vscode.Uri.file(filepath);
     try {
       await vscode.commands.executeCommand("git.openMergeEditor", uri);
@@ -1024,12 +1086,35 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       // 继续尝试下一个入口
     }
     try {
-      await vscode.commands.executeCommand("vscode.openWith", uri, "mergeEditor");
+      await vscode.commands.executeCommand(
+        "vscode.openWith",
+        uri,
+        "mergeEditor",
+      );
       return;
     } catch {
       // 继续退化
     }
     await vscode.commands.executeCommand("vscode.open", uri, { preview: true });
+  }
+
+  /**
+   * 根据当前冲突解决模式打开冲突文件。
+   * inline 模式普通打开以显示标记与扩展 CodeLens；mergeEditor 模式打开原生合并编辑器。
+   */
+  private async openConflictFile(filepath: string) {
+    const mode = vscode.workspace
+      .getConfiguration("commit")
+      .get<string>("conflictResolutionMode");
+    if (mode === "mergeEditor") {
+      await this.openNativeMergeEditor(filepath);
+    } else {
+      await vscode.commands.executeCommand(
+        "vscode.open",
+        vscode.Uri.file(filepath),
+        { preview: true },
+      );
+    }
   }
 
   /**
@@ -1050,7 +1135,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const normalized = strategy === "ours" || strategy === "theirs" ? strategy : "manual";
+    const normalized =
+      strategy === "ours" || strategy === "theirs" ? strategy : "manual";
     if (normalized === "manual") {
       await repo.add([filepath]);
       await this._refreshChanges();
@@ -1060,13 +1146,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const root = repo.rootUri.fsPath;
     const rel = path.relative(root, filepath).replace(/\\/g, "/");
     const escapedRel = rel.replace(/"/g, '\\"');
-    await execAsync(`git -C "${root}" checkout --${normalized} -- "${escapedRel}"`);
+    await execAsync(
+      `git -C "${root}" checkout --${normalized} -- "${escapedRel}"`,
+    );
     await execAsync(`git -C "${root}" add -- "${escapedRel}"`);
     await this._refreshChanges();
     this._view?.webview.postMessage({
       command: "status",
       message:
-        normalized === "ours" ? "已采用当前更改并标记解决" : "已采用传入更改并标记解决",
+        normalized === "ours"
+          ? "已采用当前更改并标记解决"
+          : "已采用传入更改并标记解决",
       type: "success",
     });
   }
@@ -1237,8 +1327,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       );
       if (targetRepos.length === 0 && isPureSync) {
         // 纯同步：无本地变更，仅对有上游分支的仓库执行 pull/push
-        targetRepos = repos.filter(
-          (r: any) => Boolean(r?.state?.HEAD?.upstream),
+        targetRepos = repos.filter((r: any) =>
+          Boolean(r?.state?.HEAD?.upstream),
         );
         if (targetRepos.length === 0) {
           this._view?.webview.postMessage({
@@ -1254,9 +1344,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const stagedRepos: any[] = [];
         for (const repo of repos) {
           const paths = (repo.state.workingTreeChanges || [])
-            .filter(
-              (c: GitChange) => !this._isConflictStatus(c.status, Status),
-            )
+            .filter((c: GitChange) => !this._isConflictStatus(c.status, Status))
             .map((c: GitChange) => c.uri.fsPath);
           if (paths.length === 0) {
             continue;
@@ -1392,7 +1480,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       // 初始化中断控制器并通知前端生成已开始
       const controller = new AbortController();
       this._aiAbortControllers.set(targetRoot, controller);
-      this._view.webview.postMessage({ command: "generatingStarted", repoRoot: targetRoot });
+      this._view.webview.postMessage({
+        command: "generatingStarted",
+        repoRoot: targetRoot,
+      });
 
       await Promise.all(repos.map((r: any) => this._waitRepoStateReady(r)));
 
@@ -1407,7 +1498,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           command: "error",
           error: "存在未解决的合并冲突，请先解决冲突",
         });
-        this._view.webview.postMessage({ command: "generatingDone", repoRoot: targetRoot });
+        this._view.webview.postMessage({
+          command: "generatingDone",
+          repoRoot: targetRoot,
+        });
         return;
       }
 
@@ -1421,7 +1515,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           command: "error",
           error: "暂存区没有内容，请先将变更添加到暂存区",
         });
-        this._view.webview.postMessage({ command: "generatingDone", repoRoot: targetRoot });
+        this._view.webview.postMessage({
+          command: "generatingDone",
+          repoRoot: targetRoot,
+        });
         return;
       }
 
@@ -1440,7 +1537,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           command: "error",
           error: "暂存区没有内容，请先将变更添加到暂存区",
         });
-        this._view.webview.postMessage({ command: "generatingDone", repoRoot: targetRoot });
+        this._view.webview.postMessage({
+          command: "generatingDone",
+          repoRoot: targetRoot,
+        });
         return;
       }
 
@@ -1541,7 +1641,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           continue;
         }
         const prompt = this._buildFileSummaryPrompt(fileDiff);
-        const text = await this._callAi(apiEndpoint, apiKey, model, apiProtocol, prompt, signal);
+        const text = await this._callAi(
+          apiEndpoint,
+          apiKey,
+          model,
+          apiProtocol,
+          prompt,
+          signal,
+        );
         if (text) {
           summaries.push(text);
         }
@@ -2257,7 +2364,7 @@ ${joined}
       display: flex;
       align-items: center;
       gap: 5px;
-      padding: 6px 12px;
+      padding: 6px 12px 6px 2px;
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.5px;
@@ -2314,7 +2421,7 @@ ${joined}
       display: flex;
       align-items: center;
       gap: 5px;
-      padding: 4px 12px 2px 22px;
+      padding: 4px 12px 2px 27px;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.3px;
@@ -2325,8 +2432,8 @@ ${joined}
     }
 
     /* ===== 仓库内提交区（每个仓库独立的消息框与操作按钮） ===== */
-    .repo-commit-area { padding: 8px 12px 6px; }
-    .repo-message { min-height: 90px; max-height: 50vh; }
+    .repo-commit-area { padding: 8px 12px 22px; }
+    .repo-message { min-height: 240px; max-height: 70vh; }
 
     /* ===== 文件列表 ===== */
     .file-list { padding: 2px 0; }
@@ -2335,7 +2442,7 @@ ${joined}
       display: flex;
       align-items: center;
       height: 26px;
-      padding: 0 12px 0 4px;
+      padding: 0 12px 0 9px;
       cursor: pointer;
       position: relative;
       transition: background var(--dur) var(--ease);
@@ -2584,9 +2691,9 @@ ${joined}
         const conflictIcon = isConflict ? '<span class="file-image-icon" title="合并冲突">⚠</span>' : '';
         const imageIcon = file.isImage ? '<span class="file-image-icon" title="图片">🖼</span>' : '';
         const conflictActions = isConflict
-          ? '<button class="file-action-btn" title="打开合并编辑器" data-cmd="openMergeEditor">⇄</button>' +
-            '<button class="file-action-btn" title="采用当前更改（ours）" data-cmd="resolveConflict" data-strategy="ours">◀</button>' +
-            '<button class="file-action-btn" title="采用传入更改（theirs）" data-cmd="resolveConflict" data-strategy="theirs">▶</button>' +
+          ? '<button class="file-action-btn" title="在合并编辑器中打开" data-cmd="openMergeEditor">⇄</button>' +
+            '<button class="file-action-btn" title="采用当前更改" data-cmd="resolveConflict" data-strategy="ours">◀</button>' +
+            '<button class="file-action-btn" title="采用传入更改" data-cmd="resolveConflict" data-strategy="theirs">▶</button>' +
             '<button class="file-action-btn" title="标记为已解决（暂存）" data-cmd="resolveConflict" data-strategy="manual">✓</button>'
           : '<button class="file-action-btn" title="' + actionTitle + '" data-cmd="' + actionCommand + '"' + (isDeleted ? ' disabled' : '') + '>' + actionIcon + '</button>' +
             (isDeleted ? '' : '<button class="file-action-btn" title="放弃更改" data-cmd="discardFile">↺</button>');
@@ -2616,7 +2723,7 @@ ${joined}
         item.addEventListener('click', (e) => {
           if (e.target.closest('.file-actions')) return;
           if (file.isConflict) {
-            vscode.postMessage({ command: 'openMergeEditor', filepath, status: file.status });
+            vscode.postMessage({ command: 'openConflictFile', filepath, status: file.status });
             return;
           }
           vscode.postMessage({ command: 'openFile', filepath, status: file.status, originalFilepath });
@@ -2735,30 +2842,28 @@ ${joined}
         const stagedSectionHtml = stagedFiles.length > 0
           ? '<div class="sub-header">暂存的更改<span class="change-count">' + stagedFiles.length + '</span>' +
               '<span class="section-actions">' +
+                '<button class="section-action-btn" title="刷新" data-action="refreshDiff" type="button">↻</button>' +
                 '<button class="section-action-btn" title="全部取消暂存" data-action="unstageAll" type="button">−</button>' +
               '</span>' +
             '</div>' +
             '<div class="file-list staged-list"></div>'
           : '';
-        section.innerHTML =
-          '<div class="section-header repo-header">' +
-            '<span class="collapse-icon">▼</span>' +
-            (repoIcon ? '<span class="repo-icon" title="' + repoTitle + '">' + repoIcon + '</span>' : '') +
-            '<span class="repo-name">' + escapeHtml(g.repoName) + '</span>' +
-            '<span class="change-count">' + total + '</span>' +
-            '<span class="section-actions">' +
-              '<button class="section-action-btn" title="刷新" data-action="refreshDiff" type="button">↻</button>' +
-            '</span>' +
-          '</div>' +
-          '<div class="repo-body">' +
-            conflictSectionHtml +
-            stagedSectionHtml +
-            '<div class="sub-header">更改<span class="change-count">' + unstagedFiles.length + '</span>' +
+        // 单仓库时不显示仓库分组标题；多仓库时把标题放在 repo-body 外部，
+        // 避免折叠时标题被 .repo-body.collapsed 一起隐藏导致无法再次展开
+        const repoHeaderHtml = isMultiRepo
+          ? '<div class="section-header repo-header">' +
+              '<span class="collapse-icon">▼</span>' +
+              (repoIcon ? '<span class="repo-icon" title="' + repoTitle + '">' + repoIcon + '</span>' : '') +
+              '<span class="repo-name">' + escapeHtml(g.repoName) + '</span>' +
+              '<span class="change-count">' + total + '</span>' +
               '<span class="section-actions">' +
-                '<button class="section-action-btn" title="全部暂存" data-action="stageAll" type="button">+</button>' +
+                '<button class="section-action-btn" title="刷新" data-action="refreshDiff" type="button">↻</button>' +
               '</span>' +
-            '</div>' +
-            '<div class="file-list unstaged-list"></div>' +
+            '</div>'
+          : '';
+        section.innerHTML =
+          repoHeaderHtml +
+          '<div class="repo-body">' +
             '<div class="repo-commit-area">' +
               '<textarea class="message-textarea repo-message" spellcheck="false" placeholder="点击「AI 生成」自动填充，或点击「模板」手动填写规范 commit..." aria-label="提交信息"></textarea>' +
               '<div class="message-meta">' +
@@ -2784,6 +2889,14 @@ ${joined}
                 '</div>' +
               '</div>' +
             '</div>' +
+            conflictSectionHtml +
+            stagedSectionHtml +
+            '<div class="sub-header">更改<span class="change-count">' + unstagedFiles.length + '</span>' +
+              '<span class="section-actions">' +
+                '<button class="section-action-btn" title="全部暂存" data-action="stageAll" type="button">+</button>' +
+              '</span>' +
+            '</div>' +
+            '<div class="file-list unstaged-list"></div>' +
           '</div>';
         els.repoGroups.appendChild(section);
 
@@ -2826,7 +2939,7 @@ ${joined}
 
         function autoResizeTa() {
           ta.style.height = 'auto';
-          const h = Math.min(Math.max(ta.scrollHeight, 90), Math.round(window.innerHeight * 0.5));
+          const h = Math.min(Math.max(ta.scrollHeight, 140), Math.round(window.innerHeight * 0.5));
           ta.style.height = h + 'px';
         }
 
@@ -2834,7 +2947,7 @@ ${joined}
         ta.value = st.message;
         if (st.collapsed) {
           body.classList.add('collapsed');
-          icon.classList.add('collapsed');
+          if (icon) { icon.classList.add('collapsed'); }
         }
         if (st.generating) {
           btnGenerate.innerHTML = '⏹ 停止生成';
@@ -2842,13 +2955,15 @@ ${joined}
         refreshCommitUI();
         autoResizeTa();
 
-        // 仓库分组折叠
-        header.addEventListener('click', (e) => {
-          if (e.target.closest('.section-actions')) { return; }
-          st.collapsed = !st.collapsed;
-          body.classList.toggle('collapsed', st.collapsed);
-          icon.classList.toggle('collapsed', st.collapsed);
-        });
+        // 仓库分组折叠（仅多仓库显示分组标题时才可折叠）
+        if (header) {
+          header.addEventListener('click', (e) => {
+            if (e.target.closest('.section-actions')) { return; }
+            st.collapsed = !st.collapsed;
+            body.classList.toggle('collapsed', st.collapsed);
+            icon.classList.toggle('collapsed', st.collapsed);
+          });
+        }
 
         // 仓库级批量操作：暂存的更改区「全部取消暂存」、更改区「全部暂存」、组头「刷新」（只作用于该仓库）
         section.querySelectorAll('[data-action]').forEach(btn => {

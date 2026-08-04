@@ -74,6 +74,11 @@
         "command": "commit.compareChange",
         "title": "比较变更",
         "category": "合并冲突"
+      },
+      {
+        "command": "commit.toggleConflictResolutionMode",
+        "title": "切换冲突解决模式",
+        "category": "合并冲突"
       }
     ],
     "configuration": {
@@ -103,8 +108,21 @@
           "type": "string",
           "default": "deepseek-v4-flash",
           "markdownDescription": "使用的 AI 模型名称（如 `deepseek-v4-flash`、`kimi-k2`、`MiniMax-M3`、`gpt-4o-mini`、`deepseek-chat` 等）"
+        },
+        "commit.conflictResolutionMode": {
+          "type": "string",
+          "enum": ["inline", "mergeEditor"],
+          "default": "inline",
+          "markdownDescription": "合并冲突解决方式。`inline` 在文件中显示 CodeLens 快捷按钮；`mergeEditor` 使用 VS Code 原生三栏合并编辑器。",
+          "enumDescriptions": [
+            "内联 CodeLens 模式（默认）",
+            "原生合并编辑器模式"
+          ]
         }
       }
+    },
+    "configurationDefaults": {
+      "merge-conflict.codeLens.enabled": false
     }
   },
   "scripts": {
