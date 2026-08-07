@@ -49,6 +49,7 @@ interface RepoChange {
   isImage: boolean; // 是否为图片文件，用于在列表中显示图片图标
   originalFullPath?: string; // 重命名文件的原路径，打开 diff 时需要
   repoName: string; // 所属仓库名（多仓库场景用于分组展示）
+  isConflict?: boolean; // 是否为合并冲突文件（Source Control 风格单独分组）
 }
 
 /**
@@ -57,8 +58,13 @@ interface RepoChange {
 interface RepoGroup {
   repoName: string;
   repoRoot: string;
+  conflicts: RepoChange[];
   staged: RepoChange[];
   unstaged: RepoChange[];
+  ahead: number;
+  behind: number;
+  hasUpstream: boolean;
+  needsSync: boolean;
 }
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -154,6 +160,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 message.originalFilepath,
               );
               break;
+            case "openConflictFile":
+              await this.openConflictFile(message.filepath);
+              break;
+            case "openMergeEditor":
+              await this.openNativeMergeEditor(message.filepath);
+              break;
+            case "resolveConflict":
+              await this.resolveConflict(message.filepath, message.strategy);
+              break;
             case "stageFile":
               await this.stageFile(message.filepath);
               break;
@@ -170,7 +185,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               await this.discardFile(message.filepath, message.status);
               break;
             case "commit":
-              await this.commit(message.message, message.mode, message.repoRoot);
+              await this.commit(
+                message.message,
+                message.mode,
+                message.repoRoot,
+              );
               break;
             case "insertTemplate":
               this._insertTemplate(message.repoRoot);
@@ -193,7 +212,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 监听 Git 状态变化，自动刷新 Changes 列表
+   * 监听 Git 状态变化，自动刷新更改列表
    */
   private _watchGitStatus() {
     try {
@@ -266,7 +285,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 刷新 Changes 列表到 Webview
+   * 刷新更改列表到 Webview
    */
   private async _refreshChanges() {
     if (!this._view) {
@@ -317,7 +336,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           changes.groups
             .map(
               (g) =>
-                `${g.repoName}(暂存 ${g.staged.length}/未暂存 ${g.unstaged.length})`,
+                `${g.repoName}(冲突 ${g.conflicts.length}/暂存 ${g.staged.length}/未暂存 ${g.unstaged.length})`,
             )
             .join("，"),
       );
@@ -327,7 +346,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         additions: stats.additions,
         deletions: stats.deletions,
         aiContextChars: stats.aiContextChars,
-        files: changes.staged.length + changes.unstaged.length,
+        files:
+          changes.conflicts.length +
+          changes.staged.length +
+          changes.unstaged.length,
         changes,
       });
     } catch (err: any) {
@@ -383,12 +405,60 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private _getRepoSyncState(repo: any): {
+    ahead: number;
+    behind: number;
+    hasUpstream: boolean;
+    needsSync: boolean;
+  } {
+    const head = repo?.state?.HEAD;
+    const ahead = typeof head?.ahead === "number" ? head.ahead : 0;
+    const behind = typeof head?.behind === "number" ? head.behind : 0;
+    const hasUpstream = Boolean(head?.upstream);
+    return {
+      ahead,
+      behind,
+      hasUpstream,
+      needsSync: hasUpstream && behind > 0,
+    };
+  }
+
+  private _isConflictStatus(status: GitStatus, Status: any): boolean {
+    const conflictKeys = [
+      "UNMERGED",
+      "ADDED_BY_US",
+      "ADDED_BY_THEM",
+      "DELETED_BY_US",
+      "DELETED_BY_THEM",
+      "BOTH_ADDED",
+      "BOTH_DELETED",
+      "BOTH_MODIFIED",
+    ];
+    return conflictKeys.some(
+      (key) => typeof Status?.[key] === "number" && status === Status[key],
+    );
+  }
+
+  private _getRepoConflicts(repo: any, Status: any): GitChange[] {
+    const mergeChanges = Array.isArray(repo?.state?.mergeChanges)
+      ? (repo.state.mergeChanges as GitChange[])
+      : [];
+    if (mergeChanges.length > 0) {
+      return mergeChanges;
+    }
+    return ((repo?.state?.workingTreeChanges || []) as GitChange[]).filter(
+      (change) => this._isConflictStatus(change.status, Status),
+    );
+  }
+
   private _collectChanges(gitApi: any): {
+    conflicts: RepoChange[];
     staged: RepoChange[];
     unstaged: RepoChange[];
     groups: RepoGroup[];
   } {
     const repos: any[] = gitApi.repositories || [];
+    const conflicts: RepoChange[] = [];
     const staged: RepoChange[] = [];
     const unstaged: RepoChange[] = [];
     const groups: RepoGroup[] = [];
@@ -398,6 +468,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       change: GitChange,
       repoRoot: string,
       isStaged: boolean,
+      isConflict: boolean = false,
     ): RepoChange => {
       const fullPath = change.uri.fsPath;
       const rel = path.relative(repoRoot, fullPath);
@@ -414,36 +485,62 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         isImage: this._isPreviewableImageFile(filename),
         originalFullPath: change.originalUri?.fsPath,
         repoName: path.basename(repoRoot),
+        isConflict,
       };
     };
 
     for (const repo of repos) {
       const rootPath = repo.rootUri.fsPath;
+      const workingChanges = (repo.state.workingTreeChanges ||
+        []) as GitChange[];
+      const conflictChanges = this._getRepoConflicts(repo, Status);
+      const conflictPaths = new Set(conflictChanges.map((c) => c.uri.fsPath));
+
+      const repoConflicts: RepoChange[] = conflictChanges.map((c) =>
+        map(c, rootPath, false, true),
+      );
       const repoStaged: RepoChange[] = (
         (repo.state.indexChanges || []) as GitChange[]
       ).map((c) => map(c, rootPath, true));
-      const repoUnstaged: RepoChange[] = (
-        (repo.state.workingTreeChanges || []) as GitChange[]
-      ).map((c) => map(c, rootPath, false));
+      const repoUnstaged: RepoChange[] = workingChanges
+        .filter(
+          (c) =>
+            !this._isConflictStatus(c.status, Status) &&
+            !conflictPaths.has(c.uri.fsPath),
+        )
+        .map((c) => map(c, rootPath, false));
+
+      repoConflicts.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
       repoStaged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
       repoUnstaged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
+      conflicts.push(...repoConflicts);
       staged.push(...repoStaged);
       unstaged.push(...repoUnstaged);
+      const syncState = this._getRepoSyncState(repo);
       groups.push({
         repoName: path.basename(rootPath),
         repoRoot: rootPath,
+        conflicts: repoConflicts,
         staged: repoStaged,
         unstaged: repoUnstaged,
+        ahead: syncState.ahead,
+        behind: syncState.behind,
+        hasUpstream: syncState.hasUpstream,
+        needsSync: syncState.needsSync,
       });
     }
 
+    conflicts.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
     staged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
     unstaged.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
     groups.sort((a, b) => a.repoRoot.localeCompare(b.repoRoot));
-    return { staged, unstaged, groups };
+    return { conflicts, staged, unstaged, groups };
   }
 
   private _statusToLetter(status: GitStatus, Status: any): string {
+    if (this._isConflictStatus(status, Status)) {
+      return "!";
+    }
     switch (status) {
       case Status.INDEX_MODIFIED:
       case Status.MODIFIED:
@@ -474,6 +571,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _statusToColor(status: GitStatus, Status: any): string {
+    if (this._isConflictStatus(status, Status)) {
+      return "var(--vscode-gitDecoration-conflictingResourceForeground, #e2a05c)";
+    }
     switch (status) {
       case Status.INDEX_MODIFIED:
       case Status.MODIFIED:
@@ -680,13 +780,53 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    */
   private _isImageFile(filename: string): boolean {
     const imageExts = new Set([
-      "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "svg",
-      "tiff", "tif", "raw", "cr2", "nef", "heic", "heif",
-      "psd", "ai", "eps", "sketch", "fig", "xd",
-      "mp3", "mp4", "avi", "mov", "wmv", "flv", "mkv",
-      "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-      "zip", "rar", "7z", "tar", "gz", "bz2",
-      "exe", "dll", "so", "dylib", "bin", "dat",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "bmp",
+      "webp",
+      "ico",
+      "svg",
+      "tiff",
+      "tif",
+      "raw",
+      "cr2",
+      "nef",
+      "heic",
+      "heif",
+      "psd",
+      "ai",
+      "eps",
+      "sketch",
+      "fig",
+      "xd",
+      "mp3",
+      "mp4",
+      "avi",
+      "mov",
+      "wmv",
+      "flv",
+      "mkv",
+      "pdf",
+      "doc",
+      "docx",
+      "xls",
+      "xlsx",
+      "ppt",
+      "pptx",
+      "zip",
+      "rar",
+      "7z",
+      "tar",
+      "gz",
+      "bz2",
+      "exe",
+      "dll",
+      "so",
+      "dylib",
+      "bin",
+      "dat",
     ]);
     const ext = filename.split(".").pop()?.toLowerCase() || "";
     return imageExts.has(ext);
@@ -697,8 +837,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    */
   private _isPreviewableImageFile(filename: string): boolean {
     const imageExts = new Set([
-      "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "svg",
-      "tiff", "tif",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "bmp",
+      "webp",
+      "ico",
+      "svg",
+      "tiff",
+      "tif",
     ]);
     const ext = filename.split(".").pop()?.toLowerCase() || "";
     return imageExts.has(ext);
@@ -781,9 +929,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         if (relPath) {
           // 先用 git cat-file 检查该文件在指定 ref 中是否存在
           const escaped = relPath.replace(/"/g, '\\"');
-          await execAsync(`git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`, {
-            maxBuffer: 10 * 1024 * 1024,
-          });
+          await execAsync(
+            `git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`,
+            {
+              maxBuffer: 10 * 1024 * 1024,
+            },
+          );
         }
         await vscode.commands.executeCommand(
           "vscode.diff",
@@ -811,14 +962,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       try {
         const query = JSON.parse(gitUri.query || "{}");
         const absPath = query.path || gitUri.fsPath;
-        const relPath = path
-          .relative(rootPath, absPath)
-          .replace(/\\/g, "/");
+        const relPath = path.relative(rootPath, absPath).replace(/\\/g, "/");
         if (relPath) {
           const escaped = relPath.replace(/"/g, '\\"');
-          await execAsync(`git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`, {
-            maxBuffer: 10 * 1024 * 1024,
-          });
+          await execAsync(
+            `git -C "${rootPath}" cat-file -e HEAD:"${escaped}"`,
+            {
+              maxBuffer: 10 * 1024 * 1024,
+            },
+          );
         }
         await vscode.commands.executeCommand("vscode.open", gitUri, {
           preview: true,
@@ -873,7 +1025,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     } catch (err: any) {
       console.error("[openFileInDiffView] 打开文件失败:", err);
       const rawMessage = err?.message || "";
-      const isBinaryTextError = /binary|cannot be opened as text/i.test(rawMessage);
+      const isBinaryTextError = /binary|cannot be opened as text/i.test(
+        rawMessage,
+      );
       const hint = isBinaryTextError
         ? `VS Code 把 ${filename} 当作文本文件打开失败。请检查：1) 该文件是否真的是有效图片；2) settings.json 中 workbench.editorAssociations 是否把 *.png 绑定到了文本编辑器。`
         : rawMessage || `无法打开文件 ${filename}`;
@@ -920,6 +1074,94 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 打开冲突文件的合并编辑器（Source Control 同款入口）。
+   * 优先走 Git 扩展的 openMergeEditor；老版本退化为 mergeEditor/openWith，最后直接打开文件。
+   */
+  private async openNativeMergeEditor(filepath: string) {
+    const uri = vscode.Uri.file(filepath);
+    try {
+      await vscode.commands.executeCommand("git.openMergeEditor", uri);
+      return;
+    } catch {
+      // 继续尝试下一个入口
+    }
+    try {
+      await vscode.commands.executeCommand(
+        "vscode.openWith",
+        uri,
+        "mergeEditor",
+      );
+      return;
+    } catch {
+      // 继续退化
+    }
+    await vscode.commands.executeCommand("vscode.open", uri, { preview: true });
+  }
+
+  /**
+   * 根据当前冲突解决模式打开冲突文件。
+   * inline 模式普通打开以显示标记与扩展 CodeLens；mergeEditor 模式打开原生合并编辑器。
+   */
+  private async openConflictFile(filepath: string) {
+    const mode = vscode.workspace
+      .getConfiguration("commit")
+      .get<string>("conflictResolutionMode");
+    if (mode === "mergeEditor") {
+      await this.openNativeMergeEditor(filepath);
+    } else {
+      await vscode.commands.executeCommand(
+        "vscode.open",
+        vscode.Uri.file(filepath),
+        { preview: true },
+      );
+    }
+  }
+
+  /**
+   * 冲突解决：manual 表示用户已在编辑器中处理完，直接暂存标记解决；
+   * ours/theirs 对应 Source Control 的“采用当前更改/采用传入更改”。
+   */
+  private async resolveConflict(
+    filepath: string,
+    strategy?: "ours" | "theirs" | "manual",
+  ) {
+    const gitApi = await this._getGitApi().catch(() => null);
+    const repo = gitApi ? this._findRepoForPath(gitApi, filepath) : null;
+    if (!repo) {
+      this._view?.webview.postMessage({
+        command: "error",
+        error: "未找到冲突文件所属的 Git 仓库",
+      });
+      return;
+    }
+
+    const normalized =
+      strategy === "ours" || strategy === "theirs" ? strategy : "manual";
+    if (normalized === "manual") {
+      await repo.add([filepath]);
+      await this._refreshChanges();
+      return;
+    }
+
+    const root = repo.rootUri.fsPath;
+    const rel = path.relative(root, filepath).replace(/\\/g, "/");
+    const escapedRel = rel.replace(/"/g, '\\"');
+    await execAsync(
+      `git -C "${root}" checkout --${normalized} -- "${escapedRel}"`,
+    );
+    await execAsync(`git -C "${root}" add -- "${escapedRel}"`);
+    await this._refreshChanges();
+    this._view?.webview.postMessage({
+      command: "status",
+      message:
+        normalized === "ours"
+          ? "已采用当前更改并标记解决"
+          : "已采用传入更改并标记解决",
+      type: "success",
+    });
+  }
+
+  /**
    * 暂存所有未暂存文件（遍历所有仓库：主仓库 + 子仓库）
    * 传入 repoRoot 时只暂存该仓库的变更（多仓库分组界面中按仓库操作）
    */
@@ -935,7 +1177,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const Status = this._getStatusEnum(gitApi);
     for (const repo of repos) {
       const paths = (repo.state.workingTreeChanges || [])
-        .filter((c: GitChange) => c.status !== Status.UNMERGED)
+        .filter((c: GitChange) => !this._isConflictStatus(c.status, Status))
         .map((c: GitChange) => c.uri.fsPath);
       if (paths.length === 0) {
         continue;
@@ -1013,14 +1255,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     mode: "commit" | "push" | "sync",
     repoRoot?: string,
   ) {
-    if (!message.trim()) {
-      this._view?.webview.postMessage({
-        command: "error",
-        error: "请输入提交信息",
-      });
-      return;
-    }
-
     let gitApi: any;
     try {
       gitApi = await this._getGitApi();
@@ -1060,19 +1294,58 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         ),
       );
 
+      const Status = this._getStatusEnum(gitApi);
+      const conflictRepos = repos.filter(
+        (r: any) => this._getRepoConflicts(r, Status).length > 0,
+      );
+      if (conflictRepos.length > 0) {
+        this._view?.webview.postMessage({
+          command: "error",
+          error: "存在未解决的合并冲突，请先在“冲突”分组中解决后再提交",
+        });
+        return;
+      }
+
+      // 判断是否为纯同步：sync 模式且无本地变更时无需提交信息；有本地变更则必须先提交
+      const hasLocalChanges = repos.some(
+        (r: any) =>
+          (r.state.indexChanges?.length ?? 0) > 0 ||
+          (r.state.workingTreeChanges?.length ?? 0) > 0,
+      );
+      const isPureSync = mode === "sync" && !hasLocalChanges;
+      if (!isPureSync && !message.trim()) {
+        this._view?.webview.postMessage({
+          command: "error",
+          error: "请输入提交信息",
+        });
+        return;
+      }
+
       // 多仓库（主仓库 + 子仓库）场景：对所有有暂存内容的仓库分别提交
       let targetRepos = repos.filter(
         (r: any) => (r.state.indexChanges?.length ?? 0) > 0,
       );
-      if (targetRepos.length === 0) {
+      if (targetRepos.length === 0 && isPureSync) {
+        // 纯同步：无本地变更，仅对有上游分支的仓库执行 pull/push
+        targetRepos = repos.filter((r: any) =>
+          Boolean(r?.state?.HEAD?.upstream),
+        );
+        if (targetRepos.length === 0) {
+          this._view?.webview.postMessage({
+            command: "error",
+            error: "没有可同步的仓库",
+          });
+          return;
+        }
+      } else if (targetRepos.length === 0) {
         // 没有任何仓库暂存内容：把所有仓库的工作区变更全部暂存后提交
         // 注意：repo.add() 后 state.indexChanges 依赖文件事件异步刷新，
         // 不能立刻用 state 判断，这里显式记录成功暂存的仓库
         const stagedRepos: any[] = [];
         for (const repo of repos) {
-          const paths = (repo.state.workingTreeChanges || []).map(
-            (c: GitChange) => c.uri.fsPath,
-          );
+          const paths = (repo.state.workingTreeChanges || [])
+            .filter((c: GitChange) => !this._isConflictStatus(c.status, Status))
+            .map((c: GitChange) => c.uri.fsPath);
           if (paths.length === 0) {
             continue;
           }
@@ -1089,20 +1362,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         targetRepos = stagedRepos;
       }
 
-      // 逐仓库提交（同一提交信息应用到每个有变更的仓库）
-      for (const repo of targetRepos) {
-        await repo.commit(message);
+      // 远端落后时自动切换为同步流程，避免提交/推送被远端拒绝
+      let effectiveMode: "commit" | "push" | "sync" = mode;
+      const needsSyncRepos = targetRepos.filter(
+        (r: any) => this._getRepoSyncState(r).needsSync,
+      );
+      if (
+        (effectiveMode === "commit" || effectiveMode === "push") &&
+        needsSyncRepos.length > 0
+      ) {
+        effectiveMode = "sync";
+        this._view?.webview.postMessage({
+          command: "status",
+          message: "检测到远端有需要同步的提交，已切换为同步提交",
+          type: "info",
+        });
       }
-      this._view?.webview.postMessage({
-        command: "status",
-        message:
-          targetRepos.length > 1
-            ? `提交成功（${targetRepos.length} 个仓库）`
-            : "提交成功",
-        type: "success",
-      });
 
-      if (mode === "push") {
+      // 逐仓库提交（同一提交信息应用到每个有变更的仓库）；纯同步无本地变更时不提交
+      if (!isPureSync) {
+        for (const repo of targetRepos) {
+          await repo.commit(message);
+        }
+        this._view?.webview.postMessage({
+          command: "status",
+          message:
+            targetRepos.length > 1
+              ? `提交成功（${targetRepos.length} 个仓库）`
+              : "提交成功",
+          type: "success",
+        });
+      }
+
+      if (effectiveMode === "push") {
         for (const repo of targetRepos) {
           await repo.push();
         }
@@ -1111,7 +1403,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           message: "已提交并推送",
           type: "success",
         });
-      } else if (mode === "sync") {
+      } else if (effectiveMode === "sync") {
         for (const repo of targetRepos) {
           await repo.pull();
           await repo.push();
@@ -1188,9 +1480,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       // 初始化中断控制器并通知前端生成已开始
       const controller = new AbortController();
       this._aiAbortControllers.set(targetRoot, controller);
-      this._view.webview.postMessage({ command: "generatingStarted", repoRoot: targetRoot });
+      this._view.webview.postMessage({
+        command: "generatingStarted",
+        repoRoot: targetRoot,
+      });
 
       await Promise.all(repos.map((r: any) => this._waitRepoStateReady(r)));
+
+      // 冲突未解决时不进入 AI 生成，避免把冲突标记/中间态带进提交信息
+      const Status = this._getStatusEnum(gitApi);
+      const conflictCount = repos.reduce(
+        (sum, repo) => sum + this._getRepoConflicts(repo, Status).length,
+        0,
+      );
+      if (conflictCount > 0) {
+        this._view.webview.postMessage({
+          command: "error",
+          error: "存在未解决的合并冲突，请先解决冲突",
+        });
+        this._view.webview.postMessage({
+          command: "generatingDone",
+          repoRoot: targetRoot,
+        });
+        return;
+      }
 
       // 校验：必须至少有一个仓库的暂存区有内容
       const stagedCount = repos.reduce(
@@ -1202,7 +1515,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           command: "error",
           error: "暂存区没有内容，请先将变更添加到暂存区",
         });
-        this._view.webview.postMessage({ command: "generatingDone", repoRoot: targetRoot });
+        this._view.webview.postMessage({
+          command: "generatingDone",
+          repoRoot: targetRoot,
+        });
         return;
       }
 
@@ -1221,7 +1537,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           command: "error",
           error: "暂存区没有内容，请先将变更添加到暂存区",
         });
-        this._view.webview.postMessage({ command: "generatingDone", repoRoot: targetRoot });
+        this._view.webview.postMessage({
+          command: "generatingDone",
+          repoRoot: targetRoot,
+        });
         return;
       }
 
@@ -1232,7 +1551,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         command: "diffStats",
         additions: stats.additions,
         deletions: stats.deletions,
-        files: changes.staged.length + changes.unstaged.length,
+        files:
+          changes.conflicts.length +
+          changes.staged.length +
+          changes.unstaged.length,
         changes,
       });
 
@@ -1319,7 +1641,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           continue;
         }
         const prompt = this._buildFileSummaryPrompt(fileDiff);
-        const text = await this._callAi(apiEndpoint, apiKey, model, apiProtocol, prompt, signal);
+        const text = await this._callAi(
+          apiEndpoint,
+          apiKey,
+          model,
+          apiProtocol,
+          prompt,
+          signal,
+        );
         if (text) {
           summaries.push(text);
         }
@@ -2030,12 +2359,12 @@ ${joined}
     }
     .stat-chip.ctx.danger .num { color: var(--vscode-editorError-foreground, #f14c4c); }
 
-    /* ===== Changes 区 ===== */
+    /* ===== 更改区 ===== */
     .section-header {
       display: flex;
       align-items: center;
       gap: 5px;
-      padding: 6px 12px;
+      padding: 6px 12px 6px 2px;
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.5px;
@@ -2092,16 +2421,19 @@ ${joined}
       display: flex;
       align-items: center;
       gap: 5px;
-      padding: 4px 12px 2px 22px;
+      padding: 4px 12px 2px 27px;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.3px;
       color: var(--vscode-descriptionForeground);
     }
+    .sub-header.conflict-header {
+      color: var(--vscode-gitDecoration-conflictingResourceForeground, #e2a05c);
+    }
 
     /* ===== 仓库内提交区（每个仓库独立的消息框与操作按钮） ===== */
-    .repo-commit-area { padding: 8px 12px 6px; }
-    .repo-message { min-height: 90px; max-height: 50vh; }
+    .repo-commit-area { padding: 8px 12px 22px; }
+    .repo-message { min-height: 240px; max-height: 70vh; }
 
     /* ===== 文件列表 ===== */
     .file-list { padding: 2px 0; }
@@ -2110,7 +2442,7 @@ ${joined}
       display: flex;
       align-items: center;
       height: 26px;
-      padding: 0 12px 0 4px;
+      padding: 0 12px 0 9px;
       cursor: pointer;
       position: relative;
       transition: background var(--dur) var(--ease);
@@ -2121,6 +2453,12 @@ ${joined}
       text-decoration: line-through;
       opacity: 0.55;
       color: var(--vscode-descriptionForeground);
+    }
+    .file-item.conflict {
+      background: var(--vscode-mergeEditor-conflict-input1-background, rgba(226,160,92,0.08));
+    }
+    .file-item.conflict:hover {
+      background: var(--vscode-list-hoverBackground);
     }
     .file-status {
       width: 16px;
@@ -2343,26 +2681,35 @@ ${joined}
 
       const html = files.map((file, index) => {
         const statusColor = file.statusColor || 'var(--vscode-foreground)';
+        const isConflict = Boolean(file.isConflict);
         const isStaged = file.isStaged;
         const actionIcon = isStaged ? '−' : '+';
         const actionTitle = isStaged ? '取消暂存' : '暂存';
         const actionCommand = isStaged ? 'unstageFile' : 'stageFile';
 
-        const isDeleted = file.statusLetter === 'D';
+        const isDeleted = !isConflict && file.statusLetter === 'D';
+        const conflictIcon = isConflict ? '<span class="file-image-icon" title="合并冲突">⚠</span>' : '';
         const imageIcon = file.isImage ? '<span class="file-image-icon" title="图片">🖼</span>' : '';
+        const conflictActions = isConflict
+          ? '<button class="file-action-btn" title="在合并编辑器中打开" data-cmd="openMergeEditor">⇄</button>' +
+            '<button class="file-action-btn" title="采用当前更改" data-cmd="resolveConflict" data-strategy="ours">◀</button>' +
+            '<button class="file-action-btn" title="采用传入更改" data-cmd="resolveConflict" data-strategy="theirs">▶</button>' +
+            '<button class="file-action-btn" title="标记为已解决（暂存）" data-cmd="resolveConflict" data-strategy="manual">✓</button>'
+          : '<button class="file-action-btn" title="' + actionTitle + '" data-cmd="' + actionCommand + '"' + (isDeleted ? ' disabled' : '') + '>' + actionIcon + '</button>' +
+            (isDeleted ? '' : '<button class="file-action-btn" title="放弃更改" data-cmd="discardFile">↺</button>');
 
-        return '<div class="file-item' + (isDeleted ? ' deleted' : '') + '" data-index="' + index + '" data-path="' + escapeHtml(file.fullPath) + '"' +
+        return '<div class="file-item' + (isDeleted ? ' deleted' : '') + (isConflict ? ' conflict' : '') + '" data-index="' + index + '" data-path="' + escapeHtml(file.fullPath) + '"' +
           (file.originalFullPath ? ' data-original-path="' + escapeHtml(file.originalFullPath) + '"' : '') +
           '>' +
           '<div class="file-status" style="color:' + statusColor + '">' + file.statusLetter + '</div>' +
           '<div class="file-info">' +
+            conflictIcon +
             imageIcon +
             '<span class="file-name">' + escapeHtml(file.filename) + '</span>' +
             (file.dir ? '<span class="file-dir">' + escapeHtml(file.dir) + '</span>' : '') +
           '</div>' +
           '<div class="file-actions">' +
-            '<button class="file-action-btn" title="' + actionTitle + '" data-cmd="' + actionCommand + '"' + (isDeleted ? ' disabled' : '') + '>' + actionIcon + '</button>' +
-            (isDeleted ? '' : '<button class="file-action-btn" title="放弃更改" data-cmd="discardFile">↺</button>') +
+            conflictActions +
           '</div>' +
         '</div>';
       }).join('');
@@ -2375,6 +2722,10 @@ ${joined}
         const file = files[item.dataset.index];
         item.addEventListener('click', (e) => {
           if (e.target.closest('.file-actions')) return;
+          if (file.isConflict) {
+            vscode.postMessage({ command: 'openConflictFile', filepath, status: file.status });
+            return;
+          }
           vscode.postMessage({ command: 'openFile', filepath, status: file.status, originalFilepath });
         });
       });
@@ -2385,18 +2736,19 @@ ${joined}
           const item = btn.closest('.file-item');
           const filepath = item.dataset.path;
           const file = files[item.dataset.index];
-          vscode.postMessage({ command: btn.dataset.cmd, filepath, status: file.status });
+          vscode.postMessage({ command: btn.dataset.cmd, filepath, status: file.status, strategy: btn.dataset.strategy });
         });
       });
     }
 
-    // 渲染变更列表（按仓库分组：多仓库/子模块场景每个仓库一组，各自带 Staged/Changes 与操作按钮）
+    // 渲染变更列表（按仓库分组：多仓库/子模块场景每个仓库一组，各自带暂存的更改/更改与操作按钮）
     function renderChanges(payload) {
-      const changes = payload.changes || { staged: [], unstaged: [] };
+      const changes = payload.changes || { conflicts: [], staged: [], unstaged: [] };
       const groups = payload.groups || changes.groups || [];
+      const conflicts = changes.conflicts || [];
       const staged = changes.staged || [];
       const unstaged = changes.unstaged || [];
-      const totalFiles = staged.length + unstaged.length;
+      const totalFiles = conflicts.length + staged.length + unstaged.length;
 
       els.statFiles.textContent = totalFiles;
       els.statAdd.textContent = '+' + (payload.additions || 0);
@@ -2422,7 +2774,7 @@ ${joined}
       renderRepoGroups(groups);
     }
 
-    // 按仓库分组渲染：每个仓库一张卡片，包含独立的 Staged/Changes 列表、消息框、AI 生成与提交按钮
+    // 按仓库分组渲染：每个仓库一张卡片，包含独立的暂存的更改/更改列表、消息框、AI 生成与提交按钮
     function renderRepoGroups(groups) {
       // 保存当前滚动位置，重渲染后恢复，避免列表闪烁/跳动
       const savedScrollTop = els.repoGroups.scrollTop;
@@ -2454,44 +2806,64 @@ ${joined}
         : null;
 
       groups.forEach((g) => {
+        const conflictFiles = g.conflicts || [];
         const stagedFiles = g.staged || [];
         const unstagedFiles = g.unstaged || [];
-        const total = stagedFiles.length + unstagedFiles.length;
+        const total = conflictFiles.length + stagedFiles.length + unstagedFiles.length;
         const st = getRepoState(g.repoRoot);
         const isMainRepo = g.repoRoot === mainRepoRoot;
         const repoIcon = isMultiRepo ? (isMainRepo ? '🏠' : '📁') : '';
         const repoTitle = isMultiRepo ? (isMainRepo ? '主仓库' : '子仓库') : '';
+        const behindCount = typeof g.behind === 'number' ? g.behind : 0;
+        const needsSync = Boolean(g.needsSync) || behindCount > 0;
+        const hasLocalChanges = stagedFiles.length + unstagedFiles.length > 0;
+        const isPureSync = needsSync && !hasLocalChanges;
+        const mainCommitMode = needsSync ? 'sync' : 'commit';
+        const mainCommitText = isPureSync
+          ? '⇅ 同步'
+          : needsSync
+            ? '⇅ Commit & Sync'
+            : '✓ Commit';
+        const mainCommitTitle = isPureSync
+          ? '远端有 ' + behindCount + ' 个提交需要同步'
+          : needsSync
+            ? '远端有 ' + behindCount + ' 个提交需要同步，提交后同步'
+            : '提交';
 
         const section = document.createElement('section');
         section.className = 'changes-section repo-group';
         section.dataset.repoRoot = g.repoRoot;
-        // 暂存区为空时不显示 Staged Changes 区域，避免无效空区块占位
+        // Source Control 风格：合并冲突单独置顶分组，解决前不允许提交
+        const conflictSectionHtml = conflictFiles.length > 0
+          ? '<div class="sub-header conflict-header">冲突<span class="change-count">' + conflictFiles.length + '</span></div>' +
+            '<div class="file-list conflict-list"></div>'
+          : '';
+        // 暂存区为空时不显示“暂存的更改”区域，避免无效空区块占位
         const stagedSectionHtml = stagedFiles.length > 0
-          ? '<div class="sub-header">Staged Changes<span class="change-count">' + stagedFiles.length + '</span>' +
+          ? '<div class="sub-header">暂存的更改<span class="change-count">' + stagedFiles.length + '</span>' +
               '<span class="section-actions">' +
+                '<button class="section-action-btn" title="刷新" data-action="refreshDiff" type="button">↻</button>' +
                 '<button class="section-action-btn" title="全部取消暂存" data-action="unstageAll" type="button">−</button>' +
               '</span>' +
             '</div>' +
             '<div class="file-list staged-list"></div>'
           : '';
-        section.innerHTML =
-          '<div class="section-header repo-header">' +
-            '<span class="collapse-icon">▼</span>' +
-            (repoIcon ? '<span class="repo-icon" title="' + repoTitle + '">' + repoIcon + '</span>' : '') +
-            '<span class="repo-name">' + escapeHtml(g.repoName) + '</span>' +
-            '<span class="change-count">' + total + '</span>' +
-            '<span class="section-actions">' +
-              '<button class="section-action-btn" title="刷新" data-action="refreshDiff" type="button">↻</button>' +
-            '</span>' +
-          '</div>' +
-          '<div class="repo-body">' +
-            stagedSectionHtml +
-            '<div class="sub-header">Changes<span class="change-count">' + unstagedFiles.length + '</span>' +
+        // 单仓库时不显示仓库分组标题；多仓库时把标题放在 repo-body 外部，
+        // 避免折叠时标题被 .repo-body.collapsed 一起隐藏导致无法再次展开
+        const repoHeaderHtml = isMultiRepo
+          ? '<div class="section-header repo-header">' +
+              '<span class="collapse-icon">▼</span>' +
+              (repoIcon ? '<span class="repo-icon" title="' + repoTitle + '">' + repoIcon + '</span>' : '') +
+              '<span class="repo-name">' + escapeHtml(g.repoName) + '</span>' +
+              '<span class="change-count">' + total + '</span>' +
               '<span class="section-actions">' +
-                '<button class="section-action-btn" title="全部暂存" data-action="stageAll" type="button">+</button>' +
+                '<button class="section-action-btn" title="刷新" data-action="refreshDiff" type="button">↻</button>' +
               '</span>' +
-            '</div>' +
-            '<div class="file-list unstaged-list"></div>' +
+            '</div>'
+          : '';
+        section.innerHTML =
+          repoHeaderHtml +
+          '<div class="repo-body">' +
             '<div class="repo-commit-area">' +
               '<textarea class="message-textarea repo-message" spellcheck="false" placeholder="点击「AI 生成」自动填充，或点击「模板」手动填写规范 commit..." aria-label="提交信息"></textarea>' +
               '<div class="message-meta">' +
@@ -2507,7 +2879,7 @@ ${joined}
               '</div>' +
               '<div class="commit-actions">' +
                 '<div class="commit-btn-group disabled">' +
-                  '<button class="btn-commit-main" type="button" disabled>✓ Commit</button>' +
+                  '<button class="btn-commit-main" type="button" data-mode="' + mainCommitMode + '" title="' + escapeHtml(mainCommitTitle) + '" disabled>' + mainCommitText + '</button>' +
                   '<button class="btn-commit-dropdown" type="button" aria-label="更多提交选项">▼</button>' +
                 '</div>' +
                 '<div class="dropdown commit-dropdown">' +
@@ -2517,9 +2889,20 @@ ${joined}
                 '</div>' +
               '</div>' +
             '</div>' +
+            conflictSectionHtml +
+            stagedSectionHtml +
+            '<div class="sub-header">更改<span class="change-count">' + unstagedFiles.length + '</span>' +
+              '<span class="section-actions">' +
+                '<button class="section-action-btn" title="全部暂存" data-action="stageAll" type="button">+</button>' +
+              '</span>' +
+            '</div>' +
+            '<div class="file-list unstaged-list"></div>' +
           '</div>';
         els.repoGroups.appendChild(section);
 
+        if (conflictFiles.length > 0) {
+          renderFileList(section.querySelector('.conflict-list'), conflictFiles, '暂无冲突');
+        }
         if (stagedFiles.length > 0) {
           renderFileList(section.querySelector('.staged-list'), stagedFiles, '暂无已暂存变更');
         }
@@ -2538,15 +2921,25 @@ ${joined}
 
         function refreshCommitUI() {
           const hasText = ta.value.trim().length > 0;
-          btnCommitMain.disabled = !hasText;
-          btnDropdown.disabled = !hasText;
-          commitGroup.classList.toggle('disabled', !hasText);
+          const hasConflict = conflictFiles.length > 0;
+          const canCommit = !hasConflict && (hasText || isPureSync);
+          btnCommitMain.disabled = !canCommit;
+          btnCommitMain.dataset.mode = mainCommitMode;
+          if (hasConflict) {
+            btnCommitMain.textContent = '⚠ 解决冲突';
+            btnCommitMain.title = '存在未解决的合并冲突，请先在“冲突”分组中处理';
+          } else {
+            btnCommitMain.textContent = mainCommitText;
+            btnCommitMain.title = mainCommitTitle;
+          }
+          btnDropdown.disabled = !canCommit;
+          commitGroup.classList.toggle('disabled', !canCommit);
           charCount.textContent = ta.value.length;
         }
 
         function autoResizeTa() {
           ta.style.height = 'auto';
-          const h = Math.min(Math.max(ta.scrollHeight, 90), Math.round(window.innerHeight * 0.5));
+          const h = Math.min(Math.max(ta.scrollHeight, 140), Math.round(window.innerHeight * 0.5));
           ta.style.height = h + 'px';
         }
 
@@ -2554,7 +2947,7 @@ ${joined}
         ta.value = st.message;
         if (st.collapsed) {
           body.classList.add('collapsed');
-          icon.classList.add('collapsed');
+          if (icon) { icon.classList.add('collapsed'); }
         }
         if (st.generating) {
           btnGenerate.innerHTML = '⏹ 停止生成';
@@ -2562,15 +2955,17 @@ ${joined}
         refreshCommitUI();
         autoResizeTa();
 
-        // 仓库分组折叠
-        header.addEventListener('click', (e) => {
-          if (e.target.closest('.section-actions')) { return; }
-          st.collapsed = !st.collapsed;
-          body.classList.toggle('collapsed', st.collapsed);
-          icon.classList.toggle('collapsed', st.collapsed);
-        });
+        // 仓库分组折叠（仅多仓库显示分组标题时才可折叠）
+        if (header) {
+          header.addEventListener('click', (e) => {
+            if (e.target.closest('.section-actions')) { return; }
+            st.collapsed = !st.collapsed;
+            body.classList.toggle('collapsed', st.collapsed);
+            icon.classList.toggle('collapsed', st.collapsed);
+          });
+        }
 
-        // 仓库级批量操作：Staged 区「全部取消暂存」、Changes 区「全部暂存」、组头「刷新」（只作用于该仓库）
+        // 仓库级批量操作：暂存的更改区「全部取消暂存」、更改区「全部暂存」、组头「刷新」（只作用于该仓库）
         section.querySelectorAll('[data-action]').forEach(btn => {
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2585,8 +2980,8 @@ ${joined}
           autoResizeTa();
         });
         ta.addEventListener('keydown', (e) => {
-          if (e.ctrlKey && e.key === 'Enter' && ta.value.trim()) {
-            vscode.postMessage({ command: 'commit', message: ta.value, mode: 'commit', repoRoot: g.repoRoot });
+          if (e.ctrlKey && e.key === 'Enter' && ta.value.trim() && !btnCommitMain.disabled) {
+            vscode.postMessage({ command: 'commit', message: ta.value, mode: btnCommitMain.dataset.mode || 'commit', repoRoot: g.repoRoot });
           }
         });
 
@@ -2621,8 +3016,8 @@ ${joined}
 
         // 提交按钮组（只提交该仓库）
         btnCommitMain.addEventListener('click', () => {
-          if (ta.value.trim()) {
-            vscode.postMessage({ command: 'commit', message: ta.value, mode: 'commit', repoRoot: g.repoRoot });
+          if (ta.value.trim() || btnCommitMain.dataset.mode === 'sync') {
+            vscode.postMessage({ command: 'commit', message: ta.value, mode: btnCommitMain.dataset.mode || 'commit', repoRoot: g.repoRoot });
           }
         });
         btnDropdown.addEventListener('click', (e) => {
@@ -2634,7 +3029,7 @@ ${joined}
         dropdown.querySelectorAll('.dropdown-item').forEach(item => {
           item.addEventListener('click', () => {
             dropdown.classList.remove('show');
-            if (ta.value.trim()) {
+            if (ta.value.trim() || item.dataset.mode === 'sync') {
               vscode.postMessage({ command: 'commit', message: ta.value, mode: item.dataset.mode, repoRoot: g.repoRoot });
             }
           });

@@ -5,13 +5,7 @@
  */
 
 /** 思维块标签列表 */
-const THINK_TAGS = [
-  "think",
-  "thinking",
-  "reasoning",
-  "analysis",
-  "reflection",
-];
+const THINK_TAGS = ["think", "thinking", "reasoning", "analysis", "reflection"];
 
 /** 禁用前缀行（引导 AI 或用户填写的标题行） */
 const FORBIDDEN_PREFIXES = [
@@ -110,9 +104,7 @@ export function autoCorrectCommit(text: string): string {
     .split("\n")
     .filter((line) => {
       const trimmed = line.trim();
-      return !FORBIDDEN_PREFIXES.some((prefix) =>
-        trimmed.startsWith(prefix),
-      );
+      return !FORBIDDEN_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
     })
     .join("\n");
 
