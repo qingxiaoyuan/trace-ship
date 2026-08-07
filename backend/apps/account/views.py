@@ -22,7 +22,7 @@ from apps.account.serializers import (
     UserSerializer, UserBriefSerializer, UserCreateSerializer, RoleSerializer,
     PermissionSerializer, LoginSerializer, UserInfoSerializer,
 )
-from utils.permissions import IsSuperUser
+from utils.permissions import HasPermission
 from utils.response import success_response, error_response
 
 
@@ -268,12 +268,11 @@ class AuthViewSet(viewsets.GenericViewSet):
                 # 父级不限制模块，按子菜单权限过滤（子项全不可见时父级自动隐藏）
                 "modules": [],
                 "children": [
-                    {"id": "system_users", "name": "用户管理", "path": "/system/users", "icon": "TeamOutlined", "modules": ["system"]},
-                    {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined", "modules": ["system"]},
-                    {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined", "modules": ["system"]},
-                    # 打包镜像对 system 与 package 模块均可见（开发人员可选择打包镜像）
-                    {"id": "system_package_images", "name": "打包镜像", "path": "/system/package-images", "icon": "BoxPlotOutlined", "modules": ["system", "package"]},
-                    {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined", "modules": ["system"]},
+                    {"id": "system_users", "name": "用户管理", "path": "/system/users", "icon": "TeamOutlined", "permission": "system.user"},
+                    {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined", "permission": "system.role"},
+                    {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined", "permission": "system.config"},
+                    {"id": "system_package_images", "name": "打包镜像", "path": "/system/package-images", "icon": "BoxPlotOutlined", "permission": "system.package_image"},
+                    {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined", "permission": "system.log"},
                 ],
             },
         ]
@@ -284,7 +283,10 @@ class AuthViewSet(viewsets.GenericViewSet):
         if user.is_superuser:
             return success_response(all_menus)
 
-        # 收集当前用户所有角色关联的权限模块
+        # 收集当前用户所有角色关联的权限模块与权限编码
+        user_permissions = set(
+            user.user_roles.values_list("role__permissions__code", flat=True)
+        )
         user_modules = set(
             user.user_roles.values_list("role__permissions__module", flat=True)
         )
@@ -296,31 +298,26 @@ class AuthViewSet(viewsets.GenericViewSet):
         if visible_project_ids(user).exists():
             user_modules |= {"project", "repository", "release", "workflow", "commit", "package"}
 
-        # 按模块过滤菜单
+        # 按权限过滤菜单：优先校验 permission（精确权限码），其次按 modules 模块
         def filter_menu(menu: dict) -> dict | None:
             """过滤单个菜单项，无权限返回 None"""
+            perm = menu.get("permission")
             required = menu.get("modules", [])
-            # modules 为空表示无需权限（如工作台）
-            if not required:
-                result = dict(menu)
-                result.pop("modules", None)
-                if "children" in menu:
-                    result["children"] = [
-                        c for c in (filter_menu(child) for child in menu["children"])
-                        if c is not None
-                    ]
-                return result
-            if not any(m in user_modules for m in required):
+            if perm:
+                if perm not in user_permissions:
+                    return None
+            elif required and not any(m in user_modules for m in required):
                 return None
             result = dict(menu)
             result.pop("modules", None)
+            result.pop("permission", None)
             if "children" in menu:
                 filtered_children = [
                     c for c in (filter_menu(child) for child in menu["children"])
                     if c is not None
                 ]
                 # 子菜单全被过滤掉则隐藏父菜单
-                if not filtered_children:
+                if menu["children"] and not filtered_children:
                     return None
                 result["children"] = filtered_children
             return result
@@ -358,47 +355,65 @@ class UserViewSet(StandardModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
+    @property
+    def _has_system_user_perm(self) -> bool:
+        """当前用户是否拥有 system.user 权限（单次请求内缓存）"""
+        if not hasattr(self, "_cached_has_system_user"):
+            user = self.request.user
+            self._cached_has_system_user = (
+                not user.is_superuser
+                and user.user_roles.filter(role__permissions__code="system.user").exists()
+            )
+        return self._cached_has_system_user
+
     def get_queryset(self):
         """
         根据当前用户身份与操作返回查询集
 
-        超管返回全部用户；普通用户读操作（人员查询）返回全部用户，
-        写操作仅返回自己；预加载角色关联以避免 N+1 查询。
+        超管返回全部用户；拥有 system.user 权限可管理全部用户；
+        普通用户读操作（人员查询）返回全部用户，写操作仅返回自己；
+        预加载角色关联以避免 N+1 查询。
 
         Returns:
             当前身份与操作可见的用户查询集
         """
         if getattr(self, "swagger_fake_view", False):
             return User.objects.none()
-        if self.request.user.is_superuser or self.action in ["list", "retrieve"]:
+        user = self.request.user
+        if user.is_superuser or self.action in ["list", "retrieve"]:
             return User.objects.all().prefetch_related("user_roles__role")
-        return User.objects.filter(id=self.request.user.id).prefetch_related("user_roles__role")
+        # 拥有 system.user 权限可管理全部用户，否则仅可操作自己
+        if self._has_system_user_perm:
+            return User.objects.all().prefetch_related("user_roles__role")
+        return User.objects.filter(id=user.id).prefetch_related("user_roles__role")
 
     def get_serializer_class(self):
         """
-        写操作使用 UserCreateSerializer；读操作超管使用 UserSerializer，
-        普通用户查询他人时使用 UserBriefSerializer（查看自己仍返回完整字段）
+        写操作使用 UserCreateSerializer；读操作超管或拥有 system.user 权限
+        使用 UserSerializer，普通用户查看他人使用 UserBriefSerializer
+        （查看自己仍返回完整字段）
 
         Returns:
             当前 action 对应的 Serializer 类
         """
         if self.action in ["create", "update", "partial_update"]:
             return UserCreateSerializer
-        if not self.request.user.is_superuser:
-            if self.action == "retrieve" and str(self.kwargs.get("pk")) == str(self.request.user.id):
-                return UserSerializer
-            return UserBriefSerializer
-        return UserSerializer
+        user = self.request.user
+        if user.is_superuser or self._has_system_user_perm:
+            return UserSerializer
+        if self.action == "retrieve" and str(self.kwargs.get("pk")) == str(user.id):
+            return UserSerializer
+        return UserBriefSerializer
 
     def get_permissions(self):
         """
-        创建和删除用户需要超管权限
+        创建和删除用户需要 system.user 权限（超管自动放行）
 
         Returns:
             当前 action 对应的权限实例列表
         """
         if self.action in ["create", "destroy"]:
-            return [IsAuthenticated(), IsSuperUser()]
+            return [IsAuthenticated(), HasPermission("system.user")]
         return super().get_permissions()
 
     def perform_create(self, serializer):
@@ -415,22 +430,32 @@ class RoleViewSet(StandardModelViewSet):
     """
     角色管理视图集
 
-    提供角色增删改查，仅超管可操作。
+    查询（列表/详情）所有登录用户可用（用户表单需加载角色列表）；
+    增删改需要 system.role 权限（超管自动放行）。
     """
 
     queryset = Role.objects.all().prefetch_related("permissions")
     serializer_class = RoleSerializer
-    permission_classes = [IsAuthenticated, IsSuperUser]
+
+    def get_permissions(self):
+        """读操作放开给登录用户，写操作需要 system.role 权限"""
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAuthenticated(), HasPermission("system.role")]
+        return [IsAuthenticated()]
 
 
 class PermissionViewSet(StandardModelViewSet):
     """
     权限管理视图集
 
-    提供权限列表查询，仅超管可访问，且只允许 GET 请求。
+    提供权限列表查询，需要 system.role 权限（角色管理时加载权限树），
+    超管自动放行，且只允许 GET 请求。
     """
 
     queryset = Permission.objects.all()
     serializer_class = PermissionSerializer
-    permission_classes = [IsAuthenticated, IsSuperUser]
     http_method_names = ["get", "head"]
+
+    def get_permissions(self):
+        """权限列表查询需要 system.role 权限（超管自动放行）"""
+        return [IsAuthenticated(), HasPermission("system.role")]

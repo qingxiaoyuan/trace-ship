@@ -307,12 +307,12 @@ def test_ldap_repeated_login_idempotent():
 
 
 @pytest.mark.django_db
-def test_menus_package_image_visible_to_developer_modules():
+def test_menus_package_image_requires_system_permission():
     """
-    测试打包镜像菜单对 package 模块角色可见
+    测试打包镜像菜单需要 system.package_image 权限，不再因 package 模块自动可见
 
-    期望：仅有 package 模块权限的用户菜单中包含 /system/package-images，
-    且不包含其他系统管理子菜单
+    期望：仅有 package.trigger 权限的用户菜单中不包含任何系统管理子菜单
+    （打包镜像菜单也属于系统管理，需要 system.package_image 权限）
     """
     from apps.account.models import Permission, Role, UserRole
 
@@ -333,6 +333,6 @@ def test_menus_package_image_visible_to_developer_modules():
             collect(item.get("children", []))
 
     collect(response.data["data"])
-    assert "/system/package-images" in paths
+    assert "/system/package-images" not in paths
     assert "/system/users" not in paths
     assert "/system/configs" not in paths

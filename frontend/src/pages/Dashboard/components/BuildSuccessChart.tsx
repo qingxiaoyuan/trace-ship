@@ -2,17 +2,15 @@ import { useEffect, useRef } from 'react';
 import { Chart } from 'chart.js';
 import { tokens } from '@/styles/theme';
 
-/** 提交合规率环形图 */
-export function ComplianceChart({
+/** 打包成功率环形图 */
+export function BuildSuccessChart({
   rate,
-  passCount,
-  warningCount,
-  illegalCount,
+  successCount,
+  failureCount,
 }: {
   rate: number;
-  passCount: number;
-  warningCount: number;
-  illegalCount: number;
+  successCount: number;
+  failureCount: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -30,11 +28,11 @@ export function ComplianceChart({
     chartRef.current = new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['合规', '警告', '不合规'],
+        labels: ['成功', '失败'],
         datasets: [
           {
-            data: [passCount, warningCount, illegalCount],
-            backgroundColor: ['#10B981', '#F59E0B', '#F43F5E'],
+            data: [successCount, failureCount],
+            backgroundColor: ['#10B981', '#F43F5E'],
             borderWidth: 0,
             borderRadius: 3,
             spacing: 2,
@@ -65,7 +63,7 @@ export function ComplianceChart({
     return () => {
       chartRef.current?.destroy();
     };
-  }, [passCount, warningCount, illegalCount]);
+  }, [successCount, failureCount]);
 
   return (
     <div className="relative flex items-center justify-center py-3">
@@ -77,7 +75,7 @@ export function ComplianceChart({
           {rate}
           <span className="text-[16px] text-slate-400">%</span>
         </span>
-        <span className="mt-0.5 text-[11px] text-slate-400">合规率</span>
+        <span className="mt-0.5 text-[11px] text-slate-400">成功率</span>
       </div>
     </div>
   );

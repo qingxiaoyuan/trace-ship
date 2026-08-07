@@ -3,11 +3,10 @@ import type { RouteObject } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
-import { AuthGuard, PageLoader, SystemGuard } from './components';
+import { AuthGuard, PageLoader, SystemGuard, RequirePermission } from './components';
 import Forbidden from '@/pages/Error/Forbidden';
 import {
   BrowserUpgrade,
-  CommitAlertDetail,
   CommitDetail,
   CommitList,
   CredentialDetail,
@@ -80,7 +79,6 @@ const routes: AppRouteObject[] = [
             handle: { title: '提交规范审查' },
             children: [
               { index: true, element: <PageLoader><CommitList /></PageLoader> },
-              { path: 'alerts', element: <PageLoader><CommitAlertDetail /></PageLoader>, handle: { title: '非法提交预警详情' } },
               { path: ':id', element: <PageLoader><CommitDetail /></PageLoader>, handle: { title: '查看详情' } },
             ],
           },
@@ -99,11 +97,11 @@ const routes: AppRouteObject[] = [
             element: <SystemGuard />,
             handle: { title: '系统管理' },
             children: [
-              { path: 'users', element: <PageLoader><SystemUserList /></PageLoader>, handle: { title: '用户管理' } },
-              { path: 'roles', element: <PageLoader><SystemRoleList /></PageLoader>, handle: { title: '角色管理' } },
-              { path: 'configs', element: <PageLoader><SystemConfig /></PageLoader>, handle: { title: '系统配置' } },
-              { path: 'package-images', element: <PageLoader><PackageImage /></PageLoader>, handle: { title: '打包镜像' } },
-              { path: 'logs', element: <PageLoader><SystemLogList /></PageLoader>, handle: { title: '操作日志' } },
+              { path: 'users', element: <RequirePermission permission="system.user"><PageLoader><SystemUserList /></PageLoader></RequirePermission>, handle: { title: '用户管理' } },
+              { path: 'roles', element: <RequirePermission permission="system.role"><PageLoader><SystemRoleList /></PageLoader></RequirePermission>, handle: { title: '角色管理' } },
+              { path: 'configs', element: <RequirePermission permission="system.config"><PageLoader><SystemConfig /></PageLoader></RequirePermission>, handle: { title: '系统配置' } },
+              { path: 'package-images', element: <RequirePermission permission="system.package_image"><PageLoader><PackageImage /></PageLoader></RequirePermission>, handle: { title: '打包镜像' } },
+              { path: 'logs', element: <RequirePermission permission="system.log"><PageLoader><SystemLogList /></PageLoader></RequirePermission>, handle: { title: '操作日志' } },
             ],
           },
           { path: 'profile', element: <PageLoader><Profile /></PageLoader>, handle: { title: '个人中心' } },

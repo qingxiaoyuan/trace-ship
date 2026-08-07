@@ -25,6 +25,7 @@ import {
   CheckSquare,
   GitCommitHorizontal,
   GitPullRequestArrow,
+  ScanSearch,
 } from 'lucide-react';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
@@ -33,6 +34,7 @@ import { useAppMessage } from '@/hooks/useAppMessage';
 import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField';
+import { CommitCheckModal } from './components/CommitCheckModal';
 import type { Release, ReleaseType, Repository, ChangesPreview, ParsedUpdate } from '@/types';
 
 /** 关联变更清单条目 */
@@ -74,6 +76,7 @@ export default function ReleaseCreate() {
   const [impactDesc, setImpactDesc] = useState('');
   const [selfTestPassed, setSelfTestPassed] = useState(false);
   const [retestPassed, setRetestPassed] = useState(false);
+  const [commitCheckOpen, setCommitCheckOpen] = useState(false);
 
   // 响应式跟踪关键字段
   const watchProject = Form.useWatch('project', form) as string | undefined;
@@ -311,6 +314,7 @@ export default function ReleaseCreate() {
 
       {/* ========== 步骤 1：填写表单 ========== */}
       {currentStep === 0 && (
+        <>
         <Form form={form} layout="vertical" onFinish={(v) => createMutation.mutate(v)} requiredMark={false}>
           {/* 1. 基础配置 */}
           <section className="tech-card mb-5 rounded-xl p-5">
@@ -545,14 +549,25 @@ export default function ReleaseCreate() {
                   </span>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => setUpdates((prev) => [...prev, { type: 'A', content: '' }])}
-                className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"
-              >
-                <Plus className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
-                手动添加
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCommitCheckOpen(true)}
+                  disabled={!watchRepository}
+                  className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ScanSearch className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
+                  检测commit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUpdates((prev) => [...prev, { type: 'A', content: '' }])}
+                  className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600"
+                >
+                  <Plus className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
+                  手动添加
+                </button>
+              </div>
             </div>
             <p className="mb-3 text-[11px] text-slate-400">
               来源：Commit 中含「A 」或「F 」前缀的行 + MR 描述中正则匹配的行，可在此编辑
@@ -824,6 +839,17 @@ export default function ReleaseCreate() {
             </div>
           </div>
         </Form>
+        <CommitCheckModal
+          repoId={watchRepository || ''}
+          lastTag={changesPreview?.last_tag ?? null}
+          open={commitCheckOpen}
+          onClose={() => setCommitCheckOpen(false)}
+          onAddUpdates={(items) => {
+            setUpdates((prev) => [...prev, ...items]);
+            message.success(`已添加 ${items.length} 条更新内容`);
+          }}
+        />
+        </>
       )}
 
       {/* ========== 步骤 2：编辑发布说明（表格组件，无表头） ========== */}

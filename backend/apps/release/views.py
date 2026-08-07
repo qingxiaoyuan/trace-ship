@@ -244,7 +244,7 @@ class ReleaseViewSet(StandardModelViewSet):
                         instance.tag_name = f"{instance.tag_name[:-9]}-{suffix}{instance.tag_name[-9:]}"
                     else:
                         instance.tag_name = f"{instance.tag_name}-{suffix}"
-            instance.tag_name = ReleaseValidator.ensure_tag_date(instance.tag_name)
+            instance.tag_name = ReleaseValidator.ensure_tag_date(instance.tag_name, version_rule)
             instance.version = ReleaseValidator.strip_suffix(instance.tag_name, version_rule)
         elif "version" in data and data.get("version"):
             instance.version = data["version"]
@@ -254,7 +254,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 suffix = (suffixes.get(instance.release_type, "") or "").strip("-")
                 if suffix and not instance.tag_name.endswith(f"-{suffix}"):
                     instance.tag_name = f"{instance.tag_name}-{suffix}"
-            instance.tag_name = ReleaseValidator.ensure_tag_date(instance.tag_name)
+            instance.tag_name = ReleaseValidator.ensure_tag_date(instance.tag_name, version_rule)
 
         # 校验 tag 后缀一致性
         try:

@@ -39,7 +39,7 @@ export interface TodoItem {
   icon: LucideIcon;
   iconClass: string;
   actions: ReactNode;
-  type: 'audit' | 'build' | 'commit';
+  type: 'audit' | 'build';
 }
 
 /** 发布流水线时间范围过滤 */

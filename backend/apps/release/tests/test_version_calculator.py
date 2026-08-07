@@ -235,3 +235,38 @@ class TestBuildScanRegex:
         assert match
         assert match.group("major") == "1"
         assert match.group("date") == "20251014"
+
+
+class TestWithDateOption:
+    """with_date 开关测试：控制生成的 tag 是否携带 _YYYYMMDD 日期段"""
+
+    def test_with_date_false_omits_date_suffix(self):
+        """with_date=False 时生成的 tag 不含日期段"""
+        rule = {"prefix": "VA", "major": 1, "minor": 0, "patch": 0, "with_date": False}
+        calculator = VersionCalculator(rule)
+        version, tag_name = calculator.calculate([], release_type="formal")
+        assert version == "VA.1.0.0"
+        assert tag_name == "VA.1.0.0"
+        assert "_" not in tag_name
+
+    def test_with_date_false_omits_date_suffix_rc(self):
+        """with_date=False 时 rc 类型 tag 也不含日期段"""
+        rule = {"prefix": "VA", "major": 1, "minor": 0, "patch": 0, "with_date": False}
+        calculator = VersionCalculator(rule)
+        version, tag_name = calculator.calculate([_tag("VA.1.0.0-rc")], release_type="rc")
+        assert tag_name == "VA.1.0.1-rc"
+
+    def test_with_date_true_appends_date_suffix(self):
+        """with_date=True（默认）时 tag 含日期段"""
+        rule = {"prefix": "VA", "major": 1, "minor": 0, "patch": 0, "with_date": True}
+        calculator = VersionCalculator(rule)
+        version, tag_name = calculator.calculate([], release_type="formal")
+        assert tag_name == f"VA.1.0.0_{TODAY}"
+
+    def test_with_date_defaults_to_true(self):
+        """未配置 with_date 时默认为 True（兼容历史数据）"""
+        rule = {"prefix": "VA", "major": 1, "minor": 0, "patch": 0}
+        calculator = VersionCalculator(rule)
+        assert calculator.with_date is True
+        _, tag_name = calculator.calculate([], release_type="formal")
+        assert tag_name.endswith(f"_{TODAY}")

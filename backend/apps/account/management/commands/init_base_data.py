@@ -50,7 +50,12 @@ class Command(BaseCommand):
             {"name": "管理打包任务", "code": "package.manage", "module": "package"},
             {"name": "查看提交审查", "code": "commit.view", "module": "commit"},
             {"name": "查看工作流", "code": "workflow.view", "module": "workflow"},
-            {"name": "系统管理", "code": "system.manage", "module": "system"},
+            # 系统管理拆分为五项细分权限，可独立分配给角色
+            {"name": "用户管理", "code": "system.user", "module": "system"},
+            {"name": "角色管理", "code": "system.role", "module": "system"},
+            {"name": "系统配置", "code": "system.config", "module": "system"},
+            {"name": "打包镜像", "code": "system.package_image", "module": "system"},
+            {"name": "操作日志", "code": "system.log", "module": "system"},
         ]
         permission_map: Dict[str, Permission] = {}
         for item in permissions_data:

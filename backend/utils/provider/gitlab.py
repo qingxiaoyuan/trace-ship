@@ -3,6 +3,7 @@ GitLab Provider
 
 基于 GitLab REST API v4 的统一适配器实现。
 """
+import logging
 from datetime import datetime
 from typing import List, Optional
 from urllib.parse import quote
@@ -12,6 +13,8 @@ from django.utils.dateparse import parse_datetime
 
 from .base import BranchInfo, CommitInfo, GitProvider, MergeRequestInfo, TagInfo
 from .exceptions import AuthenticationError, ConnectionError, ProviderError
+
+logger = logging.getLogger(__name__)
 
 
 class GitLabProvider(GitProvider):
@@ -56,7 +59,26 @@ class GitLabProvider(GitProvider):
             raise ConnectionError(f"GitLab 请求失败: {exc}") from exc
 
         if resp.status_code == 401:
-            raise AuthenticationError("GitLab Token 无效或已过期")
+            # 记录 401 细节，帮助定位 token 失效的真实原因
+            # （token 是否为空/被截断，GitLab 返回的具体响应体）
+            token_preview = (
+                f"{self.token[:4]}...{self.token[-4:]}"
+                if len(self.token) >= 8
+                else (self.token or "<空>")
+            )
+            diagnostic = {
+                "url": url,
+                "token_preview": token_preview,
+                "status_code": resp.status_code,
+                "response_body": resp.text[:500],
+            }
+            logger.warning(
+                "GitLab 认证失败(401): url=%s, token脱敏=%s, 响应体=%s",
+                url, token_preview, resp.text[:500],
+            )
+            exc = AuthenticationError("GitLab Token 无效或已过期")
+            exc.diagnostic = diagnostic
+            raise exc
         if resp.status_code == 404:
             raise ProviderError(f"GitLab 资源不存在: {path}")
         resp.raise_for_status()

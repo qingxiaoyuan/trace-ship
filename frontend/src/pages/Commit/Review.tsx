@@ -475,7 +475,8 @@ function DocRow({ row, hasWarning }: { row: MdTableRow; hasWarning: boolean }) {
 function FetchReviewSection() {
   const [projectId, setProjectId] = useState('');
   const [repoId, setRepoId] = useState('');
-  const [tagName, setTagName] = useState('');
+  const [baseTag, setBaseTag] = useState('');
+  const [headTag, setHeadTag] = useState('');
   const [fetching, setFetching] = useState(false);
   const [result, setResult] = useState<ReviewRangeResult | null>(null);
 
@@ -505,12 +506,17 @@ function FetchReviewSection() {
   });
 
   const selectedRepo = reposQ.data?.results?.find((r) => r.id === repoId);
+  const tagOptions = tagsQ.data ?? [];
 
   const handleFetch = async () => {
     if (!repoId) return;
     setFetching(true);
     try {
-      const data = await repositoryApi.reviewRange(repoId, tagName || undefined);
+      const data = await repositoryApi.reviewRange(
+        repoId,
+        baseTag || undefined,
+        headTag || undefined,
+      );
       setResult(data);
     } catch {
       setResult(null);
@@ -522,7 +528,8 @@ function FetchReviewSection() {
   const handleReset = () => {
     setProjectId('');
     setRepoId('');
-    setTagName('');
+    setBaseTag('');
+    setHeadTag('');
     setResult(null);
   };
 
@@ -538,7 +545,7 @@ function FetchReviewSection() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {/* 项目 */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
@@ -549,7 +556,8 @@ function FetchReviewSection() {
               onChange={(v) => {
                 setProjectId(v);
                 setRepoId('');
-                setTagName('');
+                setBaseTag('');
+                setHeadTag('');
                 setResult(null);
               }}
               placeholder="请选择项目"
@@ -568,7 +576,8 @@ function FetchReviewSection() {
               value={repoId}
               onChange={(v) => {
                 setRepoId(v);
-                setTagName('');
+                setBaseTag('');
+                setHeadTag('');
                 setResult(null);
               }}
               placeholder={projectId ? '请选择仓库' : '先选项目'}
@@ -579,25 +588,41 @@ function FetchReviewSection() {
               }))}
             />
           </div>
-          {/* Tag 区间 */}
+          {/* 起始 Tag */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
-              Tag 区间
+              起始 Tag
             </label>
             <Select
-              value={tagName}
+              value={baseTag}
               onChange={(v) => {
-                setTagName(v);
+                setBaseTag(v);
                 setResult(null);
               }}
-              placeholder={repoId ? '默认最新 Tag → HEAD' : '先选仓库'}
+              placeholder={repoId ? '最新 Tag（自动）' : '先选仓库'}
               disabled={!repoId}
               options={[
-                { value: '', label: '最新（最新 Tag → 分支 HEAD）' },
-                ...(tagsQ.data ?? []).map((t) => ({
-                  value: t.name,
-                  label: t.name,
-                })),
+                { value: '', label: '最新 Tag（自动）' },
+                ...tagOptions.map((t) => ({ value: t.name, label: t.name })),
+              ]}
+            />
+          </div>
+          {/* 结束 Tag */}
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
+              结束 Tag
+            </label>
+            <Select
+              value={headTag}
+              onChange={(v) => {
+                setHeadTag(v);
+                setResult(null);
+              }}
+              placeholder={repoId ? '分支 HEAD（最新提交）' : '先选仓库'}
+              disabled={!repoId}
+              options={[
+                { value: '', label: '分支 HEAD（最新提交）' },
+                ...tagOptions.map((t) => ({ value: t.name, label: t.name })),
               ]}
             />
           </div>
@@ -624,7 +649,7 @@ function FetchReviewSection() {
             <div className="ml-auto text-[11px] text-slate-400">
               区间：
               <span className="font-mono text-slate-500">
-                {tagName ? `上一 Tag → ${tagName}` : '最新 Tag → HEAD'}
+                {baseTag || '最新 Tag'} -&gt; {headTag || 'HEAD'}
               </span>
             </div>
           )}
@@ -647,7 +672,7 @@ function FetchReviewSection() {
           </div>
           <h3 className="mt-4 text-[15px] font-semibold text-slate-800">选择审查范围后拉取</h3>
           <p className="mt-1 text-[13px] text-slate-500">
-            依次选择 项目 → 仓库 → Tag，系统将拉取该 Tag 与上一个 Tag 之间的所有提交与合并请求进行合规审查
+            依次选择 项目 -&gt; 仓库 -&gt; 起始/结束 Tag，系统将拉取该区间内的所有提交与合并请求进行合规审查
           </p>
         </div>
       )}

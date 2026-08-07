@@ -60,6 +60,8 @@ class VersionCalculator:
         self.minor: int = int(rule.get("minor", 0))
         self.patch: int = int(rule.get("patch", 0))
         self.suffixes: Dict[str, str] = rule.get("suffixes") or dict(self.DEFAULT_SUFFIXES)
+        # 是否在生成的 tag 末尾拼接 _YYYYMMDD 日期段，默认开启（兼容历史数据）
+        self.with_date: bool = bool(rule.get("with_date", True))
 
     @staticmethod
     def today_str() -> str:
@@ -210,13 +212,14 @@ class VersionCalculator:
         else:
             version = self._format_version(best[0], best[1], best[2] + 1)
 
-        # 按发布类型追加后缀，并拼接当天日期段
+        # 按发布类型追加后缀，并按规则决定是否拼接当天日期段
         if release_type in ("rc", "beta"):
             suffix = (self.suffixes.get(release_type, "") or "").strip("-")
             tag_name = f"{version}-{suffix}" if suffix else version
         else:
             tag_name = version
-        tag_name = f"{tag_name}_{self.today_str()}"
+        if self.with_date:
+            tag_name = f"{tag_name}_{self.today_str()}"
         return version, tag_name
 
 
@@ -276,16 +279,22 @@ class ReleaseValidator:
         return version
 
     @staticmethod
-    def ensure_tag_date(tag_name: str) -> str:
+    def ensure_tag_date(tag_name: str, version_rule: dict = None) -> str:
         """
         确保 tag 名称带 _YYYYMMDD 日期段，缺失时拼接当天日期
 
+        当 version_rule 的 with_date 为 False 时不拼接日期段，直接返回原值。
+
         Args:
             tag_name: tag 名称
+            version_rule: 版本规则（含 with_date 开关）
 
         Returns:
             带日期段的 tag 名称
         """
+        with_date = bool((version_rule or {}).get("with_date", True))
+        if not with_date:
+            return tag_name
         if re.search(r"_\d{8}$", tag_name):
             return tag_name
         return f"{tag_name}_{VersionCalculator.today_str()}"
@@ -467,7 +476,7 @@ class ReleaseDocGenerator:
         change_type = "有配置项改动" if release.has_config_changes else "无配置项改动"
         rows.append(("变更类型", change_type))
 
-        # 变更内容
+        # 变更内容（多行合并在一个单元格内，用换行分隔，不使用 <br>）
         updates = release.updates or []
         if updates:
             lines: List[str] = []
@@ -477,7 +486,7 @@ class ReleaseDocGenerator:
                 utype = item.get("type", "")
                 content = item.get("content", "")
                 lines.append(f"{utype} {content}".strip())
-            rows.append(("变更内容", "<br>".join(lines)))
+            rows.append(("变更内容", "\n".join(lines)))
         else:
             rows.append(("变更内容", "无"))
 
@@ -488,16 +497,16 @@ class ReleaseDocGenerator:
         else:
             rows.append(("配置项改动", "无"))
 
-        # 关联项改动（选填）
+        # 关联项改动（多行合并在一个单元格内，用换行分隔，不使用 <br>）
         related = release.related_changes or []
         if related:
-            related_lines = []
+            related_lines: List[str] = []
             for item in related:
                 if isinstance(item, dict):
                     key = item.get("key", "")
                     val = item.get("value", "")
                     related_lines.append(f"{key}: {val}".strip(": ").strip())
-            rows.append(("关联项改动", "<br>".join(related_lines) if related_lines else "无"))
+            rows.append(("关联项改动", "\n".join(related_lines) if related_lines else "无"))
         else:
             rows.append(("关联项改动", "无"))
 
@@ -524,8 +533,8 @@ class ReleaseDocGenerator:
         # 构建 Markdown 表格（保留最小表头以兼容 MD 语法）
         lines = ["| 项目 | 内容 |", "|------|------|"]
         for label, content in rows:
-            # 转义管道符避免破坏表格结构，换行转 <br>
-            safe = content.replace("|", "\\|").replace("\n", "<br>")
+            # 转义管道符避免破坏表格结构
+            safe = content.replace("|", "\\|")
             lines.append(f"| {label} | {safe} |")
         return "\n".join(lines)
 
@@ -793,7 +802,7 @@ class ReleaseService:
                     auto_tag_name = f"{auto_tag_name}-{suffix}"
             else:
                 auto_tag_name = version
-            auto_tag_name = ReleaseValidator.ensure_tag_date(auto_tag_name)
+            auto_tag_name = ReleaseValidator.ensure_tag_date(auto_tag_name, version_rule)
 
         # tag_name 优先使用传入值，rc/beta 类型自动补后缀，统一补齐日期段
         if tag_name:
@@ -806,7 +815,7 @@ class ReleaseService:
                         tag_name = f"{tag_name[:-9]}-{suffix}{tag_name[-9:]}"
                     else:
                         tag_name = f"{tag_name}-{suffix}"
-            tag_name = ReleaseValidator.ensure_tag_date(tag_name)
+            tag_name = ReleaseValidator.ensure_tag_date(tag_name, version_rule)
         else:
             tag_name = auto_tag_name
 
@@ -906,8 +915,9 @@ class ReleaseService:
         """
         预览上个 Tag 到本次基线之间的 commits 与 MRs，并自动解析更新内容
 
-        只拉取“本分支最新提交”到“本分支最新匹配 tag”之间的内容；
-        若无匹配 tag，则取本分支最新 100 条提交。
+        先主动拉取当前分支最新 100 条提交记录，再按上一个 tag 的 commit hash
+        截断，取 tag 之后的提交；若 100 条内未找到 tag commit 则回退到
+        compare_commits 接口。无匹配 tag 时取本分支最新 100 条提交。
 
         Args:
             repository: 仓库实例
@@ -945,18 +955,30 @@ class ReleaseService:
         except ProviderError:
             last_tag = None
 
-        # 拉取 commits：从 last_tag 到分支 HEAD；无 tag 时回退到本分支最新 100 条
-        commits: List[CommitInfo] = []
+        # 主动拉取当前分支的提交记录（最新 100 条，新→旧）
+        all_commits: List[CommitInfo] = []
         try:
-            if last_tag:
+            all_commits = provider.list_commits(repo_identity, branch, per_page=100)
+        except ProviderError:
+            all_commits = []
+
+        # 与上一个 tag 对比：在提交列表中找到 tag 对应的 commit，取其后的所有提交
+        commits: List[CommitInfo] = []
+        if last_tag and tag_commit_hash:
+            tag_found = False
+            for c in all_commits:
+                if c.hash == tag_commit_hash:
+                    tag_found = True
+                    break
+                commits.append(c)
+            # 若未在 100 条内找到 tag 的 commit（提交量过大），回退到 compare_commits
+            if not tag_found and all_commits:
                 try:
                     commits = provider.compare_commits(repo_identity, base=last_tag, head=branch)
                 except ProviderError:
-                    commits = provider.list_commits(repo_identity, branch, per_page=100)
-            else:
-                commits = provider.list_commits(repo_identity, branch, per_page=100)
-        except ProviderError:
-            commits = []
+                    commits = all_commits
+        else:
+            commits = all_commits
 
         # 过滤非法提交：预览接口不落库，按 commit message 是否包含有效 A/F 行实时判断
         commits = [c for c in commits if extract_update_lines(c.message)]

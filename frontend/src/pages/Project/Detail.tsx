@@ -16,7 +16,6 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { OverviewTab } from './tabs/OverviewTab';
 import { RepoTab } from './tabs/RepoTab';
 import { MemberTab } from './tabs/MemberTab';
-import { RuleTab } from './tabs/RuleTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
 import { ReleaseTab } from './tabs/ReleaseTab';
 import { PackageTab } from './tabs/PackageTab';
@@ -24,7 +23,7 @@ import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { projectApi } from '@/api/project';
 import type { ProjectStatus } from '@/types';
 
-/** Tab 配置：基本信息 / 仓库 / 成员 / 审批流 / 规则配置 / 发布版本 */
+/** Tab 配置：基本信息 / 仓库 / 成员 / 审批流 / 打包配置 / SVN 制品 / 发布版本 */
 const tabItems = [
   { key: 'overview', label: '基本信息' },
   { key: 'repos', label: '仓库' },
@@ -32,7 +31,6 @@ const tabItems = [
   { key: 'workflows', label: '审批流' },
   { key: 'packages', label: '打包配置' },
   { key: 'svn', label: 'SVN 制品' },
-  { key: 'rules', label: '规则配置' },
   { key: 'releases', label: '发布版本' },
 ] as const;
 
@@ -192,7 +190,6 @@ export default function ProjectDetail() {
           {activeTab === 'workflows' && <WorkflowTab project={project} />}
           {activeTab === 'packages' && <PackageTab projectId={id || ''} />}
           {activeTab === 'svn' && <SvnArtifactsTab projectId={id || ''} />}
-          {activeTab === 'rules' && <RuleTab project={project} />}
           {activeTab === 'releases' && <ReleaseTab projectId={id || ''} />}
         </div>
       </TsCard>

@@ -33,6 +33,7 @@ export interface UserInfo {
   department: string;
   source: string;
   roles: string[];
+  permissions: string[];
   is_superuser: boolean;
 }
 
@@ -46,7 +47,7 @@ export interface MenuItem {
 
 export type ProjectStatus = 'active' | 'inactive' | number;
 
-/** 版本号规则：{prefix}.主.次.修(-后缀)?_YYYYMMDD */
+/** 版本号规则：{prefix}.主.次.修(-后缀)?(_YYYYMMDD)? */
 export interface VersionRule {
   prefix?: string;
   major?: number;
@@ -56,6 +57,8 @@ export interface VersionRule {
     rc?: string;
     beta?: string;
   };
+  /** 生成的 tag 是否携带 _YYYYMMDD 日期段，默认 true */
+  with_date?: boolean;
 }
 
 export interface Project {
@@ -74,7 +77,7 @@ export interface Project {
   version_rule?: unknown;
   release_rule?: unknown;
   /** 当前用户在该项目的成员角色（详情接口返回，超管为 manager，非成员为 null） */
-  my_role?: 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | null;
+  my_role?: 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin' | null;
 }
 
 /** 项目统计聚合数据（/projects/stats/） */
@@ -304,13 +307,6 @@ export interface CommitRecord {
   parsed_result?: ParsedCommit;
   project_name?: string;
   repo_name?: string;
-}
-
-export type AlertStatus = 'pending' | 'resolved' | 'ignored';
-
-export interface CommitAlertRecord extends CommitRecord {
-  illegal_reason: string;
-  alert_status: AlertStatus;
 }
 
 export type PackageTaskStatus = 'queued' | 'running' | 'success' | 'failure' | 'canceled';

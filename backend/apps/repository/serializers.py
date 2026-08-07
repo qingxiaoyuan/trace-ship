@@ -110,6 +110,9 @@ class RepositorySerializer(serializers.ModelSerializer):
         """
         校验仓库类型与 vendor、凭证来源与绑定凭证的一致性，并规范化 Git 仓库地址。
 
+        凭证归属/类型校验仅在凭证变更时执行，避免修改版本规则等字段时
+        因凭证使用人不一致而被拦截（软件负责人与项目负责人均可修改仓库配置）。
+
         Args:
             attrs: 待校验属性
 
@@ -118,25 +121,27 @@ class RepositorySerializer(serializers.ModelSerializer):
         """
         repo_type = attrs.get("repo_type", getattr(self.instance, "repo_type", None))
         vendor = attrs.get("vendor", getattr(self.instance, "vendor", None))
-        credential = attrs.get("credential", getattr(self.instance, "credential", None))
 
         if repo_type == "svn" and vendor != "svn":
             raise serializers.ValidationError({"vendor": "SVN 仓库的 vendor 必须为 svn"})
         if repo_type == "git" and vendor == "svn":
             raise serializers.ValidationError({"vendor": "Git 仓库不能使用 svn vendor"})
 
-        # 凭证必须显式绑定；凭证统一为个人凭证（SVN 凭证全系统共享），
-        # 因此只允许绑定本人的凭证或系统共享凭证
-        if credential is None:
-            raise serializers.ValidationError({"credential": "必须选择凭证"})
-        request_user = self.context["request"].user
-        if not credential.is_system_shared and credential.owner_id != request_user.id:
-            raise serializers.ValidationError({"credential": "只能绑定本人的凭证（SVN 系统共享凭证除外）"})
+        # 凭证校验仅在显式变更凭证时执行
+        if "credential" in attrs:
+            credential = attrs.get("credential")
+            # 凭证必须显式绑定；凭证统一为个人凭证（SVN 凭证全系统共享），
+            # 因此只允许绑定本人的凭证或系统共享凭证
+            if credential is None:
+                raise serializers.ValidationError({"credential": "必须选择凭证"})
+            request_user = self.context["request"].user
+            if not credential.is_system_shared and credential.owner_id != request_user.id:
+                raise serializers.ValidationError({"credential": "只能绑定本人的凭证（SVN 系统共享凭证除外）"})
 
-        # 校验凭证类型与仓库平台一致
-        expected_cred_type = VENDOR_TO_CRED_TYPE.get(vendor)
-        if expected_cred_type and credential.cred_type != expected_cred_type:
-            raise serializers.ValidationError({"credential": f"凭证类型与仓库平台不匹配，应为 {expected_cred_type}"})
+            # 校验凭证类型与仓库平台一致
+            expected_cred_type = VENDOR_TO_CRED_TYPE.get(vendor)
+            if expected_cred_type and credential.cred_type != expected_cred_type:
+                raise serializers.ValidationError({"credential": f"凭证类型与仓库平台不匹配，应为 {expected_cred_type}"})
 
         # Git 仓库地址规范化：把克隆地址统一解析为服务器根地址 + owner/repo
         url = attrs.get("url")

@@ -60,8 +60,8 @@ export const repositoryApi = {
     }>(`/repositories/${id}/next-version/`, { params: { release_type: releaseType } }),
   previewChanges: (id: string, branch: string) =>
     get<ChangesPreview>(`/repositories/${id}/changes-preview/`, { params: { branch } }),
-  reviewRange: (id: string, tag?: string) =>
+  reviewRange: (id: string, baseTag?: string, headTag?: string) =>
     get<ReviewRangeResult>(`/repositories/${id}/review-range/`, {
-      params: { tag: tag || 'latest' },
+      params: { base: baseTag || undefined, head: headTag || undefined },
     }),
 };

@@ -34,12 +34,29 @@ export function AuthGuard() {
   return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
 }
 
-/** 系统管理路由守卫：仅超管可访问，否则展示 403 页面 */
+/** 系统管理路由守卫：超管或拥有任一 system.* 权限可进入系统管理区域 */
 export function SystemGuard() {
   const user = useAuthStore((state) => state.user);
+  const hasAnySystem = (user?.permissions ?? []).some((p) => p.startsWith('system.'));
 
-  if (!user?.is_superuser) {
-    return <Forbidden description="系统管理功能仅对超级管理员开放，如有需要请联系系统管理员。" />;
+  if (!user?.is_superuser && !hasAnySystem) {
+    return <Forbidden description="系统管理功能需要对应用户管理/角色管理等权限，如有需要请联系系统管理员。" />;
   }
   return <Outlet />;
+}
+
+/** 细粒度系统权限守卫：仅超管或拥有指定权限的用户可访问包裹内容 */
+export function RequirePermission({
+  permission,
+  children,
+}: {
+  permission: string;
+  children: React.ReactNode;
+}) {
+  const user = useAuthStore((state) => state.user);
+  const hasPermission = user?.is_superuser || (user?.permissions ?? []).includes(permission);
+  if (!hasPermission) {
+    return <Forbidden description="没有访问该功能的权限，请联系系统管理员分配对应角色。" />;
+  }
+  return <>{children}</>;
 }

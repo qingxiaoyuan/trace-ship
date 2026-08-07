@@ -48,6 +48,33 @@ def test_create_repository(api_client, project, credential):
 
 
 @pytest.mark.django_db
+def test_update_version_rule_by_non_credential_owner(repository):
+    """
+    测试非凭证持有人（项目负责人）可修改仓库版本规则
+
+    修改 version_rule 不触发凭证归属校验，软件负责人与项目负责人均可改
+    """
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    # 另一个用户作为项目负责人，但不持有仓库绑定的凭证
+    manager = User.objects.create_user(username="repo_mgr", password="pass", nickname="项目管理员")
+    ProjectMember.objects.create(project=repository.project, user=manager, role="manager")
+
+    client = APIClient()
+    client.force_authenticate(user=manager)
+    response = client.patch(
+        f"/api/repositories/{repository.id}/",
+        {"version_rule": {"prefix": "VB", "major": 2, "minor": 0, "patch": 0, "with_date": False}},
+        format="json",
+    )
+    assert response.status_code == 200
+    repository.refresh_from_db()
+    assert repository.version_rule["prefix"] == "VB"
+    assert repository.version_rule["with_date"] is False
+
+
+@pytest.mark.django_db
 def test_create_repository_rejects_invalid_vendor(api_client, project, credential):
     """测试 Git 仓库拒绝 SVN vendor"""
     payload = {
@@ -230,3 +257,127 @@ def test_review_range_latest_uses_branch_head(api_client, repository):
     data = response.data["data"]
     assert data["base"] == "v1.1.0"
     assert data["head"] == repository.default_branch
+
+
+@pytest.mark.django_db
+def test_review_range_explicit_base_head(api_client, repository):
+    """测试显式指定 base/head 双 tag 区间"""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from utils.provider.base import CommitInfo, TagInfo
+
+    fake_tags = [
+        TagInfo(name="v1.2.0", commit_hash="h3", created_at=datetime(2026, 6, 25, 12, 0, 0)),
+        TagInfo(name="v1.1.0", commit_hash="h2", created_at=datetime(2026, 6, 20, 12, 0, 0)),
+        TagInfo(name="v1.0.0", commit_hash="h1", created_at=datetime(2026, 6, 10, 12, 0, 0)),
+    ]
+    fake_commits = [
+        CommitInfo(
+            hash="c1",
+            author="张三",
+            author_email="",
+            message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. A 新增功能",
+            committed_at=datetime(2026, 6, 22, 10, 0, 0),
+        ),
+    ]
+    mock_provider = MagicMock()
+    mock_provider.list_tags.return_value = fake_tags
+    mock_provider.compare_commits.return_value = fake_commits
+    mock_provider.list_merge_requests.return_value = []
+
+    with patch("apps.repository.services.get_provider", return_value=mock_provider):
+        response = api_client.get(
+            f"/api/repositories/{repository.id}/review-range/?base=v1.0.0&head=v1.2.0"
+        )
+
+    assert response.status_code == 200
+    data = response.data["data"]
+    assert data["base"] == "v1.0.0"
+    assert data["head"] == "v1.2.0"
+    assert len(data["commits"]) == 1
+
+
+@pytest.mark.django_db
+def test_test_connection_success_logs_operation_log(api_client, repository):
+    """连接测试成功时写入 success 操作日志"""
+    from unittest.mock import MagicMock
+    from apps.system.models import OperationLog
+
+    mock_provider = MagicMock()
+    mock_provider.test_connection.return_value = True
+
+    with patch("apps.repository.services.get_provider", return_value=mock_provider):
+        response = api_client.post(f"/api/repositories/{repository.id}/test/")
+
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    assert response.data["data"]["connected"] is True
+
+    log = OperationLog.objects.filter(
+        module="代码仓库", action="连接测试", resource_id=str(repository.id)
+    ).first()
+    assert log is not None
+    assert log.result == "success"
+    assert repository.name in log.description
+
+
+@pytest.mark.django_db
+def test_test_connection_failure_logs_operation_log(api_client, repository):
+    """连接测试失败（token 过期等）时写入 failure 操作日志并记录错误原因与诊断信息"""
+    from unittest.mock import MagicMock
+    from apps.system.models import OperationLog
+    from utils.provider.exceptions import AuthenticationError
+
+    mock_provider = MagicMock()
+    exc = AuthenticationError("GitLab Token 无效或已过期")
+    exc.diagnostic = {
+        "url": "https://gitlab.example.com/api/v4/user",
+        "token_preview": "glpa...test",
+        "status_code": 401,
+        "response_body": '{"message":"401 Unauthorized"}',
+    }
+    mock_provider.test_connection.side_effect = exc
+
+    with patch("apps.repository.services.get_provider", return_value=mock_provider):
+        response = api_client.post(f"/api/repositories/{repository.id}/test/")
+
+    assert response.status_code == 200
+    assert response.data["data"]["connected"] is False
+    assert "过期" in response.data["data"]["detail"]
+
+    log = OperationLog.objects.filter(
+        module="代码仓库", action="连接测试", resource_id=str(repository.id)
+    ).first()
+    assert log is not None
+    assert log.result == "failure"
+    assert "失败" in log.description
+    assert log.detail.get("error") == "GitLab Token 无效或已过期"
+    assert log.detail["diagnostic"]["status_code"] == 401
+    assert log.detail["diagnostic"]["token_preview"] == "glpa...test"
+
+
+@pytest.mark.django_db
+def test_auditor_sees_all_project_commits(repository, commit):
+    """
+    审查员（拥有 release.audit 权限）可查看全部项目的提交记录，
+    即使不是项目成员也能看到提交审查数据
+    """
+    from apps.account.models import User, Permission, Role, UserRole
+
+    auditor = User.objects.create_user(username="auditor", password="pass", nickname="审查员")
+    perm, _ = Permission.objects.get_or_create(
+        code="release.audit",
+        defaults={"name": "审批发布", "module": "release"},
+    )
+    role = Role.objects.create(name="审查员", code="auditor_role")
+    role.permissions.add(perm)
+    UserRole.objects.create(user=auditor, role=role)
+
+    client = APIClient()
+    client.force_authenticate(user=auditor)
+    response = client.get("/api/commits/")
+
+    assert response.status_code == 200
+    hashes = [c["commit_hash"] for c in response.data["data"]["results"]]
+    assert commit.commit_hash in hashes

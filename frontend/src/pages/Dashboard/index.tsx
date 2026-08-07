@@ -8,14 +8,12 @@ import {
   GitPullRequestArrow,
   Hammer,
   Rocket,
-  ScanSearch,
   TrendingUp,
   TriangleAlert,
 } from 'lucide-react';
 import { Chart, registerables } from 'chart.js';
 import { dashboardApi } from '@/api/dashboard';
 import { releaseApi } from '@/api/release';
-import { commitApi } from '@/api/commit';
 import { packageApi } from '@/api/package';
 import { useAuthStore } from '@/stores/authStore';
 import type { KpiCard, PipelineColumn, PipelineRange, TodoFilter, TodoItem } from './types';
@@ -30,7 +28,7 @@ import {
 } from './utils';
 import { InitialAvatar } from './components/SmallTag';
 import { KpiCardView } from './components/KpiCardView';
-import { ComplianceChart } from './components/ComplianceChart';
+import { BuildSuccessChart } from './components/BuildSuccessChart';
 import { BuildTrendChart } from './components/BuildTrendChart';
 import { PipelinePanel } from './components/PipelinePanel';
 import { RecentReleasesPanel } from './components/RecentReleasesPanel';
@@ -65,14 +63,6 @@ export default function Dashboard() {
     gcTime: 300_000,
   });
 
-  const { data: commitData } = useQuery({
-    queryKey: ['dashboard-commits'],
-    // 统计类请求不需要 1000 条，20 条足够算各类数量
-    queryFn: () => commitApi.getCommits({ page_size: 20 }),
-    staleTime: 30_000,
-    gcTime: 300_000,
-  });
-
   const { data: packageTaskData } = useQuery({
     queryKey: ['dashboard-package-tasks'],
     queryFn: () => packageApi.getTasks({ page_size: 20 }),
@@ -93,7 +83,6 @@ export default function Dashboard() {
       return t >= start;
     });
   }, [releases, pipelineRange]);
-  const commits = useMemo(() => commitData?.results || [], [commitData?.results]);
   const packageTasks = useMemo(() => packageTaskData?.results || [], [packageTaskData?.results]);
   const recentReleases = recentReleaseRows.filter((r) => r.status === 'released').slice(0, 10);
   const runningBuilds = packageTasks.filter(isBuildRunning);
@@ -104,16 +93,11 @@ export default function Dashboard() {
   const pendingAuditCount = overview?.pending_audit_count || pendingReleases.length;
   const rejectedCount = overview?.rejected_count || releases.filter((r) => normalizeStatus(r) === 'rejected').length;
   const successRate = Math.round((overview?.success_rate || 0) * 1000) / 10;
-  // 合规率统计口径：仅统计已审查（pass/warning/illegal）的提交，
-  // 未审查（unreviewed）不计入分母，避免全合规时因含未审查数据导致合规率低于 100%
-  const reviewedCommits = commits.filter((c) => c.review_status !== 'unreviewed');
-  const passCommits = commits.filter((c) => c.review_status === 'pass').length;
-  const warningCommits = commits.filter((c) => c.review_status === 'warning').length;
-  const illegalCommits = commits.filter((c) => c.review_status === 'illegal').length;
-  const complianceRate = reviewedCommits.length ? Math.round((passCommits / reviewedCommits.length) * 1000) / 10 : 0;
+  const buildSuccess = packageTasks.filter((task) => task.status === 'success').length;
+  const buildFailed = packageTasks.filter((task) => task.status === 'failure' || task.status === 'canceled').length;
+  const buildTotal = buildSuccess + buildFailed;
+  const buildSuccessRate = buildTotal ? Math.round((buildSuccess / buildTotal) * 1000) / 10 : 0;
   const displayName = user?.nickname || user?.username || '用户';
-  const warningRate = reviewedCommits.length ? Math.round((warningCommits / reviewedCommits.length) * 1000) / 10 : 0;
-  const illegalRate = reviewedCommits.length ? Math.round((illegalCommits / reviewedCommits.length) * 1000) / 10 : 0;
   const pendingPublishers = pendingReleases
     .map((release) => release.publisher)
     .filter((publisher): publisher is string => Boolean(publisher));
@@ -217,27 +201,6 @@ export default function Dashboard() {
         </button>
       ),
     })),
-    ...(illegalCommits > 0
-      ? [
-          {
-            key: 'commit-alerts',
-            title: `${illegalCommits} 条不合规提交需处理`,
-            project: commits.find((c) => c.review_status === 'illegal')?.project_name || '提交审查',
-            meta: '提交信息不符合规范或存在异常，需要确认',
-            icon: TriangleAlert,
-            iconClass: 'icon-rose',
-            type: 'commit' as const,
-            actions: (
-              <button
-                onClick={() => navigate('/commits/alerts')}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600"
-              >
-                查看
-              </button>
-            ),
-          },
-        ]
-      : []),
   ]
     .filter((item) => (todoFilter === 'all' ? true : item.type === todoFilter))
     .slice(0, 5);
@@ -306,49 +269,43 @@ export default function Dashboard() {
         </div>
       ),
       footer: (
-        <button className="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500">
+        <button
+          onClick={() => navigate('/packages')}
+          className="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500"
+        >
           <span>查看详情</span>
           <ArrowRight className="h-3 w-3" strokeWidth={1.5} />
         </button>
       ),
     },
     {
-      title: 'Commit 合规率',
+      title: '打包成功率',
       value: (
         <span className="text-gradient text-[28px] font-semibold tracking-tight">
-          {complianceRate}
+          {buildSuccessRate}
           <span className="text-[18px] text-slate-400">%</span>
         </span>
       ),
-      description: `本批 ${reviewedCommits.length} 条已审查提交，${illegalCommits} 条不合规`,
-      icon: ScanSearch,
-      iconClass: 'icon-violet',
-      action: <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">合规</span>,
+      description: `本批 ${buildTotal} 个打包任务，${buildFailed} 个失败`,
+      icon: Hammer,
+      iconClass: 'icon-cyan',
+      action: <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">{buildSuccess} 成功</span>,
       footer: (
         <div className="flex items-center gap-1">
           <div
             className="h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"
-            style={{ flex: Math.max(complianceRate, reviewedCommits.length ? 1 : 0) }}
+            style={{ flex: Math.max(buildSuccess, buildTotal ? 1 : 0) }}
           />
-          {warningCommits > 0 ? (
-            <div
-              className="h-1.5 rounded-full bg-amber-400"
-              style={{ flex: Math.max(warningRate, 1) }}
-            />
-          ) : null}
-          {illegalCommits > 0 ? (
+          {buildFailed > 0 ? (
             <div
               className="h-1.5 rounded-full bg-rose-400"
-              style={{ flex: Math.max(illegalRate, 1) }}
+              style={{ flex: Math.max(buildFailed, 1) }}
             />
           ) : null}
         </div>
       ),
     },
   ];
-
-  const buildSuccess = packageTasks.filter((task) => task.status === 'success').length;
-  const buildFailed = packageTasks.filter((task) => task.status === 'failure' || task.status === 'canceled').length;
 
   return (
     <div className="space-y-5">
@@ -392,20 +349,18 @@ export default function Dashboard() {
         <RecentReleasesPanel releases={recentReleases} onViewAll={() => navigate('/releases')} />
         <div className="tech-card rounded-xl p-5">
           <div className="mb-2">
-            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">提交合规率</h2>
-            <p className="mt-0.5 text-[12px] text-slate-500">本周提交规范审查</p>
+            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包成功率</h2>
+            <p className="mt-0.5 text-[12px] text-slate-500">最近打包任务统计</p>
           </div>
-          <ComplianceChart
-            rate={complianceRate}
-            passCount={passCommits}
-            warningCount={warningCommits}
-            illegalCount={illegalCommits}
+          <BuildSuccessChart
+            rate={buildSuccessRate}
+            successCount={buildSuccess}
+            failureCount={buildFailed}
           />
           <div className="mt-4 space-y-2.5 border-t border-indigo-50 pt-4">
             {[
-              ['合规', passCommits, 'bg-emerald-400'],
-              ['警告', warningCommits, 'bg-amber-400'],
-              ['不合规', illegalCommits, 'bg-rose-400'],
+              ['成功', buildSuccess, 'bg-emerald-400'],
+              ['失败', buildFailed, 'bg-rose-400'],
             ].map(([label, value, color]) => (
               <div key={String(label)} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

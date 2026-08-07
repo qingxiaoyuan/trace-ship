@@ -26,7 +26,7 @@ from apps.project.models import Project
 from apps.project.models import ProjectMember
 from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
-from utils.permissions import IsProjectManager, IsProjectMember, IsProjectPackager, IsProjectDeveloper, IsSuperUser
+from utils.permissions import IsProjectManager, IsProjectMember, IsProjectPackager, IsProjectDeveloper, HasPermission
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 from utils.provider.factory import get_provider
 from utils.response import error_response, success_response
@@ -60,8 +60,9 @@ class PackageImageViewSet(StandardModelViewSet):
     ordering = ["-created_at"]
 
     def get_permissions(self):
+        # 镜像管理（增删改、导入 tar 包）需要 system.package_image 权限，超管自动放行
         if self.action in ("create", "update", "partial_update", "destroy", "import_image"):
-            return [IsAuthenticated(), IsSuperUser()]
+            return [IsAuthenticated(), HasPermission("system.package_image")]
         return [IsAuthenticated()]
 
     # 允许导入的镜像包格式（docker load 支持 tar 及常见压缩格式）
@@ -69,7 +70,7 @@ class PackageImageViewSet(StandardModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="import")
     def import_image(self, request):
-        """上传镜像 tar 包并导入本地 Docker（docker load），仅超管可操作。"""
+        """上传镜像 tar 包并导入本地 Docker（docker load），需要 system.package_image 权限。"""
         upload = request.FILES.get("file")
         if not upload:
             return error_response(40000, "请上传镜像 tar 文件", status_code=status.HTTP_400_BAD_REQUEST)

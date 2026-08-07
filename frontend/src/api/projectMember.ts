@@ -1,4 +1,4 @@
-import { get, post, put, del } from './request';
+import { get, post, patch, del } from './request';
 import type { PaginatedData } from '@/types';
 
 export type ProjectMemberRole =
@@ -6,7 +6,8 @@ export type ProjectMemberRole =
   | 'tester'
   | 'manager'
   | 'auditor'
-  | 'viewer';
+  | 'viewer'
+  | 'software_admin';
 
 export interface ProjectMemberUser {
   id: string;
@@ -51,7 +52,7 @@ export const projectMemberApi = {
     projectId: string,
     memberId: string,
     data: { role: ProjectMemberRole }
-  ) => put<ProjectMember>(`/projects/${projectId}/members/${memberId}/`, data),
+  ) => patch<ProjectMember>(`/projects/${projectId}/members/${memberId}/`, data),
   removeMember: (projectId: string, memberId: string) =>
     del<null>(`/projects/${projectId}/members/${memberId}/`),
 };

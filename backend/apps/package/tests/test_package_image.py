@@ -31,6 +31,20 @@ def admin_client(db):
     return client
 
 
+@pytest.fixture
+def image_mgr_client(db):
+    """拥有 system.package_image 权限的普通用户客户端。"""
+    from apps.account.models import Role, UserRole, Permission
+    perm = Permission.objects.get(code="system.package_image")
+    role = Role.objects.create(name="镜像管理员", code="image_mgr")
+    role.permissions.add(perm)
+    user = User.objects.create_user(username="image_mgr", password="pass", nickname="镜像管理员")
+    UserRole.objects.create(user=user, role=role)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
+
+
 @pytest.mark.django_db
 class TestPackageImageModel:
     """PackageImage 模型测试"""
@@ -246,10 +260,22 @@ class TestNexusConfigSource:
 class TestImportImage:
     """上传 tar 包导入本地 Docker 镜像。"""
 
-    def test_import_requires_superuser(self, api_client):
+    def test_import_requires_permission(self, api_client):
+        """无 system.package_image 权限的普通用户禁止导入"""
         file = SimpleUploadedFile("img.tar", b"fake-tar", content_type="application/x-tar")
         response = api_client.post("/api/packages/images/import/", {"file": file}, format="multipart")
         assert response.status_code == 403
+
+    def test_import_by_permission_holder(self, image_mgr_client, monkeypatch):
+        """拥有 system.package_image 权限的普通用户可导入镜像"""
+        monkeypatch.setattr(
+            "apps.package.views.LocalDockerService.load_image",
+            classmethod(lambda cls, path: ["trace-ship/builder:v1"]),
+        )
+        file = SimpleUploadedFile("img.tar", b"fake-tar", content_type="application/x-tar")
+        response = image_mgr_client.post("/api/packages/images/import/", {"file": file}, format="multipart")
+        assert response.status_code == 200
+        assert response.data["data"]["loaded"] == ["trace-ship/builder:v1"]
 
     def test_import_missing_file(self, admin_client):
         response = admin_client.post("/api/packages/images/import/", {}, format="multipart")

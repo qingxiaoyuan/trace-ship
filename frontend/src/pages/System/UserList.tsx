@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { accountApi } from '@/api/account';
 import type { AccountUser, AccountRoleBrief } from '@/api/account';
+import { useAuthStore } from '@/stores/authStore';
 import { getAvatarColor } from '@/utils/avatar';
 
 type View = 'list' | 'form';
@@ -71,6 +72,7 @@ function getRoleBadgeClass(code: string): string {
 
 export default function SystemUserList() {
   const queryClient = useQueryClient();
+  const isSuperuser = useAuthStore((state) => state.user?.is_superuser ?? false);
   const [view, setView] = useState<View>('list');
   const [keyword, setKeyword] = useState('');
   const [source, setSource] = useState<string>('');
@@ -348,21 +350,23 @@ export default function SystemUserList() {
                 </span>
                 <span className="text-[13px] text-slate-700">启用账号</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, is_superuser: !form.is_superuser })}
-                className="flex items-center gap-2"
-              >
-                <span className="relative inline-flex h-4 w-4 items-center justify-center rounded border-2"
-                  style={{
-                    borderColor: form.is_superuser ? '#4F46E5' : '#CBD5E1',
-                    background: form.is_superuser ? '#4F46E5' : 'transparent',
-                  }}
+              {isSuperuser && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, is_superuser: !form.is_superuser })}
+                  className="flex items-center gap-2"
                 >
-                  {form.is_superuser ? <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} /> : null}
-                </span>
-                <span className="text-[13px] text-slate-700">超管权限</span>
-              </button>
+                  <span className="relative inline-flex h-4 w-4 items-center justify-center rounded border-2"
+                    style={{
+                      borderColor: form.is_superuser ? '#4F46E5' : '#CBD5E1',
+                      background: form.is_superuser ? '#4F46E5' : 'transparent',
+                    }}
+                  >
+                    {form.is_superuser ? <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} /> : null}
+                  </span>
+                  <span className="text-[13px] text-slate-700">超管权限</span>
+                </button>
+              )}
             </div>
           </div>
 

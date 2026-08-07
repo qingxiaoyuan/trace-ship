@@ -78,6 +78,9 @@ class ProjectRolePermission(permissions.BasePermission):
         role = self._effective_role(project, user)
         if role is None:
             return False
+        # 软件管理员拥有项目内全部操作权限（仓库、发布、打包、成员管理等）
+        if role == "software_admin":
+            return True
         if not self.required_roles:
             return True
         return role in self.required_roles

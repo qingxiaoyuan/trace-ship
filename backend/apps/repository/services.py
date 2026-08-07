@@ -54,6 +54,7 @@ class RepositoryService:
         测试仓库连通性
 
         根据凭证模式解析凭证，调用对应 Provider 测试连接，并更新仓库健康状态。
+        无论成功失败均写入操作日志，便于在「操作日志」页面审计排查。
 
         Args:
             repo: Repository 实例
@@ -62,20 +63,47 @@ class RepositoryService:
         Returns:
             {"connected": bool, "detail": str}
         """
+        from apps.system.services import OperationLogService
+
+        def _log_result(result: str, error: str = "", diagnostic: dict | None = None) -> None:
+            """记录连接测试操作日志，失败时写入错误原因与诊断信息，日志写入异常静默不影响主流程"""
+            detail: dict = {}
+            if error:
+                detail["error"] = error
+                detail["repo"] = repo.name
+            if diagnostic:
+                detail["diagnostic"] = diagnostic
+            try:
+                OperationLogService.log(
+                    user=request_user,
+                    module="代码仓库",
+                    action="连接测试",
+                    resource_type="repository",
+                    resource_id=str(repo.id),
+                    description=f"测试仓库连接 {repo.name}" + (" 失败" if result == "failure" else ""),
+                    result=result,
+                    detail=detail,
+                )
+            except Exception:
+                pass
+
         try:
             cred_data = resolve_credential(repo, request_user)
             provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
             connected = provider.test_connection()
             repo.health_status = "healthy"
             repo.save(update_fields=["health_status", "updated_at"])
+            _log_result("success")
             return {"connected": connected, "detail": "连接成功"}
         except ProviderError as exc:
             repo.health_status = "unhealthy"
             repo.save(update_fields=["health_status", "updated_at"])
+            _log_result("failure", str(exc), getattr(exc, "diagnostic", None))
             return {"connected": False, "detail": str(exc)}
         except Exception as exc:
             repo.health_status = "unhealthy"
             repo.save(update_fields=["health_status", "updated_at"])
+            _log_result("failure", str(exc))
             return {"connected": False, "detail": f"连接异常: {exc}"}
 
     @staticmethod
@@ -362,18 +390,22 @@ class RepositoryService:
     @staticmethod
     def review_range(
         repo: Repository,
-        tag: Optional[str] = None,
+        base_tag: Optional[str] = None,
+        head_tag: Optional[str] = None,
         request_user=None,
     ) -> dict:
         """
         按 Tag 区间拉取 commits 与 MRs 并做合规审查（不落库）
 
-        - 指定 tag：审查该 tag 与上一个 tag 之间的提交
-        - tag 为空或 "latest"：审查最新 tag 到分支 HEAD 之间的提交
+        - 同时指定 base_tag 与 head_tag：审查 base_tag -> head_tag 之间的提交
+        - 仅指定 head_tag：审查 head_tag 的上一个 tag -> head_tag 之间的提交
+        - 仅指定 base_tag：审查 base_tag -> 分支 HEAD 之间的提交
+        - 均未指定：审查最新 tag -> 分支 HEAD 之间的提交
 
         Args:
             repo: Repository 实例
-            tag: Tag 名称，None 或 "latest" 表示最新区间
+            base_tag: 起始 Tag 名称，None 表示自动取最新/上一个
+            head_tag: 结束 Tag 名称，None 表示分支 HEAD
             request_user: 当前请求用户
 
         Returns:
@@ -409,16 +441,24 @@ class RepositoryService:
         tag_names = [t.name for t in sortable]
 
         # 确定区间：base = 起点，head = 终点
-        base_ref: Optional[str] = None
-        head_ref = branch
-        if tag and tag != "latest":
-            if tag in tag_names:
-                idx = tag_names.index(tag)
-                head_ref = tag
-                base_ref = tag_names[idx + 1] if idx + 1 < len(tag_names) else None
+        # head 优先用显式 head_tag，否则取分支 HEAD
+        if head_tag and head_tag != "HEAD":
+            head_ref = head_tag
         else:
-            base_ref = tag_names[0] if tag_names else None
             head_ref = branch
+        # base 优先用显式 base_tag；否则按 head 自动推断
+        if base_tag:
+            base_ref = base_tag
+        elif head_tag and head_tag != "HEAD":
+            # head 是某个 tag，base 取该 tag 的上一个 tag
+            if head_tag in tag_names:
+                idx = tag_names.index(head_tag)
+                base_ref = tag_names[idx + 1] if idx + 1 < len(tag_names) else None
+            else:
+                base_ref = None
+        else:
+            # head 是分支 HEAD，base 取最新 tag
+            base_ref = tag_names[0] if tag_names else None
 
         # 拉取区间 commits
         commits: List[CommitInfo] = []

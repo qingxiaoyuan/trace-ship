@@ -71,7 +71,7 @@ class ProjectMember(models.Model):
         id: UUID 主键
         project: 关联项目
         user: 关联用户
-        role: 角色（developer/tester/manager/auditor/viewer）
+        role: 角色（developer/tester/manager/auditor/viewer/software_admin）
         created_at: 创建时间
     """
 
@@ -81,6 +81,7 @@ class ProjectMember(models.Model):
         ("manager", "项目管理员"),
         ("auditor", "审核人"),
         ("viewer", "只读人员"),
+        ("software_admin", "软件管理员"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -320,20 +320,28 @@ class RepositoryViewSet(StandardModelViewSet):
         """
         按 Tag 区间拉取 commits 与 MRs 并做合规审查（不落库）
 
-        query 参数 tag：指定 Tag 名称，审查该 Tag 与上一个 Tag 之间的提交；
-        为空或 "latest" 时审查最新 Tag 到分支 HEAD 之间的提交。
+        query 参数：
+            base: 起始 Tag 名称，缺省时自动取最新/上一个 tag
+            head: 结束 Tag 名称，缺省时取分支 HEAD
+        兼容旧参数 tag（等价于 head）。
 
         Args:
-            request: DRF Request，query 参数 tag
+            request: DRF Request
             pk: 仓库主键
 
         Returns:
             审查结果，含 commits / merge_requests / stats
         """
         repo = self.get_object()
-        tag = request.query_params.get("tag") or "latest"
+        base_tag = request.query_params.get("base") or None
+        head_tag = request.query_params.get("head") or None
+        # 兼容旧参数 tag（非 latest 时作为 head_tag）
+        if not head_tag:
+            old_tag = request.query_params.get("tag")
+            if old_tag and old_tag != "latest":
+                head_tag = old_tag
         try:
-            result = RepositoryService.review_range(repo, tag, request.user)
+            result = RepositoryService.review_range(repo, base_tag, head_tag, request.user)
             return success_response(result)
         except Exception as exc:
             return error_response(50000, f"拉取审查失败: {exc}", status_code=500)

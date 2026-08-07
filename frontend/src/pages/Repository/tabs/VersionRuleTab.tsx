@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Form, Input, InputNumber, Button, App } from 'antd';
+import { Form, Input, InputNumber, Button, Switch, App } from 'antd';
 import { repositoryApi } from '@/api/repository';
 import type { Repository, VersionRule } from '@/types';
 
@@ -14,6 +14,7 @@ interface VersionRuleFormValues {
   patch: number;
   rcSuffix: string;
   betaSuffix: string;
+  withDate: boolean;
 }
 
 export function VersionRuleTab({ repo }: VersionRuleTabProps) {
@@ -31,6 +32,7 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
     patch: versionRule.patch ?? 0,
     rcSuffix: suffixes.rc || 'rc',
     betaSuffix: suffixes.beta || 'beta',
+    withDate: versionRule.with_date ?? true,
   };
 
   // 实时预览用
@@ -40,6 +42,11 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
   const patch = Form.useWatch('patch', form) ?? initialValues.patch;
   const rcSuffix = Form.useWatch('rcSuffix', form) ?? initialValues.rcSuffix;
   const betaSuffix = Form.useWatch('betaSuffix', form) ?? initialValues.betaSuffix;
+  const withDate = Form.useWatch('withDate', form) ?? initialValues.withDate;
+
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  const dateSuffix = withDate ? `_${dateStr}` : '';
 
   const mutation = useMutation({
     mutationFn: (values: VersionRuleFormValues) => {
@@ -52,6 +59,7 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
           rc: values.rcSuffix,
           beta: values.betaSuffix,
         },
+        with_date: values.withDate,
       };
       return repositoryApi.updateRepository(repo.id, { version_rule });
     },
@@ -94,12 +102,19 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
         </Form.Item>
       </div>
 
+      <Form.Item name="withDate" label="携带时间" valuePropName="checked">
+        <Switch checkedChildren="是" unCheckedChildren="否" />
+      </Form.Item>
+      <div className="-mt-3 mb-2 text-[12px] text-slate-400">
+        开启后生成的 tag 末尾追加 <span className="font-mono">_YYYYMMDD</span> 日期段，关闭则不携带日期
+      </div>
+
       <div className="mt-2 rounded-lg border border-indigo-50 bg-indigo-50/30 px-4 py-2.5 text-[12px] text-slate-500">
-        格式预览：<span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}</span>
+        格式预览：<span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}{dateSuffix}</span>
         <span className="mx-1 text-slate-300">|</span>
-        RC: <span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}-{rcSuffix || 'rc'}</span>
+        RC: <span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}-{rcSuffix || 'rc'}{dateSuffix}</span>
         <span className="mx-1 text-slate-300">|</span>
-        Beta: <span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}-{betaSuffix || 'beta'}</span>
+        Beta: <span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}-{betaSuffix || 'beta'}{dateSuffix}</span>
       </div>
 
       <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/50 px-4 py-2.5 text-[12px] text-slate-500">

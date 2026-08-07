@@ -20,6 +20,7 @@ const roleMap: Record<ProjectMemberRole, string> = {
   developer: '开发工程师',
   auditor: '审核人',
   viewer: '只读人员',
+  software_admin: '软件管理员',
 };
 
 const roleOptions = Object.entries(roleMap).map(([value, label]) => ({

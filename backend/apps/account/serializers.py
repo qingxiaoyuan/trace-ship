@@ -95,11 +95,14 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs: dict) -> dict:
         """
-        校验密码必填条件及 LDAP 用户保护
+        校验密码必填条件、LDAP 用户保护及防提权
 
         - 创建用户时必须提供密码，更新用户时可不传（不传则保持原密码）。
         - LDAP 账号的用户名和密码由 LDAP 服务器管理，更新时静默忽略这两个字段，
           防止前端绕过禁用态直接调接口修改。
+        - 非超管始终不能设置/修改 is_superuser，防止提权。
+        - 非超管更新时：拥有 system.user 权限可调整启用状态与角色，
+          普通用户仅能修改自己的基础信息（管理字段被剔除）。
 
         Args:
             attrs: 已校验的数据
@@ -112,11 +115,22 @@ class UserCreateSerializer(serializers.ModelSerializer):
         if self.instance is not None and self.instance.source == "ldap":
             attrs.pop("password", None)
             attrs.pop("username", None)
-        # 非超管更新（仅允许改自己）时剔除管理字段，防止提权
+        # 非超管防提权处理
         request = self.context.get("request")
-        if self.instance is not None and request and not request.user.is_superuser:
-            for field in ("is_superuser", "is_active", "role_ids", "source", "username"):
-                attrs.pop(field, None)
+        if request and not request.user.is_superuser:
+            # 非超管始终不能设置/修改 is_superuser
+            attrs.pop("is_superuser", None)
+            if self.instance is not None:
+                # 更新时不允许非超管修改账号来源与用户名（登录标识）
+                attrs.pop("source", None)
+                attrs.pop("username", None)
+                # 仅拥有 system.user 权限可调整启用状态与角色，普通用户仅能改自己基础信息
+                has_system_user = request.user.user_roles.filter(
+                    role__permissions__code="system.user"
+                ).exists()
+                if not has_system_user:
+                    for field in ("is_active", "role_ids"):
+                        attrs.pop(field, None)
         return attrs
 
     def create(self, validated_data: dict) -> User:
@@ -266,14 +280,15 @@ class UserInfoSerializer(serializers.ModelSerializer):
     """
     当前登录用户信息序列化器
 
-    额外返回用户拥有的角色编码列表。
+    额外返回用户拥有的角色编码列表与权限编码列表（供前端细粒度权限控制）。
     """
 
     roles = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "nickname", "email", "department", "source", "roles", "is_superuser"]
+        fields = ["id", "username", "nickname", "email", "department", "source", "roles", "permissions", "is_superuser"]
 
     def get_roles(self, obj: User) -> List[str]:
         """
@@ -286,6 +301,18 @@ class UserInfoSerializer(serializers.ModelSerializer):
             角色编码字符串列表
         """
         return list(obj.user_roles.values_list("role__code", flat=True))
+
+    def get_permissions(self, obj: User) -> List[str]:
+        """
+        获取用户通过角色关联的全部权限编码列表
+
+        Args:
+            obj: 当前用户实例
+
+        Returns:
+            权限编码字符串列表
+        """
+        return list(obj.user_roles.values_list("role__permissions__code", flat=True).distinct())
 
 
 class MenuSerializer(serializers.Serializer):
