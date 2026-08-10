@@ -12,12 +12,14 @@ from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
-from apps.package.models import PackageConfig, PackageImage, PackageTask
+from apps.package.models import PackageConfig, PackageImage, PackageNode, PackageTask
 from apps.package.docker_local import LocalDockerError, LocalDockerService
 from apps.package.nexus import NexusError, NexusService
+from apps.package.remote_windows import RemoteNodeError, test_node_connection
 from apps.package.serializers import (
     PackageConfigSerializer,
     PackageImageSerializer,
+    PackageNodeSerializer,
     PackageTaskSerializer,
 )
 from apps.package.services import PackageService
@@ -160,6 +162,87 @@ class PackageImageViewSet(StandardModelViewSet):
         return success_response({"items": items, "errors": errors})
 
 
+class PackageNodeViewSet(StandardModelViewSet):
+    """远程打包节点视图集（系统级节点池）。"""
+
+    queryset = PackageNode.objects.select_related("credential", "created_by").all()
+    serializer_class = PackageNodeSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["os_type", "is_active"]
+    search_fields = ["name", "host"]
+    ordering_fields = ["created_at"]
+    ordering = ["-created_at"]
+
+    def get_permissions(self):
+        # 节点维护与连通性测试需要 system.package_image 权限（与打包镜像同级），超管自动放行
+        if self.action in (
+            "create", "update", "partial_update", "destroy", "test", "test_connection",
+        ):
+            return [IsAuthenticated(), HasPermission("system.package_image")]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        """节点仍被远程打包配置引用时禁止删除。"""
+        node = self.get_object()
+        if node.package_configs.filter(executor_type="remote_windows").exists():
+            return error_response(
+                40900,
+                "节点仍被远程 Windows 打包配置引用，请先将相关配置改为本地 Docker 或删除配置",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="test")
+    def test(self, request, pk=None):
+        """测试已保存节点的 SSH 连通性（含系统信息、git 检测、工作目录创建）。"""
+        node = self.get_object()
+        if not node.credential_id:
+            return error_response(40000, "节点未配置登录凭证", status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = test_node_connection(
+                host=node.host,
+                port=node.port,
+                credential_id=str(node.credential_id),
+                work_root=node.work_root,
+            )
+        except RemoteNodeError as exc:
+            return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+        message = "节点连接测试成功"
+        if not result.get("git"):
+            message += "（未检测到 git，打包时将无法拉取源码）"
+        return success_response(result, message)
+
+    @action(detail=False, methods=["post"], url_path="test-connection")
+    def test_connection(self, request):
+        """测试未保存的节点连接参数（host / port / credential_id / work_root）。"""
+        data = request.data or {}
+        host = (data.get("host") or "").strip()
+        port = data.get("port") or 22
+        credential_id = data.get("credential_id")
+        work_root = (data.get("work_root") or "").strip()
+        if not host:
+            return error_response(40000, "请输入主机地址", status_code=status.HTTP_400_BAD_REQUEST)
+        if not credential_id:
+            return error_response(40000, "请选择登录凭证", status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            return error_response(40000, "端口号不合法", status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = test_node_connection(
+                host=host, port=port, credential_id=str(credential_id), work_root=work_root,
+            )
+        except RemoteNodeError as exc:
+            return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+        message = "节点连接测试成功"
+        if not result.get("git"):
+            message += "（未检测到 git，打包时将无法拉取源码）"
+        return success_response(result, message)
+
+
 class PackageConfigViewSet(StandardModelViewSet):
     """项目级打包配置视图集。"""
 
@@ -175,7 +258,7 @@ class PackageConfigViewSet(StandardModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return PackageConfig.objects.none()
-        queryset = PackageConfig.objects.select_related("project", "repository", "image", "svn_credential")
+        queryset = PackageConfig.objects.select_related("project", "repository", "image", "node", "svn_credential")
         if user.is_superuser:
             return queryset
         project_ids = visible_project_ids(user)

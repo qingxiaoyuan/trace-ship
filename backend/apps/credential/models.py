@@ -38,13 +38,14 @@ class Credential(models.Model):
         ("gitlab_token", "GitLab Token"),
         ("svn_password", "SVN 密码"),
         ("ldap_password", "LDAP 密码"),
+        ("windows_password", "Windows 密码"),
     ]
     AUTH_MODE_CHOICES = [
         ("token", "Token"),
         ("password", "用户名密码"),
     ]
     # 全系统共享的凭证类型：所有登录用户可见可用
-    SYSTEM_SHARED_CRED_TYPES = {"svn_password"}
+    SYSTEM_SHARED_CRED_TYPES = {"svn_password", "windows_password"}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name="凭证名称")

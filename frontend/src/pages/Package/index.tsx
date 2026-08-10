@@ -18,7 +18,7 @@ import { ConfigList } from './components/ConfigList';
 import { RunningTab } from './components/RunningTab';
 import { DetailView } from './components/DetailView';
 import { BuildView } from './components/BuildView';
-import { ConfigDrawer } from './components/ConfigDrawer';
+import { PackageConfigModal } from '@/components/PackageConfigModal';
 import { PermissionAlert } from '@/components/PermissionAlert';
 
 const pageSize = 100;
@@ -439,7 +439,7 @@ export default function PackageTaskPage() {
         </Form>
       </Modal>
 
-      <ConfigDrawer open={configDrawerOpen} editing={editingConfig} onClose={closeConfigDrawer} />
+      <PackageConfigModal open={configDrawerOpen} editing={editingConfig} onClose={closeConfigDrawer} />
     </div>
   );
 }

@@ -218,7 +218,7 @@ cmd_frontend() {
         npm install
     fi
 
-    echo "🚀 启动 Vite 开发服务器: http://localhost:5173（/api 代理到 localhost:8000）"
+    echo "🚀 启动 Vite 开发服务器: http://localhost:8855（/api 代理到 localhost:8000）"
     start_bg frontend npm run dev
 }
 

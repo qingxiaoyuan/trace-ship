@@ -57,7 +57,7 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
     [branches]
   );
 
-  // 弹窗打开时初始化表单默认值（依赖 destroyOnClose 重置组件状态）
+  // 弹窗打开时初始化表单默认值（依赖 destroyOnHidden 重置组件状态）
   useEffect(() => {
     if (open) {
       form.setFieldsValue({
@@ -155,7 +155,7 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
       width={720}
       onCancel={handleCancel}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
     >
       <Steps current={currentStep} items={steps} className="mb-6" />
 

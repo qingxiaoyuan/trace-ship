@@ -1,6 +1,7 @@
 """
 系统内置打包业务服务
 """
+import base64
 import hashlib
 import logging
 import os
@@ -10,7 +11,7 @@ import select
 import shutil
 import subprocess
 import threading
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from django.conf import settings
@@ -20,6 +21,7 @@ from rest_framework import serializers
 
 from apps.credential.models import Credential
 from apps.package.models import PackageConfig, PackageTask
+from apps.package.remote_windows import RemoteWindowsClient, build_set_env_prefix, cmd_quote
 from apps.repository.serializers import RepositorySerializer
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.factory import get_provider
@@ -87,12 +89,20 @@ class PackageService:
     def _snapshot(cls, config: PackageConfig) -> dict[str, Any]:
         """生成配置快照，避免执行时配置变更影响历史任务。"""
         image = config.image
+        node = config.node
         return {
             "config_id": str(config.id),
             "name": config.name,
+            "executor_type": config.executor_type or "local_docker",
             "image": image.image if image else "",
             "image_name": image.name if image else "",
             "script_entry": image.script_entry if image else "",
+            "node_id": str(node.id) if node else None,
+            "node_name": node.name if node else "",
+            "node_host": node.host if node else "",
+            "node_port": node.port if node else 22,
+            "node_work_root": node.work_root if node else "",
+            "node_credential_id": str(node.credential_id) if node and node.credential_id else None,
             "custom_script": config.custom_script,
             "build_path": cls._safe_rel_path(
                 config.build_path,
@@ -177,7 +187,7 @@ class PackageService:
             repository=release.repository,
             auto_package_on_release=True,
             is_active=True,
-        ).select_related("project", "repository", "image")
+        ).select_related("project", "repository", "image", "node")
         tasks = []
         for config in configs:
             tasks.append(cls.create_task_for_release(config, release, request_user=request_user))
@@ -328,18 +338,42 @@ class PackageService:
         env = cls._build_auth_env(task.repository, task.triggered_by)
         cls._run_command(task, ["git", "clone", "--depth", "1", "--branch", task.tag_name, clone_url, str(source_dir)], workspace, env)
 
+    @staticmethod
+    def _auth_clone_args(repo, request_user=None) -> list[str]:
+        """生成 git 认证参数（http.extraHeader Basic 头）。
+
+        不把凭证编进克隆 URL：URL 编码产生的 %XX 会被 cmd 的 %var% 展开破坏，
+        且会触发 wincredman 持久化报错。base64 字符集（A-Za-z0-9+/=）对 cmd 安全，
+        也不会出现在报错回显中。
+        """
+        data = resolve_credential(repo, request_user)
+        username = data.get("username") or ""
+        token = data.get("token") or data.get("password") or ""
+        if not token:
+            return []
+        if not username:
+            username = "oauth2"
+        raw = base64.b64encode(f"{username}:{token}".encode("utf-8")).decode("ascii")
+        return ["-c", f"http.extraHeader=Authorization: Basic {raw}"]
+
+    @staticmethod
+    def _remote_workspace(task: PackageTask) -> PureWindowsPath:
+        """远程节点上该任务的工作目录。"""
+        snapshot = task.config_snapshot or {}
+        root = (snapshot.get("node_work_root") or r"C:\trace-ship\workspaces").strip()
+        return PureWindowsPath(root) / str(task.id)
+
     @classmethod
-    def _task_env(cls, task: PackageTask, workspace: Path) -> dict[str, str]:
-        """构建打包执行环境变量。"""
+    def _build_env(cls, task: PackageTask, workspace) -> dict[str, str]:
+        """构建打包执行环境变量（workspace 可为本地 Path 或远程 PureWindowsPath）。"""
         snapshot = task.config_snapshot or {}
         env_vars = snapshot.get("env_vars") if isinstance(snapshot.get("env_vars"), dict) else {}
-        output_path = cls._safe_rel_path(snapshot.get("output_path", "artifacts"), "artifacts")
         return {
             **{str(k): str(v) for k, v in env_vars.items()},
             "TAG_NAME": task.tag_name,
             "VERSION": task.version,
             "BUILD_PATH": cls._safe_rel_path(snapshot.get("build_path", "."), "."),
-            "OUTPUT_PATH": output_path,
+            "OUTPUT_PATH": cls._safe_rel_path(snapshot.get("output_path", "artifacts"), "artifacts"),
             "PROJECT_CODE": task.project.code or task.project.name,
             "WORKSPACE": str(workspace),
             "SOURCE_DIR": str(workspace / "source"),
@@ -348,6 +382,98 @@ class PackageService:
             "SCRIPTS_DIR": str(workspace / "scripts"),
             "TMPDIR": str(workspace / "tmp"),
         }
+
+    @classmethod
+    def _checkout_source_remote(cls, task: PackageTask) -> None:
+        """在远程 Windows 节点上克隆源码（节点自行访问代码仓库）。"""
+        snapshot = task.config_snapshot or {}
+        remote_workspace = cls._remote_workspace(task)
+        source_dir = remote_workspace / "source"
+        clone_url = cls._clone_url(task.repository)
+        auth_args = cls._auth_clone_args(task.repository, task.triggered_by)
+
+        node_label = snapshot.get("node_name") or snapshot.get("node_host") or "远程节点"
+        cls._append_log(task, f"[{node_label}] 远程工作目录: {remote_workspace}")
+        cls._append_log(
+            task,
+            f'$ git clone --depth 1 --branch {task.tag_name} {clone_url} "{source_dir}"',
+        )
+
+        def log_line(line: str) -> None:
+            cls._append_log(task, cls._sanitize_log_line(line))
+
+        # -c 参数逐个 cmd_quote（extraHeader 值含空格）；credential.helper= 置空，
+        # 避免 git 调用 wincredman 持久化凭据（SSH 会话下报错）
+        git_args = ["-c", "credential.helper=", *auth_args]
+        arg_parts = " ".join(cmd_quote(arg) for arg in git_args)
+        with RemoteWindowsClient.from_snapshot(snapshot) as client:
+            client.mkdirs(remote_workspace, remote_workspace / "artifacts", remote_workspace / "tmp")
+            # 清理历史残留，保证全新克隆
+            client.remove_dir(source_dir)
+            client.run_checked(
+                f"git {arg_parts} clone --depth 1 "
+                f"--branch {cmd_quote(task.tag_name)} "
+                f"{cmd_quote(clone_url)} {cmd_quote(str(source_dir))}",
+                on_line=log_line,
+                should_stop=lambda: cls._ensure_task_not_canceled(task),
+                error_hint="节点需安装 git 且能访问代码仓库",
+            )
+
+    @classmethod
+    def _run_remote_build(cls, task: PackageTask) -> None:
+        """在远程 Windows 节点上执行打包脚本。
+
+        有自定义脚本时上传到节点临时目录后以 call 执行；
+        否则执行源码根目录下的 pack.bat（节点接入约定）。
+        """
+        snapshot = task.config_snapshot or {}
+        custom_script = (snapshot.get("custom_script") or "").strip()
+        remote_workspace = cls._remote_workspace(task)
+        source_dir = remote_workspace / "source"
+        env = cls._build_env(task, remote_workspace)
+        build_path = env["BUILD_PATH"]
+        work_dir = source_dir if build_path == "." else source_dir / PureWindowsPath(build_path)
+        set_prefix = build_set_env_prefix(env)
+
+        with RemoteWindowsClient.from_snapshot(snapshot) as client:
+            if custom_script:
+                script_path = remote_workspace / "tmp" / "pack-custom.bat"
+                client.upload_text(script_path, custom_script)
+                entry = f"call {cmd_quote(str(script_path))}"
+                error_hint = ""
+            else:
+                entry = f"call {cmd_quote(str(source_dir / 'pack.bat'))}"
+                error_hint = "未配置自定义脚本时，源码根目录需提供 pack.bat 入口"
+            # 日志展示不打印环境变量明文，避免泄露敏感值
+            cls._append_log(
+                task,
+                f'$ cd /d "{work_dir}" && <注入 {len(env)} 个环境变量> && {entry}',
+            )
+            client.run_checked(
+                f"cd /d {cmd_quote(str(work_dir))} && {set_prefix} && {entry}",
+                on_line=lambda line: cls._append_log(task, cls._sanitize_log_line(line)),
+                should_stop=lambda: cls._ensure_task_not_canceled(task),
+                error_hint=error_hint,
+            )
+
+    @classmethod
+    def _collect_remote_artifacts(cls, task: PackageTask, workspace: Path) -> None:
+        """将远程节点产物回传到本地工作区，并清理远程工作目录。"""
+        snapshot = task.config_snapshot or {}
+        remote_workspace = cls._remote_workspace(task)
+        with RemoteWindowsClient.from_snapshot(snapshot) as client:
+            count = client.download_dir(
+                remote_workspace / "artifacts",
+                workspace / "artifacts",
+                should_stop=lambda: cls._ensure_task_not_canceled(task),
+            )
+            client.remove_dir(remote_workspace)
+        cls._append_log(task, f"已回传 {count} 个产物文件，远程工作目录已清理")
+
+    @classmethod
+    def _task_env(cls, task: PackageTask, workspace: Path) -> dict[str, str]:
+        """构建打包执行环境变量。"""
+        return cls._build_env(task, workspace)
 
     @staticmethod
     def _docker_env_args(env_vars: dict[str, Any]) -> list[str]:
@@ -643,18 +769,33 @@ class PackageService:
         workspace = cls.prepare_workspace(task)
         snapshot = task.config_snapshot or {}
         svn_push_enabled = bool(snapshot.get("svn_push_enabled"))
+        executor_type = snapshot.get("executor_type") or "local_docker"
         try:
             cls._append_log(task, f"开始打包 {task.version} ({task.tag_name})")
             cls._update_stage(task, "checkout", 5, "正在拉取源码…")
-            cls._checkout_source(task, workspace)
+            if executor_type == "remote_windows":
+                cls._checkout_source_remote(task)
+            else:
+                cls._checkout_source(task, workspace)
             cls._ensure_task_not_canceled(task)
             build_progress = 25 if svn_push_enabled else 30
             cls._update_stage(task, "build", build_progress, "开始执行打包…")
-            cls._run_container(task, workspace)
-            cls._ensure_task_not_canceled(task)
             artifacts_progress = 65 if svn_push_enabled else 80
-            cls._update_stage(task, "artifacts", artifacts_progress, "正在扫描产物…")
+            if executor_type == "remote_windows":
+                cls._run_remote_build(task)
+                cls._ensure_task_not_canceled(task)
+                cls._update_stage(task, "artifacts", artifacts_progress, "正在回传产物…")
+                cls._collect_remote_artifacts(task, workspace)
+            else:
+                cls._run_container(task, workspace)
+                cls._ensure_task_not_canceled(task)
+                cls._update_stage(task, "artifacts", artifacts_progress, "正在扫描产物…")
             task.artifact_info = cls._scan_artifacts(workspace)
+            if not task.artifact_info:
+                cls._append_log(
+                    task,
+                    "警告：未扫描到任何打包产物，请检查产物目录配置或打包脚本输出路径",
+                )
             cls._ensure_task_not_canceled(task)
 
             # SVN 推送阶段

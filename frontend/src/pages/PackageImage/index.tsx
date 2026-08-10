@@ -205,7 +205,7 @@ export default function PackageImagePage() {
         confirmLoading={importMutation.isPending}
         okButtonProps={{ disabled: !importFile || importMutation.isPending }}
         onOk={() => importFile && importMutation.mutate(importFile)}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="space-y-3 py-1">
           <p className="text-[12px] text-slate-400">

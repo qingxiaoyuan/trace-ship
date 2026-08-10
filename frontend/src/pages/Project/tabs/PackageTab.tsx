@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Form, Input, Modal, Select, Switch, Typography } from 'antd';
-import { Button } from 'antd';
+import { App, Form, Modal, Select } from 'antd';
 import {
   Plus,
   Search,
@@ -14,13 +13,9 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
-import { repositoryApi } from '@/api/repository';
 import { projectApi } from '@/api/project';
-import { SvnTestButton } from '@/components/SvnTestButton';
 import { PermissionAlert } from '@/components/PermissionAlert';
-import { ImagePickerField } from '@/components/ImagePickerField';
-import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
-import { credentialApi } from '@/api/credential';
+import { PackageConfigModal } from '@/components/PackageConfigModal';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import type { PackageConfig } from '@/types';
 
@@ -38,13 +33,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const [editing, setEditing] = useState<PackageConfig | null>(null);
   const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
   const [keyword, setKeyword] = useState('');
-  const [form] = Form.useForm<Partial<PackageConfig>>();
   const [triggerForm] = Form.useForm<{ release_id: string }>();
-  const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
-
-  const svnUrl = Form.useWatch('svn_url', form);
-  const svnCredentialId = Form.useWatch('svn_credential', form);
-  const svnPathTemplate = Form.useWatch('svn_path_template', form);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['package-configs', projectId],
@@ -60,26 +49,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
   });
   const { canManage, canTriggerPackage } = useProjectRole(project);
 
-  const { data: reposData } = useQuery({
-    queryKey: ['repositories', projectId],
-    queryFn: () => repositoryApi.getRepositories({ project: projectId, repo_type: 'git', page_size: 1000 }),
-    enabled: !!projectId,
-  });
-
-  const { items: imageItems } = useAvailableImages();
-
-  const { data: svnCredsData } = useQuery({
-    queryKey: ['svn-credentials', projectId],
-    queryFn: () =>
-      credentialApi.getCredentials({
-        cred_type: 'svn_password',
-        project: projectId,
-        is_active: true,
-        page_size: 1000,
-      }),
-    enabled: !!projectId && svnPushEnabled,
-  });
-
   const { data: releasedData, isLoading: releasesLoading } = useQuery({
     queryKey: ['package-trigger-releases', projectId, triggerConfig?.repository],
     queryFn: () =>
@@ -90,46 +59,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
         page_size: 1000,
       }),
     enabled: triggerOpen && !!projectId && !!triggerConfig?.repository,
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    if (editing) {
-      form.setFieldsValue({
-        ...editing,
-        image_ref: editing.image_ref || undefined,
-      });
-    } else {
-      form.setFieldsValue({
-        project: projectId,
-        build_path: '.',
-        output_path: 'dist',
-        env_vars: {},
-        auto_package_on_release: true,
-        is_active: true,
-        svn_push_enabled: false,
-        svn_path_template: '{version}',
-      });
-    }
-  }, [editing, form, open, projectId]);
-
-  const saveMutation = useMutation({
-    mutationFn: (values: Partial<PackageConfig>) => {
-      const payload = { ...values, project: projectId };
-      const ref = values.image_ref;
-      const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
-      if (item) {
-        payload.image_info = toImageInfo(item);
-      }
-      if (editing) return packageApi.updateConfig(editing.id, payload);
-      return packageApi.createConfig(payload);
-    },
-    onSuccess: () => {
-      message.success('保存成功');
-      setOpen(false);
-      setEditing(null);
-      queryClient.invalidateQueries({ queryKey: ['package-configs', projectId] });
-    },
   });
 
   const deleteMutation = useMutation({
@@ -169,8 +98,6 @@ export function PackageTab({ projectId }: PackageTabProps) {
     );
   }, [data, keyword]);
 
-  const repoOptions = (reposData?.results || []).map((repo) => ({ label: repo.name, value: repo.id }));
-  const svnCredentialOptions = (svnCredsData?.results || []).map((c) => ({ label: c.name, value: c.id }));
   const releaseOptions = (releasedData?.results || []).map((release) => ({
     label: `${release.version} / ${release.tag_name}`,
     value: release.id,
@@ -260,7 +187,9 @@ export function PackageTab({ projectId }: PackageTabProps) {
                   </span>
                 </div>
                 <div className="col-span-12 text-[12px] text-slate-500 truncate font-mono md:col-span-3">
-                  {config.image_ref || (config.custom_script ? '自定义脚本' : '-')}
+                  {config.executor_type === 'remote_windows'
+                    ? `远程: ${config.node_name || config.node_host || '-'}`
+                    : config.image_ref || (config.custom_script ? '自定义脚本' : '-')}
                 </div>
                 <div className="col-span-3 flex items-center justify-center md:col-span-1">
                   {config.auto_package_on_release ? (
@@ -327,94 +256,15 @@ export function PackageTab({ projectId }: PackageTabProps) {
         </div>
       </div>
 
-      <Modal
-        title={editing ? '编辑打包配置' : '新增打包配置'}
+      <PackageConfigModal
         open={open}
-        width={720}
-        onCancel={() => setOpen(false)}
-        destroyOnHidden
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setOpen(false)}>取消</Button>
-            {svnPushEnabled && (
-              <SvnTestButton
-                projectId={projectId}
-                svnUrl={svnUrl}
-                svnCredentialId={svnCredentialId}
-                svnPathTemplate={svnPathTemplate}
-              />
-            )}
-            <Button type="primary" loading={saveMutation.isPending} onClick={() => form.submit()}>
-              保存
-            </Button>
-          </div>
-        }
-      >
-        <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
-          <Form.Item name="name" label="配置名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="repository" label="关联仓库" rules={[{ required: true }]}>
-            <Select options={repoOptions} />
-          </Form.Item>
-          <Form.Item name="image_ref" label="打包镜像" rules={[{ required: true, message: '请选择打包镜像' }]}>
-            <ImagePickerField />
-          </Form.Item>
-          <Form.Item name="custom_script" label="自定义打包脚本" extra="留空则执行镜像内置脚本；填写后直接在 /workspace/source 目录执行">
-            <Input.TextArea rows={6} placeholder="cd /workspace/source && ./scripts/custom-build.sh" />
-          </Form.Item>
-          <div className="grid grid-cols-2 gap-3">
-            <Form.Item name="build_path" label="构建目录" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="output_path" label="产物目录" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Form.Item name="auto_package_on_release" label="发布后自动打包" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="is_active" label="启用" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          </div>
-          <div className="border-t border-slate-100 pt-3">
-            <Form.Item name="svn_push_enabled" label="启用 SVN 产物推送" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            {svnPushEnabled && (
-              <>
-                <Form.Item
-                  name="svn_url"
-                  label="SVN 仓库地址"
-                  rules={[{ required: true, message: '请输入 SVN 仓库地址' }]}
-                >
-                  <Input placeholder="svn://192.168.1.100/releases" />
-                </Form.Item>
-                <Form.Item
-                  name="svn_credential"
-                  label="SVN 凭证"
-                  rules={[{ required: true, message: '请选择 SVN 凭证' }]}
-                >
-                  <Select
-                    options={svnCredentialOptions}
-                    placeholder="选择 SVN 凭证"
-                    showSearch
-                    optionFilterProp="label"
-                  />
-                </Form.Item>
-                <Form.Item name="svn_path_template" label="SVN 目录模板">
-                  <Input placeholder="{version}" />
-                </Form.Item>
-                <Typography.Text type="secondary" className="text-xs">
-                  可用占位符:{'{version}'}、{'{tag_name}'}、{'{project_code}'},默认按版本号创建目录
-                </Typography.Text>
-              </>
-            )}
-          </div>
-        </Form>
-      </Modal>
+        editing={editing}
+        fixedProjectId={projectId}
+        onClose={() => {
+          setOpen(false);
+          setEditing(null);
+        }}
+      />
 
       <Modal
         title="立即打包"

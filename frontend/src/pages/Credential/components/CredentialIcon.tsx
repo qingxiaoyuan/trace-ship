@@ -2,7 +2,6 @@ import { credentialTypeIconMap } from '../constants';
 import type { CredentialType } from '@/types';
 
 type Variant = 'indigo' | 'cyan' | 'amber' | 'rose' | 'violet' | 'emerald' | 'slate';
-
 interface CredentialIconProps {
   type: CredentialType;
   size?: 'sm' | 'md' | 'lg';
@@ -29,6 +28,7 @@ const typeVariantMap: Record<CredentialType, Variant> = {
   gitlab_token: 'indigo',
   svn_password: 'amber',
   ldap_password: 'rose',
+  windows_password: 'cyan',
   ai_api_key: 'emerald',
 };
 

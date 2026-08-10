@@ -119,7 +119,7 @@ celery -A config beat -l info
 cd frontend
 
 npm install
-npm run dev       # Vite 默认 5173，/api 代理到后端
+npm run dev       # Vite 默认 8855，/api 代理到后端
 npm run build     # tsc -b && vite build
 npm run lint      # ESLint
 npm run preview
@@ -314,7 +314,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
   - `config.settings.prod`：Docker / 生产配置。
 - 关键环境变量：`SECRET_KEY`、`CREDENTIAL_SECRET_KEY`、`DB_*`、`REDIS_*`、`LDAP_*`、`ALLOWED_HOSTS`、`CORS_ALLOW_ALL_ORIGINS`。
 - 默认后端账号：`admin / admin@123`。
-- Docker 默认值以 `docker/docker-compose.yml` 和 `docker/.env` 为准；常见端口包括后端 `8000`、前端容器 `8002`、Vite `5173`、GitLab `18929`、phpLDAPadmin `18090`（test）、SVN `3690`（test）等。
+- Docker 默认值以 `docker/docker-compose.yml` 和 `docker/.env` 为准；常见端口包括后端 `8000`、前端容器 `8002`、Vite `8855`、GitLab `18929`、phpLDAPadmin `18090`（test）、SVN `3690`（test）等。
 - `docker/` 下另有 `start-prod.sh`（本地生产模式一键部署）与 `setup-docker-mirror.sh`（镜像加速器配置）辅助脚本。
 - 数据卷统一显式命名 `trace-ship-*`（如 `trace-ship-postgres-data`），不随 compose 项目名变化。
 

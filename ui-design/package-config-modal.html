@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>打包配置 · 弹窗表单优化原型</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body class="bg-[#eef0f4] font-[Inter] text-slate-700 antialiased">
+
+  <!-- 背景页面示意 -->
+  <div class="mx-auto max-w-5xl px-8 py-10 opacity-40 select-none">
+    <h1 class="text-[22px] font-semibold tracking-tight text-slate-900">打包配置</h1>
+    <p class="mt-1 text-[13px] text-slate-500">配置发布成功后的自动打包流程</p>
+    <div class="mt-6 space-y-3">
+      <div class="h-16 rounded-xl border border-slate-200 bg-white"></div>
+      <div class="h-16 rounded-xl border border-slate-200 bg-white"></div>
+      <div class="h-16 rounded-xl border border-slate-200 bg-white"></div>
+      <div class="h-16 rounded-xl border border-slate-200 bg-white"></div>
+    </div>
+  </div>
+
+  <!-- 遮罩 -->
+  <div class="fixed inset-0 z-30 bg-slate-950/35 backdrop-blur-[2px]"></div>
+
+  <!-- ============ 配置弹窗 ============ -->
+  <div class="fixed inset-0 z-40 flex items-center justify-center p-4 sm:p-8">
+    <div class="flex max-h-full w-full max-w-[880px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_-24px_rgba(15,23,42,0.35)]">
+
+      <!-- 头部 -->
+      <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
+        <div class="flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-600">
+          <i data-lucide="settings-2" class="h-4 w-4" style="stroke-width:1.5"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-[15px] font-semibold tracking-tight text-slate-900">编辑打包配置</div>
+          <div class="text-[11px] text-slate-400">Web 前端 / 发布后自动打包</div>
+        </div>
+        <button class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
+          <i data-lucide="x" class="h-4 w-4" style="stroke-width:1.5"></i>
+        </button>
+      </div>
+
+      <!-- 表单主体 -->
+      <div class="flex-1 overflow-y-auto px-6 py-5">
+
+        <!-- 基本信息 -->
+        <div class="mb-3 flex items-center gap-2">
+          <span class="text-[11px] font-medium uppercase tracking-wider text-slate-400">基本信息</span>
+          <div class="h-px flex-1 bg-slate-100"></div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1.5 block text-[12px] font-medium text-slate-600">配置名称 <span class="text-rose-500">*</span></label>
+              <input value="Web 前端打包" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition-all placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+            </div>
+            <div>
+              <label class="mb-1.5 block text-[12px] font-medium text-slate-600">所属项目 <span class="text-rose-500">*</span></label>
+              <button class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10">
+                <span>Trace Ship</span>
+                <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1.5 block text-[12px] font-medium text-slate-600">关联仓库 <span class="text-rose-500">*</span></label>
+              <button class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10">
+                <span class="flex items-center gap-1.5">
+                  <i data-lucide="git-branch" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+                  frontend
+                </span>
+                <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              </button>
+            </div>
+            <div>
+              <label class="mb-1.5 block text-[12px] font-medium text-slate-600">打包节点 <span class="text-rose-500">*</span></label>
+              <button class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10">
+                <span class="flex items-center gap-2">
+                  <span class="relative flex h-2 w-2">
+                    <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
+                    <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                  </span>
+                  Windows 打包机-01
+                  <span class="font-[JetBrains_Mono] text-[11px] text-slate-400">192.168.1.100</span>
+                </span>
+                <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 执行方式：分段选择 -->
+          <div>
+            <label class="mb-1.5 block text-[12px] font-medium text-slate-600">执行方式</label>
+            <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5">
+              <button class="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-slate-500 transition-all hover:bg-white hover:text-slate-700">
+                <i data-lucide="container" class="h-4 w-4" style="stroke-width:1.5"></i>
+                <span>
+                  <span class="block text-[12px] font-medium">本地 Docker</span>
+                  <span class="block text-[10px] text-slate-400">镜像内执行 pack.sh</span>
+                </span>
+              </button>
+              <button class="flex items-center gap-2.5 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-left text-indigo-700 shadow-sm transition-all">
+                <i data-lucide="monitor" class="h-4 w-4" style="stroke-width:1.5"></i>
+                <span>
+                  <span class="block text-[12px] font-medium">远程 Windows</span>
+                  <span class="block text-[10px] text-indigo-400">SSH 下发脚本执行</span>
+                </span>
+                <i data-lucide="check" class="ml-auto h-3.5 w-3.5" style="stroke-width:2"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1.5 block text-[12px] font-medium text-slate-600">构建目录</label>
+              <input value="." class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-[JetBrains_Mono] text-[12px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+            </div>
+            <div>
+              <label class="mb-1.5 block text-[12px] font-medium text-slate-600">产物目录</label>
+              <input value="dist" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-[JetBrains_Mono] text-[12px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 打包脚本 -->
+        <div class="mb-3 mt-7 flex items-center gap-2">
+          <span class="text-[11px] font-medium uppercase tracking-wider text-slate-400">打包脚本</span>
+          <div class="h-px flex-1 bg-slate-100"></div>
+          <span class="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-[JetBrains_Mono] text-[10px] font-medium text-amber-600">bat</span>
+        </div>
+
+        <div class="overflow-hidden rounded-xl border border-slate-200 bg-[#fbfcfe] transition-all focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10">
+          <!-- 编辑器工具栏 -->
+          <div class="flex items-center gap-1 border-b border-slate-100 bg-white px-2.5 py-1.5">
+            <i data-lucide="file-code-2" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+            <span class="font-[JetBrains_Mono] text-[11px] text-slate-500">pack-custom.bat</span>
+            <div class="ml-auto flex items-center gap-0.5">
+              <button title="插入变量" class="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600">
+                <i data-lucide="braces" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+                插入变量
+                <i data-lucide="chevron-down" class="h-3 w-3 text-slate-400" style="stroke-width:1.5"></i>
+              </button>
+              <div class="mx-1 h-4 w-px bg-slate-200"></div>
+              <button title="放大编辑" onclick="document.getElementById('editor-overlay').classList.remove('hidden');document.getElementById('editor-overlay').classList.add('flex')" class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600">
+                <i data-lucide="maximize-2" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+              </button>
+            </div>
+          </div>
+          <!-- 代码区 -->
+          <div class="flex max-h-[240px] overflow-auto">
+            <div class="sticky left-0 select-none border-r border-slate-100 bg-white px-2.5 py-3 text-right font-[JetBrains_Mono] text-[11px] leading-[1.7] text-slate-300">
+              1<br/>2<br/>3<br/>4<br/>5<br/>6<br/>7<br/>8<br/>9<br/>10
+            </div>
+            <pre class="flex-1 px-3 py-3 font-[JetBrains_Mono] text-[12px] leading-[1.7] text-slate-700"><code><span class="text-slate-400">@echo off</span>
+<span class="text-slate-400">chcp 65001 &gt;nul</span>
+<span class="text-indigo-600">echo</span> <span class="text-emerald-600">[pack] version=<span class="text-amber-600">%VERSION%</span> tag=<span class="text-amber-600">%TAG_NAME%</span></span>
+<span class="text-indigo-600">call</span> pnpm install --frozen-lockfile
+<span class="text-indigo-600">if</span> errorlevel 1 <span class="text-indigo-600">exit</span> /b 1
+<span class="text-indigo-600">call</span> pnpm run build
+<span class="text-indigo-600">if</span> errorlevel 1 <span class="text-indigo-600">exit</span> /b 1
+xcopy /e /i /y <span class="text-emerald-600">"<span class="text-amber-600">%OUTPUT_PATH%</span>"</span> <span class="text-emerald-600">"<span class="text-amber-600">%ARTIFACTS_DIR%</span>\<span class="text-amber-600">%OUTPUT_PATH%</span>"</span> &gt;nul
+<span class="text-indigo-600">if</span> errorlevel 1 <span class="text-indigo-600">exit</span> /b 1
+<span class="text-indigo-600">echo</span> <span class="text-emerald-600">[pack] done</span></code></pre>
+          </div>
+          <!-- 编辑器底栏 -->
+          <div class="flex items-center gap-2 border-t border-slate-100 bg-white px-3 py-1.5 text-[10px] text-slate-400">
+            <i data-lucide="info" class="h-3 w-3" style="stroke-width:1.5"></i>
+            留空则执行源码根目录下的 pack.bat；可用 %VERSION% 等注入变量
+          </div>
+        </div>
+
+        <!-- 高级选项 -->
+        <div class="mb-3 mt-7 flex items-center gap-2">
+          <span class="text-[11px] font-medium uppercase tracking-wider text-slate-400">高级选项</span>
+          <div class="h-px flex-1 bg-slate-100"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 transition-colors hover:border-slate-300">
+            <div>
+              <div class="text-[12px] font-medium text-slate-700">发布后自动打包</div>
+              <div class="text-[10px] text-slate-400">推 tag 成功后自动触发</div>
+            </div>
+            <button class="flex h-5 w-9 items-center rounded-full bg-indigo-600 px-0.5 transition-colors">
+              <span class="h-4 w-4 translate-x-4 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+          <div class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 transition-colors hover:border-slate-300">
+            <div>
+              <div class="text-[12px] font-medium text-slate-700">启用配置</div>
+              <div class="text-[10px] text-slate-400">停用后不可触发打包</div>
+            </div>
+            <button class="flex h-5 w-9 items-center rounded-full bg-indigo-600 px-0.5 transition-colors">
+              <span class="h-4 w-4 translate-x-4 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- SVN 推送 -->
+        <div class="mt-3 overflow-hidden rounded-xl border border-slate-200">
+          <div class="flex items-center justify-between bg-white px-3.5 py-2.5">
+            <div class="flex items-center gap-2">
+              <i data-lucide="folder-tree" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
+              <div>
+                <div class="text-[12px] font-medium text-slate-700">SVN 产物推送</div>
+                <div class="text-[10px] text-slate-400">打包成功后上传产物到 SVN</div>
+              </div>
+            </div>
+            <button class="flex h-5 w-9 items-center rounded-full bg-indigo-600 px-0.5 transition-colors">
+              <span class="h-4 w-4 translate-x-4 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+          <div class="space-y-4 border-t border-slate-100 bg-slate-50/60 px-3.5 py-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="mb-1.5 block text-[12px] font-medium text-slate-600">SVN 仓库地址 <span class="text-rose-500">*</span></label>
+                <input value="svn://192.168.1.100/releases" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-[JetBrains_Mono] text-[12px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+              </div>
+              <div>
+                <label class="mb-1.5 block text-[12px] font-medium text-slate-600">SVN 凭证 <span class="text-rose-500">*</span></label>
+                <button class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10">
+                  <span>SVN 发布账号</span>
+                  <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+                </button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="mb-1.5 block text-[12px] font-medium text-slate-600">目录模板</label>
+                <input value="{version}" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-[JetBrains_Mono] text-[12px] text-slate-800 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+              </div>
+              <div class="flex items-end pb-2">
+                <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <i data-lucide="braces" class="h-3 w-3" style="stroke-width:1.5"></i>
+                  占位符：<span class="font-[JetBrains_Mono]">{version}</span> <span class="font-[JetBrains_Mono]">{tag_name}</span> <span class="font-[JetBrains_Mono]">{project_code}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部操作栏 -->
+      <div class="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-3.5">
+        <button class="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600">
+          <i data-lucide="plug-zap" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+          测试 SVN 连接
+        </button>
+        <div class="flex items-center gap-2">
+          <button class="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100">取消</button>
+          <button class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm transition-all hover:bg-indigo-500 active:scale-[0.98]">
+            <i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:2"></i>
+            保存配置
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 放大脚本编辑 overlay ============ -->
+  <div id="editor-overlay" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/40 p-6 backdrop-blur-sm" onclick="if(event.target===this){this.classList.add('hidden');this.classList.remove('flex')}">
+    <div class="flex h-full max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div class="flex items-center gap-3 border-b border-slate-100 px-5 py-3.5">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-600">
+          <i data-lucide="file-code-2" class="h-4 w-4" style="stroke-width:1.5"></i>
+        </div>
+        <div class="flex-1">
+          <div class="text-[14px] font-semibold tracking-tight text-slate-900">编辑打包脚本</div>
+          <div class="font-[JetBrains_Mono] text-[11px] text-slate-400">pack-custom.bat · 以 cmd /c 在节点执行</div>
+        </div>
+        <span class="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-[JetBrains_Mono] text-[10px] font-medium text-amber-600">bat</span>
+        <button class="flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600">
+          <i data-lucide="braces" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+          插入变量
+          <i data-lucide="chevron-down" class="h-3 w-3 text-slate-400" style="stroke-width:1.5"></i>
+        </button>
+        <button onclick="document.getElementById('editor-overlay').classList.add('hidden');document.getElementById('editor-overlay').classList.remove('flex')" class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
+          <i data-lucide="minimize-2" class="h-4 w-4" style="stroke-width:1.5"></i>
+        </button>
+      </div>
+
+      <div class="flex flex-1 overflow-auto bg-[#fbfcfe]">
+        <div class="sticky left-0 select-none border-r border-slate-100 bg-white px-3 py-4 text-right font-[JetBrains_Mono] text-[12px] leading-[1.8] text-slate-300">
+          1<br/>2<br/>3<br/>4<br/>5<br/>6<br/>7<br/>8<br/>9<br/>10<br/>11<br/>12<br/>13
+        </div>
+        <pre class="flex-1 px-4 py-4 font-[JetBrains_Mono] text-[13px] leading-[1.8] text-slate-700"><code><span class="text-slate-400">@echo off</span>
+<span class="text-slate-400">chcp 65001 &gt;nul</span>
+
+<span class="text-indigo-600">echo</span> <span class="text-emerald-600">[pack] version=<span class="text-amber-600">%VERSION%</span> tag=<span class="text-amber-600">%TAG_NAME%</span></span>
+
+<span class="text-indigo-600">call</span> pnpm install --frozen-lockfile --registry=http://192.168.1.10:8081/repository/npm-group/
+<span class="text-indigo-600">if</span> errorlevel 1 <span class="text-indigo-600">exit</span> /b 1
+
+<span class="text-indigo-600">call</span> pnpm run build
+<span class="text-indigo-600">if</span> errorlevel 1 <span class="text-indigo-600">exit</span> /b 1
+
+<span class="text-slate-400">REM 产物复制到平台产物目录</span>
+xcopy /e /i /y <span class="text-emerald-600">"<span class="text-amber-600">%OUTPUT_PATH%</span>"</span> <span class="text-emerald-600">"<span class="text-amber-600">%ARTIFACTS_DIR%</span>\<span class="text-amber-600">%OUTPUT_PATH%</span>"</span> &gt;nul
+<span class="text-indigo-600">if</span> errorlevel 1 <span class="text-indigo-600">exit</span> /b 1
+<span class="text-indigo-600">echo</span> <span class="text-emerald-600">[pack] done <span class="text-amber-600">%VERSION%</span></span></code></pre>
+      </div>
+
+      <div class="flex items-center justify-between border-t border-slate-100 bg-white px-5 py-3">
+        <div class="flex items-center gap-3 text-[11px] text-slate-400">
+          <span class="flex items-center gap-1"><i data-lucide="info" class="h-3 w-3" style="stroke-width:1.5"></i>13 行 · 失败请用 if errorlevel 1 exit /b 1 返回非零</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="document.getElementById('editor-overlay').classList.add('hidden');document.getElementById('editor-overlay').classList.remove('flex')" class="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-100">取消</button>
+          <button onclick="document.getElementById('editor-overlay').classList.add('hidden');document.getElementById('editor-overlay').classList.remove('flex')" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm transition-all hover:bg-indigo-500 active:scale-[0.98]">
+            <i data-lucide="check" class="h-3.5 w-3.5" style="stroke-width:2"></i>
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

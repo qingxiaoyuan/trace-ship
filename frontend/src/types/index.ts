@@ -374,6 +374,34 @@ export interface PackageImageInfo {
   image_tag: string;
 }
 
+/** 远程打包节点（系统级节点池，当前支持 Windows，SSH/SFTP 接入） */
+export interface PackageNode {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  os_type: 'windows';
+  os_type_display?: string;
+  credential?: string | null;
+  credential_id?: string | null;
+  credential_name?: string;
+  work_root: string;
+  description?: string;
+  is_active: boolean;
+  created_by?: string | null;
+  created_by_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 打包节点连通性测试结果 */
+export interface PackageNodeTestResult {
+  ok: boolean;
+  os?: string;
+  git?: string;
+  work_root_ready?: boolean;
+}
+
 export interface PackageConfig {
   id: string;
   project: string;
@@ -383,6 +411,12 @@ export interface PackageConfig {
   repository_id?: string;
   repository_name?: string;
   name: string;
+  executor_type?: 'local_docker' | 'remote_windows';
+  executor_type_display?: string;
+  node?: string | null;
+  node_id?: string | null;
+  node_name?: string;
+  node_host?: string;
   image?: string | null;
   image_id?: string | null;
   image_name?: string;
@@ -466,6 +500,7 @@ export type CredentialType =
   | 'gitlab_token'
   | 'svn_password'
   | 'ldap_password'
+  | 'windows_password'
   | 'ai_api_key';
 
 export interface Credential {

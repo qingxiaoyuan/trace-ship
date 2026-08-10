@@ -83,8 +83,63 @@ class PackageImage(models.Model):
             return ""
 
 
+class PackageNode(models.Model):
+    """远程打包节点（当前支持 Windows，通过 SSH/SFTP 接入）。"""
+
+    OS_TYPE_CHOICES = [
+        ("windows", "Windows"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, verbose_name="节点名称")
+    host = models.CharField(max_length=300, verbose_name="主机地址")
+    port = models.IntegerField(default=22, verbose_name="SSH 端口")
+    os_type = models.CharField(
+        max_length=20, choices=OS_TYPE_CHOICES, default="windows", verbose_name="操作系统"
+    )
+    credential = models.ForeignKey(
+        "credential.Credential",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="package_nodes",
+        verbose_name="登录凭证",
+    )
+    work_root = models.CharField(
+        max_length=500,
+        default=r"C:\trace-ship\workspaces",
+        verbose_name="远程工作根目录",
+    )
+    description = models.CharField(max_length=500, blank=True, verbose_name="备注")
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_package_nodes",
+        verbose_name="创建人",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "package_node"
+        verbose_name = "打包节点"
+        verbose_name_plural = "打包节点"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.host})"
+
+
 class PackageConfig(models.Model):
     """项目级打包配置。"""
+
+    EXECUTOR_CHOICES = [
+        ("local_docker", "本地 Docker"),
+        ("remote_windows", "远程 Windows"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(
@@ -100,6 +155,20 @@ class PackageConfig(models.Model):
         verbose_name="关联仓库",
     )
     name = models.CharField(max_length=200, verbose_name="配置名称")
+    executor_type = models.CharField(
+        max_length=20,
+        choices=EXECUTOR_CHOICES,
+        default="local_docker",
+        verbose_name="执行方式",
+    )
+    node = models.ForeignKey(
+        PackageNode,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="package_configs",
+        verbose_name="远程打包节点",
+    )
     image = models.ForeignKey(
         PackageImage,
         on_delete=models.SET_NULL,

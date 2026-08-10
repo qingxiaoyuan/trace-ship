@@ -151,6 +151,7 @@ class CredentialViewSet(StandardModelViewSet):
                 {"value": "gitlab_token", "label": "GitLab Token"},
                 {"value": "svn_password", "label": "SVN 密码（系统共享）"},
                 {"value": "ldap_password", "label": "LDAP 密码"},
+                {"value": "windows_password", "label": "Windows 密码（系统共享）"},
                 {"value": "ai_api_key", "label": "AI API Key"},
             ],
             "auth_modes": [

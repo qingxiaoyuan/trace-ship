@@ -15,7 +15,7 @@ interface TsModalProps {
   bodyStyle?: CSSProperties;
   bodyClassName?: string;
   footerStyle?: CSSProperties;
-  destroyOnClose?: boolean;
+  destroyOnHidden?: boolean;
   afterOpenChange?: (open: boolean) => void;
 }
 
@@ -33,7 +33,7 @@ export function TsModal({
   bodyStyle,
   bodyClassName,
   footerStyle,
-  destroyOnClose,
+  destroyOnHidden,
   afterOpenChange,
 }: TsModalProps) {
   const titleNode = (
@@ -64,7 +64,7 @@ export function TsModal({
       width={width}
       centered
       footer={footer}
-      destroyOnClose={destroyOnClose}
+      destroyOnHidden={destroyOnHidden}
       afterOpenChange={afterOpenChange}
       classNames={{
         header: 'px-6 py-4 border-b border-indigo-50 mb-0',

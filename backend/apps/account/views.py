@@ -254,6 +254,7 @@ class AuthViewSet(viewsets.GenericViewSet):
             {"id": "notifications", "name": "通知中心", "path": "/notifications", "icon": "BellOutlined", "modules": []},
             {"id": "guide", "name": "使用说明", "path": "/guide", "icon": "ReadOutlined", "modules": []},
             {"id": "feedback", "name": "使用反馈", "path": "/feedback", "icon": "MessageOutlined", "modules": []},
+            {"id": "changelog", "name": "更新日志", "path": "/changelog", "icon": "FileTextOutlined", "modules": []},
             {"id": "projects", "name": "项目管理", "path": "/projects", "icon": "FolderOutlined", "modules": ["project"]},
             {"id": "repositories", "name": "仓库管理", "path": "/repositories", "icon": "DatabaseOutlined", "modules": ["repository"]},
             {"id": "credentials", "name": "凭证管理", "path": "/credentials", "icon": "KeyOutlined", "modules": ["credential"]},

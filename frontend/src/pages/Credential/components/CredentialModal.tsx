@@ -31,6 +31,12 @@ const tokenOnlyTypes: CredentialType[] = [
   'ai_api_key',
 ];
 
+const passwordOnlyTypes: CredentialType[] = [
+  'svn_password',
+  'ldap_password',
+  'windows_password',
+];
+
 const selectCommonProps = {
   suffixIcon: <ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />,
   classNames: { popup: { root: 'credential-select-popup' } },
@@ -58,8 +64,11 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
   const credType = Form.useWatch('cred_type', form);
 
   const isTokenOnly = tokenOnlyTypes.includes(credType);
+  const isPasswordOnly = passwordOnlyTypes.includes(credType);
   const isGitlabToken = credType === 'gitlab_token';
-  const isSystemShared = credType === 'svn_password';
+  const isSystemShared = credType === 'svn_password' || credType === 'windows_password';
+  // 有效认证模式：token/密码类凭证由类型直接锁定，不依赖表单里的 auth_mode 字段
+  const effectiveAuthMode = isTokenOnly ? 'token' : isPasswordOnly ? 'password' : authMode;
 
   const typeLabelMap = useMemo(
     () => Object.fromEntries(credentialTypeOptions) as Record<CredentialType, string>,
@@ -83,6 +92,13 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
     }
   }, [isTokenOnly, form]);
 
+  // 密码类凭证自动锁定认证模式为 password
+  useEffect(() => {
+    if (isPasswordOnly) {
+      form.setFieldsValue({ auth_mode: 'password' });
+    }
+  }, [isPasswordOnly, form]);
+
   const handleCancel = () => {
     form.resetFields();
     onCancel();
@@ -96,7 +112,6 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         expires_at: values.expires_at ? values.expires_at.format() : undefined,
       };
 
-      const effectiveAuthMode = isTokenOnly ? 'token' : values.auth_mode;
       payload.auth_mode = effectiveAuthMode;
 
       // 凭证内容映射为后端加密需要的 data 字段；留空表示不修改
@@ -141,7 +156,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
     [typeLabelMap],
   );
 
-  const tokenLabel = authMode === 'password' ? '密码' : 'Token';
+  const tokenLabel = effectiveAuthMode === 'password' ? '密码' : 'Token';
 
   return (
     <TsModal
@@ -151,7 +166,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
       open={open}
       onCancel={handleCancel}
       width={760}
-      destroyOnClose
+      destroyOnHidden
       bodyStyle={{ maxHeight: 'none' }}
       footerStyle={{ background: 'transparent' }}
       footer={
@@ -222,11 +237,11 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                 />
               </Form.Item>
             </div>
-            {/* 共享范围说明：默认个人凭证，SVN 凭证全系统共享 */}
+            {/* 共享范围说明：默认个人凭证，SVN / Windows 凭证全系统共享 */}
             {isSystemShared && (
               <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-[12px] text-indigo-600">
                 <Users className="h-3.5 w-3.5" strokeWidth={1.5} />
-                SVN 凭证全系统共享，所有用户可见可用；其余类型均为个人凭证
+                SVN / Windows 凭证全系统共享，所有用户可见可用；其余类型均为个人凭证
               </div>
             )}
           </FormSection>
@@ -235,17 +250,22 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
             title="认证信息"
             compact
             extra={
-              isTokenOnly && (
+              isTokenOnly ? (
                 <span className="text-[11px] text-indigo-500 font-medium inline-flex items-center gap-1">
                   <Lock className="h-3 w-3" strokeWidth={1.5} />
                   Token 类凭证固定使用 Token 认证
                 </span>
-              )
+              ) : isPasswordOnly ? (
+                <span className="text-[11px] text-indigo-500 font-medium inline-flex items-center gap-1">
+                  <Lock className="h-3 w-3" strokeWidth={1.5} />
+                  密码类凭证固定使用用户名密码认证
+                </span>
+              ) : undefined
             }
           >
             <div
               className="grid gap-x-4 gap-y-3"
-              style={{ gridTemplateColumns: (isTokenOnly && !isGitlabToken) ? '1fr' : 'repeat(2, 1fr)' }}
+              style={{ gridTemplateColumns: ((isTokenOnly && !isGitlabToken) || isPasswordOnly) ? '1fr' : 'repeat(2, 1fr)' }}
             >
               {/* GitLab Token 用户名与 Token 放在同一行，用户名在前 */}
               {isGitlabToken && (
@@ -262,7 +282,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                   />
                 </Form.Item>
               )}
-              {!isTokenOnly && (
+              {!isTokenOnly && !isPasswordOnly && (
                 <Form.Item
                   name="auth_mode"
                   label={<FieldLabel text="认证模式" required />}
@@ -284,7 +304,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                 rules={[
                   {
                     required: !credential,
-                    message: authMode === 'password' ? '请输入密码' : '请输入 Token',
+                    message: effectiveAuthMode === 'password' ? '请输入密码' : '请输入 Token',
                   },
                 ]}
                 extra={
@@ -297,7 +317,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
                   placeholder={
                     credential
                       ? '留空表示不修改'
-                      : authMode === 'password'
+                      : effectiveAuthMode === 'password'
                         ? '请输入密码'
                         : '请输入 Token'
                   }
@@ -310,14 +330,14 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
             <div
               className={[
                 'overflow-hidden transition-all duration-300',
-                authMode === 'password' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
+                effectiveAuthMode === 'password' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
               ].join(' ')}
             >
               <div className="w-1/2 pr-2.5">
                 <Form.Item
                   name="username"
                   label={<FieldLabel text="用户名" required />}
-                  rules={[{ required: authMode === 'password', message: '密码模式必须填写用户名' }]}
+                  rules={[{ required: effectiveAuthMode === 'password', message: '密码模式必须填写用户名' }]}
                 >
                   <Input
                     placeholder="请输入用户名"

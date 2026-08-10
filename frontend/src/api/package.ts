@@ -6,6 +6,8 @@ import type {
   PackageConfig,
   PackageImage,
   PackageImageSource,
+  PackageNode,
+  PackageNodeTestResult,
   PackageTask,
   PaginatedData,
   SvnEntriesData,
@@ -63,6 +65,24 @@ export const packageApi = {
       timeout: 600_000,
     });
   },
+
+  getNodes: (params?: { is_active?: boolean; keyword?: string; page?: number; page_size?: number }) =>
+    get<PaginatedData<PackageNode>>('/packages/nodes/', { params }),
+  createNode: (data: Partial<PackageNode>) => post<PackageNode>('/packages/nodes/', data),
+  updateNode: (id: string, data: Partial<PackageNode>) =>
+    put<PackageNode>(`/packages/nodes/${id}/`, data),
+  patchNode: (id: string, data: Partial<PackageNode>) =>
+    patch<PackageNode>(`/packages/nodes/${id}/`, data),
+  deleteNode: (id: string) => del<null>(`/packages/nodes/${id}/`),
+  /** 测试已保存节点的 SSH 连通性 */
+  testNode: (id: string) => post<PackageNodeTestResult>(`/packages/nodes/${id}/test/`),
+  /** 测试未保存的节点连接参数 */
+  testNodeConnection: (data: {
+    host: string;
+    port?: number;
+    credential_id: string;
+    work_root?: string;
+  }) => post<PackageNodeTestResult>('/packages/nodes/test-connection/', data),
 
   getConfigs: (params?: PackageConfigListParams) =>
     get<PaginatedData<PackageConfig>>('/packages/configs/', { params }),

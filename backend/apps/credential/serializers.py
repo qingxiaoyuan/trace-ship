@@ -58,13 +58,14 @@ class CredentialSerializer(serializers.ModelSerializer):
         auth_mode = attrs.get("auth_mode", getattr(self.instance, "auth_mode", None))
 
         token_types = {"gitlab_token"}
-        password_types = {"svn_password", "ldap_password"}
+        password_types = {"svn_password", "ldap_password", "windows_password"}
 
         # 凭证类型友好名称映射
         CRED_TYPE_LABELS = {
             "gitlab_token": "GitLab Token",
             "svn_password": "SVN 密码",
             "ldap_password": "LDAP 密码",
+            "windows_password": "Windows 密码",
         }
 
         if cred_type in token_types and auth_mode != "token":

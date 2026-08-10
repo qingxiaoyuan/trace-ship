@@ -3,7 +3,7 @@
 """
 from rest_framework import serializers
 
-from apps.package.models import PackageConfig, PackageImage, PackageTask
+from apps.package.models import PackageConfig, PackageImage, PackageNode, PackageTask
 from apps.project.models import ProjectMember
 
 
@@ -58,6 +58,43 @@ class PackageImageSerializer(serializers.ModelSerializer):
         return validate_safe_rel_path(value, "default_output_path")
 
 
+class PackageNodeSerializer(serializers.ModelSerializer):
+    """远程打包节点序列化器。"""
+
+    credential_id = serializers.UUIDField(source="credential.id", read_only=True)
+    credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
+    os_type_display = serializers.CharField(source="get_os_type_display", read_only=True)
+    created_by_name = serializers.CharField(source="created_by.nickname", read_only=True, default="")
+
+    class Meta:
+        model = PackageNode
+        fields = [
+            "id", "name", "host", "port", "os_type", "os_type_display",
+            "credential", "credential_id", "credential_name",
+            "work_root", "description", "is_active",
+            "created_by", "created_by_name", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "credential_id", "credential_name", "os_type_display",
+            "created_by", "created_by_name", "created_at", "updated_at",
+        ]
+
+    def validate_credential(self, value):
+        """节点登录凭证必须是 Windows 密码类型且启用。"""
+        if value is None:
+            raise serializers.ValidationError("必须选择登录凭证")
+        if value.cred_type != "windows_password":
+            raise serializers.ValidationError("节点登录凭证类型必须为 windows_password")
+        if not value.is_active:
+            raise serializers.ValidationError("登录凭证已停用")
+        return value
+
+    def validate_port(self, value: int) -> int:
+        if not (1 <= value <= 65535):
+            raise serializers.ValidationError("端口号必须在 1-65535 之间")
+        return value
+
+
 class PackageConfigSerializer(serializers.ModelSerializer):
     """项目级打包配置序列化器。"""
 
@@ -71,6 +108,10 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     image_source = serializers.CharField(source="image.source", read_only=True, default="")
     # 写入镜像坐标（本地 / Nexus 可选列表中的条目），后端按坐标 get_or_create 镜像记录
     image_info = serializers.DictField(write_only=True, required=False)
+    node_id = serializers.UUIDField(source="node.id", read_only=True)
+    node_name = serializers.CharField(source="node.name", read_only=True, default="")
+    node_host = serializers.CharField(source="node.host", read_only=True, default="")
+    executor_type_display = serializers.CharField(source="get_executor_type_display", read_only=True)
     svn_credential_id = serializers.UUIDField(source="svn_credential.id", read_only=True)
     svn_credential_name = serializers.CharField(source="svn_credential.name", read_only=True, default="")
 
@@ -80,6 +121,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "id", "project", "project_id", "project_name",
             "repository", "repository_id", "repository_name",
             "name",
+            "executor_type", "executor_type_display", "node", "node_id", "node_name", "node_host",
             "image", "image_id", "image_name", "image_ref", "image_source", "image_info", "custom_script",
             "build_path", "output_path", "env_vars",
             "auto_package_on_release", "is_active",
@@ -90,6 +132,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "project_id", "project_name", "repository_id", "repository_name",
             "image_id", "image_name", "image_ref", "image_source",
+            "executor_type_display", "node_id", "node_name", "node_host",
             "svn_credential_id", "svn_credential_name",
             "created_at", "updated_at",
         ]
@@ -157,10 +200,20 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         if not isinstance(env_vars, dict):
             raise serializers.ValidationError({"env_vars": "环境变量必须为 JSON 对象"})
 
-        if image is None:
-            raise serializers.ValidationError({"image": "必须选择打包镜像"})
-        if not image.is_active:
-            raise serializers.ValidationError({"image": "打包镜像已停用"})
+        executor_type = attrs.get("executor_type", getattr(self.instance, "executor_type", "local_docker")) or "local_docker"
+        node = attrs.get("node", getattr(self.instance, "node", None))
+        if executor_type == "remote_windows":
+            if node is None:
+                raise serializers.ValidationError({"node": "远程 Windows 打包必须选择打包节点"})
+            if not node.is_active:
+                raise serializers.ValidationError({"node": "打包节点已停用"})
+        else:
+            if node is not None:
+                raise serializers.ValidationError({"node": "本地 Docker 打包不需要选择打包节点"})
+            if image is None:
+                raise serializers.ValidationError({"image": "必须选择打包镜像"})
+            if not image.is_active:
+                raise serializers.ValidationError({"image": "打包镜像已停用"})
 
         # SVN 推送配置校验
         svn_push_enabled = attrs.get("svn_push_enabled", getattr(self.instance, "svn_push_enabled", False))

@@ -61,7 +61,7 @@ const sourceTabs: { label: string; value: PackageImageSource }[] = [
 
 /** 镜像选择弹窗：高密度列表，tag 区分本地 / Nexus，默认本地 */
 function ImagePickerModal({ open, value, onCancel, onSelect }: ImagePickerModalProps) {
-  // Modal destroyOnClose：每次打开都重新挂载，以最新 value 初始化
+  // Modal destroyOnHidden：每次打开都重新挂载，以最新 value 初始化
   const [source, setSource] = useState<PackageImageSource>('local');
   const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');
@@ -86,7 +86,7 @@ function ImagePickerModal({ open, value, onCancel, onSelect }: ImagePickerModalP
       okText="确定"
       cancelText="取消"
       okButtonProps={{ disabled: !selected }}
-      destroyOnClose
+      destroyOnHidden
       zIndex={1100}
     >
       <div className="space-y-2.5 py-1">

@@ -112,7 +112,7 @@ export function CommitCheckModal({ repoId, lastTag, open, onClose, onAddUpdates 
       width={820}
       onCancel={onClose}
       afterOpenChange={handleOpenChange}
-      destroyOnClose
+      destroyOnHidden
       footer={
         <div className="flex items-center justify-between">
           <span className="text-[12px] text-slate-400">

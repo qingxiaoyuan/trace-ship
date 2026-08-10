@@ -12,6 +12,7 @@ import {
   CredentialDetail,
   CredentialList,
   Dashboard,
+  Changelog,
   Feedback,
   Guide,
   PackageImage,
@@ -92,6 +93,7 @@ const routes: AppRouteObject[] = [
           { path: 'notifications', element: <PageLoader><Notification /></PageLoader>, handle: { title: '通知中心' } },
           { path: 'guide', element: <PageLoader><Guide /></PageLoader>, handle: { title: '使用说明' } },
           { path: 'feedback', element: <PageLoader><Feedback /></PageLoader>, handle: { title: '使用反馈' } },
+          { path: 'changelog', element: <PageLoader><Changelog /></PageLoader>, handle: { title: '更新日志' } },
           {
             path: 'system',
             element: <SystemGuard />,

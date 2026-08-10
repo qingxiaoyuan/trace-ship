@@ -22,5 +22,6 @@ export const SystemLogList = lazy(() => import('@/pages/System/LogList'));
 export const Notification = lazy(() => import('@/pages/Notification'));
 export const Guide = lazy(() => import('@/pages/Guide'));
 export const Feedback = lazy(() => import('@/pages/Feedback'));
+export const Changelog = lazy(() => import('@/pages/Changelog'));
 export const BrowserUpgrade = lazy(() => import('@/pages/BrowserUpgrade'));
 export const Profile = lazy(() => import('@/pages/Profile'));
