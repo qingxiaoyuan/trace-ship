@@ -667,6 +667,9 @@ export interface WorkflowInstance {
   release_type?: ReleaseType;
   branch?: string;
   package_status?: string;
+  git_hash?: string;
+  tag_name?: string;
+  release_doc?: string;
 }
 
 /**

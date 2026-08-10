@@ -52,6 +52,15 @@ export function ReleaseSummary({ source, instance }: ReleaseSummaryProps) {
             <span className="text-[12px] text-slate-500">分支</span>
             <span className="font-mono text-[12px] text-slate-800">{source.branch || '-'}</span>
           </div>
+          <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
+            <span className="text-[12px] text-slate-500">Git Hash</span>
+            <span
+              className="font-mono text-[12px] text-slate-800"
+              title={instance?.git_hash || ''}
+            >
+              {instance?.git_hash ? instance.git_hash.slice(0, 12) : '-'}
+            </span>
+          </div>
           <div className="flex items-center justify-between py-1.5">
             <span className="text-[12px] text-slate-500">打包状态</span>
             <span className="font-mono text-[13px] text-slate-800">

@@ -6,6 +6,7 @@ import { instanceStatusMap, releaseTypeText } from '../constants';
 import { ApprovalTimeline } from './ApprovalTimeline';
 import { ApprovalActions } from './ApprovalActions';
 import { ReleaseSummary } from './ReleaseSummary';
+import { ReleaseDocCard } from './ReleaseDocCard';
 import type { DetailSource } from '../types';
 import type { ReleaseType } from '@/types';
 
@@ -117,6 +118,9 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
               <div className="py-6 text-center text-[13px] text-slate-400">暂无流程数据</div>
             )}
           </div>
+
+          {/* 变更文档 */}
+          <ReleaseDocCard doc={instance?.release_doc} />
 
           {/* 审批意见 + 操作 */}
           <ApprovalActions source={detailSource} instance={instance ?? null} onBack={onBack} />

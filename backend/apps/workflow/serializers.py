@@ -226,6 +226,9 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     release_type = serializers.SerializerMethodField()
     branch = serializers.SerializerMethodField()
     package_status = serializers.SerializerMethodField()
+    git_hash = serializers.SerializerMethodField()
+    tag_name = serializers.SerializerMethodField()
+    release_doc = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -236,6 +239,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "created_by", "created_at", "updated_at", "completed_at", "tasks",
             "title", "applicant", "project_name", "current_node", "submit_time",
             "version", "release_type", "branch", "package_status",
+            "git_hash", "tag_name", "release_doc",
         ]
         read_only_fields = [
             "id", "definition_name", "biz_type", "biz_id", "status",
@@ -243,6 +247,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "created_at", "updated_at", "completed_at", "tasks",
             "title", "applicant", "project_name", "current_node", "submit_time",
             "version", "release_type", "branch", "package_status",
+            "git_hash", "tag_name", "release_doc",
         ]
 
     def get_title(self, obj: WorkflowInstance) -> str:
@@ -282,6 +287,21 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     def get_package_status(self, obj: WorkflowInstance):
         """返回最近打包任务状态。"""
         return release_fields(resolve_release(obj))["package_status"]
+
+    def get_git_hash(self, obj: WorkflowInstance) -> str:
+        """返回发布分支的 commit hash（创建/修改发布时快照）。"""
+        release = resolve_release(obj)
+        return release.git_hash if release else ""
+
+    def get_tag_name(self, obj: WorkflowInstance) -> str:
+        """返回发布目标 tag 名。"""
+        release = resolve_release(obj)
+        return release.tag_name if release else ""
+
+    def get_release_doc(self, obj: WorkflowInstance) -> str:
+        """返回发布说明（变更文档）内容，供审批人查看。"""
+        release = resolve_release(obj)
+        return release.release_doc if release else ""
 
 
 class WorkflowInstanceListSerializer(serializers.ModelSerializer):
