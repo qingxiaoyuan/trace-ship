@@ -110,6 +110,7 @@ class PackageNode(models.Model):
         default=r"C:\trace-ship\workspaces",
         verbose_name="远程工作根目录",
     )
+    max_concurrency = models.IntegerField(default=1, verbose_name="最大并发打包数")
     description = models.CharField(max_length=500, blank=True, verbose_name="备注")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_by = models.ForeignKey(

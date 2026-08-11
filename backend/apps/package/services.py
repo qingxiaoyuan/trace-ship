@@ -20,7 +20,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.credential.models import Credential
-from apps.package.models import PackageConfig, PackageTask
+from apps.package.models import PackageConfig, PackageNode, PackageTask
 from apps.package.remote_windows import RemoteWindowsClient, build_set_env_prefix, cmd_quote
 from apps.repository.serializers import RepositorySerializer
 from utils.markdown_table import table_newlines_to_br
@@ -157,11 +157,77 @@ class PackageService:
             logger.warning("Celery 投递失败，改用本地后台线程执行打包 task_id=%s error=%s", task.id, exc)
             cls._start_local_worker(str(task.id), str(exc))
 
+    # 节点并发占满时的重投间隔（秒）
+    NODE_WAIT_RETRY_SECONDS = 30
+
     @classmethod
-    def _start_local_worker(cls, task_id: str, reason: str = "") -> None:
+    def node_slot_available(cls, task: PackageTask) -> tuple[bool, int, int]:
+        """检查远程节点是否有空闲并发槽位。
+
+        Returns:
+            (available, running_count, max_concurrency)；
+            本地 Docker 任务、未绑定节点的任务、节点已删除的兜底场景直接放行。
+        """
+        snapshot = task.config_snapshot or {}
+        if (snapshot.get("executor_type") or "local_docker") != "remote_windows":
+            return True, 0, 0
+        node_id = snapshot.get("node_id")
+        if not node_id:
+            return True, 0, 0
+        try:
+            node = PackageNode.objects.get(id=node_id)
+            max_concurrency = max(1, node.max_concurrency or 1)
+        except PackageNode.DoesNotExist:
+            max_concurrency = 1
+        running = (
+            PackageTask.objects.filter(status="running", config_snapshot__node_id=str(node_id))
+            .exclude(id=task.id)
+            .count()
+        )
+        return running < max_concurrency, running, max_concurrency
+
+    @classmethod
+    def run_task_with_gate(cls, task: PackageTask) -> None:
+        """带节点并发闸门的任务入口：无空闲槽位时保持排队并延迟重投。"""
+        if task.is_finished:
+            return
+        available, running, max_concurrency = cls.node_slot_available(task)
+        if available:
+            cls.run_task(task)
+            return
+        # 排队等待：写日志与阶段标记，延迟后重新投递（不直接失败）
+        if not task.workspace_path:
+            cls.prepare_workspace(task)
+        task.stage_info = {
+            "stage": "waiting_node",
+            "progress": 0,
+            "running": running,
+            "max_concurrency": max_concurrency,
+        }
+        task.save(update_fields=["stage_info", "updated_at"])
+        cls._append_log(task, f"节点并发已满（{running}/{max_concurrency}），排队等待空闲槽位…")
+        cls._redispatch_delayed(task)
+
+    @classmethod
+    def _redispatch_delayed(cls, task: PackageTask) -> None:
+        """延迟重投任务；Celery 不可用时用后台线程等待后重试。"""
+        from apps.package.tasks import run_package_task
+
+        try:
+            run_package_task.apply_async(
+                args=[str(task.id)], countdown=cls.NODE_WAIT_RETRY_SECONDS,
+            )
+        except Exception as exc:
+            logger.warning("Celery 延迟重投失败，改用本地后台线程等待 task_id=%s error=%s", task.id, exc)
+            cls._start_local_worker(str(task.id), delay=cls.NODE_WAIT_RETRY_SECONDS)
+
+    @classmethod
+    def _start_local_worker(cls, task_id: str, reason: str = "", delay: int = 0) -> None:
         """在当前后端进程中启动后台线程执行打包任务。"""
 
         def runner() -> None:
+            if delay > 0:
+                threading.Event().wait(delay)
             close_old_connections()
             try:
                 task = PackageTask.objects.select_related(
@@ -170,7 +236,7 @@ class PackageService:
                 if reason:
                     cls.prepare_workspace(task)
                     cls._append_log(task, f"Celery 不可用，已降级为本地后台执行: {reason}")
-                cls.run_task(task)
+                cls.run_task_with_gate(task)
             except PackageTask.DoesNotExist:
                 logger.warning("本地后台执行打包时任务不存在 task_id=%s", task_id)
             except Exception:

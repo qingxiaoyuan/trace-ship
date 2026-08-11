@@ -192,3 +192,105 @@ def test_download_all_forbidden_for_non_member(other_user, task_with_artifacts, 
     )
     response = client.get(f"/api/packages/tasks/{task_with_artifacts.id}/download-all/")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 任务日志增量读取
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def task_with_log(package_config, release, project, repository, user, tmp_path):
+    """带日志文件的任务（10 行 ASCII 日志）。"""
+    workspace = tmp_path / "workspaces" / "20260101" / "task-log"
+    logs_dir = workspace / "logs"
+    logs_dir.mkdir(parents=True)
+    content = "".join(f"line {i:03d} xxxxxxxxxx\n" for i in range(10))
+    (logs_dir / "build.log").write_text(content, encoding="utf-8")
+    task = PackageTask.objects.create(
+        config=package_config,
+        release=release,
+        project=project,
+        repository=repository,
+        triggered_by=user,
+        name="日志任务",
+        build_type="web",
+        tag_name="V1.0.0",
+        version="V1.0.0",
+        status="running",
+        workspace_path=str(workspace),
+        log_path=str(logs_dir / "build.log"),
+    )
+    return task, content
+
+
+@pytest.mark.django_db
+class TestTaskLogsIncremental:
+    """日志 tail / offset 增量读取测试。"""
+
+    @staticmethod
+    def _patch_root(monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "apps.package.views.PackageService.workspace_root",
+            staticmethod(lambda: tmp_path / "workspaces"),
+        )
+
+    def test_full_log_default(self, api_client, task_with_artifacts, task_with_log, monkeypatch, tmp_path):
+        self._patch_root(monkeypatch, tmp_path)
+        task, content = task_with_log
+        response = api_client.get(f"/api/packages/tasks/{task.id}/logs/")
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content).decode("utf-8") == content
+
+    def test_tail_returns_last_bytes(self, api_client, task_with_log, monkeypatch, tmp_path):
+        self._patch_root(monkeypatch, tmp_path)
+        task, content = task_with_log
+        response = api_client.get(f"/api/packages/tasks/{task.id}/logs/?tail=46")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["size"] == len(content.encode("utf-8"))
+        assert data["offset"] == data["size"] - 46
+        assert data["content"] == content.encode("utf-8")[-46:].decode("utf-8")
+        assert data["truncated"] is False
+
+    def test_tail_larger_than_file(self, api_client, task_with_log, monkeypatch, tmp_path):
+        self._patch_root(monkeypatch, tmp_path)
+        task, content = task_with_log
+        response = api_client.get(f"/api/packages/tasks/{task.id}/logs/?tail=999999")
+        data = response.json()["data"]
+        assert data["offset"] == 0
+        assert data["content"] == content
+
+    def test_offset_returns_increment(self, api_client, task_with_log, monkeypatch, tmp_path):
+        self._patch_root(monkeypatch, tmp_path)
+        task, content = task_with_log
+        half = len(content.encode("utf-8")) // 2
+        response = api_client.get(f"/api/packages/tasks/{task.id}/logs/?offset={half}")
+        data = response.json()["data"]
+        assert data["offset"] == half
+        assert data["content"].encode("utf-8") == content.encode("utf-8")[half:]
+
+    def test_offset_beyond_size_falls_back_full(self, api_client, task_with_log, monkeypatch, tmp_path):
+        self._patch_root(monkeypatch, tmp_path)
+        task, content = task_with_log
+        response = api_client.get(f"/api/packages/tasks/{task.id}/logs/?offset=999999")
+        data = response.json()["data"]
+        assert data["truncated"] is True
+        assert data["offset"] == 0
+        assert data["content"] == content
+
+    def test_invalid_offset_rejected(self, api_client, task_with_log, monkeypatch, tmp_path):
+        self._patch_root(monkeypatch, tmp_path)
+        task, _ = task_with_log
+        response = api_client.get(f"/api/packages/tasks/{task.id}/logs/?offset=abc")
+        assert response.status_code == 400
+
+    def test_empty_log_incremental(self, api_client, package_config, release, project, repository, user, monkeypatch, tmp_path):
+        self._patch_root(monkeypatch, tmp_path)
+        task = PackageTask.objects.create(
+            config=package_config, release=release, project=project, repository=repository,
+            triggered_by=user, name="无日志任务", build_type="web", tag_name="V1.0.0",
+            version="V1.0.0", status="queued",
+        )
+        response = api_client.get(f"/api/packages/tasks/{task.id}/logs/?offset=0")
+        assert response.status_code == 200
+        assert response.json()["data"]["content"] == ""

@@ -7,17 +7,19 @@ import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { ArtifactPanel, ArtifactActionsDropdown } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
-import { formatDuration, isRunning, stageLabels } from './utils';
+import { formatDuration, isRunning, stageLabels, downloadTaskLog } from './utils';
 import { StatusBadge } from './Shared';
 
 interface BuildViewProps {
   task: PackageTask;
   logText: string;
+  /** 日志仅加载了末尾部分（大日志首屏优化） */
+  logPartial?: boolean;
   onBack: () => void;
   onCancel: (task: PackageTask) => void;
 }
 
-export const BuildView = memo(function BuildView({ task, logText, onBack, onCancel }: BuildViewProps) {
+export const BuildView = memo(function BuildView({ task, logText, logPartial, onBack, onCancel }: BuildViewProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const artifacts = task.artifact_info || [];
@@ -109,7 +111,7 @@ export const BuildView = memo(function BuildView({ task, logText, onBack, onCanc
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">构建日志</h3>
             </div>
           </div>
-          <TerminalLog text={logText} />
+          <TerminalLog text={logText} partial={logPartial} onDownloadFull={() => downloadTaskLog(task.id)} />
         </div>
 
         <div className="lg:col-span-2 tech-card rounded-xl overflow-hidden flex flex-col">

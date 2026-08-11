@@ -382,6 +382,114 @@ class TestRemoteRunTask:
 
 
 @pytest.mark.django_db
+class TestNodeConcurrencyGate:
+    """节点并发闸门：槽位不足时排队重投而不是失败。"""
+
+    def _make_task(self, project, repository, node, release, user, status="queued"):
+        config = PackageConfig.objects.create(
+            project=project,
+            repository=repository,
+            name="远程打包",
+            executor_type="remote_windows",
+            node=node,
+        )
+        return PackageTask.objects.create(
+            config=config,
+            release=release,
+            project=project,
+            repository=repository,
+            triggered_by=user,
+            name="远程打包 / VA.1.0.0",
+            tag_name=release.tag_name,
+            version=release.version,
+            config_snapshot=PackageService._snapshot(config),
+            status=status,
+        )
+
+    def test_slot_available_when_idle(self, project, repository, node, release, user):
+        task = self._make_task(project, repository, node, release, user)
+        available, running, max_concurrency = PackageService.node_slot_available(task)
+        assert available is True
+        assert running == 0
+        assert max_concurrency == 1
+
+    def test_slot_full_when_running(self, project, repository, node, release, user):
+        self._make_task(project, repository, node, release, user, status="running")
+        waiting = self._make_task(project, repository, node, release, user)
+        available, running, max_concurrency = PackageService.node_slot_available(waiting)
+        assert available is False
+        assert running == 1
+        assert max_concurrency == 1
+
+    def test_slot_respects_max_concurrency(self, project, repository, node, release, user):
+        node.max_concurrency = 2
+        node.save(update_fields=["max_concurrency"])
+        self._make_task(project, repository, node, release, user, status="running")
+        waiting = self._make_task(project, repository, node, release, user)
+        available, running, _ = PackageService.node_slot_available(waiting)
+        assert available is True
+        assert running == 1
+
+    def test_local_docker_task_bypasses_gate(self, project, repository, release, user):
+        image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+        config = PackageConfig.objects.create(
+            project=project, repository=repository, name="本地打包", image=image,
+        )
+        task = PackageTask.objects.create(
+            config=config, release=release, project=project, repository=repository,
+            triggered_by=user, name="本地打包", tag_name=release.tag_name,
+            version=release.version, config_snapshot=PackageService._snapshot(config),
+        )
+        available, _, _ = PackageService.node_slot_available(task)
+        assert available is True
+
+    def test_gate_queues_and_redispatches_when_full(self, project, repository, node, release, user, monkeypatch, tmp_path):
+        monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
+        self._make_task(project, repository, node, release, user, status="running")
+        waiting = self._make_task(project, repository, node, release, user)
+
+        redispatched = []
+        monkeypatch.setattr(
+            PackageService, "_redispatch_delayed",
+            classmethod(lambda cls, task: redispatched.append(str(task.id))),
+        )
+        run_called = []
+        monkeypatch.setattr(
+            PackageService, "run_task",
+            classmethod(lambda cls, task: run_called.append(str(task.id))),
+        )
+
+        PackageService.run_task_with_gate(waiting)
+        waiting.refresh_from_db()
+
+        assert not run_called, "槽位不足时不应执行"
+        assert redispatched == [str(waiting.id)], "应延迟重投"
+        assert waiting.status == "queued"
+        assert waiting.stage_info["stage"] == "waiting_node"
+        assert waiting.stage_info["running"] == 1
+
+    def test_gate_runs_when_slot_free(self, project, repository, node, release, user, monkeypatch):
+        waiting = self._make_task(project, repository, node, release, user)
+        run_called = []
+        monkeypatch.setattr(
+            PackageService, "run_task",
+            classmethod(lambda cls, task: run_called.append(str(task.id))),
+        )
+        PackageService.run_task_with_gate(waiting)
+        assert run_called == [str(waiting.id)]
+
+    def test_gate_skips_finished_task(self, project, repository, node, release, user, monkeypatch):
+        task = self._make_task(project, repository, node, release, user, status="canceled")
+        run_called = []
+        monkeypatch.setattr(
+            PackageService, "run_task",
+            classmethod(lambda cls, t: run_called.append(str(t.id))),
+        )
+        PackageService.run_task_with_gate(task)
+        assert not run_called
+
+
+@pytest.mark.django_db
 class TestPackageNodeViews:
     def _superuser_client(self):
         admin = User.objects.create_superuser(

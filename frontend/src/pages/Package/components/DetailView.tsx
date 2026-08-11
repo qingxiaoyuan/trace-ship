@@ -7,7 +7,7 @@ import { packageApi } from '@/api/package';
 import { BuildHistory, ArtifactListPanel } from './BuildHistory';
 import { TerminalLog } from './TerminalLog';
 import { ArtifactActionsDropdown } from './Artifacts';
-import { isRunning } from './utils';
+import { downloadTaskLog, isRunning } from './utils';
 import { StatusBadge } from './Shared';
 
 interface DetailViewProps {
@@ -16,7 +16,7 @@ interface DetailViewProps {
   builds: PackageTask[];
   logText: string;
   onBack: () => void;
-  onLoadTaskLog: (taskId: string) => Promise<{ task: PackageTask; logText: string }>;
+  onLoadTaskLog: (taskId: string) => Promise<{ task: PackageTask; logText: string; logPartial?: boolean }>;
   onCancel: (task: PackageTask) => void;
   onEditConfig: () => void;
   onTriggerBuild: () => void;
@@ -40,12 +40,14 @@ export const DetailView = memo(function DetailView({
   const [activeTab, setActiveTab] = useState<'log' | 'artifacts'>('log');
   const [activeBuild, setActiveBuild] = useState<PackageTask>(task);
   const [activeLogText, setActiveLogText] = useState<string>(logText);
+  const [activeLogPartial, setActiveLogPartial] = useState(false);
   const [pushing, setPushing] = useState(false);
 
   const loadLog = useCallback(async (taskId: string) => {
-    const { task: t, logText: text } = await onLoadTaskLog(taskId);
+    const { task: t, logText: text, logPartial: partial } = await onLoadTaskLog(taskId);
     setActiveBuild(t);
     setActiveLogText(text);
+    setActiveLogPartial(partial ?? false);
   }, [onLoadTaskLog]);
 
   useEffect(() => {
@@ -149,7 +151,11 @@ export const DetailView = memo(function DetailView({
             </div>
           </div>
           {activeTab === 'log' ? (
-            <TerminalLog text={activeLogText} />
+            <TerminalLog
+              text={activeLogText}
+              partial={activeLogPartial}
+              onDownloadFull={() => downloadTaskLog(activeBuild.id)}
+            />
           ) : (
             <ArtifactListPanel artifacts={artifacts} taskId={activeBuild.id} />
           )}

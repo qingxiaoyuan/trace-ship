@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { App, Button, Form, Modal, Pagination, Select } from 'antd';
@@ -27,6 +27,8 @@ const pageSize = 100;
 const page = 1;
 /** 构建列表每页条数 */
 const TASK_PAGE_SIZE = 15;
+/** 大日志首屏只加载末尾字节数 */
+const LOG_TAIL_BYTES = 256 * 1024;
 
 type TabKey = 'running' | 'configs';
 
@@ -123,19 +125,39 @@ export default function PackageTaskPage() {
   const selectedTaskId = selectedTask?.id;
   const shouldPoll = !!selectedTask && isRunning(selectedTask.status);
 
+  // 大日志优化：首屏只取末尾 256KB，轮询按字节偏移追加增量
+  const logStateRef = useRef<Map<string, { offset: number; text: string; partial: boolean }>>(new Map());
+  const [logPartial, setLogPartial] = useState(false);
+
   const loadTaskDetail = useCallback(
     async (taskId: string) => {
-      const [task, blob] = await Promise.all([
+      const state = logStateRef.current.get(taskId);
+      const [task, chunk] = await Promise.all([
         packageApi.getTask(taskId),
-        packageApi.getTaskLog(taskId).catch(() => new Blob([''])),
+        (state
+          ? packageApi.getTaskLogChunk(taskId, { offset: state.offset })
+          : packageApi.getTaskLogChunk(taskId, { tail: LOG_TAIL_BYTES })
+        ).catch(() => null),
       ]);
-      const text = await blob.text();
       setSelectedTask(task);
-      setLogText(text);
+      let fullText = state?.text ?? '';
+      let partial = state?.partial ?? false;
+      if (chunk) {
+        if (!state || chunk.truncated) {
+          // 首次加载或日志被重建：整体替换
+          fullText = chunk.content;
+          partial = chunk.offset > 0;
+        } else {
+          fullText = state.text + chunk.content;
+        }
+        logStateRef.current.set(taskId, { offset: chunk.size, text: fullText, partial });
+      }
+      setLogText(fullText);
+      setLogPartial(partial);
       if (!isRunning(task.status)) {
         queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
       }
-      return { task, logText: text };
+      return { task, logText: fullText, logPartial: partial };
     },
     [queryClient]
   );
@@ -502,7 +524,7 @@ export default function PackageTaskPage() {
       )}
 
       {view === 'build' && selectedTask && (
-        <BuildView task={selectedTask} logText={logText} onBack={backToList} onCancel={handleCancel} />
+        <BuildView task={selectedTask} logText={logText} logPartial={logPartial} onBack={backToList} onCancel={handleCancel} />
       )}
 
       <Modal

@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback } from 'react';
 import { ExternalLink, Hammer } from 'lucide-react';
 import type { PackageTask } from '@/types';
 import { ProgressBar, UserAvatar } from './Shared';
@@ -43,13 +43,20 @@ interface RunningRowProps {
 
 const RunningRow = memo(function RunningRow({ task, onOpen }: RunningRowProps) {
   const running = isRunning(task.status);
-  const [label] = useState(() => {
+  const stageInfo = task.stage_info as
+    | { stage?: string; running?: number; max_concurrency?: number }
+    | undefined;
+  const label = (() => {
+    // 节点并发占满排队中：展示等待节点与占用情况
+    if (task.status === 'queued' && stageInfo?.stage === 'waiting_node') {
+      return `等待节点 ${stageInfo.running ?? '-'}/${stageInfo.max_concurrency ?? '-'}`;
+    }
     if (!running) {
       return statusMeta[task.status]?.label || task.status;
     }
-    const s = (task.stage_info as { stage?: string } | undefined)?.stage;
+    const s = stageInfo?.stage;
     return s ? (stageLabels[s] || s) : '打包中';
-  });
+  })();
   const meta = statusMeta[task.status];
 
   const handleClick = useCallback(() => {

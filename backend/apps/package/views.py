@@ -443,9 +443,24 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="logs")
     def logs(self, request, pk=None):
-        """读取任务日志。"""
+        """读取任务日志。
+
+        默认返回完整文本（兼容旧调用）。
+        增量模式（大日志优化）：
+        - ``?tail=<bytes>``：只返回文件末尾 tail 字节，用于首屏快速打开；
+        - ``?offset=<bytes>``：返回该偏移之后的新增内容，用于轮询追加；
+        两种模式均返回 JSON ``{size, offset, content}``，offset 为本次内容的
+        起始字节位置（下次轮询传 size 即可只取增量）；日志文件被截断
+        （offset > size）时回退返回全量并带 ``truncated: true``。
+        """
         task = self.get_object()
+        tail = request.query_params.get("tail")
+        offset = request.query_params.get("offset")
+        incremental = tail is not None or offset is not None
+
         if not task.log_path or not Path(task.log_path).exists():
+            if incremental:
+                return success_response({"size": 0, "offset": 0, "content": ""})
             return HttpResponse("", content_type="text/plain; charset=utf-8")
         workspace = Path(task.workspace_path).resolve() if task.workspace_path else None
         log_path = Path(task.log_path).resolve()
@@ -456,7 +471,39 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
             or (workspace not in log_path.parents and log_path != workspace)
         ):
             raise Http404("日志路径非法")
-        return FileResponse(open(log_path, "rb"), content_type="text/plain; charset=utf-8")
+
+        if not incremental:
+            return FileResponse(open(log_path, "rb"), content_type="text/plain; charset=utf-8")
+
+        size = log_path.stat().st_size
+        start = 0
+        truncated = False
+        if offset is not None:
+            try:
+                start = max(0, int(offset))
+            except (TypeError, ValueError):
+                return error_response(40000, "offset 参数不合法", status_code=status.HTTP_400_BAD_REQUEST)
+            if start > size:
+                # 日志被截断/重建，回退全量
+                start = 0
+                truncated = True
+        elif tail is not None:
+            try:
+                tail_bytes = max(1, min(int(tail), 10 * 1024 * 1024))
+            except (TypeError, ValueError):
+                return error_response(40000, "tail 参数不合法", status_code=status.HTTP_400_BAD_REQUEST)
+            start = max(0, size - tail_bytes)
+
+        with open(log_path, "rb") as f:
+            f.seek(start)
+            # UTF-8 多字节字符可能在 seek 边界截断，容错解码
+            content = f.read().decode("utf-8", errors="replace")
+        return success_response({
+            "size": size,
+            "offset": start,
+            "content": content,
+            "truncated": truncated,
+        })
 
     @action(detail=True, methods=["get"], url_path=r"artifacts/(?P<artifact_id>[^/.]+)/download")
     def download_artifact(self, request, pk=None, artifact_id=None):

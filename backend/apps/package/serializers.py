@@ -71,7 +71,7 @@ class PackageNodeSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "host", "port", "os_type", "os_type_display",
             "credential", "credential_id", "credential_name",
-            "work_root", "description", "is_active",
+            "work_root", "max_concurrency", "description", "is_active",
             "created_by", "created_by_name", "created_at", "updated_at",
         ]
         read_only_fields = [
@@ -92,6 +92,11 @@ class PackageNodeSerializer(serializers.ModelSerializer):
     def validate_port(self, value: int) -> int:
         if not (1 <= value <= 65535):
             raise serializers.ValidationError("端口号必须在 1-65535 之间")
+        return value
+
+    def validate_max_concurrency(self, value: int) -> int:
+        if not (1 <= value <= 16):
+            raise serializers.ValidationError("最大并发数必须在 1-16 之间")
         return value
 
 

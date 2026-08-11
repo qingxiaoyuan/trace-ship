@@ -1,6 +1,19 @@
 import type { PackageTask, PackageTaskStatus } from '@/types';
+import { packageApi } from '@/api/package';
+
+/** 下载任务完整日志文件 */
+export async function downloadTaskLog(taskId: string) {
+  const blob = await packageApi.getTaskLog(taskId);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `build-${taskId}.log`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export const stageLabels: Record<string, string> = {
+  waiting_node: '等待节点',
   checkout: '拉取源码',
   build: '构建打包',
   artifacts: '扫描产物',

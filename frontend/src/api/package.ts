@@ -30,8 +30,18 @@ export interface PackageConfigListParams {
   page_size?: number;
 }
 
-export interface PackageTaskListParams {
-  project?: string;
+/** 任务日志增量分片（tail 截尾 / offset 增量模式） */
+export interface TaskLogChunk {
+  /** 日志文件总字节数（即下次轮询应传的 offset） */
+  size: number;
+  /** 本次内容的起始字节位置 */
+  offset: number;
+  content: string;
+  /** 日志文件被截断/重建时为 true，内容为全量 */
+  truncated?: boolean;
+}
+
+export interface PackageTaskListParams {  project?: string;
   repository?: string;
   release?: string;
   config?: string;
@@ -116,6 +126,9 @@ export const packageApi = {
   cancelTask: (id: string) => post<PackageTask>(`/packages/tasks/${id}/cancel/`),
   pushSvn: (id: string) => post<PackageTask>(`/packages/tasks/${id}/push-svn/`),
   getTaskLog: (id: string) => get<Blob>(`/packages/tasks/${id}/logs/`, { responseType: 'blob' }),
+  /** 增量读取任务日志：tail 取末尾字节（首屏），offset 取增量（轮询） */
+  getTaskLogChunk: (id: string, params: { offset?: number; tail?: number }) =>
+    get<TaskLogChunk>(`/packages/tasks/${id}/logs/`, { params }),
   downloadArtifact: (taskId: string, artifactId: string) =>
    get<Blob>(`/packages/tasks/${taskId}/artifacts/${artifactId}/download/`, { responseType: 'blob' }),
   downloadAllArtifacts: (taskId: string) =>

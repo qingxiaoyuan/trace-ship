@@ -386,6 +386,8 @@ export interface PackageNode {
   credential_id?: string | null;
   credential_name?: string;
   work_root: string;
+  /** 该节点最大并发打包数，超出任务排队等待 */
+  max_concurrency?: number;
   description?: string;
   is_active: boolean;
   created_by?: string | null;

@@ -12,6 +12,7 @@ interface NodeFormValues {
   port: number;
   credential: string;
   work_root: string;
+  max_concurrency: number;
   description?: string;
   is_active: boolean;
 }
@@ -98,6 +99,7 @@ export function PackageNodeCard() {
       port: 22,
       credential: undefined as unknown as string,
       work_root: 'C:\\trace-ship\\workspaces',
+      max_concurrency: 1,
       description: '',
       is_active: true,
     });
@@ -112,6 +114,7 @@ export function PackageNodeCard() {
       port: node.port,
       credential: node.credential || undefined,
       work_root: node.work_root,
+      max_concurrency: node.max_concurrency ?? 1,
       description: node.description || '',
       is_active: node.is_active,
     });
@@ -163,9 +166,10 @@ export function PackageNodeCard() {
       <div className="mt-4 overflow-hidden rounded-lg border border-indigo-50">
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 bg-slate-50/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-2">节点名称</div>
-          <div className="col-span-3">地址</div>
+          <div className="col-span-2">地址</div>
           <div className="col-span-2">登录凭证</div>
           <div className="col-span-2">工作目录</div>
+          <div className="col-span-1 text-center">并发</div>
           <div className="col-span-1 text-center">状态</div>
           <div className="col-span-2 text-right">操作</div>
         </div>
@@ -182,7 +186,7 @@ export function PackageNodeCard() {
               className="grid grid-cols-1 gap-2 border-b border-indigo-50 px-4 py-2.5 text-[13px] last:border-0 md:grid-cols-12 md:items-center md:gap-3"
             >
               <div className="col-span-2 font-medium text-slate-800">{node.name}</div>
-              <div className="col-span-3 font-mono text-[12px] text-slate-600">
+              <div className="col-span-2 font-mono text-[12px] text-slate-600">
                 {node.host}:{node.port}
               </div>
               <div className="col-span-2 text-[12px] text-slate-600">
@@ -190,6 +194,9 @@ export function PackageNodeCard() {
               </div>
               <div className="col-span-2 truncate font-mono text-[12px] text-slate-500" title={node.work_root}>
                 {node.work_root}
+              </div>
+              <div className="col-span-1 text-center font-mono text-[12px] text-slate-600">
+                {node.max_concurrency ?? 1}
               </div>
               <div className="col-span-1 text-center">
                 <span
@@ -282,6 +289,14 @@ export function PackageNodeCard() {
               rules={[{ required: true, message: '请输入端口' }]}
             >
               <InputNumber min={1} max={65535} className="w-full" />
+            </Form.Item>
+            <Form.Item
+              name="max_concurrency"
+              label="最大并发打包数"
+              rules={[{ required: true, message: '请输入并发数' }]}
+              extra={<span className="text-[11px] text-slate-400">超出并发的任务将排队等待，不会失败</span>}
+            >
+              <InputNumber min={1} max={16} className="w-full" />
             </Form.Item>
           </div>
           <Form.Item
