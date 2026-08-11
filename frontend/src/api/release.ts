@@ -1,5 +1,5 @@
 import { get, post } from './request';
-import type { PaginatedData, Release, ReleaseCommit } from '@/types';
+import type { PaginatedData, Release } from '@/types';
 
 export const releaseApi = {
   getReleases: (params?: Record<string, unknown>) =>
@@ -14,8 +14,6 @@ export const releaseApi = {
   submitAudit: (id: string) =>
     post<{ id: string; status: string; workflow_instance_id?: string }>(`/releases/${id}/submit-audit/`, {}),
   pushTag: (id: string) => post<Release>(`/releases/${id}/push-tag/`, {}),
-  getCommits: (id: string, params?: Record<string, unknown>) =>
-    get<PaginatedData<ReleaseCommit>>(`/releases/${id}/commits/`, { params }),
   exportPdf: (id: string) =>
     get<Blob>(`/releases/${id}/export-pdf/`, { responseType: 'blob' }),
   exportWord: (id: string) =>

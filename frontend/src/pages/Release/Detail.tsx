@@ -9,14 +9,12 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { releaseApi } from '@/api/release';
 import { releaseTypeText, releaseTypeBadge, statusBadge, releaseStatusText } from './constants';
 import { ReleaseTimeline } from './components/ReleaseTimeline';
-import { ReleaseCommits } from './components/ReleaseCommits';
 import { ReleaseNotes } from './components/ReleaseNotes';
 import { ReleasePackages } from './components/ReleasePackages';
 import type { ReleaseStatus, ReleaseType } from '@/types';
 
 /** 详情头 Tab */
 const tabs = [
-  { key: 'commits', label: '关联提交' },
   { key: 'notes', label: '发布说明' },
   { key: 'packages', label: '打包任务' },
 ] as const;
@@ -24,7 +22,7 @@ const tabs = [
 export default function ReleaseDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('commits');
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('notes');
 
   const { data: release, isLoading, error } = useQuery({
     queryKey: ['release', id],
@@ -169,7 +167,6 @@ export default function ReleaseDetail() {
               })}
             </div>
             <div className="p-5">
-              {activeTab === 'commits' && <ReleaseCommits releaseId={release.id} />}
               {activeTab === 'notes' && <ReleaseNotes release={release} />}
               {activeTab === 'packages' && <ReleasePackages release={release} />}
             </div>

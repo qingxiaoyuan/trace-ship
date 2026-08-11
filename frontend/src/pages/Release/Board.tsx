@@ -24,7 +24,11 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
           </span>
         ) : null}
       </div>
-      <div className="mt-1.5 truncate text-[11px] text-slate-500">{release.project_name || '-'}</div>
+      <div className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
+        <span className="truncate">{release.project_name || '-'}</span>
+        <span className="shrink-0 text-slate-300">/</span>
+        <span className="truncate font-mono text-[10px] text-slate-400">{release.repository_name || '-'}</span>
+      </div>
       <div className="mt-2 flex items-center gap-1.5">
         <span
           className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-semibold text-white"
@@ -118,7 +122,7 @@ export function ReleaseList() {
     <div className="tech-card overflow-hidden rounded-xl">
       <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
         <div className="col-span-2">版本</div>
-        <div className="col-span-3">项目</div>
+        <div className="col-span-3">项目 / 仓库</div>
         <div className="col-span-2">类型</div>
         <div className="col-span-2">发布人</div>
         <div className="col-span-2">状态</div>
@@ -149,8 +153,10 @@ export function ReleaseList() {
                 <div className="col-span-12 font-mono text-[13px] font-medium text-slate-900 md:col-span-2">
                   {release.version}
                 </div>
-                <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-3">
-                  {release.project_name || '-'}
+                <div className="col-span-6 flex items-center gap-1 text-[12px] text-slate-600 md:col-span-3">
+                  <span className="truncate">{release.project_name || '-'}</span>
+                  <span className="shrink-0 text-slate-300">/</span>
+                  <span className="truncate font-mono text-[11px] text-slate-400">{release.repository_name || '-'}</span>
                 </div>
                 <div className="col-span-6 md:col-span-2">
                   {type ? (

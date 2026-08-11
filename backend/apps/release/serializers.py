@@ -83,8 +83,10 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         if user.is_superuser:
             return value
-        member = ProjectMember.objects.filter(project=value, user=user).first()
-        if not member or member.role not in ("developer", "tester", "manager", "auditor"):
+        from utils.permissions import ProjectRolePermission
+
+        role = ProjectRolePermission._effective_role(value, user)
+        if role not in ("developer", "tester", "manager", "auditor", "software_admin"):
             raise serializers.ValidationError("只有项目成员才能创建/修改发布")
         return value
 

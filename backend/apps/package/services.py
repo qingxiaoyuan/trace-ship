@@ -23,6 +23,7 @@ from apps.credential.models import Credential
 from apps.package.models import PackageConfig, PackageTask
 from apps.package.remote_windows import RemoteWindowsClient, build_set_env_prefix, cmd_quote
 from apps.repository.serializers import RepositorySerializer
+from utils.markdown_table import table_newlines_to_br
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.factory import get_provider
 
@@ -679,7 +680,8 @@ class PackageService:
         release_doc = ""
         if task.release_id:
             release_doc = task.release.release_doc or ""
-        doc_path.write_text(release_doc, encoding="utf-8")
+        # 推送 SVN 的发布文档转为标准 Markdown 表格语法（单元格内换行用 <br>）
+        doc_path.write_text(table_newlines_to_br(release_doc), encoding="utf-8")
 
         message = f"Release {task.version} artifacts ({task.tag_name})"
         provider.import_path(str(upload_dir), remote_url, message)

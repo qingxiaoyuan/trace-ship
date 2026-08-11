@@ -313,6 +313,40 @@ class TestPushArtifactsToSVN:
         assert (workspace / "tmp" / "svn_upload" / "release-V1.0.0.md").read_text(encoding="utf-8") == release.release_doc
         assert import_path == str(workspace / "tmp" / "svn_upload")
 
+    def test_push_doc_multiline_cells_use_br(self, project, repository, release, svn_credential, tmp_path):
+        """推送的发布文档中多行单元格换行转换为 <br>（标准 Markdown 表格语法）。"""
+        release.release_doc = "| 项目 | 内容 |\n|---|---|\n| 变更内容 | 第一行\n第二行 |\n| 发布人 | 张三 |"
+        release.save(update_fields=["release_doc"])
+        task = PackageTask.objects.create(
+            release=release,
+            project=project,
+            repository=repository,
+            name="打包任务",
+            build_type="web",
+            tag_name=release.tag_name,
+            version=release.version,
+            config_snapshot={
+                "svn_push_enabled": True,
+                "svn_url": "svn://host/releases",
+                "svn_credential_id": str(svn_credential.id),
+                "svn_path_template": "{version}",
+            },
+            artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
+        )
+        workspace = tmp_path / "workspace"
+        (workspace / "artifacts").mkdir(parents=True)
+        (workspace / "artifacts" / "app.tar.gz").write_bytes(b"fake artifact")
+
+        mock_provider = MagicMock()
+        mock_provider.remote_exists.return_value = False
+
+        with patch("apps.package.services.get_provider", return_value=mock_provider):
+            PackageService._push_artifacts_to_svn(task, workspace)
+
+        doc_text = (workspace / "tmp" / "svn_upload" / f"release-{release.version}.md").read_text(encoding="utf-8")
+        assert "| 变更内容 | 第一行<br>第二行 |" in doc_text
+        assert "| 发布人 | 张三 |" in doc_text
+
     def test_push_fails_when_directory_exists(self, project, repository, release, svn_credential, tmp_path):
         """SVN 版本目录已存在时推送失败。"""
         task = PackageTask.objects.create(

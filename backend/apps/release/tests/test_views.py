@@ -293,6 +293,26 @@ class TestReleaseViews:
         assert response.status_code == 200
         assert response.data["data"]["total"] == 1
 
+    def test_release_commits_endpoint(self, api_client, project, repository, commit):
+        """发布关联提交接口正常返回（回归：视图集 filterset 模型不匹配导致 500）"""
+        from apps.release.models import ReleaseCommit
+
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            branch="main",
+            release_type="formal",
+            publisher=api_client.handler._force_user,
+        )
+        ReleaseCommit.objects.create(release=release, commit=commit)
+
+        response = api_client.get(f"/api/releases/{release.id}/commits/")
+        assert response.status_code == 200
+        assert response.data["data"]["total"] == 1
+        assert response.data["data"]["results"][0]["commit_hash"] == "abc123def"
+
     def test_retrieve_returns_package_tasks(self, api_client, project, repository):
         """详情接口展开关联打包任务概要"""
         release = ReleaseRecord.objects.create(

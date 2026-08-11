@@ -356,8 +356,11 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         from django.http import HttpResponse
 
+        from utils.markdown_table import table_newlines_to_br
+
         release = self.get_object()
-        md_content = release.release_doc or ""
+        # 导出文件转为标准 Markdown 表格语法（单元格内换行用 <br>）
+        md_content = table_newlines_to_br(release.release_doc or "")
         response = HttpResponse(md_content, content_type="text/markdown; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="release-{release.version}.md"'
         return response
@@ -466,8 +469,9 @@ class ReleaseViewSet(StandardModelViewSet):
             分页后的 ReleaseCommit 列表
         """
         release = self.get_object()
+        # 注意：不要走 self.filter_queryset——视图集的 ReleaseFilter 是针对
+        # ReleaseRecord 的，套用到 ReleaseCommit 查询集会因模型不匹配报错
         queryset = release.release_commits.select_related("commit").order_by("-commit__committed_at")
-        queryset = self.filter_queryset(queryset)
         page = self.paginate_queryset(queryset)
         serializer = ReleaseCommitSerializer(page, many=True, context={"request": request})
         return self.get_paginated_response(serializer.data)
