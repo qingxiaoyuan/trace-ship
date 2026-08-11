@@ -70,3 +70,16 @@ leader）对项目资源不可见、不可写；流程节点编辑等高权限�
   leader 与成员是两套数据，强制同步会引入一致性维护成本，且历史项目仍需兼容。
 - 维持 `IsProjectLeader` 作为高权限动作专用权限类：被否决，因为 leader 与 manager
   语义重叠会造成两套授权规则并存、易走样，故统一并入角色矩阵并移除 `IsProjectLeader`。
+
+## Update (2026-08-11)
+
+在原决策基础上扩展 `software_admin` 角色：
+
+- `_effective_role` 中成员记录为 `software_admin` 时优先于 leader 等价语义生效；
+- `_check` 在 `role == "software_admin"` 时直接放行，使其拥有项目内全部操作权限
+  （仓库、发布、打包、成员管理等），无需在 `required_roles` 中重复枚举；
+- 新增 `IsProjectPackageAdmin`（`required_roles = ["manager", "software_admin"]`）
+  用于打包配置维护语义，其行为与其他子类一致（`software_admin` 仍由 `_check` 放行）。
+
+`software_admin` 与 `manager` 区别：前者在项目内拥有全部操作权限（含通常仅 manager
+可做的成员管理），后者仍受 `required_roles` 约束。

@@ -7,6 +7,7 @@ import zipfile
 from pathlib import Path
 
 from django.http import FileResponse, Http404, HttpResponse
+from django.db.models import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
@@ -28,7 +29,7 @@ from apps.project.models import Project
 from apps.project.models import ProjectMember
 from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
-from utils.permissions import IsProjectManager, IsProjectMember, IsProjectPackager, IsProjectDeveloper, HasPermission
+from utils.permissions import IsProjectManager, IsProjectMember, IsProjectPackager, IsProjectDeveloper, IsProjectPackageAdmin, HasPermission
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 from utils.provider.factory import get_provider
 from utils.response import error_response, success_response
@@ -261,12 +262,21 @@ class PackageConfigViewSet(StandardModelViewSet):
         queryset = PackageConfig.objects.select_related("project", "repository", "image", "node", "svn_credential")
         if user.is_superuser:
             return queryset
+        # 预取当前用户在每个项目中的成员记录，避免序列化器 get_my_role 在列表场景触发 N+1
+        queryset = queryset.prefetch_related(
+            Prefetch(
+                "project__members",
+                queryset=ProjectMember.objects.filter(user=user),
+                to_attr="_my_member",
+            )
+        )
         project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
-            return [IsAuthenticated(), IsProjectManager()]
+            # 打包配置参数仅项目管理员 / 软件管理员可维护
+            return [IsAuthenticated(), IsProjectPackageAdmin()]
         if self.action == "trigger":
             # 手动触发打包：管理员/开发/测试均可
             return [IsAuthenticated(), IsProjectPackager()]

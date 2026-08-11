@@ -26,6 +26,18 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.08.11',
+    date: '2026-08-11',
+    summary: '打包权限收敛与看板易用性增强',
+    items: [
+      { category: 'feature', text: '打包看板构建列表支持分页（每页 15 条）、关键字搜索与按项目过滤' },
+      { category: 'improvement', text: '打包配置参数仅项目管理员 / 软件管理员可维护，其他角色在看板中隐藏编辑入口并显示锁定提示' },
+      { category: 'improvement', text: '新建打包配置的项目下拉只列出当前用户可管理（项目管理员 / 软件管理员）的项目' },
+      { category: 'improvement', text: '成员记录中的软件管理员角色优先生效，项目负责人被显式设为软件管理员后自动获得对应权限' },
+      { category: 'fix', text: '补充项目可见性回归保障：非项目成员无法在项目列表看到该项目，访问详情返回 404' },
+    ],
+  },
+  {
     version: '2026.08.10',
     date: '2026-08-10',
     summary: '打包能力扩展：支持远程 Windows 节点打包，审批信息更完整',

@@ -434,6 +434,8 @@ export interface PackageConfig {
   svn_credential_id?: string | null;
   svn_credential_name?: string;
   svn_path_template?: string;
+  /** 当前用户在配置所属项目中的角色（超管返回 software_admin），用于控制配置编辑入口 */
+  my_role?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

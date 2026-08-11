@@ -114,6 +114,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     executor_type_display = serializers.CharField(source="get_executor_type_display", read_only=True)
     svn_credential_id = serializers.UUIDField(source="svn_credential.id", read_only=True)
     svn_credential_name = serializers.CharField(source="svn_credential.name", read_only=True, default="")
+    my_role = serializers.SerializerMethodField()
 
     class Meta:
         model = PackageConfig
@@ -127,13 +128,14 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "auto_package_on_release", "is_active",
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
             "svn_path_template",
+            "my_role",
             "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "project_id", "project_name", "repository_id", "repository_name",
             "image_id", "image_name", "image_ref", "image_source",
             "executor_type_display", "node_id", "node_name", "node_host",
-            "svn_credential_id", "svn_credential_name",
+            "svn_credential_id", "svn_credential_name", "my_role",
             "created_at", "updated_at",
         ]
 
@@ -166,14 +168,43 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         )
         return image
 
+    def get_my_role(self, obj: PackageConfig) -> str | None:
+        """当前请求用户在配置所属项目中的角色。
+
+        与 `ProjectSerializer.get_my_role` 保持一致：超管与项目负责人均视为 manager；
+        成员记录为 software_admin 时优先生效；非成员返回 None。
+        前端 `ConfigList`/`PackageConfigModal` 同时接受 manager / software_admin
+        作为可维护信号，因此超管返回 manager 不会影响 UI 放行。
+        列表场景下视图已通过 Prefetch(to_attr="_my_member") 预取当前用户
+        的成员记录，避免逐条查询产生 N+1。
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        if user.is_superuser:
+            return "manager"
+        # 视图通过 Prefetch(to_attr="_my_member") 预取当前用户成员记录；
+        # 嵌套调用或未 prefetch 时回退到直接查询（仅单条，无 N+1 风险）
+        members = getattr(obj.project, "_my_member", None)
+        if members is None:
+            member = obj.project.members.filter(user=user).only("role").first()
+        else:
+            member = members[0] if members else None
+        if member and member.role == "software_admin":
+            return "software_admin"
+        if str(obj.project.leader_id) == str(user.id):
+            return "manager"
+        return member.role if member else None
+
     def validate_project(self, value):
-        """校验项目管理员权限。"""
+        """校验打包配置维护权限（项目管理员 / 软件管理员）。"""
         user = self.context["request"].user
         if user.is_superuser:
             return value
         member = ProjectMember.objects.filter(project=value, user=user).first()
-        if not member or member.role != "manager":
-            raise serializers.ValidationError("只有项目管理员才能维护打包配置")
+        if not member or member.role not in ("manager", "software_admin"):
+            raise serializers.ValidationError("只有项目管理员或软件管理员才能维护打包配置")
         return value
 
     def validate_build_path(self, value: str) -> str:

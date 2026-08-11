@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Boxes, FolderOpen, Package as PackageIcon, Play, Search, Settings2, Trash2 } from 'lucide-react';
+import { Boxes, FolderOpen, Lock, Package as PackageIcon, Play, Search, Settings2, Trash2 } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { SvnBrowserDrawer } from '@/components/SvnBrowserDrawer';
 import { useLatestTaskByConfig } from './useLatestTaskByConfig';
@@ -155,6 +155,8 @@ const ConfigRow = memo(function ConfigRow({
 
   // 是否启用了 SVN 产物推送（展示「浏览 SVN」入口）
   const svnEnabled = Boolean(config.svn_push_enabled && config.svn_url);
+  // 打包配置参数仅项目管理员 / 软件管理员可维护（后端 my_role：超管返回 software_admin）
+  const canManage = config.my_role === 'software_admin' || config.my_role === 'manager';
 
   return (
     <div
@@ -206,20 +208,28 @@ const ConfigRow = memo(function ConfigRow({
         >
           <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
         </button>
-        <button
-          title="编辑配置"
-          className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
-          onClick={handleEdit}
-        >
-          <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </button>
-        <button
-          title="删除配置"
-          className="rounded-md p-1.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600"
-          onClick={handleDelete}
-        >
-          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </button>
+        {canManage ? (
+          <>
+            <button
+              title="编辑配置"
+              className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
+              onClick={handleEdit}
+            >
+              <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+            <button
+              title="删除配置"
+              className="rounded-md p-1.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600"
+              onClick={handleDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+          </>
+        ) : (
+          <span title="仅项目管理员或软件管理员可维护打包配置" className="rounded-md p-1.5 text-slate-300">
+            <Lock className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </span>
+        )}
       </div>
     </div>
   );

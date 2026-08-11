@@ -46,7 +46,7 @@ def project(user):
         leader=user,
         status=1,
     )
-    ProjectMember.objects.create(project=project, user=user, role="manager")
+    ProjectMember.objects.create(project=project, user=user, role="software_admin")
     return project
 
 

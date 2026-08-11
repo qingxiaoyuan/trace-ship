@@ -4,6 +4,7 @@
 覆盖项目成员角色对打包操作的权限控制：
 - 触发打包：manager / developer / tester
 - 取消任务 / 手动推 SVN：manager / developer
+- 打包配置增删改：仅 software_admin（软件管理员）
 """
 import pytest
 from rest_framework.test import APIClient
@@ -25,16 +26,16 @@ def auth_client(user):
 
 @pytest.fixture
 def users():
-    """四种项目角色用户"""
+    """五种项目角色用户"""
     return {
         role: User.objects.create_user(username=f"pkg_{role}", password="pass")
-        for role in ("manager", "developer", "tester", "viewer")
+        for role in ("manager", "developer", "tester", "viewer", "software_admin")
     }
 
 
 @pytest.fixture
 def project(users):
-    """包含四种角色成员的项目"""
+    """包含五种角色成员的项目（负责人为 manager 用户）"""
     manager = users["manager"]
     project = Project.objects.create(
         code="PKGPERM", name="打包权限项目", leader=manager, status=1,
@@ -72,8 +73,13 @@ def release(project, repository, users):
 
 
 @pytest.fixture
-def package_config(project, repository):
-    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+def image():
+    """打包镜像 fixture，被 package_config 与新建配置测试共用"""
+    return PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+
+
+@pytest.fixture
+def package_config(project, repository, image):
     return PackageConfig.objects.create(
         project=project, repository=repository, name="Web 打包", image=image,
     )
@@ -155,4 +161,93 @@ def test_tester_cannot_push_svn(project, queued_task, users):
         f"/api/packages/tasks/{queued_task.id}/push-svn/"
     )
 
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 打包配置写权限：项目管理员 / 软件管理员
+# ---------------------------------------------------------------------------
+
+def _config_payload(project, repository, image, name="权限测试配置"):
+    return {
+        "project": str(project.id),
+        "repository": str(repository.id),
+        "name": name,
+        "executor_type": "local_docker",
+        "image": str(image.id),
+        "build_path": ".",
+        "output_path": "dist",
+    }
+
+
+@pytest.mark.django_db
+def test_software_admin_can_create_config(project, repository, image, users):
+    """软件管理员可创建打包配置"""
+    response = auth_client(users["software_admin"]).post(
+        "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+    )
+    assert response.status_code == 200, response.data
+
+
+@pytest.mark.django_db
+def test_manager_can_create_config(project, repository, image, users):
+    """项目管理员可创建打包配置"""
+    response = auth_client(users["manager"]).post(
+        "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+    )
+    assert response.status_code == 200, response.data
+
+
+@pytest.mark.django_db
+def test_developer_cannot_create_config(project, repository, image, users):
+    """开发角色不能创建打包配置"""
+    response = auth_client(users["developer"]).post(
+        "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_tester_viewer_cannot_create_config(project, repository, image, users):
+    """测试 / 只读角色不能创建打包配置"""
+    for role in ("tester", "viewer"):
+        response = auth_client(users[role]).post(
+            "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_software_admin_can_update_and_delete_config(project, package_config, users):
+    """软件管理员可修改/删除打包配置"""
+    client = auth_client(users["software_admin"])
+    response = client.patch(
+        f"/api/packages/configs/{package_config.id}/", {"name": "改名"}, format="json",
+    )
+    assert response.status_code == 200, response.data
+    response = client.delete(f"/api/packages/configs/{package_config.id}/")
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_manager_can_update_and_delete_config(project, package_config, users):
+    """项目管理员可修改/删除打包配置"""
+    client = auth_client(users["manager"])
+    response = client.patch(
+        f"/api/packages/configs/{package_config.id}/", {"name": "改名"}, format="json",
+    )
+    assert response.status_code == 200, response.data
+    response = client.delete(f"/api/packages/configs/{package_config.id}/")
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_developer_cannot_update_or_delete_config(project, package_config, users):
+    """开发角色不能修改/删除打包配置"""
+    client = auth_client(users["developer"])
+    response = client.patch(
+        f"/api/packages/configs/{package_config.id}/", {"name": "改名"}, format="json",
+    )
+    assert response.status_code == 403
+    response = client.delete(f"/api/packages/configs/{package_config.id}/")
     assert response.status_code == 403

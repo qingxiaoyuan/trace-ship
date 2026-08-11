@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { App, Button, Form, Modal, Select } from 'antd';
+import { App, Button, Form, Modal, Pagination, Select } from 'antd';
 import {
   ChevronRight,
   Hammer,
@@ -9,11 +9,13 @@ import {
   Package as PackageIcon,
   Plus,
   RefreshCw,
+  Search,
   Settings2,
 } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
+import { projectApi } from '@/api/project';
 import { ConfigList } from './components/ConfigList';
 import { RunningTab } from './components/RunningTab';
 import { DetailView } from './components/DetailView';
@@ -23,6 +25,8 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 
 const pageSize = 100;
 const page = 1;
+/** 构建列表每页条数 */
+const TASK_PAGE_SIZE = 15;
 
 type TabKey = 'running' | 'configs';
 
@@ -44,18 +48,57 @@ export default function PackageTaskPage() {
   const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
   const [triggerForm] = Form.useForm<{ release_id: string }>();
 
+  // 构建列表：分页 / 搜索 / 项目过滤
+  const [taskPage, setTaskPage] = useState(1);
+  const [taskKeyword, setTaskKeyword] = useState('');
+  const [taskSearch, setTaskSearch] = useState('');
+  const [taskProject, setTaskProject] = useState<string>('');
+
+  // 搜索关键字防抖，避免每次击键都请求
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTaskSearch(taskKeyword.trim());
+      setTaskPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [taskKeyword]);
+
+  const { data: projectsData } = useQuery({
+    queryKey: ['package-board-projects'],
+    queryFn: () => projectApi.getProjects({ page: 1, page_size: 1000 }),
+  });
+
   const { data: configsData, isLoading: configsLoading, error: configsError } = useQuery({
     queryKey: ['package-configs', page],
     queryFn: () => packageApi.getConfigs({ page, page_size: pageSize }),
   });
 
   const { data: tasksData, isLoading: tasksLoading, error: tasksError } = useQuery({
-    queryKey: ['package-tasks', page],
-    queryFn: () => packageApi.getTasks({ page, page_size: 20 }),
+    queryKey: ['package-tasks', taskPage, taskSearch, taskProject],
+    queryFn: () =>
+      packageApi.getTasks({
+        page: taskPage,
+        page_size: TASK_PAGE_SIZE,
+        search: taskSearch || undefined,
+        project: taskProject || undefined,
+      }),
   });
 
   const configs = useMemo(() => configsData?.results || [], [configsData]);
   const tasks = useMemo(() => tasksData?.results || [], [tasksData]);
+  const tasksTotal = tasksData?.total || 0;
+
+  const projectOptions = useMemo(
+    () => (projectsData?.results || []).map((p) => ({ label: p.name, value: p.id })),
+    [projectsData],
+  );
+
+  // 配置历史视图：按配置单独拉取完整任务列表（构建列表分页后不能复用当前页数据）
+  const { data: configTasksData } = useQuery({
+    queryKey: ['package-tasks-by-config', selectedConfig?.id],
+    queryFn: () => packageApi.getTasks({ config: selectedConfig!.id, page_size: 50 }),
+    enabled: view === 'detail' && !!selectedConfig,
+  });
 
   const { data: releasedData, isLoading: releasesLoading } = useQuery({
     queryKey: ['package-trigger-releases', triggerConfig?.project, triggerConfig?.repository],
@@ -260,13 +303,19 @@ export default function PackageTaskPage() {
   );
 
   const builds = useMemo(() => {
-    const configId = selectedConfig?.id || selectedTask?.config;
+    // 配置历史视图使用按配置拉取的完整列表
+    if (selectedConfig) {
+      return [...(configTasksData?.results || [])].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+    }
+    const configId = selectedTask?.config;
     const name = selectedTask?.name;
     if (!configId && !name) return [];
     return tasks
       .filter((t) => (configId && t.config === configId) || (!configId && t.name === name))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [tasks, selectedConfig, selectedTask]);
+  }, [tasks, configTasksData, selectedConfig, selectedTask]);
 
   const closeTrigger = useCallback(() => {
     setTriggerOpen(false);
@@ -313,8 +362,8 @@ export default function PackageTaskPage() {
               >
                 <Hammer className="h-3.5 w-3.5" strokeWidth={1.5} />
                 构建列表
-                {tasks.length > 0 && (
-                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{tasks.length}</span>
+                {tasksTotal > 0 && (
+                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{tasksTotal}</span>
                 )}
               </button>
               <button
@@ -340,7 +389,50 @@ export default function PackageTaskPage() {
               onOpenHistory={openConfigHistory}
             />
           )}
-          {activeTab === 'running' && <RunningTab tasks={tasks} onOpen={openBuild} />}
+          {activeTab === 'running' && (
+            <div className="space-y-3">
+              {/* 构建列表工具栏：搜索 + 项目过滤 */}
+              <div className="tech-card flex flex-wrap items-center gap-2 rounded-xl px-4 py-2.5">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
+                  <input
+                    type="text"
+                    value={taskKeyword}
+                    onChange={(e) => setTaskKeyword(e.target.value)}
+                    placeholder="搜索任务 / 版本 / Tag / 仓库"
+                    className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder="按项目过滤"
+                  options={projectOptions}
+                  value={taskProject || undefined}
+                  onChange={(v) => {
+                    setTaskProject(v || '');
+                    setTaskPage(1);
+                  }}
+                  className="w-[200px]"
+                />
+                <div className="ml-auto text-[12px] text-slate-400">共 {tasksTotal} 条</div>
+              </div>
+              <RunningTab tasks={tasks} onOpen={openBuild} />
+              {tasksTotal > TASK_PAGE_SIZE && (
+                <div className="flex justify-end">
+                  <Pagination
+                    current={taskPage}
+                    pageSize={TASK_PAGE_SIZE}
+                    total={tasksTotal}
+                    onChange={setTaskPage}
+                    showSizeChanger={false}
+                    size="small"
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

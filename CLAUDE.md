@@ -146,7 +146,7 @@ npm run lint
 所有业务资源都围绕 `Project` 组织：
 
 - `apps.project.Project`：项目主体，包含 `version_rule` 和 `release_rule` JSON 规则。
-- `apps.project.ProjectMember`：用户与项目的关联，角色为 `developer` / `tester` / `manager` / `auditor` / `viewer`。
+- `apps.project.ProjectMember`：用户与项目的关联，角色为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行）。
 - `apps.repository.Repository` 与 `CommitRecord`：代码仓库（仅 Git/GitLab，直接归属项目并各自绑定凭证；SVN 仅作为打包产物推送目标）与提交记录。
 - `apps.release.ReleaseRecord` 与 `ReleaseCommit`：发布记录与关联提交。
 - `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：审批工作流定义、实例与任务。

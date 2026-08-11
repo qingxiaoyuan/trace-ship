@@ -425,3 +425,90 @@ def test_non_auditor_only_sees_member_projects(project, outsider):
     assert response.status_code == 200
     names = [p["name"] for p in response.data["data"]["results"]]
     assert "权限项目" not in names
+
+
+@pytest.mark.django_db
+def test_non_member_cannot_view_project_detail(project, outsider):
+    """
+    非项目成员访问项目详情被隔离
+
+    期望：HTTP 404（get_queryset 过滤后对象不存在）
+    """
+    response = auth_client(outsider).get(f"/api/projects/{project.id}/")
+
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# _effective_role 顺序：software_admin 成员优先于 leader 等价语义
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_effective_role_software_admin_takes_precedence_over_leader(project, manager):
+    """
+    成员记录为 software_admin 时优先于 leader=manager 等价
+
+    场景：项目负责人（leader）被显式设置为 software_admin 成员
+    期望：_effective_role 返回 software_admin，而非降级为 manager
+    """
+    from utils.permissions import IsProjectManager
+
+    ProjectMember.objects.filter(project=project, user=manager).update(role="software_admin")
+
+    perm = IsProjectManager()
+    assert perm._effective_role(project, manager) == "software_admin"
+
+
+@pytest.mark.django_db
+def test_effective_role_leader_equivalent_to_manager_without_member_record(project, manager):
+    """
+    无 software_admin 成员时，leader（无 ProjectMember 记录）等价于 manager
+
+    回归保障：删除 leader 的成员记录后仍能识别为 manager
+    """
+    from utils.permissions import IsProjectManager
+
+    ProjectMember.objects.filter(project=project, user=manager).delete()
+
+    perm = IsProjectManager()
+    assert perm._effective_role(project, manager) == "manager"
+
+
+@pytest.mark.django_db
+def test_effective_role_non_member_returns_none(project, outsider):
+    """非成员且非 leader 时，_effective_role 返回 None"""
+    from utils.permissions import IsProjectManager
+
+    perm = IsProjectManager()
+    assert perm._effective_role(project, outsider) is None
+
+
+@pytest.mark.django_db
+def test_effective_role_software_admin_passes_all_role_gates(project, software_admin):
+    """
+    software_admin 在 _check 中统一放行，等同项目内全权限
+
+    覆盖 IsProjectManager / IsProjectDeveloper / IsProjectTester /
+    IsProjectAuditor / IsProjectPackager / IsProjectPackageAdmin 等子类：
+    无论 required_roles 如何声明，software_admin 都直接通过
+    """
+    from utils.permissions import (
+        IsProjectManager,
+        IsProjectDeveloper,
+        IsProjectTester,
+        IsProjectAuditor,
+        IsProjectPackager,
+        IsProjectPackageAdmin,
+    )
+
+    ProjectMember.objects.create(project=project, user=software_admin, role="software_admin")
+
+    for perm_cls in (
+        IsProjectManager,
+        IsProjectDeveloper,
+        IsProjectTester,
+        IsProjectAuditor,
+        IsProjectPackager,
+        IsProjectPackageAdmin,
+    ):
+        assert perm_cls()._check(project, software_admin) is True, perm_cls.__name__

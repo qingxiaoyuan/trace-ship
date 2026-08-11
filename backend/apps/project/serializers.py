@@ -113,9 +113,13 @@ class ProjectSerializer(serializers.ModelSerializer):
         user = getattr(request, "user", None)
         if not user or not user.is_authenticated:
             return None
-        if user.is_superuser or str(obj.leader_id) == str(user.id):
+        if user.is_superuser:
             return "manager"
         member = obj.members.filter(user=user).only("role").first()
+        if member and member.role == "software_admin":
+            return "software_admin"
+        if str(obj.leader_id) == str(user.id):
+            return "manager"
         return member.role if member else None
 
     def create(self, validated_data: dict) -> Project:

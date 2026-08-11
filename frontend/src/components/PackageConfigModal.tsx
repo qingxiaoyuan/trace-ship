@@ -7,6 +7,7 @@ import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { packageApi } from '@/api/package';
 import { credentialApi } from '@/api/credential';
+import { useAuthStore } from '@/stores/authStore';
 import { SvnTestButton } from '@/components/SvnTestButton';
 import { ImagePickerField } from '@/components/ImagePickerField';
 import { ScriptEditorField } from '@/components/ScriptEditorField';
@@ -109,6 +110,7 @@ function ToggleCard({ title, desc, name }: ToggleCardProps) {
 export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: PackageConfigModalProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
   const [form] = Form.useForm<Partial<PackageConfig>>();
 
   const projectId = Form.useWatch('project', form) ?? fixedProjectId;
@@ -209,9 +211,18 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
     },
   });
 
+  // 打包配置仅项目管理员 / 软件管理员可维护：项目下拉只列出可管理的项目（超管放行）
   const projectOptions = useMemo(
-    () => (projectsData?.results || []).map((p) => ({ label: p.name, value: p.id })),
-    [projectsData],
+    () =>
+      (projectsData?.results || [])
+        .filter(
+          (p) =>
+            currentUser?.is_superuser ||
+            p.my_role === 'software_admin' ||
+            p.my_role === 'manager',
+        )
+        .map((p) => ({ label: p.name, value: p.id })),
+    [projectsData, currentUser],
   );
   const repoOptions = useMemo(
     () => (reposData?.results || []).map((r) => ({ label: r.name, value: r.id })),
@@ -318,6 +329,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
                 label={<FieldLabel text="所属项目" required />}
                 rules={[{ required: true, message: '请选择项目' }]}
                 className="mb-0"
+                extra={<p className="mb-0 mt-1 text-[11px] text-slate-400">仅列出你是项目管理员或软件管理员的项目</p>}
               >
                 <Select
                   options={projectOptions}

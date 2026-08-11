@@ -37,6 +37,7 @@ export interface PackageTaskListParams {
   config?: string;
   status?: string;
   mode?: string;
+  search?: string;
   page?: number;
   page_size?: number;
 }

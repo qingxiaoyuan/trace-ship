@@ -61,16 +61,19 @@ class ProjectRolePermission(permissions.BasePermission):
         """
         计算用户在项目中的有效角色
 
-        项目负责人（leader）视同 manager；否则取成员记录的角色，
+        成员记录为 software_admin 时优先生效（软件管理员高于负责人/管理员）；
+        项目负责人（leader）否则视同 manager；其余取成员记录的角色，
         非成员返回 None。
         """
         if project is None:
             return None
-        if str(getattr(project, "leader_id", "")) == str(user.id):
-            return "manager"
         from apps.project.models import ProjectMember
 
         member = ProjectMember.objects.filter(project=project, user=user).first()
+        if member and member.role == "software_admin":
+            return "software_admin"
+        if str(getattr(project, "leader_id", "")) == str(user.id):
+            return "manager"
         return member.role if member else None
 
     def _check(self, project, user) -> bool:
@@ -114,6 +117,11 @@ class ProjectRolePermission(permissions.BasePermission):
 class IsProjectManager(ProjectRolePermission):
     """项目管理员权限"""
     required_roles = ["manager"]
+
+
+class IsProjectPackageAdmin(ProjectRolePermission):
+    """项目打包配置维护权限（项目管理员 / 软件管理员）"""
+    required_roles = ["manager", "software_admin"]
 
 
 class IsProjectDeveloper(ProjectRolePermission):

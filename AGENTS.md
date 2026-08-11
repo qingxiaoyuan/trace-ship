@@ -169,7 +169,7 @@ npm run preview
 项目是主要聚合根：
 
 - `Project`：项目主体，包含 `version_rule`、`release_rule`、负责人和启停状态。
-- `ProjectMember`：项目成员角色，角色值为 `developer` / `tester` / `manager` / `auditor` / `viewer`。
+- `ProjectMember`：项目成员角色，角色值为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行，等同项目内全权限）。
 - `Repository`：项目下代码仓库，仅支持 Git（GitLab）；SVN 仅作为打包产物推送目标（见 `PackageConfig` 的 SVN 推送配置）。
 - `CommitRecord`：提交记录与提交规范审查结果。
 - `ReleaseRecord`：发布申请，当前状态为 `draft` / `pending` / `released` / `rejected`。
