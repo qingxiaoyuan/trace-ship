@@ -15,6 +15,7 @@ from apps.package.services import PackageService
 from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
+from utils.markdown_table import table_newlines_to_br
 
 
 @pytest.fixture
@@ -299,6 +300,7 @@ class TestCpuLimitBuild:
         path, content = client.upload_text.call_args.args
         assert str(path).endswith("pack-run.bat")
         assert 'set "VERSION=' in content
+        assert f'set "RELEASE_DOC_PATH=C:\\trace-ship\\workspaces\\{task.id}\\source\\release-{task.version}.md"' in content
         assert "echo build %VERSION%" in content
         assert content.splitlines()[-1] == "exit /b %errorlevel%"
         command = client.run_checked.call_args.args[0]
@@ -720,6 +722,23 @@ class TestRemoteRunTask:
         task = self._make_task(project, repository, node, release, user)
         workspace = PackageService._remote_workspace(task)
         assert workspace == PureWindowsPath(r"C:\trace-ship\workspaces") / str(task.id)
+
+    def test_remote_checkout_uploads_release_doc(self, project, repository, node, release, user):
+        """远程拉取源码后上传发布说明到源码根目录。"""
+        release.release_doc = "| 项目 | 内容 |\n|---|---|\n| 变更内容 | 第一行\n第二行 |"
+        release.save(update_fields=["release_doc"])
+        client = MagicMock()
+        client.mkdirs.return_value = None
+        client.remove_dir.return_value = None
+        client.run_checked.return_value = None
+        task = self._make_task(project, repository, node, release, user)
+
+        PackageService._checkout_source_remote(task, client)
+
+        path, content = client.upload_text.call_args.args
+        expected = PackageService._remote_workspace(task) / "source" / f"release-{task.version}.md"
+        assert path == expected
+        assert content == table_newlines_to_br(release.release_doc)
 
 
 @pytest.mark.django_db

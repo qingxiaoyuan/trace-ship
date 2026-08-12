@@ -37,8 +37,11 @@ Trace Ship 支持将打包任务下发到远程 Windows 机器执行（如 .NET 
 | `TAG_NAME` / `VERSION` / `PROJECT_CODE` | 发布 tag、版本号、项目编码 |
 | `BUILD_PATH` / `OUTPUT_PATH` | 构建目录（相对源码根）、产物目录名 |
 | `WORKSPACE` / `SOURCE_DIR` / `ARTIFACTS_DIR` / `TMPDIR` | 节点上的 Windows 路径 |
+| `RELEASE_DOC_PATH` | 源码根目录下本次发布说明 MD 的完整路径（`release-{version}.md`） |
 | `DEPLOY_DIR` / `SCRIPTS_DIR` | 预留目录（节点可自行使用） |
 | 自定义环境变量 | 打包配置中的 `env_vars` |
+
+平台拉取源码后会向源码根目录写入本次发布说明 `release-{version}.md`（单元格内换行转 `<br>`），构建脚本可直接通过 `%RELEASE_DOC_PATH%` 读取该文件。
 
 产物写入 `%ARTIFACTS_DIR%`（即 `{task}\artifacts`）后，平台经 SFTP 回传到本地工作区，后续扫描、下载、推 SVN 流程与本地 Docker 打包一致。
 

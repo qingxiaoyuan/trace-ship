@@ -436,21 +436,14 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             >
               <Input className={`${inputCls} font-mono text-[12px]`} />
             </Form.Item>
-            <div>
-              <Form.Item
-                name="output_path"
-                label={<FieldLabel text="产物目录" />}
-                rules={[{ required: true }]}
-                className="mb-0"
-              >
-                <Input className={`${inputCls} font-mono text-[12px]`} />
-              </Form.Item>
-              <Form.Item name="auto_collect_output" valuePropName="checked" className="mb-0 mt-1">
-                <Checkbox className="text-[11px] text-slate-500">
-                  构建后自动收集产物目录到 artifacts（脚本可不再手动拷贝）
-                </Checkbox>
-              </Form.Item>
-            </div>
+            <Form.Item
+              name="output_path"
+              label={<FieldLabel text="产物目录" />}
+              rules={[{ required: true }]}
+              className="mb-0"
+            >
+              <Input className={`${inputCls} font-mono text-[12px]`} />
+            </Form.Item>
           </div>
         </div>
 
@@ -528,6 +521,15 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             />
           )}
           <ToggleCard title="启用配置" desc="停用后不可触发打包" name="is_active" />
+        </div>
+
+        {/* 构建后自动收集产物 */}
+        <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3">
+          <Form.Item name="auto_collect_output" valuePropName="checked" noStyle>
+            <Checkbox className="text-[12px] text-slate-700">
+              构建后自动收集产物目录到 artifacts（脚本可不再手动拷贝）
+            </Checkbox>
+          </Form.Item>
         </div>
 
         {/* SVN 推送 */}

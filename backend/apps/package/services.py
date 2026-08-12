@@ -418,6 +418,10 @@ class PackageService:
         clone_url = cls._clone_url(task.repository)
         env = cls._build_auth_env(task.repository, task.triggered_by)
         cls._run_command(task, ["git", "clone", "--depth", "1", "--branch", task.tag_name, clone_url, str(source_dir)], workspace, env)
+        # 写入本次发布说明到源码根目录，供构建脚本读取
+        doc_path = source_dir / f"release-{task.version}.md"
+        doc_path.write_text(table_newlines_to_br(task.release.release_doc or ""), encoding="utf-8")
+        cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
 
     @staticmethod
     def _auth_clone_args(repo, request_user=None) -> list[str]:
@@ -458,6 +462,7 @@ class PackageService:
             "PROJECT_CODE": task.project.code or task.project.name,
             "WORKSPACE": str(workspace),
             "SOURCE_DIR": str(workspace / "source"),
+            "RELEASE_DOC_PATH": str(workspace / "source" / f"release-{task.version}.md"),
             "ARTIFACTS_DIR": str(workspace / "artifacts"),
             "DEPLOY_DIR": str(workspace / "deploy"),
             "SCRIPTS_DIR": str(workspace / "scripts"),
@@ -498,6 +503,10 @@ class PackageService:
             should_stop=lambda: cls._ensure_task_not_canceled(task),
             error_hint="节点需安装 git 且能访问代码仓库",
         )
+        # 上传本次发布说明到源码根目录，供构建脚本读取
+        doc_path = source_dir / f"release-{task.version}.md"
+        client.upload_text(doc_path, table_newlines_to_br(task.release.release_doc or ""))
+        cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
 
     @staticmethod
     def _affinity_mask(cores: int) -> str:
@@ -685,6 +694,7 @@ class PackageService:
             *cls._docker_env_args(env_vars),
             "-e", "WORKSPACE=/workspace",
             "-e", "SOURCE_DIR=/workspace/source",
+            "-e", f"RELEASE_DOC_PATH=/workspace/source/release-{task.version}.md",
             "-e", "ARTIFACTS_DIR=/workspace/artifacts",
             "-e", "DEPLOY_DIR=/workspace/deploy",
             "-e", "SCRIPTS_DIR=/workspace/scripts",
@@ -908,6 +918,8 @@ class PackageService:
         doc_path.write_text(table_newlines_to_br(release_doc), encoding="utf-8")
 
         message = f"Release {task.version} artifacts ({task.tag_name})"
+        if release_doc:
+            message += f"\n\n{release_doc}"
         provider.import_path(str(upload_dir), remote_url, message)
 
         uploaded_files = sorted(

@@ -37,7 +37,7 @@ docker push <nexus-registry-host>/<docker-repo>/web-builder:node22
 
 ## 入口脚本职责（pack.sh）
 
-1. 读取环境变量：`WORKSPACE`、`SOURCE_DIR`、`ARTIFACTS_DIR`、`SCRIPTS_DIR`、`DEPLOY_DIR`、`BUILD_PATH`、`OUTPUT_PATH`、`TAG_NAME`、`VERSION`、`PROJECT_CODE`；
+1. 读取环境变量：`WORKSPACE`、`SOURCE_DIR`、`ARTIFACTS_DIR`、`SCRIPTS_DIR`、`DEPLOY_DIR`、`BUILD_PATH`、`OUTPUT_PATH`、`TAG_NAME`、`VERSION`、`PROJECT_CODE`、`RELEASE_DOC_PATH`；
 2. 执行内置打包逻辑：`pnpm install` -> `pnpm run build`；
 3. 将产物复制到 `/workspace/artifacts`；
 4. 不主动从互联网拉取依赖（内网源由项目内 `.npmrc` 等配置处理）。
@@ -48,6 +48,7 @@ docker push <nexus-registry-host>/<docker-repo>/web-builder:node22
 |------|------|
 | `WORKSPACE` | 容器内工作区根目录，固定 `/workspace` |
 | `SOURCE_DIR` | 源码目录，默认 `/workspace/source` |
+| `RELEASE_DOC_PATH` | 源码根目录下本次发布说明 MD 的完整路径（`release-{version}.md`） |
 | `ARTIFACTS_DIR` | 产物目录，默认 `/workspace/artifacts` |
 | `SCRIPTS_DIR` | 脚本目录，默认 `/workspace/scripts` |
 | `DEPLOY_DIR` | 预制依赖目录，默认 `/workspace/deploy`（可选） |
@@ -56,6 +57,8 @@ docker push <nexus-registry-host>/<docker-repo>/web-builder:node22
 | `TAG_NAME` | Git Tag 名 |
 | `VERSION` | 版本号 |
 | `PROJECT_CODE` | 项目编码 |
+
+平台拉取源码后会向源码根目录写入本次发布说明 `release-{version}.md`（单元格内换行转 `<br>`），构建脚本可直接通过 `$RELEASE_DOC_PATH` 读取该文件。
 
 ## 示例 Dockerfile
 

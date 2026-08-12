@@ -10,6 +10,7 @@ from apps.package.services import PackageService, PackageTaskCanceledError
 from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
+from utils.markdown_table import table_newlines_to_br
 
 
 @pytest.fixture
@@ -211,6 +212,40 @@ def test_prepare_workspace_isolated(project, repository, user, settings, tmp_pat
 
 
 @pytest.mark.django_db
+def test_checkout_source_writes_release_doc(project, repository, user, tmp_path, monkeypatch):
+    """拉取源码后把发布说明写入源码根目录。"""
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="released",
+        release_doc="# 发布说明\n\n- 修复问题",
+        publisher=user,
+    )
+    task = PackageTask.objects.create(
+        release=release,
+        project=project,
+        repository=repository,
+        name="打包任务",
+        tag_name=release.tag_name,
+        version=release.version,
+        config_snapshot={},
+    )
+    workspace = tmp_path / "workspace"
+    (workspace / "source").mkdir(parents=True)
+    monkeypatch.setattr(PackageService, "_run_command", lambda *args, **kwargs: None)
+    monkeypatch.setattr(PackageService, "_build_auth_env", lambda repo, request_user=None: {})
+
+    PackageService._checkout_source(task, workspace)
+
+    doc_path = workspace / "source" / f"release-{task.version}.md"
+    assert doc_path.read_text(encoding="utf-8") == table_newlines_to_br(release.release_doc)
+
+
+@pytest.mark.django_db
 def test_simple_package_does_not_precreate_source_output_dir(project, repository, user, tmp_path, monkeypatch):
     """简易打包不能提前创建源码产物目录，否则镜像会复制空目录。"""
     release = ReleaseRecord.objects.create(
@@ -273,7 +308,7 @@ def test_container_package_uses_workspace_and_overrides_env(project, repository,
             "script_entry": "/workspace/scripts/pack.sh",
             "build_path": ".",
             "output_path": "custom-output",
-            "env_vars": {"ARTIFACTS_DIR": "/custom/artifacts"},
+            "env_vars": {"ARTIFACTS_DIR": "/custom/artifacts", "RELEASE_DOC_PATH": "/custom/doc.md"},
         },
     )
     workspace = tmp_path / "workspace"
@@ -297,6 +332,8 @@ def test_container_package_uses_workspace_and_overrides_env(project, repository,
     assert "--entrypoint" in command
     assert "ARTIFACTS_DIR=/custom/artifacts" in command
     assert command.index("ARTIFACTS_DIR=/workspace/artifacts") > command.index("ARTIFACTS_DIR=/custom/artifacts")
+    assert "RELEASE_DOC_PATH=/workspace/source/release-VA.1.0.0.md" in command
+    assert command.index("RELEASE_DOC_PATH=/workspace/source/release-VA.1.0.0.md") > command.index("RELEASE_DOC_PATH=/custom/doc.md")
 
 
 def _make_container_task(project, repository, user, snapshot):
