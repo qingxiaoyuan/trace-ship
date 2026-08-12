@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Checkbox, ConfigProvider, Form, Input, InputNumber, Modal, Select, Switch, Typography } from 'antd';
+import { App, Button, ConfigProvider, Form, Input, InputNumber, Modal, Select, Switch, Typography } from 'antd';
 import { Check, ChevronDown, Container, FolderTree, Monitor, Settings2 } from 'lucide-react';
 import type { PackageConfig } from '@/types';
 import { projectApi } from '@/api/project';
@@ -513,6 +513,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
 
         <div className="grid grid-cols-2 gap-3">
           <ToggleCard title="发布后自动打包" desc="推 tag 成功后自动触发" name="auto_package_on_release" />
+          <ToggleCard
+            title="构建后自动收集产物"
+            desc="构建后自动归集产物目录到 artifacts（脚本可不再手动拷贝）"
+            name="auto_collect_output"
+          />
           {isRemote && (
             <ToggleCard
               title="打包后清理工作区"
@@ -521,15 +526,6 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             />
           )}
           <ToggleCard title="启用配置" desc="停用后不可触发打包" name="is_active" />
-        </div>
-
-        {/* 构建后自动收集产物 */}
-        <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3">
-          <Form.Item name="auto_collect_output" valuePropName="checked" noStyle>
-            <Checkbox className="text-[12px] text-slate-700">
-              构建后自动收集产物目录到 artifacts（脚本可不再手动拷贝）
-            </Checkbox>
-          </Form.Item>
         </div>
 
         {/* SVN 推送 */}
