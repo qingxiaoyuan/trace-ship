@@ -1,15 +1,17 @@
 import { memo, useCallback } from 'react';
-import { ExternalLink, Hammer } from 'lucide-react';
+import { ExternalLink, Hammer, Trash2 } from 'lucide-react';
 import type { PackageTask } from '@/types';
 import { ProgressBar, UserAvatar } from './Shared';
-import { formatDuration, isRunning, stageLabels, statusMeta } from './utils';
+import { formatDuration, isRunning, releaseTypeBadge, releaseTypeText, stageLabels, statusMeta } from './utils';
 
 interface RunningTabProps {
   tasks: PackageTask[];
   onOpen: (task: PackageTask) => void;
+  canDelete?: boolean;
+  onDelete?: (task: PackageTask) => void;
 }
 
-export const RunningTab = memo(function RunningTab({ tasks, onOpen }: RunningTabProps) {
+export const RunningTab = memo(function RunningTab({ tasks, onOpen, canDelete, onDelete }: RunningTabProps) {
   if (tasks.length === 0) {
     return (
       <div className="tech-card rounded-xl p-12 text-center">
@@ -29,7 +31,7 @@ export const RunningTab = memo(function RunningTab({ tasks, onOpen }: RunningTab
       </div>
       <div className="divide-y divide-indigo-50/50">
         {tasks.map((task) => (
-          <RunningRow key={task.id} task={task} onOpen={onOpen} />
+          <RunningRow key={task.id} task={task} onOpen={onOpen} canDelete={canDelete} onDelete={onDelete} />
         ))}
       </div>
     </div>
@@ -39,9 +41,13 @@ export const RunningTab = memo(function RunningTab({ tasks, onOpen }: RunningTab
 interface RunningRowProps {
   task: PackageTask;
   onOpen: (task: PackageTask) => void;
+  canDelete?: boolean;
+  onDelete?: (task: PackageTask) => void;
 }
 
-const RunningRow = memo(function RunningRow({ task, onOpen }: RunningRowProps) {
+const FINISHED_STATUSES = new Set(['success', 'failure', 'canceled']);
+
+const RunningRow = memo(function RunningRow({ task, onOpen, canDelete, onDelete }: RunningRowProps) {
   const running = isRunning(task.status);
   const stageInfo = task.stage_info as
     | { stage?: string; running?: number; max_concurrency?: number }
@@ -58,10 +64,19 @@ const RunningRow = memo(function RunningRow({ task, onOpen }: RunningRowProps) {
     return s ? (stageLabels[s] || s) : '打包中';
   })();
   const meta = statusMeta[task.status];
+  const canDeleteTask = canDelete && FINISHED_STATUSES.has(task.status);
 
   const handleClick = useCallback(() => {
     onOpen(task);
   }, [onOpen, task]);
+
+  const handleDelete = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onDelete?.(task);
+    },
+    [onDelete, task],
+  );
 
   return (
     <div
@@ -72,7 +87,14 @@ const RunningRow = memo(function RunningRow({ task, onOpen }: RunningRowProps) {
         <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${running ? 'pulse-dot' : ''} shrink-0`} />
         <div className="min-w-0">
           <div className="text-[13px] font-medium text-slate-900 truncate">{task.name}</div>
-          <div className="font-mono text-[10px] text-slate-400 truncate">{task.version} · {task.repository_name || '-'}</div>
+          <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-400">
+            <span className="truncate">{task.version} · {task.repository_name || '-'}</span>
+            {task.release_type && (
+              <span className={`shrink-0 rounded border px-1 py-px text-[9px] font-medium ${releaseTypeBadge[task.release_type] || 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                {releaseTypeText[task.release_type] || task.release_type}
+              </span>
+            )}
+          </div>
         </div>
       </div>
       <div className="col-span-6 md:col-span-2">
@@ -90,8 +112,18 @@ const RunningRow = memo(function RunningRow({ task, onOpen }: RunningRowProps) {
         <span className="text-slate-300">·</span>
         <span className="font-mono">{task.started_at ? formatDuration(task.duration) : '-'}</span>
       </div>
-      <div className="col-span-6 md:col-span-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition">
-        <ExternalLink className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
+      <div className="col-span-6 md:col-span-1 flex items-center justify-end gap-1.5">
+        {canDeleteTask ? (
+          <button
+            onClick={handleDelete}
+            title="删除任务"
+            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+        ) : (
+          <ExternalLink className="h-3.5 w-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition" strokeWidth={1.5} />
+        )}
       </div>
     </div>
   );

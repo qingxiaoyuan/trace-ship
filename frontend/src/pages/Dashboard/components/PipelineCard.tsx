@@ -26,7 +26,9 @@ export function PipelineCard({
         <span className="font-mono text-[12px] font-medium text-slate-800">{release.version}</span>
         <SmallTag className={releaseTypeClass[release.release_type]}>{releaseTypeText[release.release_type]}</SmallTag>
       </div>
-      <div className="mt-1.5 truncate text-[11px] text-slate-500">{release.project_name || '-'}</div>
+      <div className="mt-1.5 truncate text-[11px] text-slate-500">
+        {release.repository_name ? `${release.project_name || '-'} / ${release.repository_name}` : release.project_name || '-'}
+      </div>
       <div className="mt-2 flex items-center gap-1.5">
         {status === 'building' ? (
           <Loader className="spin-slow h-3 w-3 text-cyan-500" strokeWidth={2} />

@@ -228,6 +228,314 @@ class TestSnapshot:
         assert snapshot["node_id"] is None
 
 
+@pytest.mark.django_db
+class TestCpuLimitBuild:
+    """节点 CPU 资源限制：start /wait 包装构建命令。"""
+
+    def _make_task(self, project, repository, node, release, user, cores=0, priority="normal", custom="echo hi"):
+        node.cpu_cores = cores
+        node.cpu_priority = priority
+        node.save(update_fields=["cpu_cores", "cpu_priority"])
+        config = PackageConfig.objects.create(
+            project=project,
+            repository=repository,
+            name="远程打包",
+            executor_type="remote_windows",
+            node=node,
+            custom_script=custom,
+        )
+        return PackageTask.objects.create(
+            config=config, release=release, project=project, repository=repository,
+            triggered_by=user, name="远程打包", tag_name=release.tag_name,
+            version=release.version, config_snapshot=PackageService._snapshot(config),
+        )
+
+    def test_snapshot_contains_cpu_fields(self, project, repository, node, release, user):
+        task = self._make_task(project, repository, node, release, user, cores=4, priority="low")
+        snapshot = task.config_snapshot
+        assert snapshot["cpu_cores"] == 4
+        assert snapshot["cpu_priority"] == "low"
+
+    def test_affinity_mask(self):
+        assert PackageService._affinity_mask(1) == "1"
+        assert PackageService._affinity_mask(4) == "F"
+        assert PackageService._affinity_mask(8) == "FF"
+
+    def _run_build(self, task):
+        client = MagicMock()
+        PackageService._run_remote_build(task, client)
+        return client
+
+    def test_no_limit_uses_inline_command(self, project, repository, node, release, user):
+        """不配置限制（normal + 0 核）时保持原有内联命令。"""
+        task = self._make_task(project, repository, node, release, user, cores=0, priority="normal")
+        client = self._run_build(task)
+        command = client.run_checked.call_args.args[0]
+        assert command.startswith("cd /d ")
+        assert "start " not in command
+
+    def test_priority_only_wraps_start(self, project, repository, node, release, user):
+        """仅优先级限制：start /wait /优先级，无 /affinity。"""
+        task = self._make_task(project, repository, node, release, user, cores=0, priority="belownormal")
+        client = self._run_build(task)
+        command = client.run_checked.call_args.args[0]
+        assert command.startswith('start "" /wait /belownormal cmd /c')
+        assert "/affinity" not in command
+        assert "pack-run.bat" in command
+
+    def test_cores_only_wraps_affinity(self, project, repository, node, release, user):
+        """仅核数限制：带 /affinity 掩码，不加优先级。"""
+        task = self._make_task(project, repository, node, release, user, cores=4, priority="normal")
+        client = self._run_build(task)
+        command = client.run_checked.call_args.args[0]
+        assert '/affinity F' in command
+        assert "/belownormal" not in command and "/low" not in command
+
+    def test_full_limit_run_script_content(self, project, repository, node, release, user):
+        """限制路径上传的 pack-run.bat 包含目录切换、环境变量与退出码透传。"""
+        task = self._make_task(project, repository, node, release, user, cores=2, priority="low", custom="echo build %VERSION%")
+        client = self._run_build(task)
+        # 最后一次 upload_text 是 pack-run.bat
+        path, content = client.upload_text.call_args.args
+        assert str(path).endswith("pack-run.bat")
+        assert 'set "VERSION=' in content
+        assert "echo build %VERSION%" in content
+        assert content.splitlines()[-1] == "exit /b %errorlevel%"
+        command = client.run_checked.call_args.args[0]
+        assert command.startswith('start "" /wait /low /affinity 3 cmd /c')
+
+    def test_default_pack_bat_in_run_script(self, project, repository, node, release, user):
+        """未配置自定义脚本时，pack-run.bat 调源码根目录 pack.bat。"""
+        task = self._make_task(project, repository, node, release, user, cores=2, priority="low", custom="")
+        client = self._run_build(task)
+        _, content = client.upload_text.call_args.args
+        assert 'call "' in content and "pack.bat" in content
+
+
+@pytest.mark.django_db
+class TestConfigLevelResourceLimits:
+    """配置级资源限制：覆盖节点默认，内存走作业对象脚本。"""
+
+    def _make_task(self, project, repository, node, release, user, **cfg):
+        config = PackageConfig.objects.create(
+            project=project,
+            repository=repository,
+            name="远程打包",
+            executor_type="remote_windows",
+            node=node,
+            custom_script="echo hi",
+            **cfg,
+        )
+        return PackageTask.objects.create(
+            config=config, release=release, project=project, repository=repository,
+            triggered_by=user, name="远程打包", tag_name=release.tag_name,
+            version=release.version, config_snapshot=PackageService._snapshot(config),
+        )
+
+    def test_config_overrides_node(self, project, repository, node, release, user):
+        """配置级核数/优先级覆盖节点默认。"""
+        node.cpu_cores = 2
+        node.cpu_priority = "low"
+        node.save(update_fields=["cpu_cores", "cpu_priority"])
+        task = self._make_task(project, repository, node, release, user, cpu_cores=6, cpu_priority="belownormal")
+        snapshot = task.config_snapshot
+        assert snapshot["cpu_cores"] == 6
+        assert snapshot["cpu_priority"] == "belownormal"
+
+    def test_config_blank_falls_back_to_node(self, project, repository, node, release, user):
+        """配置未设置（0/空串）时跟随节点。"""
+        node.cpu_cores = 3
+        node.cpu_priority = "low"
+        node.save(update_fields=["cpu_cores", "cpu_priority"])
+        task = self._make_task(project, repository, node, release, user)
+        snapshot = task.config_snapshot
+        assert snapshot["cpu_cores"] == 3
+        assert snapshot["cpu_priority"] == "low"
+
+    def test_mem_limit_uses_powershell_wrapper(self, project, repository, node, release, user):
+        """内存上限 > 0 时上传 run-limited.ps1 并用 powershell 执行。"""
+        task = self._make_task(project, repository, node, release, user, mem_limit_mb=4096)
+        client = MagicMock()
+        PackageService._run_remote_build(task, client)
+        uploaded = [call.args[0] for call in client.upload_text.call_args_list]
+        assert any(str(p).endswith("run-limited.ps1") for p in uploaded)
+        command = client.run_checked.call_args.args[0]
+        assert command.startswith("powershell -NoProfile -ExecutionPolicy Bypass -File")
+        assert "-MemMB 4096" in command
+        assert "pack-run.bat" in command
+
+    def test_mem_zero_uses_start_wrapper(self, project, repository, node, release, user):
+        """内存上限为 0 时仍用 start /wait 包装，不上传 ps1。"""
+        task = self._make_task(project, repository, node, release, user, cpu_cores=2)
+        client = MagicMock()
+        PackageService._run_remote_build(task, client)
+        uploaded = [call.args[0] for call in client.upload_text.call_args_list]
+        assert not any(str(p).endswith("run-limited.ps1") for p in uploaded)
+        command = client.run_checked.call_args.args[0]
+        assert command.startswith('start "" /wait')
+
+    def test_old_snapshot_node_keys_fallback(self):
+        """旧快照的 node_cpu_* 键仍可读取。"""
+        cores, priority, mem = PackageService._resource_limits({
+            "node_cpu_cores": 5, "node_cpu_priority": "low",
+        })
+        assert (cores, priority, mem) == (5, "low", 0)
+
+    def test_empty_snapshot_defaults(self):
+        cores, priority, mem = PackageService._resource_limits({})
+        assert (cores, priority, mem) == (0, "normal", 0)
+
+    def test_serializer_rejects_invalid_limits(self, project, repository, node, user):
+        """配置级资源字段范围校验。"""
+        request = MagicMock()
+        request.user = user
+        base = {
+            "project": str(project.id),
+            "repository": str(repository.id),
+            "name": "限制校验",
+            "executor_type": "remote_windows",
+            "node": str(node.id),
+        }
+        serializer = PackageConfigSerializer(
+            data={**base, "cpu_cores": 100}, context={"request": request},
+        )
+        assert not serializer.is_valid()
+        assert "cpu_cores" in serializer.errors
+        serializer = PackageConfigSerializer(
+            data={**base, "mem_limit_mb": -1}, context={"request": request},
+        )
+        assert not serializer.is_valid()
+        assert "mem_limit_mb" in serializer.errors
+
+
+@pytest.mark.django_db
+class TestAutoCollectOutput:
+    """自动收集产物目录到 artifacts。"""
+
+    def _snapshot(self, **overrides):
+        base = {
+            "build_path": ".",
+            "output_path": "dist",
+            "auto_collect_output": True,
+        }
+        base.update(overrides)
+        return base
+
+    def _make_task(self, project, repository, release, user, snapshot):
+        return PackageTask.objects.create(
+            release=release, project=project, repository=repository,
+            triggered_by=user, name="打包", tag_name=release.tag_name,
+            version=release.version, config_snapshot=snapshot,
+        )
+
+    def test_output_dir_rel(self):
+        svc = PackageService
+        assert svc._output_dir_rel({"build_path": ".", "output_path": "dist"}) == "dist"
+        assert svc._output_dir_rel({"build_path": "apps/web", "output_path": "dist"}) == "apps/web/dist"
+
+    def test_local_collect_copies_files(self, project, repository, release, user, tmp_path):
+        task = self._make_task(project, repository, release, user, self._snapshot())
+        workspace = tmp_path / "ws"
+        src = workspace / "source" / "dist" / "assets"
+        src.mkdir(parents=True)
+        (workspace / "source" / "dist" / "app.js").write_text("a")
+        (src / "style.css").write_text("b")
+        (workspace / "artifacts").mkdir(parents=True)
+
+        PackageService._collect_output_local(task, workspace)
+
+        assert (workspace / "artifacts" / "app.js").exists()
+        assert (workspace / "artifacts" / "assets" / "style.css").exists()
+
+    def test_local_collect_missing_dir_skips(self, project, repository, release, user, tmp_path):
+        task = self._make_task(project, repository, release, user, self._snapshot())
+        workspace = tmp_path / "ws"
+        (workspace / "source").mkdir(parents=True)
+        (workspace / "artifacts").mkdir(parents=True)
+        # 不抛异常即通过
+        PackageService._collect_output_local(task, workspace)
+        assert list((workspace / "artifacts").iterdir()) == []
+
+    def test_remote_collect_command(self, project, repository, release, user):
+        task = self._make_task(project, repository, release, user, self._snapshot(build_path="app", output_path="dist"))
+        client = MagicMock()
+        PackageService._collect_output_remote(task, client)
+        command = client.run_checked.call_args.args[0]
+        assert "robocopy" in command
+        assert "/e" in command
+        assert "/r:1" in command
+        assert "/w:1" in command
+        assert "app\\dist" in command
+        assert "artifacts" in command
+        # robocopy 成功也返回非零，必须 exit /b 0 归零
+        assert "exit /b 0" in command
+        assert "errorlevel 8" in command
+
+
+class TestConnectRetry:
+    """建连重试：握手阶段瞬时失败（并发场景常见）重试，认证失败不重试。"""
+
+    def _fake_paramiko(self, monkeypatch, connect_side_effect):
+        import apps.package.remote_windows as rw
+
+        class FakeSSHException(Exception):
+            pass
+
+        class FakeAuthException(Exception):
+            pass
+
+        calls = []
+
+        class FakeClient:
+            def set_missing_host_key_policy(self, policy):
+                pass
+
+            def connect(self, **kwargs):
+                calls.append(1)
+                connect_side_effect(len(calls), FakeSSHException, FakeAuthException)
+
+            def close(self):
+                pass
+
+        fake = MagicMock()
+        fake.SSHClient.side_effect = lambda: FakeClient()
+        fake.SSHException = FakeSSHException
+        fake.AuthenticationException = FakeAuthException
+        monkeypatch.setattr(rw, "_import_paramiko", lambda: fake)
+        monkeypatch.setattr(rw.time, "sleep", lambda _s: None)
+        return rw, calls
+
+    def test_retry_on_transient_handshake_error(self, monkeypatch):
+        def side_effect(attempt, ssh_exc, _auth_exc):
+            if attempt < 2:
+                raise ssh_exc("No existing session")
+
+        rw, calls = self._fake_paramiko(monkeypatch, side_effect)
+        client = rw.RemoteWindowsClient("h", 22, "u", "p")
+        client.connect()
+        assert len(calls) == 2  # 第一次失败后重连成功
+
+    def test_no_retry_on_auth_failure(self, monkeypatch):
+        def side_effect(_attempt, _ssh_exc, auth_exc):
+            raise auth_exc("bad credentials")
+
+        rw, calls = self._fake_paramiko(monkeypatch, side_effect)
+        client = rw.RemoteWindowsClient("h", 22, "u", "p")
+        with pytest.raises(RemoteNodeError, match="认证失败"):
+            client.connect()
+        assert len(calls) == 1
+
+    def test_gives_up_after_three_attempts(self, monkeypatch):
+        def side_effect(_attempt, ssh_exc, _auth_exc):
+            raise ssh_exc("No existing session")
+
+        rw, calls = self._fake_paramiko(monkeypatch, side_effect)
+        client = rw.RemoteWindowsClient("h", 22, "u", "p")
+        with pytest.raises(RemoteNodeError, match="无法连接远程节点"):
+            client.connect()
+        assert len(calls) == 3
+
+
 class TestRemoteHelpers:
     def test_build_set_env_prefix(self):
         prefix = build_set_env_prefix({"TAG_NAME": "v1", "VERSION": "1.0.0"})

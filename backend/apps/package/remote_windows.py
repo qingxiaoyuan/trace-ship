@@ -20,6 +20,83 @@ class RemoteNodeError(RuntimeError):
     """远程节点操作失败。"""
 
 
+# 作业对象资源限制包装脚本：优先级 / 核数亲和性 / 内存硬上限（进程树生效）
+# 平台在启用内存上限时上传到节点执行，退出码透传给平台判定。
+RUN_LIMITED_PS1 = r"""
+param(
+    [int]$MemMB = 0,
+    [int]$Cores = 0,
+    [string]$Priority = "BelowNormal",
+    [Parameter(Mandatory = $true)][string]$Script
+)
+$ErrorActionPreference = "Stop"
+
+$p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$Script`"" -PassThru
+
+# 优先级与核数亲和性（构建子进程继承）
+if ($Priority -and $Priority -ne "Normal") {
+    try { $p.PriorityClass = $Priority } catch {}
+}
+if ($Cores -gt 0) {
+    try { $p.ProcessorAffinity = [IntPtr](([long]1 -shl $Cores) - 1) } catch {}
+}
+
+# 作业对象内存硬上限（JOB_MEMORY 覆盖整棵进程树；KILL_ON_JOB_CLOSE 保证取消时整树回收）
+if ($MemMB -gt 0) {
+    $sig = @"
+using System;
+using System.Runtime.InteropServices;
+public static class JobApi {
+    [DllImport("kernel32.dll")] public static extern IntPtr CreateJobObject(IntPtr attr, string name);
+    [DllImport("kernel32.dll")] public static extern bool SetInformationJobObject(IntPtr job, int type, IntPtr info, uint length);
+    [DllImport("kernel32.dll")] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IO_COUNTERS {
+        public ulong ReadOperationCount; public ulong WriteOperationCount; public ulong OtherOperationCount;
+        public ulong ReadTransferCount; public ulong WriteTransferCount; public ulong OtherTransferCount;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BASIC_LIMIT {
+        public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit; public IntPtr Affinity;
+        public uint PriorityClass; public uint SchedulingClass;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct EXTENDED_LIMIT {
+        public BASIC_LIMIT BasicLimitInformation; public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed;
+    }
+}
+"@
+    Add-Type -TypeDefinition $sig
+    $job = [JobApi]::CreateJobObject([IntPtr]::Zero, "trace-ship-pack")
+    $info = New-Object "JobApi+EXTENDED_LIMIT"
+    $basic = $info.BasicLimitInformation
+    # JOB_OBJECT_LIMIT_JOB_MEMORY(0x1000) | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE(0x2000)
+    $basic.LimitFlags = 0x1000 -bor 0x2000
+    $info.BasicLimitInformation = $basic
+    $info.JobMemoryLimit = [UIntPtr]([uint64]$MemMB * 1MB)
+    $size = [Runtime.InteropServices.Marshal]::SizeOf($info)
+    $ptr = [Runtime.InteropServices.Marshal]::AllocHGlobal($size)
+    try {
+        [Runtime.InteropServices.Marshal]::StructureToPtr($info, $ptr, $false) | Out-Null
+        # 9 = JobObjectExtendedLimitInformation
+        [void][JobApi]::SetInformationJobObject($job, 9, $ptr, [uint32]$size)
+    } finally {
+        [Runtime.InteropServices.Marshal]::FreeHGlobal($ptr)
+    }
+    [void][JobApi]::AssignProcessToJobObject($job, $p.Handle)
+}
+
+$p.WaitForExit()
+exit $p.ExitCode
+""".strip()
+
+
+
 def _import_paramiko():
     """延迟导入 paramiko，缺失时给出友好错误。"""
     try:
@@ -104,27 +181,47 @@ class RemoteWindowsClient:
         self.close()
 
     def connect(self) -> None:
-        """建立 SSH 连接。"""
+        """建立 SSH 连接。
+
+        并发打包或节点负载较高时，Windows OpenSSH 可能在握手阶段直接断开
+        新连接（paramiko 报 No existing session / banner 读取失败），
+        属于瞬时故障，做有限重试；认证失败不重试。
+        """
         paramiko = _import_paramiko()
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        try:
-            client.connect(
-                hostname=self.host,
-                port=self.port,
-                username=self.username,
-                password=self.password,
-                timeout=self.timeout,
-                banner_timeout=self.timeout,
-                auth_timeout=self.timeout,
-                look_for_keys=False,
-                allow_agent=False,
-            )
-        except paramiko.AuthenticationException as exc:
-            raise RemoteNodeError(f"远程节点认证失败，请检查用户名密码: {self.host}") from exc
-        except Exception as exc:
-            raise RemoteNodeError(f"无法连接远程节点 {self.host}:{self.port}: {exc}") from exc
-        self._client = client
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                client.connect(
+                    hostname=self.host,
+                    port=self.port,
+                    username=self.username,
+                    password=self.password,
+                    timeout=self.timeout,
+                    # 握手/认证超时放宽：节点繁忙时 banner 交换可能较慢
+                    banner_timeout=30,
+                    auth_timeout=30,
+                    look_for_keys=False,
+                    allow_agent=False,
+                )
+                self._client = client
+                return
+            except paramiko.AuthenticationException as exc:
+                raise RemoteNodeError(f"远程节点认证失败，请检查用户名密码: {self.host}") from exc
+            except Exception as exc:
+                last_exc = exc
+                try:
+                    client.close()
+                except Exception:
+                    pass
+                if attempt < 2:
+                    logger.warning(
+                        "连接远程节点失败，2s 后重试（第 %d 次）%s:%s error=%s",
+                        attempt + 1, self.host, self.port, exc,
+                    )
+                    time.sleep(2)
+        raise RemoteNodeError(f"无法连接远程节点 {self.host}:{self.port}: {last_exc}") from last_exc
 
     def close(self) -> None:
         """关闭连接。"""

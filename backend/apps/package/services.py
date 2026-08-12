@@ -21,7 +21,12 @@ from rest_framework import serializers
 
 from apps.credential.models import Credential
 from apps.package.models import PackageConfig, PackageNode, PackageTask
-from apps.package.remote_windows import RemoteWindowsClient, build_set_env_prefix, cmd_quote
+from apps.package.remote_windows import (
+    RUN_LIMITED_PS1,
+    RemoteWindowsClient,
+    build_set_env_prefix,
+    cmd_quote,
+)
 from apps.repository.serializers import RepositorySerializer
 from utils.markdown_table import table_newlines_to_br
 from utils.provider.credential_resolver import resolve_credential
@@ -104,6 +109,12 @@ class PackageService:
             "node_port": node.port if node else 22,
             "node_work_root": node.work_root if node else "",
             "node_credential_id": str(node.credential_id) if node and node.credential_id else None,
+            # 资源限制生效值：配置级优先，未设置（0/空串）时跟随节点；内存上限仅配置级
+            "cpu_cores": config.cpu_cores or (node.cpu_cores if node else 0),
+            "cpu_priority": config.cpu_priority
+            or (node.cpu_priority if node else "")
+            or "belownormal",
+            "mem_limit_mb": config.mem_limit_mb or 0,
             "custom_script": config.custom_script,
             "build_path": cls._safe_rel_path(
                 config.build_path,
@@ -113,6 +124,7 @@ class PackageService:
                 config.output_path,
                 image.default_output_path if image else "artifacts",
             ),
+            "auto_collect_output": bool(config.auto_collect_output),
             "env_vars": config.env_vars or {},
             "svn_push_enabled": config.svn_push_enabled,
             "svn_url": config.svn_url or "",
@@ -140,6 +152,7 @@ class PackageService:
             name=f"{config.name} / {release.version}",
             tag_name=release.tag_name,
             version=release.version,
+            release_type=release.release_type,
             commit_hash=release.git_hash,
             config_snapshot=snapshot,
         )
@@ -451,7 +464,7 @@ class PackageService:
         }
 
     @classmethod
-    def _checkout_source_remote(cls, task: PackageTask) -> None:
+    def _checkout_source_remote(cls, task: PackageTask, client: RemoteWindowsClient) -> None:
         """在远程 Windows 节点上克隆源码（节点自行访问代码仓库）。"""
         snapshot = task.config_snapshot or {}
         remote_workspace = cls._remote_workspace(task)
@@ -473,25 +486,46 @@ class PackageService:
         # 避免 git 调用 wincredman 持久化凭据（SSH 会话下报错）
         git_args = ["-c", "credential.helper=", *auth_args]
         arg_parts = " ".join(cmd_quote(arg) for arg in git_args)
-        with RemoteWindowsClient.from_snapshot(snapshot) as client:
-            client.mkdirs(remote_workspace, remote_workspace / "artifacts", remote_workspace / "tmp")
-            # 清理历史残留，保证全新克隆
-            client.remove_dir(source_dir)
-            client.run_checked(
-                f"git {arg_parts} clone --depth 1 "
-                f"--branch {cmd_quote(task.tag_name)} "
-                f"{cmd_quote(clone_url)} {cmd_quote(str(source_dir))}",
-                on_line=log_line,
-                should_stop=lambda: cls._ensure_task_not_canceled(task),
-                error_hint="节点需安装 git 且能访问代码仓库",
-            )
+        client.mkdirs(remote_workspace, remote_workspace / "artifacts", remote_workspace / "tmp")
+        # 清理历史残留，保证全新克隆
+        client.remove_dir(source_dir)
+        client.run_checked(
+            f"git {arg_parts} clone --depth 1 "
+            f"--branch {cmd_quote(task.tag_name)} "
+            f"{cmd_quote(clone_url)} {cmd_quote(str(source_dir))}",
+            on_line=log_line,
+            should_stop=lambda: cls._ensure_task_not_canceled(task),
+            error_hint="节点需安装 git 且能访问代码仓库",
+        )
+
+    @staticmethod
+    def _affinity_mask(cores: int) -> str:
+        """CPU 核数转 start /affinity 的十六进制掩码（取低 N 位）。"""
+        return format((1 << cores) - 1, "X")
+
+    @staticmethod
+    def _resource_limits(snapshot: dict) -> tuple[int, str, int]:
+        """读取资源限制生效值（核数 / 优先级 / 内存上限 MB）。
+
+        配置级优先、未设置跟随节点（快照已合并生效值）；
+        兼容旧快照中的 node_cpu_* 键。
+        """
+        cores = int(snapshot.get("cpu_cores") or snapshot.get("node_cpu_cores") or 0)
+        priority = (
+            snapshot.get("cpu_priority") or snapshot.get("node_cpu_priority") or "normal"
+        ).lower()
+        mem_mb = int(snapshot.get("mem_limit_mb") or 0)
+        return cores, priority, mem_mb
 
     @classmethod
-    def _run_remote_build(cls, task: PackageTask) -> None:
+    def _run_remote_build(cls, task: PackageTask, client: RemoteWindowsClient) -> None:
         """在远程 Windows 节点上执行打包脚本。
 
-        有自定义脚本时上传到节点临时目录后以 call 执行；
+        有自定义脚本时上传到节点临时目录后执行；
         否则执行源码根目录下的 pack.bat（节点接入约定）。
+        节点配置了 CPU 限制（核数 / 优先级）时，组装 pack-run.bat 后用
+        start /wait 包装执行——优先级与亲和性对整棵构建进程树生效，
+        防止打包占满 CPU 导致 SSH 断连。
         """
         snapshot = task.config_snapshot or {}
         custom_script = (snapshot.get("custom_script") or "").strip()
@@ -502,7 +536,10 @@ class PackageService:
         work_dir = source_dir if build_path == "." else source_dir / PureWindowsPath(build_path)
         set_prefix = build_set_env_prefix(env)
 
-        with RemoteWindowsClient.from_snapshot(snapshot) as client:
+        cores, priority, mem_mb = cls._resource_limits(snapshot)
+        limited = cores > 0 or mem_mb > 0 or priority in ("belownormal", "low")
+
+        if not limited:
             if custom_script:
                 script_path = remote_workspace / "tmp" / "pack-custom.bat"
                 client.upload_text(script_path, custom_script)
@@ -522,19 +559,78 @@ class PackageService:
                 should_stop=lambda: cls._ensure_task_not_canceled(task),
                 error_hint=error_hint,
             )
+            return
+
+        # 资源限制路径：完整命令写入 pack-run.bat，start /wait 包装执行
+        run_script = remote_workspace / "tmp" / "pack-run.bat"
+        bat_lines = [
+            "@echo off",
+            f"cd /d {cmd_quote(str(work_dir))}",
+            *[f'set "{key}={value}"' for key, value in env.items()],
+        ]
+        if custom_script:
+            bat_lines.append(custom_script)
+            error_hint = ""
+        else:
+            bat_lines.append(f"call {cmd_quote(str(source_dir / 'pack.bat'))}")
+            error_hint = "未配置自定义脚本时，源码根目录需提供 pack.bat 入口"
+        bat_lines.append("exit /b %errorlevel%")
+        client.upload_text(run_script, "\n".join(bat_lines))
+
+        # 内存上限需要作业对象（PowerShell 包装脚本），优先级/核数在其中一并生效；
+        # 仅 CPU 限制时用 start /wait 即可，无需节点侧脚本
+        if mem_mb > 0:
+            ps1_path = remote_workspace.parent / "bin" / "run-limited.ps1"
+            client.upload_text(ps1_path, RUN_LIMITED_PS1)
+            ps_priority = {"normal": "Normal", "belownormal": "BelowNormal", "low": "Idle"}.get(priority, "Normal")
+            limit_desc = [f"内存 {mem_mb}MB"]
+            if cores > 0:
+                limit_desc.append(f"核数 {cores}")
+            if priority in ("belownormal", "low"):
+                limit_desc.append(f"优先级 {priority}")
+            cls._append_log(
+                task,
+                f'$ powershell -File "{ps1_path}" -MemMB {mem_mb} -Cores {cores} -Priority {ps_priority}'
+                f' -Script "{run_script}"  <注入 {len(env)} 个环境变量，{ "、".join(limit_desc) }>',
+            )
+            client.run_checked(
+                f"powershell -NoProfile -ExecutionPolicy Bypass -File {cmd_quote(str(ps1_path))}"
+                f" -MemMB {mem_mb} -Cores {cores} -Priority {ps_priority}"
+                f" -Script {cmd_quote(str(run_script))}",
+                on_line=lambda line: cls._append_log(task, cls._sanitize_log_line(line)),
+                should_stop=lambda: cls._ensure_task_not_canceled(task),
+                error_hint=error_hint,
+            )
+            return
+
+        start_args = 'start "" /wait'
+        if priority in ("belownormal", "low"):
+            start_args += f" /{priority}"
+        if cores > 0:
+            start_args += f" /affinity {cls._affinity_mask(cores)}"
+        limit_desc = []
+        if priority in ("belownormal", "low"):
+            limit_desc.append(f"优先级 {priority}")
+        if cores > 0:
+            limit_desc.append(f"核数 {cores}")
+        cls._append_log(
+            task,
+            f'$ {start_args} cmd /c "{run_script}"  <注入 {len(env)} 个环境变量，{ "、".join(limit_desc) }>',
+        )
+        client.run_checked(
+            f"{start_args} cmd /c {cmd_quote(str(run_script))}",
+            on_line=lambda line: cls._append_log(task, cls._sanitize_log_line(line)),
+            should_stop=lambda: cls._ensure_task_not_canceled(task),
+            error_hint=error_hint,
+        )
 
     @classmethod
-    def _collect_remote_artifacts(cls, task: PackageTask, workspace: Path) -> None:
+    def _collect_remote_artifacts(cls, task: PackageTask, workspace: Path, client: RemoteWindowsClient) -> None:
         """将远程节点产物回传到本地工作区，并清理远程工作目录。"""
         snapshot = task.config_snapshot or {}
         remote_workspace = cls._remote_workspace(task)
-        with RemoteWindowsClient.from_snapshot(snapshot) as client:
-            count = client.download_dir(
-                remote_workspace / "artifacts",
-                workspace / "artifacts",
-                should_stop=lambda: cls._ensure_task_not_canceled(task),
-            )
-            client.remove_dir(remote_workspace)
+        count = client.download_dir(remote_workspace / "artifacts", workspace / "artifacts")
+        client.remove_dir(remote_workspace)
         cls._append_log(task, f"已回传 {count} 个产物文件，远程工作目录已清理")
 
     @classmethod
@@ -611,6 +707,59 @@ class PackageService:
                     "请更换符合规范的镜像，或在打包配置中填写自定义打包脚本"
                 ) from exc
             raise
+
+    @classmethod
+    def _output_dir_rel(cls, snapshot: dict) -> str:
+        """产物目录相对源码根的路径（构建目录/产物目录 合并）。"""
+        build_path = cls._safe_rel_path(snapshot.get("build_path", "."), ".")
+        output_path = cls._safe_rel_path(snapshot.get("output_path", "artifacts"), "artifacts")
+        return output_path if build_path == "." else f"{build_path}/{output_path}"
+
+    @classmethod
+    def _collect_output_local(cls, task: PackageTask, workspace: Path) -> None:
+        """本地打包：构建后把产物目录内容归集到 artifacts。"""
+        snapshot = task.config_snapshot or {}
+        rel_dir = cls._output_dir_rel(snapshot)
+        src = workspace / "source" / rel_dir
+        if not src.exists() or not src.is_dir():
+            cls._append_log(task, f"产物目录不存在，跳过自动收集: source/{rel_dir}")
+            return
+        dst = workspace / "artifacts"
+        count = 0
+        for file in src.rglob("*"):
+            if not file.is_file():
+                continue
+            target = dst / file.relative_to(src)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file, target)
+            count += 1
+        cls._append_log(task, f"已自动收集产物 {count} 个文件（source/{rel_dir} → artifacts）")
+
+    @classmethod
+    def _collect_output_remote(cls, task: PackageTask, client: RemoteWindowsClient) -> None:
+        """远程打包：构建后在节点上把产物目录内容拷贝到 artifacts。"""
+        snapshot = task.config_snapshot or {}
+        remote_workspace = cls._remote_workspace(task)
+        rel_dir = cls._output_dir_rel(snapshot)
+        src = remote_workspace / "source" / PureWindowsPath(rel_dir)
+        dst = remote_workspace / "artifacts"
+        cls._append_log(task, f"正在收集产物目录 source\\{rel_dir} -> artifacts…")
+        src_quoted = cmd_quote(str(src))
+        dst_quoted = cmd_quote(str(dst))
+        client.run_checked(
+            # robocopy 默认复制源目录内容（不含目录名本身），与本地 rglob 行为一致；
+            # 退出码 < 8 均为成功（0=无文件，1=已复制，2=有额外文件，4=有不匹配），
+            # >= 8 才是失败；/r:1 /w:1 避免默认百万次重试卡住 SSH 会话；
+            # robocopy 成功也返回非零（1/2/4），必须显式 exit /b 0 归零，
+            # 否则 run_checked 会把 1 误判为失败
+            f"if exist {src_quoted} "
+            f"(robocopy {src_quoted} {dst_quoted} /e /r:1 /w:1 /njh /njs /np "
+            f"& if errorlevel 8 exit /b 1 & exit /b 0) "
+            f"else (echo 产物目录不存在: {src})",
+            on_line=lambda line: cls._append_log(task, cls._sanitize_log_line(line)),
+            should_stop=lambda: cls._ensure_task_not_canceled(task),
+            error_hint="产物自动收集失败",
+        )
 
     @classmethod
     def _scan_artifacts(cls, workspace: Path) -> list[dict[str, Any]]:
@@ -714,15 +863,19 @@ class PackageService:
         credential.save(update_fields=["last_used_at", "updated_at"])
         cred_data = credential.get_data()
 
-        # 渲染版本目录名
+        # 渲染版本目录名（支持 {release_type} 占位符区分正式/RC/测试版）
         version_dir = path_template.format(
             version=task.version,
             tag_name=task.tag_name,
             build_type=task.build_type,
             project_code=task.project.code or task.project.name,
+            release_type=task.release_type or "formal",
         ).strip("/")
         if not version_dir:
             raise RuntimeError("SVN 目录模板渲染结果为空")
+        # 默认模板 {version} 下，非正式版目录自动带类型后缀，避免 rc/测试版覆盖正式版目录
+        if path_template == "{version}" and task.release_type and task.release_type != "formal":
+            version_dir = f"{version_dir}-{task.release_type}"
         remote_url = f"{svn_url.rstrip('/')}/{version_dir}"
 
         # 创建 provider 并检查目录是否已存在
@@ -838,11 +991,16 @@ class PackageService:
         snapshot = task.config_snapshot or {}
         svn_push_enabled = bool(snapshot.get("svn_push_enabled"))
         executor_type = snapshot.get("executor_type") or "local_docker"
+        # 远程执行全程复用同一条 SSH 连接：分阶段建连在并发/节点繁忙时
+        # 容易在握手阶段被 Windows OpenSSH 断开（No existing session）
+        remote_client: RemoteWindowsClient | None = None
         try:
             cls._append_log(task, f"开始打包 {task.version} ({task.tag_name})")
             cls._update_stage(task, "checkout", 5, "正在拉取源码…")
             if executor_type == "remote_windows":
-                cls._checkout_source_remote(task)
+                remote_client = RemoteWindowsClient.from_snapshot(snapshot)
+                remote_client.connect()
+                cls._checkout_source_remote(task, remote_client)
             else:
                 cls._checkout_source(task, workspace)
             cls._ensure_task_not_canceled(task)
@@ -850,14 +1008,18 @@ class PackageService:
             cls._update_stage(task, "build", build_progress, "开始执行打包…")
             artifacts_progress = 65 if svn_push_enabled else 80
             if executor_type == "remote_windows":
-                cls._run_remote_build(task)
+                cls._run_remote_build(task, remote_client)
                 cls._ensure_task_not_canceled(task)
                 cls._update_stage(task, "artifacts", artifacts_progress, "正在回传产物…")
-                cls._collect_remote_artifacts(task, workspace)
+                if snapshot.get("auto_collect_output"):
+                    cls._collect_output_remote(task, remote_client)
+                cls._collect_remote_artifacts(task, workspace, remote_client)
             else:
                 cls._run_container(task, workspace)
                 cls._ensure_task_not_canceled(task)
                 cls._update_stage(task, "artifacts", artifacts_progress, "正在扫描产物…")
+                if snapshot.get("auto_collect_output"):
+                    cls._collect_output_local(task, workspace)
             task.artifact_info = cls._scan_artifacts(workspace)
             if not task.artifact_info:
                 cls._append_log(
@@ -893,6 +1055,8 @@ class PackageService:
             task.error_message = str(exc)
             cls._append_log(task, f"打包失败: {exc}")
         finally:
+            if remote_client is not None:
+                remote_client.close()
             finished = timezone.now()
             task.finished_at = finished
             task.duration = int((finished - started).total_seconds() * 1000)

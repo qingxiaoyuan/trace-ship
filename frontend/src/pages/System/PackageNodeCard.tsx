@@ -13,6 +13,8 @@ interface NodeFormValues {
   credential: string;
   work_root: string;
   max_concurrency: number;
+  cpu_cores: number;
+  cpu_priority: 'normal' | 'belownormal' | 'low';
   description?: string;
   is_active: boolean;
 }
@@ -100,6 +102,8 @@ export function PackageNodeCard() {
       credential: undefined as unknown as string,
       work_root: 'C:\\trace-ship\\workspaces',
       max_concurrency: 1,
+      cpu_cores: 0,
+      cpu_priority: 'belownormal',
       description: '',
       is_active: true,
     });
@@ -115,6 +119,8 @@ export function PackageNodeCard() {
       credential: node.credential || undefined,
       work_root: node.work_root,
       max_concurrency: node.max_concurrency ?? 1,
+      cpu_cores: node.cpu_cores ?? 0,
+      cpu_priority: node.cpu_priority ?? 'belownormal',
       description: node.description || '',
       is_active: node.is_active,
     });
@@ -297,6 +303,26 @@ export function PackageNodeCard() {
               extra={<span className="text-[11px] text-slate-400">超出并发的任务将排队等待，不会失败</span>}
             >
               <InputNumber min={1} max={16} className="w-full" />
+            </Form.Item>
+            <Form.Item
+              name="cpu_cores"
+              label="构建可用 CPU 核数"
+              extra={<span className="text-[11px] text-slate-400">0 为不限；建议设为总核数-1</span>}
+            >
+              <InputNumber min={0} max={64} className="w-full" />
+            </Form.Item>
+            <Form.Item
+              name="cpu_priority"
+              label="构建进程 CPU 优先级"
+              extra={<span className="text-[11px] text-slate-400">降低优先级可防止打包占满 CPU 导致 SSH 断连</span>}
+            >
+              <Select
+                options={[
+                  { label: '正常（不限制）', value: 'normal' },
+                  { label: '低于正常（推荐）', value: 'belownormal' },
+                  { label: '低（响应最好，构建最慢）', value: 'low' },
+                ]}
+              />
             </Form.Item>
           </div>
           <Form.Item

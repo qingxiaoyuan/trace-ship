@@ -2,6 +2,7 @@
 系统内置打包视图
 """
 import os
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -11,6 +12,7 @@ from django.db.models import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
+from rest_framework.mixins import DestroyModelMixin
 from rest_framework.permissions import IsAuthenticated
 
 from apps.package.models import PackageConfig, PackageImage, PackageNode, PackageTask
@@ -350,15 +352,15 @@ class PackageConfigViewSet(StandardModelViewSet):
         except Project.DoesNotExist:
             return error_response(40400, "项目不存在", status_code=status.HTTP_404_NOT_FOUND)
 
+        # 连通性测试不设管理员限制，但至少要求是项目成员（SVN 凭证全系统共享，
+        # 且响应包含目录条目，不能完全放开给非成员）
         user = request.user
         if not user.is_superuser:
-            is_manager = ProjectMember.objects.filter(
-                project=project, user=user, role="manager"
-            ).exists()
+            is_member = ProjectMember.objects.filter(project=project, user=user).exists()
             is_leader = str(project.leader_id) == str(user.id)
-            if not is_manager and not is_leader:
+            if not is_member and not is_leader:
                 return error_response(
-                    40300, "只有项目管理员可测试 SVN 配置", status_code=status.HTTP_403_FORBIDDEN
+                    40300, "只有项目成员才能测试 SVN 配置", status_code=status.HTTP_403_FORBIDDEN
                 )
 
         try:
@@ -390,13 +392,13 @@ class PackageConfigViewSet(StandardModelViewSet):
         )
 
 
-class PackageTaskViewSet(StandardReadOnlyModelViewSet):
-    """打包任务只读视图集。"""
+class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
+    """打包任务视图集（只读 + 管理员删除已结束任务）。"""
 
     queryset = PackageTask.objects.all()
     serializer_class = PackageTaskSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repository", "release", "config", "status", "build_type"]
+    filterset_fields = ["project", "repository", "release", "config", "status", "build_type", "release_type"]
     search_fields = ["name", "version", "tag_name", "project__name", "repository__name"]
     ordering_fields = ["created_at", "started_at", "finished_at"]
     ordering = ["-created_at"]
@@ -415,7 +417,28 @@ class PackageTaskViewSet(StandardReadOnlyModelViewSet):
         if self.action in ("cancel", "push_svn"):
             # 取消任务 / 手动推 SVN：管理员/开发可操作
             return [IsAuthenticated(), IsProjectDeveloper()]
+        if self.action == "destroy":
+            # 删除已结束任务：项目管理员 / 软件管理员
+            return [IsAuthenticated(), IsProjectPackageAdmin()]
         return [IsAuthenticated(), IsProjectMember()]
+
+    def destroy(self, request, *args, **kwargs):
+        """删除已结束的打包任务，同时清理工作区文件。"""
+        task = self.get_object()
+        if not task.is_finished:
+            return error_response(
+                40000, "仅可删除已结束的任务（成功/失败/已取消）", status_code=status.HTTP_400_BAD_REQUEST
+            )
+        # 清理工作区目录（容错，日志文件随目录一并删除）
+        if task.workspace_path:
+            try:
+                workspace = Path(task.workspace_path)
+                if workspace.exists():
+                    shutil.rmtree(workspace, ignore_errors=True)
+            except Exception:
+                pass
+        task.delete()
+        return success_response(None, "删除成功")
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):

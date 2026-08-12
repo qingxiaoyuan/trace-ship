@@ -36,7 +36,7 @@ export function RecentReleasesPanel({
 
       <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
         <div className="col-span-3">版本</div>
-        <div className="col-span-3">项目</div>
+        <div className="col-span-3">项目 / 仓库</div>
         <div className="col-span-2">类型</div>
         <div className="col-span-2">发布人</div>
         <div className="col-span-2 text-right">状态</div>
@@ -54,7 +54,12 @@ export function RecentReleasesPanel({
                 <div className="col-span-12 flex items-center gap-2 md:col-span-3">
                   <span className="font-mono text-[13px] font-medium text-slate-900">{release.version}</span>
                 </div>
-                <div className="col-span-6 text-[13px] text-slate-600 md:col-span-3">{release.project_name || '-'}</div>
+                <div className="col-span-6 text-[13px] text-slate-600 md:col-span-3">
+                  <div className="truncate">{release.project_name || '-'}</div>
+                  {release.repository_name && (
+                    <div className="truncate text-[11px] text-slate-400">{release.repository_name}</div>
+                  )}
+                </div>
                 <div className="col-span-6 md:col-span-2">
                   <SmallTag className={releaseTypeClass[release.release_type]}>{releaseTypeText[release.release_type]}</SmallTag>
                 </div>

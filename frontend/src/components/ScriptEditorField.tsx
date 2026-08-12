@@ -32,10 +32,12 @@ interface ScriptEditorFieldProps {
   hint?: string;
   /** 全屏模式（隐藏放大按钮，避免嵌套弹层） */
   fullscreen?: boolean;
+  /** 只读模式：禁止编辑与插入变量，仍可放大查看 */
+  readOnly?: boolean;
 }
 
 /** 打包脚本编辑字段（Ace 编辑器）：工具栏 + 语法高亮 + 插入变量 + 放大编辑 */
-export function ScriptEditorField({ value, onChange, lang, filename, hint, fullscreen }: ScriptEditorFieldProps) {
+export function ScriptEditorField({ value, onChange, lang, filename, hint, fullscreen, readOnly }: ScriptEditorFieldProps) {
   const [expandOpen, setExpandOpen] = useState(false);
   const [varOpen, setVarOpen] = useState(false);
   const editorRef = useRef<AceEditor | null>(null);
@@ -83,25 +85,27 @@ export function ScriptEditorField({ value, onChange, lang, filename, hint, fulls
       <FileCode2 className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
       <span className="font-mono text-[11px] text-slate-500">{filename}</span>
       <div className="ml-auto flex items-center gap-0.5">
-        <Popover
-          content={variablePanel}
-          open={varOpen}
-          onOpenChange={setVarOpen}
-          trigger="click"
-          placement="bottomRight"
-          arrow={false}
-        >
-          <button
-            type="button"
-            title="插入变量"
-            {...keepFocus}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+        {!readOnly && (
+          <Popover
+            content={variablePanel}
+            open={varOpen}
+            onOpenChange={setVarOpen}
+            trigger="click"
+            placement="bottomRight"
+            arrow={false}
           >
-            <Braces className="h-3.5 w-3.5" strokeWidth={1.5} />
-            插入变量
-            <ChevronDown className="h-3 w-3 text-slate-400" strokeWidth={1.5} />
-          </button>
-        </Popover>
+            <button
+              type="button"
+              title="插入变量"
+              {...keepFocus}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              <Braces className="h-3.5 w-3.5" strokeWidth={1.5} />
+              插入变量
+              <ChevronDown className="h-3 w-3 text-slate-400" strokeWidth={1.5} />
+            </button>
+          </Popover>
+        )}
         {!fullscreen && (
           <>
             <div className="mx-1 h-4 w-px bg-slate-200" />
@@ -133,6 +137,7 @@ export function ScriptEditorField({ value, onChange, lang, filename, hint, fulls
       name={`script-editor-${filename}-${fullscreen ? 'full' : 'inline'}`}
       value={script}
       onChange={(v) => onChange?.(v)}
+      readOnly={readOnly}
       width="100%"
       height="100%"
       fontSize={fullscreen ? 13 : 12}
@@ -210,6 +215,7 @@ export function ScriptEditorField({ value, onChange, lang, filename, hint, fulls
               onChange={onChange}
               lang={lang}
               filename={filename}
+              readOnly={readOnly}
               fullscreen
             />
           </div>

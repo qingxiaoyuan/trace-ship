@@ -111,6 +111,13 @@ class PackageNode(models.Model):
         verbose_name="远程工作根目录",
     )
     max_concurrency = models.IntegerField(default=1, verbose_name="最大并发打包数")
+    cpu_cores = models.IntegerField(default=0, verbose_name="构建可用 CPU 核数")
+    cpu_priority = models.CharField(
+        max_length=20,
+        choices=[("normal", "正常"), ("belownormal", "低于正常"), ("low", "低")],
+        default="belownormal",
+        verbose_name="构建进程 CPU 优先级",
+    )
     description = models.CharField(max_length=500, blank=True, verbose_name="备注")
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_by = models.ForeignKey(
@@ -179,8 +186,23 @@ class PackageConfig(models.Model):
         verbose_name="打包镜像",
     )
     custom_script = models.TextField(blank=True, verbose_name="自定义打包脚本")
+    # 资源配置：0 / 空串表示跟随节点配置
+    cpu_cores = models.IntegerField(default=0, verbose_name="构建可用 CPU 核数")
+    cpu_priority = models.CharField(
+        max_length=20,
+        choices=[("normal", "正常"), ("belownormal", "低于正常"), ("low", "低")],
+        blank=True,
+        default="",
+        verbose_name="构建进程 CPU 优先级",
+    )
+    mem_limit_mb = models.IntegerField(default=0, verbose_name="构建内存上限（MB）")
     build_path = models.CharField(max_length=300, default=".", blank=True, verbose_name="构建目录")
     output_path = models.CharField(max_length=300, default="dist", blank=True, verbose_name="产物目录")
+    auto_collect_output = models.BooleanField(
+        default=False,
+        verbose_name="自动收集产物",
+        help_text="构建完成后自动将产物目录内容归集到 artifacts，脚本无需手动拷贝",
+    )
     env_vars = models.JSONField(default=dict, blank=True, verbose_name="环境变量")
     auto_package_on_release = models.BooleanField(default=False, verbose_name="发布后自动打包")
     svn_push_enabled = models.BooleanField(default=False, verbose_name="启用 SVN 推送")
@@ -263,6 +285,12 @@ class PackageTask(models.Model):
     name = models.CharField(max_length=200, verbose_name="任务名称")
     # 历史保留字段：早期按 web/qt 区分打包类型，现已取消分类，新任务写入空串
     build_type = models.CharField(max_length=20, blank=True, default="", verbose_name="打包类型")
+    release_type = models.CharField(
+        max_length=20,
+        choices=[("formal", "正式版"), ("rc", "RC 版"), ("beta", "测试版")],
+        default="formal",
+        verbose_name="发布类型",
+    )
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
     version = models.CharField(max_length=100, verbose_name="版本号")
     commit_hash = models.CharField(max_length=100, blank=True, verbose_name="提交哈希")

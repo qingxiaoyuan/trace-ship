@@ -479,12 +479,15 @@ class ReleaseViewSet(StandardModelViewSet):
     @action(detail=False, methods=["get"], url_path="dashboard/overview")
     def dashboard_overview(self, request: Request) -> Response:
         """
-        看板总览统计
+        看板总览统计（近 7 天）
 
         Returns:
             总览数据字典
         """
-        queryset = self.get_queryset()
+        from datetime import timedelta
+
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        queryset = self.get_queryset().filter(created_at__gte=seven_days_ago)
         total = queryset.count()
         success_count = queryset.filter(status="released").count()
         success_rate = round(success_count / total, 2) if total > 0 else 1.0
@@ -493,7 +496,7 @@ class ReleaseViewSet(StandardModelViewSet):
             "success_rate": success_rate,
             "pending_audit_count": queryset.filter(status="pending").count(),
             "rejected_count": queryset.filter(status="rejected").count(),
-            "released_count": queryset.filter(status="released").count(),
+            "released_count": success_count,
         }
         return success_response(data)
 

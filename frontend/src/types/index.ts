@@ -388,6 +388,10 @@ export interface PackageNode {
   work_root: string;
   /** 该节点最大并发打包数，超出任务排队等待 */
   max_concurrency?: number;
+  /** 构建可用 CPU 核数，0 为不限 */
+  cpu_cores?: number;
+  /** 构建进程 CPU 优先级 */
+  cpu_priority?: 'normal' | 'belownormal' | 'low';
   description?: string;
   is_active: boolean;
   created_by?: string | null;
@@ -426,8 +430,16 @@ export interface PackageConfig {
   image_source?: PackageImageSource;
   image_info?: PackageImageInfo;
   custom_script?: string;
+  /** 构建可用 CPU 核数，0 为跟随节点 */
+  cpu_cores?: number;
+  /** 构建进程 CPU 优先级，空为跟随节点 */
+  cpu_priority?: '' | 'normal' | 'belownormal' | 'low';
+  /** 构建内存上限 MB，0 为不限 */
+  mem_limit_mb?: number;
   build_path?: string;
   output_path?: string;
+  /** 构建完成后自动把产物目录内容归集到 artifacts */
+  auto_collect_output?: boolean;
   env_vars?: Record<string, unknown>;
   auto_package_on_release?: boolean;
   svn_push_enabled?: boolean;
@@ -457,6 +469,9 @@ export interface PackageTask {
   triggered_by_name?: string;
   name: string;
   build_type?: string;
+  /** 发布类型：formal 正式 / rc / beta 测试 */
+  release_type?: 'formal' | 'rc' | 'beta';
+  release_type_display?: string;
   tag_name: string;
   version: string;
   commit_hash?: string;
@@ -642,6 +657,7 @@ export interface DashboardOverview {
   success_rate: number;
   pending_audit_count: number;
   rejected_count: number;
+  released_count: number;
 }
 
 export interface WorkflowNodeProperties {

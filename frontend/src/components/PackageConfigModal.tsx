@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, ConfigProvider, Form, Input, Modal, Select, Switch, Typography } from 'antd';
+import { App, Button, Checkbox, ConfigProvider, Form, Input, InputNumber, Modal, Select, Switch, Typography } from 'antd';
 import { Check, ChevronDown, Container, FolderTree, Monitor, Settings2 } from 'lucide-react';
 import type { PackageConfig } from '@/types';
 import { projectApi } from '@/api/project';
@@ -18,6 +18,8 @@ interface PackageConfigModalProps {
   editing: PackageConfig | null;
   /** 项目内录入时传入：固定项目并隐藏项目选择 */
   fixedProjectId?: string;
+  /** 只读查看（无配置维护权限时字段不可编辑，仅供查看模仿） */
+  readOnly?: boolean;
   onClose: () => void;
 }
 
@@ -45,6 +47,7 @@ function FieldLabel({ text, required }: { text: string; required?: boolean }) {
 interface ExecutorSegmentProps {
   value?: string;
   onChange?: (value: string) => void;
+  disabled?: boolean;
 }
 
 const EXECUTOR_OPTIONS = [
@@ -53,9 +56,13 @@ const EXECUTOR_OPTIONS = [
 ];
 
 /** 执行方式分段选择器 */
-function ExecutorSegment({ value, onChange }: ExecutorSegmentProps) {
+function ExecutorSegment({ value, onChange, disabled }: ExecutorSegmentProps) {
   return (
-    <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5">
+    <div
+      className={`grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5 ${
+        disabled ? 'pointer-events-none opacity-60' : ''
+      }`}
+    >
       {EXECUTOR_OPTIONS.map((opt) => {
         const selected = value === opt.value;
         const Icon = opt.icon;
@@ -107,7 +114,7 @@ function ToggleCard({ title, desc, name }: ToggleCardProps) {
 }
 
 /** 打包配置弹窗（打包看板与项目内录入共用） */
-export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: PackageConfigModalProps) {
+export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, onClose }: PackageConfigModalProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
@@ -175,7 +182,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
         executor_type: 'local_docker',
         build_path: '.',
         output_path: 'dist',
+        auto_collect_output: false,
         env_vars: {},
+        cpu_cores: 0,
+        cpu_priority: '',
+        mem_limit_mb: 0,
         auto_package_on_release: true,
         is_active: true,
         svn_push_enabled: false,
@@ -258,10 +269,19 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
           </div>
           <div>
             <div className="text-[15px] font-semibold tracking-tight text-slate-900">
-              {editing ? '编辑打包配置' : '新建打包配置'}
+              {readOnly ? '查看打包配置' : editing ? '编辑打包配置' : '新建打包配置'}
+              {readOnly && (
+                <span className="ml-2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+                  只读
+                </span>
+              )}
             </div>
             <div className="text-[11px] font-normal text-slate-400">
-              {editing ? `${editing.name} / ${editing.project_name || '-'}` : '配置发布成功后的打包流程'}
+              {readOnly
+                ? '仅项目管理员或软件管理员可修改，当前为只读查看'
+                : editing
+                  ? `${editing.name} / ${editing.project_name || '-'}`
+                  : '配置发布成功后的打包流程'}
             </div>
           </div>
         </div>
@@ -279,15 +299,17 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={onClose}>取消</Button>
-            <Button
-              type="primary"
-              loading={saveMutation.isPending}
-              onClick={() => form.submit()}
-              icon={<Check className="h-3.5 w-3.5" strokeWidth={2} />}
-            >
-              保存配置
-            </Button>
+            <Button onClick={onClose}>{readOnly ? '关闭' : '取消'}</Button>
+            {!readOnly && (
+              <Button
+                type="primary"
+                loading={saveMutation.isPending}
+                onClick={() => form.submit()}
+                icon={<Check className="h-3.5 w-3.5" strokeWidth={2} />}
+              >
+                保存配置
+              </Button>
+            )}
           </div>
         </div>
       }
@@ -308,6 +330,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
         form={form}
         layout="vertical"
         requiredMark={false}
+        disabled={readOnly}
         onFinish={(values) => saveMutation.mutate(values)}
       >
         {/* 基本信息 */}
@@ -348,7 +371,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
 
           {/* 第二行：执行方式（与下一行额外留 8px） */}
           <Form.Item name="executor_type" label={<FieldLabel text="执行方式" />} className="!mb-2">
-            <ExecutorSegment />
+            <ExecutorSegment disabled={readOnly} />
           </Form.Item>
 
           <div className="grid grid-cols-2 gap-3">
@@ -396,7 +419,9 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
                 rules={[{ required: true, message: '请选择打包镜像' }]}
                 className="mb-0"
               >
-                <ImagePickerField />
+                <div className={readOnly ? 'pointer-events-none opacity-60' : ''}>
+                  <ImagePickerField />
+                </div>
               </Form.Item>
             )}
           </div>
@@ -410,14 +435,21 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
             >
               <Input className={`${inputCls} font-mono text-[12px]`} />
             </Form.Item>
-            <Form.Item
-              name="output_path"
-              label={<FieldLabel text="产物目录" />}
-              rules={[{ required: true }]}
-              className="mb-0"
-            >
-              <Input className={`${inputCls} font-mono text-[12px]`} />
-            </Form.Item>
+            <div>
+              <Form.Item
+                name="output_path"
+                label={<FieldLabel text="产物目录" />}
+                rules={[{ required: true }]}
+                className="mb-0"
+              >
+                <Input className={`${inputCls} font-mono text-[12px]`} />
+              </Form.Item>
+              <Form.Item name="auto_collect_output" valuePropName="checked" className="mb-0 mt-1">
+                <Checkbox className="text-[11px] text-slate-500">
+                  构建后自动收集产物目录到 artifacts（脚本可不再手动拷贝）
+                </Checkbox>
+              </Form.Item>
+            </div>
           </div>
         </div>
 
@@ -436,6 +468,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
           <ScriptEditorField
             lang={isRemote ? 'bat' : 'sh'}
             filename={isRemote ? 'pack-custom.bat' : 'custom-script.sh'}
+            readOnly={readOnly}
             hint={
               isRemote
                 ? 'Windows 批处理脚本；留空则执行源码根目录下的 pack.bat，可用 %VERSION% 等注入变量'
@@ -446,6 +479,43 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
 
         {/* 高级选项 */}
         <SectionLabel>高级选项</SectionLabel>
+
+        {isRemote && (
+          <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3">
+            <Form.Item
+              name="cpu_cores"
+              label={<FieldLabel text="CPU 核数" />}
+              className="mb-0"
+              extra={<p className="mb-0 mt-1 text-[11px] text-slate-400">0 = 跟随节点</p>}
+            >
+              <InputNumber min={0} max={64} className="w-full" disabled={readOnly} />
+            </Form.Item>
+            <Form.Item
+              name="cpu_priority"
+              label={<FieldLabel text="CPU 优先级" />}
+              className="mb-0"
+              extra={<p className="mb-0 mt-1 text-[11px] text-slate-400">跟随节点默认</p>}
+            >
+              <Select
+                options={[
+                  { label: '跟随节点', value: '' },
+                  { label: '正常', value: 'normal' },
+                  { label: '低于正常', value: 'belownormal' },
+                  { label: '低', value: 'low' },
+                ]}
+                suffixIcon={<ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
+              />
+            </Form.Item>
+            <Form.Item
+              name="mem_limit_mb"
+              label={<FieldLabel text="内存上限 (MB)" />}
+              className="mb-0"
+              extra={<p className="mb-0 mt-1 text-[11px] text-slate-400">0 = 不限</p>}
+            >
+              <InputNumber min={0} max={1048576} className="w-full" disabled={readOnly} />
+            </Form.Item>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <ToggleCard title="发布后自动打包" desc="推 tag 成功后自动触发" name="auto_package_on_release" />
@@ -499,7 +569,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, onClose }: P
                 </Form.Item>
                 <div className="flex items-end pb-1">
                   <Typography.Text type="secondary" className="text-[11px]">
-                    占位符：{'{version}'}、{'{tag_name}'}、{'{project_code}'}，默认按版本号创建目录
+                    占位符：{'{version}'}、{'{tag_name}'}、{'{project_code}'}、{'{release_type}'}；默认按版本号建目录，RC/测试版自动追加类型后缀
                   </Typography.Text>
                 </div>
               </div>

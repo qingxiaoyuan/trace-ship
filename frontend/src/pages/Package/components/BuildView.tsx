@@ -7,7 +7,7 @@ import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { ArtifactPanel, ArtifactActionsDropdown } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
-import { formatDuration, isRunning, stageLabels, downloadTaskLog } from './utils';
+import { formatDuration, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText } from './utils';
 import { StatusBadge } from './Shared';
 
 interface BuildViewProps {
@@ -62,6 +62,11 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-[20px] font-semibold tracking-tight text-slate-900">{task.version}</h1>
+                {task.release_type && (
+                  <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${releaseTypeBadge[task.release_type] || 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                    {releaseTypeText[task.release_type] || task.release_type}
+                  </span>
+                )}
                 <StatusBadge status={task.status} />
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">

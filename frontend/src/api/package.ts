@@ -124,6 +124,7 @@ export const packageApi = {
     get<PaginatedData<PackageTask>>('/packages/tasks/', { params }),
   getTask: (id: string) => get<PackageTask>(`/packages/tasks/${id}/`),
   cancelTask: (id: string) => post<PackageTask>(`/packages/tasks/${id}/cancel/`),
+  deleteTask: (id: string) => del<null>(`/packages/tasks/${id}/`),
   pushSvn: (id: string) => post<PackageTask>(`/packages/tasks/${id}/push-svn/`),
   getTaskLog: (id: string) => get<Blob>(`/packages/tasks/${id}/logs/`, { responseType: 'blob' }),
   /** 增量读取任务日志：tail 取末尾字节（首屏），offset 取增量（轮询） */

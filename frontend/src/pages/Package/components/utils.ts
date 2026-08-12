@@ -21,6 +21,19 @@ export const stageLabels: Record<string, string> = {
   done: '已完成',
 };
 
+/** 发布类型展示（正式 / RC / 测试） */
+export const releaseTypeText: Record<string, string> = {
+  formal: '正式',
+  rc: 'RC',
+  beta: 'BETA',
+};
+
+export const releaseTypeBadge: Record<string, string> = {
+  formal: 'border-emerald-200 bg-emerald-50 text-emerald-600',
+  rc: 'border-blue-200 bg-blue-50 text-blue-600',
+  beta: 'border-amber-200 bg-amber-50 text-amber-600',
+};
+
 export interface StatusMeta {
   label: string;
   dot: string;

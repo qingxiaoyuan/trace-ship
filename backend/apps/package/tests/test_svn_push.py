@@ -781,3 +781,74 @@ def test_package_task_serializer_can_push_svn(project, repository, release, svn_
     task.save(update_fields=["config_snapshot"])
     data = PackageTaskSerializer(task).data
     assert data["can_push_svn"] is False
+
+
+@pytest.mark.django_db
+class TestReleaseTypeDistinction:
+    """打包任务区分发布类型（正式 / RC / 测试版）。"""
+
+    def _push_remote_url(self, task, workspace, artifacts_name="app.tar.gz"):
+        (workspace / "artifacts").mkdir(parents=True, exist_ok=True)
+        (workspace / "artifacts" / artifacts_name).write_bytes(b"fake artifact")
+        mock_provider = MagicMock()
+        mock_provider.remote_exists.return_value = False
+        with patch("apps.package.services.get_provider", return_value=mock_provider):
+            result = PackageService._push_artifacts_to_svn(task, workspace)
+        return result["remote_url"]
+
+    def _make_task(self, project, repository, release, svn_credential, release_type, template="{version}"):
+        release.release_type = release_type
+        release.save(update_fields=["release_type"])
+        return PackageTask.objects.create(
+            release=release,
+            project=project,
+            repository=repository,
+            name="打包任务",
+            tag_name=release.tag_name,
+            version=release.version,
+            release_type=release_type,
+            config_snapshot={
+                "svn_push_enabled": True,
+                "svn_url": "svn://host/releases",
+                "svn_credential_id": str(svn_credential.id),
+                "svn_path_template": template,
+            },
+            artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
+        )
+
+    def test_formal_default_template_unchanged(self, project, repository, release, svn_credential, tmp_path):
+        """正式版默认模板目录不带后缀（保持既有行为）。"""
+        task = self._make_task(project, repository, release, svn_credential, "formal")
+        url = self._push_remote_url(task, tmp_path / "ws1")
+        assert url == "svn://host/releases/V1.0.0"
+
+    def test_rc_default_template_gets_type_suffix(self, project, repository, release, svn_credential, tmp_path):
+        """RC 版默认模板目录自动带 -rc 后缀，不覆盖正式版目录。"""
+        task = self._make_task(project, repository, release, svn_credential, "rc")
+        url = self._push_remote_url(task, tmp_path / "ws2")
+        assert url == "svn://host/releases/V1.0.0-rc"
+
+    def test_beta_default_template_gets_type_suffix(self, project, repository, release, svn_credential, tmp_path):
+        """测试版默认模板目录自动带 -beta 后缀。"""
+        task = self._make_task(project, repository, release, svn_credential, "beta")
+        url = self._push_remote_url(task, tmp_path / "ws3")
+        assert url == "svn://host/releases/V1.0.0-beta"
+
+    def test_custom_template_supports_release_type_placeholder(self, project, repository, release, svn_credential, tmp_path):
+        """自定义模板支持 {release_type} 占位符。"""
+        task = self._make_task(project, repository, release, svn_credential, "rc", template="{release_type}/{version}")
+        url = self._push_remote_url(task, tmp_path / "ws4")
+        assert url == "svn://host/releases/rc/V1.0.0"
+
+    def test_create_task_carries_release_type(self, project, repository, release, user, monkeypatch):
+        """创建打包任务时从发布记录带出发布类型。"""
+        image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+        config = PackageConfig.objects.create(
+            project=project, repository=repository, name="Web 打包", image=image,
+        )
+        release.release_type = "rc"
+        release.save(update_fields=["release_type"])
+        monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
+
+        task = PackageService.create_task_for_release(config, release, request_user=user)
+        assert task.release_type == "rc"

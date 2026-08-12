@@ -30,6 +30,14 @@ ADR-0002 确立的内置打包仅支持在平台宿主机以本地 Docker 容器
 
 节点准入要求（OpenSSH Server、git、构建环境、目录约定）见 `docs/package-windows-node.md`。
 
+## 2026-08-11 演进
+
+- 节点增加 `max_concurrency`（默认 1）：`run_task_with_gate` 按快照 node_id 统计 running 任务，槽位不足时任务保持 `queued` 并 30s 延迟重投，不直接失败。
+- `PackageTask` 增加 `release_type`（formal/rc/beta），创建任务时从发布记录带出；SVN 推送在默认模板 `{version}` 下对非正式版自动追加 `-rc`/`-beta` 目录后缀，自定义模板支持 `{release_type}` 占位符。
+- 打包配置维护权限定为项目管理员 / 软件管理员（`IsProjectPackageAdmin`）；无权限用户在前端可只读查看配置（字段禁用、无保存按钮）用于参考模仿。
+- SVN 连通性测试（test-svn）不再要求管理员，但要求项目成员（响应含目录条目，不对非成员开放）。
+- 任务日志接口支持 tail/offset 增量读取，前端虚拟滚动渲染，解决大日志详情卡顿。
+
 ## Consequences
 
 - `requirements.txt` 新增 `paramiko`，外网构建后端镜像时自动装入。

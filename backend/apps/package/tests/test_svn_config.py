@@ -203,7 +203,8 @@ class TestSVNConfigTestAction:
         assert response.data["code"] == 40000
         assert "svn://" in response.data["message"]
 
-    def test_test_svn_forbidden_for_non_manager(self, project, svn_credential):
+    def test_test_svn_allowed_for_non_manager(self, project, svn_credential):
+        """连通性测试不设管理员限制，普通项目成员也可测试"""
         dev_user = User.objects.create_user(
             username="svn_dev_user",
             password="pass",
@@ -222,8 +223,26 @@ class TestSVNConfigTestAction:
                 },
                 format="json",
             )
-        assert response.status_code == 403
-        assert response.data["code"] == 40300
+        assert response.status_code == 200
+
+    def test_test_svn_forbidden_for_non_member(self, project, svn_credential):
+        """非项目成员不能测试（响应含目录条目，不对外开放）"""
+        outsider = User.objects.create_user(
+            username="svn_outsider",
+            password="pass",
+            nickname="外部人员",
+        )
+        client = APIClient()
+        client.force_authenticate(user=outsider)
+        response = client.post(
+            "/api/packages/configs/test-svn/",
+            {
+                "project_id": str(project.id),
+                "svn_url": "svn://svn.example.com/releases",
+                "svn_credential_id": str(svn_credential.id),
+            },
+            format="json",
+        )
         assert response.status_code == 403
         assert response.data["code"] == 40300
 

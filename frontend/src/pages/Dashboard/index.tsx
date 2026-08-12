@@ -39,7 +39,7 @@ Chart.register(...registerables);
 export default function Dashboard() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const [pipelineRange, setPipelineRange] = useState<PipelineRange>('all');
+  const [pipelineRange, setPipelineRange] = useState<PipelineRange>('week');
   const [todoFilter, setTodoFilter] = useState<TodoFilter>('all');
 
   const { data: overview } = useQuery({
@@ -207,14 +207,14 @@ export default function Dashboard() {
 
   const kpiCards: KpiCard[] = [
     {
-      title: '累计发布数',
+      title: '近 7 天发布数',
       value: <span className="text-[28px] font-semibold tracking-tight text-slate-900">{totalReleases}</span>,
       unit: '次发布',
       description: (
         <>
           <span>成功率 {successRate}%</span>
           <span className="h-1 w-1 rounded-full bg-slate-300" />
-          <span>最近 {recentReleases.length} 条</span>
+          <span>已发布 {overview?.released_count || 0} 条</span>
         </>
       ),
       icon: Rocket,

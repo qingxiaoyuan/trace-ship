@@ -16,6 +16,7 @@ import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
+import { useAuthStore } from '@/stores/authStore';
 import { ConfigList } from './components/ConfigList';
 import { RunningTab } from './components/RunningTab';
 import { DetailView } from './components/DetailView';
@@ -37,6 +38,7 @@ export default function PackageTaskPage() {
   const { id: routeTaskId } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { message, modal } = App.useApp();
+  const user = useAuthStore((state) => state.user);
 
   const [userView, setUserView] = useState<'list' | 'detail' | 'build'>('list');
   const view: 'list' | 'detail' | 'build' = routeTaskId ? 'build' : userView;
@@ -213,6 +215,14 @@ export default function PackageTaskPage() {
     },
   });
 
+  const deleteTaskMutation = useMutation({
+    mutationFn: (taskId: string) => packageApi.deleteTask(taskId),
+    onSuccess: () => {
+      message.success('已删除任务');
+      queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+    },
+  });
+
   const deleteConfigMutation = useMutation({
     mutationFn: (configId: string) => packageApi.deleteConfig(configId),
     onSuccess: () => {
@@ -277,6 +287,18 @@ export default function PackageTaskPage() {
       });
     },
     [cancelMutation, modal]
+  );
+
+  const handleDeleteTask = useCallback(
+    (task: PackageTask) => {
+      modal.confirm({
+        title: '删除打包任务',
+        content: `确定要删除任务「${task.name}」吗？工作区文件将一并清理，此操作不可撤销。`,
+        okButtonProps: { danger: true },
+        onOk: () => deleteTaskMutation.mutate(task.id),
+      });
+    },
+    [deleteTaskMutation, modal]
   );
 
   const openBuild = useCallback(
@@ -440,7 +462,12 @@ export default function PackageTaskPage() {
                 />
                 <div className="ml-auto text-[12px] text-slate-400">共 {tasksTotal} 条</div>
               </div>
-              <RunningTab tasks={tasks} onOpen={openBuild} />
+              <RunningTab
+                tasks={tasks}
+                onOpen={openBuild}
+                canDelete={!!user?.is_superuser}
+                onDelete={handleDeleteTask}
+              />
               {tasksTotal > TASK_PAGE_SIZE && (
                 <div className="flex justify-end">
                   <Pagination
@@ -553,7 +580,16 @@ export default function PackageTaskPage() {
         </Form>
       </Modal>
 
-      <PackageConfigModal open={configDrawerOpen} editing={editingConfig} onClose={closeConfigDrawer} />
+      <PackageConfigModal
+        open={configDrawerOpen}
+        editing={editingConfig}
+        readOnly={
+          !!editingConfig &&
+          editingConfig.my_role !== 'manager' &&
+          editingConfig.my_role !== 'software_admin'
+        }
+        onClose={closeConfigDrawer}
+      />
     </div>
   );
 }

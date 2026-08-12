@@ -71,7 +71,7 @@ class PackageNodeSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "host", "port", "os_type", "os_type_display",
             "credential", "credential_id", "credential_name",
-            "work_root", "max_concurrency", "description", "is_active",
+            "work_root", "max_concurrency", "cpu_cores", "cpu_priority", "description", "is_active",
             "created_by", "created_by_name", "created_at", "updated_at",
         ]
         read_only_fields = [
@@ -97,6 +97,11 @@ class PackageNodeSerializer(serializers.ModelSerializer):
     def validate_max_concurrency(self, value: int) -> int:
         if not (1 <= value <= 16):
             raise serializers.ValidationError("最大并发数必须在 1-16 之间")
+        return value
+
+    def validate_cpu_cores(self, value: int) -> int:
+        if not (0 <= value <= 64):
+            raise serializers.ValidationError("CPU 核数必须在 0-64 之间（0 为不限）")
         return value
 
 
@@ -129,7 +134,8 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "name",
             "executor_type", "executor_type_display", "node", "node_id", "node_name", "node_host",
             "image", "image_id", "image_name", "image_ref", "image_source", "image_info", "custom_script",
-            "build_path", "output_path", "env_vars",
+            "cpu_cores", "cpu_priority", "mem_limit_mb",
+            "build_path", "output_path", "auto_collect_output", "env_vars",
             "auto_package_on_release", "is_active",
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
             "svn_path_template",
@@ -218,6 +224,16 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     def validate_output_path(self, value: str) -> str:
         return validate_safe_rel_path(value, "output_path")
 
+    def validate_cpu_cores(self, value: int) -> int:
+        if not (0 <= value <= 64):
+            raise serializers.ValidationError("CPU 核数必须在 0-64 之间（0 为跟随节点）")
+        return value
+
+    def validate_mem_limit_mb(self, value: int) -> int:
+        if not (0 <= value <= 1024 * 1024):
+            raise serializers.ValidationError("内存上限必须在 0-1048576 MB 之间（0 为不限）")
+        return value
+
     def validate(self, attrs: dict) -> dict:
         """校验仓库、镜像和脚本约束。"""
         project = attrs.get("project", getattr(self.instance, "project", None))
@@ -284,6 +300,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
     release_version = serializers.CharField(source="release.version", read_only=True)
     triggered_by_name = serializers.CharField(source="triggered_by.nickname", read_only=True, default="")
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    release_type_display = serializers.CharField(source="get_release_type_display", read_only=True)
     can_push_svn = serializers.SerializerMethodField()
 
     class Meta:
@@ -292,7 +309,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "id", "config", "config_name", "release", "release_version",
             "project", "project_name", "repository", "repository_name",
             "triggered_by", "triggered_by_name", "name",
-            "build_type",
+            "build_type", "release_type", "release_type_display",
             "tag_name", "version", "commit_hash", "config_snapshot",
             "status", "status_display", "progress", "stage_info", "can_push_svn",
             "artifact_info", "duration", "error_message",
