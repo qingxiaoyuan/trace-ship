@@ -136,7 +136,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "image", "image_id", "image_name", "image_ref", "image_source", "image_info", "custom_script",
             "cpu_cores", "cpu_priority", "mem_limit_mb",
             "build_path", "output_path", "auto_collect_output", "env_vars",
-            "auto_package_on_release", "is_active",
+            "auto_package_on_release", "cleanup_workspace", "is_active",
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
             "svn_path_template",
             "my_role",

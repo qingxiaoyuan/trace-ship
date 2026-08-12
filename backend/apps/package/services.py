@@ -125,6 +125,7 @@ class PackageService:
                 image.default_output_path if image else "artifacts",
             ),
             "auto_collect_output": bool(config.auto_collect_output),
+            "cleanup_workspace": config.cleanup_workspace,
             "env_vars": config.env_vars or {},
             "svn_push_enabled": config.svn_push_enabled,
             "svn_url": config.svn_url or "",
@@ -603,7 +604,8 @@ class PackageService:
             )
             return
 
-        start_args = 'start "" /wait'
+        # /b 不创建新窗口，子进程输出继承 SSH 管道，构建日志才能回传平台
+        start_args = 'start "" /b /wait'
         if priority in ("belownormal", "low"):
             start_args += f" /{priority}"
         if cores > 0:
@@ -626,12 +628,15 @@ class PackageService:
 
     @classmethod
     def _collect_remote_artifacts(cls, task: PackageTask, workspace: Path, client: RemoteWindowsClient) -> None:
-        """将远程节点产物回传到本地工作区，并清理远程工作目录。"""
+        """将远程节点产物回传到本地工作区，按配置清理远程工作目录。"""
         snapshot = task.config_snapshot or {}
         remote_workspace = cls._remote_workspace(task)
         count = client.download_dir(remote_workspace / "artifacts", workspace / "artifacts")
-        client.remove_dir(remote_workspace)
-        cls._append_log(task, f"已回传 {count} 个产物文件，远程工作目录已清理")
+        if snapshot.get("cleanup_workspace", True):
+            client.remove_dir(remote_workspace)
+            cls._append_log(task, f"已回传 {count} 个产物文件，远程工作目录已清理")
+        else:
+            cls._append_log(task, f"已回传 {count} 个产物文件，远程工作目录已保留（{remote_workspace}）")
 
     @classmethod
     def _task_env(cls, task: PackageTask, workspace: Path) -> dict[str, str]:

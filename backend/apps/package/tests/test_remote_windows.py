@@ -279,7 +279,7 @@ class TestCpuLimitBuild:
         task = self._make_task(project, repository, node, release, user, cores=0, priority="belownormal")
         client = self._run_build(task)
         command = client.run_checked.call_args.args[0]
-        assert command.startswith('start "" /wait /belownormal cmd /c')
+        assert command.startswith('start "" /b /wait /belownormal cmd /c')
         assert "/affinity" not in command
         assert "pack-run.bat" in command
 
@@ -302,7 +302,7 @@ class TestCpuLimitBuild:
         assert "echo build %VERSION%" in content
         assert content.splitlines()[-1] == "exit /b %errorlevel%"
         command = client.run_checked.call_args.args[0]
-        assert command.startswith('start "" /wait /low /affinity 3 cmd /c')
+        assert command.startswith('start "" /b /wait /low /affinity 3 cmd /c')
 
     def test_default_pack_bat_in_run_script(self, project, repository, node, release, user):
         """未配置自定义脚本时，pack-run.bat 调源码根目录 pack.bat。"""
@@ -372,7 +372,7 @@ class TestConfigLevelResourceLimits:
         uploaded = [call.args[0] for call in client.upload_text.call_args_list]
         assert not any(str(p).endswith("run-limited.ps1") for p in uploaded)
         command = client.run_checked.call_args.args[0]
-        assert command.startswith('start "" /wait')
+        assert command.startswith('start "" /b /wait')
 
     def test_old_snapshot_node_keys_fallback(self):
         """旧快照的 node_cpu_* 键仍可读取。"""
@@ -587,7 +587,7 @@ class TestAuthCloneArgs:
 
 @pytest.mark.django_db
 class TestRemoteRunTask:
-    def _make_task(self, project, repository, node, release, user):
+    def _make_task(self, project, repository, node, release, user, cleanup_workspace=True):
         config = PackageConfig.objects.create(
             project=project,
             repository=repository,
@@ -595,6 +595,7 @@ class TestRemoteRunTask:
             executor_type="remote_windows",
             node=node,
             custom_script="echo building %VERSION%",
+            cleanup_workspace=cleanup_workspace,
         )
         return PackageTask.objects.create(
             config=config,
@@ -647,6 +648,38 @@ class TestRemoteRunTask:
         workspace = tmp_path
         zips = list(workspace.rglob("app.zip"))
         assert zips, "产物未回传到本地工作区"
+
+    def test_remote_pipeline_cleans_workspace_by_default(self, project, repository, node, release, user, monkeypatch, tmp_path):
+        """默认开启清理：回传成功后删除远程工作目录。"""
+        monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
+        client = self._mock_client(monkeypatch, artifacts={"app.zip": b"zip-content"})
+        task = self._make_task(project, repository, node, release, user)
+
+        PackageService.run_task(task)
+        task.refresh_from_db()
+
+        assert task.status == "success"
+        remote_workspace = PackageService._remote_workspace(task)
+        removed = [call.args[0] for call in client.remove_dir.call_args_list]
+        assert remote_workspace in removed, "默认配置应清理远程工作目录"
+        log_text = (tmp_path.rglob("build.log").__next__()).read_text(encoding="utf-8")
+        assert "远程工作目录已清理" in log_text
+
+    def test_remote_pipeline_keeps_workspace_when_cleanup_disabled(self, project, repository, node, release, user, monkeypatch, tmp_path):
+        """关闭清理：回传成功后保留远程工作目录用于调试。"""
+        monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
+        client = self._mock_client(monkeypatch, artifacts={"app.zip": b"zip-content"})
+        task = self._make_task(project, repository, node, release, user, cleanup_workspace=False)
+
+        PackageService.run_task(task)
+        task.refresh_from_db()
+
+        assert task.status == "success"
+        remote_workspace = PackageService._remote_workspace(task)
+        removed = [call.args[0] for call in client.remove_dir.call_args_list]
+        assert remote_workspace not in removed, "关闭清理后不应删除远程工作目录"
+        log_text = (tmp_path.rglob("build.log").__next__()).read_text(encoding="utf-8")
+        assert "远程工作目录已保留" in log_text
 
     def test_remote_build_failure_marks_task(self, project, repository, node, release, user, monkeypatch, tmp_path):
         monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))

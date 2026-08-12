@@ -188,6 +188,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         cpu_priority: '',
         mem_limit_mb: 0,
         auto_package_on_release: true,
+        cleanup_workspace: true,
         is_active: true,
         svn_push_enabled: false,
         svn_path_template: '{version}',
@@ -519,6 +520,13 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
 
         <div className="grid grid-cols-2 gap-3">
           <ToggleCard title="发布后自动打包" desc="推 tag 成功后自动触发" name="auto_package_on_release" />
+          {isRemote && (
+            <ToggleCard
+              title="打包后清理工作区"
+              desc="成功后清理远程节点目录，关闭可保留源码与产物用于调试"
+              name="cleanup_workspace"
+            />
+          )}
           <ToggleCard title="启用配置" desc="停用后不可触发打包" name="is_active" />
         </div>
 

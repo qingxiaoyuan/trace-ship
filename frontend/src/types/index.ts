@@ -442,6 +442,8 @@ export interface PackageConfig {
   auto_collect_output?: boolean;
   env_vars?: Record<string, unknown>;
   auto_package_on_release?: boolean;
+  /** 打包后清理远程工作区 */
+  cleanup_workspace?: boolean;
   svn_push_enabled?: boolean;
   svn_url?: string;
   svn_credential?: string | null;

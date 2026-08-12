@@ -22,6 +22,7 @@ class RemoteNodeError(RuntimeError):
 
 # 作业对象资源限制包装脚本：优先级 / 核数亲和性 / 内存硬上限（进程树生效）
 # 平台在启用内存上限时上传到节点执行，退出码透传给平台判定。
+# -NoNewWindow 让子进程继承 SSH 管道的 stdout/stderr，构建日志才能回传平台。
 RUN_LIMITED_PS1 = r"""
 param(
     [int]$MemMB = 0,
@@ -31,7 +32,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$Script`"" -PassThru
+$p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$Script`"" -PassThru -NoNewWindow
 
 # 优先级与核数亲和性（构建子进程继承）
 if ($Priority -and $Priority -ne "Normal") {
