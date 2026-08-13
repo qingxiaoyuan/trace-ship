@@ -15,10 +15,12 @@ Trace Ship 支持将打包任务下发到远程 Windows 机器执行（如 .NET 
    默认 shell 保持 cmd 即可。
 
 2. **git**：节点需安装 git 且能访问 GitLab（源码由节点自行克隆，平台下发带凭证的克隆地址）。
+3. **tar**：启用「自动压缩产物」的配置需要节点内置 `tar.exe`（Windows 10 1803+ / Server 2019+
+   自带，无需额外安装），用于把产物目录压缩为单个 zip 压缩包。
 
-3. **构建环境**：按项目需要预装 MSBuild / .NET SDK / Qt 等；节点不主动联网安装依赖。
+4. **构建环境**：按项目需要预装 MSBuild / .NET SDK / Qt 等；节点不主动联网安装依赖。
 
-4. **工作目录**：默认 `C:\trace-ship\workspaces`，平台按任务创建 `{work_root}\{task_id}\{source,artifacts,tmp}`，完成后自动清理。
+5. **工作目录**：默认 `C:\trace-ship\workspaces`，平台按任务创建 `{work_root}\{task_id}\{source,artifacts,tmp}`，完成后自动清理。
 
 ## 平台配置
 

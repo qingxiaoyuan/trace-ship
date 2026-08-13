@@ -92,6 +92,9 @@ FRONTEND_PORT=${FRONTEND_PORT}
 
 PACKAGE_WORKSPACE_ROOT=${PACKAGE_WORKSPACE_ROOT}
 
+# 发布预览单分支最大提交扫描数（可选，默认 100）
+# RELEASE_PREVIEW_MAX_COMMITS=100
+
 # LDAP（可选）
 # LDAP_SERVER_URI=ldap://your-ldap-server:389
 # LDAP_BIND_DN=cn=admin,dc=example,dc=com

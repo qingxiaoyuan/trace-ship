@@ -6,9 +6,11 @@
 import logging
 import re
 import traceback
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
+from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
@@ -33,6 +35,44 @@ class ReleaseTagExistsError(serializers.ValidationError):
     """远端已存在同名 tag。"""
 
 
+_TAG_LIST_CACHE_TTL = 60  # tag 列表短缓存（秒），供发布预览、版本号计算等只读场景复用
+
+
+def tags_cache_key(repo_identity: str, server_url: str = "") -> str:
+    """tag 列表缓存键（含服务端地址，避免同一仓库更换 GitLab 地址后读到旧缓存）"""
+    return f"trace-ship:repo-tags:{server_url}:{repo_identity}"
+
+
+def list_tags_cached(provider: GitProvider, repo_identity: str) -> list[TagInfo]:
+    """
+    带短 TTL 缓存的 list_tags
+
+    发布预览、版本号计算等只读场景使用，60s 内的重复请求直接命中缓存；
+    tag 查重等强一致场景仍应直接调用 provider.list_tags。
+
+    Args:
+        provider: GitProvider 实例
+        repo_identity: 仓库标识
+
+    Returns:
+        TagInfo 列表
+    """
+    key = tags_cache_key(repo_identity, getattr(provider, "server_url", ""))
+    try:
+        cached = cache.get(key)
+    except Exception:
+        # 缓存后端不可用时降级为实时拉取
+        cached = None
+    if cached is not None:
+        return cached
+    tags = provider.list_tags(repo_identity)
+    try:
+        cache.set(key, tags, timeout=_TAG_LIST_CACHE_TTL)
+    except Exception:
+        pass
+    return tags
+
+
 class VersionCalculator:
     """
     版本号计算器
@@ -44,7 +84,7 @@ class VersionCalculator:
     """
 
     # 默认后缀映射：beta → beta，rc → rc
-    DEFAULT_SUFFIXES: Dict[str, str] = {"rc": "rc", "beta": "beta"}
+    DEFAULT_SUFFIXES: dict[str, str] = {"rc": "rc", "beta": "beta"}
 
     # tag 末尾日期段（年月日 8 位数字）
     DATE_PATTERN = r"(?P<date>\d{8})"
@@ -59,7 +99,7 @@ class VersionCalculator:
         self.major: int = int(rule.get("major", 1))
         self.minor: int = int(rule.get("minor", 0))
         self.patch: int = int(rule.get("patch", 0))
-        self.suffixes: Dict[str, str] = rule.get("suffixes") or dict(self.DEFAULT_SUFFIXES)
+        self.suffixes: dict[str, str] = rule.get("suffixes") or dict(self.DEFAULT_SUFFIXES)
         # 是否在生成的 tag 末尾拼接 _YYYYMMDD 日期段，默认开启（兼容历史数据）
         self.with_date: bool = bool(rule.get("with_date", True))
 
@@ -114,17 +154,87 @@ class VersionCalculator:
         date_part = f"(?:_{self.DATE_PATTERN})?"
         if release_type in ("rc", "beta"):
             suffix = (self.suffixes.get(release_type, "") or "").strip("-")
-            suffix_part = f"-{re.escape(suffix)}" if suffix else ""
+            if not suffix:
+                # 后缀配置为空时永不匹配，避免退化为 formal 同款正则误匹配无后缀 tag
+                return re.compile(r"(?!)")
+            suffix_part = f"-{re.escape(suffix)}"
             pattern = f"^{self._prefix_pattern()}{version_core}{suffix_part}{date_part}$"
         else:
             pattern = f"^{self._prefix_pattern()}{version_core}{date_part}$"
         return re.compile(pattern)
 
+    def sort_tags_by_recency(self, tags: list[TagInfo]) -> list[TagInfo]:
+        """
+        按"最新程度"排序 tag 列表（新→旧），不区分发布类型
+
+        无创建时间的 tag 按版本号降序排到最前（历史遗留 tag 的兜底语义），
+        有创建时间的 tag 按 created_at 倒序排列。
+        供 Tag 区间审查（review-range）等场景使用。
+
+        Args:
+            tags: TagInfo 列表
+
+        Returns:
+            排序后的 TagInfo 列表
+        """
+        timed = sorted(
+            (t for t in tags if t.created_at),
+            key=lambda t: t.created_at,
+            reverse=True,
+        )
+        untimed = sorted(
+            (t for t in tags if not t.created_at),
+            key=lambda t: self._tag_version_key(t.name),
+            reverse=True,
+        )
+        return untimed + timed
+
+    @staticmethod
+    def _tag_version_key(name: str) -> tuple[int, int, int]:
+        """从 tag 名提取 (major, minor, patch) 版本号排序键，无版本号退化为 (0, 0, 0)"""
+        match = re.search(r"(\d+)\.(\d+)\.(\d+)", name)
+        if match:
+            return tuple(int(x) for x in match.groups())
+        return (0, 0, 0)
+
+    def find_latest_tag_info_by_type(
+        self,
+        tags: list[TagInfo],
+        release_type: str,
+    ) -> TagInfo | None:
+        """
+        按发布类型查找最新匹配的 tag 完整信息
+
+        formal 取无后缀的 tag；rc/beta 取带对应后缀的 tag；
+        先按版本号倒序取最大版本，同版本号时取日期段更新的 tag
+        （无日期段视为最旧），规则与 find_latest_tag_by_type 一致。
+
+        Args:
+            tags: TagInfo 列表
+            release_type: 发布类型 formal/rc/beta
+
+        Returns:
+            最新匹配 tag 的 TagInfo（含名称/commit/创建时间），无匹配时返回 None
+        """
+        regex = self._build_regex(release_type)
+        candidates: list[tuple[TagInfo, tuple[int, ...], str]] = []
+        for tag in tags:
+            match = regex.match(tag.name)
+            if not match:
+                continue
+            values = (int(match.group("major")), int(match.group("minor")), int(match.group("patch")))
+            date = match.group("date") or ""
+            candidates.append((tag, values, date))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[1], item[2]), reverse=True)
+        return candidates[0][0]
+
     def find_latest_tag_by_type(
         self,
-        tags: List[TagInfo],
+        tags: list[TagInfo],
         release_type: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         按发布类型查找最新匹配的 tag 原始名
 
@@ -137,23 +247,13 @@ class VersionCalculator:
         Returns:
             最新匹配 tag 的原始名，无匹配时返回 None
         """
-        regex = self._build_regex(release_type)
-        candidates: List[Tuple[str, Tuple[int, ...]]] = []
-        for tag in tags:
-            match = regex.match(tag.name)
-            if not match:
-                continue
-            values = (int(match.group("major")), int(match.group("minor")), int(match.group("patch")))
-            candidates.append((tag.name, values))
-        if not candidates:
-            return None
-        candidates.sort(key=lambda item: item[1], reverse=True)
-        return candidates[0][0]
+        latest = self.find_latest_tag_info_by_type(tags, release_type)
+        return latest.name if latest else None
 
     def find_latest_matching_tag(
         self,
-        tags: List[TagInfo],
-    ) -> Optional[Tuple[TagInfo, Dict[str, int]]]:
+        tags: list[TagInfo],
+    ) -> tuple[TagInfo, dict[str, int]] | None:
         """
         从 tag 列表中找到最新正式版 tag（无类型后缀，含日期段）
 
@@ -164,7 +264,7 @@ class VersionCalculator:
             (TagInfo, 版本字段字典) 元组，无匹配时返回 None
         """
         regex = self._build_regex("formal")
-        candidates: List[Tuple[TagInfo, Tuple[int, int, int]]] = []
+        candidates: list[tuple[TagInfo, tuple[int, int, int]]] = []
         for tag in tags:
             match = regex.match(tag.name)
             if not match:
@@ -179,9 +279,9 @@ class VersionCalculator:
 
     def calculate(
         self,
-        tags: List[TagInfo],
+        tags: list[TagInfo],
         release_type: str = "formal",
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """
         计算下一个版本号和 tag 名称
 
@@ -198,7 +298,7 @@ class VersionCalculator:
             (version, tag_name) 元组，version 为纯版本号，tag_name 含后缀与日期段
         """
         type_regex = self._build_regex(release_type)
-        best: Optional[Tuple[int, int, int]] = None
+        best: tuple[int, int, int] | None = None
         for t in tags:
             match = type_regex.match(t.name)
             if not match:
@@ -247,7 +347,7 @@ class ReleaseValidator:
         }
 
     @staticmethod
-    def get_default_suffixes() -> Dict[str, str]:
+    def get_default_suffixes() -> dict[str, str]:
         """
         获取默认后缀配置
 
@@ -371,9 +471,12 @@ class ReleaseDocGenerator:
         self.release = release
         self.provider = provider
 
-    def _get_last_tag(self) -> Optional[str]:
+    def _get_last_tag(self) -> str | None:
         """
         获取仓库中匹配 version_rule 的最新 tag 名称
+
+        按发布类型（formal/rc/beta）分别取对应类型的最新 tag，
+        与 changes-preview 预览基线保持一致。
 
         Returns:
             tag 名称或 None
@@ -383,9 +486,9 @@ class ReleaseDocGenerator:
         except ProviderError:
             return None
         calculator = VersionCalculator(self.release.repository.get_version_rule())
-        return calculator.find_latest_tag_by_type(tags, "formal")
+        return calculator.find_latest_tag_by_type(tags, self.release.release_type or "formal")
 
-    def _fetch_commits(self) -> List[CommitInfo]:
+    def _fetch_commits(self) -> list[CommitInfo]:
         """
         拉取用于生成发布说明的 commits
 
@@ -407,7 +510,7 @@ class ReleaseDocGenerator:
             logger.warning("拉取发布提交失败，将继续生成基础发布说明: %s", exc)
             return []
 
-    def _fetch_merge_requests(self) -> List[MergeRequestInfo]:
+    def _fetch_merge_requests(self) -> list[MergeRequestInfo]:
         """
         拉取合并到发布分支的 MR 列表
 
@@ -424,7 +527,7 @@ class ReleaseDocGenerator:
             return []
 
     @staticmethod
-    def _filter_commits(commits: List[CommitInfo], commit_ids: Optional[List[str]] = None) -> List[CommitInfo]:
+    def _filter_commits(commits: list[CommitInfo], commit_ids: list[str] | None = None) -> list[CommitInfo]:
         """
         按 commit_id 筛选并过滤非法提交
 
@@ -464,7 +567,7 @@ class ReleaseDocGenerator:
         Returns:
             Markdown 字符串
         """
-        rows: List[Tuple[str, str]] = []
+        rows: list[tuple[str, str]] = []
 
         # 当前发布版本号
         rows.append(("当前发布版本号", release.version or "-"))
@@ -479,7 +582,7 @@ class ReleaseDocGenerator:
         # 变更内容（多行合并在一个单元格内，用换行分隔，不使用 <br>）
         updates = release.updates or []
         if updates:
-            lines: List[str] = []
+            lines: list[str] = []
             for item in updates:
                 if not isinstance(item, dict):
                     continue
@@ -500,7 +603,7 @@ class ReleaseDocGenerator:
         # 关联项改动（多行合并在一个单元格内，用换行分隔，不使用 <br>）
         related = release.related_changes or []
         if related:
-            related_lines: List[str] = []
+            related_lines: list[str] = []
             for item in related:
                 if isinstance(item, dict):
                     key = item.get("key", "")
@@ -538,7 +641,7 @@ class ReleaseDocGenerator:
             lines.append(f"| {label} | {safe} |")
         return "\n".join(lines)
 
-    def generate(self, commit_ids: Optional[List[str]] = None, merge_similar: bool = True) -> str:
+    def generate(self, commit_ids: list[str] | None = None, merge_similar: bool = True) -> str:
         """
         生成发布说明 Markdown 文档并持久化关联 commits / MRs
 
@@ -593,9 +696,6 @@ class ReleaseDocGenerator:
                 rc.save(update_fields=["is_included"])
 
         # 持久化 ReleaseMergeRequest 关联
-        existing_mr_numbers = set(
-            self.release.release_mrs.values_list("mr_number", flat=True)
-        )
         new_mr_numbers = set()
         for mr in merge_requests:
             number = mr.number
@@ -737,10 +837,10 @@ class ReleaseService:
         release_type: str,
         branch: str,
         publisher,
-        version: Optional[str] = None,
-        tag_name: Optional[str] = None,
-        related_changes: Optional[list] = None,
-        updates: Optional[list] = None,
+        version: str | None = None,
+        tag_name: str | None = None,
+        related_changes: list | None = None,
+        updates: list | None = None,
         has_config_changes: bool = False,
         config_change_doc: str = "",
         impact_other: bool = False,
@@ -776,7 +876,7 @@ class ReleaseService:
         version_rule = repository.get_version_rule()
 
         provider = cls._get_provider(repository, publisher)
-        tags: Optional[List[TagInfo]] = None
+        tags: list[TagInfo] | None = None
 
         # 若未传 version 但传了 tag_name，从 tag_name 去后缀反推 version
         if not version and tag_name:
@@ -867,7 +967,7 @@ class ReleaseService:
     def generate_doc(
         cls,
         release: ReleaseRecord,
-        commit_ids: Optional[List[str]] = None,
+        commit_ids: list[str] | None = None,
         merge_similar: bool = True,
         request_user=None,
     ) -> str:
@@ -911,17 +1011,24 @@ class ReleaseService:
         repository: Repository,
         branch: str,
         request_user=None,
+        release_type: str = "formal",
     ) -> dict:
         """
         预览上个 Tag 到本次基线之间的 commits 与 MRs，并自动解析更新内容
 
-        先主动拉取当前分支最新 100 条提交记录，再按上一个 tag 的 commit hash
-        截断，取 tag 之后的提交；若 100 条内未找到 tag commit 则回退到
-        compare_commits 接口。无匹配 tag 时取本分支最新 100 条提交。
+        先并发拉取 tag 列表（短 TTL 缓存）与当前分支最新 N 条提交记录
+        （settings.RELEASE_PREVIEW_MAX_COMMITS，默认 100），再按上一个 tag 的
+        commit hash 截断取 tag 之后的提交；若 N 条内未找到 tag commit，
+        先通过 merge_base 校验 tag 是否为分支祖先，是则回退 compare_commits
+        接口取区间差异，否则说明 tag 不在该分支历史上（如跨分支打 tag），
+        保守取本分支最新 N 条提交。无匹配 tag 时同样取最新 N 条提交。
+        上一个 tag 按发布类型分别查找：formal 取最新正式 tag，
+        rc/beta 取各自类型（-rc / -beta）的最新 tag。
 
         Args:
             repository: 仓库实例
             branch: 发布分支
+            release_type: 发布类型 formal/rc/beta
             request_user: 当前请求用户
 
         Returns:
@@ -929,41 +1036,39 @@ class ReleaseService:
         """
         provider = ReleaseService._get_provider(repository, request_user)
         repo_identity = repository.external_identity
-        project = repository.project
+        max_commits = int(getattr(settings, "RELEASE_PREVIEW_MAX_COMMITS", 100))
 
-        # 获取分支最新提交，用于确定基线及 MR/commit 过滤
-        head_commit: Optional[CommitInfo] = None
-        try:
-            head_commits = provider.list_commits(repo_identity, branch, per_page=1)
-            if head_commits:
-                head_commit = head_commits[0]
-        except ProviderError:
-            head_commit = None
+        # 并发拉取 tag 列表与本分支提交记录（两者无依赖），缩短预览等待
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            tags_future = executor.submit(list_tags_cached, provider, repo_identity)
+            commits_future = executor.submit(
+                provider.list_commits, repo_identity, branch, per_page=max_commits
+            )
+            try:
+                tags = tags_future.result()
+            except Exception:
+                tags = []
+            try:
+                all_commits = commits_future.result()
+            except Exception:
+                all_commits = []
 
-        # 获取本分支最新匹配 tag（仅比较同分支上的 tag）
-        last_tag: Optional[str] = None
-        tag_commit_hash: Optional[str] = None
-        tag_created_at: Optional[datetime] = None
-        try:
-            tags = provider.list_tags(repo_identity)
-            calculator = VersionCalculator(repository.get_version_rule())
-            latest = calculator.find_latest_matching_tag(tags)
-            if latest:
-                last_tag = latest[0].name
-                tag_commit_hash = latest[0].commit_hash
-                tag_created_at = latest[0].created_at
-        except ProviderError:
-            last_tag = None
+        # 分支 HEAD 即提交列表首条（新→旧），获取失败时为空
+        head_commit: CommitInfo | None = all_commits[0] if all_commits else None
 
-        # 主动拉取当前分支的提交记录（最新 100 条，新→旧）
-        all_commits: List[CommitInfo] = []
-        try:
-            all_commits = provider.list_commits(repo_identity, branch, per_page=100)
-        except ProviderError:
-            all_commits = []
+        # 获取本分支最新匹配 tag（按发布类型区分 formal/rc/beta）
+        last_tag: str | None = None
+        tag_commit_hash: str | None = None
+        tag_created_at: datetime | None = None
+        calculator = VersionCalculator(repository.get_version_rule())
+        latest = calculator.find_latest_tag_info_by_type(tags, release_type)
+        if latest:
+            last_tag = latest.name
+            tag_commit_hash = latest.commit_hash
+            tag_created_at = latest.created_at
 
         # 与上一个 tag 对比：在提交列表中找到 tag 对应的 commit，取其后的所有提交
-        commits: List[CommitInfo] = []
+        commits: list[CommitInfo] = []
         if last_tag and tag_commit_hash:
             tag_found = False
             for c in all_commits:
@@ -971,11 +1076,21 @@ class ReleaseService:
                     tag_found = True
                     break
                 commits.append(c)
-            # 若未在 100 条内找到 tag 的 commit（提交量过大），回退到 compare_commits
+            # 若未在最新 N 条内找到 tag commit：先校验 tag 是否为分支祖先，
+            # 是祖先才回退 compare_commits 取区间差异，避免跨分支 tag 被误当基线
             if not tag_found and all_commits:
+                merge_base: str | None = None
                 try:
-                    commits = provider.compare_commits(repo_identity, base=last_tag, head=branch)
-                except ProviderError:
+                    merge_base = provider.get_merge_base(repo_identity, [last_tag, branch])
+                except Exception:
+                    merge_base = None
+                if merge_base and merge_base == tag_commit_hash:
+                    try:
+                        commits = provider.compare_commits(repo_identity, base=last_tag, head=branch)
+                    except ProviderError:
+                        commits = all_commits
+                else:
+                    # 无法确认祖先关系或 tag 不在该分支历史上：保守取本分支最新 N 条
                     commits = all_commits
         else:
             commits = all_commits
@@ -984,7 +1099,7 @@ class ReleaseService:
         commits = [c for c in commits if extract_update_lines(c.message)]
 
         # 拉取 MRs，并按 tag 时间过滤：只保留 tag 之后合并到本分支的 MR
-        merge_requests: List[MergeRequestInfo] = []
+        merge_requests: list[MergeRequestInfo] = []
         try:
             merge_requests = provider.list_merge_requests(
                 repo_identity, target_branch=branch, since=tag_created_at
@@ -1002,7 +1117,7 @@ class ReleaseService:
         head_hash = head_commit.hash if head_commit else ""
 
         # 解析更新内容
-        parsed_updates: List[Dict[str, str]] = []
+        parsed_updates: list[dict[str, str]] = []
         seen: set = set()
         for commit in commits:
             for item in extract_update_lines(commit.message):
@@ -1282,6 +1397,18 @@ class ReleaseService:
         release.status = "released"
         release.released_at = timezone.now()
         release.save(update_fields=["status", "released_at", "updated_at"])
+        # 推 tag 成功后失效 tag 列表缓存，保证预览/版本号计算立即看到新 tag
+        try:
+            from apps.repository.services import RepositoryService
+
+            cache.delete(
+                tags_cache_key(
+                    release.repository.external_identity,
+                    RepositoryService._resolve_server_url(release.repository),
+                )
+            )
+        except Exception:
+            pass
         logger.info("推 tag 成功，发布完成: release=%s tag=%s", release.id, release.tag_name)
         NotificationService.notify_release_released(release)
         try:

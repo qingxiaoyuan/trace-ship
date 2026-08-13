@@ -3,25 +3,26 @@
 
 提供项目 CRUD、项目成员管理接口。
 """
-from django_filters.rest_framework import DjangoFilterBackend
 from django.core.exceptions import ValidationError
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, filters, status
-from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.project.models import Project, ProjectMember
-from apps.project.services import visible_project_ids
 from apps.project.serializers import (
-    ProjectSerializer, ProjectListSerializer, ProjectMemberSerializer,
+    ProjectListSerializer,
+    ProjectMemberSerializer,
+    ProjectSerializer,
 )
-from apps.project.services import ProjectService
+from apps.project.services import ProjectService, visible_project_ids
 from utils.permissions import HasPermission, IsProjectManager, IsProjectMember
-from utils.response import success_response, error_response
+from utils.response import error_response, success_response
+from utils.viewsets import StandardModelViewSet
 
 
 class ProjectViewSet(StandardModelViewSet):
@@ -63,11 +64,23 @@ class ProjectViewSet(StandardModelViewSet):
         user = self.request.user
         if not user or not user.is_authenticated:
             return Project.objects.none()
-        queryset = Project.objects.select_related("leader").annotate(
-            repo_count=Count("repositories", distinct=True),
-            member_count=Count("members", distinct=True),
-            package_count=Count("package_configs", distinct=True),
-            release_count=Count("releases", distinct=True),
+        queryset = (
+            Project.objects.select_related("leader")
+            .prefetch_related(
+                # 预取当前用户在每个项目中的成员记录（to_attr="_my_member"），
+                # 供列表序列化器 get_my_role 读取，避免逐项目查询成员表
+                Prefetch(
+                    "members",
+                    queryset=ProjectMember.objects.filter(user=user).only("role", "project_id"),
+                    to_attr="_my_member",
+                )
+            )
+            .annotate(
+                repo_count=Count("repositories", distinct=True),
+                member_count=Count("members", distinct=True),
+                package_count=Count("package_configs", distinct=True),
+                release_count=Count("releases", distinct=True),
+            )
         )
         if user.is_superuser:
             return queryset.all()

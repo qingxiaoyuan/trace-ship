@@ -96,18 +96,26 @@ interface ToggleCardProps {
   title: string;
   desc: string;
   name: string;
+  /** 额外禁用（如依赖其他开关）；与 Form 级 disabled 合并 */
+  disabled?: boolean;
+  /** 禁用时替换显示的说明文案 */
+  disabledHint?: string;
 }
 
 /** 开关卡片：标题 + 说明 + 开关 */
-function ToggleCard({ title, desc, name }: ToggleCardProps) {
+function ToggleCard({ title, desc, name, disabled, disabledHint }: ToggleCardProps) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 transition-colors hover:border-slate-300">
+    <div
+      className={`flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 transition-colors ${
+        disabled ? 'opacity-50' : 'hover:border-slate-300'
+      }`}
+    >
       <div>
         <div className="text-[12px] font-medium text-slate-700">{title}</div>
-        <div className="text-[10px] text-slate-400">{desc}</div>
+        <div className="text-[10px] text-slate-400">{disabled && disabledHint ? disabledHint : desc}</div>
       </div>
       <Form.Item name={name} valuePropName="checked" noStyle>
-        <Switch size="small" />
+        <Switch size="small" disabled={disabled} />
       </Form.Item>
     </div>
   );
@@ -123,6 +131,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const projectId = Form.useWatch('project', form) ?? fixedProjectId;
   const executorType = Form.useWatch('executor_type', form) ?? 'local_docker';
   const isRemote = executorType === 'remote_windows';
+  const autoCollectOutput = Form.useWatch('auto_collect_output', form) ?? false;
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
   const svnUrl = Form.useWatch('svn_url', form);
   const svnCredentialId = Form.useWatch('svn_credential', form);
@@ -183,6 +192,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         build_path: '.',
         output_path: 'dist',
         auto_collect_output: false,
+        auto_compress: false,
         env_vars: {},
         cpu_cores: 0,
         cpu_priority: '',
@@ -211,6 +221,10 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         if (item) {
           payload.image_info = toImageInfo(item);
         }
+      }
+      // 未开启自动收集时，自动压缩无意义，统一落库为 false 保持数据干净
+      if (!payload.auto_collect_output) {
+        payload.auto_compress = false;
       }
       if (editing) return packageApi.updateConfig(editing.id, payload);
       return packageApi.createConfig(payload);
@@ -414,15 +428,15 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                 />
               </Form.Item>
             ) : (
+              // Form.Item 必须直接包裹 ImagePickerField：value/onChange 只注入直接子组件，
+              // 中间隔一层 div 会导致选择结果无法写回表单（镜像不回显）
               <Form.Item
                 name="image_ref"
                 label={<FieldLabel text="打包镜像" required />}
                 rules={[{ required: true, message: '请选择打包镜像' }]}
                 className="mb-0"
               >
-                <div className={readOnly ? 'pointer-events-none opacity-60' : ''}>
-                  <ImagePickerField />
-                </div>
+                <ImagePickerField disabled={readOnly} />
               </Form.Item>
             )}
           </div>
@@ -517,6 +531,13 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             title="构建后自动收集产物"
             desc="构建后自动归集产物目录到 artifacts（脚本可不再手动拷贝）"
             name="auto_collect_output"
+          />
+          <ToggleCard
+            title="自动压缩产物"
+            desc="打包完成后将产物目录内所有内容压缩为单个 zip 压缩包（软件名-版本-日期）"
+            name="auto_compress"
+            disabled={readOnly || !autoCollectOutput}
+            disabledHint="需先开启「构建后自动收集产物」"
           />
           {isRemote && (
             <ToggleCard

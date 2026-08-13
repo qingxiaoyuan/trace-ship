@@ -1,14 +1,15 @@
 """
 发布服务单元测试
 """
+from datetime import UTC
+
 import pytest
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.release.services import ReleaseService
-from utils.provider.exceptions import ProviderError
 from utils.provider.base import TagInfo
-
+from utils.provider.exceptions import ProviderError
 
 pytestmark = pytest.mark.django_db
 
@@ -126,14 +127,15 @@ def test_push_tag_keeps_pending_when_tag_check_failed(
 
 def _make_commit(hash, message):
     """构造 CommitInfo"""
-    from datetime import datetime, timezone as tz
+    from datetime import datetime
+
     from utils.provider.base import CommitInfo
     return CommitInfo(
         hash=hash,
         author="开发者",
         author_email="",
         message=message,
-        committed_at=datetime(2026, 8, 1, 10, 0, 0, tzinfo=tz.utc),
+        committed_at=datetime(2026, 8, 1, 10, 0, 0, tzinfo=UTC),
     )
 
 
@@ -174,7 +176,7 @@ def test_preview_changes_truncates_at_tag_commit(repository, monkeypatch):
 
 
 def test_preview_changes_falls_back_to_compare_when_tag_not_in_list(repository, monkeypatch):
-    """tag commit 不在 100 条提交列表内时，回退到 compare_commits"""
+    """tag commit 不在 100 条提交列表内时，校验为分支祖先后回退到 compare_commits"""
     from utils.provider.base import TagInfo
 
     compare_called = []
@@ -186,6 +188,10 @@ def test_preview_changes_falls_back_to_compare_when_tag_not_in_list(repository, 
         def list_commits(self, repo_identity, branch, since=None, until=None, per_page=100):
             return [_make_commit("new1", AF_MSG)]
 
+        def get_merge_base(self, repo_identity, refs):
+            # merge_base 等于 tag commit，说明 tag 是分支祖先，允许回退 compare
+            return "veryoldhash"
+
         def compare_commits(self, repo_identity, base, head):
             compare_called.append((base, head))
             return [_make_commit("cmp1", AF_MSG), _make_commit("cmp2", AF_MSG_2)]
@@ -194,6 +200,54 @@ def test_preview_changes_falls_back_to_compare_when_tag_not_in_list(repository, 
             return []
 
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    result = ReleaseService.preview_changes(repository, "main")
+
+    assert len(compare_called) == 1
+    assert compare_called[0][0] == "VA.1.0.0_20260701"
+    hashes = [c["hash"] for c in result["commits"]]
+    assert "cmp1" in hashes
+    assert "cmp2" in hashes
+
+
+def test_preview_changes_rejects_cross_branch_tag_baseline(repository, monkeypatch):
+    """tag commit 不在分支历史上（merge_base 非 tag commit）时，保守取本分支最新提交，不回退 compare"""
+    from utils.provider.base import TagInfo
+
+    compare_called = []
+
+    class FakeProvider:
+        # 类属性控制 merge_base 返回值，便于切换祖先校验场景
+        merge_base_result = "someotherbase"
+
+        def list_tags(self, repo_identity):
+            return [TagInfo(name="VA.1.0.0_20260701", commit_hash="otherbranchhash")]
+
+        def list_commits(self, repo_identity, branch, since=None, until=None, per_page=100):
+            return [_make_commit("new1", AF_MSG), _make_commit("new2", AF_MSG_2)]
+
+        def get_merge_base(self, repo_identity, refs):
+            return self.merge_base_result
+
+        def compare_commits(self, repo_identity, base, head):
+            compare_called.append((base, head))
+            return [_make_commit("cmp1", AF_MSG), _make_commit("cmp2", AF_MSG_2)]
+
+        def list_merge_requests(self, repo_identity, target_branch, since=None):
+            return []
+
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+
+    # 场景一：merge_base 不是 tag commit（跨分支 tag），不调用 compare_commits，直接使用本分支最新提交
+    FakeProvider.merge_base_result = "someotherbase"
+    result = ReleaseService.preview_changes(repository, "main")
+
+    assert compare_called == []
+    hashes = [c["hash"] for c in result["commits"]]
+    assert "new1" in hashes
+    assert "new2" in hashes
+
+    # 场景二：merge_base 等于 tag commit（tag 是分支祖先），回退 compare 取区间差异
+    FakeProvider.merge_base_result = "otherbranchhash"
     result = ReleaseService.preview_changes(repository, "main")
 
     assert len(compare_called) == 1
@@ -225,3 +279,126 @@ def test_preview_changes_no_tag_uses_all_commits(repository, monkeypatch):
     hashes = [c["hash"] for c in result["commits"]]
     assert "c1" in hashes
     assert "c2" in hashes
+
+
+def test_preview_changes_uses_latest_tag_of_given_release_type(repository, monkeypatch):
+    """preview_changes 按 release_type 取对应类型（formal/rc/beta）的最新 tag 作为基线"""
+    from utils.provider.base import TagInfo
+
+    # 仓库同时存在正式与 rc tag，且 rc tag 版本更高（更晚）
+    # 注：项目 version_rule 的 beta 后缀配置为 alpha（见 conftest）
+    class FakeProvider:
+        def list_tags(self, repo_identity):
+            return [
+                TagInfo(name="VA.1.0.0_20260101", commit_hash="formalhash"),
+                TagInfo(name="VA.1.0.5-rc_20260601", commit_hash="rchash"),
+                TagInfo(name="VA.1.0.2-alpha_20260201", commit_hash="betahash"),
+            ]
+
+        def list_commits(self, repo_identity, branch, since=None, until=None, per_page=100):
+            return [
+                _make_commit("new1", AF_MSG),
+                _make_commit("rchash", AF_MSG),
+                _make_commit("formalhash", AF_MSG_2),
+            ]
+
+        def get_merge_base(self, repo_identity, refs):
+            # beta 场景：merge_base 返回 tag commit，视为分支祖先，允许回退 compare
+            return "betahash"
+
+        def compare_commits(self, repo_identity, base, head):
+            return []
+
+        def list_merge_requests(self, repo_identity, target_branch, since=None):
+            return []
+
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+
+    # rc 发布：以最新 -rc tag 为基线，只取 rchash 之后的提交
+    result_rc = ReleaseService.preview_changes(repository, "main", release_type="rc")
+    assert result_rc["last_tag"] == "VA.1.0.5-rc_20260601"
+    hashes_rc = [c["hash"] for c in result_rc["commits"]]
+    assert "new1" in hashes_rc
+    assert "rchash" not in hashes_rc
+    assert "formalhash" not in hashes_rc
+
+    # formal 发布：以最新正式 tag 为基线，取 formalhash 之后的提交（含 rchash 之后的所有提交）
+    result_formal = ReleaseService.preview_changes(repository, "main", release_type="formal")
+    assert result_formal["last_tag"] == "VA.1.0.0_20260101"
+    hashes_formal = [c["hash"] for c in result_formal["commits"]]
+    assert "new1" in hashes_formal
+    assert "rchash" in hashes_formal
+    assert "formalhash" not in hashes_formal
+
+    # beta 发布：以最新 beta 类型（配置后缀为 alpha）tag 为基线，但 beta tag 的 commit 不在提交列表中，回退到 compare_commits（返回空）
+    result_beta = ReleaseService.preview_changes(repository, "main", release_type="beta")
+    assert result_beta["last_tag"] == "VA.1.0.2-alpha_20260201"
+    assert result_beta["commits"] == []
+
+
+def test_preview_changes_provider_failure_returns_empty(repository, monkeypatch):
+    """provider 拉取 tag/提交/MR 均失败时，预览降级为空结果而非抛异常"""
+    class BrokenProvider:
+        server_url = "https://gitlab.example.com"
+
+        def list_tags(self, repo_identity):
+            raise ProviderError("远端不可用")
+
+        def list_commits(self, repo_identity, branch, since=None, until=None, per_page=100):
+            raise ProviderError("远端不可用")
+
+        def list_merge_requests(self, repo_identity, target_branch, since=None):
+            raise ProviderError("远端不可用")
+
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: BrokenProvider())
+
+    result = ReleaseService.preview_changes(repository, "main")
+
+    assert result["last_tag"] is None
+    assert result["commits"] == []
+    assert result["merge_requests"] == []
+
+
+def _cached_tags_provider(server_url="https://gitlab.example.com"):
+    """构造带 server_url 的 FakeProvider，记录 list_tags 调用次数"""
+    class FakeProvider:
+        def __init__(self):
+            self.server_url = server_url
+            self.tags_calls = 0
+
+        def list_tags(self, repo_identity):
+            self.tags_calls += 1
+            return [TagInfo(name="VA.1.0.0_20260101", commit_hash="a")]
+
+    return FakeProvider()
+
+
+def test_list_tags_cached_hits_cache_within_ttl():
+    """60s 短缓存：同仓库重复请求命中缓存不重复拉取；失效后重新拉取"""
+    from django.core.cache import cache
+
+    from apps.release.services import list_tags_cached
+
+    provider = _cached_tags_provider()
+    first = list_tags_cached(provider, "group/repo")
+    second = list_tags_cached(provider, "group/repo")
+    assert first == second
+    assert provider.tags_calls == 1
+
+    cache.delete("trace-ship:repo-tags:https://gitlab.example.com:group/repo")
+    list_tags_cached(provider, "group/repo")
+    assert provider.tags_calls == 2
+
+
+def test_list_tags_cached_key_is_isolated_by_server_url():
+    """缓存键含服务端地址：同一仓库不同 GitLab 地址互不串缓存"""
+    from apps.release.services import list_tags_cached
+
+    provider_a = _cached_tags_provider("https://a.example.com")
+    provider_b = _cached_tags_provider("https://b.example.com")
+
+    list_tags_cached(provider_a, "group/repo")
+    list_tags_cached(provider_b, "group/repo")
+
+    assert provider_a.tags_calls == 1
+    assert provider_b.tags_calls == 1

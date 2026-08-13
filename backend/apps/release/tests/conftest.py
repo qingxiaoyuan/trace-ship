@@ -3,6 +3,8 @@
 
 提供用户、项目、凭证、仓库、提交记录等通用测试数据。
 """
+from datetime import UTC
+
 import pytest
 
 from apps.account.models import User
@@ -82,6 +84,15 @@ def commit(repository, project):
     )
 
 
+@pytest.fixture(autouse=True)
+def _clear_tag_cache():
+    """每个测试前后清空缓存，避免 list_tags_cached 的 tag 列表缓存跨测试污染"""
+    from django.core.cache import cache
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def mock_git_provider():
     """模拟的 GitProvider"""
@@ -98,7 +109,8 @@ def mock_git_provider():
             return TagInfo(name=tag_name, commit_hash=commit_hash)
 
         def list_commits(self, repo_identity: str, branch: str, since=None, until=None, per_page=100):
-            from datetime import datetime, timezone as tz
+            from datetime import datetime
+
             from utils.provider.base import CommitInfo
             return [
                 CommitInfo(
@@ -106,7 +118,7 @@ def mock_git_provider():
                     author="张三",
                     author_email="",
                     message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. A 新增功能",
-                    committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+                    committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=UTC),
                 )
             ]
 

@@ -249,8 +249,10 @@ class TestSVNConfigTestAction:
 
 @pytest.mark.django_db
 class TestSVNConfigSerializerValidation:
-    def test_serializer_rejects_invalid_url_scheme(self, project, repository, svn_credential, user):
+    def test_serializer_rejects_auto_compress_without_auto_collect(self, project, repository, user):
+        """未开启「构建后自动收集产物」时禁止单独开启「自动压缩产物」"""
         from unittest.mock import MagicMock
+
         from apps.package.models import PackageImage
         from apps.package.serializers import PackageConfigSerializer
 
@@ -263,19 +265,42 @@ class TestSVNConfigSerializerValidation:
             "repository": repository.id,
             "name": "测试配置",
             "image": image.id,
-            "svn_push_enabled": True,
-            "svn_url": "ssh://svn.example.com/releases",
-            "svn_credential": svn_credential.id,
-            "svn_path_template": "{version}",
+            "auto_collect_output": False,
+            "auto_compress": True,
         }
         request = MagicMock()
         request.user = user
         serializer = PackageConfigSerializer(data=data, context={"request": request})
         assert not serializer.is_valid()
-        assert "svn_url" in serializer.errors
-        assert "svn://" in str(serializer.errors["svn_url"][0])
+        assert "auto_compress" in serializer.errors
+
+    def test_serializer_accepts_auto_compress_with_auto_collect(self, project, repository, user):
+        """开启「构建后自动收集产物」时可同时开启「自动压缩产物」"""
+        from unittest.mock import MagicMock
+
+        from apps.package.models import PackageImage
+        from apps.package.serializers import PackageConfigSerializer
+
+        image = PackageImage.objects.create(
+            name="Web 构建镜像",
+            image="trace-ship/web-builder:node22",
+        )
+        data = {
+            "project": project.id,
+            "repository": repository.id,
+            "name": "测试配置",
+            "image": image.id,
+            "auto_collect_output": True,
+            "auto_compress": True,
+        }
+        request = MagicMock()
+        request.user = user
+        serializer = PackageConfigSerializer(data=data, context={"request": request})
+        assert serializer.is_valid()
+
     def test_serializer_rejects_invalid_url_scheme(self, project, repository, svn_credential, user):
         from unittest.mock import MagicMock
+
         from apps.package.models import PackageImage
         from apps.package.serializers import PackageConfigSerializer
 

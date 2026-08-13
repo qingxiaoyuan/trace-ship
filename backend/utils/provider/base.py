@@ -4,9 +4,8 @@ Provider 抽象基类与数据类
 定义 Git 平台统一适配器接口以及 Commit/Branch/Tag 信息的数据结构。
 """
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
 
 
 @dataclass
@@ -28,7 +27,7 @@ class CommitInfo:
     author_email: str
     message: str
     committed_at: datetime
-    files_changed: Optional[List[str]] = None
+    files_changed: list[str] | None = None
 
 
 @dataclass
@@ -47,10 +46,10 @@ class BranchInfo:
 
     name: str
     is_default: bool = False
-    last_commit_hash: Optional[str] = None
+    last_commit_hash: str | None = None
     last_commit_author: str = ""
     last_commit_message: str = ""
-    last_commit_at: Optional[datetime] = None
+    last_commit_at: datetime | None = None
 
 
 @dataclass
@@ -65,8 +64,8 @@ class TagInfo:
     """
 
     name: str
-    commit_hash: Optional[str] = None
-    created_at: Optional[datetime] = None
+    commit_hash: str | None = None
+    created_at: datetime | None = None
 
 
 @dataclass
@@ -92,7 +91,7 @@ class MergeRequestInfo:
     source_branch: str = ""
     target_branch: str = ""
     web_url: str = ""
-    merged_at: Optional[datetime] = None
+    merged_at: datetime | None = None
 
 
 class GitProvider(ABC):
@@ -117,7 +116,7 @@ class GitProvider(ABC):
         pass
 
     @abstractmethod
-    def list_branches(self, repo_identity: str) -> List[BranchInfo]:
+    def list_branches(self, repo_identity: str) -> list[BranchInfo]:
         """列出分支"""
         pass
 
@@ -126,10 +125,10 @@ class GitProvider(ABC):
         self,
         repo_identity: str,
         branch: str,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         per_page: int = 100,
-    ) -> List[CommitInfo]:
+    ) -> list[CommitInfo]:
         """拉取 commit 列表"""
         pass
 
@@ -139,7 +138,7 @@ class GitProvider(ABC):
         pass
 
     @abstractmethod
-    def list_tags(self, repo_identity: str) -> List[TagInfo]:
+    def list_tags(self, repo_identity: str) -> list[TagInfo]:
         """列出 tag"""
         pass
 
@@ -149,17 +148,33 @@ class GitProvider(ABC):
         pass
 
     @abstractmethod
-    def compare_commits(self, repo_identity: str, base: str, head: str) -> List[CommitInfo]:
+    def compare_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
         """比较两个 ref 之间的差异"""
         pass
+
+    def get_merge_base(self, repo_identity: str, refs: list[str]) -> str | None:
+        """
+        获取多个 ref 的 merge base（共同祖先）commit hash
+
+        用于校验 tag 是否位于目标分支历史上。默认实现返回 None，
+        表示该 Provider 不支持此能力，调用方应采用保守回退策略。
+
+        Args:
+            repo_identity: 仓库标识
+            refs: 待比较的 ref 列表（分支名 / tag 名 / commit hash）
+
+        Returns:
+            共同祖先 commit hash，不支持或查询失败时返回 None
+        """
+        return None
 
     @abstractmethod
     def list_merge_requests(
         self,
         repo_identity: str,
-        target_branch: Optional[str] = None,
-        since: Optional[datetime] = None,
-    ) -> List[MergeRequestInfo]:
+        target_branch: str | None = None,
+        since: datetime | None = None,
+    ) -> list[MergeRequestInfo]:
         """
         拉取已合并的 Merge Request / Pull Request 列表
 

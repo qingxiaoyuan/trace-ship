@@ -203,6 +203,11 @@ class PackageConfig(models.Model):
         verbose_name="自动收集产物",
         help_text="构建完成后自动将产物目录内容归集到 artifacts，脚本无需手动拷贝",
     )
+    auto_compress = models.BooleanField(
+        default=False,
+        verbose_name="自动压缩产物",
+        help_text="构建完成后将产物目录内所有内容压缩为单个 zip 压缩包（命名：软件名-版本-日期）",
+    )
     env_vars = models.JSONField(default=dict, blank=True, verbose_name="环境变量")
     auto_package_on_release = models.BooleanField(default=False, verbose_name="发布后自动打包")
     cleanup_workspace = models.BooleanField(

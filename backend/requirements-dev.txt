@@ -1,0 +1,5 @@
+# 开发/测试附加依赖（生产镜像只安装 requirements.txt，不包含本文件）
+-r requirements.txt
+
+# 代码风格与静态检查
+ruff>=0.6.0

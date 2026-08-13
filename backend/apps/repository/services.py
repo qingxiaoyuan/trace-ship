@@ -3,12 +3,12 @@
 
 封装仓库连通性测试、分支/commit 查询、提交同步等业务逻辑。
 """
-from typing import List, Optional
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from django.utils import timezone
 
+from apps.release.services import VersionCalculator
 from apps.repository.models import CommitRecord, Repository, RepositoryBranch, RepositoryTag
 from utils.commit_reviewer import CommitReviewer
 from utils.provider.base import CommitInfo
@@ -107,7 +107,7 @@ class RepositoryService:
             return {"connected": False, "detail": f"连接异常: {exc}"}
 
     @staticmethod
-    def list_branches(repo: Repository, request_user=None) -> List[dict]:
+    def list_branches(repo: Repository, request_user=None) -> list[dict]:
         """
         获取仓库分支列表（本地优先，为空时自动从远端同步）
 
@@ -285,7 +285,7 @@ class RepositoryService:
         return {"synced_count": synced_count, "total": len(tags)}
 
     @staticmethod
-    def list_tags(repo: Repository, request_user=None) -> List[dict]:
+    def list_tags(repo: Repository, request_user=None) -> list[dict]:
         """
         获取仓库标签列表
 
@@ -315,9 +315,9 @@ class RepositoryService:
     @staticmethod
     def list_commits(
         repo: Repository,
-        branch: Optional[str] = None,
+        branch: str | None = None,
         request_user=None,
-    ) -> List[CommitInfo]:
+    ) -> list[CommitInfo]:
         """
         获取指定分支的 commit 列表
 
@@ -337,7 +337,7 @@ class RepositoryService:
     @staticmethod
     def sync_commits(
         repo: Repository,
-        branch: Optional[str] = None,
+        branch: str | None = None,
         request_user=None,
     ) -> dict:
         """
@@ -390,8 +390,8 @@ class RepositoryService:
     @staticmethod
     def review_range(
         repo: Repository,
-        base_tag: Optional[str] = None,
-        head_tag: Optional[str] = None,
+        base_tag: str | None = None,
+        head_tag: str | None = None,
         request_user=None,
     ) -> dict:
         """
@@ -416,29 +416,15 @@ class RepositoryService:
         repo_identity = repo.external_identity
         branch = repo.default_branch
 
-        # 获取 tags 并按 created_at 倒序（无时间的按 commit_hash 兜底去重后放前面）
+        # 统一通过 VersionCalculator.sort_tags_by_recency 排序 tag（新→旧）：
+        # 无创建时间的 tag 按版本号降序排最前兜底，有时间的按 created_at 倒序
         try:
             tags = provider.list_tags(repo_identity)
         except ProviderError:
             tags = []
-        sortable = [t for t in tags if t.created_at]
-        sortable.sort(key=lambda t: t.created_at, reverse=True)
-        # 无 created_at 的 tag 按名称中版本号降序补充到前面
-        seen = {t.name for t in sortable}
-        def _tag_version_key(name: str) -> tuple:
-            import re
-            m = re.search(r"(\d+)\.(\d+)\.(\d+)", name)
-            if m:
-                return tuple(int(x) for x in m.groups())
-            return (0, 0, 0)
-        for t in sorted(
-            [t for t in tags if t.name not in seen],
-            key=lambda t: _tag_version_key(t.name),
-            reverse=True,
-        ):
-            sortable.insert(0, t)
-            seen.add(t.name)
-        tag_names = [t.name for t in sortable]
+        calculator = VersionCalculator(repo.get_version_rule())
+        sorted_tags = calculator.sort_tags_by_recency(tags)
+        tag_names = [t.name for t in sorted_tags]
 
         # 确定区间：base = 起点，head = 终点
         # head 优先用显式 head_tag，否则取分支 HEAD
@@ -461,7 +447,7 @@ class RepositoryService:
             base_ref = tag_names[0] if tag_names else None
 
         # 拉取区间 commits
-        commits: List[CommitInfo] = []
+        commits: list[CommitInfo] = []
         try:
             if base_ref and head_ref:
                 commits = provider.compare_commits(repo_identity, base=base_ref, head=head_ref)
@@ -489,10 +475,13 @@ class RepositoryService:
         merge_results = []
         base_tag_time = None
         if base_ref:
-            for t in sortable:
+            for t in sorted_tags:
                 if t.name == base_ref:
                     base_tag_time = t.created_at
                     break
+        # 注意：base_tag_time 为 tag 指向 commit 的提交时间近似（GitLab REST
+        # API 不返回 tag 创建时间）。tag 打在历史 commit 上时，该时间可能早于
+        # tag 实际创建时间，导致「tag 创建后、commit 日期前」合并的 MR 被误过滤。
         try:
             mrs = provider.list_merge_requests(repo_identity, target_branch=branch, since=base_tag_time)
             for mr in mrs:
@@ -526,7 +515,7 @@ class RepositoryService:
             "head": head_ref,
             "tags": [
                 {"name": t.name, "created_at": t.created_at.isoformat() if t.created_at else None}
-                for t in sortable
+                for t in sorted_tags
             ],
             "commits": commit_results,
             "merge_requests": merge_results,
@@ -537,4 +526,3 @@ class RepositoryService:
                 "mr_total": len(merge_results),
             },
         }
-

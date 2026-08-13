@@ -373,7 +373,7 @@
 | search | string | 编码/名称模糊搜索 |
 | status | int | 1 启用 / 0 停用 |
 
-**响应：** 分页列表，含 `repo_count` / `member_count`。
+**响应：** 分页列表，含 `repo_count` / `member_count`；`my_role` 为当前用户在项目中的有效角色（超管与项目负责人为 `manager`，软件管理员成员为 `software_admin`，非成员为 `null`），供前端按角色过滤项目下拉（如打包配置归属项目）。
 
 ### 4.2 创建项目
 
@@ -809,9 +809,9 @@
 
 ### 6.11 变更预览
 
-- **GET** `/api/repositories/{id}/changes-preview/?branch=develop`
+- **GET** `/api/repositories/{id}/changes-preview/?branch=develop&release_type=formal`
 
-预览上个 Tag 到目标分支之间的 commits 与 MRs，并解析 A/F 类更新内容（不落库），供创建发布表单使用。`branch` 必填。
+预览上个 Tag 到目标分支之间的 commits 与 MRs，并解析 A/F 类更新内容（不落库），供创建发布表单使用。`branch` 必填；`release_type` 可选（`formal` / `rc` / `beta`，默认 `formal`），用于按发布类型分别取对应类型的最新 tag 作为基线：formal 取最新正式 tag，rc/beta 取各自 `-rc` / `-beta` 后缀的最新 tag。
 
 **响应：**
 

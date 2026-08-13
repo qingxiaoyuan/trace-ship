@@ -58,8 +58,10 @@ export const repositoryApi = {
         }
       >;
     }>(`/repositories/${id}/next-version/`, { params: { release_type: releaseType } }),
-  previewChanges: (id: string, branch: string) =>
-    get<ChangesPreview>(`/repositories/${id}/changes-preview/`, { params: { branch } }),
+  previewChanges: (id: string, branch: string, releaseType: string = 'formal') =>
+    get<ChangesPreview>(`/repositories/${id}/changes-preview/`, {
+      params: { branch, release_type: releaseType },
+    }),
   reviewRange: (id: string, baseTag?: string, headTag?: string) =>
     get<ReviewRangeResult>(`/repositories/${id}/review-range/`, {
       params: { base: baseTag || undefined, head: headTag || undefined },

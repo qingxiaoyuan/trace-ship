@@ -4,13 +4,39 @@
 包含项目、项目成员的序列化器，以及支持字符串/数字双格式的状态字段。
 """
 from typing import Any
+
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from apps.project.models import Project, ProjectMember
+
 from apps.account.serializers import UserSerializer
+from apps.project.models import Project, ProjectMember
 from apps.project.services import ProjectService
 
 User = get_user_model()
+
+
+def resolve_my_role(obj: Project, user) -> str | None:
+    """
+    计算用户在项目中的有效角色（列表 / 详情序列化器共用）
+
+    超管与项目负责人（leader）均视为 manager；成员记录为 software_admin 时
+    优先生效；非成员返回 None。列表场景优先读取视图
+    Prefetch(to_attr="_my_member") 预取的成员记录，避免逐项目查询产生 N+1。
+    """
+    if not user or not user.is_authenticated:
+        return None
+    if user.is_superuser:
+        return "manager"
+    members = getattr(obj, "_my_member", None)
+    if members is None:
+        member = obj.members.filter(user=user).only("role").first()
+    else:
+        member = members[0] if members else None
+    if member and member.role == "software_admin":
+        return "software_admin"
+    if str(obj.leader_id) == str(user.id):
+        return "manager"
+    return member.role if member else None
 
 
 class ProjectStatusField(serializers.IntegerField):
@@ -103,24 +129,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         return self._count(obj, "release_count")
 
     def get_my_role(self, obj: Project) -> str | None:
-        """
-        当前请求用户在该项目中的有效角色
-
-        超管与项目负责人（leader）均视为 manager，非成员返回 None，
-        前端据此控制操作按钮可见性。
-        """
+        """当前请求用户在该项目中的有效角色（逻辑见 resolve_my_role）。"""
         request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if not user or not user.is_authenticated:
-            return None
-        if user.is_superuser:
-            return "manager"
-        member = obj.members.filter(user=user).only("role").first()
-        if member and member.role == "software_admin":
-            return "software_admin"
-        if str(obj.leader_id) == str(user.id):
-            return "manager"
-        return member.role if member else None
+        return resolve_my_role(obj, getattr(request, "user", None))
 
     def create(self, validated_data: dict) -> Project:
         """
@@ -171,11 +182,12 @@ class ProjectListSerializer(serializers.ModelSerializer):
     status = ProjectStatusField()
     repo_count = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
+    my_role = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
         fields = ["id", "code", "name", "leader_name", "status", "created_at",
-                  "repo_count", "member_count"]
+                  "repo_count", "member_count", "my_role"]
 
     def _count(self, obj: Project, attr: str) -> int:
         """读取视图 annotate 注入的计数字段，未注入时回退为 0。"""
@@ -188,6 +200,11 @@ class ProjectListSerializer(serializers.ModelSerializer):
     def get_member_count(self, obj: Project) -> int:
         """项目成员数"""
         return self._count(obj, "member_count")
+
+    def get_my_role(self, obj: Project) -> str | None:
+        """当前请求用户在该项目中的有效角色（打包配置等场景按角色过滤项目下拉）。"""
+        request = self.context.get("request")
+        return resolve_my_role(obj, getattr(request, "user", None))
 
 
 class ProjectMemberSerializer(serializers.ModelSerializer):

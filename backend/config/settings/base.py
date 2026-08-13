@@ -5,8 +5,10 @@ Django 项目基础配置（所有环境共享）
 环境特定覆盖项位于 dev.py / prod.py / test.py。
 """
 import os
-from pathlib import Path
 from datetime import timedelta
+from pathlib import Path
+
+from celery.schedules import crontab
 
 # 项目根目录：backend/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -213,8 +215,6 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 
 # Celery beat 定时任务：每个整点清理草稿发布申请
-from celery.schedules import crontab
-
 CELERY_BEAT_SCHEDULE = {
     "cleanup-draft-releases-hourly": {
         "task": "apps.release.tasks.cleanup_draft_releases",
@@ -222,6 +222,9 @@ CELERY_BEAT_SCHEDULE = {
         "args": (),
     },
 }
+
+# 发布变更预览拉取分支提交的最大条数；超出该范围时回退 compare 接口取区间差异
+RELEASE_PREVIEW_MAX_COMMITS = int(os.getenv("RELEASE_PREVIEW_MAX_COMMITS", "100"))
 
 # 系统内置打包工作区根目录
 PACKAGE_WORKSPACE_ROOT = os.getenv("PACKAGE_WORKSPACE_ROOT", str(BASE_DIR / "package_workspaces"))

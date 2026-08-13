@@ -3,18 +3,19 @@
 
 提供仓库 CRUD、连通性测试、分支/commit 查询、手动同步以及提交记录审查接口。
 """
-from typing import Any, Dict
+import logging
+from typing import Any
 
-from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Q
-from rest_framework import filters, viewsets
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.project.services import visible_project_ids
+from apps.release.services import ReleaseService, VersionCalculator, list_tags_cached
 from apps.repository.models import CommitRecord, Repository
 from apps.repository.serializers import (
     CommitRecordSerializer,
@@ -23,9 +24,11 @@ from apps.repository.serializers import (
 )
 from apps.repository.services import RepositoryService
 from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectTester
-from utils.response import error_response, success_response
-from apps.release.services import ReleaseService, ReleaseValidator, VersionCalculator
 from utils.provider.exceptions import ProviderError
+from utils.response import error_response, success_response
+from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+
+logger = logging.getLogger(__name__)
 
 
 class RepositoryViewSet(StandardModelViewSet):
@@ -262,17 +265,19 @@ class RepositoryViewSet(StandardModelViewSet):
 
         try:
             provider = ReleaseService._get_provider(repo, request.user)
-            tags = provider.list_tags(repo.external_identity)
-        except ProviderError as exc:
-            return error_response(50000, f"获取 tag 列表失败: {exc}", status_code=500)
-        except Exception as exc:
-            return error_response(50000, f"计算版本号失败: {exc}", status_code=500)
+            tags = list_tags_cached(provider, repo.external_identity)
+        except ProviderError:
+            logger.exception("获取 tag 列表失败: repo=%s", pk)
+            return error_response(50000, "获取 tag 列表失败，请检查仓库凭证与连通性", status_code=500)
+        except Exception:
+            logger.exception("计算版本号失败: repo=%s", pk)
+            return error_response(50000, "计算版本号失败，请稍后重试", status_code=500)
 
         version_rule = repo.get_version_rule()
         calculator = VersionCalculator(version_rule)
 
         # 计算三类发布类型各自的结果
-        all_types: Dict[str, Dict[str, Any]] = {}
+        all_types: dict[str, dict[str, Any]] = {}
         for rt in ("formal", "rc", "beta"):
             rt_version, rt_tag_name = calculator.calculate(tags, release_type=rt)
             all_types[rt] = {
@@ -309,11 +314,21 @@ class RepositoryViewSet(StandardModelViewSet):
         branch = request.query_params.get("branch", "")
         if not branch:
             return error_response(40001, "缺少 branch 参数")
+        release_type = request.query_params.get("release_type", "formal")
+        if release_type not in ("formal", "rc", "beta"):
+            return error_response(40001, "release_type 参数非法，仅支持 formal/rc/beta")
         try:
-            data = ReleaseService.preview_changes(repo, branch, request.user)
+            data = ReleaseService.preview_changes(
+                repo,
+                branch,
+                release_type=release_type,
+                request_user=request.user,
+            )
             return success_response(data)
-        except Exception as exc:
-            return error_response(50000, f"预览失败: {exc}", status_code=500)
+        except Exception:
+            # 内部细节仅记录日志，不直接返回给前端，避免泄露敏感信息
+            logger.exception("变更预览失败: repo=%s branch=%s", pk, branch)
+            return error_response(50000, "预览失败，请检查仓库凭证与连通性后重试", status_code=500)
 
     @action(detail=True, methods=["get"], url_path="review-range")
     def review_range(self, request: Request, pk=None) -> Response:

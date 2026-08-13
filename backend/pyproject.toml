@@ -1,0 +1,28 @@
+# Ruff 配置：后端统一的 lint / format 工具链
+#
+# 使用方式：
+#   pip install -r requirements-dev.txt
+#   ruff check .        # 静态检查
+#   ruff format .       # 代码格式化（可选）
+#
+# 首轮仅启用基础规则集，避免存量代码大规模报错；后续可逐步收紧 select 规则。
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort（import 排序）
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # 行宽交给 formatter，存量长行不阻塞
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "utils", "config"]

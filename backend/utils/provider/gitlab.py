@@ -4,8 +4,8 @@ GitLab Provider
 基于 GitLab REST API v4 的统一适配器实现。
 """
 import logging
+import threading
 from datetime import datetime
-from typing import List, Optional
 from urllib.parse import quote
 
 import requests
@@ -34,6 +34,9 @@ class GitLabProvider(GitProvider):
         self.session.headers.update({"PRIVATE-TOKEN": self.token})
         self.session.headers.update({"Accept": "application/json"})
         self.base_api = f"{self.server_url}/api/v4"
+        # requests.Session 非线程安全：并发场景（如发布预览并行拉取 tag/提交）
+        # 复用同一 provider 时用锁串行化底层 HTTP 调用，避免连接池/响应头竞争
+        self._request_lock = threading.Lock()
 
     def _request(self, method: str, path: str, **kwargs):
         """
@@ -54,7 +57,8 @@ class GitLabProvider(GitProvider):
         """
         url = f"{self.base_api}{path}"
         try:
-            resp = self.session.request(method, url, timeout=30, **kwargs)
+            with self._request_lock:
+                resp = self.session.request(method, url, timeout=30, **kwargs)
         except requests.RequestException as exc:
             raise ConnectionError(f"GitLab 请求失败: {exc}") from exc
 
@@ -93,7 +97,7 @@ class GitLabProvider(GitProvider):
         resp = self._request("GET", "/user")
         return resp.status_code == 200
 
-    def list_branches(self, repo_identity: str) -> List[BranchInfo]:
+    def list_branches(self, repo_identity: str) -> list[BranchInfo]:
         """
         列出仓库全部分支
 
@@ -101,7 +105,7 @@ class GitLabProvider(GitProvider):
         拉取全部，保证同步时不会因截断误删本地分支。
         """
         encoded = self._encode_identity(repo_identity)
-        result: List[BranchInfo] = []
+        result: list[BranchInfo] = []
         page = 1
         while True:
             resp = self._request(
@@ -131,10 +135,10 @@ class GitLabProvider(GitProvider):
         self,
         repo_identity: str,
         branch: str,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         per_page: int = 100,
-    ) -> List[CommitInfo]:
+    ) -> list[CommitInfo]:
         """拉取指定分支 commit 列表"""
         encoded = self._encode_identity(repo_identity)
         params = {"ref_name": branch, "per_page": per_page}
@@ -175,14 +179,19 @@ class GitLabProvider(GitProvider):
             committed_at=self._parse_datetime(c.get("committed_date")),
         )
 
-    def list_tags(self, repo_identity: str) -> List[TagInfo]:
+    def list_tags(self, repo_identity: str) -> list[TagInfo]:
         """
         列出仓库全部 tag
 
         单页最多 100 条，按 X-Next-Page 响应头翻页拉取全部。
+        created_at 取 tag 指向 commit 的提交时间（committed_date），
+        作为 tag 时间点的近似（GitLab REST API 不提供 tag 创建时间），
+        用于发布预览的 MR/commit 时间截断；tag 打在历史 commit 上时
+        该近似可能早于真实创建时间，调用方（如 review-range 的 MR 过滤）
+        应知晓这一误差。
         """
         encoded = self._encode_identity(repo_identity)
-        result: List[TagInfo] = []
+        result: list[TagInfo] = []
         page = 1
         while True:
             resp = self._request(
@@ -191,10 +200,12 @@ class GitLabProvider(GitProvider):
                 params={"per_page": 100, "page": page},
             )
             for t in resp.json():
+                commit = t.get("commit") or {}
                 result.append(
                     TagInfo(
                         name=t["name"],
-                        commit_hash=t.get("commit", {}).get("id"),
+                        commit_hash=commit.get("id"),
+                        created_at=self._parse_datetime(commit.get("committed_date")),
                     )
                 )
             next_page = resp.headers.get("X-Next-Page")
@@ -204,7 +215,7 @@ class GitLabProvider(GitProvider):
         return result
 
     def create_tag(self, repo_identity: str, tag_name: str, commit_hash: str, message: str = "") -> TagInfo:
-        """创建 tag"""
+        """创建 tag（created_at 为 tag 指向 commit 的提交时间近似，同 list_tags 口径）"""
         encoded = self._encode_identity(repo_identity)
         payload = {"tag_name": tag_name, "ref": commit_hash}
         if message:
@@ -215,12 +226,14 @@ class GitLabProvider(GitProvider):
             json=payload,
         )
         data = resp.json()
+        commit = data.get("commit") or {}
         return TagInfo(
             name=data["name"],
-            commit_hash=data.get("commit", {}).get("id"),
+            commit_hash=commit.get("id"),
+            created_at=self._parse_datetime(commit.get("committed_date")),
         )
 
-    def compare_commits(self, repo_identity: str, base: str, head: str) -> List[CommitInfo]:
+    def compare_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
         """比较两个 ref 之间的 commits"""
         encoded = self._encode_identity(repo_identity)
         resp = self._request(
@@ -239,12 +252,27 @@ class GitLabProvider(GitProvider):
             for c in resp.json().get("commits", [])
         ]
 
+    def get_merge_base(self, repo_identity: str, refs: list[str]) -> str | None:
+        """
+        获取多个 ref 的 merge base（共同祖先）commit hash
+
+        调用 GitLab merge_base API；用于校验 tag 是否位于目标分支历史上，
+        防止跨分支 tag 被误用为发布预览基线。
+        """
+        encoded = self._encode_identity(repo_identity)
+        resp = self._request(
+            "GET",
+            f"/projects/{encoded}/repository/merge_base",
+            params=[("refs[]", r) for r in refs],
+        )
+        return resp.json().get("id")
+
     def list_merge_requests(
         self,
         repo_identity: str,
         target_branch: str,
-        since: Optional[datetime] = None,
-    ) -> List[MergeRequestInfo]:
+        since: datetime | None = None,
+    ) -> list[MergeRequestInfo]:
         """拉取合并到目标分支的 MR 列表"""
         encoded = self._encode_identity(repo_identity)
         params: dict = {"state": "merged", "target_branch": target_branch, "per_page": 100}
@@ -266,7 +294,7 @@ class GitLabProvider(GitProvider):
         ]
 
     @staticmethod
-    def _parse_datetime(value) -> Optional[datetime]:
+    def _parse_datetime(value) -> datetime | None:
         """解析 ISO 格式日期字符串"""
         if not value:
             return None

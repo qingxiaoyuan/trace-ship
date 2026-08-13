@@ -185,6 +185,43 @@ class TestFindLatestTagByType:
         latest = calculator.find_latest_tag_by_type(mixed_tags, "rc")
         assert latest == "VA.1.0.8-rc_20260816"
 
+    def test_find_latest_tag_info_by_type_returns_info_and_type(self, rule, mixed_tags):
+        """find_latest_tag_info_by_type 按类型返回最新 TagInfo（含 commit hash）"""
+        calculator = VersionCalculator(rule)
+        # formal：最新无后缀 tag
+        formal = calculator.find_latest_tag_info_by_type(mixed_tags, "formal")
+        assert formal is not None and formal.name == "VA.1.0.5_20251014"
+        assert formal.commit_hash == "b"
+        # rc：最新 -rc tag
+        rc = calculator.find_latest_tag_info_by_type(mixed_tags, "rc")
+        assert rc is not None and rc.name == "VA.1.0.8-rc_20260816"
+        assert rc.commit_hash == "d"
+        # beta：最新 -beta tag
+        beta = calculator.find_latest_tag_info_by_type(mixed_tags, "beta")
+        assert beta is not None and beta.name == "VA.1.0.3-beta_20251014"
+        assert beta.commit_hash == "f"
+
+    def test_find_latest_tag_info_by_type_none_when_no_match(self, rule):
+        """无匹配类型 tag 时 find_latest_tag_info_by_type 返回 None"""
+        calculator = VersionCalculator(rule)
+        tags = [_tag("v1.0.0_20251014"), _tag("VA.1.0.1-rc_20251014")]
+        assert calculator.find_latest_tag_info_by_type(tags, "formal") is None
+        assert calculator.find_latest_tag_info_by_type(tags, "beta") is None
+        assert calculator.find_latest_tag_info_by_type(tags, "rc") is not None
+
+    def test_find_latest_tag_info_by_type_same_version_uses_newer_date(self, rule):
+        """同版本号存在多个日期 tag 时，取日期段更新的 tag"""
+        calculator = VersionCalculator(rule)
+        tags = [
+            _tag("VA.1.0.5_20260101", "old"),
+            _tag("VA.1.0.5_20260201", "new"),
+            _tag("VA.1.0.5", "nodate"),
+        ]
+        latest = calculator.find_latest_tag_info_by_type(tags, "formal")
+        assert latest is not None
+        assert latest.name == "VA.1.0.5_20260201"
+        assert latest.commit_hash == "new"
+
     def test_beta_returns_latest_beta_suffixed(self, rule, mixed_tags):
         """beta 仅取 -beta 后缀的最新 tag"""
         calculator = VersionCalculator(rule)
@@ -203,6 +240,44 @@ class TestFindLatestTagByType:
         """空 tag 列表时返回 None"""
         calculator = VersionCalculator(rule)
         assert calculator.find_latest_tag_by_type([], "formal") is None
+
+
+class TestSortTagsByRecency:
+    """sort_tags_by_recency 新近度排序测试类"""
+
+    def test_mixed_tags_untimed_first_by_version_desc(self):
+        """无创建时间的 tag 按版本号降序排最前，有时间的按 created_at 倒序"""
+        from datetime import datetime
+
+        from utils.provider.base import TagInfo
+
+        calculator = VersionCalculator({})
+        tags = [
+            _tag("VA.1.0.1_20260101"),
+            TagInfo(name="VA.1.0.0_20260101", created_at=datetime(2026, 1, 1)),
+            TagInfo(name="VA.1.0.2_20260301", created_at=datetime(2026, 3, 1)),
+        ]
+        ordered = calculator.sort_tags_by_recency(tags)
+        assert [t.name for t in ordered] == [
+            "VA.1.0.1_20260101",
+            "VA.1.0.2_20260301",
+            "VA.1.0.0_20260101",
+        ]
+
+    def test_untimed_tags_sorted_by_version_desc(self):
+        """全部无创建时间时按版本号数值降序（非字符串排序）"""
+        calculator = VersionCalculator({})
+        tags = [
+            _tag("VA.1.0.0_20260101"),
+            _tag("VA.1.0.10_20260101"),
+            _tag("VA.1.0.2_20260101"),
+        ]
+        ordered = calculator.sort_tags_by_recency(tags)
+        assert [t.name for t in ordered] == [
+            "VA.1.0.10_20260101",
+            "VA.1.0.2_20260101",
+            "VA.1.0.0_20260101",
+        ]
 
 
 class TestBuildScanRegex:

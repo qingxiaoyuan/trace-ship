@@ -229,6 +229,7 @@ temp/
 .claude/
 .codegraph/
 .codebase-memory/
+.reasonix/
 
 # 开发脚本运行时状态（PID / 日志）
 scripts/.run/

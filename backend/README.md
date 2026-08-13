@@ -193,6 +193,7 @@ python manage.py reset_admin_password
 | `CORS_ALLOW_ALL_ORIGINS` | 允许所有跨域来源 | `True`（base），prod 默认 `False` |
 | `CORS_ALLOWED_ORIGINS` | 允许跨域来源列表（逗号分隔） | 空 |
 | `PACKAGE_WORKSPACE_ROOT` | 打包工作区根目录 | `backend/package_workspaces` |
+| `RELEASE_PREVIEW_MAX_COMMITS` | 发布变更预览单分支最大提交扫描数 | `100` |
 | `NEXUS_BASE_URL` / `NEXUS_USERNAME` / `NEXUS_PASSWORD` / `NEXUS_TIMEOUT` / `NEXUS_REGISTRY_HOST` | Nexus 仓库连接配置（打包镜像选择） | 空 |
 
 > LDAP 与 Nexus 连接参数也可在「系统管理 → 系统配置」页面维护（`ldap_*` / `nexus_*` 键），页面配置优先于环境变量，无需重启服务。
@@ -249,6 +250,29 @@ pytest
 ```
 
 测试覆盖率门槛为 50%（`pytest.ini` 中 `--cov-fail-under=50`）。
+
+---
+
+## 代码风格检查（Ruff）
+
+后端统一使用 Ruff 做 lint 与格式化，配置见 `pyproject.toml`（首轮仅启用基础规则集）。
+
+```bash
+# 安装开发依赖（含 ruff，生产镜像不安装本文件）
+pip install -r requirements-dev.txt
+
+# 静态检查
+ruff check .
+
+# 新增 / 修改的代码必须通过 ruff check；存量文件历史问题（如 typing 现代化、
+# 导入排序）尚未全量清理，`ruff check .` 当前仍会报告这些遗留项。
+
+# 自动修复可修复项
+ruff check . --fix
+
+# 代码格式化（可选）
+ruff format .
+```
 
 ---
 

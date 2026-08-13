@@ -135,7 +135,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "executor_type", "executor_type_display", "node", "node_id", "node_name", "node_host",
             "image", "image_id", "image_name", "image_ref", "image_source", "image_info", "custom_script",
             "cpu_cores", "cpu_priority", "mem_limit_mb",
-            "build_path", "output_path", "auto_collect_output", "env_vars",
+            "build_path", "output_path", "auto_collect_output", "auto_compress", "env_vars",
             "auto_package_on_release", "cleanup_workspace", "is_active",
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
             "svn_path_template",
@@ -242,7 +242,6 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         if image_info:
             attrs["image"] = self._resolve_image_info(image_info)
         image = attrs.get("image", getattr(self.instance, "image", None))
-        custom_script = attrs.get("custom_script", getattr(self.instance, "custom_script", ""))
         env_vars = attrs.get("env_vars", getattr(self.instance, "env_vars", {}))
 
         if repository and project and repository.project_id != project.id:
@@ -287,6 +286,15 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             if not svn_credential.is_active:
                 raise serializers.ValidationError({"svn_credential": "SVN 凭证已停用"})
             # SVN 凭证全系统共享，任意归属人的 SVN 凭证均可绑定，无需再校验项目归属
+
+        # 「自动压缩产物」依赖「构建后自动收集产物」，未开启时禁止单独开启
+        auto_collect_output = attrs.get(
+            "auto_collect_output", getattr(self.instance, "auto_collect_output", False)
+        )
+        if attrs.get("auto_compress") and not auto_collect_output:
+            raise serializers.ValidationError(
+                {"auto_compress": "自动压缩产物需先开启「构建后自动收集产物」"}
+            )
 
         return attrs
 

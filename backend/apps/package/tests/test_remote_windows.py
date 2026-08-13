@@ -1,9 +1,9 @@
 """远程 Windows 打包节点相关测试。"""
 import base64
-import pytest
 from pathlib import PureWindowsPath
 from unittest.mock import MagicMock
 
+import pytest
 from rest_framework.test import APIClient
 
 from apps.account.models import User
@@ -227,6 +227,23 @@ class TestSnapshot:
         snapshot = PackageService._snapshot(config)
         assert snapshot["executor_type"] == "local_docker"
         assert snapshot["node_id"] is None
+        # 自动压缩默认关闭
+        assert snapshot["auto_compress"] is False
+
+    def test_snapshot_auto_compress(self, project, repository):
+        """开启自动压缩后进入任务快照"""
+        image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+        config = PackageConfig.objects.create(
+            project=project,
+            repository=repository,
+            name="本地打包",
+            image=image,
+            auto_collect_output=True,
+            auto_compress=True,
+        )
+        snapshot = PackageService._snapshot(config)
+        assert snapshot["auto_collect_output"] is True
+        assert snapshot["auto_compress"] is True
 
 
 @pytest.mark.django_db
@@ -473,6 +490,66 @@ class TestAutoCollectOutput:
         assert "exit /b 0" in command
         assert "errorlevel 8" in command
 
+    def test_local_auto_compress(self, project, repository, release, user, tmp_path):
+        """自动压缩：产物目录内所有内容（含子目录与非压缩文件）归入单个 zip"""
+        import zipfile
+
+        from django.utils import timezone
+
+        config = PackageConfig.objects.create(
+            project=project, repository=repository, name="Web前端打包",
+        )
+        task = self._make_task(
+            project, repository, release, user, self._snapshot(auto_compress=True)
+        )
+        task.config = config
+        task.save(update_fields=["config"])
+        workspace = tmp_path / "ws"
+        dist = workspace / "source" / "dist"
+        (dist / "assets").mkdir(parents=True)
+        (dist / "app.js").write_text("a")
+        (dist / "assets" / "style.css").write_text("b")
+        (workspace / "artifacts").mkdir(parents=True)
+
+        PackageService._collect_output_local(task, workspace)
+
+        artifacts = workspace / "artifacts"
+        files = list(artifacts.iterdir())
+        # 最终产物只有一个压缩包
+        assert len(files) == 1
+        archive = files[0]
+        expected = f"{config.name}-{release.version}-{timezone.localdate().strftime('%Y%m%d')}.zip"
+        assert archive.name == expected
+        with zipfile.ZipFile(archive) as zf:
+            names = set(zf.namelist())
+        # 产物目录内所有内容（含子目录）都在压缩包内
+        assert "app.js" in names
+        assert "assets/style.css" in names
+
+    def test_remote_auto_compress_command(self, project, repository, release, user):
+        """自动压缩：远程用 tar 把产物目录压缩为单个 zip，不使用 robocopy"""
+        config = PackageConfig.objects.create(
+            project=project, repository=repository, name="Web前端打包",
+        )
+        task = self._make_task(
+            project,
+            repository,
+            release,
+            user,
+            self._snapshot(build_path="app", output_path="dist", auto_compress=True),
+        )
+        task.config = config
+        task.save(update_fields=["config"])
+        client = MagicMock()
+        PackageService._collect_output_remote(task, client)
+        command = client.run_checked.call_args.args[0]
+        assert "tar -a -c -f" in command
+        assert " -C " in command
+        assert "app\\dist" in command
+        assert f"{config.name}-{release.version}-" in command
+        assert "robocopy" not in command
+        assert "exit /b 0" in command
+
 
 class TestConnectRetry:
     """建连重试：握手阶段瞬时失败（并发场景常见）重试，认证失败不重试。"""
@@ -555,7 +632,7 @@ class TestRemoteHelpers:
 
     def test_decode_remote_line_gbk_fallback(self):
         assert decode_remote_line("中文".encode("gbk")) == "中文"
-        assert decode_remote_line("中文".encode("utf-8")) == "中文"
+        assert decode_remote_line("中文".encode()) == "中文"
 
 
 @pytest.mark.django_db
@@ -636,7 +713,7 @@ class TestRemoteRunTask:
 
     def test_remote_pipeline_success(self, project, repository, node, release, user, monkeypatch, tmp_path):
         monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
-        client = self._mock_client(monkeypatch, artifacts={"app.zip": b"zip-content"})
+        self._mock_client(monkeypatch, artifacts={"app.zip": b"zip-content"})
         task = self._make_task(project, repository, node, release, user)
 
         PackageService.run_task(task)

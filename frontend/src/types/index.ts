@@ -440,6 +440,8 @@ export interface PackageConfig {
   output_path?: string;
   /** 构建完成后自动把产物目录内容归集到 artifacts */
   auto_collect_output?: boolean;
+  /** 构建完成后将产物目录内所有内容压缩为单个 zip 压缩包（命名：软件名-版本-日期） */
+  auto_compress?: boolean;
   env_vars?: Record<string, unknown>;
   auto_package_on_release?: boolean;
   /** 打包后清理远程工作区 */

@@ -43,6 +43,16 @@ ADR-0002 确立的内置打包仅支持在平台宿主机以本地 Docker 容器
 - `PackageConfig` 新增 `cleanup_workspace` 开关（默认开启）：打包成功回传产物后是否清理远程任务目录；关闭时保留完整工作目录（源码 / 产物 / 临时文件）供调试排查，节点会因此长期留存源码与产物，需注意数据留存与磁盘占用。
 - 该开关只影响远程 Windows 执行（`local_docker` 路径不受影响，容器由 `docker run --rm` 自清理），创建任务时固化进 `config_snapshot`，历史任务快照缺失时按默认开启处理；前端仅远程执行方式下展示该开关。
 
+## 2026-08-13 演进
+
+- `PackageConfig` 新增 `auto_compress` 开关（默认关闭）：开启后自动收集产物时把产物目录内
+  所有内容压缩为单个 zip 压缩包（命名：软件名-版本-日期，软件名取打包配置名、版本取发布版本、
+  日期取打包当天），最终产物只保留这一个压缩包；不再支持「仅收集压缩包」过滤模式。
+- 本地压缩用 Python `shutil.make_archive`，远程 Windows 用系统自带
+  `tar.exe -a -c -f`（Win10 1803+ / Server 2019+ 内置），两者都以产物目录内容为
+  压缩包根目录，行为一致，均有单测覆盖。
+- 未开启 `auto_collect_output` 时该开关无意义，前端禁用、后端序列化器校验。
+
 ## Consequences
 
 - `requirements.txt` 新增 `paramiko`，外网构建后端镜像时自动装入。

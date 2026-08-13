@@ -118,33 +118,33 @@ export default function ReleaseCreate() {
     enabled: !!watchRepository && !!watchBranch,
   });
 
-  // 变更预览：选 branch 后拉取 commits + MRs + parsed_updates
+  // 变更预览：选 branch 后拉取 commits + MRs + parsed_updates（按发布类型取基线 tag）
   const { data: changesPreview, isLoading: changesLoading } = useQuery<ChangesPreview>({
-    queryKey: ['repository-changes-preview', watchRepository, watchBranch],
-    queryFn: () => repositoryApi.previewChanges(watchRepository || '', watchBranch || ''),
+    queryKey: ['repository-changes-preview', watchRepository, watchBranch, watchReleaseType],
+    queryFn: () =>
+      repositoryApi.previewChanges(watchRepository || '', watchBranch || '', watchReleaseType),
     enabled: !!watchRepository && !!watchBranch,
     retry: false,
   });
 
-  // 选 branch 后自动回填 parsed_updates（仅在首次拉取或切换分支时触发）
+  // 选 branch 后自动回填 parsed_updates（仅在首次拉取或切换分支/发布类型时触发）
   const lastPreviewRef = useRef<string>('');
   useEffect(() => {
     if (!changesPreview) return;
-    const key = `${watchRepository}-${watchBranch}`;
+    const key = `${watchRepository}-${watchBranch}-${watchReleaseType}`;
     if (key === lastPreviewRef.current) return;
     lastPreviewRef.current = key;
-    if (changesPreview.parsed_updates?.length) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUpdates(
-        changesPreview.parsed_updates.map((u) => ({
-          type: u.type || 'A',
-          content: u.content || '',
-          source: u.source,
-          source_ref: u.source_ref,
-        }))
-      );
-    }
-  }, [changesPreview, watchRepository, watchBranch]);
+    // 切换分支/发布类型后基线 tag 变化，无论新结果是否为空都重置回填，避免旧类型更新项残留
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUpdates(
+      (changesPreview.parsed_updates || []).map((u) => ({
+        type: u.type || 'A',
+        content: u.content || '',
+        source: u.source,
+        source_ref: u.source_ref,
+      }))
+    );
+  }, [changesPreview, watchRepository, watchBranch, watchReleaseType]);
 
   const projectOptions = useMemo(
     () => (projectData?.results || []).map((p) => ({ label: p.name, value: p.id })),

@@ -9,15 +9,16 @@ interface ImagePickerFieldProps {
   value?: string;
   onChange?: (value: string | undefined) => void;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 /** 打包镜像选择字段：只读展示当前镜像，点击按钮打开弹窗选择 */
-export function ImagePickerField({ value, onChange, placeholder }: ImagePickerFieldProps) {
+export function ImagePickerField({ value, onChange, placeholder, disabled }: ImagePickerFieldProps) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className={`flex items-center gap-2 ${disabled ? 'opacity-60' : ''}`}>
         <div
           className={`flex-1 truncate rounded-lg border px-3 py-1.5 font-mono text-[12px] ${
             value ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-dashed border-slate-200 text-slate-400'
@@ -27,8 +28,9 @@ export function ImagePickerField({ value, onChange, placeholder }: ImagePickerFi
         </div>
         <button
           type="button"
+          disabled={disabled}
           onClick={() => setOpen(true)}
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50/50 px-2.5 py-1.5 text-[12px] font-medium text-indigo-600 transition-colors hover:bg-indigo-100"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50/50 px-2.5 py-1.5 text-[12px] font-medium text-indigo-600 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-indigo-50/50"
         >
           <Container className="h-3 w-3" strokeWidth={1.5} />
           选择镜像

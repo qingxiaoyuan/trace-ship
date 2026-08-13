@@ -33,3 +33,15 @@
 - 历史无日期段 tag 不再参与版本计算；如存在旧 tag，下次计算的版本号可能与人工预期不一致，需要以新格式推一次 tag 对齐。
 - 分支同步接口耗时增加一次 tag 列表拉取；返回值新增 tag 统计字段，前端无感知。
 - `RepositoryTag` 目前仅供同步落库与后续查询展示，版本计算仍以远端实时列表为准。
+
+## 2026-08-13 演进：发布预览基线、tag 短缓存与祖先校验
+
+- 发布变更预览（changes-preview / 发布创建页）按 `release_type`（formal/rc/beta）
+  分别取对应类型的最新 tag 作为基线，与版本号计算口径保持一致；`next-version`
+  已支持该参数，预览接口新增同参数。
+- tag 列表引入 60s 短 TTL 缓存（`list_tags_cached`）：只读场景（预览、版本号计算）
+  复用；缓存键包含仓库服务端地址与仓库标识，推 tag 成功后主动失效。
+- 预览回退 `compare_commits` 前先经 `get_merge_base` 校验 tag 是否为目标分支祖先，
+  避免跨分支 tag 被误当基线；无法确认祖先关系时保守取分支最新提交。
+- `GitLabProvider` 的 `TagInfo.created_at` 统一取 tag 指向 commit 的提交时间近似；
+  `sort_tags_by_recency` 收敛为唯一排序实现（无创建时间按版本号降序排前）。

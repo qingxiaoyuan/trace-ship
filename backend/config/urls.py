@@ -4,10 +4,10 @@
 统一注册管理后台、健康检查、各业务模块 API 以及 API 文档页面。
 """
 from django.contrib import admin
-from django.urls import path, include
 from django.http import JsonResponse
+from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from rest_framework import status
-from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
 
 def health_check(request) -> JsonResponse:
@@ -15,6 +15,7 @@ def health_check(request) -> JsonResponse:
     健康检查接口
 
     检查 PostgreSQL 和 Redis 是否可用，用于容器探针和负载均衡健康检测。
+    结果短缓存 5 秒，避免高频探针请求反复压测数据库与 Redis。
 
     Args:
         request: Django HttpRequest 对象
@@ -22,8 +23,16 @@ def health_check(request) -> JsonResponse:
     Returns:
         服务正常时返回 200，异常时返回 503
     """
-    from django.db import connection
     from django.core.cache import cache
+    from django.db import connection
+
+    # 探针结果短缓存：命中则直接返回，避免每次探针都真实探测 DB/Redis
+    try:
+        cached = cache.get("health_check_result")
+    except Exception:
+        cached = None
+    if cached is not None:
+        return JsonResponse(cached["payload"], status=cached["http_status"])
 
     db_ok = True
     redis_ok = True
@@ -43,19 +52,21 @@ def health_check(request) -> JsonResponse:
         redis_ok = False
 
     if db_ok and redis_ok:
-        return JsonResponse(
-            {"code": 0, "message": "success", "data": {"db": "ok", "redis": "ok"}},
-            status=status.HTTP_200_OK,
-        )
+        payload = {"code": 0, "message": "success", "data": {"db": "ok", "redis": "ok"}}
+        http_status = status.HTTP_200_OK
     else:
-        return JsonResponse(
-            {
-                "code": 50000,
-                "message": "service unhealthy",
-                "data": {"db": "ok" if db_ok else "error", "redis": "ok" if redis_ok else "error"},
-            },
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
+        payload = {
+            "code": 50000,
+            "message": "service unhealthy",
+            "data": {"db": "ok" if db_ok else "error", "redis": "ok" if redis_ok else "error"},
+        }
+        http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    try:
+        cache.set("health_check_result", {"payload": payload, "http_status": http_status}, timeout=5)
+    except Exception:
+        pass
+    return JsonResponse(payload, status=http_status)
 
 
 # 根路由表

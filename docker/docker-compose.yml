@@ -171,6 +171,8 @@ services:
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:?CREDENTIAL_SECRET_KEY must be set for production settings}
       # CORS
       CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-False}
+      # 发布预览单分支最大提交扫描数（可选，默认 100）
+      RELEASE_PREVIEW_MAX_COMMITS: ${RELEASE_PREVIEW_MAX_COMMITS:-100}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

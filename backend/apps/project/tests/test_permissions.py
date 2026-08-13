@@ -204,6 +204,38 @@ def test_my_role_returns_manager_for_leader(manager):
 
 
 @pytest.mark.django_db
+def test_project_list_contains_my_role(manager, software_admin, developer):
+    """
+    项目列表接口返回 my_role（打包配置等前端按角色过滤项目下拉）
+
+    - leader（无成员记录）→ manager
+    - software_admin 成员 → software_admin
+    - 普通成员 → 其成员角色
+    - 非成员项目不出现在列表中
+    """
+    Project.objects.create(code="LST1", name="Leader 列表项目", leader=manager)
+    admin_project = Project.objects.create(code="LST2", name="管理员列表项目", leader=manager)
+    ProjectMember.objects.create(project=admin_project, user=software_admin, role="software_admin")
+    ProjectMember.objects.create(project=admin_project, user=developer, role="developer")
+
+    response = auth_client(manager).get("/api/projects/")
+    assert response.status_code == 200
+    roles = {p["name"]: p["my_role"] for p in response.data["data"]["results"]}
+    assert roles["Leader 列表项目"] == "manager"
+    assert roles["管理员列表项目"] == "manager"
+
+    response = auth_client(software_admin).get("/api/projects/")
+    roles = {p["name"]: p["my_role"] for p in response.data["data"]["results"]}
+    assert roles["管理员列表项目"] == "software_admin"
+    assert "Leader 列表项目" not in roles
+
+    response = auth_client(developer).get("/api/projects/")
+    roles = {p["name"]: p["my_role"] for p in response.data["data"]["results"]}
+    assert roles["管理员列表项目"] == "developer"
+    assert "Leader 列表项目" not in roles
+
+
+@pytest.mark.django_db
 def test_create_project_requires_project_create_permission(outsider):
     """
     无 project.create 权限的用户不能创建项目
@@ -493,12 +525,12 @@ def test_effective_role_software_admin_passes_all_role_gates(project, software_a
     无论 required_roles 如何声明，software_admin 都直接通过
     """
     from utils.permissions import (
-        IsProjectManager,
-        IsProjectDeveloper,
-        IsProjectTester,
         IsProjectAuditor,
-        IsProjectPackager,
+        IsProjectDeveloper,
+        IsProjectManager,
         IsProjectPackageAdmin,
+        IsProjectPackager,
+        IsProjectTester,
     )
 
     ProjectMember.objects.create(project=project, user=software_admin, role="software_admin")

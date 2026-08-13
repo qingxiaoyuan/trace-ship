@@ -3,8 +3,10 @@
 
 覆盖仓库列表、创建、vendor 校验、commit 同步以及提交复核接口。
 """
-import pytest
+from datetime import UTC
 from unittest.mock import patch
+
+import pytest
 from rest_framework.test import APIClient
 
 from apps.repository.models import CommitRecord
@@ -239,7 +241,7 @@ def test_review_range_latest_uses_branch_head(api_client, repository):
     from datetime import datetime
     from unittest.mock import MagicMock
 
-    from utils.provider.base import CommitInfo, TagInfo
+    from utils.provider.base import TagInfo
 
     fake_tags = [
         TagInfo(name="v1.1.0", commit_hash="h2", created_at=datetime(2026, 6, 20, 12, 0, 0)),
@@ -302,6 +304,7 @@ def test_review_range_explicit_base_head(api_client, repository):
 def test_test_connection_success_logs_operation_log(api_client, repository):
     """连接测试成功时写入 success 操作日志"""
     from unittest.mock import MagicMock
+
     from apps.system.models import OperationLog
 
     mock_provider = MagicMock()
@@ -323,9 +326,77 @@ def test_test_connection_success_logs_operation_log(api_client, repository):
 
 
 @pytest.mark.django_db
+def test_changes_preview_uses_release_type_baseline(api_client, repository):
+    """changes-preview 按 release_type 参数取对应类型的最新 tag 作为基线"""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from django.core.cache import cache
+
+    from utils.provider.base import CommitInfo, TagInfo
+
+    repository.version_rule = {
+        "prefix": "VA", "major": 1, "minor": 0, "patch": 0,
+        "suffixes": {"rc": "rc", "beta": "beta"},
+    }
+    repository.save(update_fields=["version_rule"])
+    # tag 列表走短缓存，先清理避免其他测试残留
+    cache.clear()
+
+    af_msg = "变更类型：\n☑ 无配置项改动\n\n更新内容：\n1. A 新增功能"
+    fake_tags = [
+        TagInfo(name="VA.1.0.0_20260101", commit_hash="formalhash",
+                created_at=datetime(2026, 1, 1, tzinfo=UTC)),
+        TagInfo(name="VA.1.0.5-rc_20260601", commit_hash="rchash",
+                created_at=datetime(2026, 6, 1, tzinfo=UTC)),
+    ]
+    fake_commits = [
+        CommitInfo(hash="new1", author="张三", author_email="", message=af_msg,
+                   committed_at=datetime(2026, 6, 20, tzinfo=UTC)),
+        CommitInfo(hash="rchash", author="李四", author_email="", message=af_msg,
+                   committed_at=datetime(2026, 6, 1, tzinfo=UTC)),
+    ]
+    mock_provider = MagicMock()
+    mock_provider.server_url = "https://gitlab.example.com"
+    mock_provider.list_tags.return_value = fake_tags
+    mock_provider.list_commits.return_value = fake_commits
+    mock_provider.list_merge_requests.return_value = []
+
+    with patch("apps.release.services.ReleaseService._get_provider", return_value=mock_provider):
+        resp_formal = api_client.get(
+            f"/api/repositories/{repository.id}/changes-preview/?branch=develop"
+        )
+        resp_rc = api_client.get(
+            f"/api/repositories/{repository.id}/changes-preview/?branch=develop&release_type=rc"
+        )
+
+    assert resp_formal.status_code == 200
+    assert resp_formal.data["code"] == 0
+    # 默认 formal：以最新正式 tag 为基线
+    assert resp_formal.data["data"]["last_tag"] == "VA.1.0.0_20260101"
+    assert resp_rc.status_code == 200
+    # rc：以最新 -rc tag 为基线，且只包含 rchash 之后的提交
+    assert resp_rc.data["data"]["last_tag"] == "VA.1.0.5-rc_20260601"
+    rc_hashes = [c["hash"] for c in resp_rc.data["data"]["commits"]]
+    assert "new1" in rc_hashes
+    assert "rchash" not in rc_hashes
+
+
+@pytest.mark.django_db
+def test_changes_preview_rejects_invalid_release_type(api_client, repository):
+    """changes-preview 拒绝非法 release_type 参数"""
+    response = api_client.get(
+        f"/api/repositories/{repository.id}/changes-preview/?branch=develop&release_type=alpha"
+    )
+    assert response.status_code == 400
+    assert response.data["code"] == 40001
+
+
+@pytest.mark.django_db
 def test_test_connection_failure_logs_operation_log(api_client, repository):
     """连接测试失败（token 过期等）时写入 failure 操作日志并记录错误原因与诊断信息"""
     from unittest.mock import MagicMock
+
     from apps.system.models import OperationLog
     from utils.provider.exceptions import AuthenticationError
 
@@ -363,7 +434,7 @@ def test_auditor_sees_all_project_commits(repository, commit):
     审查员（拥有 release.audit 权限）可查看全部项目的提交记录，
     即使不是项目成员也能看到提交审查数据
     """
-    from apps.account.models import User, Permission, Role, UserRole
+    from apps.account.models import Permission, Role, User, UserRole
 
     auditor = User.objects.create_user(username="auditor", password="pass", nickname="审查员")
     perm, _ = Permission.objects.get_or_create(

@@ -5,10 +5,10 @@ import base64
 import hashlib
 import logging
 import os
-import signal
 import re
 import select
 import shutil
+import signal
 import subprocess
 import threading
 from pathlib import Path, PureWindowsPath
@@ -32,10 +32,11 @@ from utils.markdown_table import table_newlines_to_br
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.factory import get_provider
 
-
 logger = logging.getLogger(__name__)
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_ENV_RE = re.compile(r"(TOKEN|PASSWORD|PASSWD|SECRET|KEY|CREDENTIAL|AUTH)", re.IGNORECASE)
+# 「自动压缩产物」压缩包文件名中的非法字符（Windows 保留字符与控制字符），统一替换为 -
+_ARCHIVE_NAME_INVALID_RE = re.compile(r'[\\/:*?"<>|\s\x00-\x1f]+')
 
 
 class PackageTaskCanceledError(RuntimeError):
@@ -125,6 +126,7 @@ class PackageService:
                 image.default_output_path if image else "artifacts",
             ),
             "auto_collect_output": bool(config.auto_collect_output),
+            "auto_compress": bool(config.auto_compress),
             "cleanup_workspace": config.cleanup_workspace,
             "env_vars": config.env_vars or {},
             "svn_push_enabled": config.svn_push_enabled,
@@ -438,7 +440,7 @@ class PackageService:
             return []
         if not username:
             username = "oauth2"
-        raw = base64.b64encode(f"{username}:{token}".encode("utf-8")).decode("ascii")
+        raw = base64.b64encode(f"{username}:{token}".encode()).decode("ascii")
         return ["-c", f"http.extraHeader=Authorization: Basic {raw}"]
 
     @staticmethod
@@ -731,8 +733,33 @@ class PackageService:
         return output_path if build_path == "." else f"{build_path}/{output_path}"
 
     @classmethod
+    def _archive_stem(cls, task: PackageTask) -> str:
+        """生成产物压缩包文件名主干（不含扩展名）：软件名-版本-日期
+
+        软件名取打包配置名（配置被删除时回退仓库名）；版本取发布版本号；
+        日期为打包当天（本地时区 YYYYMMDD）。
+        文件名中的非法字符统一替换为 -，避免 Windows / 下载场景命名问题。
+        """
+        def safe(part: str) -> str:
+            cleaned = _ARCHIVE_NAME_INVALID_RE.sub("-", part or "").strip("-")
+            return cleaned or "package"
+
+        software = safe(
+            task.config.name
+            if task.config
+            else (task.repository.name if task.repository else "")
+        )
+        version = safe(task.version or "")
+        date = timezone.localdate().strftime("%Y%m%d")
+        return f"{software}-{version}-{date}"
+
+    @classmethod
     def _collect_output_local(cls, task: PackageTask, workspace: Path) -> None:
-        """本地打包：构建后把产物目录内容归集到 artifacts。"""
+        """本地打包：构建后把产物目录内容归集到 artifacts。
+
+        快照开启 auto_compress 时，将产物目录内所有内容压缩为单个
+        zip 压缩包（命名：软件名-版本-日期），最终只保留该压缩包。
+        """
         snapshot = task.config_snapshot or {}
         rel_dir = cls._output_dir_rel(snapshot)
         src = workspace / "source" / rel_dir
@@ -740,6 +767,16 @@ class PackageService:
             cls._append_log(task, f"产物目录不存在，跳过自动收集: source/{rel_dir}")
             return
         dst = workspace / "artifacts"
+        if bool(snapshot.get("auto_compress")):
+            dst.mkdir(parents=True, exist_ok=True)
+            archive_stem = cls._archive_stem(task)
+            # make_archive 以 root_dir 内容为压缩包根（不含目录名本身），与远程 tar 行为一致
+            shutil.make_archive(str(dst / archive_stem), "zip", root_dir=src)
+            cls._append_log(
+                task,
+                f"已自动压缩产物为单个压缩包（source/{rel_dir} → {archive_stem}.zip）",
+            )
+            return
         count = 0
         for file in src.rglob("*"):
             if not file.is_file():
@@ -752,7 +789,11 @@ class PackageService:
 
     @classmethod
     def _collect_output_remote(cls, task: PackageTask, client: RemoteWindowsClient) -> None:
-        """远程打包：构建后在节点上把产物目录内容拷贝到 artifacts。"""
+        """远程打包：构建后在节点上把产物目录内容拷贝到 artifacts。
+
+        快照开启 auto_compress 时，用节点系统自带 tar（Win10 1803+ / Server 2019+
+        内置）把产物目录内所有内容压缩为单个 zip 压缩包（命名：软件名-版本-日期）。
+        """
         snapshot = task.config_snapshot or {}
         remote_workspace = cls._remote_workspace(task)
         rel_dir = cls._output_dir_rel(snapshot)
@@ -761,6 +802,22 @@ class PackageService:
         cls._append_log(task, f"正在收集产物目录 source\\{rel_dir} -> artifacts…")
         src_quoted = cmd_quote(str(src))
         dst_quoted = cmd_quote(str(dst))
+        if bool(snapshot.get("auto_compress")):
+            archive_name = f"{cls._archive_stem(task)}.zip"
+            client.run_checked(
+                # tar -a 按扩展名自动识别格式（.zip → zip）；-C src . 归档目录内容本身；
+                # 产物目录不存在时提示后正常结束，与本地跳过行为一致
+                f"if exist {src_quoted} "
+                f"(tar -a -c -f {cmd_quote(str(dst / archive_name))} -C {src_quoted} . "
+                f"& if errorlevel 1 exit /b 1 & exit /b 0) "
+                f"else (echo 产物目录不存在: {src})",
+                on_line=lambda line: cls._append_log(task, cls._sanitize_log_line(line)),
+                should_stop=lambda: cls._ensure_task_not_canceled(task),
+                error_hint="产物自动压缩失败",
+            )
+            cls._append_log(task, f"已自动压缩产物为单个压缩包（source\\{rel_dir} → {archive_name}）")
+            return
+        copy_cmd = f"robocopy {src_quoted} {dst_quoted} /e /r:1 /w:1 /njh /njs /np"
         client.run_checked(
             # robocopy 默认复制源目录内容（不含目录名本身），与本地 rglob 行为一致；
             # 退出码 < 8 均为成功（0=无文件，1=已复制，2=有额外文件，4=有不匹配），
@@ -768,7 +825,7 @@ class PackageService:
             # robocopy 成功也返回非零（1/2/4），必须显式 exit /b 0 归零，
             # 否则 run_checked 会把 1 误判为失败
             f"if exist {src_quoted} "
-            f"(robocopy {src_quoted} {dst_quoted} /e /r:1 /w:1 /njh /njs /np "
+            f"({copy_cmd} "
             f"& if errorlevel 8 exit /b 1 & exit /b 0) "
             f"else (echo 产物目录不存在: {src})",
             on_line=lambda line: cls._append_log(task, cls._sanitize_log_line(line)),
