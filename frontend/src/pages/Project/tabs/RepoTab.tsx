@@ -180,11 +180,11 @@ export function RepoTab({ projectId }: RepoTabProps) {
         <div className="hidden grid-cols-[repeat(13,minmax(0,1fr))] gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-2">仓库名称</div>
           <div className="col-span-1">类型</div>
-          <div className="col-span-3">仓库地址</div>
+          <div className="col-span-4">仓库地址</div>
           <div className="col-span-1">默认分支</div>
           <div className="col-span-1">凭证</div>
           <div className="col-span-1">健康状态</div>
-          <div className="col-span-2">最后同步</div>
+          <div className="col-span-1">最后同步</div>
           <div className="col-span-2 text-right">操作</div>
         </div>
 
