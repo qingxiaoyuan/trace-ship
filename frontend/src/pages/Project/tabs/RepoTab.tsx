@@ -217,7 +217,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
                   <div className="col-span-1">
                     <StatusTag status={vendorConfig.status}>{vendorConfig.label}</StatusTag>
                   </div>
-                  <div className="col-span-3 break-all text-[13px]">
+                  <div className="col-span-4 break-all text-[13px]">
                     {displayUrl ? (
                       <a
                         href={displayUrl}
@@ -243,7 +243,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
                       {isHealthy ? '正常' : record.health_status === 'unhealthy' ? '异常' : record.health_status || '-'}
                     </StatusTag>
                   </div>
-                  <div className="col-span-2 whitespace-nowrap text-[12px] text-slate-500">
+                  <div className="col-span-1 whitespace-nowrap text-[12px] text-slate-500">
                     {record.last_sync_at ? dayjs(record.last_sync_at).format('YYYY-MM-DD HH:mm') : '-'}
                   </div>
                   <div className="col-span-2 flex items-center justify-end gap-1">

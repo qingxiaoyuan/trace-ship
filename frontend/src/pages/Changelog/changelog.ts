@@ -26,6 +26,32 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.08.13',
+    date: '2026-08-13',
+    summary: '发布预览基线优化与构建产物自动压缩',
+    items: [
+      { category: 'feature', text: '打包配置新增「自动压缩产物」开关：构建完成后将产物目录内所有内容压缩为单个 zip 压缩包（命名：打包配置名-版本-日期），最终产物只保留一个压缩包，本地 Docker 与远程 Windows 节点行为一致' },
+      { category: 'feature', text: '发布变更预览按发布类型（正式/RC/测试）分别取对应类型的最新 Tag 作为基线，RC/测试版预览不再混用正式版基线' },
+      { category: 'feature', text: '项目列表返回当前用户有效角色（my_role），打包配置项目下拉仅列出可管理的项目' },
+      { category: 'improvement', text: '变更预览并行拉取 Tag 与提交、Tag 列表 60 秒短缓存并在推 Tag 后自动失效，预览与版本号计算更及时；回退 compare 前先校验 Tag 是否为分支祖先，避免跨分支 Tag 被误当基线' },
+      { category: 'improvement', text: '新增「发布预览单分支最大提交扫描数」配置（RELEASE_PREVIEW_MAX_COMMITS，默认 100）' },
+      { category: 'improvement', text: '仓库列表优先显示完整克隆地址，编辑仓库时回填全地址；项目详情仓库表格调整列宽（地址列加宽、操作栏加宽、同步时间不换行）' },
+      { category: 'improvement', text: '健康检查结果短缓存 5 秒，降低高频探针对数据库/Redis 的压力' },
+      { category: 'improvement', text: '后端引入 Ruff 统一代码检查与格式化工具链' },
+      { category: 'fix', text: '修复变更预览并发复用 GitLab HTTP 会话的线程安全隐患（加锁串行化）' },
+    ],
+  },
+  {
+    version: '2026.08.12',
+    date: '2026-08-12',
+    summary: '远程打包调试能力与发布说明传递增强',
+    items: [
+      { category: 'feature', text: '远程 Windows 打包新增「打包后清理工作区」开关（默认开启），关闭后保留完整工作目录（源码/产物/临时文件）供调试排查' },
+      { category: 'feature', text: '发布说明随源码保存：打包时自动写入 release-{版本}.md 并通过 RELEASE_DOC_PATH 环境变量传递给构建脚本，本地 Docker 与远程 Windows 均生效' },
+      { category: 'improvement', text: '打包配置的自动收集产物等选项改为开关卡片形式，配置可见性与操作体验提升' },
+    ],
+  },
+  {
     version: '2026.08.11',
     date: '2026-08-11',
     summary: '打包权限收敛与看板易用性增强',
