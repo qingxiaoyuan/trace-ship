@@ -77,7 +77,8 @@ export function RepositoryModal({
           repo_type: repo.repo_type,
           vendor: repo.vendor,
           name: repo.name,
-          url: repo.url,
+          // 编辑回填完整克隆地址（url 可能只存服务端根地址）
+          url: repo.clone_url || repo.url,
           default_branch: repo.default_branch,
           credential_id: repo.credential_id,
         });

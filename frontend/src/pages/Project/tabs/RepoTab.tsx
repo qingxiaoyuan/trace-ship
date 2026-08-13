@@ -177,15 +177,15 @@ export function RepoTab({ projectId }: RepoTabProps) {
           <div className="ml-auto text-[12px] text-slate-400">共 {filteredRepositories.length} 个仓库</div>
         </div>
 
-        <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
-          <div className="col-span-3">仓库名称</div>
+        <div className="hidden grid-cols-[repeat(13,minmax(0,1fr))] gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+          <div className="col-span-2">仓库名称</div>
           <div className="col-span-1">类型</div>
           <div className="col-span-3">仓库地址</div>
           <div className="col-span-1">默认分支</div>
           <div className="col-span-1">凭证</div>
           <div className="col-span-1">健康状态</div>
-          <div className="col-span-1">最后同步</div>
-          <div className="col-span-1 text-right">操作</div>
+          <div className="col-span-2">最后同步</div>
+          <div className="col-span-2 text-right">操作</div>
         </div>
 
         <div className="divide-y divide-indigo-50/50">
@@ -203,29 +203,30 @@ export function RepoTab({ projectId }: RepoTabProps) {
                 status: 'neutral' as const,
               };
               const isHealthy = record.health_status === 'healthy';
+              const displayUrl = record.clone_url || record.url;
 
               return (
                 <div
                   key={record.id}
-                  className="grid grid-cols-12 gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30"
+                  className="grid grid-cols-[repeat(13,minmax(0,1fr))] gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30"
                 >
-                  <div className="col-span-3 flex items-center gap-2">
+                  <div className="col-span-2 flex items-center gap-2">
                     <GitFork className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
                     <span className="truncate text-[13px] font-semibold text-slate-900">{record.name}</span>
                   </div>
                   <div className="col-span-1">
                     <StatusTag status={vendorConfig.status}>{vendorConfig.label}</StatusTag>
                   </div>
-                  <div className="col-span-3 truncate text-[13px]">
-                    {record.url ? (
+                  <div className="col-span-3 break-all text-[13px]">
+                    {displayUrl ? (
                       <a
-                        href={record.url}
+                        href={displayUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="text-blue-600 hover:underline"
-                        title={record.url}
+                        title={displayUrl}
                       >
-                        {record.url}
+                        {displayUrl}
                       </a>
                     ) : (
                       '-'
@@ -242,10 +243,10 @@ export function RepoTab({ projectId }: RepoTabProps) {
                       {isHealthy ? '正常' : record.health_status === 'unhealthy' ? '异常' : record.health_status || '-'}
                     </StatusTag>
                   </div>
-                  <div className="col-span-1 text-[12px] text-slate-500">
+                  <div className="col-span-2 whitespace-nowrap text-[12px] text-slate-500">
                     {record.last_sync_at ? dayjs(record.last_sync_at).format('YYYY-MM-DD HH:mm') : '-'}
                   </div>
-                  <div className="col-span-1 flex items-center justify-end gap-1">
+                  <div className="col-span-2 flex items-center justify-end gap-1">
                     {canDevelop && (
                       <>
                         <button
