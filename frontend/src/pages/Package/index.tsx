@@ -32,6 +32,8 @@ const TASK_PAGE_SIZE = 15;
 const LOG_TAIL_BYTES = 256 * 1024;
 
 type TabKey = 'running' | 'configs';
+type TaskLogState = { offset: number; text: string; partial: boolean };
+type TaskDetailLoadResult = { task: PackageTask; logText: string; logPartial: boolean };
 
 export default function PackageTaskPage() {
   const navigate = useNavigate();
@@ -128,38 +130,68 @@ export default function PackageTaskPage() {
   const shouldPoll = !!selectedTask && isRunning(selectedTask.status);
 
   // 大日志优化：首屏只取末尾 256KB，轮询按字节偏移追加增量
-  const logStateRef = useRef<Map<string, { offset: number; text: string; partial: boolean }>>(new Map());
+  const logStateRef = useRef<Map<string, TaskLogState>>(new Map());
+  const taskDetailLoadsRef = useRef<Map<string, Promise<TaskDetailLoadResult>>>(new Map());
   const [logPartial, setLogPartial] = useState(false);
 
   const loadTaskDetail = useCallback(
-    async (taskId: string) => {
-      const state = logStateRef.current.get(taskId);
-      const [task, chunk] = await Promise.all([
-        packageApi.getTask(taskId),
-        (state
-          ? packageApi.getTaskLogChunk(taskId, { offset: state.offset })
-          : packageApi.getTaskLogChunk(taskId, { tail: LOG_TAIL_BYTES })
-        ).catch(() => null),
-      ]);
-      setSelectedTask(task);
-      let fullText = state?.text ?? '';
-      let partial = state?.partial ?? false;
-      if (chunk) {
-        if (!state || chunk.truncated) {
-          // 首次加载或日志被重建：整体替换
-          fullText = chunk.content;
-          partial = chunk.offset > 0;
-        } else {
-          fullText = state.text + chunk.content;
+    (taskId: string): Promise<TaskDetailLoadResult> => {
+      const inFlight = taskDetailLoadsRef.current.get(taskId);
+      if (inFlight) return inFlight;
+
+      const load = (async (): Promise<TaskDetailLoadResult> => {
+        const state = logStateRef.current.get(taskId);
+        const [task, chunk] = await Promise.all([
+          packageApi.getTask(taskId),
+          (state
+            ? packageApi.getTaskLogChunk(taskId, { offset: state.offset })
+            : packageApi.getTaskLogChunk(taskId, { tail: LOG_TAIL_BYTES })
+          ).catch(() => null),
+        ]);
+        let nextState = state;
+
+        const mergeChunk = (nextChunk: NonNullable<typeof chunk>) => {
+          if (!nextState || nextChunk.truncated) {
+            nextState = {
+              offset: nextChunk.size,
+              text: nextChunk.content,
+              partial: nextChunk.offset > 0,
+            };
+            return;
+          }
+          nextState = {
+            offset: nextChunk.size,
+            text: nextState.text + nextChunk.content,
+            partial: nextState.partial,
+          };
+        };
+
+        if (chunk) mergeChunk(chunk);
+
+        // 任务状态和日志请求并行，终态时补拉一次避免漏掉最后一段失败或 SVN 警告日志。
+        if (!isRunning(task.status) && nextState) {
+          const finalChunk = await packageApi.getTaskLogChunk(taskId, { offset: nextState.offset }).catch(() => null);
+          if (finalChunk) mergeChunk(finalChunk);
         }
-        logStateRef.current.set(taskId, { offset: chunk.size, text: fullText, partial });
-      }
-      setLogText(fullText);
-      setLogPartial(partial);
-      if (!isRunning(task.status)) {
-        queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
-      }
-      return { task, logText: fullText, logPartial: partial };
+
+        const resolvedState = nextState ?? { offset: 0, text: '', partial: false };
+        logStateRef.current.set(taskId, resolvedState);
+        setSelectedTask(task);
+        setLogText(resolvedState.text);
+        setLogPartial(resolvedState.partial);
+        if (!isRunning(task.status)) {
+          queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+        }
+        return { task, logText: resolvedState.text, logPartial: resolvedState.partial };
+      })();
+
+      taskDetailLoadsRef.current.set(taskId, load);
+      void load.finally(() => {
+        if (taskDetailLoadsRef.current.get(taskId) === load) {
+          taskDetailLoadsRef.current.delete(taskId);
+        }
+      }).catch(() => {});
+      return load;
     },
     [queryClient]
   );
@@ -465,7 +497,7 @@ export default function PackageTaskPage() {
               <RunningTab
                 tasks={tasks}
                 onOpen={openBuild}
-                canDelete={!!user?.is_superuser}
+                canDelete={!!user?.is_superuser || user?.permissions.includes('package.task.delete')}
                 onDelete={handleDeleteTask}
               />
               {tasksTotal > TASK_PAGE_SIZE && (

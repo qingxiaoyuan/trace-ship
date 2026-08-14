@@ -516,7 +516,7 @@ export default function ReleaseCreate() {
                               : 'bg-slate-100 text-slate-400'
                           }`}
                         >
-                          {c.has_af ? 'AF 命中' : '未命中'}
+                          {c.has_af ? '已解析' : '未解析'}
                         </span>
                         <span className="font-mono text-[11px] text-slate-500">{c.hash.slice(0, 12)}</span>
                         <span className="text-[11px] text-slate-400">· {c.author}</span>
@@ -553,7 +553,8 @@ export default function ReleaseCreate() {
                 <button
                   type="button"
                   onClick={() => setCommitCheckOpen(true)}
-                  disabled={!watchRepository}
+                  disabled={!watchRepository || changesLoading || !changesPreview}
+                  title={changesLoading || !changesPreview ? '正在加载变更预览' : undefined}
                   className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <ScanSearch className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
@@ -570,7 +571,7 @@ export default function ReleaseCreate() {
               </div>
             </div>
             <p className="mb-3 text-[11px] text-slate-400">
-              来源：Commit 中含「A 」或「F 」前缀的行 + MR 描述中正则匹配的行，可在此编辑
+              来源：Commit 或 MR 中识别到的 A/F 行与 fix/feat 前缀，可在此编辑
             </p>
 
             {updates.length === 0 ? (
@@ -839,16 +840,19 @@ export default function ReleaseCreate() {
             </div>
           </div>
         </Form>
-        <CommitCheckModal
-          repoId={watchRepository || ''}
-          lastTag={changesPreview?.last_tag ?? null}
-          open={commitCheckOpen}
-          onClose={() => setCommitCheckOpen(false)}
-          onAddUpdates={(items) => {
-            setUpdates((prev) => [...prev, ...items]);
-            message.success(`已添加 ${items.length} 条更新内容`);
-          }}
-        />
+        {commitCheckOpen && (
+          <CommitCheckModal
+            lastTag={changesPreview?.last_tag ?? null}
+            branch={watchBranch || ''}
+            commits={changesPreview?.commits || []}
+            open
+            onClose={() => setCommitCheckOpen(false)}
+            onAddUpdates={(items) => {
+              setUpdates((prev) => [...prev, ...items]);
+              message.success(`已添加 ${items.length} 条更新内容`);
+            }}
+          />
+        )}
         </>
       )}
 

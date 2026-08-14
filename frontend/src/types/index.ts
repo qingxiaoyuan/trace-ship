@@ -192,6 +192,7 @@ export interface PreviewCommit {
   author: string;
   message: string;
   committed_at: string | null;
+  /** 是否已自动解析出更新内容（兼容字段名，包含 A/F 与 fix/feat） */
   has_af: boolean;
 }
 
@@ -205,6 +206,7 @@ export interface PreviewMergeRequest {
   target_branch: string;
   web_url: string;
   merged_at: string | null;
+  /** 是否已自动解析出更新内容（兼容字段名，包含 A/F 与 fix/feat） */
   has_af: boolean;
 }
 
@@ -484,7 +486,7 @@ export interface PackageTask {
   status_display?: string;
   can_push_svn?: boolean;
   progress?: number;
-  stage_info?: { stage?: string; progress?: number } | Record<string, unknown>;
+  stage_info?: PackageTaskStageInfo;
   artifact_info?: PackageArtifact[];
   duration?: number;
   error_message?: string;
@@ -492,6 +494,22 @@ export interface PackageTask {
   finished_at?: string | null;
   created_at: string;
   updated_at?: string;
+}
+
+/** 打包阶段信息；SVN 推送失败不会改变打包任务的成功状态。 */
+export interface PackageTaskStageInfo {
+  stage?: string;
+  progress?: number;
+  svn_push?: PackageSvnPushInfo;
+  [key: string]: unknown;
+}
+
+export interface PackageSvnPushInfo {
+  status?: 'success' | 'failure';
+  error_message?: string;
+  remote_url?: string;
+  file_count?: number;
+  files?: string[];
 }
 
 export interface PackageArtifact {

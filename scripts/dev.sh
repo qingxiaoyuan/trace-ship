@@ -10,14 +10,14 @@
 #                                  --test 追加 OpenLDAP / phpLDAPadmin / SVN 模拟服务）
 #   scripts/dev.sh backend         本地启动后端（自动迁移 + runserver + Celery worker，后台运行）
 #   scripts/dev.sh frontend        本地启动前端（Vite dev server，后台运行）
-#   scripts/dev.sh all [--test]    一键启动全部（依赖 + 后端 + 前端 + Celery worker）
-#   scripts/dev.sh down            关闭所有（本地后端/前端/Celery worker 进程 + 全部第三方容器）
+#   scripts/dev.sh all [--test]    一键启动全部（依赖 + 后端 + 前端 + Celery worker/beat）
+#   scripts/dev.sh down            关闭所有（本地后端/前端/Celery worker/beat 进程 + 全部第三方容器）
 #   scripts/dev.sh status          查看各组件运行状态
-#   scripts/dev.sh logs <目标>     跟踪日志（backend / frontend / celery-worker / <compose 服务名>）
+#   scripts/dev.sh logs <目标>     跟踪日志（backend / frontend / celery-worker / celery-beat / <compose 服务名>）
 #   scripts/dev.sh gitlab-admin    创建/重置 GitLab 管理员（admin / admin123）
 #
 # 后台进程的 PID 与日志保存在 scripts/.run/ 下。
-# 本地后端启动时会自动拉起 Celery worker；Celery beat 仍需手动启动（定时任务调试）。
+# 本地后端启动时会自动拉起 Celery worker 与 Celery beat（定时任务调度，如每小时清理草稿）。
 # ============================================================
 set -e
 
@@ -207,6 +207,8 @@ cmd_backend() {
     start_bg backend ${py} manage.py runserver "0.0.0.0:${BACKEND_PORT:-8000}"
     echo "🚀 启动 Celery worker（队列: celery）"
     start_bg celery-worker ${py} -m celery -A config worker -l info -Q celery --concurrency=2
+    echo "🚀 启动 Celery beat（定时任务调度，如每小时清理草稿）"
+    start_bg celery-beat ${py} -m celery -A config beat -l info -s "${RUN_DIR}/celerybeat-schedule"
 }
 
 # ---------- frontend：本地启动前端 ----------
@@ -228,10 +230,12 @@ cmd_down() {
     stop_bg backend
     stop_bg frontend
     stop_bg celery-worker
+    stop_bg celery-beat
     # 兜底：清理可能游离的进程
     pkill -f "manage.py runserver" 2>/dev/null || true
     pkill -f "vite" 2>/dev/null || true
     pkill -f "celery -A config worker" 2>/dev/null || true
+    pkill -f "celery -A config beat" 2>/dev/null || true
 
     echo "🛑 停止全部第三方容器（含 test / app profile）..."
     cd "${DOCKER_DIR}"
@@ -243,7 +247,7 @@ cmd_down() {
 # ---------- status：查看状态 ----------
 cmd_status() {
     echo "📋 本地进程:"
-    for name in backend frontend celery-worker; do
+    for name in backend frontend celery-worker celery-beat; do
         if pid_alive "${RUN_DIR}/${name}.pid"; then
             echo "  ✅ ${name} 运行中（PID $(cat "${RUN_DIR}/${name}.pid")）"
         else
@@ -260,13 +264,13 @@ cmd_status() {
 cmd_logs() {
     local target="$1"
     case "${target}" in
-        backend|frontend|celery-worker)
+        backend|frontend|celery-worker|celery-beat)
             local log_file="${RUN_DIR}/${target}.log"
             [ -f "${log_file}" ] || { echo "❌ 日志不存在: ${log_file}"; return 1; }
             tail -f "${log_file}"
             ;;
         "")
-            echo "❌ 用法: scripts/dev.sh logs <backend|frontend|celery-worker|compose服务名>"
+            echo "❌ 用法: scripts/dev.sh logs <backend|frontend|celery-worker|celery-beat|compose服务名>"
             return 1
             ;;
         *)
@@ -341,17 +345,18 @@ cmd_menu() {
         local be_status="⬜ 未运行" fe_status="⬜ 未运行"
         pid_alive "${RUN_DIR}/backend.pid" && be_status="✅ 运行中"
         pid_alive "${RUN_DIR}/frontend.pid" && fe_status="✅ 运行中"
-        local cw_status="⬜ 未运行"
+        local cw_status="⬜ 未运行" cb_status="⬜ 未运行"
         pid_alive "${RUN_DIR}/celery-worker.pid" && cw_status="✅ 运行中"
+        pid_alive "${RUN_DIR}/celery-beat.pid" && cb_status="✅ 运行中"
         local dep_count=0
         dep_count=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -c "^trace-ship-dev-") || true
-        echo "  后端: ${be_status}   前端: ${fe_status}   Celery: ${cw_status}   第三方容器: ${dep_count} 个运行中"
+        echo "  后端: ${be_status}   前端: ${fe_status}   Celery: ${cw_status}   Beat: ${cb_status}   第三方容器: ${dep_count} 个运行中"
         echo ""
         echo "  1) 启动第三方开发容器（PostgreSQL / Redis / GitLab）"
         echo "  2) 启动第三方开发容器 + 测试模拟（LDAP / SVN）"
-        echo "  3) 启动后端（本地，自动迁移 + Celery worker）"
+        echo "  3) 启动后端（本地，自动迁移 + Celery worker/beat）"
         echo "  4) 启动前端（本地 Vite）"
-        echo "  5) 一键启动全部（依赖 + 后端 + 前端 + Celery worker）"
+        echo "  5) 一键启动全部（依赖 + 后端 + 前端 + Celery worker/beat）"
         echo "  6) 查看状态"
         echo "  7) 跟踪日志"
         echo "  8) 关闭所有"
@@ -368,7 +373,7 @@ cmd_menu() {
             5) cmd_all || echo "⚠️ 操作失败，请检查上方输出" ;;
             6) cmd_status || true ;;
             7)
-                read -rp "日志目标（backend / frontend / celery-worker / postgres / redis / gitlab ...）: " log_target
+                read -rp "日志目标（backend / frontend / celery-worker / celery-beat / postgres / redis / gitlab ...）: " log_target
                 [ -n "${log_target}" ] && cmd_logs "${log_target}"
                 ;;
             8)
@@ -405,10 +410,10 @@ case "${1:-}" in
         echo "  deps [--test]   启动第三方开发容器（--test 追加 LDAP/SVN 模拟）"
         echo "  backend         本地启动后端（自动迁移 + Celery worker，后台运行）"
         echo "  frontend        本地启动前端（Vite dev server，后台运行）"
-        echo "  all [--test]    一键启动全部（依赖 + 后端 + 前端 + Celery worker）"
+        echo "  all [--test]    一键启动全部（依赖 + 后端 + 前端 + Celery worker/beat）"
         echo "  down            关闭所有（本地进程 + 第三方容器）"
         echo "  status          查看运行状态"
-        echo "  logs <目标>     跟踪日志（backend / frontend / celery-worker / compose 服务名）"
+        echo "  logs <目标>     跟踪日志（backend / frontend / celery-worker / celery-beat / compose 服务名）"
         echo "  gitlab-admin    创建/重置 GitLab 管理员（admin / admin123）"
         exit 1
         ;;

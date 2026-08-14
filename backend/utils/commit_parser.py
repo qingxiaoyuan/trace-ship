@@ -8,16 +8,28 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 
-# 更新内容行正则：匹配 A 或 F 作为类型标记，后接空格和内容。
-# 允许类型标记前为行首、空白或任意非字母字符；按行提取，换行为有效数据分隔。
-UPDATE_LINE_RE = re.compile(r"(?:^|[^A-Za-z])([AF])\s+(.+)$", re.MULTILINE)
+# 更新内容行正则：匹配行首 A/F 标记，允许可选前导序号如「1. 」或「1、」。
+# 限制为行首可避免把「提交A功能」等普通提交中的字母误判为更新类型。
+UPDATE_LINE_RE = re.compile(r"^\s*(?:\d+[.、][ \t]*)?([AF])[ \t]+(.+)$", re.MULTILINE)
+
+# Conventional Commit 与尖括号前缀。仅识别提交首个非空行，避免正文中的普通
+# fix/feat 文本被误解析为更新内容。
+UPDATE_PREFIX_RE = re.compile(
+    r"^\s*(?:"
+    r"<(?P<angle_type>fix|feat)>\s*:?\s*"
+    r"|(?P<conventional_type>fix|feat)(?:\([^\r\n)]+\))?!?\s*:\s*"
+    r")(?P<content>.*)$",
+    re.IGNORECASE,
+)
 
 
 def extract_update_lines(text: str) -> List[Dict[str, str]]:
     """
-    从 commit message 或 MR description 中提取 A/F 更新行
+    从 commit message 或 MR description 中提取更新行
 
-    规则：行以「A 」或「F 」开头（可选前导序号如「1. 」「1、」），类型即该字母。
+    优先识别显式「A 内容」或「F 内容」（可选前导序号如「1. 」「1、」）。
+    未命中显式 A/F 时，兼容首行 ``fix:`` / ``feat:``、带 scope 的 Conventional
+    Commit 以及 ``<fix>`` / ``<feat>`` 前缀；多行内容的每个非空行继承该前缀类型。
     commit message 和 MR description 共用此规则。
 
     Args:
@@ -34,7 +46,26 @@ def extract_update_lines(text: str) -> List[Dict[str, str]]:
             "type": match.group(1).upper(),
             "content": match.group(2).strip(),
         })
-    return result
+    if result:
+        return result
+
+    lines = text.splitlines()
+    first_index = next((index for index, line in enumerate(lines) if line.strip()), None)
+    if first_index is None:
+        return []
+    prefix_match = UPDATE_PREFIX_RE.match(lines[first_index])
+    if not prefix_match:
+        return []
+
+    prefix_type = prefix_match.group("angle_type") or prefix_match.group("conventional_type")
+    update_type = "F" if prefix_type.lower() == "fix" else "A"
+    contents = [prefix_match.group("content").strip()]
+    contents.extend(line.strip() for line in lines[first_index + 1:] if line.strip())
+    return [
+        {"type": update_type, "content": content}
+        for content in contents
+        if content
+    ]
 
 
 @dataclass

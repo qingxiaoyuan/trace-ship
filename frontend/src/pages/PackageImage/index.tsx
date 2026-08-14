@@ -188,7 +188,7 @@ export default function PackageImagePage() {
           <p className="font-medium">执行逻辑</p>
           <ol className="list-decimal pl-4 text-[11px]">
             <li>未填写自定义脚本：执行镜像的 /workspace/scripts/pack.sh</li>
-            <li>填写了自定义脚本：在 /workspace/source（或 BUILD_PATH 指定目录）以 sh -c 直接执行，不经过 pack.sh</li>
+            <li>填写了自定义脚本：在 /workspace/source（或 BUILD_PATH 指定目录）以 sh -ec 执行（遇错即停），不经过 pack.sh</li>
             <li>环境变量：WORKSPACE、SOURCE_DIR、ARTIFACTS_DIR、DEPLOY_DIR、SCRIPTS_DIR、BUILD_PATH、OUTPUT_PATH、TAG_NAME、VERSION、PROJECT_CODE</li>
             <li>产物统一写入 /workspace/artifacts，不主动从互联网拉取依赖</li>
           </ol>

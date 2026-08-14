@@ -48,6 +48,7 @@ class Command(BaseCommand):
             {"name": "审批发布", "code": "release.audit", "module": "release"},
             {"name": "触发打包", "code": "package.trigger", "module": "package"},
             {"name": "管理打包任务", "code": "package.manage", "module": "package"},
+            {"name": "删除打包任务记录", "code": "package.task.delete", "module": "package"},
             {"name": "查看提交审查", "code": "commit.view", "module": "commit"},
             {"name": "查看工作流", "code": "workflow.view", "module": "workflow"},
             # 系统管理拆分为五项细分权限，可独立分配给角色

@@ -1,7 +1,7 @@
 import { memo, useCallback, useState } from 'react';
 import type { PackageTask } from '@/types';
 import { ArtifactRow } from './Artifacts';
-import { formatDuration, formatRelativeTime, isRunning, stageLabels } from './utils';
+import { formatDuration, formatRelativeTime, getSvnPushWarning, isRunning, stageLabels } from './utils';
 import { ProgressBar, StatusBadge } from './Shared';
 
 interface BuildHistoryProps {
@@ -61,6 +61,7 @@ const BuildHistoryItem = memo(function BuildHistoryItem({ build, isActive, onSel
     },
     [build, onCancel]
   );
+  const svnPushWarning = getSvnPushWarning(build);
 
   return (
     <div
@@ -91,7 +92,10 @@ const BuildHistoryItem = memo(function BuildHistoryItem({ build, isActive, onSel
         </div>
       ) : (
         <div className="mt-1.5 flex items-center justify-between">
-          <StatusBadge status={build.status} />
+          <div className="flex items-center gap-1.5">
+            <StatusBadge status={build.status} />
+            {svnPushWarning && <span className="text-[10px] font-medium text-amber-600" title={svnPushWarning}>SVN 未上传</span>}
+          </div>
           <span className="text-[10px] text-slate-400">{formatRelativeTime(build.finished_at || build.created_at)}</span>
         </div>
       )}

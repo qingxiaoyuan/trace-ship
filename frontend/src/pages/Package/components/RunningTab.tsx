@@ -1,8 +1,8 @@
 import { memo, useCallback } from 'react';
-import { ExternalLink, Hammer, Trash2 } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Hammer, Trash2 } from 'lucide-react';
 import type { PackageTask } from '@/types';
 import { ProgressBar, UserAvatar } from './Shared';
-import { formatDuration, isRunning, releaseTypeBadge, releaseTypeText, stageLabels, statusMeta } from './utils';
+import { formatDuration, getSvnPushWarning, isRunning, releaseTypeBadge, releaseTypeText, stageLabels, statusMeta } from './utils';
 
 interface RunningTabProps {
   tasks: PackageTask[];
@@ -64,6 +64,7 @@ const RunningRow = memo(function RunningRow({ task, onOpen, canDelete, onDelete 
     return s ? (stageLabels[s] || s) : '打包中';
   })();
   const meta = statusMeta[task.status];
+  const svnPushWarning = getSvnPushWarning(task);
   const canDeleteTask = canDelete && FINISHED_STATUSES.has(task.status);
 
   const handleClick = useCallback(() => {
@@ -98,10 +99,18 @@ const RunningRow = memo(function RunningRow({ task, onOpen, canDelete, onDelete 
         </div>
       </div>
       <div className="col-span-6 md:col-span-2">
-        <span className={`inline-flex items-center gap-1.5 rounded-md border ${meta.border} ${meta.bg} px-1.5 py-0.5 text-[11px] font-medium ${meta.text}`}>
-          <Hammer className="h-3 w-3" strokeWidth={1.5} />
-          {label}
-        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={`inline-flex items-center gap-1.5 rounded-md border ${meta.border} ${meta.bg} px-1.5 py-0.5 text-[11px] font-medium ${meta.text}`}>
+            <Hammer className="h-3 w-3" strokeWidth={1.5} />
+            {label}
+          </span>
+          {svnPushWarning && (
+            <span title={svnPushWarning} className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+              <AlertTriangle className="h-3 w-3" strokeWidth={1.5} />
+              SVN 未上传
+            </span>
+          )}
+        </div>
       </div>
       <div className="col-span-6 md:col-span-3">
         <ProgressBar progress={task.progress || 0} status={task.status} />

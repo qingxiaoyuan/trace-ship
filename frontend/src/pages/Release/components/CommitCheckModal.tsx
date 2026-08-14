@@ -1,28 +1,24 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Modal } from 'antd';
 import {
-  AlertTriangle,
   CheckCircle2,
   GitCommitHorizontal,
-  Loader2,
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { repositoryApi } from '@/api/repository';
-import type { ReviewRangeResult } from '@/types';
+import type { PreviewCommit } from '@/types';
 
 interface CheckRow {
   hash: string;
   author: string;
-  message: string;
-  reviewReason: string;
   type: string;
   content: string;
 }
 
 interface CommitCheckModalProps {
-  repoId: string;
   lastTag: string | null;
+  branch: string;
+  commits: PreviewCommit[];
   open: boolean;
   onClose: () => void;
   onAddUpdates: (items: { type: string; content: string; source: 'commit'; source_ref: string }[]) => void;
@@ -33,51 +29,24 @@ function firstLine(message: string): string {
   return message.split('\n').find((l) => l.trim())?.trim() || message.slice(0, 80);
 }
 
-export function CommitCheckModal({ repoId, lastTag, open, onClose, onAddUpdates }: CommitCheckModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<CheckRow[]>([]);
-  const [stats, setStats] = useState<{ total: number; nonCompliant: number } | null>(null);
+function buildRows(commits: PreviewCommit[]): CheckRow[] {
+  return commits
+    .filter((commit) => !commit.has_af)
+    .map((commit) => ({
+      hash: commit.hash,
+      author: commit.author,
+      type: 'A',
+      content: firstLine(commit.message),
+    }));
+}
 
-  const doFetch = async () => {
-    if (!repoId) return;
-    setLoading(true);
-    setRows([]);
-    setStats(null);
-    try {
-      const result: ReviewRangeResult = await repositoryApi.reviewRange(
-        repoId,
-        lastTag || undefined,
-        undefined,
-      );
-      const nonCompliant = result.commits.filter(
-        (c) => c.review_status === 'warning' || c.review_status === 'illegal',
-      );
-      setRows(
-        nonCompliant.map((c) => ({
-          hash: c.hash || '',
-          author: c.author,
-          message: c.message,
-          reviewReason: c.review_reason,
-          type: 'A',
-          content: firstLine(c.message),
-        })),
-      );
-      setStats({ total: result.commits.length, nonCompliant: nonCompliant.length });
-    } catch {
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+export function CommitCheckModal({ lastTag, branch, commits, open, onClose, onAddUpdates }: CommitCheckModalProps) {
+  const [rows, setRows] = useState<CheckRow[]>(() => buildRows(commits));
+  const unparsedCommits = useMemo(() => commits.filter((commit) => !commit.has_af), [commits]);
 
-  // 打开时自动检测
-  const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && repoId) {
-      doFetch();
-    } else if (!isOpen) {
-      // 关闭时不清空数据，避免闪烁
-    }
-  };
+  const resetRows = useCallback(() => {
+    setRows(buildRows(commits));
+  }, [commits]);
 
   const updateRow = (idx: number, patch: Partial<CheckRow>) => {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -99,7 +68,6 @@ export function CommitCheckModal({ repoId, lastTag, open, onClose, onAddUpdates 
     if (items.length === 0) return;
     onAddUpdates(items);
     setRows([]);
-    setStats(null);
     onClose();
   };
 
@@ -108,17 +76,16 @@ export function CommitCheckModal({ repoId, lastTag, open, onClose, onAddUpdates 
   return (
     <Modal
       open={open}
-      title="检测不合规 Commit"
+      title="检测未自动解析 Commit"
       width={820}
       onCancel={onClose}
-      afterOpenChange={handleOpenChange}
       destroyOnHidden
       footer={
         <div className="flex items-center justify-between">
           <span className="text-[12px] text-slate-400">
             {rows.length > 0
               ? `已编辑 ${validCount} 条可加入更新内容`
-              : '自动检测上一个 Tag 到分支 HEAD 之间的不合规 commit'}
+              : '当前区间没有需要人工录入的 Commit'}
           </span>
           <div className="flex gap-2">
             <button
@@ -147,36 +114,25 @@ export function CommitCheckModal({ repoId, lastTag, open, onClose, onAddUpdates 
             <span>
               区间：<span className="font-mono text-slate-600">{lastTag || '最新 Tag'}</span>
               {' -> '}
-              <span className="font-mono text-slate-600">HEAD</span>
+              <span className="font-mono text-slate-600">{branch || 'HEAD'}</span>
             </span>
-            {stats && (
-              <>
-                <span className="h-1 w-1 rounded-full bg-slate-300" />
-                <span>共 {stats.total} 条</span>
-                <span className="text-rose-500">不合规 {stats.nonCompliant} 条</span>
-              </>
-            )}
+            <span className="h-1 w-1 rounded-full bg-slate-300" />
+            <span>共 {commits.length} 条</span>
+            <span className="text-amber-600">未自动解析 {unparsedCommits.length} 条</span>
           </div>
           <button
-            onClick={doFetch}
-            disabled={loading}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+            onClick={resetRows}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-50"
           >
-            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-            重新检测
+            <RefreshCw className="h-3 w-3" strokeWidth={1.5} />
+            重置候选
           </button>
         </div>
 
-        {/* 加载中 */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-7 w-7 animate-spin text-indigo-500" strokeWidth={1.5} />
-            <p className="mt-3 text-[13px] text-slate-500">正在拉取并审查 commit…</p>
-          </div>
-        ) : rows.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
             <CheckCircle2 className="h-8 w-8 text-emerald-400" strokeWidth={1.5} />
-            <p className="mt-3 text-[13px] text-slate-500">无不合规 commit，全部已通过</p>
+            <p className="mt-3 text-[13px] text-slate-500">没有需要人工录入的 Commit</p>
           </div>
         ) : (
           /* 表格 */
@@ -225,12 +181,6 @@ export function CommitCheckModal({ repoId, lastTag, open, onClose, onAddUpdates 
                   <div className="mt-1 flex items-center gap-2 pl-[64px] text-[10px] text-slate-400">
                     <span className="font-mono">{row.hash.slice(0, 8)}</span>
                     <span>{row.author}</span>
-                    {row.reviewReason && (
-                      <span className="flex items-center gap-0.5 text-amber-500">
-                        <AlertTriangle className="h-2.5 w-2.5" strokeWidth={1.5} />
-                        {row.reviewReason}
-                      </span>
-                    )}
                   </div>
                 </div>
               ))}

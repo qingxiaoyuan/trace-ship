@@ -393,7 +393,7 @@ class PackageConfigViewSet(StandardModelViewSet):
 
 
 class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
-    """打包任务视图集（只读 + 管理员删除已结束任务）。"""
+    """打包任务视图集（只读 + 按独立权限删除已结束任务）。"""
 
     queryset = PackageTask.objects.all()
     serializer_class = PackageTaskSerializer
@@ -418,8 +418,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             # 取消任务 / 手动推 SVN：管理员/开发可操作
             return [IsAuthenticated(), IsProjectDeveloper()]
         if self.action == "destroy":
-            # 删除已结束任务：项目管理员 / 软件管理员
-            return [IsAuthenticated(), IsProjectPackageAdmin()]
+            # 删除任务记录是独立高风险权限；任务查询范围仍限制为当前用户可见项目。
+            return [IsAuthenticated(), HasPermission("package.task.delete")]
         return [IsAuthenticated(), IsProjectMember()]
 
     def destroy(self, request, *args, **kwargs):

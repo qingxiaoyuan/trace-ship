@@ -574,13 +574,14 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
     assert task.status == "success"
     assert task.stage_info["stage"] == "done"
     assert task.stage_info.get("svn_push") is not None
+    assert task.stage_info["svn_push"]["status"] == "success"
     assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/V1.0.0"
     mock_provider.import_path.assert_called_once()
 
 
 @pytest.mark.django_db
-def test_run_task_with_svn_push_failure_marks_task_failed(project, repository, release, svn_credential, user, settings, tmp_path, monkeypatch):
-    """SVN 推送失败时，打包任务标记为 failure。"""
+def test_run_task_with_svn_push_failure_keeps_task_success(project, repository, release, svn_credential, user, settings, tmp_path, monkeypatch):
+    """SVN 推送失败仅作为警告，打包任务与产物仍保持成功。"""
     settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
     config = PackageConfig.objects.create(
         project=project,
@@ -619,10 +620,19 @@ def test_run_task_with_svn_push_failure_marks_task_failed(project, repository, r
     PackageService.run_task(task)
     task.refresh_from_db()
 
-    assert task.status == "failure"
-    assert "SVN 目录已存在" in task.error_message
+    assert task.status == "success"
+    assert task.error_message == ""
+    assert task.stage_info["svn_push"]["status"] == "failure"
+    assert "SVN 目录已存在" in task.stage_info["svn_push"]["error_message"]
     # 产物仍然保留
     assert len(task.artifact_info) == 1
+
+    mock_provider.remote_exists.return_value = False
+    PackageService.manual_push_svn(task)
+    task.refresh_from_db()
+    assert task.status == "success"
+    assert task.stage_info["svn_push"]["status"] == "success"
+    assert "error_message" not in task.stage_info["svn_push"]
 
 
 @pytest.mark.django_db
@@ -710,6 +720,7 @@ class TestManualPushSvn:
         assert result["remote_url"] == "svn://host/releases/V1.0.0"
         task.refresh_from_db()
         assert task.stage_info.get("svn_push") is not None
+        assert task.stage_info["svn_push"]["status"] == "success"
         assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/V1.0.0"
 
     def test_manual_push_fails_when_task_not_success(self, project, repository, release, svn_credential, tmp_path):

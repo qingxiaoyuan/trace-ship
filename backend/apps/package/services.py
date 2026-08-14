@@ -24,7 +24,6 @@ from apps.package.models import PackageConfig, PackageNode, PackageTask
 from apps.package.remote_windows import (
     RUN_LIMITED_PS1,
     RemoteWindowsClient,
-    build_set_env_prefix,
     cmd_quote,
 )
 from apps.repository.serializers import RepositorySerializer
@@ -360,6 +359,12 @@ class PackageService:
                         continue
                 code = process.poll()
                 if code is not None:
+                    # 进程已退出：先把管道中剩余输出全部读完再结束。
+                    # 否则脚本快速失败（如 sh -e 遇错即停）时，最后一段输出
+                    # （往往是错误信息）尚未被 select 报告就绪，会被直接丢弃
+                    for line in process.stdout:
+                        if line:
+                            cls._append_log(task, cls._sanitize_log_line(line.rstrip("\r\n")))
                     break
         except PackageTaskCanceledError:
             cls._terminate_process_group(process)
@@ -533,11 +538,9 @@ class PackageService:
     def _run_remote_build(cls, task: PackageTask, client: RemoteWindowsClient) -> None:
         """在远程 Windows 节点上执行打包脚本。
 
-        有自定义脚本时上传到节点临时目录后执行；
-        否则执行源码根目录下的 pack.bat（节点接入约定）。
-        节点配置了 CPU 限制（核数 / 优先级）时，组装 pack-run.bat 后用
-        start /wait 包装执行——优先级与亲和性对整棵构建进程树生效，
-        防止打包占满 CPU 导致 SSH 断连。
+        自定义脚本上传到节点临时目录，未配置时调用源码根目录 pack.bat。
+        所有路径均通过 pack-run.bat 注入环境变量并透传目标脚本最终退出码，
+        资源限制仅改变该包装脚本的启动方式。
         """
         snapshot = task.config_snapshot or {}
         custom_script = (snapshot.get("custom_script") or "").strip()
@@ -546,48 +549,44 @@ class PackageService:
         env = cls._build_env(task, remote_workspace)
         build_path = env["BUILD_PATH"]
         work_dir = source_dir if build_path == "." else source_dir / PureWindowsPath(build_path)
-        set_prefix = build_set_env_prefix(env)
-
         cores, priority, mem_mb = cls._resource_limits(snapshot)
         limited = cores > 0 or mem_mb > 0 or priority in ("belownormal", "low")
 
+        run_script = remote_workspace / "tmp" / "pack-run.bat"
+        bat_lines = [
+            "@echo off",
+            f"cd /d {cmd_quote(str(work_dir))} || exit /b 1",
+            *[f'set "{key}={value}"' for key, value in env.items()],
+            # 隐藏平台注入的敏感环境变量，但保留用户脚本的命令回显，便于排查。
+            "@echo on",
+        ]
+        if custom_script:
+            script_path = remote_workspace / "tmp" / "pack-custom.bat"
+            client.upload_text(script_path, custom_script)
+            bat_lines.append(f"call {cmd_quote(str(script_path))}")
+            error_hint = ""
+        else:
+            bat_lines.append(f"call {cmd_quote(str(source_dir / 'pack.bat'))}")
+            error_hint = "未配置自定义脚本时，源码根目录需提供 pack.bat 入口"
+        # 在独立行保存退出码，避免后续包装命令覆盖目标脚本的结果。
+        bat_lines.extend([
+            '@set "TRACE_SHIP_EXIT_CODE=%errorlevel%"',
+            "@exit /b %TRACE_SHIP_EXIT_CODE%",
+        ])
+        client.upload_text(run_script, "\n".join(bat_lines))
+
         if not limited:
-            if custom_script:
-                script_path = remote_workspace / "tmp" / "pack-custom.bat"
-                client.upload_text(script_path, custom_script)
-                entry = f"call {cmd_quote(str(script_path))}"
-                error_hint = ""
-            else:
-                entry = f"call {cmd_quote(str(source_dir / 'pack.bat'))}"
-                error_hint = "未配置自定义脚本时，源码根目录需提供 pack.bat 入口"
-            # 日志展示不打印环境变量明文，避免泄露敏感值
             cls._append_log(
                 task,
-                f'$ cd /d "{work_dir}" && <注入 {len(env)} 个环境变量> && {entry}',
+                f'$ call "{run_script}"  <注入 {len(env)} 个环境变量>',
             )
             client.run_checked(
-                f"cd /d {cmd_quote(str(work_dir))} && {set_prefix} && {entry}",
+                f"call {cmd_quote(str(run_script))}",
                 on_line=lambda line: cls._append_log(task, cls._sanitize_log_line(line)),
                 should_stop=lambda: cls._ensure_task_not_canceled(task),
                 error_hint=error_hint,
             )
             return
-
-        # 资源限制路径：完整命令写入 pack-run.bat，start /wait 包装执行
-        run_script = remote_workspace / "tmp" / "pack-run.bat"
-        bat_lines = [
-            "@echo off",
-            f"cd /d {cmd_quote(str(work_dir))}",
-            *[f'set "{key}={value}"' for key, value in env.items()],
-        ]
-        if custom_script:
-            bat_lines.append(custom_script)
-            error_hint = ""
-        else:
-            bat_lines.append(f"call {cmd_quote(str(source_dir / 'pack.bat'))}")
-            error_hint = "未配置自定义脚本时，源码根目录需提供 pack.bat 入口"
-        bat_lines.append("exit /b %errorlevel%")
-        client.upload_text(run_script, "\n".join(bat_lines))
 
         # 内存上限需要作业对象（PowerShell 包装脚本），优先级/核数在其中一并生效；
         # 仅 CPU 限制时用 start /wait 即可，无需节点侧脚本
@@ -671,7 +670,7 @@ class PackageService:
 
         镜像目录约定：平台只挂载 /workspace/source、/workspace/artifacts、/workspace/tmp；
         /workspace/scripts（含 pack.sh 入口）与 /workspace/deploy（可选）由镜像提供。
-        有自定义脚本时用镜像内 shell 直接执行，否则执行镜像的 /workspace/scripts/pack.sh。
+        有自定义脚本时用镜像内 shell 以 -ec（遇错即停）执行，否则执行镜像的 /workspace/scripts/pack.sh。
         统一通过 --entrypoint /bin/sh 启动，避免镜像自身 ENTRYPOINT 干扰。
         """
         snapshot = task.config_snapshot or {}
@@ -712,9 +711,13 @@ class PackageService:
             "--entrypoint", "/bin/sh",
         ]
         if custom_script:
-            command.extend([str(image), "-c", custom_script])
+            # -e 遇错即停：避免脚本中间步骤（如编译）失败但退出码被后续命令覆盖，
+            # 导致任务被误判为成功
+            command.extend([str(image), "-ec", custom_script])
         else:
-            command.extend([str(image), str(script_entry)])
+            # 内置入口同样以 -e 执行（遇错即停），不依赖镜像 pack.sh 内部是否写了 set -e，
+            # 避免镜像脚本中间步骤失败被后续命令覆盖导致误判成功
+            command.extend([str(image), "-e", str(script_entry)])
         try:
             cls._run_command(task, command, workspace, env)
         except RuntimeError as exc:
@@ -1044,7 +1047,7 @@ class PackageService:
 
         # 更新 stage_info 记录推送结果
         stage_info = dict(task.stage_info) if task.stage_info else {}
-        stage_info["svn_push"] = result
+        stage_info["svn_push"] = {"status": "success", **result}
         task.stage_info = stage_info
         task.save(update_fields=["stage_info", "config_snapshot", "updated_at"])
 
@@ -1106,12 +1109,21 @@ class PackageService:
             svn_push_result: dict[str, Any] | None = None
             if svn_push_enabled:
                 cls._update_stage(task, "svn_push", 90, "正在推送产物到 SVN…")
-                svn_push_result = cls._push_artifacts_to_svn(task, workspace)
-                cls._append_log(
-                    task,
-                    f"SVN 推送完成: {svn_push_result['remote_url']}"
-                    f" ({svn_push_result['file_count']} 个文件)",
-                )
+                try:
+                    result = cls._push_artifacts_to_svn(task, workspace)
+                except PackageTaskCanceledError:
+                    raise
+                except Exception as exc:
+                    # SVN 是打包完成后的附加交付动作，失败不应覆盖构建成功结果。
+                    svn_push_result = {"status": "failure", "error_message": str(exc)}
+                    cls._append_log(task, f"警告：打包成功，但 SVN 推送失败: {exc}")
+                else:
+                    svn_push_result = {"status": "success", **result}
+                    cls._append_log(
+                        task,
+                        f"SVN 推送完成: {result['remote_url']}"
+                        f" ({result['file_count']} 个文件)",
+                    )
 
             task.status = "success"
             task.progress = 100

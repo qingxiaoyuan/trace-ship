@@ -96,6 +96,13 @@ export function canPushSvn(task: PackageTask): boolean {
   );
 }
 
+/** 返回自动 SVN 推送失败原因；历史任务无状态字段时保持原有展示。 */
+export function getSvnPushWarning(task: PackageTask): string | null {
+  const result = task.stage_info?.svn_push;
+  if (task.status !== 'success' || result?.status !== 'failure') return null;
+  return result.error_message || 'SVN 推送失败，请手动重试';
+}
+
 export function formatRelativeTime(date: string | Date): string {
   const now = new Date();
   const then = typeof date === 'string' ? new Date(date) : date;

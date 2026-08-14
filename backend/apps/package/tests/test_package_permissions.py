@@ -9,7 +9,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.account.models import User
+from apps.account.models import Permission, Role, User, UserRole
 from apps.package.models import PackageConfig, PackageImage, PackageTask
 from apps.package.services import PackageService
 from apps.project.models import Project, ProjectMember
@@ -162,6 +162,50 @@ def test_tester_cannot_push_svn(project, queued_task, users):
     )
 
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 打包任务删除权限：由系统角色独立分配
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def finished_task(queued_task):
+    """已结束任务可作为删除权限的测试目标。"""
+    queued_task.status = "success"
+    queued_task.save(update_fields=["status"])
+    return queued_task
+
+
+def grant_delete_task_permission(user):
+    """通过临时系统角色为用户授予删除打包任务记录权限。"""
+    permission, _ = Permission.objects.get_or_create(
+        code="package.task.delete",
+        defaults={"name": "删除打包任务记录", "module": "package"},
+    )
+    role = Role.objects.create(name=f"删除任务_{user.username}", code=f"delete_task_{user.username}")
+    role.permissions.add(permission)
+    UserRole.objects.create(user=user, role=role)
+
+
+@pytest.mark.django_db
+def test_project_manager_cannot_delete_task_without_dedicated_permission(project, finished_task, users):
+    """项目管理员不再因项目角色自动获得删除任务记录权限。"""
+    response = auth_client(users["manager"]).delete(f"/api/packages/tasks/{finished_task.id}/")
+
+    assert response.status_code == 403
+    assert PackageTask.objects.filter(id=finished_task.id).exists()
+
+
+@pytest.mark.django_db
+def test_user_with_dedicated_permission_can_delete_visible_finished_task(project, finished_task, users):
+    """拥有独立权限且可见项目的用户可删除已结束任务。"""
+    user = users["developer"]
+    grant_delete_task_permission(user)
+
+    response = auth_client(user).delete(f"/api/packages/tasks/{finished_task.id}/")
+
+    assert response.status_code == 200, response.data
+    assert not PackageTask.objects.filter(id=finished_task.id).exists()
 
 
 # ---------------------------------------------------------------------------

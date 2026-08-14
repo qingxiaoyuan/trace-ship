@@ -284,13 +284,20 @@ class TestCpuLimitBuild:
         PackageService._run_remote_build(task, client)
         return client
 
-    def test_no_limit_uses_inline_command(self, project, repository, node, release, user):
-        """不配置限制（normal + 0 核）时保持原有内联命令。"""
+    def test_no_limit_uses_run_script(self, project, repository, node, release, user):
+        """不配置限制时也经 pack-run.bat 统一注入环境变量与透传退出码。"""
         task = self._make_task(project, repository, node, release, user, cores=0, priority="normal")
         client = self._run_build(task)
         command = client.run_checked.call_args.args[0]
-        assert command.startswith("cd /d ")
+        assert command.startswith("call ")
+        assert "pack-run.bat" in command
         assert "start " not in command
+        uploads = {str(call.args[0]): call.args[1] for call in client.upload_text.call_args_list}
+        custom_script = next(content for path, content in uploads.items() if path.endswith("pack-custom.bat"))
+        run_script = next(content for path, content in uploads.items() if path.endswith("pack-run.bat"))
+        assert custom_script == "echo hi"
+        assert "pack-custom.bat" in run_script
+        assert "echo hi" not in run_script
 
     def test_priority_only_wraps_start(self, project, repository, node, release, user):
         """仅优先级限制：start /wait /优先级，无 /affinity。"""
@@ -313,13 +320,14 @@ class TestCpuLimitBuild:
         """限制路径上传的 pack-run.bat 包含目录切换、环境变量与退出码透传。"""
         task = self._make_task(project, repository, node, release, user, cores=2, priority="low", custom="echo build %VERSION%")
         client = self._run_build(task)
-        # 最后一次 upload_text 是 pack-run.bat
-        path, content = client.upload_text.call_args.args
+        uploads = {str(call.args[0]): call.args[1] for call in client.upload_text.call_args_list}
+        path, content = next((path, content) for path, content in uploads.items() if path.endswith("pack-run.bat"))
         assert str(path).endswith("pack-run.bat")
         assert 'set "VERSION=' in content
         assert f'set "RELEASE_DOC_PATH=C:\\trace-ship\\workspaces\\{task.id}\\source\\release-{task.version}.md"' in content
-        assert "echo build %VERSION%" in content
-        assert content.splitlines()[-1] == "exit /b %errorlevel%"
+        assert "@echo on" in content
+        assert "pack-custom.bat" in content
+        assert content.splitlines()[-2:] == ['@set "TRACE_SHIP_EXIT_CODE=%errorlevel%"', "@exit /b %TRACE_SHIP_EXIT_CODE%"]
         command = client.run_checked.call_args.args[0]
         assert command.startswith('start "" /b /wait /low /affinity 3 cmd /c')
 

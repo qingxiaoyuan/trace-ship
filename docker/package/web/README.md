@@ -31,8 +31,8 @@ docker push <nexus-registry-host>/<docker-repo>/web-builder:node22
 
 ## 执行逻辑
 
-- 打包配置未填写自定义脚本：平台执行 `/workspace/scripts/pack.sh`；
-- 打包配置填写了自定义脚本：平台在 `/workspace/source`（或 `BUILD_PATH` 指定目录）直接以 `sh -c` 执行该脚本，不经过 `pack.sh`；
+- 打包配置未填写自定义脚本：平台以 `sh -e`（遇错即停）执行 `/workspace/scripts/pack.sh`，脚本中任一步骤失败会立即中断并将任务判为失败；
+- 打包配置填写了自定义脚本：平台在 `/workspace/source`（或 `BUILD_PATH` 指定目录）以 `sh -ec`（遇错即停）执行该脚本，不经过 `pack.sh`；
 - 两种模式都会注入相同的环境变量，产物需写入 `/workspace/artifacts`。
 
 ## 入口脚本职责（pack.sh）
@@ -41,6 +41,8 @@ docker push <nexus-registry-host>/<docker-repo>/web-builder:node22
 2. 执行内置打包逻辑：`pnpm install` -> `pnpm run build`；
 3. 将产物复制到 `/workspace/artifacts`；
 4. 不主动从互联网拉取依赖（内网源由项目内 `.npmrc` 等配置处理）。
+
+> 平台以 `sh -e` 执行 `pack.sh`（等价于脚本首行 `set -e`），因此脚本内不要依赖"某条命令失败后继续执行"的行为；确实允许失败的步骤请显式使用 `|| true` 兜底。
 
 ## 环境变量
 

@@ -209,8 +209,8 @@ npm run preview
    - 只挂载 `source` / `artifacts` / `tmp` 到容器 `/workspace` 对应目录，`scripts` / `deploy` 使用镜像自身内容；
    - 容器内工作目录为 `/workspace/source`，通过环境变量传入 `DEPLOY_DIR`、`SCRIPTS_DIR` 等；
    - 统一以 `--entrypoint /bin/sh` 启动，镜像自身 ENTRYPOINT 不生效；
-   - 若配置 `custom_script`，则以 `sh -c` 直接执行该脚本；
-   - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`）；
+   - 若配置 `custom_script`，则以 `sh -ec`（遇错即停）执行该脚本；
+   - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）；
    - 打包产物写入 `/workspace/artifacts`；
    - 扫描 `workspace/artifacts`，可选推 SVN。
 4. 镜像必须满足目录、环境变量、入口脚本约定（详见「镜像接入规范」或 `docker/package/web/README.md`）。

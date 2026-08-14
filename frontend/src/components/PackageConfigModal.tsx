@@ -479,8 +479,8 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             readOnly={readOnly}
             hint={
               isRemote
-                ? 'Windows 批处理脚本；留空则执行源码根目录下的 pack.bat，可用 %VERSION% 等注入变量'
-                : '留空则执行镜像内置脚本；填写后直接在 /workspace/source 目录以 sh -c 执行'
+                ? 'Windows 批处理脚本；留空则执行源码根目录下的 pack.bat。平台透传最终退出码，多步骤失败请自行返回非零'
+                : '留空则执行镜像内置脚本；填写后在 /workspace/source 目录以 sh -ec 执行（遇错即停，编译失败会自动判为打包失败）'
             }
           />
         </Form.Item>

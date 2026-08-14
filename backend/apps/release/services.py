@@ -1095,9 +1095,6 @@ class ReleaseService:
         else:
             commits = all_commits
 
-        # 过滤非法提交：预览接口不落库，按 commit message 是否包含有效 A/F 行实时判断
-        commits = [c for c in commits if extract_update_lines(c.message)]
-
         # 拉取 MRs，并按 tag 时间过滤：只保留 tag 之后合并到本分支的 MR
         merge_requests: list[MergeRequestInfo] = []
         try:

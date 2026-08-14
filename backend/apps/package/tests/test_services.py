@@ -324,6 +324,8 @@ def test_container_package_uses_workspace_and_overrides_env(project, repository,
     PackageService._run_container(task, workspace)
 
     command = captured["command"]
+    # 内置入口脚本以 sh -e 执行（遇错即停）
+    assert command[-2:] == ["-e", "/workspace/scripts/pack.sh"]
     assert "-e" in command
     assert "OUTPUT_PATH=custom-output" in command
     assert "ARTIFACTS_DIR=/workspace/artifacts" in command
@@ -381,7 +383,8 @@ def test_container_custom_script_bypasses_pack_sh(project, repository, user, tmp
     PackageService._run_container(task, workspace)
 
     command = captured["command"]
-    assert command[-2:] == ["-c", "echo build"]
+    # -ec：遇错即停，脚本中间步骤失败会直接以非零码退出，任务正确判为失败
+    assert command[-2:] == ["-ec", "echo build"]
     assert "/workspace/scripts/pack.sh" not in command
     assert "--entrypoint" in command
 
@@ -405,6 +408,41 @@ def test_container_missing_pack_sh_hint(project, repository, user, tmp_path, mon
 
     with pytest.raises(RuntimeError, match="不符合镜像接入规范"):
         PackageService._run_container(task, workspace)
+
+
+@pytest.mark.django_db
+def test_custom_script_ec_fails_fast_on_mid_script_error(project, repository, user, tmp_path):
+    """自定义脚本以 -ec 执行：中间步骤失败即使最后一条命令成功，也判定失败。
+
+    回归：此前用 -c 执行时，shell 返回最后一条命令的退出码，
+    例如 g++ 编译失败但脚本末尾 echo 成功，任务会被误判为打包成功。
+    """
+    task = _make_container_task(project, repository, user, {
+        "image": "node:22",
+        "custom_script": "false\necho after",
+        "build_path": ".",
+        "output_path": "dist",
+    })
+    script = "false\necho after"
+
+    # 旧行为（-c）：整体退出码取最后一条命令，中间失败不抛错
+    PackageService._run_command(task, ["/bin/sh", "-c", script], tmp_path)
+
+    # 新行为（-ec）：遇错即停，以非零码退出并抛 RuntimeError
+    with pytest.raises(RuntimeError, match="退出码"):
+        PackageService._run_command(task, ["/bin/sh", "-ec", script], tmp_path)
+
+    # 内置脚本路径为 sh -e <script 文件>，同样遇错即停：
+    # 脚本文件中间命令失败时，最后一条成功命令不能把退出码掩盖为 0
+    script_file = tmp_path / "pack.sh"
+    script_file.write_text("echo mid\nfalse\necho after\n", encoding="utf-8")
+
+    # 旧行为（不带 -e）：不抛错
+    PackageService._run_command(task, ["/bin/sh", str(script_file)], tmp_path)
+
+    # 新行为（-e script）：遇错即停
+    with pytest.raises(RuntimeError, match="退出码"):
+        PackageService._run_command(task, ["/bin/sh", "-e", str(script_file)], tmp_path)
 
 
 @pytest.mark.django_db
@@ -538,6 +576,72 @@ def test_run_command_terminates_process_group_when_task_canceled(project, reposi
 
     assert popen_calls["start_new_session"] is True
     assert signal_calls == [(fake_process.pid, signal.SIGTERM)]
+
+
+@pytest.mark.django_db
+def test_run_command_drains_remaining_output_after_process_exit(project, repository, user, tmp_path, monkeypatch):
+    """进程退出后剩余输出不能被丢弃。
+
+    回归：脚本快速失败（sh -e 遇错即停）时，最后一段输出（往往是错误信息）
+    可能晚于进程退出状态到达，旧实现直接 break 导致日志缺失。
+    用 fake 进程精确模拟"进程已退出但 stdout 管道仍有未读数据"。
+    """
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.3",
+        tag_name="VA.1.0.3",
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+    )
+    log_path = tmp_path / "build.log"
+    task = PackageTask.objects.create(
+        release=release,
+        project=project,
+        repository=repository,
+        name="打包任务",
+        tag_name=release.tag_name,
+        version=release.version,
+        log_path=str(log_path),
+    )
+
+    class FakeStdout:
+        def __init__(self):
+            self._lines = iter(["g++ error: xxx\n", "tail-output\n"])
+
+        def fileno(self):
+            return 0
+
+        def readline(self):
+            return next(self._lines, "")
+
+        def __iter__(self):
+            return self._lines
+
+    class FakeProcess:
+        pid = 4321
+        stdout = FakeStdout()
+
+        def poll(self):
+            # 进程已退出，但 stdout 管道中还有未读的输出
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr("apps.package.services.subprocess.Popen", lambda *a, **k: FakeProcess())
+    # select 永不报告就绪：模拟"输出到达晚于进程退出"，旧实现会直接 break
+    monkeypatch.setattr("apps.package.services.select.select", lambda *a, **k: ([], [], []))
+    monkeypatch.setattr(PackageService, "_ensure_task_not_canceled", lambda task: None)
+
+    PackageService._run_command(task, ["/bin/sh", "-ec", "false"], tmp_path)
+
+    log = log_path.read_text(encoding="utf-8")
+    # 进程退出后仍排空管道剩余输出，错误信息不能丢
+    assert "g++ error: xxx" in log
+    assert "tail-output" in log
 
 
 def test_sanitize_log_line_strips_ansi():

@@ -7,8 +7,8 @@ import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { ArtifactPanel, ArtifactActionsDropdown } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
-import { formatDuration, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText } from './utils';
-import { StatusBadge } from './Shared';
+import { formatDuration, getSvnPushWarning, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText } from './utils';
+import { StatusBadge, SvnPushWarning } from './Shared';
 
 interface BuildViewProps {
   task: PackageTask;
@@ -23,6 +23,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const artifacts = task.artifact_info || [];
+  const svnPushWarning = getSvnPushWarning(task);
   const stageLabel = useMemo(() => {
     const stage = (task.stage_info as { stage?: string } | undefined)?.stage;
     return stage ? (stageLabels[stage] || stage) : '打包中';
@@ -104,6 +105,11 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
         {task.error_message && (
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] text-rose-700">
             {task.error_message}
+          </div>
+        )}
+        {svnPushWarning && (
+          <div className="mt-4">
+            <SvnPushWarning task={task} pushing={pushing} onRetry={handlePushSvn} />
           </div>
         )}
       </div>

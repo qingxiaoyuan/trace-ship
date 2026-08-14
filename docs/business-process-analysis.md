@@ -276,7 +276,7 @@ flowchart TD
     M --> N[git clone 源码]
     N --> O[启动容器 --entrypoint /bin/sh<br/>挂载 /workspace 三目录]
     O --> P{脚本来源}
-    P -->|custom_script| Q[sh -c 执行自定义脚本]
+    P -->|custom_script| Q[sh -ec 执行自定义脚本（遇错即停）]
     P -->|默认| R[执行镜像内置 script_entry<br/>/workspace/scripts/pack.sh]
     Q --> S[扫描 workspace/artifacts 产物]
     R --> S

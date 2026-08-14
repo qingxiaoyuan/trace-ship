@@ -8,7 +8,7 @@ import { BuildHistory, ArtifactListPanel } from './BuildHistory';
 import { TerminalLog } from './TerminalLog';
 import { ArtifactActionsDropdown } from './Artifacts';
 import { downloadTaskLog, isRunning } from './utils';
-import { StatusBadge } from './Shared';
+import { StatusBadge, SvnPushWarning } from './Shared';
 
 interface DetailViewProps {
   config?: PackageConfig | null;
@@ -121,6 +121,8 @@ export const DetailView = memo(function DetailView({
           </div>
         </>
       )}
+
+      <SvnPushWarning task={activeBuild} pushing={pushing} onRetry={handlePushSvn} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <BuildHistory builds={builds} activeBuildId={activeBuild.id} onSelect={handleSelectBuild} onCancel={onCancel} />

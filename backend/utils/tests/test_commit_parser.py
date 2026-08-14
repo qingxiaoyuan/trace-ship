@@ -84,3 +84,47 @@ def test_parse_no_config_declared():
     assert result.is_valid is True
     assert result.change_type == "无配置项改动"
     assert result.config_changes == {}
+
+
+@pytest.mark.parametrize(
+    ("message", "update_type", "content"),
+    [
+        ("fix: 修复登录问题", "F", "修复登录问题"),
+        ("FEAT(ui): 新增发布看板", "A", "新增发布看板"),
+        ("<fix> 修复 SVN 推送", "F", "修复 SVN 推送"),
+        ("<FeAt>: 新增扫描规则", "A", "新增扫描规则"),
+    ],
+)
+def test_parse_fix_feat_prefix_as_updates(message, update_type, content):
+    """兼容 fix/feat 与尖括号前缀，映射为 F/A 更新内容。"""
+    result = CommitParser.parse(message)
+
+    assert result.is_valid is True
+    assert result.updates == [{"type": update_type, "content": content}]
+
+
+def test_parse_multiline_fix_prefix_as_multiple_updates():
+    """多行 fix/feat 提交的每个非空行继承同一更新类型。"""
+    result = CommitParser.parse("fix: 修复登录问题\n\n修复超时提示\n补充错误日志")
+
+    assert result.is_valid is True
+    assert result.updates == [
+        {"type": "F", "content": "修复登录问题"},
+        {"type": "F", "content": "修复超时提示"},
+        {"type": "F", "content": "补充错误日志"},
+    ]
+
+
+def test_parse_explicit_af_takes_priority_over_fix_feat_prefix():
+    """已有 A/F 格式时不再按 fix/feat 拆分，保持原有解析结果。"""
+    result = CommitParser.parse("feat: 发布模块\nF 修复版本号计算")
+
+    assert result.updates == [{"type": "F", "content": "修复版本号计算"}]
+
+
+def test_parse_plain_commit_with_embedded_a_or_f_is_not_auto_detected():
+    """普通中文提交中的 A/F 字母不应触发自动解析，应留给发布页面人工确认。"""
+    result = CommitParser.parse("提交A功能")
+
+    assert result.updates == []
+    assert result.is_valid is False

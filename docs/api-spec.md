@@ -1416,7 +1416,7 @@
 
 说明：
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
-- 配置了 `custom_script` 时容器内以 `sh -c` 直接执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`）。
+- 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
 - 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。
 - 打包配置仅支持 Git 仓库，且仓库必须属于当前项目。
 

@@ -175,6 +175,37 @@ def test_preview_changes_truncates_at_tag_commit(repository, monkeypatch):
     assert result["last_tag"] == "VA.1.0.0_20260701"
 
 
+def test_preview_changes_keeps_unparsed_commits_and_parses_fix_feat(repository, monkeypatch):
+    """预览保留完整提交区间，普通提交供前端人工录入，fix/feat 自动解析。"""
+    from utils.provider.base import TagInfo
+
+    class FakeProvider:
+        def list_tags(self, repo_identity):
+            return [TagInfo(name="VA.1.0.0_20260701", commit_hash="taghash")]
+
+        def list_commits(self, repo_identity, branch, since=None, until=None, per_page=100):
+            return [
+                _make_commit("feat1", "feat: 新增发布扫描"),
+                _make_commit("manual1", "提交 A 功能"),
+                _make_commit("manual2", "修改 B 功能"),
+                _make_commit("taghash", "old commit before tag"),
+            ]
+
+        def list_merge_requests(self, repo_identity, target_branch, since=None):
+            return []
+
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    result = ReleaseService.preview_changes(repository, "main")
+
+    assert [commit["hash"] for commit in result["commits"]] == ["feat1", "manual1", "manual2"]
+    assert result["parsed_updates"] == [{
+        "type": "A", "content": "新增发布扫描", "source": "commit", "source_ref": "feat1",
+    }]
+    assert [commit["hash"] for commit in result["commits"] if not commit["has_af"]] == [
+        "manual1", "manual2",
+    ]
+
+
 def test_preview_changes_falls_back_to_compare_when_tag_not_in_list(repository, monkeypatch):
     """tag commit 不在 100 条提交列表内时，校验为分支祖先后回退到 compare_commits"""
     from utils.provider.base import TagInfo

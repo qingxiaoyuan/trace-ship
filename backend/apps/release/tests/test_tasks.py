@@ -14,8 +14,8 @@ pytestmark = pytest.mark.django_db
 class TestReleaseTasks:
     """发布任务测试类"""
 
-    def test_cleanup_draft_releases_deletes_only_expired_empty_drafts(self, project, repository, user):
-        """cleanup_draft_releases 仅删除过期空草稿，保留有内容草稿和其他状态"""
+    def test_cleanup_draft_releases_deletes_all_expired_drafts(self, project, repository, user):
+        """cleanup_draft_releases 删除所有超期草稿（无论是否有内容），保留新草稿和其他状态"""
         expired_empty = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
@@ -76,10 +76,12 @@ class TestReleaseTasks:
 
         result = cleanup_draft_releases()
 
-        assert result["deleted"] >= 1
+        assert result["deleted"] >= 2
         assert not ReleaseRecord.objects.filter(id=expired_empty.id).exists()
+        # 有内容的超期草稿同样被清理
+        assert not ReleaseRecord.objects.filter(id=expired_with_doc.id).exists()
+        # 创建未满 1 小时的新草稿保留
         assert ReleaseRecord.objects.filter(id=fresh_empty.id).exists()
-        assert ReleaseRecord.objects.filter(id=expired_with_doc.id).exists()
         assert ReleaseRecord.objects.filter(id=pending.id).exists()
         assert ReleaseRecord.objects.filter(id=released.id).exists()
 
