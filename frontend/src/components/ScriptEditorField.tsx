@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AceEditor from 'react-ace';
 import { Modal, Popover } from 'antd';
 import { Braces, Check, ChevronDown, FileCode2, Info, Maximize2, Sparkles } from 'lucide-react';
@@ -52,7 +52,20 @@ export function ScriptEditorField({
   const [expandOpen, setExpandOpen] = useState(false);
   const [varOpen, setVarOpen] = useState(false);
   const editorRef = useRef<AceEditor | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const script = value ?? '';
+
+  // 高 DPI / 窗口缩放、弹窗动画导致容器尺寸变化时同步 Ace 渲染层，
+  // 避免光标与文本位置错位
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      editorRef.current?.editor.resize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const langBadge = lang === 'bat' ? 'bat' : 'sh';
 
@@ -159,7 +172,11 @@ export function ScriptEditorField({
       theme="github"
       name={`script-editor-${filename}-${fullscreen ? 'full' : 'inline'}`}
       value={script}
-      onChange={(v) => onChange?.(v)}
+      onChange={(v) => {
+        // Windows 粘贴的 sh 脚本常带 CRLF，统一转成 LF，避免行尾 \r 影响 shell 执行
+        const next = lang === 'sh' ? v.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : v;
+        onChange?.(next);
+      }}
       readOnly={readOnly}
       width="100%"
       height="100%"
@@ -170,7 +187,9 @@ export function ScriptEditorField({
       focus={fullscreen}
       setOptions={{
         useWorker: false,
-        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        // 等宽字体 fallback：避免字体未加载时测量宽度失真导致高 DPI 光标错位
+        fontFamily: "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+        fixedWidthGutter: true,
         showLineNumbers: true,
         showGutter: true,
         displayIndentGuides: false,
@@ -187,7 +206,7 @@ export function ScriptEditorField({
         }`}
       >
         {toolbar}
-        <div className={fullscreen ? 'min-h-0 flex-1' : 'h-[280px]'}>{editor}</div>
+        <div ref={containerRef} className={fullscreen ? 'min-h-0 flex-1' : 'h-[280px]'}>{editor}</div>
         {hint && (
           <div className="flex items-center gap-2 border-t border-slate-100 bg-white px-3 py-1.5 text-[10px] text-slate-400">
             <Info className="h-3 w-3 shrink-0" strokeWidth={1.5} />

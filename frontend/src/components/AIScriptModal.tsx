@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin, Switch } from 'antd';
 import { Check, RefreshCw, Sparkles, WandSparkles } from 'lucide-react';
 import AceEditor from 'react-ace';
@@ -53,6 +53,18 @@ export function AIScriptModal({
   const [progressLog, setProgressLog] = useState<string[]>([]);
   const editorRef = useRef<AceEditor | null>(null);
   const markerRef = useRef<number | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // 弹窗动画 / 高 DPI / 窗口缩放导致容器尺寸变化时同步 Ace 渲染层，避免光标错位
+  useEffect(() => {
+    const el = editorContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      editorRef.current?.editor.resize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const generate = async () => {
     setLoading(true);
@@ -265,7 +277,7 @@ export function AIScriptModal({
                     {lang === 'bat' ? 'bat' : 'sh'}
                   </span>
                 </div>
-                <div className="h-[calc(100%-33px)]">
+                <div ref={editorContainerRef} className="h-[calc(100%-33px)]">
                   <AceEditor
                     ref={editorRef}
                     mode={lang === 'bat' ? 'batchfile' : 'sh'}
@@ -281,7 +293,9 @@ export function AIScriptModal({
                     highlightActiveLine={false}
                     setOptions={{
                       useWorker: false,
-                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                      // 等宽字体 fallback：避免字体未加载时测量宽度失真导致高 DPI 光标错位
+                      fontFamily: "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+                      fixedWidthGutter: true,
                       showLineNumbers: true,
                       showGutter: true,
                       displayIndentGuides: false,

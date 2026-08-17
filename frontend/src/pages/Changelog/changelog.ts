@@ -43,6 +43,8 @@ export const changelogEntries: ChangelogEntry[] = [
       { category: 'improvement', text: '顶部通知入口由红点改为数字徽标，未读数量一目了然（超过 99 显示 99+）' },
       { category: 'improvement', text: '生成发布说明文档时，将「配置项改动」置于「变更类型」下方、便于先确认配置影响' },
       { category: 'fix', text: '修复发布说明「变更内容」等多行单元格只显示第一行的问题：提交审查页与发布详情页现可正确按换行展示每一条变更，变更类型（A/F）标记逐行生效' },
+      { category: 'fix', text: '修复脚本编辑器在高 DPI / 窗口缩放下光标错位的问题：开启固定行号栏宽度、补齐等宽字体兜底，并在容器尺寸变化时同步 Ace 渲染层' },
+      { category: 'improvement', text: '从 Windows 粘贴到 sh 脚本编辑器的命令自动将 CRLF 转换为 LF，避免行尾回车符影响 shell 执行' },
     ],
   },
   {
