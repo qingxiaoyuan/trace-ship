@@ -10,7 +10,10 @@ export const releaseApi = {
   /** 删除草稿 / 已驳回发布（仅草稿、已驳回状态可删） */
   deleteRelease: (id: string) => del<null>(`/releases/${id}/`),
   generateDoc: (id: string, data?: { commit_ids?: string[]; merge_similar?: boolean }) =>
-    post<string>(`/releases/${id}/generate-doc/`, data || {}),
+    post<string>(`/releases/${id}/generate-doc/`, data || {}, {
+      // 发布说明内容较多时生成耗时较长，放宽到 5 分钟，避免默认 30s 超时失败
+      timeout: 300_000,
+    }),
   updateDoc: (id: string, releaseDoc: string) =>
     post<Release>(`/releases/${id}/update-doc/`, { release_doc: releaseDoc }),
   submitAudit: (id: string) =>

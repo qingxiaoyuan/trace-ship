@@ -181,7 +181,9 @@ export function TopHeader() {
           >
             <Bell className="h-4 w-4" strokeWidth={1.5} />
             {unreadCount > 0 ? (
-              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400 ring-2 ring-white" />
+              <span className="absolute right-0 top-0 flex h-4 min-w-[16px] -translate-y-1/3 translate-x-1/3 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-semibold leading-none text-white ring-2 ring-white">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
             ) : null}
           </button>
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Loader, Plus, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader, Plus, XCircle } from 'lucide-react';
 import dayjs from 'dayjs';
 import { releaseApi } from '@/api/release';
 import { getAvatarColor } from '@/utils/avatar';
@@ -65,7 +65,7 @@ export function ReleaseBoard() {
   }, [data?.results]);
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
       {boardColumns.map((col) => {
         const items = (groupedReleases[col.key] || []).slice(0, 8);
         const count = groupedReleases[col.key]?.length ?? 0;
@@ -80,12 +80,6 @@ export function ReleaseBoard() {
                 {count}
               </span>
             </div>
-            {col.key === 'draft' && (
-              <div className="mb-2 flex items-center gap-1 rounded border border-amber-100 bg-amber-50/60 px-2 py-1 text-[10px] text-amber-700">
-                <AlertTriangle className="h-3 w-3 flex-shrink-0" strokeWidth={1.5} />
-                <span>每小时整点自动清理草稿</span>
-              </div>
-            )}
             <div className="space-y-2">
               {isLoading ? (
                 <div className="py-4 text-center text-[11px] text-slate-400">加载中…</div>
@@ -116,7 +110,8 @@ export function ReleaseList() {
     queryFn: () => releaseApi.getReleases({ page: 1, page_size: 8 }),
   });
 
-  const releases = data?.results || [];
+  // 发布看板不再展示草稿：草稿为内部过程状态，过滤后不出现在看板/列表
+  const releases = (data?.results || []).filter((r) => r.status !== 'draft');
 
   return (
     <div className="tech-card overflow-hidden rounded-xl">
@@ -181,7 +176,7 @@ export function ReleaseList() {
                 <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
                   {statusIcon}
                   <span className="text-[12px] text-slate-600">
-                    {release.status === 'released' ? '已发布' : release.status === 'rejected' ? '已驳回' : release.status === 'pending' ? '待审批' : '草稿'}
+                    {release.status === 'released' ? '已发布' : release.status === 'rejected' ? '已驳回' : release.status === 'pending' ? '待审批' : '-'}
                   </span>
                 </div>
                 <div className="col-span-6 text-right text-[11px] text-slate-400 md:col-span-1">
@@ -206,7 +201,7 @@ export function ReleaseBoardPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">发布看板</h1>
-          <p className="mt-1 text-[13px] text-slate-500">跟踪发布全生命周期：草稿 → 审批 → 发布</p>
+          <p className="mt-1 text-[13px] text-slate-500">跟踪发布全生命周期：审批 → 发布</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50/40 p-0.5">

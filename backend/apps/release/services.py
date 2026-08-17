@@ -558,8 +558,8 @@ class ReleaseDocGenerator:
         """
         由 release 已保存的表单字段组装 2 列 Markdown 表格发布说明文档
 
-        按需求顺序包含：当前发布版本号、Git提交hash、变更类型、变更内容、
-        配置项改动、关联项改动、是否影响其他功能、测试验证、发布人
+        按需求顺序包含：当前发布版本号、Git提交hash、变更类型、配置项改动、
+        变更内容、关联项改动、是否影响其他功能、测试验证、发布人
 
         Args:
             release: 发布记录实例
@@ -579,6 +579,13 @@ class ReleaseDocGenerator:
         change_type = "有配置项改动" if release.has_config_changes else "无配置项改动"
         rows.append(("变更类型", change_type))
 
+        # 配置项改动（紧随变更类型下方，便于先确认配置影响）
+        if release.has_config_changes:
+            cfg_doc = release.config_change_doc or "无"
+            rows.append(("配置项改动", cfg_doc))
+        else:
+            rows.append(("配置项改动", "无"))
+
         # 变更内容（多行合并在一个单元格内，用换行分隔，不使用 <br>）
         updates = release.updates or []
         if updates:
@@ -592,13 +599,6 @@ class ReleaseDocGenerator:
             rows.append(("变更内容", "\n".join(lines)))
         else:
             rows.append(("变更内容", "无"))
-
-        # 配置项改动
-        if release.has_config_changes:
-            cfg_doc = release.config_change_doc or "无"
-            rows.append(("配置项改动", cfg_doc))
-        else:
-            rows.append(("配置项改动", "无"))
 
         # 关联项改动（多行合并在一个单元格内，用换行分隔，不使用 <br>）
         related = release.related_changes or []
@@ -1017,11 +1017,12 @@ class ReleaseService:
         预览上个 Tag 到本次基线之间的 commits 与 MRs，并自动解析更新内容
 
         先并发拉取 tag 列表（短 TTL 缓存）与当前分支最新 N 条提交记录
-        （settings.RELEASE_PREVIEW_MAX_COMMITS，默认 100），再按上一个 tag 的
+        （settings.RELEASE_PREVIEW_MAX_COMMITS，默认 10），再按上一个 tag 的
         commit hash 截断取 tag 之后的提交；若 N 条内未找到 tag commit，
         先通过 merge_base 校验 tag 是否为分支祖先，是则回退 compare_commits
-        接口取区间差异，否则说明 tag 不在该分支历史上（如跨分支打 tag），
-        保守取本分支最新 N 条提交。无匹配 tag 时同样取最新 N 条提交。
+        接口取区间完整差异（方案 A：结果完整，不受 N 条限制），否则说明
+        tag 不在该分支历史上（如跨分支打 tag），保守取本分支最新 N 条提交。
+        无匹配 tag 时同样取最新 N 条提交。
         上一个 tag 按发布类型分别查找：formal 取最新正式 tag，
         rc/beta 取各自类型（-rc / -beta）的最新 tag。
 
@@ -1036,7 +1037,7 @@ class ReleaseService:
         """
         provider = ReleaseService._get_provider(repository, request_user)
         repo_identity = repository.external_identity
-        max_commits = int(getattr(settings, "RELEASE_PREVIEW_MAX_COMMITS", 100))
+        max_commits = int(getattr(settings, "RELEASE_PREVIEW_MAX_COMMITS", 10))
 
         # 并发拉取 tag 列表与本分支提交记录（两者无依赖），缩短预览等待
         with ThreadPoolExecutor(max_workers=2) as executor:

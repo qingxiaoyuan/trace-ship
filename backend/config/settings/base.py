@@ -223,8 +223,10 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# 发布变更预览拉取分支提交的最大条数；超出该范围时回退 compare 接口取区间差异
-RELEASE_PREVIEW_MAX_COMMITS = int(os.getenv("RELEASE_PREVIEW_MAX_COMMITS", "100"))
+# 发布预览单分支最大提交扫描数（RELEASE_PREVIEW_MAX_COMMITS 可覆盖），默认 10 条以内。
+# 方案 A：仅用于在最近 N 条提交中定位上一个 tag；若超出该范围未找到 tag commit，
+# 仍回退 compare 接口取 tag 到分支头的完整区间差异，保证结果完整。
+RELEASE_PREVIEW_MAX_COMMITS = int(os.getenv("RELEASE_PREVIEW_MAX_COMMITS", "10"))
 
 # 系统内置打包工作区根目录
 PACKAGE_WORKSPACE_ROOT = os.getenv("PACKAGE_WORKSPACE_ROOT", str(BASE_DIR / "package_workspaces"))

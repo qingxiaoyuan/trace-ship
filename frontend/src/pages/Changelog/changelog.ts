@@ -37,6 +37,11 @@ export const changelogEntries: ChangelogEntry[] = [
       { category: 'fix', text: '修复分支直打包 SVN 推送失败：分支名含斜杠时版本目录的父目录不存在（svn import 不会自动创建），推送前自动逐级创建缺失的父目录' },
       { category: 'improvement', text: '分支直打包任务在打包看板/详情中明确标注「分支」来源并显示最新提交短哈希，与按 Tag 触发的任务清晰区分' },
       { category: 'improvement', text: '新建打包弹窗的「按已发布 Tag / 按分支最新代码」切换改为与打包看板一致的分段样式' },
+      { category: 'improvement', text: '发布变更预览单分支最大提交扫描数默认限制为 10 条（RELEASE_PREVIEW_MAX_COMMITS 可配置）；超出该范围时回退区间对比，变更内容仍完整' },
+      { category: 'improvement', text: '生成发布说明接口前端超时由 30 秒放宽至 5 分钟，内容较多时不再超时失败' },
+      { category: 'improvement', text: '发布看板不再展示草稿状态（草稿为内部过程状态），看板/列表聚焦待审批、已发布、已驳回' },
+      { category: 'improvement', text: '顶部通知入口由红点改为数字徽标，未读数量一目了然（超过 99 显示 99+）' },
+      { category: 'improvement', text: '生成发布说明文档时，将「配置项改动」置于「变更类型」下方、便于先确认配置影响' },
     ],
   },
   {

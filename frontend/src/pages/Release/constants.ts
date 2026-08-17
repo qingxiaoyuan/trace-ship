@@ -20,14 +20,6 @@ export const boardColumns: {
   cardBorder: string;
 }[] = [
   {
-    key: 'draft',
-    label: '草稿',
-    tone: 'border-slate-200/70 bg-slate-50/50',
-    dot: 'bg-slate-400',
-    countText: 'text-slate-400',
-    cardBorder: 'border-slate-200 hover:border-indigo-300',
-  },
-  {
     key: 'pending',
     label: '待审批',
     tone: 'border-amber-200/70 bg-amber-50/40',
