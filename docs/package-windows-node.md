@@ -47,6 +47,46 @@ Trace Ship 支持将打包任务下发到远程 Windows 机器执行（如 .NET 
 
 产物写入 `%ARTIFACTS_DIR%`（即 `{task}\artifacts`）后，平台经 SFTP 回传到本地工作区，后续扫描、下载、推 SVN 流程与本地 Docker 打包一致。
 
+## 脚本错误处理（BAT 无 `set -e`）
+
+与 sh 的 `set -e`（遇错即停）不同，**Windows 批处理没有自动中断机制**：某条命令失败后
+脚本默认会继续往下执行。平台只按 `pack-custom.bat` / `pack.bat` 的**最终退出码**判定
+打包成功或失败。因此：
+
+- 若脚本中某条命令失败但脚本继续执行、最终以 `0` 退出，**打包会被误判为成功**；
+- 若失败后脚本继续执行且后续命令因依赖失败产物而挂起（等待网络 / 等待输入 / 进程未退出），
+  cmd 没有超时机制，任务会**一直等待**（只能手动取消任务关闭 SSH 会话）。
+
+正确做法是让错误码**逐层向上传递**：
+
+**1. 内部脚本（仓库里的脚本）**：每个关键命令失败立即返回非零
+```bat
+@echo off
+pnpm install || exit /b 1
+pnpm run build || exit /b 1
+exit /b 0
+```
+
+**2. 自定义脚本（外层）**：`call` 内部脚本后检查错误码
+```bat
+@echo off
+chcp 65001 >nul
+call "%SOURCE_DIR%\scripts\build.bat"
+if errorlevel 1 exit /b 1
+call "%SOURCE_DIR%\scripts\test.bat"
+if errorlevel 1 exit /b 1
+exit /b 0
+```
+
+错误码传递链：内部脚本（非 0）→ 自定义脚本（`exit /b 1`）→ 平台生成的 `pack-run.bat`
+（`exit /b %errorlevel%`）→ **打包判定为失败**。
+
+> 提示：`%errorlevel%`（带百分号）在括号 `( )` 代码块内取值是**进入块时的旧值**（延迟展开问题），
+> 需要逐条判断时请**优先用不带 `%` 的 `if errorlevel 1`**（cmd 内建判断，不经过变量展开，
+> 括号块内也实时可靠），而不要用 `if %ERRORLEVEL% neq 0`；也不要让 `call` 与判断之间夹
+> 其他成功命令（成功命令会把 errorlevel 重置为 0）。确实需要变量形式时用 `!errorlevel!`
+> 并搭配 `setlocal EnableDelayedExpansion`。
+
 ## 资源限制（防止打包占满节点）
 
 节点支持 CPU 资源限制，打包配置可进一步覆盖并追加内存上限：

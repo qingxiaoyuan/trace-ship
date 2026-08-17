@@ -532,7 +532,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             onAiGenerate={readOnly ? undefined : () => setAiModalOpen(true)}
             hint={
               isRemote
-                ? 'Windows 批处理脚本；留空则执行源码根目录下的 pack.bat。平台透传最终退出码，多步骤失败请自行返回非零'
+                ? 'Windows 批处理：BAT 无 set -e，平台按脚本最终退出码判定，失败须逐级返回非零——调用内部脚本后加 "if errorlevel 1 exit /b 1"，内部脚本内关键命令失败也请 "|| exit /b 1"'
                 : '留空则执行镜像内置脚本；填写后在 /workspace/source 目录以 sh -ec 执行（遇错即停，编译失败会自动判为打包失败）'
             }
           />
