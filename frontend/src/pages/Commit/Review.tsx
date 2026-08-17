@@ -420,8 +420,8 @@ function ReleaseReviewDetail({
 /** 发布说明表格行 */
 function DocRow({ row, hasWarning }: { row: MdTableRow; hasWarning: boolean }) {
   const isChangeContent = row.key === '变更内容';
-  // 变更内容按 <br> 分行，每行尝试提取类型标记
-  const lines = row.value.split('<br>');
+  // 变更内容按 <br> 或字面换行分行（文档存储用 \n 多行），每行尝试提取类型标记
+  const lines = row.value.split(/<br>|\n/);
 
   return (
     <tr className="border-b border-slate-100 last:border-0">
@@ -462,7 +462,7 @@ function DocRow({ row, hasWarning }: { row: MdTableRow; hasWarning: boolean }) {
             })}
           </div>
         ) : (
-          row.value.split('<br>').map((line, i) => <div key={i}>{line}</div>)
+          row.value.split(/<br>|\n/).map((line, i) => <div key={i}>{line}</div>)
         )}
       </td>
     </tr>

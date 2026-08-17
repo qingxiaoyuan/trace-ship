@@ -223,7 +223,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
                     {isCheckboxField(row.key) ? (
                       <CheckboxField value={row.value} fieldKey={row.key} disabled />
                     ) : (
-                      row.value.split('<br>').map((line, lineIdx) => (
+                      row.value.split(/<br>|\n/).map((line, lineIdx) => (
                         <div key={lineIdx}>{line}</div>
                       ))
                     )}
