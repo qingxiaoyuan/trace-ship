@@ -1,8 +1,9 @@
-import pytest
-from rest_framework.test import APIClient
-import subprocess
 import signal
 from pathlib import Path
+
+import pytest
+from rest_framework import serializers
+from rest_framework.test import APIClient
 
 from apps.account.models import User
 from apps.package.models import PackageConfig, PackageImage, PackageTask
@@ -682,3 +683,135 @@ def test_sanitize_log_line_plain_text_unchanged():
     """
     raw = "added 128 packages in 3s（含中文）"
     assert PackageService._sanitize_log_line(raw) == raw
+
+
+@pytest.mark.django_db
+def test_create_task_for_branch_creates_task(project, repository, user, monkeypatch):
+    """分支直打包：任务标题与自动编码按分支名命名，无关联发布。"""
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project, repository=repository, name="Web 打包", image=image,
+    )
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
+    # 模拟分支列表（含最新提交哈希），验证 commit_hash 落库
+    monkeypatch.setattr(
+        "apps.repository.services.RepositoryService.list_branches",
+        lambda repo, request_user=None: [
+            {"name": "feature/demo", "last_commit_hash": "a1b2c3d4", "is_default": False},
+        ],
+    )
+
+    task = PackageService.create_task_for_branch(config, "feature/demo", request_user=user)
+
+    assert task.release_id is None
+    assert task.project_id == project.id
+    assert task.repository_id == repository.id
+    assert task.triggered_by_id == user.id
+    assert task.name == "Web 打包 / feature/demo"
+    assert task.version == "feature/demo"
+    assert task.tag_name == "feature/demo"
+    assert task.commit_hash == "a1b2c3d4"
+    assert task.release_type == "formal"
+    assert task.status == "queued"
+
+
+@pytest.mark.django_db
+def test_create_task_for_branch_commit_hash_fallback(project, repository, user, monkeypatch):
+    """分支最新提交信息拉取失败时降级为空串，不阻断打包。"""
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project, repository=repository, name="Web 打包", image=image,
+    )
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
+    monkeypatch.setattr(
+        "apps.repository.services.RepositoryService.list_branches",
+        lambda repo, request_user=None: (_ for _ in ()).throw(RuntimeError("网络异常")),
+    )
+
+    task = PackageService.create_task_for_branch(config, "main", request_user=user)
+
+    assert task.commit_hash == ""
+    assert task.tag_name == "main"
+
+
+@pytest.mark.django_db
+def test_create_task_for_branch_rejects_empty_branch(project, repository, user):
+    """分支名为空时抛校验错误。"""
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project, repository=repository, name="Web 打包", image=image,
+    )
+    with pytest.raises(serializers.ValidationError):
+        PackageService.create_task_for_branch(config, "  ", request_user=user)
+
+
+@pytest.mark.django_db
+def test_create_task_for_branch_rejects_inactive_config(project, repository, user):
+    """停用的打包配置不能触发分支打包。"""
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project, repository=repository, name="Web 打包", image=image, is_active=False,
+    )
+    with pytest.raises(serializers.ValidationError):
+        PackageService.create_task_for_branch(config, "main", request_user=user)
+
+
+@pytest.mark.django_db
+def test_doc_filename_sanitizes_branch_slash():
+    """发布说明文件名中的版本段会替换路径非法字符（分支名可能含 /）。"""
+    assert PackageService._doc_filename("feature/1.0") == "feature-1.0"
+    assert PackageService._doc_filename("release/测试 v2.0") == "release-测试-v2.0"
+    assert PackageService._doc_filename("/") == "latest"
+
+
+@pytest.mark.django_db
+def test_notify_package_result_falls_back_to_triggered_by(project, repository, user):
+    """分支直打包任务（无发布）结束时通知触发人。"""
+    from apps.notification.models import Notification
+    from apps.notification.services import NotificationService
+
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project, repository=repository, name="Web 打包", image=image,
+    )
+    task = PackageTask.objects.create(
+        config=config,
+        release=None,
+        project=project,
+        repository=repository,
+        triggered_by=user,
+        name="Web 打包 / feature/demo",
+        tag_name="feature/demo",
+        version="feature/demo",
+        status="success",
+    )
+
+    NotificationService.notify_package_result(task)
+
+    notification = Notification.objects.filter(user=user).first()
+    assert notification is not None
+    assert notification.notification_type == "build"
+    assert "feature/demo" in notification.content
+    assert notification.related_id == str(task.id)
+
+
+@pytest.mark.django_db
+def test_build_env_omits_release_doc_path_for_branch_task(project, repository, user, tmp_path):
+    """分支直打包任务（无发布）不注入 RELEASE_DOC_PATH，避免构建脚本误读不存在的文件。"""
+    workspace = tmp_path / "workspace"
+    task = PackageTask.objects.create(
+        config=None,
+        release=None,
+        project=project,
+        repository=repository,
+        triggered_by=user,
+        name="Web 打包 / feature/demo",
+        tag_name="feature/demo",
+        version="feature/demo",
+    )
+
+    env = PackageService._build_env(task, workspace)
+
+    assert "RELEASE_DOC_PATH" not in env
+    assert env["VERSION"] == "feature/demo"
+    assert env["TAG_NAME"] == "feature/demo"

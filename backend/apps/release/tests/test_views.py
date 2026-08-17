@@ -278,6 +278,73 @@ class TestReleaseViews:
         release.refresh_from_db()
         assert release.status == "released"
 
+    def test_delete_released_tag_success(self, api_client, project, repository, patched_provider):
+        """管理员输入正确 tag 名称后删除已发布版本（远端 tag + 本地记录）"""
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0_20260814",
+            branch="main",
+            release_type="formal",
+            status="released",
+            released_at=timezone.now(),
+            publisher=api_client.handler._force_user,
+        )
+        response = api_client.post(
+            f"/api/releases/{release.id}/delete-released/",
+            {"tag_name": "VA.1.0.0_20260814"},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["code"] == 0
+        assert response.data["data"]["tag_name"] == "VA.1.0.0_20260814"
+        assert response.data["data"]["remote_deleted"] is True
+        assert not ReleaseRecord.objects.filter(id=release.id).exists()
+
+    def test_delete_released_tag_mismatch(self, api_client, project, repository, patched_provider):
+        """输入的 tag 名称与发布记录不一致时拒绝删除"""
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0_20260814",
+            branch="main",
+            release_type="formal",
+            status="released",
+            released_at=timezone.now(),
+            publisher=api_client.handler._force_user,
+        )
+        response = api_client.post(
+            f"/api/releases/{release.id}/delete-released/",
+            {"tag_name": "VA.9.9.9_99999999"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "不一致" in response.data["message"]
+        assert ReleaseRecord.objects.filter(id=release.id).exists()
+
+    def test_delete_released_tag_rejects_not_released(self, api_client, project, repository, patched_provider):
+        """非已发布状态不允许删除版本"""
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0_20260814",
+            branch="main",
+            release_type="formal",
+            status="pending",
+            publisher=api_client.handler._force_user,
+        )
+        response = api_client.post(
+            f"/api/releases/{release.id}/delete-released/",
+            {"tag_name": "VA.1.0.0_20260814"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "仅已发布状态" in response.data["message"]
+        assert ReleaseRecord.objects.filter(id=release.id).exists()
+
     def test_list_releases(self, api_client, project, repository):
         """查询发布列表"""
         ReleaseRecord.objects.create(

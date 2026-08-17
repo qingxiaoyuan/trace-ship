@@ -7,8 +7,8 @@ import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { ArtifactPanel, ArtifactActionsDropdown } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
-import { formatDuration, getSvnPushWarning, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText } from './utils';
-import { StatusBadge, SvnPushWarning } from './Shared';
+import { formatDuration, getSvnPushWarning, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText, isBranchTask } from './utils';
+import { StatusBadge, SvnPushWarning, TaskSourceBadge } from './Shared';
 
 interface BuildViewProps {
   task: PackageTask;
@@ -73,7 +73,11 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
                 <span className="font-mono">{task.name}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
-                <span className="font-mono">{task.tag_name}</span>
+                {isBranchTask(task) ? (
+                  <TaskSourceBadge task={task} />
+                ) : (
+                  <span className="font-mono">{task.tag_name}</span>
+                )}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span>{task.triggered_by_name || '-'}</span>
                 {task.started_at && (

@@ -269,8 +269,11 @@ class PackageTask(models.Model):
     release = models.ForeignKey(
         "release.ReleaseRecord",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="package_tasks",
         verbose_name="关联发布",
+        help_text="发布触发任务绑定发布记录；分支直打包任务该字段为空",
     )
     project = models.ForeignKey(
         "project.Project",
@@ -336,3 +339,37 @@ class PackageTask(models.Model):
     def is_finished(self) -> bool:
         """任务是否已结束。"""
         return self.status in ("success", "failure", "canceled")
+
+
+class PackageKnowledge(models.Model):
+    """AI 打包通用知识库条目（系统级，生成打包脚本时作为上下文注入）。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=200, verbose_name="标题")
+    content = models.TextField(verbose_name="内容")
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_package_knowledge",
+        verbose_name="创建人",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "sys_package_knowledge"
+        verbose_name = "打包知识库"
+        verbose_name_plural = "打包知识库"
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(
+                fields=["is_active", "updated_at"],
+                name="pkg_knowledge_active_upd_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.title

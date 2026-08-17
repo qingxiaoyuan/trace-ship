@@ -1,8 +1,8 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, ConfigProvider, Form, Input, InputNumber, Modal, Select, Switch, Typography } from 'antd';
 import { Check, ChevronDown, Container, FolderTree, Monitor, Settings2 } from 'lucide-react';
-import type { PackageConfig } from '@/types';
+import type { AIGenerateScriptPayload, AIScriptDraft, PackageConfig } from '@/types';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { packageApi } from '@/api/package';
@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { SvnTestButton } from '@/components/SvnTestButton';
 import { ImagePickerField } from '@/components/ImagePickerField';
 import { ScriptEditorField } from '@/components/ScriptEditorField';
+import { AIScriptModal } from '@/components/AIScriptModal';
 import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
 
 interface PackageConfigModalProps {
@@ -127,6 +128,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
   const [form] = Form.useForm<Partial<PackageConfig>>();
+  const [aiModalOpen, setAiModalOpen] = useState(false);
 
   const projectId = Form.useWatch('project', form) ?? fixedProjectId;
   const executorType = Form.useWatch('executor_type', form) ?? 'local_docker';
@@ -266,6 +268,56 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     () => (svnCredsData?.results || []).map((c) => ({ label: c.name, value: c.id })),
     [svnCredsData],
   );
+
+  /** 组装当前表单值并调用 AI 生成接口（支持未保存配置） */
+  const buildAiPayload = (
+    hint: string,
+    referenceExemplars: boolean,
+  ): AIGenerateScriptPayload => {
+    const values = form.getFieldsValue() as Partial<PackageConfig>;
+    const project = fixedProjectId ?? values.project;
+    const repository = values.repository;
+    if (!project || !repository) {
+      throw new Error('请先选择项目与关联仓库');
+    }
+    const ref = values.image_ref;
+    const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
+    const isRemote = values.executor_type === 'remote_windows';
+    const payload: AIGenerateScriptPayload = {
+      project,
+      repository,
+      executor_type: isRemote ? 'remote_windows' : 'local_docker',
+      node: isRemote ? values.node : undefined,
+      image_ref: isRemote ? undefined : ref,
+      image_info: item ? toImageInfo(item) : undefined,
+      build_path: values.build_path || '.',
+      output_path: values.output_path || 'dist',
+      auto_collect_output: !!values.auto_collect_output,
+      auto_compress: !!values.auto_compress,
+      env_vars: values.env_vars || {},
+      custom_script: values.custom_script || '',
+      hint,
+      reference_exemplars: referenceExemplars,
+    };
+    return payload;
+  };
+
+  const handleAiGenerate = async (
+    hint: string,
+    referenceExemplars: boolean,
+  ): Promise<AIScriptDraft> => {
+    return packageApi.aiGenerateScript(buildAiPayload(hint, referenceExemplars));
+  };
+
+  /** SSE 流式生成：实时返回 delta / done / error 事件 */
+  const handleAiGenerateStream = (hint: string, referenceExemplars: boolean) =>
+    packageApi.aiGenerateScriptStream(buildAiPayload(hint, referenceExemplars));
+
+  const handleAiApply = (script: string) => {
+    form.setFieldValue('custom_script', script);
+    setAiModalOpen(false);
+    message.success('已应用到打包脚本，可继续编辑后保存');
+  };
 
   const inputCls =
     'rounded-lg border-slate-200 text-[13px] hover:border-slate-300 focus:border-indigo-500';
@@ -477,6 +529,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             lang={isRemote ? 'bat' : 'sh'}
             filename={isRemote ? 'pack-custom.bat' : 'custom-script.sh'}
             readOnly={readOnly}
+            onAiGenerate={readOnly ? undefined : () => setAiModalOpen(true)}
             hint={
               isRemote
                 ? 'Windows 批处理脚本；留空则执行源码根目录下的 pack.bat。平台透传最终退出码，多步骤失败请自行返回非零'
@@ -605,6 +658,15 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         </div>
       </Form>
       </ConfigProvider>
+      <AIScriptModal
+        open={aiModalOpen}
+        lang={isRemote ? 'bat' : 'sh'}
+        filename={isRemote ? 'pack-custom.bat' : 'custom-script.sh'}
+        onGenerate={handleAiGenerate}
+        onGenerateStream={handleAiGenerateStream}
+        onApply={handleAiApply}
+        onClose={() => setAiModalOpen(false)}
+      />
     </Modal>
   );
 }

@@ -25,7 +25,7 @@ from apps.workflow.services import WorkflowEngine
 from utils.commit_parser import extract_update_lines
 from utils.provider.base import CommitInfo, GitProvider, MergeRequestInfo, TagInfo
 from utils.provider.credential_resolver import resolve_credential
-from utils.provider.exceptions import ProviderError
+from utils.provider.exceptions import NotFoundError, ProviderError
 from utils.provider.factory import get_provider
 
 logger = logging.getLogger(__name__)
@@ -1436,3 +1436,108 @@ class ReleaseService:
         """
         release = ReleaseRecord.objects.get(id=release_id)
         return cls.push_tag(release, request_user)
+
+    @classmethod
+    def delete_released_tag(
+        cls,
+        release: ReleaseRecord,
+        tag_name: str,
+        request_user=None,
+    ) -> dict:
+        """
+        删除已发布的版本（远端 tag + 发布记录）
+
+        仅 released 状态可删除；调用方必须先通过前端二次确认并传入完整
+        tag 名称，本方法再次校验输入与发布记录一致后才执行。远端 tag 已
+        不存在（例如在 GitLab 手工删除过）时视为幂等，仍继续删除本地记录。
+
+        Args:
+            release: ReleaseRecord 实例（status=released）
+            tag_name: 用户输入的 tag 名称，必须与 release.tag_name 一致
+            request_user: 当前请求用户
+
+        Returns:
+            {"tag_name": str, "remote_deleted": bool}
+
+        Raises:
+            serializers.ValidationError: 状态不符 / tag 名称不匹配
+            ProviderError: 远端删除失败（认证、连接等）
+        """
+        if release.status != "released":
+            raise serializers.ValidationError({"status": "仅已发布状态可删除版本"})
+        if tag_name != release.tag_name:
+            raise serializers.ValidationError({"tag_name": "输入的 Tag 名称与发布版本不一致"})
+
+        user = request_user or release.publisher
+        provider = cls._get_provider(release.repository, request_user)
+        remote_deleted = True
+        try:
+            provider.delete_tag(
+                repo_identity=release.repository.external_identity,
+                tag_name=release.tag_name,
+            )
+        except NotFoundError:
+            # 远端 tag 已不存在（可能被手工删除），本地记录仍按删除处理
+            remote_deleted = False
+            logger.warning(
+                "删除已发布版本时远端 tag 不存在: release=%s tag=%s",
+                release.id, release.tag_name,
+            )
+        except ProviderError as exc:
+            logger.warning(
+                "删除已发布版本失败(Provider 错误): release=%s tag=%s err=%s",
+                release.id, release.tag_name, exc,
+            )
+            OperationLogService.log_release(
+                user=user,
+                release=release,
+                action="delete_released",
+                result="failure",
+                detail={"error": str(exc), "traceback": traceback.format_exc()},
+            )
+            raise
+        except Exception:
+            # 非 Provider 异常（凭证解密、网络等）同样留痕
+            OperationLogService.log_release(
+                user=user,
+                release=release,
+                action="delete_released",
+                result="failure",
+                detail={"error": "删除已发布版本出现未预期异常", "traceback": traceback.format_exc()},
+            )
+            logger.exception(
+                "删除已发布版本出现未预期异常: release=%s version=%s tag=%s",
+                release.id, release.version, release.tag_name,
+            )
+            raise
+
+        # 失效 tag 列表缓存，保证预览/版本号计算立即看到删除后的 tag
+        try:
+            from apps.repository.services import RepositoryService
+
+            cache.delete(
+                tags_cache_key(
+                    release.repository.external_identity,
+                    RepositoryService._resolve_server_url(release.repository),
+                )
+            )
+        except Exception:
+            pass
+
+        release.delete()
+        OperationLogService.log_release(
+            user=user,
+            release=release,
+            action="delete_released",
+            result="success",
+            detail={
+                "tag_name": release.tag_name,
+                "version": release.version,
+                "remote_deleted": remote_deleted,
+            },
+        )
+        logger.info(
+            "删除已发布版本成功: release=%s tag=%s remote_deleted=%s",
+            release.id, release.tag_name, remote_deleted,
+        )
+        return {"tag_name": release.tag_name, "remote_deleted": remote_deleted}

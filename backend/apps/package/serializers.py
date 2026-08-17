@@ -3,7 +3,7 @@
 """
 from rest_framework import serializers
 
-from apps.package.models import PackageConfig, PackageImage, PackageNode, PackageTask
+from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
 from apps.project.models import ProjectMember
 
 
@@ -297,6 +297,34 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+
+class PackageKnowledgeSerializer(serializers.ModelSerializer):
+    """AI 打包通用知识库条目序列化器。"""
+
+    created_by_name = serializers.CharField(source="created_by.nickname", read_only=True, default="")
+
+    class Meta:
+        model = PackageKnowledge
+        fields = [
+            "id", "title", "content", "is_active",
+            "created_by_name", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_by_name", "created_at", "updated_at"]
+
+    def validate_title(self, value: str) -> str:
+        title = (value or "").strip()
+        if not title:
+            raise serializers.ValidationError("请输入知识标题")
+        return title
+
+    def validate_content(self, value: str) -> str:
+        content = (value or "").strip()
+        if not content:
+            raise serializers.ValidationError("请输入知识内容")
+        if len(content) > 20000:
+            raise serializers.ValidationError("知识内容不能超过 20000 字符")
+        return content
 
 
 class PackageTaskSerializer(serializers.ModelSerializer):

@@ -376,6 +376,80 @@ export interface PackageImageInfo {
   image_tag: string;
 }
 
+/** AI 生成打包脚本：逐行解释项 */
+export interface AIScriptExplanation {
+  line: number;
+  reason: string;
+}
+
+/** AI 生成打包脚本草稿结果 */
+export interface AIScriptDraft {
+  script: string;
+  explanations: AIScriptExplanation[];
+  summary: string;
+  model: string;
+  /** 是否成功扫描到仓库上下文 */
+  repo_scanned: boolean;
+  /** 仓库扫描失败时的降级提示 */
+  repo_scan_warning?: string;
+  /** 是否成功探测本地 Docker 镜像 */
+  container_probed: boolean;
+  /** 容器探测失败时的降级提示 */
+  container_probe_warning?: string;
+  /** 是否成功探测远程 Windows 节点工具链 */
+  node_probed: boolean;
+  /** 节点工具探测失败时的降级提示 */
+  node_probe_warning?: string;
+  /** 生成时参考的历史成功脚本来源（不含脚本内容） */
+  referenced_scripts?: ReferencedScript[];
+}
+
+/** AI 生成时参考的历史成功脚本来源 */
+export interface ReferencedScript {
+  project_name: string;
+  repository_name: string;
+  executor_type: string;
+  version: string;
+  success_count: number;
+}
+
+/** AI 生成脚本 SSE 流事件（delta 实时文本 / done 最终结果 / error 失败） */
+export type AIScriptStreamEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; data: AIScriptDraft }
+  | { type: 'error'; code: number; message: string };
+
+/** AI 生成打包脚本请求参数（支持未保存配置，project/repository 必填） */
+export interface AIGenerateScriptPayload {
+  project: string;
+  repository: string;
+  executor_type: 'local_docker' | 'remote_windows';
+  node?: string | null;
+  image_ref?: string;
+  image_info?: PackageImageInfo;
+  build_path?: string;
+  output_path?: string;
+  auto_collect_output?: boolean;
+  auto_compress?: boolean;
+  env_vars?: Record<string, unknown>;
+  custom_script?: string;
+  hint?: string;
+  /** 是否参考历史成功脚本（默认 true） */
+  reference_exemplars?: boolean;
+}
+
+/** AI 打包通用知识库条目（系统级，生成脚本时注入 AI 上下文） */
+export interface PackageKnowledge {
+  id: string;
+  title: string;
+  content: string;
+  is_active: boolean;
+  created_by_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 远程打包节点（系统级节点池，当前支持 Windows，SSH/SFTP 接入） */
 export interface PackageNode {
   id: string;
@@ -465,8 +539,9 @@ export interface PackageTask {
   id: string;
   config?: string | null;
   config_name?: string;
-  release: string;
-  release_version?: string;
+  /** 关联发布（分支直打包任务为空） */
+  release: string | null;
+  release_version?: string | null;
   project: string;
   project_name?: string;
   repository: string;

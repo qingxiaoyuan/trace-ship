@@ -119,3 +119,16 @@ export function formatRelativeTime(date: string | Date): string {
   if (months < 12) return `${months}个月前`;
   return `${Math.floor(months / 12)}年前`;
 }
+
+/** 是否为分支直打包任务（无关联发布，标题与编码按分支名命名）。 */
+export function isBranchTask(task: PackageTask): boolean {
+  return !task.release;
+}
+
+/** 分支直打包任务来源展示文案：分支名 + 最新提交短哈希（如 "feature/demo @ a1b2c3d4"）。 */
+export function branchTaskLabel(task: PackageTask): string | null {
+  if (!isBranchTask(task)) return null;
+  const branch = task.tag_name || task.version || '';
+  const commit = task.commit_hash ? ` @ ${task.commit_hash.slice(0, 8)}` : '';
+  return `${branch}${commit}`;
+}

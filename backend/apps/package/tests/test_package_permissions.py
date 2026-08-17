@@ -121,6 +121,47 @@ def test_tester_can_trigger_package(project, package_config, release, users, no_
 
 
 @pytest.mark.django_db
+def test_tester_can_trigger_branch_package(project, package_config, users, no_dispatch):
+    """测试角色可按分支最新代码触发打包。"""
+    response = auth_client(users["tester"]).post(
+        f"/api/packages/configs/{package_config.id}/trigger-branch/",
+        {"branch": "feature/demo"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    data = response.data["data"]
+    assert data["release"] is None
+    assert data["name"] == "Web 打包 / feature/demo"
+    assert data["version"] == "feature/demo"
+    assert data["tag_name"] == "feature/demo"
+
+
+@pytest.mark.django_db
+def test_viewer_cannot_trigger_branch_package(project, package_config, users, no_dispatch):
+    """只读成员不能按分支触发打包。"""
+    response = auth_client(users["viewer"]).post(
+        f"/api/packages/configs/{package_config.id}/trigger-branch/",
+        {"branch": "main"},
+        format="json",
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_trigger_branch_requires_branch(project, package_config, users, no_dispatch):
+    """分支直打包必须指定分支名。"""
+    response = auth_client(users["manager"]).post(
+        f"/api/packages/configs/{package_config.id}/trigger-branch/",
+        {},
+        format="json",
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
 def test_viewer_cannot_trigger_package(project, package_config, release, users, no_dispatch):
     """只读成员不能触发打包"""
     response = auth_client(users["viewer"]).post(

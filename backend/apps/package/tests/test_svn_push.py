@@ -903,3 +903,62 @@ class TestReleaseTypeDistinction:
 
         task = PackageService.create_task_for_release(config, release, request_user=user)
         assert task.release_type == "rc"
+
+
+@pytest.mark.django_db
+def test_run_task_with_svn_push_for_branch_task(
+    project, repository, svn_credential, user, settings, tmp_path, monkeypatch
+):
+    """分支直打包任务（无发布）启用 SVN 推送时，打包成功后同样推送产物到 SVN。"""
+    settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
+    config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="SVN 打包配置",
+        custom_script="echo build",
+        svn_push_enabled=True,
+        svn_url="svn://host/releases",
+        svn_credential=svn_credential,
+        svn_path_template="{version}",
+    )
+    # 屏蔽任务投递，避免测试环境实际执行打包
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
+    task = PackageService.create_task_for_branch(config, "feature/demo", request_user=user)
+
+    monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
+    monkeypatch.setattr(PackageService, "_run_container", lambda task, workspace: None)
+    monkeypatch.setattr(
+        PackageService,
+        "_scan_artifacts",
+        lambda workspace: [{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
+    )
+
+    mock_provider = MagicMock()
+    # remote_exists：对最末目录返回 False（不存在可推送），对父目录 releases/feature 也返回 False（需创建）
+    mock_provider.remote_exists.side_effect = lambda url: False
+    monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+
+    PackageService.run_task(task)
+    task.refresh_from_db()
+
+    assert task.status == "success"
+    assert task.stage_info["svn_push"]["status"] == "success"
+    # 默认模板 {version} 即分支名，SVN 目录保留分支层级
+    assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/feature/demo"
+    mock_provider.import_path.assert_called_once()
+    # svn import 不会创建父目录：应先用 mkdir 创建 releases/feature
+    mock_provider.mkdir.assert_called_once()
+    assert mock_provider.mkdir.call_args.args[0] == "svn://host/releases/feature"
+
+
+@pytest.mark.django_db
+def test_ensure_svn_parent_dirs_skips_existing(project, repository, user):
+    """SVN 父目录已存在时不重复创建。"""
+    provider = MagicMock()
+    provider.remote_exists.return_value = True
+
+    PackageService._ensure_svn_parent_dirs(provider, "svn://host/releases", "feature/demo/1.0")
+
+    provider.mkdir.assert_not_called()
+    # 存在性检查覆盖 feature 与 feature/demo 两级父目录
+    assert provider.remote_exists.call_count == 2

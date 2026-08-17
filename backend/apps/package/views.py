@@ -1,13 +1,18 @@
 """
 系统内置打包视图
 """
+import json
+import logging
 import os
 import shutil
 import tempfile
+import threading
 import zipfile
+from queue import Queue
 from pathlib import Path
 
-from django.http import FileResponse, Http404, HttpResponse
+from django.core.cache import cache
+from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django.db.models import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
@@ -15,13 +20,15 @@ from rest_framework.decorators import action
 from rest_framework.mixins import DestroyModelMixin
 from rest_framework.permissions import IsAuthenticated
 
-from apps.package.models import PackageConfig, PackageImage, PackageNode, PackageTask
+from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
+from apps.package.ai import PackageScriptAIError, PackageScriptAIService
 from apps.package.docker_local import LocalDockerError, LocalDockerService
 from apps.package.nexus import NexusError, NexusService
 from apps.package.remote_windows import RemoteNodeError, test_node_connection
 from apps.package.serializers import (
     PackageConfigSerializer,
     PackageImageSerializer,
+    PackageKnowledgeSerializer,
     PackageNodeSerializer,
     PackageTaskSerializer,
 )
@@ -31,11 +38,18 @@ from apps.project.models import Project
 from apps.project.models import ProjectMember
 from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
+from apps.system.services import OperationLogService
 from utils.permissions import IsProjectManager, IsProjectMember, IsProjectPackager, IsProjectDeveloper, IsProjectPackageAdmin, HasPermission
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 from utils.provider.factory import get_provider
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+
+logger = logging.getLogger(__name__)
+
+# AI 生成频控：同一用户对同一项目 15 秒内只允许一次（防误触/成本消耗）
+AI_GENERATE_THROTTLE_SECONDS = 15
+
 
 class _TempFileResponse(FileResponse):
     """下载完成后自动删除临时 zip 文件的响应。"""
@@ -246,6 +260,27 @@ class PackageNodeViewSet(StandardModelViewSet):
         return success_response(result, message)
 
 
+class PackageKnowledgeViewSet(StandardModelViewSet):
+    """AI 打包通用知识库视图集（系统级，system.config 权限维护）。"""
+
+    queryset = PackageKnowledge.objects.all()
+    serializer_class = PackageKnowledgeSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["title", "content"]
+    ordering_fields = ["updated_at", "created_at"]
+    ordering = ["-updated_at"]
+
+    def get_permissions(self):
+        # 知识库维护需要 system.config 权限（与系统配置页一致），超管自动放行
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAuthenticated(), HasPermission("system.config")]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
 class PackageConfigViewSet(StandardModelViewSet):
     """项目级打包配置视图集。"""
 
@@ -276,11 +311,14 @@ class PackageConfigViewSet(StandardModelViewSet):
         return queryset.filter(project_id__in=project_ids)
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
+        if self.action in (
+            "create", "update", "partial_update", "destroy",
+            "ai_generate_script", "ai_generate_script_stream",
+        ):
             # 打包配置参数仅项目管理员 / 软件管理员可维护
             return [IsAuthenticated(), IsProjectPackageAdmin()]
-        if self.action == "trigger":
-            # 手动触发打包：管理员/开发/测试均可
+        if self.action in ("trigger", "trigger_branch"):
+            # 手动触发打包（按已发布 Tag / 按分支最新代码）：管理员/开发/测试均可
             return [IsAuthenticated(), IsProjectPackager()]
         return [IsAuthenticated(), IsProjectMember()]
 
@@ -297,6 +335,26 @@ class PackageConfigViewSet(StandardModelViewSet):
         task = PackageService.create_task_for_release(config, release, request_user=request.user)
         data = PackageTaskSerializer(task, context={"request": request}).data
         return success_response(data, "已创建打包任务", status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="trigger-branch")
+    def trigger_branch(self, request, pk=None):
+        """直接对仓库某条分支的最新代码创建打包任务（不经发布流程）。
+
+        任务标题与自动编码（version）均按分支名命名；打包时克隆该分支最新代码。
+
+        Args:
+            request: DRF Request，body 携带 branch（分支名）
+
+        Returns:
+            已创建的打包任务
+        """
+        config = self.get_object()
+        branch = (request.data.get("branch") or request.data.get("branch_name") or "").strip()
+        if not branch:
+            return error_response(40000, "必须指定 branch 分支名", status_code=status.HTTP_400_BAD_REQUEST)
+        task = PackageService.create_task_for_branch(config, branch, request_user=request.user)
+        data = PackageTaskSerializer(task, context={"request": request}).data
+        return success_response(data, "已创建分支打包任务", status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path="svn-entries")
     def svn_entries(self, request, pk=None):
@@ -390,6 +448,118 @@ class PackageConfigViewSet(StandardModelViewSet):
             {"ok": True, "entries": entries, "message": "连接成功"},
             message="SVN 连接测试成功",
         )
+
+    @action(detail=False, methods=["post"], url_path="ai-generate-script")
+    def ai_generate_script(self, request):
+        """
+        AI 生成打包脚本草稿（支持未保存配置）。
+
+        请求体需包含 project（UUID，用于项目管理员权限预检）与 repository 等
+        当前表单值；返回脚本 + 逐行解释，仅作为草稿，由用户确认后写回配置。
+        """
+        project_id = str((request.data or {}).get("project") or "")
+        throttle_key = f"ai_script_gen:{request.user.id}:{project_id}"
+        if not cache.add(throttle_key, "1", AI_GENERATE_THROTTLE_SECONDS):
+            return error_response(
+                42900,
+                f"AI 生成过于频繁，请 {AI_GENERATE_THROTTLE_SECONDS} 秒后再试",
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        try:
+            result = PackageScriptAIService.generate(request.data or {}, request.user)
+        except PackageScriptAIError as exc:
+            status_map = {
+                40000: status.HTTP_400_BAD_REQUEST,
+                40400: status.HTTP_404_NOT_FOUND,
+                42900: status.HTTP_429_TOO_MANY_REQUESTS,
+                50200: status.HTTP_502_BAD_GATEWAY,
+            }
+            try:
+                OperationLogService.log(
+                    user=request.user,
+                    module="package",
+                    action="AI生成打包脚本",
+                    resource_type="package_config",
+                    resource_id=str(request.data.get("project") or ""),
+                    description="AI 生成打包脚本失败",
+                    result="failure",
+                    detail={"error": str(exc)},
+                )
+            except Exception:
+                logger.exception("记录 AI 生成打包脚本失败日志出错")
+            return error_response(
+                exc.code,
+                str(exc),
+                status_code=status_map.get(exc.code, status.HTTP_400_BAD_REQUEST),
+            )
+        return success_response(result, "已生成打包脚本草稿")
+
+
+    @action(detail=False, methods=["post"], url_path="ai-generate-script-stream")
+    def ai_generate_script_stream(self, request):
+        """
+        AI 生成打包脚本草稿（SSE 流式，兼容 OpenAI/Anthropic stream）。
+
+        text/event-stream 的 data 事件（JSON）：
+        - {"type": "progress", "message": "..."}  阶段进度（如上下文准备完成）
+        - {"type": "delta", "text": "..."}  AI 输出片段（供前端实时展示）
+        - {"type": "done", "data": {...}}    最终结构化结果
+        - {"type": "error", "code": ..., "message": "..."} 失败
+        """
+        payload = request.data or {}
+        project_id = str(payload.get("project") or "")
+        throttle_key = f"ai_script_gen:{request.user.id}:{project_id}"
+        if not cache.add(throttle_key, "1", AI_GENERATE_THROTTLE_SECONDS):
+            return error_response(
+                42900,
+                f"AI 生成过于频繁，请 {AI_GENERATE_THROTTLE_SECONDS} 秒后再试",
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        events: Queue = Queue()
+
+        def run() -> None:
+            try:
+                result = PackageScriptAIService.generate(
+                    payload,
+                    request.user,
+                    on_chunk=lambda text: events.put({"type": "delta", "text": text}),
+                    on_progress=lambda message: events.put(
+                        {"type": "progress", "message": message}
+                    ),
+                )
+                events.put({"type": "done", "data": result})
+            except PackageScriptAIError as exc:
+                try:
+                    OperationLogService.log(
+                        user=request.user,
+                        module="package",
+                        action="AI生成打包脚本",
+                        resource_type="package_config",
+                        resource_id=project_id,
+                        description="AI 生成打包脚本失败",
+                        result="failure",
+                        detail={"error": str(exc)},
+                    )
+                except Exception:
+                    logger.exception("记录 AI 生成打包脚本失败日志出错")
+                events.put({"type": "error", "code": exc.code, "message": str(exc)})
+            except Exception as exc:
+                logger.exception("AI 生成打包脚本流式处理异常")
+                events.put({"type": "error", "code": 50000, "message": f"AI 生成失败：{exc}"})
+            finally:
+                events.put(None)
+
+        threading.Thread(target=run, daemon=True, name="ai-generate-stream").start()
+
+        def sse_stream():
+            while True:
+                event = events.get()
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        return StreamingHttpResponse(sse_stream(), content_type="text/event-stream")
 
 
 class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):

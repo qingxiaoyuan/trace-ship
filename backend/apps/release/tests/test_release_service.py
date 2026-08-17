@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.release.services import ReleaseService
+from utils.provider.exceptions import NotFoundError
 from utils.provider.base import TagInfo
 from utils.provider.exceptions import ProviderError
 
@@ -433,3 +434,104 @@ def test_list_tags_cached_key_is_isolated_by_server_url():
 
     assert provider_a.tags_calls == 1
     assert provider_b.tags_calls == 1
+
+
+def _make_released(repository, project, user, tag_name="VA.1.0.0_20260814"):
+    """直接落库一条已发布记录"""
+    from apps.release.models import ReleaseRecord
+
+    return ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name=tag_name,
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+        released_at=timezone.now(),
+    )
+
+
+def test_delete_released_tag_success(repository, project, user, mock_git_provider, monkeypatch):
+    """删除已发布版本：远端 tag 删除成功且本地记录删除"""
+    from apps.release.models import ReleaseRecord
+
+    release = _make_released(repository, project, user)
+    mock_git_provider.tags = [TagInfo(name=release.tag_name, commit_hash="head")]
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    result = ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
+
+    assert result["tag_name"] == release.tag_name
+    assert result["remote_deleted"] is True
+    assert mock_git_provider.tags == []
+    assert not ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+def test_delete_released_tag_requires_released_status(repository, project, user, mock_git_provider, monkeypatch):
+    """非 released 状态不允许删除"""
+    from apps.release.models import ReleaseRecord
+
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="draft",
+        publisher=user,
+    )
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    with pytest.raises(serializers.ValidationError, match="仅已发布状态可删除版本"):
+        ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
+    assert ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+def test_delete_released_tag_requires_matching_tag_name(repository, project, user, mock_git_provider, monkeypatch):
+    """输入的 tag 名称与发布记录不一致时拒绝删除"""
+    from apps.release.models import ReleaseRecord
+
+    release = _make_released(repository, project, user)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    with pytest.raises(serializers.ValidationError, match="输入的 Tag 名称与发布版本不一致"):
+        ReleaseService.delete_released_tag(release, "VA.9.9.9_99999999", request_user=user)
+    assert ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+def test_delete_released_tag_tolerates_missing_remote_tag(repository, project, user, mock_git_provider, monkeypatch):
+    """远端 tag 已不存在时幂等删除本地记录并标记 remote_deleted=False"""
+    from apps.release.models import ReleaseRecord
+
+    release = _make_released(repository, project, user)
+
+    def raise_not_found(repo_identity, tag_name):
+        raise NotFoundError(f"tag 不存在: {tag_name}")
+
+    mock_git_provider.delete_tag = raise_not_found
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    result = ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
+
+    assert result["remote_deleted"] is False
+    assert not ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+def test_delete_released_tag_provider_error_keeps_record(repository, project, user, mock_git_provider, monkeypatch):
+    """远端删除失败（认证/连接错误）时保留本地记录并抛出异常"""
+    from apps.release.models import ReleaseRecord
+
+    release = _make_released(repository, project, user)
+
+    def raise_provider_error(repo_identity, tag_name):
+        raise ProviderError("远端不可用")
+
+    mock_git_provider.delete_tag = raise_provider_error
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    with pytest.raises(ProviderError):
+        ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
+    assert ReleaseRecord.objects.filter(id=release.id).exists()

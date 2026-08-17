@@ -108,6 +108,9 @@ def mock_git_provider():
             self.tags.append(TagInfo(name=tag_name, commit_hash=commit_hash))
             return TagInfo(name=tag_name, commit_hash=commit_hash)
 
+        def delete_tag(self, repo_identity: str, tag_name: str):
+            self.tags = [t for t in self.tags if t.name != tag_name]
+
         def list_commits(self, repo_identity: str, branch: str, since=None, until=None, per_page=100):
             from datetime import datetime
 

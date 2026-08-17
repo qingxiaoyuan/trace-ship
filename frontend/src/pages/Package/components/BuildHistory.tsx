@@ -1,7 +1,7 @@
 import { memo, useCallback, useState } from 'react';
 import type { PackageTask } from '@/types';
 import { ArtifactRow } from './Artifacts';
-import { formatDuration, formatRelativeTime, getSvnPushWarning, isRunning, stageLabels } from './utils';
+import { formatDuration, formatRelativeTime, getSvnPushWarning, isRunning, stageLabels, isBranchTask } from './utils';
 import { ProgressBar, StatusBadge } from './Shared';
 
 interface BuildHistoryProps {
@@ -70,7 +70,12 @@ const BuildHistoryItem = memo(function BuildHistoryItem({ build, isActive, onSel
     >
       <div className="flex items-center gap-1.5">
         {isActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" />}
-        <span className={`font-mono text-[12px] font-medium ${isActive ? 'text-indigo-700' : 'text-slate-900'}`}>{build.version}</span>
+        <span className="flex items-center gap-1 min-w-0">
+          <span className={`font-mono text-[12px] font-medium ${isActive ? 'text-indigo-700' : 'text-slate-900'}`}>{build.version}</span>
+          {isBranchTask(build) && (
+            <span className="shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1 py-px text-[9px] font-medium text-emerald-700">分支</span>
+          )}
+        </span>
         <span className="text-[10px] text-slate-400 truncate">{build.triggered_by_name || '-'}</span>
         <span className="ml-auto text-[10px] text-slate-400 shrink-0">{build.started_at ? formatDuration(build.duration) : '-'}</span>
       </div>

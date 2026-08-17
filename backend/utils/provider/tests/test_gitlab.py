@@ -8,7 +8,7 @@ import responses
 from urllib.parse import quote
 
 from utils.provider.gitlab import GitLabProvider
-from utils.provider.exceptions import AuthenticationError, ProviderError
+from utils.provider.exceptions import AuthenticationError, NotFoundError, ProviderError
 
 
 @pytest.fixture
@@ -121,3 +121,33 @@ def test_list_commits_not_found(provider):
     )
     with pytest.raises(ProviderError):
         provider.list_commits("group/notfound", "develop")
+
+
+@responses.activate
+def test_delete_tag_success(provider):
+    """删除远端 tag 成功（tag 名需 URL 编码）"""
+    encoded = quote("group/project", safe="")
+    encoded_tag = quote("VA.1.0.0_20260814", safe="")
+    url = f"https://gitlab.example.com/api/v4/projects/{encoded}/repository/tags/{encoded_tag}"
+    responses.add(responses.DELETE, url, status=204)
+
+    provider.delete_tag("group/project", "VA.1.0.0_20260814")
+
+    assert responses.calls[0].request.method == "DELETE"
+    assert responses.calls[0].request.url == url
+
+
+@responses.activate
+def test_delete_tag_not_found(provider):
+    """远端 tag 不存在时抛出 NotFoundError，供调用方幂等处理"""
+    encoded = quote("group/project", safe="")
+    encoded_tag = quote("VA.1.0.0_20260814", safe="")
+    responses.add(
+        responses.DELETE,
+        f"https://gitlab.example.com/api/v4/projects/{encoded}/repository/tags/{encoded_tag}",
+        json={"message": "404 Tag Not Found"},
+        status=404,
+    )
+
+    with pytest.raises(NotFoundError):
+        provider.delete_tag("group/project", "VA.1.0.0_20260814")

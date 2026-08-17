@@ -707,3 +707,8 @@ a[href],
   color: #4F46E5;
   border-color: #4F46E5;
 }
+
+/* AI 脚本预览：点击解释条目时高亮对应行 */
+.ai-script-highlight-line {
+  background: rgba(99, 102, 241, 0.16);
+}

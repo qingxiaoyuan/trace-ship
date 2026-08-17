@@ -143,7 +143,8 @@ class ReleaseViewSet(StandardModelViewSet):
 
     def get_permissions(self):
         """
-        写操作（创建/编辑/删除/生成说明/提交审批/推 tag）需项目开发及以上角色
+        写操作（创建/编辑/删除/生成说明/提交审批/推 tag）需项目开发及以上角色；
+        删除已发布版本属高风险操作，额外要求项目管理员及以上。
 
         Returns:
             权限实例列表
@@ -153,6 +154,8 @@ class ReleaseViewSet(StandardModelViewSet):
             "generate_doc", "update_doc", "submit_audit", "push_tag",
         ]:
             return [IsAuthenticated(), IsProjectDeveloper()]
+        if self.action == "delete_released":
+            return [IsAuthenticated(), IsProjectManager()]
         return super().get_permissions()
 
     def _serialize_release(self, release: ReleaseRecord) -> Dict[str, Any]:
@@ -410,6 +413,37 @@ class ReleaseViewSet(StandardModelViewSet):
             "git_hash": tag_info.commit_hash,
             "pushed_at": release.released_at,
         }, message="推 tag 成功")
+
+    @action(detail=True, methods=["post"], url_path="delete-released")
+    def delete_released(self, request: Request, pk=None) -> Response:
+        """
+        删除已发布的版本（远端 tag + 发布记录）
+
+        Body 需携带 tag_name（必须与发布记录的 tag 名称一致），
+        作为删除前的二次确认输入，防止误删。
+
+        Args:
+            request: DRF Request，body: {tag_name: str}
+            pk: 发布主键
+
+        Returns:
+            删除结果（含远端 tag 是否实际删除）
+        """
+        release = self.get_object()
+        if not request.user.is_superuser and not IsProjectManager().has_object_permission(
+            request, self, release.project
+        ):
+            return error_response(40300, "仅项目管理员可删除已发布版本", status_code=403)
+        tag_name = request.data.get("tag_name", "")
+        try:
+            result = ReleaseService.delete_released_tag(
+                release,
+                tag_name=tag_name,
+                request_user=request.user,
+            )
+        except Exception as exc:
+            return _handle_service_error(exc, "删除已发布版本")
+        return success_response(result, message="删除成功")
 
     @action(detail=True, methods=["get"], url_path="export-pdf")
     def export_pdf(self, request: Request, pk=None) -> Response:

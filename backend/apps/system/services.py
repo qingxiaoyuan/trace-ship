@@ -93,6 +93,7 @@ class OperationLogService:
             "build_success": "构建成功",
             "build_failure": "构建失败",
             "push_tag": "推 tag",
+            "delete_released": "删除已发布版本",
         }
         return OperationLogService.log(
             user=user,

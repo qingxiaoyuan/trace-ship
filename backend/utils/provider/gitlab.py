@@ -12,7 +12,7 @@ import requests
 from django.utils.dateparse import parse_datetime
 
 from .base import BranchInfo, CommitInfo, GitProvider, MergeRequestInfo, TagInfo
-from .exceptions import AuthenticationError, ConnectionError, ProviderError
+from .exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class GitLabProvider(GitProvider):
             exc.diagnostic = diagnostic
             raise exc
         if resp.status_code == 404:
-            raise ProviderError(f"GitLab 资源不存在: {path}")
+            raise NotFoundError(f"GitLab 资源不存在: {path}")
         resp.raise_for_status()
         return resp
 
@@ -130,6 +130,110 @@ class GitLabProvider(GitProvider):
                 break
             page = int(next_page)
         return result
+
+    def list_tree(
+        self,
+        repo_identity: str,
+        path: str = "",
+        ref: str = "",
+        recursive: bool = True,
+        max_entries: int = 300,
+        per_page: int = 100,
+    ) -> list[dict]:
+        """
+        列出仓库文件树（供 AI 生成打包脚本时读取仓库结构）。
+
+        Args:
+            repo_identity: 仓库标识（owner/repo）
+            path: 子目录路径，为空时从仓库根开始
+            ref: 分支 / tag / commit hash，为空时使用仓库默认分支
+            recursive: 是否递归列出全部子目录
+            max_entries: 最多返回的条目数（防止超大仓库撑爆 prompt）
+            per_page: 单页条数（GitLab 上限 100）
+
+        Returns:
+            [{"path", "type", "name"}, ...]，type 为 tree / blob
+        """
+        encoded = self._encode_identity(repo_identity)
+        result: list[dict] = []
+        page = 1
+        params: dict = {
+            "per_page": per_page,
+            "page": page,
+            "recursive": str(recursive).lower(),
+        }
+        if path:
+            params["path"] = path
+        if ref:
+            params["ref"] = ref
+        while len(result) < max_entries:
+            resp = self._request(
+                "GET",
+                f"/projects/{encoded}/repository/tree",
+                params=params,
+            )
+            entries = resp.json()
+            if not entries:
+                break
+            for item in entries:
+                result.append(
+                    {
+                        "path": item.get("path", ""),
+                        "type": item.get("type", "blob"),
+                        "name": item.get("name", ""),
+                    }
+                )
+                if len(result) >= max_entries:
+                    break
+            next_page = resp.headers.get("X-Next-Page")
+            if not next_page or len(result) >= max_entries:
+                break
+            page = int(next_page)
+            params["page"] = page
+        return result
+
+    def get_file_raw(
+        self,
+        repo_identity: str,
+        file_path: str,
+        ref: str = "",
+        max_bytes: int = 65536,
+    ) -> str | None:
+        """
+        读取仓库内单个文件内容（供 AI 生成打包脚本时读取清单文件）。
+
+        文件不存在、二进制（含 NUL 字节）、解码失败或超过大小上限时
+        返回 None，由调用方降级处理，不抛出异常。
+
+        Args:
+            repo_identity: 仓库标识（owner/repo）
+            file_path: 文件路径，如 ``src/package.json``
+            ref: 分支 / tag / commit hash，为空时使用仓库默认分支
+            max_bytes: 文件大小上限，超过视为不可用
+
+        Returns:
+            文本内容或 None
+        """
+        encoded = self._encode_identity(repo_identity)
+        file_encoded = quote(file_path, safe="")
+        params = {"ref": ref} if ref else {}
+        try:
+            resp = self._request(
+                "GET",
+                f"/projects/{encoded}/repository/files/{file_encoded}/raw",
+                params=params,
+            )
+        except NotFoundError:
+            # 文件不存在等场景按缺失处理，由调用方降级；
+            # 认证/连接错误不吞掉，交由 _scan_repo 降级并给出可读警告
+            return None
+        content = resp.content
+        if content is None or len(content) > max_bytes or b"\x00" in content:
+            return None
+        try:
+            return content.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
 
     def list_commits(
         self,
@@ -231,6 +335,29 @@ class GitLabProvider(GitProvider):
             name=data["name"],
             commit_hash=commit.get("id"),
             created_at=self._parse_datetime(commit.get("committed_date")),
+        )
+
+    def delete_tag(self, repo_identity: str, tag_name: str) -> None:
+        """
+        删除远端 tag
+
+        GitLab REST API: DELETE /projects/{id}/repository/tags/{tag_name}。
+        tag 不存在时返回 404，由 _request 抛出 NotFoundError，调用方按
+        “已不存在”幂等处理。
+
+        Args:
+            repo_identity: 仓库标识（owner/repo）
+            tag_name: 要删除的 tag 名称
+
+        Raises:
+            NotFoundError: tag 不存在
+            ProviderError: 认证失败 / 连接失败 / 其他错误
+        """
+        encoded = self._encode_identity(repo_identity)
+        encoded_tag = quote(tag_name, safe="")
+        self._request(
+            "DELETE",
+            f"/projects/{encoded}/repository/tags/{encoded_tag}",
         )
 
     def compare_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:

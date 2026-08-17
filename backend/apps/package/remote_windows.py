@@ -8,12 +8,30 @@
 """
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 
 from apps.credential.models import Credential
+from utils.probe_output import parse_probe_output
 
 logger = logging.getLogger(__name__)
+
+# 节点只读工具探测命令：where 常用构建工具并输出版本、PATH。
+# 由平台硬编码执行，不包含用户/AI 内容，不会修改节点任何状态。
+NODE_PROBE_CMD = r"""
+@echo off
+echo --- versions ---
+for %%c in (node npm npx pnpm yarn python python3 java mvn gradle dotnet go gcc g++ make cmake ruby bundle php composer msbuild) do (
+    where "%%c" >nul 2>nul
+    if not errorlevel 1 (
+        echo [%%c]
+        %%c --version 2>&1
+    )
+)
+echo --- path ---
+echo %PATH%
+""".strip()
 
 
 class RemoteNodeError(RuntimeError):
@@ -397,3 +415,68 @@ def test_node_connection(host: str, port: int, credential_id: str, work_root: st
             client.mkdirs(PureWindowsPath(work_root))
             result["work_root_ready"] = True
     return result
+
+
+def probe_node_tools(
+    host: str,
+    port: int,
+    credential_id: str,
+    timeout: int = 30,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    对远程 Windows 节点执行只读工具探测（where 常用构建工具 + --version + PATH）。
+
+    用于 AI 生成打包脚本时提供节点侧工具链上下文；失败返回 (None, 原因)
+    供调用方降级，不抛异常。探测命令为平台硬编码只读命令，不修改节点状态。
+
+    Args:
+        host: 节点主机地址
+        port: SSH 端口
+        credential_id: windows_password 凭证 id
+        timeout: 探测总超时秒数
+
+    Returns:
+        ({"versions": ..., "path": ...}, None) 成功；(None, 失败原因) 失败
+    """
+    try:
+        credential = Credential.objects.get(id=credential_id)
+    except Credential.DoesNotExist:
+        return None, "远程节点登录凭证不存在"
+    if not credential.is_active:
+        return None, "远程节点登录凭证已停用"
+    data = credential.get_data()
+    username = data.get("username") or ""
+    password = data.get("password") or ""
+    if not username or not password:
+        return None, "远程节点凭证缺少用户名或密码"
+
+    def _probe() -> str:
+        lines: list[str] = []
+        with RemoteWindowsClient(
+            host=host,
+            port=int(port or 22),
+            username=username,
+            password=password,
+        ) as client:
+            client.run(NODE_PROBE_CMD, on_line=lines.append)
+        return "\n".join(lines)
+
+    try:
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="node-probe")
+        future = pool.submit(_probe)
+        try:
+            output = future.result(timeout=timeout)
+        finally:
+            # 超时后立即返回，不等待后台线程（shutdown(wait=True) 会阻塞到探测结束）
+            pool.shutdown(wait=False, cancel_futures=True)
+    except TimeoutError:
+        return None, f"节点工具探测超时（超过 {timeout} 秒）"
+    except RemoteNodeError as exc:
+        return None, f"节点工具探测失败：{exc}"
+    except Exception as exc:
+        return None, f"节点工具探测失败：{exc}"
+
+    parsed = parse_probe_output(output)
+    if not parsed.get("versions"):
+        return None, "节点未检测到常用构建工具（请确认工具已加入节点 PATH）"
+    return parsed, None

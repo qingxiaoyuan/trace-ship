@@ -162,6 +162,58 @@ class PackageService:
         return task
 
     @classmethod
+    def create_task_for_branch(cls, config: PackageConfig, branch_name: str, request_user=None) -> PackageTask:
+        """直接对仓库某条分支的最新代码创建打包任务（不经发布流程）。
+
+        任务标题与自动编码（version）均按分支名命名，便于在打包看板中识别来源；
+        克隆源码时以 ``git clone --branch {branch}`` 拉取该分支最新代码。
+
+        Args:
+            config: 打包配置
+            branch_name: 仓库分支名（Git 分支最新代码）
+            request_user: 触发人
+
+        Returns:
+            已投递的打包任务
+        """
+        if not config.is_active:
+            raise serializers.ValidationError({"config": "打包配置已停用"})
+        branch_name = (branch_name or "").strip()
+        if not branch_name:
+            raise serializers.ValidationError({"branch": "必须指定分支名"})
+        if len(branch_name) > 100:
+            raise serializers.ValidationError({"branch": "分支名过长（不能超过 100 字符）"})
+
+        snapshot = cls._snapshot(config)
+        # 分支最新提交哈希仅用于可追溯展示；拉取失败降级为空串，不阻断打包
+        commit_hash = ""
+        try:
+            from apps.repository.services import RepositoryService
+
+            for branch in RepositoryService.list_branches(config.repository, request_user):
+                if branch.get("name") == branch_name:
+                    commit_hash = branch.get("last_commit_hash") or ""
+                    break
+        except Exception:
+            logger.warning("获取分支最新提交信息失败，忽略 branch=%s", branch_name)
+
+        task = PackageTask.objects.create(
+            config=config,
+            release=None,
+            project=config.project,
+            repository=config.repository,
+            triggered_by=request_user,
+            name=f"{config.name} / {branch_name}",
+            tag_name=branch_name,
+            version=branch_name,
+            release_type="formal",
+            commit_hash=commit_hash,
+            config_snapshot=snapshot,
+        )
+        cls.dispatch_task(task)
+        return task
+
+    @classmethod
     def dispatch_task(cls, task: PackageTask) -> None:
         """投递打包任务；Celery 不可用时降级为本进程后台执行。"""
         from apps.package.tasks import run_package_task
@@ -425,10 +477,13 @@ class PackageService:
         clone_url = cls._clone_url(task.repository)
         env = cls._build_auth_env(task.repository, task.triggered_by)
         cls._run_command(task, ["git", "clone", "--depth", "1", "--branch", task.tag_name, clone_url, str(source_dir)], workspace, env)
-        # 写入本次发布说明到源码根目录，供构建脚本读取
-        doc_path = source_dir / f"release-{task.version}.md"
-        doc_path.write_text(table_newlines_to_br(task.release.release_doc or ""), encoding="utf-8")
-        cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
+        # 写入本次发布说明到源码根目录，供构建脚本读取（分支直打包无发布说明，跳过）
+        if task.release_id:
+            doc_path = source_dir / f"release-{cls._doc_filename(task.version)}.md"
+            doc_path.write_text(table_newlines_to_br(task.release.release_doc or ""), encoding="utf-8")
+            cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
+        else:
+            cls._append_log(task, "分支直打包：无发布说明，跳过写入")
 
     @staticmethod
     def _auth_clone_args(repo, request_user=None) -> list[str]:
@@ -457,10 +512,15 @@ class PackageService:
 
     @classmethod
     def _build_env(cls, task: PackageTask, workspace) -> dict[str, str]:
-        """构建打包执行环境变量（workspace 可为本地 Path 或远程 PureWindowsPath）。"""
+        """构建打包执行环境变量（workspace 可为本地 Path 或远程 PureWindowsPath）。
+
+        仅发布触发的任务才注入 RELEASE_DOC_PATH：发布说明文件随源码写入源码根目录，
+        构建脚本可读取该文件；分支直打包任务无发布说明、文件不存在，因此不注入该变量，
+        避免构建脚本误读不存在的文件路径。
+        """
         snapshot = task.config_snapshot or {}
         env_vars = snapshot.get("env_vars") if isinstance(snapshot.get("env_vars"), dict) else {}
-        return {
+        env = {
             **{str(k): str(v) for k, v in env_vars.items()},
             "TAG_NAME": task.tag_name,
             "VERSION": task.version,
@@ -469,12 +529,14 @@ class PackageService:
             "PROJECT_CODE": task.project.code or task.project.name,
             "WORKSPACE": str(workspace),
             "SOURCE_DIR": str(workspace / "source"),
-            "RELEASE_DOC_PATH": str(workspace / "source" / f"release-{task.version}.md"),
             "ARTIFACTS_DIR": str(workspace / "artifacts"),
             "DEPLOY_DIR": str(workspace / "deploy"),
             "SCRIPTS_DIR": str(workspace / "scripts"),
             "TMPDIR": str(workspace / "tmp"),
         }
+        if task.release_id:
+            env["RELEASE_DOC_PATH"] = str(workspace / "source" / f"release-{cls._doc_filename(task.version)}.md")
+        return env
 
     @classmethod
     def _checkout_source_remote(cls, task: PackageTask, client: RemoteWindowsClient) -> None:
@@ -510,10 +572,13 @@ class PackageService:
             should_stop=lambda: cls._ensure_task_not_canceled(task),
             error_hint="节点需安装 git 且能访问代码仓库",
         )
-        # 上传本次发布说明到源码根目录，供构建脚本读取
-        doc_path = source_dir / f"release-{task.version}.md"
-        client.upload_text(doc_path, table_newlines_to_br(task.release.release_doc or ""))
-        cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
+        # 上传本次发布说明到源码根目录，供构建脚本读取（分支直打包无发布说明，跳过）
+        if task.release_id:
+            doc_path = source_dir / f"release-{cls._doc_filename(task.version)}.md"
+            client.upload_text(doc_path, table_newlines_to_br(task.release.release_doc or ""))
+            cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
+        else:
+            cls._append_log(task, "分支直打包：无发布说明，跳过上传")
 
     @staticmethod
     def _affinity_mask(cores: int) -> str:
@@ -695,7 +760,13 @@ class PackageService:
             *cls._docker_env_args(env_vars),
             "-e", "WORKSPACE=/workspace",
             "-e", "SOURCE_DIR=/workspace/source",
-            "-e", f"RELEASE_DOC_PATH=/workspace/source/release-{task.version}.md",
+            # 发布说明文件仅发布触发的任务写入源码根目录（文件名经路径安全化），
+            # 分支直打包无发布说明，不注入 RELEASE_DOC_PATH
+            *(
+                ["-e", f"RELEASE_DOC_PATH=/workspace/source/release-{cls._doc_filename(task.version)}.md"]
+                if task.release_id
+                else []
+            ),
             "-e", "ARTIFACTS_DIR=/workspace/artifacts",
             "-e", "DEPLOY_DIR=/workspace/deploy",
             "-e", "SCRIPTS_DIR=/workspace/scripts",
@@ -734,6 +805,16 @@ class PackageService:
         build_path = cls._safe_rel_path(snapshot.get("build_path", "."), ".")
         output_path = cls._safe_rel_path(snapshot.get("output_path", "artifacts"), "artifacts")
         return output_path if build_path == "." else f"{build_path}/{output_path}"
+
+    @staticmethod
+    def _doc_filename(version: str) -> str:
+        """生成发布说明文件名中的版本段，替换路径/文件名非法字符。
+
+        分支直打包时 version 即分支名（可能含 ``/``），若不处理会导致
+        写入源码根目录或 SVN 上传目录时越级创建子目录。
+        """
+        cleaned = _ARCHIVE_NAME_INVALID_RE.sub("-", version or "").strip("-")
+        return cleaned or "latest"
 
     @classmethod
     def _archive_stem(cls, task: PackageTask) -> str:
@@ -905,6 +986,22 @@ class PackageService:
         if log:
             cls._append_log(task, log)
 
+    @staticmethod
+    def _ensure_svn_parent_dirs(provider, svn_url: str, version_dir: str) -> None:
+        """svn import 不会自动创建父目录，逐级创建版本目录缺失的中间父目录。
+
+        发布任务的版本号通常为单级（如 V1.0.0），父目录即 svn_url 本身；分支直打包
+        任务的 version 即分支名（可能含斜杠，如 feature/demo），目标 releases/feature/demo
+        的父目录 releases/feature 需先创建，否则 import 会因路径不存在而失败。
+        最后一级目录由 svn import 自动创建，无需预先 mkdir。
+        """
+        base = svn_url.rstrip("/")
+        parts = [part for part in version_dir.split("/") if part]
+        for depth in range(1, len(parts)):
+            url = f"{base}/{'/'.join(parts[:depth])}"
+            if not provider.remote_exists(url):
+                provider.mkdir(url, message="trace-ship: 自动创建打包产物 SVN 目录")
+
     @classmethod
     def _push_artifacts_to_svn(cls, task: PackageTask, workspace: Path) -> dict[str, Any]:
         """将打包产物推送到 SVN 版本号目录。
@@ -939,6 +1036,9 @@ class PackageService:
         cred_data = credential.get_data()
 
         # 渲染版本目录名（支持 {release_type} 占位符区分正式/RC/测试版）
+        # 说明：分支直打包任务 version/tag_name 即分支名（如 feature/1.0），
+        # 默认模板 {version} 渲染后保留斜杠，会按分支层级生成嵌套 SVN 目录
+        # （svn_root/feature/1.0/），这是预期行为，便于按分支组织产物。
         version_dir = path_template.format(
             version=task.version,
             tag_name=task.tag_name,
@@ -957,6 +1057,9 @@ class PackageService:
         provider = get_provider("svn", svn_url, cred_data)
         if provider.remote_exists(remote_url):
             raise RuntimeError(f"SVN 目录已存在: {remote_url}")
+        # svn import 不会自动创建父目录：分支直打包的版本目录可能含斜杠
+        # （如 feature/demo），需先逐级创建缺失的中间目录，否则推送必然失败
+        cls._ensure_svn_parent_dirs(provider, svn_url, version_dir)
 
         artifacts_dir = workspace / "artifacts"
         if not artifacts_dir.exists():
@@ -967,7 +1070,7 @@ class PackageService:
             shutil.rmtree(upload_dir)
         shutil.copytree(artifacts_dir, upload_dir)
 
-        doc_name = f"release-{task.version}.md"
+        doc_name = f"release-{cls._doc_filename(task.version)}.md"
         doc_path = upload_dir / doc_name
         if doc_path.exists():
             raise RuntimeError(f"SVN 上传目录已存在发布文档同名文件: {doc_name}")

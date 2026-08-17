@@ -15,6 +15,8 @@ import type { SystemConfig } from '@/api/system';
 import { NexusIntegrationCard } from './NexusIntegrationCard';
 import { LdapIntegrationCard } from './LdapIntegrationCard';
 import { PackageNodeCard } from './PackageNodeCard';
+import { AiIntegrationCard } from './AiIntegrationCard';
+import { PackageKnowledgeCard } from './PackageKnowledgeCard';
 
 interface FormState {
   key: string;
@@ -37,6 +39,11 @@ function formatDate(dateStr?: string): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${mm}-${dd}`;
+}
+
+/** 敏感配置键（密码/密钥类）在列表中脱敏展示，仅显示尾 4 位 */
+function isSensitiveKey(key: string): boolean {
+  return /(password|passwd|token|secret|api_key|credential)/i.test(key);
 }
 
 export default function SystemConfigPage() {
@@ -158,6 +165,10 @@ export default function SystemConfigPage() {
 
       <LdapIntegrationCard />
 
+      <AiIntegrationCard />
+
+      <PackageKnowledgeCard />
+
       <PackageNodeCard />
 
       <div className="tech-card overflow-hidden rounded-xl">
@@ -197,7 +208,11 @@ export default function SystemConfigPage() {
                 className="grid grid-cols-12 cursor-pointer items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30"
               >
                 <div className="col-span-12 font-mono text-[12px] font-medium text-indigo-600 md:col-span-3">{cfg.key}</div>
-                <div className="col-span-12 truncate font-mono text-[12px] text-slate-700 md:col-span-3">{cfg.value}</div>
+                <div className="col-span-12 truncate font-mono text-[12px] text-slate-700 md:col-span-3">
+                  {isSensitiveKey(cfg.key) && cfg.value
+                    ? `••••${cfg.value.slice(-4)}`
+                    : cfg.value}
+                </div>
                 <div className="col-span-12 truncate text-[12px] text-slate-500 md:col-span-3">{cfg.description || '-'}</div>
                 <div className="col-span-3 text-center md:col-span-1">
                   {cfg.is_public ? (

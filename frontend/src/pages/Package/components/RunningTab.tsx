@@ -2,7 +2,7 @@ import { memo, useCallback } from 'react';
 import { AlertTriangle, ExternalLink, Hammer, Trash2 } from 'lucide-react';
 import type { PackageTask } from '@/types';
 import { ProgressBar, UserAvatar } from './Shared';
-import { formatDuration, getSvnPushWarning, isRunning, releaseTypeBadge, releaseTypeText, stageLabels, statusMeta } from './utils';
+import { formatDuration, getSvnPushWarning, isRunning, releaseTypeBadge, releaseTypeText, stageLabels, statusMeta, isBranchTask } from './utils';
 
 interface RunningTabProps {
   tasks: PackageTask[];
@@ -89,7 +89,12 @@ const RunningRow = memo(function RunningRow({ task, onOpen, canDelete, onDelete 
         <div className="min-w-0">
           <div className="text-[13px] font-medium text-slate-900 truncate">{task.name}</div>
           <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-400">
-            <span className="truncate">{task.version} · {task.repository_name || '-'}</span>
+            <span className="flex items-center gap-1.5 truncate">
+              <span className="truncate">{task.version} · {task.repository_name || '-'}</span>
+              {isBranchTask(task) && (
+                <span className="shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1 py-px text-[9px] font-medium text-emerald-700">分支</span>
+              )}
+            </span>
             {task.release_type && (
               <span className={`shrink-0 rounded border px-1 py-px text-[9px] font-medium ${releaseTypeBadge[task.release_type] || 'border-slate-200 bg-slate-50 text-slate-500'}`}>
                 {releaseTypeText[task.release_type] || task.release_type}

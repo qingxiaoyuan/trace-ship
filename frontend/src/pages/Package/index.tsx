@@ -15,6 +15,7 @@ import {
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
+import { repositoryApi } from '@/api/repository';
 import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfigList } from './components/ConfigList';
@@ -30,6 +31,8 @@ const page = 1;
 const TASK_PAGE_SIZE = 15;
 /** 大日志首屏只加载末尾字节数 */
 const LOG_TAIL_BYTES = 256 * 1024;
+/** 打包看板「项目过滤」本地缓存 key（选择过项目后下次进入自动复用） */
+const PACKAGE_BOARD_PROJECT_KEY = 'trace-ship.package-board.project';
 
 type TabKey = 'running' | 'configs';
 type TaskLogState = { offset: number; text: string; partial: boolean };
@@ -52,13 +55,20 @@ export default function PackageTaskPage() {
   const [editingConfig, setEditingConfig] = useState<PackageConfig | null>(null);
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
-  const [triggerForm] = Form.useForm<{ release_id: string }>();
+  const [triggerForm] = Form.useForm<{ release_id?: string; branch?: string }>();
+  const [triggerMode, setTriggerMode] = useState<'release' | 'branch'>('release');
 
-  // 构建列表：分页 / 搜索 / 项目过滤
+  // 构建列表 / 打包配置列表：分页 / 搜索 / 项目过滤（项目选择写入本地缓存，下次复用）
   const [taskPage, setTaskPage] = useState(1);
   const [taskKeyword, setTaskKeyword] = useState('');
   const [taskSearch, setTaskSearch] = useState('');
-  const [taskProject, setTaskProject] = useState<string>('');
+  const [filterProject, setFilterProject] = useState<string>(() => {
+    try {
+      return localStorage.getItem(PACKAGE_BOARD_PROJECT_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
 
   // 搜索关键字防抖，避免每次击键都请求
   useEffect(() => {
@@ -75,18 +85,23 @@ export default function PackageTaskPage() {
   });
 
   const { data: configsData, isLoading: configsLoading, error: configsError } = useQuery({
-    queryKey: ['package-configs', page],
-    queryFn: () => packageApi.getConfigs({ page, page_size: pageSize }),
+    queryKey: ['package-configs', page, filterProject],
+    queryFn: () =>
+      packageApi.getConfigs({
+        page,
+        page_size: pageSize,
+        project: filterProject || undefined,
+      }),
   });
 
   const { data: tasksData, isLoading: tasksLoading, error: tasksError } = useQuery({
-    queryKey: ['package-tasks', taskPage, taskSearch, taskProject],
+    queryKey: ['package-tasks', taskPage, taskSearch, filterProject],
     queryFn: () =>
       packageApi.getTasks({
         page: taskPage,
         page_size: TASK_PAGE_SIZE,
         search: taskSearch || undefined,
-        project: taskProject || undefined,
+        project: filterProject || undefined,
       }),
   });
 
@@ -124,6 +139,21 @@ export default function PackageTaskPage() {
       value: release.id,
     })),
     [releasedData]
+  );
+
+  // 分支直打包：按配置关联仓库加载分支列表（含最新提交哈希）
+  const { data: branchesData, isLoading: branchesLoading } = useQuery({
+    queryKey: ['package-trigger-branches', triggerConfig?.repository],
+    queryFn: () => repositoryApi.getBranches(triggerConfig!.repository),
+    enabled: triggerOpen && triggerMode === 'branch' && !!triggerConfig?.repository,
+  });
+
+  const branchOptions = useMemo(
+    () => (branchesData || []).map((branch) => ({
+      label: branch.name,
+      value: branch.name,
+    })),
+    [branchesData]
   );
 
   const selectedTaskId = selectedTask?.id;
@@ -222,8 +252,24 @@ export default function PackageTaskPage() {
   }, [selectedTaskId, shouldPoll, loadTaskDetail]);
 
   const triggerMutation = useMutation({
-    mutationFn: ({ configId, releaseId }: { configId: string; releaseId: string }) =>
-      packageApi.triggerConfig(configId, releaseId),
+    mutationFn: ({
+      configId,
+      mode,
+      releaseId,
+      branch,
+    }: {
+      configId: string;
+      mode: 'release' | 'branch';
+      releaseId?: string;
+      branch?: string;
+    }) => {
+      if (mode === 'branch') {
+        if (!branch) throw new Error('请选择要打包的分支');
+        return packageApi.triggerConfigBranch(configId, branch);
+      }
+      if (!releaseId) throw new Error('请选择已发布 Tag');
+      return packageApi.triggerConfig(configId, releaseId);
+    },
     onSuccess: (task) => {
       if (task.status === 'failure') {
         message.warning(task.error_message || '打包任务创建成功，但任务投递失败');
@@ -233,8 +279,12 @@ export default function PackageTaskPage() {
       }
       setTriggerOpen(false);
       setTriggerConfig(null);
+      setTriggerMode('release');
       triggerForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : '创建打包任务失败');
     },
   });
 
@@ -267,6 +317,22 @@ export default function PackageTaskPage() {
     queryClient.invalidateQueries({ queryKey: ['package-configs'] });
     queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
   }, [queryClient]);
+
+  // 项目过滤：同时作用于构建列表与打包配置列表，选择结果写入本地缓存下次复用
+  const handleProjectChange = useCallback((value?: string) => {
+    const projectId = value || '';
+    setFilterProject(projectId);
+    setTaskPage(1);
+    try {
+      if (projectId) {
+        localStorage.setItem(PACKAGE_BOARD_PROJECT_KEY, projectId);
+      } else {
+        localStorage.removeItem(PACKAGE_BOARD_PROJECT_KEY);
+      }
+    } catch {
+      // 本地存储不可用时静默降级，仅本次会话生效
+    }
+  }, []);
 
   const backToList = useCallback(() => {
     setUserView('list');
@@ -396,15 +462,36 @@ export default function PackageTaskPage() {
   const closeTrigger = useCallback(() => {
     setTriggerOpen(false);
     setTriggerConfig(null);
+    setTriggerMode('release');
     triggerForm.resetFields();
   }, [triggerForm]);
 
   const handleTriggerFinish = useCallback(
-    (values: { release_id: string }) => {
+    (values: { release_id?: string; branch?: string }) => {
       if (!triggerConfig) return;
-      triggerMutation.mutate({ configId: triggerConfig.id, releaseId: values.release_id });
+      if (triggerMode === 'branch') {
+        if (!values.branch) {
+          message.warning('请选择要打包的分支');
+          return;
+        }
+        triggerMutation.mutate({
+          configId: triggerConfig.id,
+          mode: 'branch',
+          branch: values.branch,
+        });
+      } else {
+        if (!values.release_id) {
+          message.warning('请选择已发布 Tag');
+          return;
+        }
+        triggerMutation.mutate({
+          configId: triggerConfig.id,
+          mode: 'release',
+          releaseId: values.release_id,
+        });
+      }
     },
-    [triggerConfig, triggerMutation]
+    [triggerConfig, triggerMutation, triggerMode, message]
   );
 
   return (
@@ -450,6 +537,18 @@ export default function PackageTaskPage() {
                 打包配置
               </button>
             </div>
+            <div className="ml-auto flex items-center gap-2">
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                placeholder="全部项目"
+                options={projectOptions}
+                value={filterProject || undefined}
+                onChange={handleProjectChange}
+                className="w-[200px]"
+              />
+            </div>
           </div>
 
           <PermissionAlert error={configsError || tasksError} className="rounded-xl" />
@@ -479,19 +578,6 @@ export default function PackageTaskPage() {
                     className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
-                <Select
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="按项目过滤"
-                  options={projectOptions}
-                  value={taskProject || undefined}
-                  onChange={(v) => {
-                    setTaskProject(v || '');
-                    setTaskPage(1);
-                  }}
-                  className="w-[200px]"
-                />
                 <div className="ml-auto text-[12px] text-slate-400">共 {tasksTotal} 条</div>
               </div>
               <RunningTab
@@ -599,16 +685,60 @@ export default function PackageTaskPage() {
           <div>关联仓库：{triggerConfig?.repository_name || '-'}</div>
         </div>
         <Form form={triggerForm} layout="vertical" onFinish={handleTriggerFinish}>
-          <Form.Item name="release_id" label="选择已发布 Tag" rules={[{ required: true, message: '请选择已发布 Tag' }]}>
-            <Select
-              showSearch
-              loading={releasesLoading}
-              options={releaseOptions}
-              placeholder="选择已发布版本 / Tag"
-              optionFilterProp="label"
-              notFoundContent={releasesLoading ? '加载中...' : '暂无可打包的已发布 Tag'}
-            />
-          </Form.Item>
+          <div className="mb-3">
+            <div className="mb-1.5 text-[13px] font-medium text-slate-700">打包方式</div>
+            <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
+              <button
+                type="button"
+                className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${triggerMode === 'release' ? 'on' : ''}`}
+                onClick={() => {
+                  setTriggerMode('release');
+                  triggerForm.setFieldsValue({ release_id: undefined, branch: undefined });
+                }}
+              >
+                按已发布 Tag
+              </button>
+              <button
+                type="button"
+                className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${triggerMode === 'branch' ? 'on' : ''}`}
+                onClick={() => {
+                  setTriggerMode('branch');
+                  triggerForm.setFieldsValue({ release_id: undefined, branch: undefined });
+                }}
+              >
+                按分支最新代码
+              </button>
+            </div>
+          </div>
+
+          {triggerMode === 'release' ? (
+            <Form.Item name="release_id" label="选择已发布 Tag" rules={[{ required: true, message: '请选择已发布 Tag' }]}>
+              <Select
+                showSearch
+                loading={releasesLoading}
+                options={releaseOptions}
+                placeholder="选择已发布版本 / Tag"
+                optionFilterProp="label"
+                notFoundContent={releasesLoading ? '加载中...' : '暂无可打包的已发布 Tag'}
+              />
+            </Form.Item>
+          ) : (
+            <>
+              <Form.Item name="branch" label="选择分支" rules={[{ required: true, message: '请选择分支' }]}>
+                <Select
+                  showSearch
+                  loading={branchesLoading}
+                  options={branchOptions}
+                  placeholder="选择要打包的分支（取该分支最新代码）"
+                  optionFilterProp="label"
+                  notFoundContent={branchesLoading ? '加载中...' : '暂无可选分支'}
+                />
+              </Form.Item>
+              <div className="-mt-1 mb-1 rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5 text-[12px] leading-relaxed text-emerald-700">
+                将对所选分支的最新代码直接打包（无需发布流程），打包任务标题与自动编码均按分支名命名。
+              </div>
+            </>
+          )}
         </Form>
       </Modal>
 

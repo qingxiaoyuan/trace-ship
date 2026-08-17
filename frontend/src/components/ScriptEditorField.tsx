@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import AceEditor from 'react-ace';
 import { Modal, Popover } from 'antd';
-import { Braces, Check, ChevronDown, FileCode2, Info, Maximize2 } from 'lucide-react';
+import { Braces, Check, ChevronDown, FileCode2, Info, Maximize2, Sparkles } from 'lucide-react';
 
 import 'ace-builds/src-noconflict/mode-batchfile';
 import 'ace-builds/src-noconflict/mode-sh';
@@ -34,10 +34,21 @@ interface ScriptEditorFieldProps {
   fullscreen?: boolean;
   /** 只读模式：禁止编辑与插入变量，仍可放大查看 */
   readOnly?: boolean;
+  /** 点击「AI 生成」按钮回调（由外层组装表单 payload 并打开 AI 弹窗） */
+  onAiGenerate?: () => void;
 }
 
 /** 打包脚本编辑字段（Ace 编辑器）：工具栏 + 语法高亮 + 插入变量 + 放大编辑 */
-export function ScriptEditorField({ value, onChange, lang, filename, hint, fullscreen, readOnly }: ScriptEditorFieldProps) {
+export function ScriptEditorField({
+  value,
+  onChange,
+  lang,
+  filename,
+  hint,
+  fullscreen,
+  readOnly,
+  onAiGenerate,
+}: ScriptEditorFieldProps) {
   const [expandOpen, setExpandOpen] = useState(false);
   const [varOpen, setVarOpen] = useState(false);
   const editorRef = useRef<AceEditor | null>(null);
@@ -85,6 +96,18 @@ export function ScriptEditorField({ value, onChange, lang, filename, hint, fulls
       <FileCode2 className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
       <span className="font-mono text-[11px] text-slate-500">{filename}</span>
       <div className="ml-auto flex items-center gap-0.5">
+        {!readOnly && onAiGenerate && (
+          <button
+            type="button"
+            title="AI 生成脚本"
+            {...keepFocus}
+            onClick={onAiGenerate}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+          >
+            <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
+            AI 生成
+          </button>
+        )}
         {!readOnly && (
           <Popover
             content={variablePanel}

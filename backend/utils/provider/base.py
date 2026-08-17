@@ -148,6 +148,11 @@ class GitProvider(ABC):
         pass
 
     @abstractmethod
+    def delete_tag(self, repo_identity: str, tag_name: str) -> None:
+        """删除 tag（远端不存在时抛出 NotFoundError）"""
+        pass
+
+    @abstractmethod
     def compare_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
         """比较两个 ref 之间的差异"""
         pass

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Empty, Button } from 'antd';
-import { ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, Rocket, Tag } from 'lucide-react';
+import { App, Empty, Button, Input, Modal, Typography } from 'antd';
+import { AlertTriangle, ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, Rocket, Tag, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
@@ -22,13 +22,53 @@ const tabs = [
 export default function ReleaseDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { message, modal } = App.useApp();
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('notes');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteInput, setDeleteInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const { data: release, isLoading, error } = useQuery({
     queryKey: ['release', id],
     queryFn: () => releaseApi.getRelease(id || ''),
     enabled: !!id,
   });
+
+  const handleDeleteReleased = async () => {
+    if (!release || deleteInput !== release.tag_name) return;
+    setDeleting(true);
+    try {
+      await releaseApi.deleteReleased(release.id, deleteInput);
+      message.success(`版本 ${release.version} 已删除`);
+      navigate('/releases');
+    } catch (err) {
+      console.error(err);
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteDraft = () => {
+    if (!release) return;
+    const isDraft = status === 'draft';
+    modal.confirm({
+      title: isDraft ? '删除草稿' : '删除已驳回发布',
+      content: isDraft
+        ? `确定删除草稿「${release.version}」吗？删除后不可恢复。`
+        : `确定删除已驳回发布「${release.version}」吗？删除后不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          await releaseApi.deleteRelease(release.id);
+          message.success('删除成功');
+          navigate('/releases');
+        } catch (err) {
+          console.error(err);
+        }
+      },
+    });
+  };
 
   if (isLoading) {
     return <div className="p-6 text-center text-[13px] text-slate-400">加载中…</div>;
@@ -104,6 +144,26 @@ export default function ReleaseDetail() {
               </div>
             </div>
           </div>
+          {status === 'released' ? (
+            <Button
+              danger
+              icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
+              onClick={() => setDeleteOpen(true)}
+              className="shrink-0"
+            >
+              删除版本
+            </Button>
+          ) : null}
+          {status === 'draft' || status === 'rejected' ? (
+            <Button
+              danger
+              icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
+              onClick={handleDeleteDraft}
+              className="shrink-0"
+            >
+              {status === 'draft' ? '删除草稿' : '删除'}
+            </Button>
+          ) : null}
         </div>
         {/* 小信息栏 */}
         <div className="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
@@ -142,6 +202,47 @@ export default function ReleaseDetail() {
           </div>
         ) : null}
       </div>
+
+      {/* 删除已发布版本二次确认 */}
+      <Modal
+        title={
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-rose-500" strokeWidth={1.5} />
+            删除已发布版本
+          </span>
+        }
+        open={deleteOpen}
+        onCancel={() => {
+          setDeleteOpen(false);
+          setDeleteInput('');
+        }}
+        okText="确认删除"
+        okButtonProps={{
+          danger: true,
+          disabled: deleteInput !== release?.tag_name,
+          loading: deleting,
+        }}
+        cancelText="取消"
+        onOk={handleDeleteReleased}
+      >
+        <div className="space-y-3 py-1">
+          <Typography.Paragraph className="mb-0 text-[13px] text-slate-600">
+            此操作将删除远程 Tag 及发布记录，关联的打包任务记录也会一并删除，<b>不可恢复</b>。
+          </Typography.Paragraph>
+          <div className="rounded-lg border border-rose-100 bg-rose-50/50 p-2.5 text-[12px] text-rose-600">
+            请输入 Tag 名称 <span className="font-mono font-semibold">{release?.tag_name}</span>{' '}
+            以确认删除
+          </div>
+          <Input
+            value={deleteInput}
+            onChange={(e) => setDeleteInput(e.target.value)}
+            placeholder="请输入完整 Tag 名称"
+            onPressEnter={handleDeleteReleased}
+            status={deleteInput && deleteInput !== release?.tag_name ? 'error' : undefined}
+            autoFocus
+          />
+        </div>
+      </Modal>
 
       {/* 主体：左 Tab 区 + 右发布流程时间线 */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">

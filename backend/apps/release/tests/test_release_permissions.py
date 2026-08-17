@@ -173,3 +173,58 @@ def test_leader_without_membership_can_delete_rejected():
 
     assert response.status_code == 200
     assert not ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+@pytest.mark.django_db
+def test_viewer_cannot_delete_released(project, repository, viewer_user, manager_user):
+    """只读成员不能删除已发布版本"""
+    release = _make_release(project, repository, manager_user, status="released")
+    response = auth_client(viewer_user).post(
+        f"/api/releases/{release.id}/delete-released/",
+        {"tag_name": release.tag_name},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+@pytest.mark.django_db
+def test_developer_cannot_delete_released(project, repository, developer_user, manager_user):
+    """项目开发成员不能删除已发布版本（需项目管理员）"""
+    release = _make_release(project, repository, manager_user, status="released")
+    response = auth_client(developer_user).post(
+        f"/api/releases/{release.id}/delete-released/",
+        {"tag_name": release.tag_name},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert response.data["code"] == 40300
+    assert ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+@pytest.mark.django_db
+def test_manager_can_delete_released(project, repository, manager_user, monkeypatch):
+    """项目管理员可删除已发布版本（含远端 tag 删除调用）"""
+    from apps.release.services import ReleaseService
+    from utils.provider.exceptions import NotFoundError
+
+    release = _make_release(project, repository, manager_user, status="released")
+    deleted = []
+
+    class FakeProvider:
+        def delete_tag(self, repo_identity, tag_name):
+            deleted.append(tag_name)
+
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+
+    response = auth_client(manager_user).post(
+        f"/api/releases/{release.id}/delete-released/",
+        {"tag_name": release.tag_name},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert deleted == [release.tag_name]
+    assert not ReleaseRecord.objects.filter(id=release.id).exists()

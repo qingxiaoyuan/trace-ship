@@ -1,9 +1,9 @@
 import { memo } from 'react';
 import { Alert, Button } from 'antd';
-import { Upload } from 'lucide-react';
+import { GitBranch, Upload } from 'lucide-react';
 import { getAvatarColor } from '@/utils/avatar';
 import type { PackageTask, PackageTaskStatus } from '@/types';
-import { canPushSvn, getSvnPushWarning, statusMeta, isRunning } from './utils';
+import { canPushSvn, getSvnPushWarning, statusMeta, isRunning, branchTaskLabel } from './utils';
 
 export const StatusBadge = memo(function StatusBadge({ status }: { status: PackageTaskStatus }) {
   const m = statusMeta[status];
@@ -11,6 +11,17 @@ export const StatusBadge = memo(function StatusBadge({ status }: { status: Packa
     <span className={`inline-flex items-center gap-1.5 rounded-md border ${m.border} ${m.bg} px-1.5 py-0.5 text-[11px] font-medium ${m.text}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${m.dot} ${m.pulse ? 'pulse-dot' : ''}`} />
       {m.label}
+    </span>
+  );
+});
+
+export const TaskSourceBadge = memo(function TaskSourceBadge({ task }: { task: PackageTask }) {
+  const label = branchTaskLabel(task);
+  if (!label) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
+      <GitBranch className="h-3 w-3" strokeWidth={1.5} />
+      分支 {label}
     </span>
   );
 });

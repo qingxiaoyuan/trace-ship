@@ -134,26 +134,39 @@ class NotificationService:
         """
         打包任务结束时通知发起人
 
+        发布触发的打包任务通知发布人；分支直打包任务（无关联发布）通知触发人。
+
         Args:
             task: PackageTask 实例
             release: ReleaseRecord 实例（可选）
         """
         if not release:
             release = task.release
-        if not release or not release.publisher:
+        user = release.publisher if release else None
+        if not user and task.triggered_by_id:
+            user = task.triggered_by
+        if not user:
             return
 
         if task.status == "success":
             title = "打包成功"
-            content = f"版本 {release.version} 的打包任务已成功完成。"
+            content = (
+                f"版本 {release.version} 的打包任务已成功完成。"
+                if release
+                else f"分支 {task.version} 的打包任务已成功完成。"
+            )
         elif task.status in ("failure", "canceled"):
-            title = "打包失败"
-            content = f"版本 {release.version} 的打包任务{task.get_status_display()}，发布状态保持已发布。"
+            title = "打包失败" if task.status == "failure" else "打包已取消"
+            content = (
+                f"版本 {release.version} 的打包任务{task.get_status_display()}，发布状态保持已发布。"
+                if release
+                else f"分支 {task.version} 的打包任务{task.get_status_display()}。"
+            )
         else:
             return
 
         NotificationService.create(
-            user=release.publisher,
+            user=user,
             notification_type="build",
             title=title,
             content=content,

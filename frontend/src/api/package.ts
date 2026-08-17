@@ -1,11 +1,16 @@
 import { get, post, put, patch, del } from './request';
+import { refreshAccessToken } from './authRefresh';
 import type {
+  AIGenerateScriptPayload,
+  AIScriptDraft,
+  AIScriptStreamEvent,
   AvailableImageResult,
   NexusImageSearchResult,
   NexusRepository,
   PackageConfig,
   PackageImage,
   PackageImageSource,
+  PackageKnowledge,
   PackageNode,
   PackageNodeTestResult,
   PackageTask,
@@ -106,6 +111,9 @@ export const packageApi = {
   deleteConfig: (id: string) => del<null>(`/packages/configs/${id}/`),
   triggerConfig: (id: string, releaseId: string) =>
     post<PackageTask>(`/packages/configs/${id}/trigger/`, { release_id: releaseId }),
+  /** 按仓库某条分支最新代码直接触发打包（不经发布流程，任务标题与编码按分支名命名） */
+  triggerConfigBranch: (id: string, branch: string) =>
+    post<PackageTask>(`/packages/configs/${id}/trigger-branch/`, { branch }),
  /** 实时浏览打包配置的 SVN 制品目录（path 为相对 svn_url 的子路径） */
  listSvnEntries: (id: string, path?: string) =>
    get<SvnEntriesData>(`/packages/configs/${id}/svn-entries/`, { params: { path: path || '' } }),
@@ -119,6 +127,89 @@ export const packageApi = {
     '/packages/configs/test-svn/',
     data
   ),
+  /** AI 生成打包脚本草稿（支持未保存配置，请求体携带当前表单值） */
+  aiGenerateScript: (data: AIGenerateScriptPayload) =>
+    post<AIScriptDraft>('/packages/configs/ai-generate-script/', data, {
+      // 仓库扫描 + 容器探测 + AI 生成耗时较长，放宽超时
+      timeout: 300_000,
+    }),
+  /** AI 生成打包脚本草稿（SSE 流式：delta 实时文本 / done 结果 / error 失败） */
+  async *aiGenerateScriptStream(
+    data: AIGenerateScriptPayload,
+  ): AsyncGenerator<AIScriptStreamEvent> {
+    const base = import.meta.env.VITE_API_BASE_URL || '/api';
+    const url = `${base}/packages/configs/ai-generate-script-stream/`;
+    let token = localStorage.getItem('accessToken');
+    const doFetch = async (): Promise<Response> =>
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(data),
+      });
+    let resp = await doFetch();
+    if (resp.status === 401) {
+      // access token 过期：刷新一次后重试（与 request.ts 的刷新逻辑一致）
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (refreshToken) {
+        try {
+          const res = await refreshAccessToken(refreshToken);
+          localStorage.setItem('accessToken', res.access);
+          if (res.refresh) {
+            localStorage.setItem('refreshToken', res.refresh);
+          }
+          token = res.access;
+          resp = await doFetch();
+        } catch {
+          // 刷新失败：沿用 401 响应走下方错误处理
+        }
+      }
+    }
+    if (!resp.ok || !resp.body) {
+      let message = `请求失败（HTTP ${resp.status || '未知'}）`;
+      try {
+        const body = (await resp.json()) as { message?: string };
+        message = body?.message || message;
+      } catch {
+        // 非 JSON 错误体，保留通用提示
+      }
+      throw new Error(message);
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // 统一换行分帧，兼容代理把 \n\n 改写为 \r\n\r\n 的情况
+      buffer = buffer.replace(/\r\n/g, '\n');
+      let sep: number;
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const raw = buffer.slice(0, sep).trim();
+        buffer = buffer.slice(sep + 2);
+        if (!raw.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(raw.slice(6)) as AIScriptStreamEvent;
+          yield event;
+        } catch {
+          // 忽略不完整的半截事件
+        }
+      }
+    }
+  },
+  /** AI 打包通用知识库（系统级上下文） */
+  getKnowledge: (params?: { is_active?: boolean; search?: string; page?: number; page_size?: number }) =>
+    get<PaginatedData<PackageKnowledge>>('/packages/knowledge/', { params }),
+  createKnowledge: (data: Partial<PackageKnowledge>) =>
+    post<PackageKnowledge>('/packages/knowledge/', data),
+  updateKnowledge: (id: string, data: Partial<PackageKnowledge>) =>
+    put<PackageKnowledge>(`/packages/knowledge/${id}/`, data),
+  patchKnowledge: (id: string, data: Partial<PackageKnowledge>) =>
+    patch<PackageKnowledge>(`/packages/knowledge/${id}/`, data),
+  deleteKnowledge: (id: string) => del<null>(`/packages/knowledge/${id}/`),
 
   getTasks: (params?: PackageTaskListParams) =>
     get<PaginatedData<PackageTask>>('/packages/tasks/', { params }),
