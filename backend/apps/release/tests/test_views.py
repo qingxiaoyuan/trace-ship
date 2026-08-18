@@ -425,3 +425,69 @@ class TestReleaseViews:
         response = api_client.get(f"/api/releases/{release.id}/")
         assert response.status_code == 200
         assert response.data["data"]["package_tasks"] == []
+
+
+class TestReleasePackageConfigSelection:
+    """发布创建时勾选「发布后自动打包」配置的接口测试"""
+
+    def test_create_release_with_selected_package_configs(
+        self, api_client, project, repository, patched_provider
+    ):
+        """创建发布时传入勾选配置：响应与记录仅保留该仓库启用了自动打包的合法 id"""
+        from apps.package.models import PackageConfig, PackageImage
+
+        image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+        config = PackageConfig.objects.create(
+            project=project,
+            repository=repository,
+            name="Web 打包",
+            image=image,
+            auto_package_on_release=True,
+        )
+        other_config = PackageConfig.objects.create(
+            project=project,
+            repository=repository,
+            name="普通打包",
+            image=image,
+            auto_package_on_release=False,
+        )
+        response = api_client.post(
+            "/api/releases/",
+            {
+                "project": str(project.id),
+                "repository": str(repository.id),
+                "release_type": "formal",
+                "branch": "main",
+                "package_config_ids": [
+                    str(config.id),
+                    str(other_config.id),
+                    "00000000-0000-0000-0000-000000000000",
+                ],
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["code"] == 0
+        data = response.data["data"]
+        assert data["package_config_ids"] == [str(config.id)]
+
+        record = ReleaseRecord.objects.get(id=data["id"])
+        assert list(record.package_config_ids) == [str(config.id)]
+
+    def test_create_release_without_selection_keeps_none(
+        self, api_client, project, repository, patched_provider
+    ):
+        """创建发布未勾选打包配置时 package_config_ids 为 None（保留历史全量语义）"""
+        response = api_client.post(
+            "/api/releases/",
+            {
+                "project": str(project.id),
+                "repository": str(repository.id),
+                "release_type": "formal",
+                "branch": "main",
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        data = response.data["data"]
+        assert data["package_config_ids"] is None

@@ -7,7 +7,12 @@ from django.db.models import Count, Q
 from rest_framework import serializers
 
 from apps.project.models import Project, ProjectMember
-from apps.release.models import ReleaseCommit, ReleaseRecord
+from apps.release.models import (
+    ReleaseCommit,
+    ReleaseRecord,
+    ReleaseReviewIssue,
+    ReleaseReviewReply,
+)
 from apps.repository.models import Repository
 
 
@@ -27,24 +32,34 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     version = serializers.CharField(required=False, allow_blank=True)
     tag_name = serializers.CharField(required=False, allow_blank=True)
     release_doc = serializers.CharField(required=False, allow_blank=True)
+    package_config_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+    )
     package_tasks = serializers.SerializerMethodField()
+    review_issue_counts = serializers.SerializerMethodField()
+    can_review = serializers.SerializerMethodField()
+    can_reply = serializers.SerializerMethodField()
 
     class Meta:
         model = ReleaseRecord
         fields = [
             "id", "project", "project_name", "repository", "repository_name",
-            "version", "tag_name", "branch", "git_hash",
+            "version", "tag_name", "base_tag", "branch", "git_hash",
             "release_type", "release_type_display", "status", "status_display",
             "release_doc", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
             "self_test_passed", "retest_passed",
+            "package_config_ids",
+            "review_issue_counts", "can_review", "can_reply",
             "publisher", "publisher_name",
             "package_tasks",
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "git_hash", "status",
+            "id", "git_hash", "base_tag", "status",
             "package_tasks", "rejected_reason",
             "released_at", "created_at", "updated_at",
         ]
@@ -66,6 +81,43 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             }
             for task in tasks
         ]
+
+    def get_review_issue_counts(self, obj: ReleaseRecord) -> dict:
+        """整改意见聚合计数（total / open / replied / resolved）"""
+        if not hasattr(obj, "_review_issue_counts_cache"):
+            agg = obj.review_issues.aggregate(
+                total=Count("id"),
+                open_count=Count("id", filter=Q(status="open")),
+                replied_count=Count("id", filter=Q(status="replied")),
+                resolved_count=Count("id", filter=Q(status="resolved")),
+            )
+            obj._review_issue_counts_cache = {
+                "total": agg["total"] or 0,
+                "open": agg["open_count"] or 0,
+                "replied": agg["replied_count"] or 0,
+                "resolved": agg["resolved_count"] or 0,
+            }
+        return obj._review_issue_counts_cache
+
+    def get_can_review(self, obj: ReleaseRecord) -> bool:
+        """当前用户是否为审查员且发布已发布（可发起/判定整改）"""
+        if obj.status != "released":
+            return False
+        request = self.context.get("request")
+        user = request.user if request else None
+        from apps.release.services import ReleaseReviewService
+
+        return ReleaseReviewService.can_review(user)
+
+    def get_can_reply(self, obj: ReleaseRecord) -> bool:
+        """当前用户是否为发布人（可回复整改意见）"""
+        request = self.context.get("request")
+        user = request.user if request else None
+        if not user or user.is_anonymous:
+            return False
+        if user.is_superuser:
+            return True
+        return str(obj.publisher_id) == str(user.id)
 
     def validate_project(self, value: Project) -> Project:
         """
@@ -216,3 +268,49 @@ class ReleaseCommitSerializer(serializers.ModelSerializer):
             "id", "commit_id", "commit_hash", "author", "message",
             "review_status", "review_reason", "parsed_result", "committed_at",
         ]
+
+
+class ReleaseReviewReplySerializer(serializers.ModelSerializer):
+    """
+    整改意见回复序列化器
+    """
+
+    author_name = serializers.CharField(source="author.nickname", read_only=True, default="")
+    author = serializers.UUIDField(read_only=True)
+
+    class Meta:
+        model = ReleaseReviewReply
+        fields = ["id", "author", "author_name", "content", "created_at"]
+
+
+class ReleaseReviewIssueSerializer(serializers.ModelSerializer):
+    """
+    发布文档整改意见序列化器
+
+    附带回应对话时间线、状态展示与当前用户判定权限（can_judge）。
+    """
+
+    author_name = serializers.CharField(source="author.nickname", read_only=True, default="")
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    resolved_by_name = serializers.CharField(source="resolved_by.nickname", read_only=True, default="")
+    replies = ReleaseReviewReplySerializer(many=True, read_only=True)
+    can_judge = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReleaseReviewIssue
+        fields = [
+            "id", "author", "author_name", "content", "status", "status_display",
+            "resolved_by", "resolved_by_name", "resolved_at",
+            "replies", "can_judge", "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_can_judge(self, obj: ReleaseReviewIssue) -> bool:
+        """当前用户是否为意见发起人（或超管），可判定通过/驳回"""
+        request = self.context.get("request")
+        user = request.user if request else None
+        if not user or user.is_anonymous:
+            return False
+        if user.is_superuser:
+            return True
+        return str(obj.author_id) == str(user.id)

@@ -133,6 +133,8 @@ export interface Release {
   self_test_passed?: boolean;
   /** 研发测试复验通过 */
   retest_passed?: boolean;
+  /** 创建发布时勾选的发布后自动打包配置 id 列表（快照固定；null/undefined 表示未显式选择） */
+  package_config_ids?: string[] | null;
   package_tasks?: ReleasePackageTaskSummary[];
   rejected_reason?: string;
   released_at?: string;
@@ -144,6 +146,19 @@ export interface Release {
   illegal_count?: number;
   /** 是否已生成发布说明文档（列表接口返回） */
   has_doc?: boolean;
+  /** 发布时的基线 tag 快照（详情返回；空表示首个版本区间） */
+  base_tag?: string;
+  /** 整改意见聚合计数（详情返回） */
+  review_issue_counts?: {
+    total: number;
+    open: number;
+    replied: number;
+    resolved: number;
+  };
+  /** 当前用户是否为审查员且发布已发布（可发起/判定整改，详情返回） */
+  can_review?: boolean;
+  /** 当前用户是否为发布人（可回复整改意见，详情返回） */
+  can_reply?: boolean;
 }
 
 /** 发布关联的打包任务概要（release 详情 package_tasks） */
@@ -175,6 +190,44 @@ export interface ReleaseCommit {
 }
 
 export type ReviewStatus = 'unreviewed' | 'pass' | 'warning' | 'illegal';
+
+/** 整改意见回复 */
+export interface ReleaseReviewReply {
+  id: string;
+  author: string;
+  author_name?: string;
+  content: string;
+  created_at: string;
+}
+
+/** 整改意见状态：open 待整改 / replied 待复核 / resolved 已通过 */
+export type ReleaseReviewStatus = 'open' | 'replied' | 'resolved';
+
+/** 发布文档同步到 SVN 的单任务结果（update-doc 返回） */
+export interface SvnSyncResult {
+  task_name: string;
+  remote_url: string;
+  ok: boolean;
+  error?: string;
+}
+
+/** 发布文档整改意见 */
+export interface ReleaseReviewIssue {
+  id: string;
+  author: string;
+  author_name?: string;
+  content: string;
+  status: ReleaseReviewStatus;
+  status_display?: string;
+  resolved_by?: string;
+  resolved_by_name?: string;
+  resolved_at?: string | null;
+  replies: ReleaseReviewReply[];
+  /** 当前用户是否为意见发起人（可判定通过/驳回） */
+  can_judge?: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 /** 提交解析结果中的单条更新内容 */
 export interface ParsedUpdate {

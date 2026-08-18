@@ -962,3 +962,207 @@ def test_ensure_svn_parent_dirs_skips_existing(project, repository, user):
     provider.mkdir.assert_not_called()
     # 存在性检查覆盖 feature 与 feature/demo 两级父目录
     assert provider.remote_exists.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# 发布文档修改后同步替换 SVN 文档测试
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+class TestSyncReleaseDocToSvn:
+    """修改发布文档后同步替换已推送 SVN 的文档。"""
+
+    def _make_pushed_task(
+        self, project, repository, release, svn_credential, *, remote_url="svn://host/releases/V1.0.0"
+    ):
+        """构造一个已成功推送 SVN 的打包任务。"""
+        image, _ = PackageImage.objects.get_or_create(
+            name="Web 镜像", image="trace-ship/web:latest"
+        )
+        config = PackageConfig.objects.create(
+            project=project,
+            repository=repository,
+            name="Web 打包",
+            image=image,
+            svn_push_enabled=True,
+            svn_url="svn://host/releases",
+            svn_credential=svn_credential,
+            svn_path_template="{version}",
+        )
+        return PackageTask.objects.create(
+            config=config,
+            release=release,
+            project=project,
+            repository=repository,
+            name="Web 打包",
+            version=release.version,
+            tag_name=release.tag_name,
+            status="success",
+            config_snapshot={
+                "svn_push_enabled": True,
+                "svn_url": "svn://host/releases",
+                "svn_credential_id": str(svn_credential.id),
+                "svn_path_template": "{version}",
+            },
+            stage_info={"svn_push": {"status": "success", "remote_url": remote_url}},
+        )
+
+    def test_sync_success(self, project, repository, release, svn_credential, monkeypatch):
+        """已推送 SVN 的任务成功替换文档。"""
+        task = self._make_pushed_task(project, repository, release, svn_credential)
+        mock_provider = MagicMock()
+        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+
+        results = PackageService.sync_release_docs_to_svn(release)
+
+        assert len(results) == 1
+        assert results[0]["ok"] is True
+        assert results[0]["remote_url"] == "svn://host/releases/V1.0.0"
+        mock_provider.replace_file.assert_called_once()
+        # 提交说明与目标文件名正确（remote_url/local_path 为位置参数）
+        args, kwargs = mock_provider.replace_file.call_args
+        assert "release-V1.0.0.md" in args[1]
+        assert "doc update" in kwargs["message"]
+
+    def test_sync_failure_not_block(self, project, repository, release, svn_credential, monkeypatch):
+        """单个任务同步失败不抛出异常，返回 error。"""
+        self._make_pushed_task(project, repository, release, svn_credential)
+        mock_provider = MagicMock()
+        mock_provider.replace_file.side_effect = RuntimeError("SVN 连接失败")
+        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+
+        results = PackageService.sync_release_docs_to_svn(release)
+
+        assert len(results) == 1
+        assert results[0]["ok"] is False
+        assert "SVN 连接失败" in results[0]["error"]
+
+    def test_skip_unpushed_tasks(self, project, repository, release, svn_credential, monkeypatch):
+        """未成功推送 SVN 的任务跳过。"""
+        image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+        config = PackageConfig.objects.create(
+            project=project, repository=repository, name="Web 打包", image=image,
+        )
+        PackageTask.objects.create(
+            config=config,
+            release=release,
+            project=project,
+            repository=repository,
+            name="未推送任务",
+            version=release.version,
+            tag_name=release.tag_name,
+            status="success",
+            config_snapshot={"svn_push_enabled": True},
+            stage_info={},
+        )
+        mock_provider = MagicMock()
+        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+
+        results = PackageService.sync_release_docs_to_svn(release)
+
+        assert results == []
+        mock_provider.replace_file.assert_not_called()
+
+    def test_skip_empty_doc(self, project, repository, release, svn_credential, monkeypatch):
+        """发布文档为空时不执行同步。"""
+        self._make_pushed_task(project, repository, release, svn_credential)
+        release.release_doc = ""
+        release.save(update_fields=["release_doc"])
+        mock_provider = MagicMock()
+        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+
+        results = PackageService.sync_release_docs_to_svn(release)
+
+        assert results == []
+        mock_provider.replace_file.assert_not_called()
+
+    def test_sync_multiple_tasks_all_replaced(
+        self, project, repository, release, svn_credential, monkeypatch
+    ):
+        """多个已推送任务全部替换（并行执行）。"""
+        self._make_pushed_task(project, repository, release, svn_credential, remote_url="svn://host/releases/V1.0.0")
+        self._make_pushed_task(project, repository, release, svn_credential, remote_url="svn://host/releases/V1.0.0-rc")
+        mock_provider = MagicMock()
+        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+
+        results = PackageService.sync_release_docs_to_svn(release)
+
+        assert len(results) == 2
+        assert all(r["ok"] for r in results)
+        assert {r["remote_url"] for r in results} == {
+            "svn://host/releases/V1.0.0",
+            "svn://host/releases/V1.0.0-rc",
+        }
+        assert mock_provider.replace_file.call_count == 2
+
+
+@pytest.mark.django_db
+def test_update_doc_returns_svn_sync_results(
+    api_client, project, repository, release, svn_credential
+):
+    """修改发布文档接口返回 SVN 同步结果字段（无已推送任务时为空列表）。"""
+    resp = api_client.post(
+        f"/api/releases/{release.id}/update-doc/",
+        {"release_doc": "# 新发布说明"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.data["code"] == 0
+    assert resp.data["data"]["svn_sync_results"] == []
+    release.refresh_from_db()
+    assert release.release_doc == "# 新发布说明"
+
+
+@pytest.mark.django_db
+def test_update_doc_logs_svn_sync_failure(
+    api_client, project, repository, release, svn_credential, monkeypatch
+):
+    """SVN 文档同步失败时记入操作日志（便于追溯）。"""
+    from apps.system.models import OperationLog
+
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="Web 打包",
+        image=image,
+        svn_push_enabled=True,
+        svn_url="svn://host/releases",
+        svn_credential=svn_credential,
+        svn_path_template="{version}",
+    )
+    PackageTask.objects.create(
+        config=config,
+        release=release,
+        project=project,
+        repository=repository,
+        name="Web 打包",
+        version=release.version,
+        tag_name=release.tag_name,
+        status="success",
+        config_snapshot={
+            "svn_push_enabled": True,
+            "svn_url": "svn://host/releases",
+            "svn_credential_id": str(svn_credential.id),
+            "svn_path_template": "{version}",
+        },
+        stage_info={"svn_push": {"status": "success", "remote_url": "svn://host/releases/V1.0.0"}},
+    )
+    mock_provider = MagicMock()
+    mock_provider.replace_file.side_effect = RuntimeError("SVN 连接失败")
+    monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+
+    resp = api_client.post(
+        f"/api/releases/{release.id}/update-doc/",
+        {"release_doc": "# 新发布说明"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.data["data"]["svn_sync_results"][0]["ok"] is False
+
+    logs = OperationLog.objects.filter(
+        resource_id=str(release.id), action="update_doc", result="failure"
+    )
+    assert logs.exists()
+    detail = logs.first().detail
+    assert detail["svn_sync_failed"][0]["error"] == "SVN 连接失败"

@@ -24,8 +24,15 @@ from apps.release.serializers import (
     ReleaseCommitSerializer,
     ReleaseListSerializer,
     ReleaseRecordSerializer,
+    ReleaseReviewIssueSerializer,
 )
-from apps.release.services import ReleaseService, ReleaseTagExistsError, ReleaseValidator
+from apps.release.services import (
+    ReleaseReviewError,
+    ReleaseReviewService,
+    ReleaseService,
+    ReleaseTagExistsError,
+    ReleaseValidator,
+)
 from apps.release.exporters import ReleaseDocExporter
 from utils.permissions import IsProjectDeveloper, IsProjectManager
 from utils.provider.exceptions import ProviderError
@@ -200,6 +207,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 impact_desc=data.get("impact_desc", ""),
                 self_test_passed=data.get("self_test_passed", False),
                 retest_passed=data.get("retest_passed", False),
+                package_config_ids=data.get("package_config_ids"),
             )
         except Exception as exc:
             return _handle_service_error(exc, "创建发布")
@@ -341,9 +349,33 @@ class ReleaseViewSet(StandardModelViewSet):
         md_content = request.data.get("release_doc", "")
         try:
             ReleaseService.update_doc(release, md_content)
+            # 保存成功后同步替换已推送 SVN 的发布文档；失败不阻塞保存
+            from apps.package.services import PackageService
+
+            sync_results = PackageService.sync_release_docs_to_svn(release)
         except Exception as exc:
             return _handle_service_error(exc, "保存发布说明")
-        return success_response(self._serialize_release(release), message="保存成功")
+        data = self._serialize_release(release)
+        data["svn_sync_results"] = sync_results
+        # SVN 文档同步失败记入操作日志，便于追溯
+        failed = [r for r in sync_results if not r.get("ok")]
+        if failed:
+            from apps.system.services import OperationLogService
+
+            OperationLogService.log(
+                user=request.user,
+                module="发布管理",
+                action="update_doc",
+                resource_type="release_record",
+                resource_id=str(release.id),
+                description=(
+                    f"保存发布说明 {release.version}（SVN 文档同步失败 "
+                    f"{len(failed)} 项）"
+                ),
+                result="failure",
+                detail={"svn_sync_failed": failed},
+            )
+        return success_response(data, message="保存成功")
 
     @action(detail=True, methods=["get"], url_path="export-md")
     def export_md(self, request: Request, pk=None):
@@ -509,6 +541,89 @@ class ReleaseViewSet(StandardModelViewSet):
         page = self.paginate_queryset(queryset)
         serializer = ReleaseCommitSerializer(page, many=True, context={"request": request})
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=True, methods=["get", "post"], url_path="review-issues")
+    def review_issues(self, request: Request, pk=None) -> Response:
+        """
+        获取/发起发布文档整改意见
+
+        GET：返回该发布全部整改意见（含回复时间线）
+        POST：审查员发起整改意见（仅 released，拥有 release.audit 权限）
+        """
+        release = self.get_object()
+        if request.method == "GET":
+            queryset = (
+                release.review_issues.select_related("author", "resolved_by")
+                .prefetch_related("replies")
+                .order_by("-created_at")
+            )
+            serializer = ReleaseReviewIssueSerializer(
+                queryset, many=True, context={"request": request}
+            )
+            return success_response(serializer.data)
+        content = request.data.get("content", "")
+        try:
+            issue = ReleaseReviewService.create_issue(release, request.user, content)
+        except ReleaseReviewError as exc:
+            return error_response(40002, str(exc))
+        serializer = ReleaseReviewIssueSerializer(issue, context={"request": request})
+        return success_response(serializer.data, "整改意见已提交", status=201)
+
+    def _get_review_issue(self, release: ReleaseRecord, issue_id: str):
+        """按 id 取发布下的整改意见，不存在或 id 非法返回 None（避免非法 UUID 触发 500）"""
+        if not issue_id:
+            return None
+        try:
+            from uuid import UUID
+
+            UUID(str(issue_id))
+        except (ValueError, TypeError, AttributeError):
+            return None
+        return release.review_issues.filter(id=issue_id).first()
+
+    @action(detail=True, methods=["post"], url_path=r"review-issues/(?P<issue_id>[^/.]+)/reply")
+    def review_issue_reply(self, request: Request, pk=None, issue_id=None) -> Response:
+        """发布人回复整改意见（仅发布人，open -> replied）"""
+        release = self.get_object()
+        issue = self._get_review_issue(release, issue_id)
+        if not issue:
+            return error_response(40400, "整改意见不存在", status_code=404)
+        content = request.data.get("content", "")
+        try:
+            issue = ReleaseReviewService.reply_issue(issue, request.user, content)
+        except ReleaseReviewError as exc:
+            return error_response(40002, str(exc))
+        serializer = ReleaseReviewIssueSerializer(issue, context={"request": request})
+        return success_response(serializer.data, "已回复整改意见")
+
+    @action(detail=True, methods=["post"], url_path=r"review-issues/(?P<issue_id>[^/.]+)/resolve")
+    def review_issue_resolve(self, request: Request, pk=None, issue_id=None) -> Response:
+        """审查员通过整改意见（replied -> resolved）"""
+        release = self.get_object()
+        issue = self._get_review_issue(release, issue_id)
+        if not issue:
+            return error_response(40400, "整改意见不存在", status_code=404)
+        try:
+            issue = ReleaseReviewService.resolve_issue(issue, request.user)
+        except ReleaseReviewError as exc:
+            return error_response(40002, str(exc))
+        serializer = ReleaseReviewIssueSerializer(issue, context={"request": request})
+        return success_response(serializer.data, "整改意见已通过")
+
+    @action(detail=True, methods=["post"], url_path=r"review-issues/(?P<issue_id>[^/.]+)/reject")
+    def review_issue_reject(self, request: Request, pk=None, issue_id=None) -> Response:
+        """审查员驳回整改意见（replied -> open，可填备注，发布人可再次回复）"""
+        release = self.get_object()
+        issue = self._get_review_issue(release, issue_id)
+        if not issue:
+            return error_response(40400, "整改意见不存在", status_code=404)
+        comment = request.data.get("comment", "")
+        try:
+            issue = ReleaseReviewService.reject_issue(issue, request.user, comment)
+        except ReleaseReviewError as exc:
+            return error_response(40002, str(exc))
+        serializer = ReleaseReviewIssueSerializer(issue, context={"request": request})
+        return success_response(serializer.data, "整改意见已驳回")
 
     @action(detail=False, methods=["get"], url_path="dashboard/overview")
     def dashboard_overview(self, request: Request) -> Response:

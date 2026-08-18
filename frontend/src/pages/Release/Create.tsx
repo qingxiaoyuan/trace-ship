@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Form, Select } from 'antd';
+import { Form, Select, Checkbox } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -17,6 +17,7 @@ import {
   Info,
   Rocket,
   Package,
+  PackageCheck,
   Cpu,
   Check,
   DownloadCloud,
@@ -30,12 +31,13 @@ import {
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
 import { releaseApi } from '@/api/release';
+import { packageApi } from '@/api/package';
 import { useAppMessage } from '@/hooks/useAppMessage';
 import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField';
 import { CommitCheckModal } from './components/CommitCheckModal';
-import type { Release, ReleaseType, Repository, ChangesPreview, ParsedUpdate } from '@/types';
+import type { Release, ReleaseType, Repository, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
 
 /** 关联变更清单条目 */
 interface RelatedChange {
@@ -48,6 +50,9 @@ interface UpdateItem extends ParsedUpdate {
   type: string;
   content: string;
 }
+
+/** 更新内容自动填入条数上限：超出部分通过「检测commit」弹窗勾选添加 */
+const AUTO_FILL_UPDATES_LIMIT = 10;
 
 /** 发布类型卡片配置 */
 const RELEASE_TYPES: { value: ReleaseType; title: string; desc: string }[] = [
@@ -77,6 +82,8 @@ export default function ReleaseCreate() {
   const [selfTestPassed, setSelfTestPassed] = useState(false);
   const [retestPassed, setRetestPassed] = useState(false);
   const [commitCheckOpen, setCommitCheckOpen] = useState(false);
+  // 发布后自动打包配置勾选（快照固定，null 表示默认全选）
+  const [autoPackageConfigIds, setAutoPackageConfigIds] = useState<string[] | null>(null);
 
   // 响应式跟踪关键字段
   const watchProject = Form.useWatch('project', form) as string | undefined;
@@ -111,6 +118,20 @@ export default function ReleaseCreate() {
     ? (branchesError as { message?: string })?.message || '获取分支失败，请检查仓库凭证与连通性'
     : undefined;
 
+  // 发布后自动打包配置：该仓库启用了「发布后自动打包」的打包配置，可勾选（默认全选）
+  const { data: autoPackageData, isLoading: autoPackageLoading } = useQuery({
+    queryKey: ['package-configs-auto', watchRepository],
+    queryFn: () =>
+      packageApi.getConfigs({
+        repository: watchRepository || '',
+        auto_package_on_release: true,
+        is_active: true,
+        page_size: 1000,
+      }),
+    enabled: !!watchRepository,
+  });
+  const autoPackageConfigs: PackageConfig[] = autoPackageData?.results || [];
+
   // 自动版本号预览
   const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
     queryKey: ['repository-next-version', watchRepository, watchReleaseType, watchBranch],
@@ -127,6 +148,39 @@ export default function ReleaseCreate() {
     retry: false,
   });
 
+  // 已解析但超出自动填入上限的条目：通过「检测commit」弹窗勾选添加
+  const pendingParsedUpdates = useMemo(
+    () => (changesPreview?.parsed_updates || []).slice(AUTO_FILL_UPDATES_LIMIT),
+    [changesPreview]
+  );
+
+  // 已加入更新内容的条目引用（`source:source_ref`），弹窗内据此过滤已填入的未解析 Commit。
+  // 跳过空内容条目（如「手动添加」产生的空白行），避免产生无意义的空引用
+  const existingUpdateRefs = useMemo(
+    () =>
+      updates
+        .filter((u) => (u.content || '').trim())
+        .map((u) => `${u.source || 'commit'}:${u.source_ref || ''}`),
+    [updates]
+  );
+
+  // 已加入更新内容的条目内容（`type:content`），弹窗内按此过滤已解析待选条目（与 onAddUpdates 去重语义一致）
+  const existingUpdateContents = useMemo(
+    () =>
+      updates
+        .filter((u) => (u.content || '').trim())
+        .map((u) => `${u.type || 'A'}:${(u.content || '').trim()}`),
+    [updates]
+  );
+
+  // 待选条目中尚未加入的数量（徽标/提示用），随已添加条目实时减少
+  const pendingAddableCount = useMemo(() => {
+    const existing = new Set(existingUpdateContents);
+    return pendingParsedUpdates.filter(
+      (u) => !existing.has(`${u.type || 'A'}:${(u.content || '').trim()}`)
+    ).length;
+  }, [pendingParsedUpdates, existingUpdateContents]);
+
   // 选 branch 后自动回填 parsed_updates（仅在首次拉取或切换分支/发布类型时触发）
   const lastPreviewRef = useRef<string>('');
   useEffect(() => {
@@ -135,9 +189,8 @@ export default function ReleaseCreate() {
     if (key === lastPreviewRef.current) return;
     lastPreviewRef.current = key;
     // 切换分支/发布类型后基线 tag 变化，无论新结果是否为空都重置回填，避免旧类型更新项残留
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUpdates(
-      (changesPreview.parsed_updates || []).map((u) => ({
+      (changesPreview.parsed_updates || []).slice(0, AUTO_FILL_UPDATES_LIMIT).map((u) => ({
         type: u.type || 'A',
         content: u.content || '',
         source: u.source,
@@ -194,6 +247,8 @@ export default function ReleaseCreate() {
         impact_desc: impactDesc,
         self_test_passed: selfTestPassed,
         retest_passed: retestPassed,
+        package_config_ids:
+          autoPackageConfigIds ?? autoPackageConfigs.map((config) => config.id),
       }),
     onSuccess: (release) => {
       setCreatedRelease(release);
@@ -233,6 +288,8 @@ export default function ReleaseCreate() {
   };
   const handleRepoChange = () => {
     form.setFieldsValue({ branch: undefined });
+    // 切换仓库后重置发布后自动打包勾选（null 表示默认全选）
+    setAutoPackageConfigIds(null);
   };
 
   const handleSubmitAudit = () => {
@@ -535,6 +592,84 @@ export default function ReleaseCreate() {
             </section>
           )}
 
+          {/* 发布后自动打包（可勾选，默认全选，快照固定） */}
+          {formReady && (autoPackageLoading || autoPackageConfigs.length > 0) && (
+            <section className="tech-card mb-5 rounded-xl p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-amber">
+                    <PackageCheck className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
+                  </div>
+                  <h3 className="text-[14px] font-semibold text-slate-900">发布后自动打包</h3>
+                  <span className="text-[11px] text-slate-400">审批通过并推 tag 成功后自动触发勾选的配置</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAutoPackageConfigIds(null)}
+                    className="rounded-md border border-indigo-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
+                  >
+                    全选
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAutoPackageConfigIds([])}
+                    className="rounded-md border border-indigo-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
+                  >
+                    全不选
+                  </button>
+                </div>
+              </div>
+              {autoPackageLoading ? (
+                <p className="py-3 text-center text-[12px] text-slate-400">加载中…</p>
+              ) : (
+                <div className="space-y-2">
+                  {autoPackageConfigs.map((config) => (
+                    <label
+                      key={config.id}
+                      className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-indigo-200"
+                    >
+                      <Checkbox
+                        checked={
+                          autoPackageConfigIds === null ||
+                          autoPackageConfigIds.includes(config.id)
+                        }
+                        onChange={(e) => {
+                          const id = config.id;
+                          setAutoPackageConfigIds((prev) => {
+                            const base =
+                              prev === null
+                                ? autoPackageConfigs.map((config) => config.id)
+                                : prev;
+                            return e.target.checked
+                              ? [...base, id]
+                              : base.filter((pid) => pid !== id);
+                          });
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-medium text-slate-700">
+                          {config.name}
+                        </div>
+                        <div className="truncate text-[11px] text-slate-400">
+                          {config.image_name || config.executor_type_display || '内置脚本打包'}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                  {autoPackageConfigIds !== null && autoPackageConfigIds.length === 0 && (
+                    <p className="text-[11px] text-amber-600">
+                      未勾选任何配置，本次发布通过后不会自动打包
+                    </p>
+                  )}
+                </div>
+              )}
+              <p className="mt-2 text-[11px] text-slate-400">
+                仅勾选的配置会在发布通过后触发（默认全选，创建后不可再改）
+              </p>
+            </section>
+          )}
+
           {/* 5. 更新内容 */}
           <section className="tech-card mb-5 rounded-xl p-5">
             <div className="mb-1 flex items-center justify-between">
@@ -559,6 +694,11 @@ export default function ReleaseCreate() {
                 >
                   <ScanSearch className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
                   检测commit
+                  {pendingAddableCount > 0 && (
+                    <span className="rounded-full bg-indigo-600 px-1.5 text-[10px] font-medium leading-4 text-white">
+                      {pendingAddableCount}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -573,6 +713,13 @@ export default function ReleaseCreate() {
             <p className="mb-3 text-[11px] text-slate-400">
               来源：Commit 或 MR 中识别到的 A/F 行与 fix/feat 前缀，可在此编辑
             </p>
+            {changesPreview && changesPreview.parsed_updates.length > AUTO_FILL_UPDATES_LIMIT && (
+              <p className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2 text-[11px] text-indigo-600">
+                本次解析出 {changesPreview.parsed_updates.length} 条变更，已自动填入前{' '}
+                {AUTO_FILL_UPDATES_LIMIT} 条，其余 {pendingAddableCount} 条可点击
+                「检测commit」勾选添加
+              </p>
+            )}
 
             {updates.length === 0 ? (
               <p className="text-[12px] text-slate-400">暂无条目</p>
@@ -845,11 +992,25 @@ export default function ReleaseCreate() {
             lastTag={changesPreview?.last_tag ?? null}
             branch={watchBranch || ''}
             commits={changesPreview?.commits || []}
+            pendingUpdates={pendingParsedUpdates}
+            existingRefs={existingUpdateRefs}
+            existingContents={existingUpdateContents}
             open
             onClose={() => setCommitCheckOpen(false)}
             onAddUpdates={(items) => {
-              setUpdates((prev) => [...prev, ...items]);
-              message.success(`已添加 ${items.length} 条更新内容`);
+              // 按「类型 + 内容」去重，避免重复勾选/多次添加产生重复条目
+              const existing = new Set(
+                updates.map((u) => `${u.type}:${u.content.trim()}`)
+              );
+              const newItems = items.filter(
+                (it) => !existing.has(`${it.type}:${it.content.trim()}`)
+              );
+              if (newItems.length === 0) {
+                message.info('所选条目均已存在于更新内容');
+                return;
+              }
+              setUpdates((prev) => [...prev, ...newItems]);
+              message.success(`已添加 ${newItems.length} 条更新内容`);
             }}
           />
         )}

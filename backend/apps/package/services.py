@@ -10,7 +10,9 @@ import select
 import shutil
 import signal
 import subprocess
+import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -316,12 +318,30 @@ class PackageService:
 
     @classmethod
     def trigger_auto_packages_for_release(cls, release, request_user=None) -> list[PackageTask]:
-        """发布推 tag 成功后触发同仓库启用的自动打包配置。"""
+        """发布推 tag 成功后触发同仓库启用的自动打包配置。
+
+        优先按创建发布时勾选的配置（快照）触发；未显式选择（None）时兼容历史逻辑，
+        触发该仓库全部启用的自动打包配置。
+        """
         configs = PackageConfig.objects.filter(
             repository=release.repository,
             auto_package_on_release=True,
             is_active=True,
         ).select_related("project", "repository", "image", "node")
+        selected = release.package_config_ids
+        if selected is not None:
+            from uuid import UUID
+
+            # 显式选择过：仅触发勾选且仍有效/同仓库的配置（[] 为空即不触发）
+            # 防御性过滤：数据被手工篡改/损坏时忽略非法 id，避免查询层抛异常
+            valid_ids: list[str] = []
+            for value in selected:
+                try:
+                    UUID(str(value))
+                except (ValueError, TypeError, AttributeError):
+                    continue
+                valid_ids.append(str(value))
+            configs = configs.filter(id__in=valid_ids)
         tasks = []
         for config in configs:
             tasks.append(cls.create_task_for_release(config, release, request_user=request_user))
@@ -1095,6 +1115,97 @@ class PackageService:
             "file_count": len(uploaded_files),
             "files": uploaded_files,
         }
+
+    @classmethod
+    @classmethod
+    def sync_release_docs_to_svn(cls, release) -> list[dict[str, Any]]:
+        """
+        将发布文档同步替换到该发布所有已推送 SVN 的打包任务目录。
+
+        修改发布文档（update-doc）后调用：仅处理已成功推送过 SVN 的打包任务，
+        按目录并行执行 SVN 文件替换。任一任务失败不影响其它任务，也不抛出异常，
+        结果以列表形式返回供前端提示。
+
+        Args:
+            release: 发布记录
+
+        Returns:
+            同步结果列表，每项 {task_name, remote_url, ok, error?}
+        """
+        results: list[dict[str, Any]] = []
+        if not (release.release_doc or "").strip():
+            return results
+        doc_content = table_newlines_to_br(release.release_doc or "")
+        message = f"Release {release.version} doc update"
+
+        # 主线程收集任务上下文并解析凭证（避免工作线程操作 ORM 连接）
+        jobs: list[dict[str, Any]] = []
+        tasks = release.package_tasks.filter(status="success")
+        for task in tasks:
+            stage = (task.stage_info or {}).get("svn_push")
+            if not stage or stage.get("status") != "success":
+                continue
+            remote_url = (stage.get("remote_url") or "").strip()
+            snapshot = task.config_snapshot or {}
+            svn_url = (snapshot.get("svn_url") or "").strip()
+            cred_id = snapshot.get("svn_credential_id")
+            if not remote_url or not svn_url or not cred_id:
+                continue
+            entry: dict[str, Any] = {
+                "task_name": task.name,
+                "remote_url": remote_url,
+                "ok": False,
+            }
+            try:
+                credential = Credential.objects.get(id=cred_id)
+                if not credential.is_active:
+                    raise RuntimeError("SVN 凭证已停用")
+                credential.last_used_at = timezone.now()
+                credential.save(update_fields=["last_used_at", "updated_at"])
+                jobs.append({
+                    "task_name": task.name,
+                    "remote_url": remote_url,
+                    "svn_url": svn_url,
+                    "cred_data": credential.get_data(),
+                    "doc_name": f"release-{cls._doc_filename(task.version)}.md",
+                })
+            except Exception as exc:  # noqa: BLE001 - 单点失败不阻塞整体
+                entry["error"] = str(exc)
+                results.append(entry)
+        if not jobs:
+            return results
+
+        def _run_one(job: dict[str, Any]) -> dict[str, Any]:
+            """工作线程：仅做 SVN 替换，无 ORM 操作"""
+            provider = get_provider("svn", job["svn_url"], job["cred_data"])
+            with tempfile.TemporaryDirectory(prefix="trace-ship-svn-doc-") as tmp:
+                doc_path = Path(tmp) / job["doc_name"]
+                doc_path.write_text(doc_content, encoding="utf-8")
+                provider.replace_file(
+                    job["remote_url"], str(doc_path), message=message
+                )
+            return {"task_name": job["task_name"], "remote_url": job["remote_url"]}
+
+        with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
+            future_map = {pool.submit(_run_one, job): job for job in jobs}
+            for future in as_completed(future_map):
+                job = future_map[future]
+                entry: dict[str, Any] = {
+                    "task_name": job["task_name"],
+                    "remote_url": job["remote_url"],
+                    "ok": False,
+                }
+                try:
+                    future.result()
+                    entry["ok"] = True
+                except Exception as exc:  # noqa: BLE001 - 单点失败不阻塞整体保存
+                    entry["error"] = str(exc)
+                    logger.warning(
+                        "同步发布文档到 SVN 失败: task=%s remote=%s err=%s",
+                        job["task_name"], job["remote_url"], exc,
+                    )
+                results.append(entry)
+        return results
 
     @classmethod
     def manual_push_svn(cls, task: PackageTask) -> dict[str, Any]:

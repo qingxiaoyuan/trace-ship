@@ -3,7 +3,10 @@ SVN Provider
 
 基于 svn 命令行的适配器，对外提供 list_commits / test_connection 接口。
 """
+import os
+import shutil
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import List, Optional
@@ -305,3 +308,45 @@ class SVNProvider:
         """
         cmd = self._base_cmd() + ["import", local_path, remote_url, "-m", message]
         self._run(cmd, timeout=300)
+
+    def replace_file(self, remote_url: str, local_path: str, message: str = "") -> None:
+        """
+        替换 SVN 远程目录中的单个文件（checkout -> 覆盖 -> commit）。
+
+        用于已推送过产物的版本目录中更新发布文档等单个文件，无需整目录重建。
+
+        Args:
+            remote_url: SVN 远程目录地址
+            local_path: 本地新文件路径，取文件名替换远程同名文件
+            message: 提交说明
+
+        Raises:
+            NotFoundError: 远程目录中不存在同名文件
+            ConnectionError: 命令执行失败或超时
+        """
+        filename = os.path.basename(local_path)
+        if not filename:
+            raise ProviderError("替换文件名为空")
+        workcopy = tempfile.mkdtemp(prefix="trace-ship-svn-")
+        try:
+            # 仅检出目录下文件（发布文档位于版本目录根），避免拉取整个产物子目录
+            checkout_cmd = self._base_cmd() + [
+                "checkout", remote_url, workcopy, "--depth", "files",
+            ]
+            self._run(checkout_cmd, timeout=300)
+
+            target = os.path.join(workcopy, filename)
+            if not os.path.exists(target):
+                raise NotFoundError(f"SVN 远程目录中不存在文件: {filename}")
+            with open(local_path, "rb") as fsrc:
+                new_data = fsrc.read()
+            with open(target, "rb") as fdst:
+                old_data = fdst.read()
+            # 内容一致时跳过 commit，避免 SVN "no changes" 误报为同步失败
+            if old_data != new_data:
+                with open(target, "wb") as fdst:
+                    fdst.write(new_data)
+                commit_cmd = self._base_cmd() + ["commit", workcopy, "-m", message]
+                self._run(commit_cmd, timeout=300)
+        finally:
+            shutil.rmtree(workcopy, ignore_errors=True)

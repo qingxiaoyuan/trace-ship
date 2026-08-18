@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Select as AntSelect } from 'antd';
+import { useMemo, useState, type ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Modal, Select as AntSelect } from 'antd';
 import {
   ArrowLeft,
   Check,
@@ -10,10 +10,12 @@ import {
   DownloadCloud,
   FileText,
   GitBranch,
+  GitCommitHorizontal,
   GitCompare,
   History,
   Info,
   LoaderCircle,
+  Pencil,
   RefreshCw,
   ScanSearch,
   Search,
@@ -23,8 +25,17 @@ import dayjs from 'dayjs';
 import { projectApi } from '@/api/project';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
-import { parseMdTable } from '@/utils/markdownTable';
+import { ReleaseCommits } from '../Release/components/ReleaseCommits';
+import { ReleaseReview } from '../Release/components/ReleaseReview';
+import { buildMdTable, parseMdTable } from '@/utils/markdownTable';
 import { PermissionAlert } from '@/components/PermissionAlert';
+import { useAppMessage } from '@/hooks/useAppMessage';
+import { useProjectRole } from '@/hooks/useProjectRole';
+import { AutoResizeTextarea, CheckboxField } from '../Release/components/ReleaseDocField';
+import {
+  applyCheckboxChange,
+  isCheckboxField,
+} from '../Release/components/releaseDocUtils';
 import type {
   MdTableRow,
 } from '@/utils/markdownTable';
@@ -36,6 +47,7 @@ import type {
   ReviewRangeItem,
   ReviewRangeResult,
   ReviewStatus,
+  SvnSyncResult,
 } from '@/types';
 
 /** 三个审查板块 */
@@ -347,11 +359,85 @@ function ReleaseReviewDetail({
   status: 'pending' | 'released';
   onBack: () => void;
 }) {
-  // 拉取完整 release 详情（含 release_doc）
+  const [tab, setTab] = useState<'doc' | 'commits' | 'review'>('doc');
+  // 拉取完整 release 详情（含 release_doc / base_tag / 整改聚合）
   const { data: detail, isLoading } = useQuery({
     queryKey: ['release', 'detail', release.id],
     queryFn: () => releaseApi.getRelease(release.id),
   });
+
+  // ---- 变更文档编辑（复用发布详情页的编辑模式）----
+  const queryClient = useQueryClient();
+  const { message } = useAppMessage();
+  const [editOpen, setEditOpen] = useState(false);
+  const [svnFailResults, setSvnFailResults] = useState<SvnSyncResult[]>([]);
+  const [docRows, setDocRows] = useState<MdTableRow[]>([]);
+  const [editContent, setEditContent] = useState('');
+  const [docSaved, setDocSaved] = useState(true);
+  const [tableEditMode, setTableEditMode] = useState(true);
+
+  // 修改发布说明需 developer 及以上项目角色
+  const { data: project } = useQuery({
+    queryKey: ['project', release.project_id],
+    queryFn: () => projectApi.getProject(release.project_id),
+    enabled: !!release.project_id,
+  });
+  const { canDevelop } = useProjectRole(project);
+
+  const updateDocMutation = useMutation({
+    mutationFn: (doc: string) => releaseApi.updateDoc(release.id, doc),
+    onSuccess: (data) => {
+      const syncResults = data?.svn_sync_results || [];
+      const failed = syncResults.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        message.success(`文档已保存，但 ${failed.length} 个 SVN 目录同步失败`);
+        setSvnFailResults(failed);
+      } else if (syncResults.length > 0) {
+        message.success('文档已保存，SVN 文档已同步');
+      } else {
+        message.success('文档已保存');
+      }
+      queryClient.invalidateQueries({ queryKey: ['release', 'detail', release.id] });
+      setDocSaved(true);
+      setEditOpen(false);
+    },
+  });
+
+  const openEdit = () => {
+    const md = detail?.release_doc || '';
+    const parsed = parseMdTable(md);
+    setDocRows(parsed);
+    setEditContent(md);
+    setTableEditMode(parsed.length > 0);
+    setDocSaved(true);
+    setEditOpen(true);
+  };
+
+  const handleRowChange = (idx: number, value: string) => {
+    setDocRows((prev) => prev.map((r, i) => (i === idx ? { ...r, value } : r)));
+    setDocSaved(false);
+  };
+
+  const handleCheckboxChange = (idx: number, value: string) => {
+    setDocRows((prev) => applyCheckboxChange(prev, idx, value));
+    setDocSaved(false);
+  };
+
+  const handleSaveDoc = () => {
+    updateDocMutation.mutate(tableEditMode ? buildMdTable(docRows) : editContent);
+  };
+
+  const handleCloseEdit = () => {
+    if (!docSaved) {
+      const ok = window.confirm('有未保存的修改，确定要放弃吗？');
+      if (!ok) return;
+    }
+    setEditOpen(false);
+  };
+
+  const handleCloseSvnFail = () => {
+    setSvnFailResults([]);
+  };
 
   const warningCount = (release.warning_count ?? 0) + (release.illegal_count ?? 0);
   const releaseDoc = detail?.release_doc || '';
@@ -359,6 +445,22 @@ function ReleaseReviewDetail({
   const hasDoc = rows.length > 0;
 
   const title = status === 'released' ? '已发布回溯' : '审批中审查';
+
+  const tabBtn = (key: 'doc' | 'commits' | 'review', label: string, icon?: ReactNode) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setTab(key)}
+      className={
+        tab === key
+          ? 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-t-lg border-b-2 border-indigo-600 px-3 py-2.5 text-[13px] font-medium text-indigo-600'
+          : 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-t-lg border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-slate-500 transition-colors hover:text-indigo-600'
+      }
+    >
+      {icon}
+      {label}
+    </button>
+  );
 
   return (
     <div className="space-y-5">
@@ -373,6 +475,9 @@ function ReleaseReviewDetail({
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
         <span className="font-mono font-medium text-slate-800">{release.version}</span>
+        <span className="text-[12px] text-slate-400">
+          {release.project_name || '-'} · {release.release_type_display || release.release_type}
+        </span>
         {!isLoading && (warningCount > 0 || !hasDoc) && (
           <span className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[12px] font-medium text-amber-600">
             <TriangleAlert className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -381,38 +486,170 @@ function ReleaseReviewDetail({
         )}
       </div>
 
-      {isLoading ? (
-        <div className="tech-card flex items-center justify-center rounded-xl py-16 text-[13px] text-slate-400">
-          加载中…
+      {/* 主体：变更文档 / 版本提交 / 审查整改 三 Tab 切换 */}
+      <div className="tech-card overflow-hidden rounded-xl">
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-indigo-50 px-4">
+          {tabBtn('doc', '变更文档', <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />)}
+          {tabBtn('commits', '版本提交', <GitCommitHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />)}
+          {status === 'released' && tabBtn('review', '审查整改', <ClipboardCheck className="h-3.5 w-3.5" strokeWidth={1.5} />)}
         </div>
-      ) : !hasDoc ? (
-        <div className="tech-card flex flex-col items-center justify-center rounded-xl py-16">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-amber-200 bg-amber-50">
-            <TriangleAlert className="h-6 w-6 text-amber-500" strokeWidth={1.5} />
-          </div>
-          <p className="mt-4 text-[14px] font-medium text-slate-700">该发布单尚未生成发布说明文档</p>
-          <p className="mt-1 text-[12px] text-slate-400">请先在发布详情页生成发布说明</p>
+
+        <div className="p-5">
+          {tab === 'doc' &&
+            (isLoading ? (
+              <div className="flex items-center justify-center py-16 text-[13px] text-slate-400">
+                加载中…
+              </div>
+            ) : !hasDoc ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-amber-200 bg-amber-50">
+                  <TriangleAlert className="h-6 w-6 text-amber-500" strokeWidth={1.5} />
+                </div>
+                <p className="mt-4 text-[14px] font-medium text-slate-700">该发布单尚未生成发布说明文档</p>
+                <p className="mt-1 text-[12px] text-slate-400">
+                  {canDevelop ? '可点击下方「修改文档」手动填写发布说明' : '仅项目开发或管理员可修改'}
+                </p>
+                {canDevelop && (
+                  <button
+                    type="button"
+                    onClick={openEdit}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                  >
+                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    修改文档
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                {/* 标题栏：标题 + 版本信息 + 修改文档按钮 */}
+                <div className="flex items-center gap-2 border-b border-indigo-50 bg-slate-50/40 px-4 py-2.5">
+                  <FileText className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={1.5} />
+                  <span className="text-[13px] font-semibold text-slate-800">变更文档</span>
+                  <span className="text-[12px] text-slate-400">发布说明</span>
+                  {canDevelop && (
+                    <button
+                      type="button"
+                      onClick={openEdit}
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                    >
+                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      修改文档
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <tbody>
+                      {rows.map((row, idx) => (
+                        <DocRow key={idx} row={row} hasWarning={warningCount > 0} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+
+          {tab === 'commits' && <ReleaseCommits release={detail || release} />}
+
+          {tab === 'review' && status === 'released' && detail && (
+            <ReleaseReview release={detail} />
+          )}
         </div>
-      ) : (
-        <div className="tech-card overflow-hidden rounded-xl">
-          <div className="flex items-center gap-2 border-b border-indigo-50 px-5 py-3">
-            <FileText className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
-            <h3 className="text-[14px] font-semibold text-slate-900">发布说明</h3>
-            <span className="text-[12px] text-slate-400">
-              {release.version} · {release.release_type_display || release.release_type}
-            </span>
-          </div>
-          <div className="overflow-hidden">
+      </div>
+
+      {/* 修改发布说明弹窗 */}
+      <Modal
+        title="修改发布说明"
+        open={editOpen}
+        onCancel={handleCloseEdit}
+        onOk={handleSaveDoc}
+        confirmLoading={updateDocMutation.isPending}
+        width={720}
+        destroyOnHidden
+      >
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setTableEditMode((m) => !m)}
+            className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"
+          >
+            {tableEditMode ? '切换为 Markdown 编辑' : '切换为表格编辑'}
+          </button>
+        </div>
+        {tableEditMode ? (
+          <div className="overflow-hidden rounded-lg border border-slate-200">
             <table className="w-full border-collapse">
               <tbody>
-                {rows.map((row, idx) => (
-                  <DocRow key={idx} row={row} hasWarning={warningCount > 0} />
+                {docRows.map((row, idx) => (
+                  <tr key={idx} className="border-b border-slate-100 last:border-0">
+                    <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-middle text-[12px] font-medium leading-[1.375] text-slate-500">
+                      {row.key}
+                    </td>
+                    <td className="px-3 py-2 align-middle">
+                      {isCheckboxField(row.key) ? (
+                        <CheckboxField
+                          value={row.value}
+                          fieldKey={row.key}
+                          onChange={(value) => handleCheckboxChange(idx, value)}
+                        />
+                      ) : (
+                        <AutoResizeTextarea
+                          value={row.value}
+                          onChange={(value) => handleRowChange(idx, value)}
+                          className="block w-full resize-none bg-transparent border-0 p-0 text-[13px] leading-[1.375] text-slate-700 outline-none focus:bg-white"
+                        />
+                      )}
+                    </td>
+                  </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        ) : (
+          <textarea
+            value={editContent}
+            onChange={(e) => {
+              setEditContent(e.target.value);
+              setDocSaved(false);
+            }}
+            rows={16}
+            placeholder="请输入 Markdown 格式的发布说明"
+            className="input-field w-full resize-none rounded-lg border border-slate-200 bg-white p-3 font-mono text-[13px] leading-5 text-slate-700 outline-none"
+          />
+        )}
+        {tableEditMode && (
+          <p className="mt-2 text-[11px] text-slate-400">
+            左列标题只读，右列内容可编辑；保存后将序列化为 Markdown 表格
+          </p>
+        )}
+      </Modal>
+
+      {/* SVN 文档同步失败提示 */}
+      <Modal
+        title="SVN 文档同步失败"
+        open={svnFailResults.length > 0}
+        onCancel={handleCloseSvnFail}
+        onOk={handleCloseSvnFail}
+        okText="知道了"
+        cancelButtonProps={{ style: { display: 'none' } }}
+      >
+        <p className="mb-3 text-[13px] text-slate-600">
+          发布文档已保存成功，但以下 SVN 目录的文档替换失败，请检查 SVN 凭证与连通性后手动处理：
+        </p>
+        <div className="space-y-2">
+          {svnFailResults.map((r) => (
+            <div
+              key={`${r.task_name}-${r.remote_url}`}
+              className="rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2 text-[12px] text-rose-600"
+            >
+              <div className="font-medium">{r.task_name}</div>
+              <div className="mt-0.5 break-all font-mono text-[11px] text-slate-500">{r.remote_url}</div>
+              <div className="mt-0.5">{r.error || '未知错误'}</div>
+            </div>
+          ))}
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

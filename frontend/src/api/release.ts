@@ -1,5 +1,11 @@
 import { del, get, post } from './request';
-import type { PaginatedData, Release } from '@/types';
+import type {
+  PaginatedData,
+  Release,
+  ReleaseCommit,
+  ReleaseReviewIssue,
+  SvnSyncResult,
+} from '@/types';
 
 export const releaseApi = {
   getReleases: (params?: Record<string, unknown>) =>
@@ -15,7 +21,9 @@ export const releaseApi = {
       timeout: 300_000,
     }),
   updateDoc: (id: string, releaseDoc: string) =>
-    post<Release>(`/releases/${id}/update-doc/`, { release_doc: releaseDoc }),
+    post<Release & { svn_sync_results?: SvnSyncResult[] }>(`/releases/${id}/update-doc/`, {
+      release_doc: releaseDoc,
+    }),
   submitAudit: (id: string) =>
     post<{ id: string; status: string; workflow_instance_id?: string }>(`/releases/${id}/submit-audit/`, {}),
   pushTag: (id: string) => post<Release>(`/releases/${id}/push-tag/`, {}),
@@ -31,4 +39,21 @@ export const releaseApi = {
   exportMd: (id: string) =>
     get<Blob>(`/releases/${id}/export-md/`, { responseType: 'blob' }),
   getCatalog: () => get<{ formal: Release[]; rc: Release[]; beta: Release[] }>('/releases/catalog/'),
+  /** 发布关联提交快照（分页） */
+  getCommits: (id: string, params?: Record<string, unknown>) =>
+    get<PaginatedData<ReleaseCommit>>(`/releases/${id}/commits/`, { params }),
+  /** 获取发布文档整改意见列表 */
+  getReviewIssues: (id: string) => get<ReleaseReviewIssue[]>(`/releases/${id}/review-issues/`),
+  /** 发起整改意见（审查员） */
+  createReviewIssue: (id: string, content: string) =>
+    post<ReleaseReviewIssue>(`/releases/${id}/review-issues/`, { content }),
+  /** 发布人回复整改意见 */
+  replyReviewIssue: (id: string, issueId: string, content: string) =>
+    post<ReleaseReviewIssue>(`/releases/${id}/review-issues/${issueId}/reply/`, { content }),
+  /** 审查员通过整改意见 */
+  resolveReviewIssue: (id: string, issueId: string) =>
+    post<ReleaseReviewIssue>(`/releases/${id}/review-issues/${issueId}/resolve/`, {}),
+  /** 审查员驳回整改意见（可填备注） */
+  rejectReviewIssue: (id: string, issueId: string, comment?: string) =>
+    post<ReleaseReviewIssue>(`/releases/${id}/review-issues/${issueId}/reject/`, { comment }),
 };

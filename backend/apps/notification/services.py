@@ -212,3 +212,73 @@ class NotificationService:
             notification.read_at = timezone.now()
             notification.save(update_fields=["is_read", "read_at"])
         return notification
+
+    # ---------- 发布文档审查整改通知 ----------
+
+    @staticmethod
+    def _latest_reply_content(issue) -> str:
+        """取意见下最近一条回复内容（不含意见正文）"""
+        latest = issue.replies.order_by("-created_at").first()
+        return (latest.content if latest else "").strip()
+
+    @staticmethod
+    def notify_review_issue_created(issue) -> None:
+        """发起整改意见时通知发布人"""
+        publisher = issue.release.publisher
+        if not publisher or str(publisher.id) == str(issue.author_id):
+            return
+        NotificationService.create(
+            user=publisher,
+            notification_type="review",
+            title="发布文档收到整改意见",
+            content=f"版本 {issue.release.version}（{issue.release.tag_name}）收到审查整改意见：{issue.content[:80]}",
+            related_type="release",
+            related_id=str(issue.release_id),
+        )
+
+    @staticmethod
+    def notify_review_issue_replied(issue) -> None:
+        """发布人回复后通知意见发起人（审查员）"""
+        author = issue.author
+        if not author or str(author.id) == str(issue.release.publisher_id):
+            return
+        content = NotificationService._latest_reply_content(issue)
+        NotificationService.create(
+            user=author,
+            notification_type="review",
+            title="整改意见已回复",
+            content=f"版本 {issue.release.version} 的整改意见已有发布人回复：{content[:80]}",
+            related_type="release",
+            related_id=str(issue.release_id),
+        )
+
+    @staticmethod
+    def notify_review_issue_resolved(issue) -> None:
+        """审查员通过整改意见后通知发布人"""
+        publisher = issue.release.publisher
+        if not publisher or str(publisher.id) == str(issue.author_id):
+            return
+        NotificationService.create(
+            user=publisher,
+            notification_type="review",
+            title="整改意见已通过",
+            content=f"版本 {issue.release.version} 的整改意见已通过：{issue.content[:80]}",
+            related_type="release",
+            related_id=str(issue.release_id),
+        )
+
+    @staticmethod
+    def notify_review_issue_rejected(issue, comment: str = "") -> None:
+        """审查员驳回整改意见后通知发布人"""
+        publisher = issue.release.publisher
+        if not publisher or str(publisher.id) == str(issue.author_id):
+            return
+        note = f"驳回备注：{comment[:80]}" if comment else "请修改后再次回复"
+        NotificationService.create(
+            user=publisher,
+            notification_type="review",
+            title="整改意见被驳回",
+            content=f"版本 {issue.release.version} 的整改意见被驳回，需继续整改。{note}",
+            related_type="release",
+            related_id=str(issue.release_id),
+        )

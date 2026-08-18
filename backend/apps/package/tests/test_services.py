@@ -815,3 +815,147 @@ def test_build_env_omits_release_doc_path_for_branch_task(project, repository, u
     assert "RELEASE_DOC_PATH" not in env
     assert env["VERSION"] == "feature/demo"
     assert env["TAG_NAME"] == "feature/demo"
+
+
+@pytest.mark.django_db
+def test_trigger_auto_packages_empty_selection_skips_all(project, repository, user, monkeypatch):
+    """用户勾选为空（[]）时发布通过不触发任何打包任务。"""
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="Web 打包",
+        image=image,
+        auto_package_on_release=True,
+    )
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+        package_config_ids=[],
+    )
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
+
+    tasks = PackageService.trigger_auto_packages_for_release(release, request_user=user)
+
+    assert tasks == []
+    assert not PackageTask.objects.filter(config=config).exists()
+
+
+@pytest.mark.django_db
+def test_trigger_auto_packages_partial_selection_filters(project, repository, user, monkeypatch):
+    """按勾选快照触发：只触发选中且仍启用/同仓库的配置，跳过停用与异仓库配置。"""
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config_a = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="A 打包",
+        image=image,
+        auto_package_on_release=True,
+    )
+    config_b = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="B 打包",
+        image=image,
+        auto_package_on_release=True,
+    )
+    config_disabled = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="停用打包",
+        image=image,
+        auto_package_on_release=True,
+        is_active=False,
+    )
+    other_repo = Repository.objects.create(
+        project=project,
+        repo_type="git",
+        vendor="gitlab",
+        name="other",
+        url="https://gitlab.example.com",
+        external_identity="group/other",
+        default_branch="main",
+    )
+    config_other = PackageConfig.objects.create(
+        project=project,
+        repository=other_repo,
+        name="异仓库打包",
+        image=image,
+        auto_package_on_release=True,
+    )
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+        package_config_ids=[
+            str(config_a.id),
+            str(config_b.id),
+            str(config_disabled.id),
+            str(config_other.id),
+            "00000000-0000-0000-0000-000000000000",
+        ],
+    )
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
+
+    tasks = PackageService.trigger_auto_packages_for_release(release, request_user=user)
+
+    assert {t.config_id for t in tasks} == {config_a.id, config_b.id}
+
+
+@pytest.mark.django_db
+def test_create_release_saves_selected_package_config_ids(project, repository, user, monkeypatch):
+    """创建发布时保存用户勾选的自动打包配置，并忽略未开启/不存在的 id。"""
+    from apps.release.services import ReleaseService
+
+    class FakeProvider:
+        def list_tags(self, repo_identity):
+            return []
+
+    image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+    config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="Web 打包",
+        image=image,
+        auto_package_on_release=True,
+    )
+    other_config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="普通打包",
+        image=image,
+        auto_package_on_release=False,
+    )
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(
+        ReleaseService,
+        "_resolve_branch_head_hash",
+        lambda repo, branch, request_user=None: "head",
+    )
+
+    release = ReleaseService.create_release(
+        project=project,
+        repository=repository,
+        release_type="formal",
+        branch="main",
+        publisher=user,
+        version="VA.1.0.0",
+        package_config_ids=[
+            str(config.id),
+            str(other_config.id),  # 未开启自动打包 -> 忽略
+            "00000000-0000-0000-0000-000000000000",  # 不存在 -> 忽略
+        ],
+    )
+
+    assert list(release.package_config_ids) == [str(config.id)]

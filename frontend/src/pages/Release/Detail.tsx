@@ -10,12 +10,14 @@ import { releaseApi } from '@/api/release';
 import { releaseTypeText, releaseTypeBadge, statusBadge, releaseStatusText } from './constants';
 import { ReleaseTimeline } from './components/ReleaseTimeline';
 import { ReleaseNotes } from './components/ReleaseNotes';
+import { ReleaseCommits } from './components/ReleaseCommits';
 import { ReleasePackages } from './components/ReleasePackages';
 import type { ReleaseStatus, ReleaseType } from '@/types';
 
 /** 详情头 Tab */
 const tabs = [
   { key: 'notes', label: '发布说明' },
+  { key: 'commits', label: '提交记录' },
   { key: 'packages', label: '打包任务' },
 ] as const;
 
@@ -269,6 +271,7 @@ export default function ReleaseDetail() {
             </div>
             <div className="p-5">
               {activeTab === 'notes' && <ReleaseNotes release={release} />}
+              {activeTab === 'commits' && <ReleaseCommits release={release} />}
               {activeTab === 'packages' && <ReleasePackages release={release} />}
             </div>
           </TsCard>

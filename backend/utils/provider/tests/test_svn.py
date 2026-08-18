@@ -71,3 +71,77 @@ def test_svn_command_not_found(provider):
         with pytest.raises(ConnectionError) as exc_info:
             provider.test_connection()
         assert "未找到 svn" in str(exc_info.value)
+
+
+def test_replace_file_success(provider, tmp_path):
+    """替换远程文件：checkout -> 覆盖 -> commit"""
+    local = tmp_path / "release-VA.1.0.0.md"
+    local.write_text("new doc content", encoding="utf-8")
+    workcopy = tmp_path / "wc"
+    workcopy.mkdir()
+    (workcopy / "release-VA.1.0.0.md").write_text("old doc", encoding="utf-8")
+
+    with (
+        patch("utils.provider.svn.subprocess.run") as mock_run,
+        patch("utils.provider.svn.tempfile.mkdtemp", return_value=str(workcopy)),
+        patch("utils.provider.svn.shutil.rmtree") as mock_rmtree,
+    ):
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stderr = ""
+        provider.replace_file(
+            "https://svn.example.com/repo/VA.1.0.0", str(local), "Release doc update"
+        )
+
+    assert (workcopy / "release-VA.1.0.0.md").read_text(encoding="utf-8") == "new doc content"
+    calls = mock_run.call_args_list
+    assert len(calls) == 2
+    assert "checkout" in calls[0].args[0]
+    assert "commit" in calls[1].args[0]
+    mock_rmtree.assert_called_once()
+
+
+def test_replace_file_missing_target_raises(provider, tmp_path):
+    """远程目录中不存在同名文件时报 NotFoundError"""
+    local = tmp_path / "release-VA.1.0.0.md"
+    local.write_text("new", encoding="utf-8")
+    workcopy = tmp_path / "wc"
+    workcopy.mkdir()
+
+    with (
+        patch("utils.provider.svn.subprocess.run") as mock_run,
+        patch("utils.provider.svn.tempfile.mkdtemp", return_value=str(workcopy)),
+    ):
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stderr = ""
+        from utils.provider.exceptions import NotFoundError
+
+        with pytest.raises(NotFoundError):
+            provider.replace_file(
+                "https://svn.example.com/repo/VA.1.0.0", str(local), "msg"
+            )
+
+
+def test_replace_file_skips_commit_when_content_unchanged(provider, tmp_path):
+    """远程文件内容一致时跳过 commit，避免 'no changes' 误报失败"""
+    local = tmp_path / "release-VA.1.0.0.md"
+    local.write_text("same content", encoding="utf-8")
+    workcopy = tmp_path / "wc"
+    workcopy.mkdir()
+    (workcopy / "release-VA.1.0.0.md").write_text("same content", encoding="utf-8")
+
+    with (
+        patch("utils.provider.svn.subprocess.run") as mock_run,
+        patch("utils.provider.svn.tempfile.mkdtemp", return_value=str(workcopy)),
+        patch("utils.provider.svn.shutil.rmtree") as mock_rmtree,
+    ):
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stderr = ""
+        provider.replace_file(
+            "https://svn.example.com/repo/VA.1.0.0", str(local), "Release doc update"
+        )
+
+    # 只 checkout，不 commit
+    calls = mock_run.call_args_list
+    assert len(calls) == 1
+    assert "checkout" in calls[0].args[0]
+    mock_rmtree.assert_called_once()

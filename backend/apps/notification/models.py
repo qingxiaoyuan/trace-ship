@@ -30,6 +30,7 @@ class Notification(models.Model):
         ("audit", "审批通知"),
         ("build", "构建结果"),
         ("release", "发布结果"),
+        ("review", "审查整改"),
         ("system", "系统通知"),
     ]
 

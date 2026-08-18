@@ -17,7 +17,13 @@ from rest_framework import serializers
 
 from apps.notification.services import NotificationService
 from apps.project.models import Project
-from apps.release.models import ReleaseCommit, ReleaseMergeRequest, ReleaseRecord
+from apps.release.models import (
+    ReleaseCommit,
+    ReleaseMergeRequest,
+    ReleaseRecord,
+    ReleaseReviewIssue,
+    ReleaseReviewReply,
+)
 from apps.repository.models import CommitRecord, Repository
 from apps.system.services import OperationLogService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance
@@ -656,6 +662,10 @@ class ReleaseDocGenerator:
         commits = self._filter_commits(commits, commit_ids)
         merge_requests = self._fetch_merge_requests()
 
+        # 持久化发布时的基线 tag 快照，供详情页展示「上一 tag -> 本次 tag」提交区间
+        self.release.base_tag = self._get_last_tag() or ""
+        self.release.save(update_fields=["base_tag"])
+
         # 持久化 ReleaseCommit 关联
         repo = self.release.repository
         project = self.release.project
@@ -847,6 +857,7 @@ class ReleaseService:
         impact_desc: str = "",
         self_test_passed: bool = False,
         retest_passed: bool = False,
+        package_config_ids: list | None = None,
     ) -> ReleaseRecord:
         """
         创建发布申请
@@ -867,6 +878,8 @@ class ReleaseService:
             impact_desc: 影响范围说明
             self_test_passed: 自测试通过
             retest_passed: 研发测试复验通过
+            package_config_ids: 用户勾选的发布后自动打包配置 id 列表；
+                None 表示未显式选择（历史语义），[] 表示不自动打包，其余为快照固定
 
         Returns:
             新创建的 ReleaseRecord
@@ -937,6 +950,21 @@ class ReleaseService:
             publisher=publisher,
         ).filter(cls.empty_draft_filter()).delete()
 
+        if package_config_ids is not None:
+            # 宽容过滤：只保留属于该仓库且启用了自动打包的配置，非法/不存在/停用的 id 忽略
+            from apps.package.models import PackageConfig
+
+            valid_package_config_ids = [
+                str(config_id)
+                for config_id in PackageConfig.objects.filter(
+                    repository=repository,
+                    auto_package_on_release=True,
+                    id__in=[str(x) for x in package_config_ids],
+                ).values_list("id", flat=True)
+            ]
+        else:
+            valid_package_config_ids = None
+
         release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
@@ -955,6 +983,7 @@ class ReleaseService:
             impact_desc=impact_desc or "",
             self_test_passed=self_test_passed,
             retest_passed=retest_passed,
+            package_config_ids=valid_package_config_ids,
         )
         OperationLogService.log_release(
             user=publisher,
@@ -1542,3 +1571,149 @@ class ReleaseService:
             release.id, release.tag_name, remote_deleted,
         )
         return {"tag_name": release.tag_name, "remote_deleted": remote_deleted}
+
+
+class ReleaseReviewError(serializers.ValidationError):
+    """发布文档整改业务错误。"""
+
+
+class ReleaseReviewService:
+    """
+    发布文档整改服务
+
+    实现已发布版本发布文档的审查整改闭环：
+    审查员（拥有 release.audit 权限或超管）发起整改意见 -> 发布人回复 -> 审查员通过/驳回，
+    驳回后发布人可再次修改并回复，直至通过。
+    """
+
+    @staticmethod
+    def can_review(user) -> bool:
+        """
+        判断用户是否为系统审查员（拥有 release.audit 权限）或超管
+
+        Args:
+            user: 当前用户
+
+        Returns:
+            是否为审查员
+        """
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        return user.user_roles.filter(
+            role__permissions__code="release.audit"
+        ).exists()
+
+    @classmethod
+    def create_issue(cls, release: ReleaseRecord, user, content: str) -> ReleaseReviewIssue:
+        """
+        审查员对已发布版本发起整改意见
+
+        Args:
+            release: 发布记录（须为 released）
+            user: 当前用户（须为审查员）
+            content: 意见正文
+
+        Returns:
+            创建的 ReleaseReviewIssue
+
+        Raises:
+            ReleaseReviewError: 发布未发布 / 无权限 / 内容为空
+        """
+        if release.status != "released":
+            raise ReleaseReviewError("仅已发布的版本可发起整改审查")
+        if not cls.can_review(user):
+            raise ReleaseReviewError("只有审查员（拥有审批发布权限）才能发起整改意见")
+        content = (content or "").strip()
+        if not content:
+            raise ReleaseReviewError("整改意见内容不能为空")
+        issue = ReleaseReviewIssue.objects.create(
+            release=release,
+            author=user,
+            content=content,
+            status="open",
+        )
+        NotificationService.notify_review_issue_created(issue)
+        return issue
+
+    @classmethod
+    def reply_issue(cls, issue: ReleaseReviewIssue, user, content: str) -> ReleaseReviewIssue:
+        """
+        发布人回复整改意见（仅发布人 publisher 可操作，状态 open -> replied）
+
+        Args:
+            issue: 整改意见
+            user: 当前用户（须为发布人）
+            content: 回复内容
+
+        Returns:
+            更新后的 ReleaseReviewIssue
+        """
+        release = issue.release
+        if release.publisher_id != user.id and not user.is_superuser:
+            raise ReleaseReviewError("只有发布人本人才能回复整改意见")
+        if issue.status != "open":
+            raise ReleaseReviewError("当前状态不可回复（仅在待整改状态可回复）")
+        content = (content or "").strip()
+        if not content:
+            raise ReleaseReviewError("回复内容不能为空")
+        ReleaseReviewReply.objects.create(issue=issue, author=user, content=content)
+        issue.status = "replied"
+        issue.save(update_fields=["status", "updated_at"])
+        NotificationService.notify_review_issue_replied(issue)
+        return issue
+
+    @classmethod
+    def _ensure_judge_allowed(cls, issue: ReleaseReviewIssue, user) -> None:
+        """校验当前用户是否为意见发起人（或超管），可判定通过/驳回"""
+        if user.is_superuser:
+            return
+        if issue.author_id != user.id:
+            raise ReleaseReviewError("只有意见发起人才能通过或驳回该整改意见")
+
+    @classmethod
+    def resolve_issue(cls, issue: ReleaseReviewIssue, user) -> ReleaseReviewIssue:
+        """
+        审查员通过整改意见（replied -> resolved）
+
+        Args:
+            issue: 整改意见
+            user: 当前用户（须为意见发起人）
+
+        Returns:
+            更新后的 ReleaseReviewIssue
+        """
+        cls._ensure_judge_allowed(issue, user)
+        if issue.status != "replied":
+            raise ReleaseReviewError("仅待复核状态的意见可判定通过")
+        issue.status = "resolved"
+        issue.resolved_by = user
+        issue.resolved_at = timezone.now()
+        issue.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+        NotificationService.notify_review_issue_resolved(issue)
+        return issue
+
+    @classmethod
+    def reject_issue(cls, issue: ReleaseReviewIssue, user, comment: str = "") -> ReleaseReviewIssue:
+        """
+        审查员驳回整改意见（replied -> open，可填写驳回备注，发布人可再次回复）
+
+        Args:
+            issue: 整改意见
+            user: 当前用户（须为意见发起人）
+            comment: 驳回备注（可选，记录为审查员回复）
+
+        Returns:
+            更新后的 ReleaseReviewIssue
+        """
+        cls._ensure_judge_allowed(issue, user)
+        if issue.status != "replied":
+            raise ReleaseReviewError("仅待复核状态的意见可判定驳回")
+        comment = (comment or "").strip()
+        if comment:
+            ReleaseReviewReply.objects.create(issue=issue, author=user, content=comment)
+        issue.status = "open"
+        issue.save(update_fields=["status", "updated_at"])
+        NotificationService.notify_review_issue_rejected(issue, comment)
+        return issue
