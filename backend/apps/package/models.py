@@ -228,6 +228,27 @@ class PackageConfig(models.Model):
     svn_path_template = models.CharField(
         max_length=300, default="{version}", blank=True, verbose_name="SVN 目录模板"
     )
+    SVN_COMMIT_CHOICES = [
+        ("new_dir", "新建版本目录"),
+        ("overwrite", "覆盖式提交"),
+    ]
+    svn_commit_mode = models.CharField(
+        max_length=20,
+        choices=SVN_COMMIT_CHOICES,
+        default="new_dir",
+        verbose_name="SVN 提交模式",
+        help_text="新建版本目录：目标目录已存在时报错；覆盖式提交：目录已存在时镜像覆盖更新（新增/修改/删除同步）",
+    )
+    clone_submodules = models.BooleanField(
+        default=False,
+        verbose_name="拉取 Git 子模块",
+        help_text="clone 时递归拉取 .gitmodules 子模块（完整克隆，便于后续提交推送）",
+    )
+    inject_git_credential = models.BooleanField(
+        default=False,
+        verbose_name="注入 Git 凭证到构建环境",
+        help_text="将仓库凭证以 GIT_ASKPASS 方式注入打包容器/远程节点，打包脚本可自行执行 git push；凭证对脚本可见，仅在需要 push 时开启",
+    )
     is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")

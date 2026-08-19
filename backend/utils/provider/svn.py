@@ -350,3 +350,69 @@ class SVNProvider:
                 self._run(commit_cmd, timeout=300)
         finally:
             shutil.rmtree(workcopy, ignore_errors=True)
+
+    def _status_entries(self, workcopy: str) -> list[tuple]:
+        """解析工作副本 svn status（XML），返回 (item_status, path) 列表。"""
+        status_xml = self._run(self._base_cmd() + ["status", "--xml", workcopy], timeout=120)
+        entries: list[tuple] = []
+        for entry in ET.fromstring(status_xml).iter("entry"):
+            wc_status = entry.find("wc-status")
+            if wc_status is None:
+                continue
+            entries.append((wc_status.get("item", ""), entry.get("path", "")))
+        return entries
+
+    def sync_directory(self, remote_url: str, local_dir: str, message: str = "") -> None:
+        """
+        将本地目录镜像覆盖同步到已存在的 SVN 远程目录（checkout -> 覆盖 -> commit）。
+
+        与 import_path 的"全新导入"不同，本方法面向已存在的远程目录：
+        新增文件 svn add、内容变化直接覆盖、本地已删除的远程文件 svn rm，
+        提交后远程目录内容与本地完全一致。无任何变更时跳过 commit。
+
+        Args:
+            remote_url: SVN 远程目标目录地址（必须已存在）
+            local_dir: 本地目录路径
+            message: 提交说明
+
+        Raises:
+            NotFoundError: 远程目录不存在
+            ConnectionError: 命令执行失败或超时
+        """
+        workcopy = tempfile.mkdtemp(prefix="trace-ship-svn-sync-")
+        try:
+            # 全量检出：覆盖式同步需比对整棵目录树（含子目录），不能用 --depth files；
+            # 忽略 svn:externals，避免外部引用内容被误纳入同步范围
+            self._run(self._base_cmd() + ["checkout", "--ignore-externals", remote_url, workcopy], timeout=300)
+
+            # 本地内容覆盖拷贝进工作副本（跳过 .svn 元数据）
+            for root, dirs, files in os.walk(local_dir):
+                dirs[:] = [d for d in dirs if d != ".svn"]
+                rel_root = os.path.relpath(root, local_dir)
+                target_root = workcopy if rel_root == "." else os.path.join(workcopy, rel_root)
+                os.makedirs(target_root, exist_ok=True)
+                for name in files:
+                    shutil.copy2(os.path.join(root, name), os.path.join(target_root, name))
+
+            entries = self._status_entries(workcopy)
+            # 新增：--force 递归把版本控制外（?）的文件/目录加入
+            if any(item == "unversioned" for item, _ in entries):
+                self._run(self._base_cmd() + ["add", "--force", workcopy], timeout=120)
+            # 删除：本地已删（!）的路径逐个 svn rm；父目录已删时跳过其子路径
+            missing = sorted(
+                (path for item, path in entries if item == "missing" and path),
+                key=len,
+            )
+            removed: list[str] = []
+            for path in missing:
+                if any(path.startswith(parent + os.sep) for parent in removed):
+                    continue
+                self._run(self._base_cmd() + ["rm", "--force", path], timeout=120)
+                removed.append(path)
+
+            # 重新确认存在变更（新增/删除/修改）后再提交；无变更跳过，避免 "no changes" 误报
+            changed = {"added", "deleted", "modified", "replaced"}
+            if any(item in changed for item, _ in self._status_entries(workcopy)):
+                self._run(self._base_cmd() + ["commit", workcopy, "-m", message], timeout=300)
+        finally:
+            shutil.rmtree(workcopy, ignore_errors=True)

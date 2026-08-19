@@ -176,7 +176,7 @@ npm run preview
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：工作流定义、实例和审批任务。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
-- `PackageConfig`：项目级打包配置，包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置。
+- `PackageConfig`：项目级打包配置，包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（含提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
 - `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。
 - `Credential`：凭证密文与凭证元数据。
 - `Notification`：站内通知。
@@ -205,14 +205,14 @@ npm run preview
 2. 项目管理员在「打包配置」中直接选择镜像（按坐标 get_or_create 镜像记录）、构建目录、产物目录，可选填写自定义脚本。
 3. 打包任务执行流程：
    - 准备 `workspace/{source,artifacts,tmp}`；
-   - `git clone` 源码到 `workspace/source`；
+   - `git clone` 源码到 `workspace/source`（配置开启「拉取 Git 子模块」时追加 `--recurse-submodules`，子模块完整克隆；开启「注入 Git 凭证」时以 GIT_ASKPASS 方式把凭证与提交身份注入构建环境，打包脚本可自行在（子）仓库内 git push，远程 Windows 节点则写入 `.git/config` 的 `http.extraHeader`、构建结束即自动回收）；
    - 只挂载 `source` / `artifacts` / `tmp` 到容器 `/workspace` 对应目录，`scripts` / `deploy` 使用镜像自身内容；
    - 容器内工作目录为 `/workspace/source`，通过环境变量传入 `DEPLOY_DIR`、`SCRIPTS_DIR` 等；
    - 统一以 `--entrypoint /bin/sh` 启动，镜像自身 ENTRYPOINT 不生效；
    - 若配置 `custom_script`，则以 `sh -ec`（遇错即停）执行该脚本；
    - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）；
    - 打包产物写入 `/workspace/artifacts`；
-   - 扫描 `workspace/artifacts`，可选推 SVN。
+   - 扫描 `workspace/artifacts`，可选推 SVN（`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步）。
 4. 镜像必须满足目录、环境变量、入口脚本约定（详见「镜像接入规范」或 `docker/package/web/README.md`）。
 
 ### 镜像接入规范

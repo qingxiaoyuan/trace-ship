@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, ConfigProvider, Form, Input, InputNumber, Modal, Select, Switch, Typography } from 'antd';
+import { App, Button, ConfigProvider, Form, Input, InputNumber, Modal, Radio, Select, Switch, Typography } from 'antd';
 import { Check, ChevronDown, Container, FolderTree, Monitor, Settings2 } from 'lucide-react';
 import type { AIGenerateScriptPayload, AIScriptDraft, PackageConfig } from '@/types';
 import { projectApi } from '@/api/project';
@@ -204,6 +204,9 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         is_active: true,
         svn_push_enabled: false,
         svn_path_template: '{version}',
+        svn_commit_mode: 'new_dir',
+        clone_submodules: false,
+        inject_git_credential: false,
       });
     }
   }, [editing, form, open, fixedProjectId]);
@@ -592,6 +595,16 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             disabled={readOnly || !autoCollectOutput}
             disabledHint="需先开启「构建后自动收集产物」"
           />
+          <ToggleCard
+            title="拉取 Git 子模块"
+            desc="clone 时递归拉取 .gitmodules 子模块（完整克隆，便于脚本内提交推送）"
+            name="clone_submodules"
+          />
+          <ToggleCard
+            title="注入 Git 凭证"
+            desc="构建环境注入 GIT_ASKPASS 凭证，打包脚本可自行 git push；凭证对脚本可见，谨慎开启"
+            name="inject_git_credential"
+          />
           {isRemote && (
             <ToggleCard
               title="打包后清理工作区"
@@ -653,6 +666,12 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                   </Typography.Text>
                 </div>
               </div>
+              <Form.Item name="svn_commit_mode" label={<FieldLabel text="提交模式" />} className="mb-0">
+                <Radio.Group>
+                  <Radio value="new_dir">新建版本目录（目录已存在时报错）</Radio>
+                  <Radio value="overwrite">覆盖式提交（目录已存在时镜像覆盖更新，会删除远程多余文件）</Radio>
+                </Radio.Group>
+              </Form.Item>
             </div>
           )}
         </div>

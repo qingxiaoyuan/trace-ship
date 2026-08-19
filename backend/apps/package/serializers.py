@@ -122,6 +122,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     node_name = serializers.CharField(source="node.name", read_only=True, default="")
     node_host = serializers.CharField(source="node.host", read_only=True, default="")
     executor_type_display = serializers.CharField(source="get_executor_type_display", read_only=True)
+    svn_commit_mode_display = serializers.CharField(source="get_svn_commit_mode_display", read_only=True)
     svn_credential_id = serializers.UUIDField(source="svn_credential.id", read_only=True)
     svn_credential_name = serializers.CharField(source="svn_credential.name", read_only=True, default="")
     my_role = serializers.SerializerMethodField()
@@ -138,7 +139,8 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "build_path", "output_path", "auto_collect_output", "auto_compress", "env_vars",
             "auto_package_on_release", "cleanup_workspace", "is_active",
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
-            "svn_path_template",
+            "svn_path_template", "svn_commit_mode", "svn_commit_mode_display",
+            "clone_submodules", "inject_git_credential",
             "my_role",
             "created_at", "updated_at",
         ]
@@ -146,7 +148,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "id", "project_id", "project_name", "repository_id", "repository_name",
             "image_id", "image_name", "image_ref", "image_source",
             "executor_type_display", "node_id", "node_name", "node_host",
-            "svn_credential_id", "svn_credential_name", "my_role",
+            "svn_credential_id", "svn_credential_name", "svn_commit_mode_display", "my_role",
             "created_at", "updated_at",
         ]
 

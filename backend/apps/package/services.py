@@ -134,6 +134,9 @@ class PackageService:
             "svn_url": config.svn_url or "",
             "svn_credential_id": str(config.svn_credential_id) if config.svn_credential_id else None,
             "svn_path_template": config.svn_path_template or "{version}",
+            "svn_commit_mode": config.svn_commit_mode or "new_dir",
+            "clone_submodules": bool(config.clone_submodules),
+            "inject_git_credential": bool(config.inject_git_credential),
         }
 
     @classmethod
@@ -489,14 +492,23 @@ class PackageService:
 
     @classmethod
     def _checkout_source(cls, task: PackageTask, workspace: Path) -> None:
-        """克隆仓库并 checkout 到发布 tag。"""
+        """克隆仓库并 checkout 到发布 tag。
+
+        配置开启 clone_submodules 时递归拉取子模块（子模块完整克隆，不浅化，
+        便于构建脚本在子模块内提交并 push）；主仓库保持 --depth 1 浅克隆。
+        """
         source_dir = workspace / "source"
         if any(source_dir.iterdir()):
             shutil.rmtree(source_dir)
             source_dir.mkdir(parents=True, exist_ok=True)
+        snapshot = task.config_snapshot or {}
         clone_url = cls._clone_url(task.repository)
         env = cls._build_auth_env(task.repository, task.triggered_by)
-        cls._run_command(task, ["git", "clone", "--depth", "1", "--branch", task.tag_name, clone_url, str(source_dir)], workspace, env)
+        clone_cmd = ["git", "clone", "--depth", "1", "--branch", task.tag_name]
+        if snapshot.get("clone_submodules"):
+            clone_cmd.append("--recurse-submodules")
+        clone_cmd.extend([clone_url, str(source_dir)])
+        cls._run_command(task, clone_cmd, workspace, env)
         # 写入本次发布说明到源码根目录，供构建脚本读取（分支直打包无发布说明，跳过）
         if task.release_id:
             doc_path = source_dir / f"release-{cls._doc_filename(task.version)}.md"
@@ -569,9 +581,11 @@ class PackageService:
 
         node_label = snapshot.get("node_name") or snapshot.get("node_host") or "远程节点"
         cls._append_log(task, f"[{node_label}] 远程工作目录: {remote_workspace}")
+        clone_submodules = bool(snapshot.get("clone_submodules"))
+        submodule_arg = " --recurse-submodules" if clone_submodules else ""
         cls._append_log(
             task,
-            f'$ git clone --depth 1 --branch {task.tag_name} {clone_url} "{source_dir}"',
+            f'$ git clone --depth 1{submodule_arg} --branch {task.tag_name} {clone_url} "{source_dir}"',
         )
 
         def log_line(line: str) -> None:
@@ -585,13 +599,35 @@ class PackageService:
         # 清理历史残留，保证全新克隆
         client.remove_dir(source_dir)
         client.run_checked(
-            f"git {arg_parts} clone --depth 1 "
+            f"git {arg_parts} clone --depth 1{submodule_arg} "
             f"--branch {cmd_quote(task.tag_name)} "
             f"{cmd_quote(clone_url)} {cmd_quote(str(source_dir))}",
             on_line=log_line,
             should_stop=lambda: cls._ensure_task_not_canceled(task),
             error_hint="节点需安装 git 且能访问代码仓库",
         )
+        # 需要脚本内 push 时，把认证头持久化到节点工作副本的 .git/config（含子模块），
+        # pack.bat 内 git push 可直接复用；凭证随 cleanup_workspace 清理工作区时一并删除
+        if snapshot.get("inject_git_credential") and auth_args:
+            header_value = next(
+                (arg.split("=", 1)[1] for arg in auth_args if arg.startswith("http.extraHeader=")),
+                "",
+            )
+            if header_value:
+                client.run_checked(
+                    f"git -C {cmd_quote(str(source_dir))} config http.extraHeader {cmd_quote(header_value)}",
+                    on_line=log_line,
+                    should_stop=lambda: cls._ensure_task_not_canceled(task),
+                )
+                if clone_submodules:
+                    foreach_cmd = f'git config http.extraHeader "{header_value}"'
+                    client.run_checked(
+                        f"git -C {cmd_quote(str(source_dir))} submodule foreach --recursive "
+                        f"{cmd_quote(foreach_cmd)}",
+                        on_line=log_line,
+                        should_stop=lambda: cls._ensure_task_not_canceled(task),
+                    )
+                cls._append_log(task, "已将 Git 认证头写入节点工作副本，构建脚本可自行 git push")
         # 上传本次发布说明到源码根目录，供构建脚本读取（分支直打包无发布说明，跳过）
         if task.release_id:
             doc_path = source_dir / f"release-{cls._doc_filename(task.version)}.md"
@@ -599,6 +635,30 @@ class PackageService:
             cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
         else:
             cls._append_log(task, "分支直打包：无发布说明，跳过上传")
+
+    @classmethod
+    def _revoke_remote_git_credential(cls, task: PackageTask, client: RemoteWindowsClient) -> None:
+        """回收远程节点工作副本中持久化的 Git 认证头（构建结束后调用）。
+
+        认证头仅为构建脚本内 git push 临时写入 .git/config（含子模块），构建结束即移除，
+        避免 cleanup_workspace 关闭时凭证长期残留节点。清理失败仅记日志，不影响任务结果。
+        """
+        snapshot = task.config_snapshot or {}
+        if not snapshot.get("inject_git_credential"):
+            return
+        source_dir = cls._remote_workspace(task) / "source"
+        try:
+            # git config --unset 在键不存在时退出码非零，client.run 忽略退出码即可
+            client.run(f"git -C {cmd_quote(str(source_dir))} config --unset http.extraHeader")
+            if snapshot.get("clone_submodules"):
+                # foreach 命令由 Git Bash 的 sh 执行，|| true 容忍子模块未写入认证头的情况
+                client.run(
+                    f"git -C {cmd_quote(str(source_dir))} submodule foreach --recursive "
+                    f"{cmd_quote('git config --unset http.extraHeader || true')}"
+                )
+            cls._append_log(task, "已回收远程节点工作副本中的 Git 认证头")
+        except Exception as exc:
+            cls._append_log(task, f"警告：回收节点 Git 认证头失败（不影响任务结果）: {exc}")
 
     @staticmethod
     def _affinity_mask(cores: int) -> str:
@@ -750,6 +810,43 @@ class PackageService:
         return args
 
     @classmethod
+    def _git_inject_env_args(cls, task: PackageTask, workspace: Path) -> list[str]:
+        """生成注入 Git 凭证的 docker -e 参数，供构建脚本自行执行 git push。
+
+        配置开启 inject_git_credential 时：把 askpass 脚本复制到 workspace/tmp
+        （容器内挂载为 /workspace/tmp），以 -e 注入 GIT_ASKPASS 与
+        TRACE_SHIP_GIT_USERNAME/PASSWORD；同时注入 GIT_AUTHOR/COMMITTER 信息，
+        脚本 commit 时无需再配置 user.name/user.email。
+        凭证对打包脚本可见，功能默认关闭，由打包配置显式开启。
+        """
+        snapshot = task.config_snapshot or {}
+        if not snapshot.get("inject_git_credential"):
+            return []
+        auth_env = cls._build_auth_env(task.repository, task.triggered_by)
+        if not auth_env.get("TRACE_SHIP_GIT_PASSWORD"):
+            # 开关开启但仓库无可用凭证：显式记日志，避免脚本内 push 失败时无从排查
+            cls._append_log(task, "已开启注入 Git 凭证，但仓库未配置可用凭证，跳过注入（脚本内 git push 将不可用）")
+            return []
+        askpass_dst = workspace / "tmp" / "git-askpass.sh"
+        shutil.copy(Path(settings.BASE_DIR) / "utils" / "git_askpass.sh", askpass_dst)
+        askpass_dst.chmod(0o755)
+        user = task.triggered_by
+        author_name = (user.nickname or user.username) if user else ""
+        author_email = (user.email if user else "") or "trace-ship@local"
+        args = [
+            "-e", "GIT_ASKPASS=/workspace/tmp/git-askpass.sh",
+            "-e", "GIT_TERMINAL_PROMPT=0",
+            "-e", f"GIT_AUTHOR_NAME={author_name or 'trace-ship'}",
+            "-e", f"GIT_AUTHOR_EMAIL={author_email}",
+            "-e", f"GIT_COMMITTER_NAME={author_name or 'trace-ship'}",
+            "-e", f"GIT_COMMITTER_EMAIL={author_email}",
+        ]
+        for key in ("TRACE_SHIP_GIT_USERNAME", "TRACE_SHIP_GIT_PASSWORD"):
+            if auth_env.get(key):
+                args.extend(["-e", f"{key}={auth_env[key]}"])
+        return args
+
+    @classmethod
     def _run_container(cls, task: PackageTask, workspace: Path) -> None:
         """在容器内执行打包。
 
@@ -795,6 +892,8 @@ class PackageService:
             "-e", f"BUILD_PATH={build_path}",
             "-e", f"OUTPUT_PATH={output_path}",
             "-e", f"PROJECT_CODE={env['PROJECT_CODE']}",
+            # 可选：注入 Git 凭证与提交身份，供打包脚本在（子）仓库内自行 git push
+            *cls._git_inject_env_args(task, workspace),
             "-v", f"{workspace / 'source'}:/workspace/source",
             "-v", f"{workspace / 'artifacts'}:/workspace/artifacts",
             "-v", f"{workspace / 'tmp'}:/workspace/tmp",
@@ -1026,6 +1125,10 @@ class PackageService:
     def _push_artifacts_to_svn(cls, task: PackageTask, workspace: Path) -> dict[str, Any]:
         """将打包产物推送到 SVN 版本号目录。
 
+        提交模式由配置快照 svn_commit_mode 决定：
+        - new_dir（默认）：目标目录已存在时报错，svn import 新建提交；
+        - overwrite：目录已存在时 checkout 后镜像覆盖提交（新增/修改/删除同步）。
+
         Args:
             task: 打包任务记录
             workspace: 任务工作区
@@ -1034,7 +1137,7 @@ class PackageService:
             推送结果字典，包含 remote_url、file_count、files
 
         Raises:
-            RuntimeError: 配置不完整、凭证失效、目录已存在或推送失败
+            RuntimeError: 配置不完整、凭证失效、目录已存在（new_dir 模式）或推送失败
         """
         snapshot = task.config_snapshot or {}
         svn_url = snapshot.get("svn_url", "")
@@ -1073,13 +1176,17 @@ class PackageService:
             version_dir = f"{version_dir}-{task.release_type}"
         remote_url = f"{svn_url.rstrip('/')}/{version_dir}"
 
-        # 创建 provider 并检查目录是否已存在
+        # 创建 provider；提交模式决定目录已存在时的行为：
+        # new_dir（默认）报错终止；overwrite 走 checkout→镜像覆盖→commit
         provider = get_provider("svn", svn_url, cred_data)
-        if provider.remote_exists(remote_url):
+        commit_mode = snapshot.get("svn_commit_mode") or "new_dir"
+        remote_exists = provider.remote_exists(remote_url)
+        if remote_exists and commit_mode != "overwrite":
             raise RuntimeError(f"SVN 目录已存在: {remote_url}")
-        # svn import 不会自动创建父目录：分支直打包的版本目录可能含斜杠
-        # （如 feature/demo），需先逐级创建缺失的中间目录，否则推送必然失败
-        cls._ensure_svn_parent_dirs(provider, svn_url, version_dir)
+        if not remote_exists:
+            # svn import 不会自动创建父目录：分支直打包的版本目录可能含斜杠
+            # （如 feature/demo），需先逐级创建缺失的中间目录，否则推送必然失败
+            cls._ensure_svn_parent_dirs(provider, svn_url, version_dir)
 
         artifacts_dir = workspace / "artifacts"
         if not artifacts_dir.exists():
@@ -1103,7 +1210,12 @@ class PackageService:
         message = f"Release {task.version} artifacts ({task.tag_name})"
         if release_doc:
             message += f"\n\n{release_doc}"
-        provider.import_path(str(upload_dir), remote_url, message)
+        if remote_exists:
+            # 覆盖式提交：checkout 目标目录后镜像同步（新增/修改/删除一并提交），
+            # 同名发布文档随之上传覆盖
+            provider.sync_directory(remote_url, str(upload_dir), message)
+        else:
+            provider.import_path(str(upload_dir), remote_url, message)
 
         uploaded_files = sorted(
             file.relative_to(upload_dir).as_posix()
@@ -1299,7 +1411,11 @@ class PackageService:
             cls._update_stage(task, "build", build_progress, "开始执行打包…")
             artifacts_progress = 65 if svn_push_enabled else 80
             if executor_type == "remote_windows":
-                cls._run_remote_build(task, remote_client)
+                try:
+                    cls._run_remote_build(task, remote_client)
+                finally:
+                    # 构建结束即回收节点工作副本中的 Git 认证头（脚本 push 仅发生在构建期）
+                    cls._revoke_remote_git_credential(task, remote_client)
                 cls._ensure_task_not_canceled(task)
                 cls._update_stage(task, "artifacts", artifacts_progress, "正在回传产物…")
                 if snapshot.get("auto_collect_output"):

@@ -581,6 +581,13 @@ export interface PackageConfig {
   svn_credential_id?: string | null;
   svn_credential_name?: string;
   svn_path_template?: string;
+  /** SVN 提交模式：new_dir 新建版本目录（默认，已存在报错）/ overwrite 覆盖式提交 */
+  svn_commit_mode?: 'new_dir' | 'overwrite';
+  svn_commit_mode_display?: string;
+  /** clone 时递归拉取 .gitmodules 子模块（完整克隆） */
+  clone_submodules?: boolean;
+  /** 注入 Git 凭证到构建环境，打包脚本可自行 git push（凭证对脚本可见） */
+  inject_git_credential?: boolean;
   /** 当前用户在配置所属项目中的角色（超管返回 software_admin），用于控制配置编辑入口 */
   my_role?: string | null;
   is_active: boolean;
