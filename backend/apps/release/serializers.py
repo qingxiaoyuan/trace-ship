@@ -201,7 +201,7 @@ class ReleaseListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "project", "project_name", "repository", "repository_name",
             "version", "tag_name", "release_type", "release_type_display",
-            "status", "status_display", "publisher_name", "released_at", "created_at",
+            "status", "status_display", "branch", "publisher_name", "released_at", "created_at",
             "commit_total", "pass_count", "warning_count", "illegal_count", "has_doc",
         ]
 

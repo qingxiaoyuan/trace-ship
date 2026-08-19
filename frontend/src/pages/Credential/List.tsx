@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { message, Popconfirm, Dropdown } from 'antd';
 import { Plus, Search, Filter, Layers, ChevronDown, Eye, Trash2, KeyRound, ShieldCheck, ClockAlert, ShieldX } from 'lucide-react';
 import { credentialApi } from '@/api/credential';
+import { getAvatarColor } from '@/utils/avatar';
 import type { Credential, CredentialType } from '@/types';
 import { CredentialIcon } from './components/CredentialIcon';
 import { TypeTag } from './components/TypeTag';
@@ -12,7 +13,7 @@ import { StatusBadge } from './components/StatusBadge';
 import { CredentialModal } from './components/CredentialModal';
 import { credentialTypeMap, credentialShareMap, credentialTypeOptions, credentialShareOptions, getCredentialShare } from './constants';
 import type { CredentialShare } from './constants';
-import { getCredentialStatus } from './utils';
+import { getCredentialStatus, statusConfig } from './utils';
 
 export default function CredentialList() {
   const navigate = useNavigate();
@@ -170,7 +171,7 @@ export default function CredentialList() {
       {/* 列表卡片 */}
       <div className="tech-card rounded-xl overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search
               className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400"
               strokeWidth={1.5}
@@ -180,7 +181,7 @@ export default function CredentialList() {
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索凭证名称"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full sm:w-[220px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
 
@@ -248,7 +249,7 @@ export default function CredentialList() {
         </div>
 
         {/* 表体 */}
-        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto max-md:max-h-none max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : filtered.length === 0 ? (
@@ -256,68 +257,135 @@ export default function CredentialList() {
           ) : (
             filtered.map((item) => {
               const status = getCredentialStatus(item.is_active, item.expires_at);
+              const statusCfg = statusConfig[status];
               const itemShare = getCredentialShare(item.cred_type);
               const subText = `${credentialShareMap[itemShare]} · ${item.owner_name || item.username || '-'}`;
+              const ownerLabel = item.owner_name || item.username || '-';
               return (
                 <div
                   key={item.id}
                   onClick={() => navigate(`/credentials/${item.id}`)}
-                  className="grid grid-cols-12 gap-3 items-center px-5 py-3 hover:bg-indigo-50/30 cursor-pointer transition-colors"
+                  className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-12 md:col-span-3 flex items-center gap-2.5">
-                    <CredentialIcon type={item.cred_type} size="sm" />
-                    <div>
-                      <div className="text-[13px] font-medium text-slate-900">{item.name}</div>
-                      <div className="text-[10px] text-slate-400">{subText}</div>
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
+                    <div className="col-span-12 md:col-span-3 flex items-center gap-2.5">
+                      <CredentialIcon type={item.cred_type} size="sm" />
+                      <div>
+                        <div className="text-[13px] font-medium text-slate-900">{item.name}</div>
+                        <div className="text-[10px] text-slate-400">{subText}</div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="col-span-6 md:col-span-2">
-                    <TypeTag type={item.cred_type} />
-                  </div>
+                    <div className="col-span-6 md:col-span-2">
+                      <TypeTag type={item.cred_type} />
+                    </div>
 
-                  <div className="col-span-6 md:col-span-2">
-                    <ScopeTag share={itemShare} />
-                  </div>
+                    <div className="col-span-6 max-md:hidden md:col-span-2">
+                      <ScopeTag share={itemShare} />
+                    </div>
 
-                  <div className="col-span-12 md:col-span-2 font-mono text-[11px] text-slate-500">
-                    {item.masked_data}
-                  </div>
+                    <div className="col-span-12 max-md:hidden md:col-span-2 font-mono text-[11px] text-slate-500">
+                      {item.masked_data}
+                    </div>
 
-                  <div className="col-span-6 md:col-span-2">
-                    <StatusBadge status={status} />
-                  </div>
+                    <div className="col-span-6 md:col-span-2">
+                      <StatusBadge status={status} />
+                    </div>
 
-                  <div className="col-span-6 md:col-span-1 flex items-center justify-end gap-1"
-                  >
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/credentials/${item.id}`);
-                      }}
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                      title="查看"
-                    >
-                      <Eye className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <Popconfirm
-                      title="确定删除该凭证？"
-                      onConfirm={(e) => {
-                        e?.stopPropagation();
-                        handleDelete(item.id);
-                      }}
-                      onCancel={(e) => e?.stopPropagation()}
+                    <div className="col-span-6 md:col-span-1 flex items-center justify-end gap-1 max-md:mt-1.5 max-md:w-full"
                     >
                       <button
                         type="button"
-                        onClick={(e) => e.stopPropagation()}
-                        className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
-                        title="删除"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/credentials/${item.id}`);
+                        }}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors max-md:p-2.5"
+                        title="查看"
                       >
-                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        <Eye className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>
-                    </Popconfirm>
+                      <Popconfirm
+                        title="确定删除该凭证？"
+                        onConfirm={(e) => {
+                          e?.stopPropagation();
+                          handleDelete(item.id);
+                        }}
+                        onCancel={(e) => e?.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors max-md:p-2.5"
+                          title="删除"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                      </Popconfirm>
+                    </div>
+                  </div>
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between">
+                      <span className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${statusCfg.bg} ${statusCfg.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
+                        {statusCfg.label}
+                      </span>
+                      <TypeTag type={item.cred_type} />
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">
+                        {item.name}
+                      </span>
+                      <span className="shrink-0 text-[12px] text-slate-400">{credentialShareMap[itemShare]}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <KeyRound className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="truncate font-mono">{item.masked_data}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white"
+                          style={{ background: getAvatarColor(ownerLabel) }}
+                        >
+                          {ownerLabel.charAt(0)}
+                        </span>
+                        <span className="truncate text-[12px] text-slate-500">{ownerLabel}</span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/credentials/${item.id}`);
+                          }}
+                          className="rounded-md p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                          title="查看"
+                        >
+                          <Eye className="h-4 w-4" strokeWidth={1.5} />
+                        </button>
+                        <Popconfirm
+                          title="确定删除该凭证？"
+                          onConfirm={(e) => {
+                            e?.stopPropagation();
+                            handleDelete(item.id);
+                          }}
+                          onCancel={(e) => e?.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded-md p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
+                            title="删除"
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                          </button>
+                        </Popconfirm>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

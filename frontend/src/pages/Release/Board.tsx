@@ -1,12 +1,19 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Loader, Plus, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, GitBranch, Loader, Plus, XCircle } from 'lucide-react';
 import dayjs from 'dayjs';
 import { releaseApi } from '@/api/release';
 import { getAvatarColor } from '@/utils/avatar';
 import { boardColumns, releaseTypeText, releaseTypeBadge } from './constants';
 import type { Release, ReleaseType } from '@/types';
+
+/** 移动端列表卡片的状态软色徽标 */
+const mobileStatusBadge: Record<string, string> = {
+  released: 'bg-emerald-50 text-emerald-600',
+  pending: 'bg-amber-50 text-amber-600',
+  rejected: 'bg-rose-50 text-rose-600',
+};
 
 /** 看板卡片 */
 function ReleaseCard({ release, onClick }: { release: Release; onClick: () => void }) {
@@ -19,7 +26,7 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
       <div className="flex items-center justify-between">
         <span className="font-mono text-[12px] font-medium text-slate-800">{release.version}</span>
         {type ? (
-          <span className={`rounded border px-1 py-0.5 text-[9px] font-medium ${releaseTypeBadge[type]}`}>
+          <span className={`rounded border px-1 py-0.5 text-[9px] font-medium max-md:text-xs ${releaseTypeBadge[type]}`}>
             {releaseTypeText[type]}
           </span>
         ) : null}
@@ -27,7 +34,7 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
       <div className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
         <span className="truncate">{release.project_name || '-'}</span>
         <span className="shrink-0 text-slate-300">/</span>
-        <span className="truncate font-mono text-[10px] text-slate-400">{release.repository_name || '-'}</span>
+        <span className="truncate font-mono text-[10px] text-slate-400 max-md:text-xs">{release.repository_name || '-'}</span>
       </div>
       <div className="mt-2 flex items-center gap-1.5">
         <span
@@ -36,7 +43,7 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
         >
           {(release.publisher_name || release.publisher || 'U').charAt(0)}
         </span>
-        <span className="text-[10px] text-slate-400">
+        <span className="text-[10px] text-slate-400 max-md:text-xs">
           {release.publisher_name || release.publisher || '-'} · {dayjs(release.created_at).format('MM-DD HH:mm')}
         </span>
       </div>
@@ -65,7 +72,7 @@ export function ReleaseBoard() {
   }, [data?.results]);
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
       {boardColumns.map((col) => {
         const items = (groupedReleases[col.key] || []).slice(0, 8);
         const count = groupedReleases[col.key]?.length ?? 0;
@@ -123,7 +130,7 @@ export function ReleaseList() {
         <div className="col-span-2">状态</div>
         <div className="col-span-1 text-right">时间</div>
       </div>
-      <div className="divide-y divide-indigo-50/50">
+      <div className="divide-y divide-indigo-50/50 max-md:space-y-3 max-md:divide-y-0 max-md:p-3">
         {isLoading ? (
           <div className="px-5 py-10 text-center text-[13px] text-slate-400">加载中…</div>
         ) : releases.length === 0 ? (
@@ -139,48 +146,90 @@ export function ReleaseList() {
               ) : release.status === 'pending' ? (
                 <Loader className="h-3 w-3 text-amber-500" strokeWidth={1.5} />
               ) : null;
+            const publisherLabel = release.publisher_name || release.publisher || '-';
             return (
               <div
                 key={release.id}
                 onClick={() => navigate(`/releases/${release.id}`)}
-                className="grid cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30"
+                className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
               >
-                <div className="col-span-12 font-mono text-[13px] font-medium text-slate-900 md:col-span-2">
-                  {release.version}
-                </div>
-                <div className="col-span-6 flex items-center gap-1 text-[12px] text-slate-600 md:col-span-3">
-                  <span className="truncate">{release.project_name || '-'}</span>
-                  <span className="shrink-0 text-slate-300">/</span>
-                  <span className="truncate font-mono text-[11px] text-slate-400">{release.repository_name || '-'}</span>
-                </div>
-                <div className="col-span-6 md:col-span-2">
-                  {type ? (
-                    <span className={`rounded border px-1 py-0.5 text-[10px] font-medium ${releaseTypeBadge[type]}`}>
-                      {releaseTypeText[type]}
+                {/* 桌面端网格行 */}
+                <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
+                  <div className="col-span-2 font-mono text-[13px] font-medium text-slate-900">
+                    {release.version}
+                  </div>
+                  <div className="col-span-3 flex items-center gap-1 text-[12px] text-slate-600">
+                    <span className="truncate">{release.project_name || '-'}</span>
+                    <span className="shrink-0 text-slate-300">/</span>
+                    <span className="truncate font-mono text-[11px] text-slate-400">{release.repository_name || '-'}</span>
+                  </div>
+                  <div className="col-span-2">
+                    {type ? (
+                      <span className={`rounded border px-1 py-0.5 text-[10px] font-medium ${releaseTypeBadge[type]}`}>
+                        {releaseTypeText[type]}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
+                  </div>
+                  <div className="col-span-2 flex items-center gap-1.5">
+                    <span
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-semibold text-white"
+                      style={{ background: getAvatarColor(publisherLabel) }}
+                    >
+                      {publisherLabel.charAt(0)}
                     </span>
-                  ) : (
-                    '-'
-                  )}
+                    <span className="text-[12px] text-slate-600">{publisherLabel}</span>
+                  </div>
+                  <div className="col-span-2 flex items-center gap-1.5">
+                    {statusIcon}
+                    <span className="text-[12px] text-slate-600">
+                      {release.status === 'released' ? '已发布' : release.status === 'rejected' ? '已驳回' : release.status === 'pending' ? '待审批' : '-'}
+                    </span>
+                  </div>
+                  <div className="col-span-1 text-right text-[11px] text-slate-400">
+                    {dayjs(release.created_at).format('MM-DD')}
+                  </div>
                 </div>
-                <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
-                  <span
-                    className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-semibold text-white"
-                    style={{ background: getAvatarColor(release.publisher_name || release.publisher) }}
-                  >
-                    {(release.publisher_name || release.publisher || 'U').charAt(0)}
-                  </span>
-                  <span className="text-[12px] text-slate-600">
-                    {release.publisher_name || release.publisher || '-'}
-                  </span>
-                </div>
-                <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
-                  {statusIcon}
-                  <span className="text-[12px] text-slate-600">
-                    {release.status === 'released' ? '已发布' : release.status === 'rejected' ? '已驳回' : release.status === 'pending' ? '待审批' : '-'}
-                  </span>
-                </div>
-                <div className="col-span-6 text-right text-[11px] text-slate-400 md:col-span-1">
-                  {dayjs(release.created_at).format('MM-DD')}
+
+                {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                <div className="md:hidden">
+                  <div className="flex items-center justify-between">
+                    <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${mobileStatusBadge[release.status] || 'bg-slate-100 text-slate-500'}`}>
+                      {release.status === 'released' ? '已发布' : release.status === 'rejected' ? '已驳回' : release.status === 'pending' ? '待审批' : '-'}
+                    </span>
+                    {type ? (
+                      <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${releaseTypeBadge[type]}`}>
+                        {releaseTypeText[type]}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-mono text-[16px] font-semibold tracking-tight text-slate-900">
+                      {release.version}
+                    </span>
+                    <span className="truncate text-[12px] text-slate-400">{release.project_name || '-'}</span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                    <span className="truncate font-mono">{release.branch || '-'}</span>
+                    <span className="shrink-0 text-slate-200">|</span>
+                    <span className="truncate font-mono">{release.repository_name || '-'}</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-semibold text-white"
+                        style={{ background: getAvatarColor(publisherLabel) }}
+                      >
+                        {publisherLabel.charAt(0)}
+                      </span>
+                      <span className="text-[12px] text-slate-500">
+                        {publisherLabel} · {dayjs(release.created_at).format('MM-DD')}
+                      </span>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" strokeWidth={1.5} />
+                  </div>
                 </div>
               </div>
             );

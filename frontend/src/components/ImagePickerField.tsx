@@ -193,7 +193,7 @@ function PickerRow({ item, active, onSelect, onConfirm }: PickerRowProps) {
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate font-mono text-[12px] text-slate-800">{item.image}</div>
-        <div className="truncate text-[10px] text-slate-400">
+        <div className="truncate text-[10px] text-slate-400 max-md:text-xs">
           {isLocal
             ? [item.size, item.image_id].filter(Boolean).join(' · ') || '本地镜像'
             : item.repository || 'Nexus 仓库'}

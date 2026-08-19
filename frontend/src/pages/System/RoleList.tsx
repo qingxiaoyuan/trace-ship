@@ -13,6 +13,7 @@ import {
   Code2,
   Bug,
   KeyRound,
+  FileText,
 } from 'lucide-react';
 import { accountApi } from '@/api/account';
 import type { AccountRole, AccountPermission } from '@/api/account';
@@ -385,14 +386,14 @@ export default function SystemRoleList() {
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索角色名 / 编码"
-              className="w-[200px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 sm:w-[200px]"
             />
           </div>
           <div className="ml-auto text-[12px] text-slate-400">共 {filteredRoles.length} 个角色</div>
@@ -406,7 +407,7 @@ export default function SystemRoleList() {
           <div className="col-span-1 text-right">操作</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-300px)] overflow-y-auto">
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-300px)] overflow-y-auto max-md:max-h-none max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : filteredRoles.length === 0 ? (
@@ -419,29 +420,69 @@ export default function SystemRoleList() {
                 <div
                   key={role.id}
                   onClick={() => openEdit(role)}
-                  className="grid grid-cols-12 cursor-pointer items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30"
+                  className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-12 flex items-center gap-2 md:col-span-3">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${getRoleIconClass(role.code)}`}>
-                      <Icon className="h-4 w-4" strokeWidth={1.5} />
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3.5 md:grid">
+                    <div className="col-span-12 flex items-center gap-2 md:col-span-3">
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${getRoleIconClass(role.code)}`}>
+                        <Icon className="h-4 w-4" strokeWidth={1.5} />
+                      </div>
+                      <span className="text-[13px] font-medium text-slate-900">{role.name}</span>
                     </div>
-                    <span className="text-[13px] font-medium text-slate-900">{role.name}</span>
+                    <div className="col-span-6 font-mono text-[12px] text-slate-500 md:col-span-2">{role.code}</div>
+                    <div className="col-span-12 text-[12px] text-slate-500 md:col-span-4">{role.description || '-'}</div>
+                    <div className="col-span-3 text-center font-mono text-[13px] text-slate-700 md:col-span-2">
+                      {role.code === 'admin' ? '全部' : permCount}
+                    </div>
+                    <div className="col-span-3 flex items-center justify-end gap-1 md:col-span-1">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openEdit(role); }}
+                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                        title="编辑"
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                      <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                    </div>
                   </div>
-                  <div className="col-span-6 font-mono text-[12px] text-slate-500 md:col-span-2">{role.code}</div>
-                  <div className="col-span-12 text-[12px] text-slate-500 md:col-span-4">{role.description || '-'}</div>
-                  <div className="col-span-3 text-center font-mono text-[13px] text-slate-700 md:col-span-2">
-                    {role.code === 'admin' ? '全部' : permCount}
-                  </div>
-                  <div className="col-span-3 flex items-center justify-end gap-1 md:col-span-1">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); openEdit(role); }}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                      title="编辑"
-                    >
-                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+
+                  {/* 移动端卡片（角色无状态字段，省略状态徽标行） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${getRoleIconClass(role.code)}`}>
+                        <Icon className="h-4 w-4" strokeWidth={1.5} />
+                      </div>
+                      <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{role.name}</span>
+                      <span className="min-w-0 truncate font-mono text-[12px] text-slate-400">{role.code}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <FileText className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="truncate">{role.description || '-'}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                      <span className="text-[11px] text-slate-400">
+                        {role.code === 'admin' ? (
+                          '全部权限'
+                        ) : (
+                          <>
+                            <span className="font-mono font-semibold text-indigo-600">{permCount}</span> 项权限
+                          </>
+                        )}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openEdit(role); }}
+                          className="rounded-md p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                          title="编辑"
+                        >
+                          <Pencil className="h-4 w-4" strokeWidth={1.5} />
+                        </button>
+                        <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

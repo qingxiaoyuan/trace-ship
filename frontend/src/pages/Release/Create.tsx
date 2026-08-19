@@ -487,13 +487,13 @@ export default function ReleaseCreate() {
                   各类型最新 Tag
                   {nextVersionLoading && <span className="text-slate-400">（计算中…）</span>}
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {(['formal', 'rc', 'beta'] as const).map((rt) => {
                     const item = nextVersionData.all_types[rt];
                     const label = rt === 'formal' ? '正式' : rt === 'rc' ? 'RC' : 'Beta';
                     return (
                       <div key={rt} className="rounded-md border border-slate-200 bg-white/70 px-2.5 py-2">
-                        <div className="text-[10px] text-slate-400">{label}</div>
+                        <div className="text-[10px] text-slate-400 max-md:text-xs">{label}</div>
                         <div className="mt-0.5 truncate font-mono text-[11px] text-slate-600" title={item?.latest_tag || '无'}>
                           {item?.latest_tag || '无'}
                         </div>
@@ -516,7 +516,7 @@ export default function ReleaseCreate() {
                   </div>
                   <h3 className="text-[14px] font-semibold text-slate-900">提交与 MR 记录</h3>
                   {changesPreview && (
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 border border-emerald-200">
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 border border-emerald-200 max-md:text-xs">
                       {changesLoading ? '拉取中…' : '已拉取'}
                     </span>
                   )}
@@ -565,9 +565,9 @@ export default function ReleaseCreate() {
                           : 'border-slate-200 bg-white'
                       }`}
                     >
-                      <div className="mb-1.5 flex items-center gap-2">
+                      <div className="mb-1.5 flex flex-wrap items-center gap-2">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold max-md:text-xs ${
                             c.has_af
                               ? 'bg-emerald-100 text-emerald-700'
                               : 'bg-slate-100 text-slate-400'
@@ -679,7 +679,7 @@ export default function ReleaseCreate() {
                 </div>
                 <h3 className="text-[14px] font-semibold text-slate-900">更新内容</h3>
                 {updates.length > 0 && (
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 border border-indigo-200">
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 border border-indigo-200 max-md:text-xs">
                     {updates.length} 条
                   </span>
                 )}
@@ -728,7 +728,7 @@ export default function ReleaseCreate() {
                 {updates.map((item, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
                   >
                     <select
                       value={item.type}
@@ -754,11 +754,11 @@ export default function ReleaseCreate() {
                         )
                       }
                       placeholder="变更内容描述"
-                      className="input-field flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
+                      className="input-field min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
                     />
                     {item.source && (
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] border ${
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] border max-md:text-xs ${
                           item.source === 'commit'
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                             : 'bg-violet-50 text-violet-600 border-violet-100'
@@ -775,7 +775,7 @@ export default function ReleaseCreate() {
                     <button
                       type="button"
                       onClick={() => setUpdates((prev) => prev.filter((_, i) => i !== idx))}
-                      className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                      className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500 max-md:p-2"
                     >
                       <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                     </button>
@@ -856,7 +856,7 @@ export default function ReleaseCreate() {
                   return (
                     <div
                       key={idx}
-                      className="flex items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-50 bg-white px-3 py-2"
                     >
                       <Icon className="h-3.5 w-3.5 shrink-0 text-amber-500" style={{ strokeWidth: 1.5 }} />
                       <input
@@ -867,7 +867,7 @@ export default function ReleaseCreate() {
                           )
                         }
                         placeholder="条目名（如：固件版本）"
-                        className="input-field flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
+                        className="input-field min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
                       />
                       <span className="text-[11px] text-slate-300">:</span>
                       <input
@@ -883,7 +883,7 @@ export default function ReleaseCreate() {
                       <button
                         type="button"
                         onClick={() => setRelatedChanges((prev) => prev.filter((_, i) => i !== idx))}
-                        className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                        className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500 max-md:p-2"
                       >
                         <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                       </button>
@@ -1054,7 +1054,7 @@ export default function ReleaseCreate() {
                   <tbody>
                     {docRows.map((row, idx) => (
                       <tr key={idx} className="border-b border-slate-100 last:border-0">
-                        <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500">
+                        <td className="w-[110px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500 sm:w-[160px]">
                           {row.key}
                         </td>
                         <td className="px-3 py-2 align-middle">

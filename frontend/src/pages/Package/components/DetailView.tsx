@@ -96,14 +96,14 @@ export const DetailView = memo(function DetailView({
             <span className="font-medium text-slate-800">{config ? config.name : task.name}</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo">
                 <PackageIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
               </div>
               <div>
                 <div className="text-[15px] font-semibold tracking-tight text-slate-900">{config ? config.name : task.name}</div>
-                <div className="font-mono text-[10px] text-slate-400">{task.repository_name || '-'} · {task.project_name || '-'}</div>
+                <div className="font-mono text-[10px] text-slate-400 max-md:text-xs">{task.repository_name || '-'} · {task.project_name || '-'}</div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">

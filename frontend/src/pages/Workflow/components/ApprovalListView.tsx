@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Rocket } from 'lucide-react';
+import { ArrowRight, ChevronRight, GitBranch, Rocket } from 'lucide-react';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
 import { getAvatarColor } from '@/utils/avatar';
 import { PermissionAlert } from '@/components/PermissionAlert';
-import { tabItems, releaseTypeText } from '../constants';
+import { tabItems, releaseTypeText, releaseTypeBadge } from '../constants';
 import type { TabKey } from '../constants';
 import type { DetailSource } from '../types';
 import type { WorkflowTask, WorkflowInstanceListItem, ReleaseType } from '@/types';
@@ -118,7 +118,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
         </div>
 
         {/* 行 */}
-        <div className="divide-y divide-indigo-50/50">
+        <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {loading ? (
             <div className="px-5 py-10 text-center text-[13px] text-slate-400">加载中…</div>
           ) : results.length === 0 ? (
@@ -126,54 +126,105 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
           ) : (
             results.map((row) => {
               const active = activeTab !== 'done';
+              const applicantLabel = row.applicant || '-';
               return (
                 <div
                   key={row.id}
                   onClick={() => onOpenDetail(toDetail(row, activeTab))}
-                  className="grid cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30"
+                  className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-12 flex items-center gap-2.5 md:col-span-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo">
-                      <Rocket className="h-4 w-4" strokeWidth={1.5} />
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3.5 md:grid">
+                    <div className="col-span-12 flex items-center gap-2.5 md:col-span-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-indigo">
+                        <Rocket className="h-4 w-4" strokeWidth={1.5} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-medium text-slate-900">
+                          {row.title}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          发布审批{row.release_type ? ` · ${releaseTypeText[row.release_type as ReleaseType]}` : ''}
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium text-slate-900">
+                    <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
+                      {row.project_name || '-'}
+                    </div>
+                    <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
+                      <span
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                        style={{ background: getAvatarColor(row.applicant) }}
+                      >
+                        {(row.applicant || 'U').charAt(0)}
+                      </span>
+                      <span className="text-[12px] text-slate-600">{row.applicant || '-'}</span>
+                    </div>
+                    <div className="col-span-6 md:col-span-2">
+                      <span
+                        className={
+                          active
+                            ? 'inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700'
+                            : 'inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500'
+                        }
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-amber-500 pulse-dot' : 'bg-slate-400'}`} />
+                        {row.current_node || '-'}
+                      </span>
+                    </div>
+                    <div className="col-span-6 text-[12px] text-slate-500 md:col-span-2">
+                      {row.submit_time ? dayjs(row.submit_time).format('MM-DD HH:mm') : '-'}
+                    </div>
+                    <div className="col-span-6 flex items-center justify-end md:col-span-1">
+                      <ArrowRight className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
+                    </div>
+                  </div>
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={
+                          active
+                            ? 'inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600'
+                            : 'inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500'
+                        }
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-amber-500 pulse-dot' : 'bg-slate-400'}`} />
+                        {row.current_node || '-'}
+                      </span>
+                      {row.release_type ? (
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${releaseTypeBadge[row.release_type as ReleaseType]}`}>
+                          {releaseTypeText[row.release_type as ReleaseType]}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">
                         {row.title}
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        发布审批{row.release_type ? ` · ${releaseTypeText[row.release_type as ReleaseType]}` : ''}
-                      </div>
+                      </span>
+                      <span className="shrink-0 truncate text-[12px] text-slate-400">{row.project_name || '-'}</span>
                     </div>
-                  </div>
-                  <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
-                    {row.project_name || '-'}
-                  </div>
-                  <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
-                    <span
-                      className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                      style={{ background: getAvatarColor(row.applicant) }}
-                    >
-                      {(row.applicant || 'U').charAt(0)}
-                    </span>
-                    <span className="text-[12px] text-slate-600">{row.applicant || '-'}</span>
-                  </div>
-                  <div className="col-span-6 md:col-span-2">
-                    <span
-                      className={
-                        active
-                          ? 'inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700'
-                          : 'inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500'
-                      }
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-amber-500 pulse-dot' : 'bg-slate-400'}`} />
-                      {row.current_node || '-'}
-                    </span>
-                  </div>
-                  <div className="col-span-6 text-[12px] text-slate-500 md:col-span-2">
-                    {row.submit_time ? dayjs(row.submit_time).format('MM-DD HH:mm') : '-'}
-                  </div>
-                  <div className="col-span-6 flex items-center justify-end md:col-span-1">
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
+                    {row.branch ? (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                        <span className="truncate font-mono">{row.branch}</span>
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white"
+                          style={{ background: getAvatarColor(row.applicant) }}
+                        >
+                          {(row.applicant || 'U').charAt(0)}
+                        </span>
+                        <span className="truncate text-[12px] text-slate-500">
+                          {applicantLabel} · {row.submit_time ? dayjs(row.submit_time).format('MM-DD HH:mm') : '-'}
+                        </span>
+                      </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" strokeWidth={1.5} />
+                    </div>
                   </div>
                 </div>
               );
@@ -190,7 +241,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 max-md:px-3 max-md:py-2"
               >
                 上一页
               </button>
@@ -201,7 +252,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                 type="button"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 max-md:px-3 max-md:py-2"
               >
                 下一页
               </button>

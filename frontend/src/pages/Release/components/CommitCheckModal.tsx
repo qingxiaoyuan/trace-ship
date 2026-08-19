@@ -165,7 +165,7 @@ export function CommitCheckModal({
       width={820}
       onCancel={handleCancel}
       footer={
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-[12px] text-slate-400">
             {validCount > 0
               ? `已勾选 ${validCount} 条可加入更新内容`
@@ -192,8 +192,8 @@ export function CommitCheckModal({
     >
       <div className="space-y-3">
         {/* 区间信息 + 重新检测 */}
-        <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2">
-          <div className="flex items-center gap-2 text-[12px] text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
             <GitCommitHorizontal className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
             <span>
               区间：<span className="font-mono text-slate-600">{lastTag || '最新 Tag'}</span>
@@ -219,7 +219,7 @@ export function CommitCheckModal({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-[12px] font-medium text-slate-600">
                 <span>已解析未自动填入</span>
-                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 border border-indigo-200">
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 border border-indigo-200 max-md:text-xs">
                   {pendingRows.length} 条
                 </span>
               </div>
@@ -248,7 +248,7 @@ export function CommitCheckModal({
                         onChange={(e) => updatePendingRow(idx, { checked: e.target.checked })}
                       />
                       <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold max-md:text-xs ${
                           row.type === 'A'
                             ? 'bg-emerald-100 text-emerald-700'
                             : 'bg-amber-100 text-amber-700'
@@ -262,7 +262,7 @@ export function CommitCheckModal({
                         className="input-field min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-[12px] text-slate-700 outline-none focus:border-indigo-200 focus:bg-white"
                       />
                     </div>
-                    <div className="mt-1 flex items-center gap-2 pl-[30px] text-[10px] text-slate-400">
+                    <div className="mt-1 flex items-center gap-2 pl-[30px] text-[10px] text-slate-400 max-md:text-xs">
                       <span className="font-mono">
                         {row.source === 'mr' ? `MR !${row.sourceRef}` : row.sourceRef || '-'}
                       </span>
@@ -286,7 +286,7 @@ export function CommitCheckModal({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-[12px] font-medium text-slate-600">
                   <span>未自动解析 Commit（勾选后加入）</span>
-                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600 border border-amber-200">
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600 border border-amber-200 max-md:text-xs">
                     {rows.length} 条
                   </span>
                 </div>
@@ -346,14 +346,14 @@ export function CommitCheckModal({
                     {/* 删除 */}
                     <button
                       onClick={() => removeRow(idx)}
-                      className="rounded-md p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                      className="rounded-md p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 max-md:p-2.5"
                       title="删除此行"
                     >
                       <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </button>
                   </div>
                   {/* 元信息 */}
-                  <div className="mt-1 flex items-center gap-2 pl-[112px] text-[10px] text-slate-400">
+                  <div className="mt-1 flex items-center gap-2 pl-[30px] text-[10px] text-slate-400 max-md:text-xs sm:pl-[112px]">
                     <span className="font-mono">{row.hash.slice(0, 8)}</span>
                     <span>{row.author}</span>
                   </div>

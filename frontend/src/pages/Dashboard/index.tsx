@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Grid } from 'antd';
 import {
   ArrowDownRight,
   ArrowRight,
@@ -41,6 +42,9 @@ export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
   const [pipelineRange, setPipelineRange] = useState<PipelineRange>('week');
   const [todoFilter, setTodoFilter] = useState<TodoFilter>('all');
+  // 移动端（<lg）使用贴合设计稿的精简布局
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.lg;
 
   const { data: overview } = useQuery({
     queryKey: ['dashboard-overview'],
@@ -208,7 +212,7 @@ export default function Dashboard() {
   const kpiCards: KpiCard[] = [
     {
       title: '近 7 天发布数',
-      value: <span className="text-[28px] font-semibold tracking-tight text-slate-900">{totalReleases}</span>,
+      value: <span className="text-[24px] lg:text-[28px] font-semibold tracking-tight text-slate-900">{totalReleases}</span>,
       unit: '次发布',
       description: (
         <>
@@ -236,7 +240,7 @@ export default function Dashboard() {
     },
     {
       title: '待审批数',
-      value: <span className="text-[28px] font-semibold tracking-tight text-slate-900">{pendingAuditCount}</span>,
+      value: <span className="text-[24px] lg:text-[28px] font-semibold tracking-tight text-slate-900">{pendingAuditCount}</span>,
       unit: '个审批',
       description: pendingDescription,
       icon: GitPullRequestArrow,
@@ -257,7 +261,7 @@ export default function Dashboard() {
     },
     {
       title: '已驳回',
-      value: <span className="text-[28px] font-semibold tracking-tight text-slate-900">{rejectedCount}</span>,
+      value: <span className="text-[24px] lg:text-[28px] font-semibold tracking-tight text-slate-900">{rejectedCount}</span>,
       unit: '个驳回',
       description: '需关注异常打包',
       icon: TriangleAlert,
@@ -281,7 +285,7 @@ export default function Dashboard() {
     {
       title: '打包成功率',
       value: (
-        <span className="text-gradient text-[28px] font-semibold tracking-tight">
+        <span className="text-gradient text-[24px] lg:text-[28px] font-semibold tracking-tight">
           {buildSuccessRate}
           <span className="text-[18px] text-slate-400">%</span>
         </span>
@@ -307,17 +311,90 @@ export default function Dashboard() {
     },
   ];
 
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+  const successChartCard = (
+    <div className="tech-card rounded-xl p-5">
+      <div className="mb-2">
+        <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包成功率</h2>
+        <p className="mt-0.5 text-[12px] text-slate-500">最近打包任务统计</p>
+      </div>
+      <BuildSuccessChart
+        rate={buildSuccessRate}
+        successCount={buildSuccess}
+        failureCount={buildFailed}
+      />
+      <div className="mt-4 space-y-2.5 border-t border-indigo-50 pt-4">
+        {[
+          ['成功', buildSuccess, 'bg-emerald-400'],
+          ['失败', buildFailed, 'bg-rose-400'],
+        ].map(([label, value, color]) => (
+          <div key={String(label)} className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-sm ${color}`} />
+              <span className="text-[12px] text-slate-600">{label}</span>
+            </div>
+            <span className="font-mono text-[12px] font-medium text-slate-800">{value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const trendChartCard = (
+    <div className="tech-card rounded-xl p-5">
+      <div className="mb-4">
+        <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包趋势</h2>
+        <p className="mt-0.5 text-[12px] text-slate-500">最近 7 天</p>
+      </div>
+      <BuildTrendChart data={buildTrendData} />
+      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4">
         <div>
-          <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">工作台</h1>
-          <p className="mt-1 text-[13px] text-slate-500">
-            {getGreeting()}，{displayName}。今天有{' '}
-            <span className="font-medium text-indigo-600">{pendingAuditCount}</span> 个发布待审批，
-            <span className="font-medium text-cyan-600">{runningBuilds.length}</span> 个打包任务进行中。
-          </p>
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <span className="h-2 w-2 rounded-sm bg-emerald-400" />
+            <span>成功</span>
+          </div>
+          <div className="mt-1 font-mono text-[18px] font-semibold tracking-tight text-slate-900">{buildSuccess}</div>
         </div>
+        <div>
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <span className="h-2 w-2 rounded-sm bg-rose-400" />
+            <span>失败</span>
+          </div>
+          <div className="mt-1 font-mono text-[18px] font-semibold tracking-tight text-slate-900">{buildFailed}</div>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+        <span className="text-[11px] text-slate-400">平均打包时长</span>
+        <span className="font-mono text-[13px] font-medium text-cyan-600">
+          {formatDurationSeconds(averageBuildDuration)}
+        </span>
+      </div>
+    </div>
+  );
+
+  const pageHeader = (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        {isMobile ? (
+          <>
+            <h1 className="text-[20px] font-semibold tracking-tight text-slate-900">
+              {getGreeting()}，{displayName}
+            </h1>
+            <p className="mt-1 text-[12px] text-slate-500">
+              今天有 {pendingAuditCount} 个发布待审批 · {runningBuilds.length} 个打包任务进行中
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">工作台</h1>
+            <p className="mt-1 text-[13px] text-slate-500">
+              {getGreeting()}，{displayName}。今天有{' '}
+              <span className="font-medium text-indigo-600">{pendingAuditCount}</span> 个发布待审批，
+              <span className="font-medium text-cyan-600">{runningBuilds.length}</span> 个打包任务进行中。
+            </p>
+          </>
+        )}
+      </div>
+      {!isMobile ? (
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -335,7 +412,30 @@ export default function Dashboard() {
             <span>新建发布</span>
           </button>
         </div>
+      ) : null}
+    </div>
+  );
+
+  // 移动端布局（对齐 ui-design/mobile-dashboard.html）：问候 → KPI 双列 → 趋势 → 待办 → 最近发布
+  if (isMobile) {
+    return (
+      <div className="space-y-4">
+        {pageHeader}
+        <div className="grid grid-cols-2 gap-3">
+          {kpiCards.map((card) => (
+            <KpiCardView key={card.title} card={card} compact />
+          ))}
+        </div>
+        {trendChartCard}
+        <TodoPanel items={todoItems} filter={todoFilter} onFilterChange={setTodoFilter} />
+        <RecentReleasesPanel releases={recentReleases} onViewAll={() => navigate('/releases')} />
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {pageHeader}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpiCards.map((card) => (
@@ -347,64 +447,12 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <RecentReleasesPanel releases={recentReleases} onViewAll={() => navigate('/releases')} />
-        <div className="tech-card rounded-xl p-5">
-          <div className="mb-2">
-            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包成功率</h2>
-            <p className="mt-0.5 text-[12px] text-slate-500">最近打包任务统计</p>
-          </div>
-          <BuildSuccessChart
-            rate={buildSuccessRate}
-            successCount={buildSuccess}
-            failureCount={buildFailed}
-          />
-          <div className="mt-4 space-y-2.5 border-t border-indigo-50 pt-4">
-            {[
-              ['成功', buildSuccess, 'bg-emerald-400'],
-              ['失败', buildFailed, 'bg-rose-400'],
-            ].map(([label, value, color]) => (
-              <div key={String(label)} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-sm ${color}`} />
-                  <span className="text-[12px] text-slate-600">{label}</span>
-                </div>
-                <span className="font-mono text-[12px] font-medium text-slate-800">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        {successChartCard}
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <TodoPanel items={todoItems} filter={todoFilter} onFilterChange={setTodoFilter} />
-        <div className="tech-card rounded-xl p-5">
-          <div className="mb-4">
-            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包趋势</h2>
-            <p className="mt-0.5 text-[12px] text-slate-500">最近 7 天</p>
-          </div>
-          <BuildTrendChart data={buildTrendData} />
-          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4">
-            <div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                <span className="h-2 w-2 rounded-sm bg-emerald-400" />
-                <span>成功</span>
-              </div>
-              <div className="mt-1 font-mono text-[18px] font-semibold tracking-tight text-slate-900">{buildSuccess}</div>
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                <span className="h-2 w-2 rounded-sm bg-rose-400" />
-                <span>失败</span>
-              </div>
-              <div className="mt-1 font-mono text-[18px] font-semibold tracking-tight text-slate-900">{buildFailed}</div>
-            </div>
-          </div>
-          <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
-            <span className="text-[11px] text-slate-400">平均打包时长</span>
-            <span className="font-mono text-[13px] font-medium text-cyan-600">
-              {formatDurationSeconds(averageBuildDuration)}
-            </span>
-          </div>
-        </div>
+        {trendChartCard}
       </div>
     </div>
   );

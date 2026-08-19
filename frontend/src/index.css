@@ -712,3 +712,51 @@ a[href],
 .ai-script-highlight-line {
   background: rgba(99, 102, 241, 0.16);
 }
+
+/* ============================================================
+   移动端适配（<768px，与 Tailwind md 断点对齐）
+   ============================================================ */
+@media (max-width: 767.98px) {
+  /* AntD 控件基线：控件高度上调，便于触控（默认字号已是 14，无需覆盖） */
+  :root {
+    --ant-font-size-sm: 13px !important;
+    --ant-control-height: 36px !important;
+    --ant-control-height-sm: 30px !important;
+  }
+
+  /* 消除双击缩放延迟 */
+  a,
+  button {
+    touch-action: manipulation;
+  }
+
+  /* Modal 底部弹出：贴底全宽，顶部圆角。
+     注意：不要给 .ant-modal 加自定义 animation（会顶掉 rc-motion 关闭动画导致无法关闭），
+     也不要改 .ant-modal-wrap 的 display（AntD 关闭时靠 display:none 隐藏 wrap，
+     覆盖后隐形全屏层会拦截页面点击） */
+  .ant-modal-wrap {
+    overflow: hidden;
+  }
+  .ant-modal-wrap .ant-modal {
+    position: absolute;
+    top: auto !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .ant-modal-wrap .ant-modal-container {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .ant-modal-wrap .ant-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}

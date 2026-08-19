@@ -239,7 +239,7 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
 
       {currentStep >= 1 && createdRelease && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 max-md:grid-cols-1">
             <Card size="small" title="版本信息">
               <p>版本号：{createdRelease.version || '-'}</p>
               <p>Tag：{createdRelease.tag_name || '-'}</p>

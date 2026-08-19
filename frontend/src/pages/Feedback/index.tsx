@@ -167,7 +167,7 @@ export default function Feedback() {
               </button>
             ))}
           </div>
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               value={keyword}
@@ -179,7 +179,7 @@ export default function Feedback() {
                 }
               }}
               placeholder="搜索标题 / 内容，回车确认"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 sm:w-[220px]"
             />
           </div>
           <button
@@ -196,7 +196,7 @@ export default function Feedback() {
           <div className="ml-auto text-[12px] text-slate-400">共 {total} 条反馈</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50">
+        <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : feedbacks.length === 0 ? (
@@ -211,42 +211,120 @@ export default function Feedback() {
               const canDelete = user && (user.id === item.created_by || user.is_superuser);
               const canProcess = user?.is_superuser && item.status === 'open';
               return (
-                <div key={item.id} className="px-5 py-4 transition-colors hover:bg-indigo-50/30">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-400 text-[12px] font-semibold text-white">
-                      {getInitials(item.created_by_name)}
+                <div key={item.id} className="transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4">
+                  {/* 桌面端行 */}
+                  <div className="hidden px-5 py-4 md:block">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-400 text-[12px] font-semibold text-white">
+                        {getInitials(item.created_by_name)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[14px] font-medium text-slate-900">{item.title}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.tagClass}`}>
+                            {meta.label}
+                          </span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo.tagClass}`}>
+                            {statusInfo.label}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-5 text-slate-600">{item.content}</p>
+                        <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                          <span className="font-medium text-slate-500">{item.created_by_name}</span>
+                          <span>{dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}</span>
+                          {item.status === 'processed' && item.processed_by_name ? (
+                            <span>
+                              由 {item.processed_by_name} 处理
+                              {item.processed_at ? ` · ${dayjs(item.processed_at).format('YYYY-MM-DD HH:mm')}` : ''}
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => likeMutation.mutate(item.id)}
+                            className={[
+                              'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors',
+                              item.liked
+                                ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
+                                : 'border-slate-200 bg-white text-slate-400 hover:border-indigo-200 hover:text-indigo-500',
+                            ].join(' ')}
+                          >
+                            <ThumbsUp className="h-3 w-3" strokeWidth={1.5} />
+                            <span>{item.like_count}</span>
+                          </button>
+                          {canProcess ? (
+                            <Popconfirm
+                              title="标记为已处理？"
+                              description="处理后状态不可恢复"
+                              okText="确认"
+                              cancelText="取消"
+                              onConfirm={() => processMutation.mutate(item.id)}
+                            >
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-slate-300 transition-colors hover:text-emerald-500"
+                              >
+                                <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} />
+                                <span>设为已处理</span>
+                              </button>
+                            </Popconfirm>
+                          ) : null}
+                          {canDelete ? (
+                            <Popconfirm
+                              title="确定删除该反馈？"
+                              description="删除后不可恢复"
+                              okText="删除"
+                              cancelText="取消"
+                              onConfirm={() => deleteMutation.mutate(item.id)}
+                            >
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-slate-300 transition-colors hover:text-rose-500"
+                              >
+                                <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                                <span>删除</span>
+                              </button>
+                            </Popconfirm>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[14px] font-medium text-slate-900">{item.title}</span>
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${meta.tagClass}`}>
-                          {meta.label}
+                  </div>
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between">
+                      <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${statusInfo.tagClass}`}>
+                        {statusInfo.label}
+                      </span>
+                      <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${meta.tagClass}`}>
+                        {meta.label}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[15px] font-semibold tracking-tight text-slate-900">
+                      {item.title}
+                    </div>
+                    <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-5 text-slate-600">{item.content}</p>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-cyan-400 text-[10px] font-semibold text-white">
+                          {getInitials(item.created_by_name)}
                         </span>
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo.tagClass}`}>
-                          {statusInfo.label}
+                        <span className="truncate text-[12px] text-slate-500">
+                          {item.created_by_name} · {dayjs(item.created_at).format('MM-DD HH:mm')}
                         </span>
                       </div>
-                      <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-5 text-slate-600">{item.content}</p>
-                      <div className="mt-2.5 flex items-center gap-3 text-[11px] text-slate-400">
-                        <span className="font-medium text-slate-500">{item.created_by_name}</span>
-                        <span>{dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}</span>
-                        {item.status === 'processed' && item.processed_by_name ? (
-                          <span>
-                            由 {item.processed_by_name} 处理
-                            {item.processed_at ? ` · ${dayjs(item.processed_at).format('YYYY-MM-DD HH:mm')}` : ''}
-                          </span>
-                        ) : null}
+                      <div className="flex shrink-0 items-center gap-1">
                         <button
                           type="button"
                           onClick={() => likeMutation.mutate(item.id)}
                           className={[
-                            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors',
+                            'inline-flex min-h-[36px] items-center gap-1 rounded-full border px-3 text-[11px] font-medium transition-colors',
                             item.liked
                               ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
                               : 'border-slate-200 bg-white text-slate-400 hover:border-indigo-200 hover:text-indigo-500',
                           ].join(' ')}
                         >
-                          <ThumbsUp className="h-3 w-3" strokeWidth={1.5} />
+                          <ThumbsUp className="h-3.5 w-3.5" strokeWidth={1.5} />
                           <span>{item.like_count}</span>
                         </button>
                         {canProcess ? (
@@ -259,10 +337,10 @@ export default function Feedback() {
                           >
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 text-slate-300 transition-colors hover:text-emerald-500"
+                              className="rounded-md p-2 text-slate-300 transition-colors hover:text-emerald-500"
+                              title="设为已处理"
                             >
-                              <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} />
-                              <span>设为已处理</span>
+                              <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
                             </button>
                           </Popconfirm>
                         ) : null}
@@ -276,10 +354,10 @@ export default function Feedback() {
                           >
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 text-slate-300 transition-colors hover:text-rose-500"
+                              className="rounded-md p-2 text-slate-300 transition-colors hover:text-rose-500"
+                              title="删除"
                             >
-                              <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                              <span>删除</span>
+                              <Trash2 className="h-4 w-4" strokeWidth={1.5} />
                             </button>
                           </Popconfirm>
                         ) : null}
@@ -301,7 +379,7 @@ export default function Feedback() {
               type="button"
               disabled={page <= 1}
               onClick={() => setPage(page - 1)}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-indigo-100 text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-indigo-100 text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
@@ -312,7 +390,7 @@ export default function Feedback() {
               type="button"
               disabled={page >= totalPages}
               onClick={() => setPage(page + 1)}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-indigo-100 text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-indigo-100 text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>

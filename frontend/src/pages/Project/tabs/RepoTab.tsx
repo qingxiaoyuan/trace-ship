@@ -10,6 +10,8 @@ import {
   PlayCircle,
   Tag,
   GitFork,
+  GitBranch,
+  Clock,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { repositoryApi } from '@/api/repository';
@@ -164,14 +166,14 @@ export function RepoTab({ projectId }: RepoTabProps) {
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索仓库名称 / 类型"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full sm:w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
           <div className="ml-auto text-[12px] text-slate-400">共 {filteredRepositories.length} 个仓库</div>
@@ -188,7 +190,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
           <div className="col-span-2 text-right">操作</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50">
+        <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : filteredRepositories.length === 0 ? (
@@ -208,96 +210,190 @@ export function RepoTab({ projectId }: RepoTabProps) {
               return (
                 <div
                   key={record.id}
-                  className="grid grid-cols-[repeat(13,minmax(0,1fr))] gap-3 items-center px-5 py-3 transition-colors hover:bg-indigo-50/30"
+                  className="transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-2 flex items-center gap-2">
-                    <GitFork className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
-                    <span className="truncate text-[13px] font-semibold text-slate-900">{record.name}</span>
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-[repeat(13,minmax(0,1fr))] items-center gap-3 px-5 py-3 md:grid">
+                    <div className="col-span-2 flex items-center gap-2">
+                      <GitFork className="h-4 w-4 text-indigo-500" strokeWidth={1.5} />
+                      <span className="truncate text-[13px] font-semibold text-slate-900">{record.name}</span>
+                    </div>
+                    <div className="col-span-1">
+                      <StatusTag status={vendorConfig.status}>{vendorConfig.label}</StatusTag>
+                    </div>
+                    <div className="col-span-4 break-all text-[13px]">
+                      {displayUrl ? (
+                        <a
+                          href={displayUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-600 hover:underline"
+                          title={displayUrl}
+                        >
+                          {displayUrl}
+                        </a>
+                      ) : (
+                        '-'
+                      )}
+                    </div>
+                    <div className="col-span-1 font-mono text-[12px] text-slate-600">
+                      {record.default_branch || '-'}
+                    </div>
+                    <div className="col-span-1 text-[12px] text-slate-600">
+                      {record.credential_mode || '-'}
+                    </div>
+                    <div className="col-span-1">
+                      <StatusTag status={isHealthy ? 'success' : record.health_status === 'unhealthy' ? 'danger' : 'neutral'}>
+                        {isHealthy ? '正常' : record.health_status === 'unhealthy' ? '异常' : record.health_status || '-'}
+                      </StatusTag>
+                    </div>
+                    <div className="col-span-1 whitespace-nowrap text-[12px] text-slate-500">
+                      {record.last_sync_at ? dayjs(record.last_sync_at).format('YYYY-MM-DD HH:mm') : '-'}
+                    </div>
+                    <div className="col-span-2 flex items-center justify-end gap-1">
+                      {canDevelop && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => testMutation.mutate(record.id)}
+                            disabled={testMutation.isPending && testMutation.variables === record.id}
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                            title="测试"
+                          >
+                            <PlayCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => syncMutation.mutate(record.id)}
+                            disabled={syncMutation.isPending && syncMutation.variables === record.id}
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                            title="同步提交"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCreateTag(record)}
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                            title="新建 Tag"
+                          >
+                            <Tag className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                        </>
+                      )}
+                      {canManage && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(record)}
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                            title="编辑"
+                          >
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(record)}
+                            disabled={deleteMutation.isPending && deleteMutation.variables === record.id}
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                            title="删除"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="col-span-1">
-                    <StatusTag status={vendorConfig.status}>{vendorConfig.label}</StatusTag>
-                  </div>
-                  <div className="col-span-4 break-all text-[13px]">
-                    {displayUrl ? (
-                      <a
-                        href={displayUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-600 hover:underline"
-                        title={displayUrl}
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
+                          isHealthy
+                            ? 'bg-emerald-50 text-emerald-600'
+                            : record.health_status === 'unhealthy'
+                              ? 'bg-rose-50 text-rose-600'
+                              : 'bg-slate-100 text-slate-500'
+                        }`}
                       >
-                        {displayUrl}
-                      </a>
-                    ) : (
-                      '-'
-                    )}
-                  </div>
-                  <div className="col-span-1 font-mono text-[12px] text-slate-600">
-                    {record.default_branch || '-'}
-                  </div>
-                  <div className="col-span-1 text-[12px] text-slate-600">
-                    {record.credential_mode || '-'}
-                  </div>
-                  <div className="col-span-1">
-                    <StatusTag status={isHealthy ? 'success' : record.health_status === 'unhealthy' ? 'danger' : 'neutral'}>
-                      {isHealthy ? '正常' : record.health_status === 'unhealthy' ? '异常' : record.health_status || '-'}
-                    </StatusTag>
-                  </div>
-                  <div className="col-span-1 whitespace-nowrap text-[12px] text-slate-500">
-                    {record.last_sync_at ? dayjs(record.last_sync_at).format('YYYY-MM-DD HH:mm') : '-'}
-                  </div>
-                  <div className="col-span-2 flex items-center justify-end gap-1">
-                    {canDevelop && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => testMutation.mutate(record.id)}
-                          disabled={testMutation.isPending && testMutation.variables === record.id}
-                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
-                          title="测试"
-                        >
-                          <PlayCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => syncMutation.mutate(record.id)}
-                          disabled={syncMutation.isPending && syncMutation.variables === record.id}
-                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
-                          title="同步提交"
-                        >
-                          <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleCreateTag(record)}
-                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                          title="新建 Tag"
-                        >
-                          <Tag className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </button>
-                      </>
-                    )}
-                    {canManage && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleEdit(record)}
-                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                          title="编辑"
-                        >
-                          <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(record)}
-                          disabled={deleteMutation.isPending && deleteMutation.variables === record.id}
-                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
-                          title="删除"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        </button>
-                      </>
-                    )}
+                        {isHealthy ? '正常' : record.health_status === 'unhealthy' ? '异常' : record.health_status || '-'}
+                      </span>
+                      <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">
+                        {vendorConfig.label}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <GitFork className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={1.5} />
+                      <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{record.name}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="shrink-0 font-mono">{record.default_branch || '-'}</span>
+                      <span className="shrink-0 text-slate-200">|</span>
+                      <span className="truncate font-mono">{displayUrl || '-'}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <Clock className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                        <span className="whitespace-nowrap">
+                          {record.last_sync_at ? dayjs(record.last_sync_at).format('MM-DD HH:mm') : '-'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {canDevelop && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => testMutation.mutate(record.id)}
+                              disabled={testMutation.isPending && testMutation.variables === record.id}
+                              className="rounded-md p-3 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                              title="测试"
+                            >
+                              <PlayCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => syncMutation.mutate(record.id)}
+                              disabled={syncMutation.isPending && syncMutation.variables === record.id}
+                              className="rounded-md p-3 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40"
+                              title="同步提交"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCreateTag(record)}
+                              className="rounded-md p-3 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                              title="新建 Tag"
+                            >
+                              <Tag className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </button>
+                          </>
+                        )}
+                        {canManage && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(record)}
+                              className="rounded-md p-3 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                              title="编辑"
+                            >
+                              <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(record)}
+                              disabled={deleteMutation.isPending && deleteMutation.variables === record.id}
+                              className="rounded-md p-3 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                              title="删除"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

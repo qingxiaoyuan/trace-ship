@@ -19,6 +19,7 @@ import {
   Save,
   Check,
   ShieldCheck,
+  Building2,
 } from 'lucide-react';
 import { accountApi } from '@/api/account';
 import type { AccountUser, AccountRoleBrief } from '@/api/account';
@@ -460,7 +461,7 @@ export default function SystemUserList() {
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               type="text"
@@ -468,7 +469,7 @@ export default function SystemUserList() {
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') setPage(1); }}
               placeholder="搜索用户名 / 姓名"
-              className="w-[200px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 sm:w-[200px]"
             />
           </div>
           <Dropdown
@@ -508,7 +509,7 @@ export default function SystemUserList() {
           <div className="col-span-2 text-right">操作</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto max-md:max-h-none max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : users.length === 0 ? (
@@ -520,63 +521,123 @@ export default function SystemUserList() {
                 <div
                   key={u.id}
                   onClick={() => openEdit(u)}
-                  className="grid grid-cols-12 cursor-pointer items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30"
+                  className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-6 font-mono text-[12px] text-slate-600 md:col-span-2">{u.username}</div>
-                  <div className="col-span-6 flex items-center gap-2 md:col-span-2">
-                    <div
-                      className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                      style={{ background: getAvatarColor(u.nickname || u.username) }}
-                    >
-                      {initial}
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
+                    <div className="col-span-6 font-mono text-[12px] text-slate-600 md:col-span-2">{u.username}</div>
+                    <div className="col-span-6 flex items-center gap-2 md:col-span-2">
+                      <div
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                        style={{ background: getAvatarColor(u.nickname || u.username) }}
+                      >
+                        {initial}
+                      </div>
+                      <span className="text-[13px] font-medium text-slate-900">{u.nickname || '-'}</span>
                     </div>
-                    <span className="text-[13px] font-medium text-slate-900">{u.nickname || '-'}</span>
-                  </div>
-                  <div className="col-span-6 text-[12px] text-slate-600 md:col-span-2">{u.department || '-'}</div>
-                  <div className="col-span-3 md:col-span-1">
-                    {u.source === 'ldap' ? (
-                      <span className="inline-flex items-center rounded border border-cyan-100 bg-cyan-50/50 px-1 py-0.5 text-[10px] font-medium text-cyan-700">LDAP</span>
-                    ) : (
-                      <span className="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/50 px-1 py-0.5 text-[10px] font-medium text-indigo-600">本地</span>
-                    )}
-                  </div>
-                  <div className="col-span-6 flex flex-wrap items-center gap-1 md:col-span-2">
-                    {(u.roles || []).length === 0 ? (
-                      <span className="text-[11px] text-slate-400">-</span>
-                    ) : (
-                      (u.roles || []).map((r) => (
-                        <span
-                          key={r.id}
-                          className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${getRoleBadgeClass(r.code)}`}
-                        >
-                          {r.name}
+                    <div className="col-span-6 text-[12px] text-slate-600 md:col-span-2">{u.department || '-'}</div>
+                    <div className="col-span-3 md:col-span-1">
+                      {u.source === 'ldap' ? (
+                        <span className="inline-flex items-center rounded border border-cyan-100 bg-cyan-50/50 px-1 py-0.5 text-[10px] font-medium text-cyan-700">LDAP</span>
+                      ) : (
+                        <span className="inline-flex items-center rounded border border-indigo-100 bg-indigo-50/50 px-1 py-0.5 text-[10px] font-medium text-indigo-600">本地</span>
+                      )}
+                    </div>
+                    <div className="col-span-6 flex flex-wrap items-center gap-1 md:col-span-2">
+                      {(u.roles || []).length === 0 ? (
+                        <span className="text-[11px] text-slate-400">-</span>
+                      ) : (
+                        (u.roles || []).map((r) => (
+                          <span
+                            key={r.id}
+                            className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${getRoleBadgeClass(r.code)}`}
+                          >
+                            {r.name}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <div className="col-span-3 md:col-span-1">
+                      {u.is_active ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          启用
                         </span>
-                      ))
-                    )}
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                          停用
+                        </span>
+                      )}
+                    </div>
+                    <div className="col-span-6 flex items-center justify-end gap-1 md:col-span-2">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openEdit(u); }}
+                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                        title="编辑"
+                      >
+                        <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                      <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                    </div>
                   </div>
-                  <div className="col-span-3 md:col-span-1">
-                    {u.is_active ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        启用
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between">
+                      {u.is_active ? (
+                        <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">启用</span>
+                      ) : (
+                        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">停用</span>
+                      )}
+                      {u.source === 'ldap' ? (
+                        <span className="rounded bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700">LDAP</span>
+                      ) : (
+                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">本地</span>
+                      )}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white"
+                        style={{ background: getAvatarColor(u.nickname || u.username) }}
+                      >
+                        {initial}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                        停用
-                      </span>
-                    )}
-                  </div>
-                  <div className="col-span-6 flex items-center justify-end gap-1 md:col-span-2">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); openEdit(u); }}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                      title="编辑"
-                    >
-                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                      <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{u.nickname || '-'}</span>
+                      <span className="min-w-0 truncate font-mono text-[12px] text-slate-400">{u.username}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <Building2 className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="truncate">{u.department || '-'}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1">
+                        {(u.roles || []).length === 0 ? (
+                          <span className="text-[11px] text-slate-400">-</span>
+                        ) : (
+                          (u.roles || []).map((r) => (
+                            <span
+                              key={r.id}
+                              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${getRoleBadgeClass(r.code)}`}
+                            >
+                              {r.name}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openEdit(u); }}
+                          className="rounded-md p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                          title="编辑"
+                        >
+                          <Pencil className="h-4 w-4" strokeWidth={1.5} />
+                        </button>
+                        <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -593,7 +654,7 @@ export default function SystemUserList() {
               type="button"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
@@ -605,7 +666,7 @@ export default function SystemUserList() {
                   type="button"
                   onClick={() => setPage(p)}
                   className={[
-                    'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors',
+                    'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors max-md:h-9 max-md:w-9',
                     p === page
                       ? 'bg-indigo-500 text-white'
                       : 'border border-indigo-100 text-slate-600 hover:bg-indigo-50',
@@ -619,7 +680,7 @@ export default function SystemUserList() {
               type="button"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>

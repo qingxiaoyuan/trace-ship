@@ -84,7 +84,7 @@ function TimelineNode({
       <div className={`flex-1 ${isLast ? '' : 'pb-5'}`}>
         <div className="flex items-center justify-between">
           <div className={`text-[13px] font-medium ${nameClass}`}>{name}</div>
-          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`}>
+          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${badge.cls}`}>
             {badge.text}
           </span>
         </div>

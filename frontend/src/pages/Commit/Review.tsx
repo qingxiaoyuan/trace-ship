@@ -32,6 +32,7 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAppMessage } from '@/hooks/useAppMessage';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import { AutoResizeTextarea, CheckboxField } from '../Release/components/ReleaseDocField';
+import { getAvatarColor } from '@/utils/avatar';
 import {
   applyCheckboxChange,
   isCheckboxField,
@@ -209,17 +210,17 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
       <div className="tech-card overflow-hidden rounded-xl">
         {/* 筛选栏 */}
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-[200px]">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索项目 / 版本号"
-              className="w-[200px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
           {/* 项目下拉 */}
-          <div className="w-[180px]">
+          <div className="w-full sm:w-[180px]">
             <Select
               value={projectId}
               onChange={(v) => {
@@ -234,7 +235,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
             />
           </div>
           {/* 仓库下拉 */}
-          <div className="w-[180px]">
+          <div className="w-full sm:w-[180px]">
             <Select
               value={repoId}
               onChange={(v) => setRepoId(v)}
@@ -280,7 +281,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
         </div>
 
         {/* 列表 */}
-        <div className="divide-y divide-indigo-50/50">
+        <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {loading ? (
             <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">加载中…</div>
           ) : rows.length === 0 ? (
@@ -290,52 +291,109 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
               const warning = (r.warning_count ?? 0) + (r.illegal_count ?? 0);
               const noDoc = r.has_doc !== true;
               const hasWarning = warning > 0 || noDoc;
+              const publisherLabel = r.publisher_name || r.publisher || '-';
               return (
                 <div
                   key={r.id}
                   onClick={() => setSelected(r)}
-                  className="grid cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30"
+                  className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-12 flex items-center gap-2 md:col-span-3">
-                    <span className={`inline-flex h-2 w-2 rounded-full ${hasWarning ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                    <div>
-                      <div className="font-mono text-[13px] font-medium text-slate-900">{r.version}</div>
-                      <div className="text-[11px] text-slate-400">{r.repository_name || '-'}</div>
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3.5 md:grid">
+                    <div className="col-span-12 flex items-center gap-2 md:col-span-3">
+                      <span className={`inline-flex h-2 w-2 rounded-full ${hasWarning ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                      <div>
+                        <div className="font-mono text-[13px] font-medium text-slate-900">{r.version}</div>
+                        <div className="text-[11px] text-slate-400">{r.repository_name || '-'}</div>
+                      </div>
+                    </div>
+                    <div className="col-span-6 text-[13px] text-slate-700 md:col-span-2">{r.project_name || '-'}</div>
+                    <div className="col-span-3 md:col-span-1">
+                      <ReleaseTypeBadge type={r.release_type} />
+                    </div>
+                    <div className="col-span-3 text-center font-mono text-[13px] text-slate-700 md:col-span-1">
+                      {r.commit_total ?? 0}
+                    </div>
+                    <div className="col-span-3 text-center md:col-span-1">
+                      {hasWarning ? (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                          {noDoc ? '无文档' : `${warning} 警告`}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正常</span>
+                      )}
+                    </div>
+                    <div className="col-span-6 md:col-span-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                        {r.status_display || r.status}
+                      </span>
+                    </div>
+                    <div className="col-span-6 flex items-center justify-end gap-1.5 md:col-span-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelected(r);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                      >
+                        <FileText className="h-3 w-3" strokeWidth={1.5} />
+                        查看文档
+                      </button>
+                      <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
                     </div>
                   </div>
-                  <div className="col-span-6 text-[13px] text-slate-700 md:col-span-2">{r.project_name || '-'}</div>
-                  <div className="col-span-3 md:col-span-1">
-                    <ReleaseTypeBadge type={r.release_type} />
-                  </div>
-                  <div className="col-span-3 text-center font-mono text-[13px] text-slate-700 md:col-span-1">
-                    {r.commit_total ?? 0}
-                  </div>
-                  <div className="col-span-3 text-center md:col-span-1">
-                    {hasWarning ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
-                        {noDoc ? '无文档' : `${warning} 警告`}
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between gap-2">
+                      {hasWarning ? (
+                        <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                          {noDoc ? '无文档' : `${warning} 警告`}
+                        </span>
+                      ) : (
+                        <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">正常</span>
+                      )}
+                      <ReleaseTypeBadge type={r.release_type} soft />
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      <span className="font-mono text-[16px] font-semibold tracking-tight text-slate-900">
+                        {r.version}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正常</span>
-                    )}
-                  </div>
-                  <div className="col-span-6 md:col-span-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
-                      {r.status_display || r.status}
-                    </span>
-                  </div>
-                  <div className="col-span-6 flex items-center justify-end gap-1.5 md:col-span-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelected(r);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-md border border-indigo-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                    >
-                      <FileText className="h-3 w-3" strokeWidth={1.5} />
-                      查看文档
-                    </button>
-                    <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                      <span className="min-w-0 truncate text-[12px] text-slate-400">{r.project_name || '-'}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="min-w-0 truncate font-mono">{r.branch || '-'}</span>
+                      <span className="shrink-0 text-slate-200">|</span>
+                      <GitCommitHorizontal className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="shrink-0">{r.commit_total ?? 0} 个提交</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white"
+                          style={{ background: getAvatarColor(publisherLabel) }}
+                        >
+                          {publisherLabel.charAt(0)}
+                        </span>
+                        <span className="truncate text-[12px] text-slate-500">
+                          {publisherLabel} · {dayjs(r.created_at).format('MM-DD')}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelected(r);
+                          }}
+                          className="inline-flex min-h-[36px] items-center gap-1 rounded-md border border-indigo-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                        >
+                          <FileText className="h-3 w-3" strokeWidth={1.5} />
+                          查看文档
+                        </button>
+                        <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -465,7 +523,7 @@ function ReleaseReviewDetail({
   return (
     <div className="space-y-5">
       {/* 面包屑 */}
-      <div className="flex items-center gap-2 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2 text-[13px]">
         <button
           onClick={onBack}
           className="inline-flex items-center gap-1 text-slate-400 transition-colors hover:text-indigo-600"
@@ -1009,7 +1067,7 @@ function FetchReviewRow({ item, type }: { item: ReviewRangeItem; type: 'commit' 
       <div className="flex items-start gap-3">
         <span
           className={[
-            'mt-1 inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium',
+            'mt-1 inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs',
             warning
               ? 'border-amber-200 bg-amber-50 text-amber-600'
               : 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -1120,8 +1178,8 @@ function Select({
   );
 }
 
-/** 发布类型徽标 */
-function ReleaseTypeBadge({ type }: { type: ReleaseType }) {
+/** 发布类型徽标（soft 用于移动端软底色，去掉边框） */
+function ReleaseTypeBadge({ type, soft }: { type: ReleaseType; soft?: boolean }) {
   const map: Record<ReleaseType, string> = {
     formal: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     beta: 'border-amber-200 bg-amber-50 text-amber-700',
@@ -1129,7 +1187,7 @@ function ReleaseTypeBadge({ type }: { type: ReleaseType }) {
   };
   const labels: Record<ReleaseType, string> = { formal: '正式', beta: '测试', rc: 'RC' };
   return (
-    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${map[type]}`}>
+    <span className={`inline-flex items-center rounded-md ${soft ? '' : 'border'} px-1.5 py-0.5 text-[11px] font-medium ${map[type]}`}>
       {labels[type]}
     </span>
   );

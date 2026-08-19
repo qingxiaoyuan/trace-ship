@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { App, Modal, Form, Select } from 'antd';
-import { Plus, Search, User, Trash2 } from 'lucide-react';
+import { Plus, Search, User, Trash2, CalendarDays } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { accountApi, type AccountUser } from '@/api/account';
@@ -158,14 +158,14 @@ export function MemberTab({ projectId }: MemberTabProps) {
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="搜索成员 / 用户名 / 部门"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full sm:w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
           <div className="ml-auto text-[12px] text-slate-400">共 {filteredMembers.length} 位成员</div>
@@ -180,7 +180,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
           <div className="col-span-1 text-right">操作</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
+        <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3 max-h-[calc(100vh-340px)] overflow-y-auto max-md:max-h-none">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : filteredMembers.length === 0 ? (
@@ -195,44 +195,98 @@ export function MemberTab({ projectId }: MemberTabProps) {
               return (
                 <div
                   key={member.id}
-                  className="grid grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30"
+                  className="transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-3 flex items-center gap-2">
-                    <div
-                      className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                      style={{ background: getAvatarColor(name) }}
-                    >
-                      {initial}
-                    </div>
-                    <span className="text-[13px] font-medium text-slate-900">{name}</span>
-                  </div>
-                  <div className="col-span-2 text-[12px] text-slate-600">{member.user.username}</div>
-                  <div className="col-span-2 text-[12px] text-slate-600">{member.user.department || '-'}</div>
-                  <div className="col-span-2">
-                    <Select
-                      value={member.role}
-                      options={roleOptions}
-                      disabled={!canManage}
-                      onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
-                      loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
-                      style={{ width: 140 }}
-                    />
-                  </div>
-                  <div className="col-span-2 text-[12px] text-slate-600">
-                    {dayjs(member.created_at).format('YYYY-MM-DD HH:mm')}
-                  </div>
-                  <div className="col-span-1 flex justify-end">
-                    {canManage && (
-                      <button
-                        type="button"
-                        disabled={removeMutation.isPending && removeMutation.variables === member.id}
-                        onClick={() => handleRemove(member)}
-                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40"
-                        title="移除"
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
+                    <div className="col-span-3 flex items-center gap-2">
+                      <div
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                        style={{ background: getAvatarColor(name) }}
                       >
-                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      </button>
-                    )}
+                        {initial}
+                      </div>
+                      <span className="text-[13px] font-medium text-slate-900">{name}</span>
+                    </div>
+                    <div className="col-span-2 text-[12px] text-slate-600">{member.user.username}</div>
+                    <div className="col-span-2 text-[12px] text-slate-600">{member.user.department || '-'}</div>
+                    <div className="col-span-2">
+                      <Select
+                        value={member.role}
+                        options={roleOptions}
+                        disabled={!canManage}
+                        onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
+                        loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
+                        style={{ width: 140 }}
+                      />
+                    </div>
+                    <div className="col-span-2 text-[12px] text-slate-600">
+                      {dayjs(member.created_at).format('YYYY-MM-DD HH:mm')}
+                    </div>
+                    <div className="col-span-1 flex justify-end">
+                      {canManage && (
+                        <button
+                          type="button"
+                          disabled={removeMutation.isPending && removeMutation.variables === member.id}
+                          onClick={() => handleRemove(member)}
+                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40"
+                          title="移除"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">
+                        {roleMap[member.role]}
+                      </span>
+                      {member.user.department ? (
+                        <span className="truncate rounded-md bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+                          {member.user.department}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-2.5 flex items-center gap-2.5">
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[12px] font-semibold text-white"
+                        style={{ background: getAvatarColor(name) }}
+                      >
+                        {initial}
+                      </div>
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{name}</span>
+                        <span className="truncate font-mono text-[12px] text-slate-400">{member.user.username}</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <CalendarDays className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span>{dayjs(member.created_at).format('YYYY-MM-DD')} 加入</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
+                      <Select
+                        value={member.role}
+                        options={roleOptions}
+                        disabled={!canManage}
+                        onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
+                        loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
+                        style={{ width: 132, height: 36 }}
+                      />
+                      {canManage && (
+                        <button
+                          type="button"
+                          disabled={removeMutation.isPending && removeMutation.variables === member.id}
+                          onClick={() => handleRemove(member)}
+                          className="rounded-md p-3 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-40"
+                          title="移除"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

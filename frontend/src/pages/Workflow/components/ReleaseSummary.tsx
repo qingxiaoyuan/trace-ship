@@ -40,7 +40,7 @@ export function ReleaseSummary({ source, instance }: ReleaseSummaryProps) {
             <span className="text-[12px] text-slate-500">发布类型</span>
             {source.releaseType ? (
               <span
-                className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${releaseTypeBadge[source.releaseType as ReleaseType]}`}
+                className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${releaseTypeBadge[source.releaseType as ReleaseType]}`}
               >
                 {releaseTypeText[source.releaseType as ReleaseType]}
               </span>

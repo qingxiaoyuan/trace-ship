@@ -517,7 +517,7 @@ export default function PackageTaskPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
               <button
                 className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${activeTab === 'running' ? 'on' : ''}`}
@@ -611,14 +611,14 @@ export default function PackageTaskPage() {
             <span className="font-medium text-slate-800">{selectedConfig.name}</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo">
                 <PackageIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
               </div>
               <div>
                 <div className="text-[15px] font-semibold tracking-tight text-slate-900">{selectedConfig.name}</div>
-                <div className="font-mono text-[10px] text-slate-400">{selectedConfig.repository_name || '-'} · {selectedConfig.project_name || '-'}</div>
+                <div className="font-mono text-[10px] text-slate-400 max-md:text-xs">{selectedConfig.repository_name || '-'} · {selectedConfig.project_name || '-'}</div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">

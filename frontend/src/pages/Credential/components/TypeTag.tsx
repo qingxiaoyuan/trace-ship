@@ -10,7 +10,7 @@ export function TypeTag({ type }: TypeTagProps) {
   return (
     <span
       className={[
-        'rounded border px-1.5 py-0.5 text-[10px] font-medium font-mono',
+        'rounded border px-1.5 py-0.5 text-[10px] font-medium font-mono max-md:text-xs',
         colors.border,
         colors.bg,
         colors.text,

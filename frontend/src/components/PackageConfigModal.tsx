@@ -60,7 +60,7 @@ const EXECUTOR_OPTIONS = [
 function ExecutorSegment({ value, onChange, disabled }: ExecutorSegmentProps) {
   return (
     <div
-      className={`grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5 ${
+      className={`grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5 max-md:grid-cols-1 ${
         disabled ? 'pointer-events-none opacity-60' : ''
       }`}
     >
@@ -357,7 +357,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         </div>
       }
       footer={
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             {svnPushEnabled && (
               <SvnTestButton
@@ -407,7 +407,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         <SectionLabel>基本信息</SectionLabel>
 
         <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
             <Form.Item
               name="name"
               label={<FieldLabel text="配置名称" required />}
@@ -444,7 +444,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             <ExecutorSegment disabled={readOnly} />
           </Form.Item>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
             <Form.Item
               name="repository"
               label={<FieldLabel text="关联仓库" required />}
@@ -496,7 +496,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
             <Form.Item
               name="build_path"
               label={<FieldLabel text="构建目录" />}
@@ -545,7 +545,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         <SectionLabel>高级选项</SectionLabel>
 
         {isRemote && (
-          <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3">
+          <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 max-md:grid-cols-1">
             <Form.Item
               name="cpu_cores"
               label={<FieldLabel text="CPU 核数" />}
@@ -581,7 +581,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
           <ToggleCard title="发布后自动打包" desc="推 tag 成功后自动触发" name="auto_package_on_release" />
           <ToggleCard
             title="构建后自动收集产物"
@@ -631,7 +631,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
           </div>
           {svnPushEnabled && (
             <div className="space-y-2 border-t border-slate-100 bg-slate-50/60 px-3.5 py-3.5">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
                 <Form.Item
                   name="svn_url"
                   label={<FieldLabel text="SVN 仓库地址" required />}
@@ -656,7 +656,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                   />
                 </Form.Item>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
                 <Form.Item name="svn_path_template" label={<FieldLabel text="目录模板" />} className="mb-0">
                   <Input placeholder="{version}" className={`${inputCls} font-mono text-[12px]`} />
                 </Form.Item>

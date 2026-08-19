@@ -305,6 +305,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - 认证状态优先使用 `useAuthStore`，不要绕过 token 刷新机制直接创建新的 Axios 实例。
 - 页面内状态和表单尽量局部化；跨页面状态再放入 Zustand。
 - UI 要偏管理后台：信息密度适中、可扫描、少装饰，避免营销页式 hero 和大面积装饰渐变。
+- 移动端适配约定（见 `docs/adr/0014-frontend-mobile-adaptation.md`）：沿用 Tailwind 断点（sm/md/lg），适配一律追加 `max-md:`/`sm:`/`md:` 前缀类、不动桌面样式；<lg 时操作区在底部操作栏 `MobileTabBar`（左胶囊=菜单+当前页、中央=新建发布、右胶囊=消息+个人空间，顶栏只留标题），菜单数据与渲染统一来自 `navMenu.ts`/`SidebarNav.tsx`，勿另建菜单源；Modal 与 Drawer 在 ≤768px 由 `index.css` 全局媒体查询自动贴底弹出，页面代码不要写弹窗定位覆盖；新页面需自检 375px 下搜索框不溢出、表格有横滚兜底、可点按钮触控目标 ≥36px、内容区底部留出操作栏空间；PC 端 grid 列表行在 <md 下应卡片化（`max-md:flex-col` + 圆角边框白底），只保留名称/状态徽标/一行 meta/主操作，次要字段加 `max-md:hidden`，参考 `ui-design/mobile-release.html`。
 
 ## 环境与默认值
 

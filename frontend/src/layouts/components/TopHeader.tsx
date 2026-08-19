@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tokens } from "@/styles/theme";
 import { useAuthStore } from "@/stores/authStore";
 import { notificationApi } from "@/api/notification";
+import { getRoleLabel } from "@/utils/role";
+import { useCurrentRouteTitle } from "./useCurrentRouteTitle";
 
 const typeMap: Record<string, string> = {
   audit: "审批",
@@ -94,19 +96,11 @@ export function TopHeader() {
 
   const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || "U";
 
+  const currentTitle = useCurrentRouteTitle();
+
   const displayName = user?.nickname || user?.username || "未登录";
 
-  const roleMap: Record<string, string> = {
-    super_admin: "超级管理员",
-    developer: "开发人员",
-    tester: "测试人员",
-    auditor: "审核人",
-    viewer: "只读人员",
-  };
-
-  const roleLabel = user?.is_superuser
-    ? "超级管理员"
-    : roleMap[user?.roles?.[0] || ""] || user?.roles?.[0] || "用户";
+  const roleLabel = getRoleLabel(user);
 
   return (
     <header
@@ -115,6 +109,12 @@ export function TopHeader() {
         height: tokens.layout.headerHeight,
       }}
     >
+      {/* 移动端顶部只保留面包屑/标题，操作入口在底部操作栏（MobileTabBar） */}
+      <div className="flex items-center gap-2.5 md:hidden">
+        <img src="/favicon.ico" alt="溯舟" className="h-7 w-7 rounded-lg object-contain" />
+        <span className="text-[14px] font-medium text-slate-800">{currentTitle}</span>
+      </div>
+
       <div className="hidden items-center gap-1.5 text-[13px] md:flex">
         {breadcrumbItems.map((item, index) => (
           <div
@@ -160,7 +160,7 @@ export function TopHeader() {
         </button>
       </div>
 
-      <div className="ml-auto flex items-center gap-2 md:ml-0">
+      <div className="ml-auto hidden items-center gap-2 lg:ml-0 lg:flex">
         <button
           type="button"
           onClick={() => navigate("/releases/create")}
@@ -190,7 +190,7 @@ export function TopHeader() {
           {bellOpen ? (
             <div
               ref={bellPanelRef}
-              className="tech-card absolute right-0 top-full mt-2 w-[320px] rounded-xl py-2 shadow-lg"
+              className="tech-card absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] max-w-[320px] rounded-xl py-2 shadow-lg"
               style={{ boxShadow: "0 12px 40px -10px rgba(79,70,229,.15)" }}
             >
               <div className="flex items-center justify-between border-b border-indigo-50 px-4 pb-2">

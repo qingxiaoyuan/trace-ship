@@ -77,7 +77,7 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
       onFinish={(values) => mutation.mutate(values)}
       className="max-w-3xl"
     >
-      <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
         <Form.Item name="prefix" label="版本前缀">
           <Input placeholder="VA" />
         </Form.Item>

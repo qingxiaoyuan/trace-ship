@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ArrowLeft,
   Check,
+  Globe,
 } from 'lucide-react';
 import { systemApi } from '@/api/system';
 import type { SystemLog } from '@/api/system';
@@ -260,14 +261,14 @@ export default function SystemLogList() {
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               type="text"
               value={filters.keyword}
               onChange={(e) => { setFilters({ ...filters, keyword: e.target.value }); setPage(1); }}
               placeholder="搜索操作描述"
-              className="w-[200px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 sm:w-[200px]"
             />
           </div>
 
@@ -363,7 +364,7 @@ export default function SystemLogList() {
           <div className="col-span-1 text-right">操作</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto max-md:max-h-none max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : logs.length === 0 ? (
@@ -378,35 +379,80 @@ export default function SystemLogList() {
                 <div
                   key={log.id}
                   onClick={() => openDetail(log)}
-                  className="grid grid-cols-12 cursor-pointer items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/20"
+                  className="cursor-pointer transition-colors hover:bg-indigo-50/20 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div className="col-span-6 font-mono text-[12px] text-slate-600 md:col-span-2">{formatShortDateTime(log.created_at)}</div>
-                  <div className="col-span-6 flex items-center gap-1.5 md:col-span-1">
-                    <div
-                      className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
-                      style={{ background: getAvatarColor(userName) }}
-                    >
-                      {userInitial}
+                  {/* 桌面端网格行 */}
+                  <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
+                    <div className="col-span-6 font-mono text-[12px] text-slate-600 md:col-span-2">{formatShortDateTime(log.created_at)}</div>
+                    <div className="col-span-6 flex items-center gap-1.5 md:col-span-1">
+                      <div
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                        style={{ background: getAvatarColor(userName) }}
+                      >
+                        {userInitial}
+                      </div>
+                      <span className="truncate text-[12px] text-slate-700">{userName}</span>
                     </div>
-                    <span className="truncate text-[12px] text-slate-700">{userName}</span>
+                    <div className="col-span-6 md:col-span-1">
+                      <span className={`inline-flex items-center rounded-md border px-1 py-0.5 text-[10px] font-medium ${getModuleBadgeClass(log.module)}`}>
+                        {log.module}
+                      </span>
+                    </div>
+                    <div className="col-span-12 text-[12px] text-slate-700 md:col-span-2">{getActionText(log.action)}</div>
+                    <div className="col-span-6 truncate font-mono text-[11px] text-slate-500 md:col-span-2">{resource || '-'}</div>
+                    <div className="col-span-6 md:col-span-1">
+                      {log.result === 'success' ? (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700">成功</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1 py-0.5 text-[10px] font-medium text-rose-600">失败</span>
+                      )}
+                    </div>
+                    <div className="col-span-6 truncate font-mono text-[11px] text-slate-500 md:col-span-2">{log.ip || '-'}</div>
+                    <div className="col-span-6 flex items-center justify-end md:col-span-1">
+                      <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+                    </div>
                   </div>
-                  <div className="col-span-6 md:col-span-1">
-                    <span className={`inline-flex items-center rounded-md border px-1 py-0.5 text-[10px] font-medium ${getModuleBadgeClass(log.module)}`}>
-                      {log.module}
-                    </span>
-                  </div>
-                  <div className="col-span-12 text-[12px] text-slate-700 md:col-span-2">{getActionText(log.action)}</div>
-                  <div className="col-span-6 truncate font-mono text-[11px] text-slate-500 md:col-span-2">{resource || '-'}</div>
-                  <div className="col-span-6 md:col-span-1">
-                    {log.result === 'success' ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700">成功</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1 py-0.5 text-[10px] font-medium text-rose-600">失败</span>
-                    )}
-                  </div>
-                  <div className="col-span-6 truncate font-mono text-[11px] text-slate-500 md:col-span-2">{log.ip || '-'}</div>
-                  <div className="col-span-6 flex items-center justify-end md:col-span-1">
-                    <ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} />
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between">
+                      {log.result === 'success' ? (
+                        <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">成功</span>
+                      ) : (
+                        <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">失败</span>
+                      )}
+                      <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${getModuleBadgeClass(log.module)}`}>
+                        {log.module}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      <span className="shrink-0 text-[15px] font-semibold tracking-tight text-slate-900">{getActionText(log.action)}</span>
+                      <span className="min-w-0 truncate font-mono text-[12px] text-slate-400">{resource || '-'}</span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <Globe className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="shrink-0 font-mono">{log.ip || '-'}</span>
+                      {log.description ? (
+                        <>
+                          <span className="shrink-0 text-slate-200">|</span>
+                          <span className="min-w-0 truncate">{log.description}</span>
+                        </>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white"
+                          style={{ background: getAvatarColor(userName) }}
+                        >
+                          {userInitial}
+                        </span>
+                        <span className="truncate text-[12px] text-slate-500">
+                          {userName} · {formatShortDateTime(log.created_at)}
+                        </span>
+                      </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" strokeWidth={1.5} />
+                    </div>
                   </div>
                 </div>
               );
@@ -423,7 +469,7 @@ export default function SystemLogList() {
               type="button"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
@@ -435,7 +481,7 @@ export default function SystemLogList() {
                   type="button"
                   onClick={() => setPage(p)}
                   className={[
-                    'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors',
+                    'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors max-md:h-9 max-md:w-9',
                     p === page
                       ? 'bg-indigo-500 text-white'
                       : 'border border-indigo-100 text-slate-600 hover:bg-indigo-50',
@@ -449,7 +495,7 @@ export default function SystemLogList() {
               type="button"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>

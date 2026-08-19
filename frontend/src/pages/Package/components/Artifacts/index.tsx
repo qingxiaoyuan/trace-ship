@@ -100,7 +100,7 @@ export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { art
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium text-slate-900 truncate">{artifact.name}</div>
-        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 max-md:text-xs">
           <span className="font-mono">{formatSize(artifact.size)}</span>
           <span className="h-1 w-1 rounded-full bg-slate-300" />
           <span className="font-mono truncate">{artifact.path}</span>
@@ -136,7 +136,7 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
 
   return (
     <button
-      className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600 shrink-0 disabled:opacity-50"
+      className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600 shrink-0 disabled:opacity-50 max-md:inline-flex max-md:h-9 max-md:w-9 max-md:items-center max-md:justify-center"
       onClick={handleDownload}
       disabled={downloading}
     >
@@ -167,19 +167,19 @@ export const ArtifactPanel = memo(function ArtifactPanel({
 }) {
   const list = artifacts || [];
   return (
-    <div className="divide-y divide-indigo-50/50 flex-1 overflow-y-auto scrollbar-thin" style={{ maxHeight: 560 }}>
+    <div className="divide-y divide-indigo-50/50 flex-1 overflow-y-auto scrollbar-thin max-md:divide-y-0 max-md:space-y-3 max-md:p-3" style={{ maxHeight: 560 }}>
       {list.length === 0 ? (
         <div className="px-4 py-12 text-center text-[13px] text-slate-400">暂无产物</div>
       ) : (
         list.map((a) => (
-          <div key={a.id} className="px-4 py-3 hover:bg-indigo-50/30">
+          <div key={a.id} className="px-4 py-3 hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-emerald shrink-0">
                 <FileArchive className="h-4 w-4" strokeWidth={1.5} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-slate-900 truncate">{a.name}</div>
-                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 max-md:text-xs">
                   <span className="font-mono">{formatSize(a.size)}</span>
                   <span className="h-1 w-1 rounded-full bg-slate-300" />
                   <span className="font-mono truncate">{a.path}</span>

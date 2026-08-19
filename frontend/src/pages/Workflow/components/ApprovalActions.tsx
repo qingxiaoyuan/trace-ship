@@ -50,7 +50,7 @@ function ApprovalHistory({ tasks }: { tasks: WorkflowTask[] }) {
                 <div className="mt-1 text-[12px] text-slate-600">{item.comment}</div>
               ) : null}
               {item.action_time ? (
-                <div className="mt-1.5 text-[10px] text-slate-400">
+                <div className="mt-1.5 text-[10px] text-slate-400 max-md:text-xs">
                   {dayjs(item.action_time).format('MM-DD HH:mm')}
                 </div>
               ) : null}
@@ -137,12 +137,12 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
             rows={3}
             className="w-full resize-none rounded-lg border border-indigo-100 bg-white px-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-2 max-md:flex-wrap">
             {transferMode ? (
               <>
                 <Select
                   placeholder="选择转交人"
-                  style={{ width: 180 }}
+                  className="w-full sm:w-[180px]"
                   value={toUserId || undefined}
                   onChange={setToUserId}
                   options={(usersData?.results || []).map((u: AccountUser) => ({

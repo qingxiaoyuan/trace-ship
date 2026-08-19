@@ -130,7 +130,7 @@ function TimelineNode({
                   : '自动执行'}
             </div>
           </div>
-          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${badge.cls}`}>
+          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${badge.cls}`}>
             {badge.text}
           </span>
         </div>

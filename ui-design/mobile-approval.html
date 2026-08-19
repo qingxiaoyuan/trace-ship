@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · 移动端 审批中心</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.phone{ width:375px; height:812px; border-radius:44px; border:1px solid #E2E8F0; box-shadow:0 24px 70px -20px rgba(30,27,75,.25),0 0 0 10px #0F172A,0 0 0 11px #334155; overflow:hidden; position:relative; background:#F6F7FB; }
+.phone-screen{ position:absolute; inset:0; overflow-y:auto; scrollbar-width:none; }
+.phone-screen::-webkit-scrollbar{ display:none; }
+.tech-card{ background:rgba(255,255,255,.9); backdrop-filter:blur(12px); border:1px solid rgba(99,102,241,.12); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:40px 40px; }
+.icon-indigo{ background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-amber{ background:#FFFBEB; color:#B45309; border:1px solid #FDE68A; }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 8px 20px -6px rgba(99,102,241,.6); }
+.header-glass{ background:rgba(255,255,255,.75); backdrop-filter:blur(16px) saturate(160%); }
+.seg{ background:rgba(255,255,255,.7); border:1px solid rgba(99,102,241,.14); }
+.seg-btn{ color:#64748B; }
+.seg-btn.on{ background:#fff; color:#4F46E5; box-shadow:0 1px 2px rgba(79,70,229,.12),0 1px 1px rgba(0,0,0,.04); }
+@keyframes rise{ from{ transform:translateY(24px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+.rise{ animation:rise .5s ease-out both; }
+.rise-1{ animation-delay:.05s; } .rise-2{ animation-delay:.12s; }
+@keyframes sheet-up{ from{ transform:translateY(100%); } to{ transform:translateY(0); } }
+.sheet-up{ animation:sheet-up .3s ease-out both; }
+@keyframes fade-in{ from{ opacity:0; } to{ opacity:1; } }
+.fade-in{ animation:fade-in .25s ease-out both; }
+.choice-on{ border-color:rgba(79,70,229,.45); background:#EEF2FF; color:#4F46E5; }
+</style>
+</head>
+<body class="min-h-screen bg-slate-100 py-10 px-6" style="background-image:radial-gradient(rgba(99,102,241,.08) 1px,transparent 1px);background-size:24px 24px;">
+
+<div class="mx-auto max-w-5xl">
+  <div class="mb-8">
+    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-500">Trace Ship · Mobile</div>
+    <h1 class="mt-1 text-[26px] font-semibold tracking-tight text-slate-900">审批中心与底部操作弹窗</h1>
+    <p class="mt-1 text-[13px] text-slate-500">审批操作弹窗在手机端从底部弹出，触控目标 ≥36px</p>
+  </div>
+
+  <div class="flex flex-wrap items-start justify-center gap-10">
+
+    <!-- ================= 屏 1：审批列表（底部操作栏） ================= -->
+    <div class="flex flex-col items-center gap-3">
+      <div class="phone">
+        <div class="phone-screen grid-bg">
+          <div class="header-glass sticky top-0 z-20 flex h-[56px] items-center gap-2.5 border-b border-indigo-100/40 px-4">
+            <div class="flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-semibold text-white" style="background:linear-gradient(135deg,#6366F1,#22D3EE)">TS</div>
+            <div class="text-[14px] font-medium text-slate-800">审批中心</div>
+            <span class="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600">2 待处理</span>
+          </div>
+
+          <div class="space-y-3 px-4 py-4 pb-32">
+            <div class="seg rise flex rounded-lg p-1 text-[12px] font-medium">
+              <button class="seg-btn on flex-1 rounded-md py-1.5">待我处理 2</button>
+              <button class="seg-btn flex-1 rounded-md py-1.5">我发起的</button>
+              <button class="seg-btn flex-1 rounded-md py-1.5">已完成</button>
+            </div>
+
+            <!-- 待审批卡片 -->
+            <div class="tech-card rise rise-1 rounded-xl p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="icon-amber flex h-8 w-8 items-center justify-center rounded-lg"><i data-lucide="rocket" class="h-4 w-4"></i></div>
+                  <span class="text-[13px] font-medium text-slate-800">发布审批</span>
+                </div>
+                <span class="flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600"><i data-lucide="alarm-clock" class="h-3 w-3"></i>紧急</span>
+              </div>
+              <div class="mt-2.5 flex items-baseline gap-2">
+                <span class="font-mono text-[16px] font-semibold tracking-tight text-slate-900">交易网关 v2.4.0</span>
+              </div>
+              <div class="mt-1 text-[12px] leading-relaxed text-slate-500">23 个提交 · 4 个 MR · 涉及订单/对账两个子模块，请关注回滚预案。</div>
+              <div class="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                <span class="text-[11px] text-slate-400">陈舟 提交 · 当前节点：测试负责人（或签）</span>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-2.5">
+                <button class="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-600 hover:bg-slate-50">
+                  <i data-lucide="eye" class="h-4 w-4"></i>查看详情
+                </button>
+                <button class="btn-glow flex h-10 items-center justify-center gap-1.5 rounded-xl text-[13px] font-medium text-white">
+                  <i data-lucide="pen-line" class="h-4 w-4"></i>立即审批
+                </button>
+              </div>
+            </div>
+
+            <div class="tech-card rise rise-2 rounded-xl p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="icon-indigo flex h-8 w-8 items-center justify-center rounded-lg"><i data-lucide="hammer" class="h-4 w-4"></i></div>
+                  <span class="text-[13px] font-medium text-slate-800">发布审批</span>
+                </div>
+                <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">常规</span>
+              </div>
+              <div class="mt-2.5 flex items-baseline gap-2">
+                <span class="font-mono text-[16px] font-semibold tracking-tight text-slate-900">报表服务 v1.6.3</span>
+              </div>
+              <div class="mt-1 text-[12px] leading-relaxed text-slate-500">修复导出 Excel 中文乱码，含 2 个提交。</div>
+              <div class="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                <span class="text-[11px] text-slate-400">周琪 提交 · 当前节点：发布管理员</span>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-2.5">
+                <button class="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-[13px] font-medium text-slate-600 hover:bg-slate-50">
+                  <i data-lucide="eye" class="h-4 w-4"></i>查看详情
+                </button>
+                <button class="btn-glow flex h-10 items-center justify-center gap-1.5 rounded-xl text-[13px] font-medium text-white">
+                  <i data-lucide="pen-line" class="h-4 w-4"></i>立即审批
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部操作栏：双胶囊 + 中央 +（同高对齐） -->
+          <div class="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between px-4 pb-5">
+            <div class="header-glass flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5">
+              <button class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-indigo-50 hover:text-indigo-600" aria-label="菜单">
+                <i data-lucide="layout-grid" class="h-5 w-5"></i>
+              </button>
+              <div class="mx-1 flex h-10 max-w-[88px] flex-col justify-center rounded-xl bg-indigo-50/70 px-2.5">
+                <span class="text-[8px] font-medium uppercase tracking-wider text-indigo-400">当前</span>
+                <span class="truncate text-[11px] font-semibold leading-tight text-indigo-700">审批中心</span>
+              </div>
+            </div>
+            <button class="btn-glow flex shrink-0 items-center justify-center rounded-2xl text-white" style="width:52px;height:52px" aria-label="新建发布">
+              <i data-lucide="plus" class="h-6 w-6"></i>
+            </button>
+            <div class="header-glass flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5">
+              <button class="relative flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-indigo-50 hover:text-indigo-600" aria-label="消息">
+                <i data-lucide="bell" class="h-5 w-5"></i>
+                <span class="absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-semibold text-white ring-2 ring-white">3</span>
+              </button>
+              <button class="ml-1 flex h-10 items-center gap-1.5 rounded-xl px-2 hover:bg-indigo-50" aria-label="个人中心">
+                <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold text-white" style="background:linear-gradient(135deg,#818CF8,#22D3EE)">陈</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="text-[12px] text-slate-400">审批中心 · 底部操作栏</div>
+    </div>
+
+    <!-- ================= 屏 2：审批操作底部弹窗 ================= -->
+    <div class="flex flex-col items-center gap-3">
+      <div class="phone">
+        <div class="phone-screen grid-bg">
+          <div class="header-glass sticky top-0 z-20 flex h-[56px] items-center gap-2.5 border-b border-indigo-100/40 px-4">
+            <div class="flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-semibold text-white" style="background:linear-gradient(135deg,#6366F1,#22D3EE)">TS</div>
+            <div class="text-[14px] font-medium text-slate-800">审批中心</div>
+          </div>
+          <div class="space-y-3 px-4 py-4 opacity-40">
+            <div class="tech-card rounded-xl p-4"><div class="h-4 w-28 rounded bg-slate-200"></div><div class="mt-2 h-6 w-40 rounded bg-slate-200"></div><div class="mt-3 h-3 w-full rounded bg-slate-100"></div></div>
+            <div class="tech-card rounded-xl p-4"><div class="h-4 w-24 rounded bg-slate-200"></div><div class="mt-2 h-6 w-32 rounded bg-slate-200"></div></div>
+          </div>
+
+          <!-- 遮罩 + 底部操作弹窗 -->
+          <div class="fade-in absolute inset-0 z-30 bg-slate-900/45"></div>
+          <div class="sheet-up absolute inset-x-0 bottom-0 z-40 flex max-h-[85%] flex-col rounded-t-2xl bg-white shadow-2xl">
+            <div class="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-slate-200"></div>
+            <div class="shrink-0 border-b border-indigo-50 px-5 pb-3 pt-2">
+              <div class="text-[15px] font-semibold tracking-tight text-slate-900">审批 · 交易网关 v2.4.0</div>
+              <div class="mt-0.5 text-[11px] text-slate-400">当前节点：测试负责人（或签）</div>
+            </div>
+            <div class="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+              <!-- 操作选择（自定义 choice） -->
+              <div>
+                <div class="mb-2 text-[12px] font-medium text-slate-500">审批结论</div>
+                <div class="grid grid-cols-3 gap-2">
+                  <button class="choice-on flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border text-[13px] font-medium">
+                    <i data-lucide="check" class="h-4 w-4"></i>通过
+                  </button>
+                  <button class="flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 text-[13px] font-medium text-slate-500 hover:border-rose-200 hover:text-rose-600">
+                    <i data-lucide="x" class="h-4 w-4"></i>驳回
+                  </button>
+                  <button class="flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 text-[13px] font-medium text-slate-500 hover:border-indigo-200 hover:text-indigo-600">
+                    <i data-lucide="forward" class="h-4 w-4"></i>转交
+                  </button>
+                </div>
+              </div>
+              <!-- 意见 -->
+              <div>
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-[12px] font-medium text-slate-500">审批意见</span>
+                  <span class="text-[11px] text-slate-300">选填</span>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-[13px] text-slate-400 focus-within:border-indigo-300 focus-within:bg-white">
+                  补充审批意见…
+                  <div class="mt-6"></div>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  <button class="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] text-slate-500 hover:border-indigo-200 hover:text-indigo-600">测试通过，同意发布</button>
+                  <button class="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] text-slate-500 hover:border-indigo-200 hover:text-indigo-600">回归用例已覆盖</button>
+                  <button class="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] text-slate-500 hover:border-indigo-200 hover:text-indigo-600">请关注灰度观察</button>
+                </div>
+              </div>
+              <!-- 摘要 -->
+              <div class="rounded-xl bg-indigo-50/50 px-3.5 py-3">
+                <div class="flex items-center justify-between text-[12px]">
+                  <span class="text-slate-500">发布内容</span>
+                  <span class="font-medium text-slate-700">23 提交 · 4 MR</span>
+                </div>
+                <div class="mt-1.5 flex items-center justify-between text-[12px]">
+                  <span class="text-slate-500">自动打包</span>
+                  <span class="font-medium text-emerald-600">2 个配置已就绪</span>
+                </div>
+                <div class="mt-1.5 flex items-center justify-between text-[12px]">
+                  <span class="text-slate-500">提交规范检查</span>
+                  <span class="font-medium text-emerald-600">全部通过</span>
+                </div>
+              </div>
+            </div>
+            <!-- 底部按钮（safe-area 留白） -->
+            <div class="shrink-0 border-t border-indigo-50 px-5 pb-6 pt-3">
+              <button class="btn-glow flex h-11 w-full items-center justify-center gap-1.5 rounded-xl text-[14px] font-medium text-white">
+                <i data-lucide="check" class="h-4 w-4"></i>确认通过
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="text-[12px] text-slate-400">审批操作 · 底部弹出</div>
+    </div>
+
+  </div>
+</div>
+
+<script>lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });</script>
+</body>
+</html>

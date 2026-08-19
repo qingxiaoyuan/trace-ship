@@ -102,7 +102,7 @@ export default function Changelog() {
                   return (
                     <li key={idx} className="flex items-start gap-2.5">
                       <span
-                        className={`mt-0.5 inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${meta.badge}`}
+                        className={`mt-0.5 inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${meta.badge}`}
                       >
                         {meta.label}
                       </span>

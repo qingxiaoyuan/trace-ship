@@ -150,7 +150,7 @@ export function ScriptEditorField({
               title="放大编辑"
               {...keepFocus}
               onClick={() => setExpandOpen(true)}
-              className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+              className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 max-md:inline-flex max-md:h-9 max-md:w-9 max-md:items-center max-md:justify-center"
             >
               <Maximize2 className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
@@ -208,7 +208,7 @@ export function ScriptEditorField({
         {toolbar}
         <div ref={containerRef} className={fullscreen ? 'min-h-0 flex-1' : 'h-[280px]'}>{editor}</div>
         {hint && (
-          <div className="flex items-center gap-2 border-t border-slate-100 bg-white px-3 py-1.5 text-[10px] text-slate-400">
+          <div className="flex items-center gap-2 border-t border-slate-100 bg-white px-3 py-1.5 text-[10px] text-slate-400 max-md:text-xs">
             <Info className="h-3 w-3 shrink-0" strokeWidth={1.5} />
             {hint}
           </div>

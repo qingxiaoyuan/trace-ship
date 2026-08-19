@@ -172,14 +172,14 @@ export default function ReleaseDetail() {
           <div className="flex items-center gap-2">
             <GitBranch className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
             <span className="text-[12px] text-slate-500">分支</span>
-            <span className="truncate font-mono text-[13px] font-semibold text-slate-900">
+            <span className="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900">
               {release.branch || '-'}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <GitCommitHorizontal className="h-4 w-4 text-violet-500" strokeWidth={1.5} />
             <span className="text-[12px] text-slate-500">Tag</span>
-            <span className="truncate font-mono text-[13px] font-semibold text-slate-900">
+            <span className="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900">
               {release.tag_name || '-'}
             </span>
           </div>
@@ -193,7 +193,7 @@ export default function ReleaseDetail() {
           <div className="flex items-center gap-2">
             <GitMerge className="h-4 w-4 text-cyan-500" strokeWidth={1.5} />
             <span className="text-[12px] text-slate-500">Git Hash</span>
-            <span className="truncate font-mono text-[13px] font-semibold text-slate-900">
+            <span className="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900">
               {release.git_hash ? release.git_hash.slice(0, 12) : '-'}
             </span>
           </div>

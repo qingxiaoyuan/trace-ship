@@ -125,7 +125,7 @@ export function PackageKnowledgeCard() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[13px] font-medium text-slate-800">{item.title}</span>
                   <span
-                    className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                    className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${
                       item.is_active
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
                         : 'border-slate-200 bg-slate-50 text-slate-400'
@@ -137,7 +137,7 @@ export function PackageKnowledgeCard() {
                 <div className="mt-0.5 line-clamp-2 text-[12px] leading-5 text-slate-500">
                   {item.content}
                 </div>
-                <div className="mt-1 text-[10px] text-slate-400">
+                <div className="mt-1 text-[10px] text-slate-400 max-md:text-xs">
                   {item.created_by_name || '-'} · 更新于{' '}
                   {item.updated_at ? item.updated_at.slice(0, 10) : '-'}
                 </div>
@@ -155,7 +155,7 @@ export function PackageKnowledgeCard() {
                   type="button"
                   title="编辑"
                   onClick={() => openEdit(item)}
-                  className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                  className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 max-md:p-2.5"
                 >
                   <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </button>
@@ -163,7 +163,7 @@ export function PackageKnowledgeCard() {
                   type="button"
                   title="删除"
                   onClick={() => handleDelete(item)}
-                  className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                  className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 max-md:p-2.5"
                 >
                   <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </button>

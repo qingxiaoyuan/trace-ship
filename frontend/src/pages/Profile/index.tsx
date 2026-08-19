@@ -259,7 +259,7 @@ export default function Profile() {
                   LDAP DN
                 </span>
                 <span
-                  className="font-mono text-[11px] text-slate-600 truncate max-w-[260px]"
+                  className="font-mono text-[11px] text-slate-600 truncate max-w-[180px] sm:max-w-[260px]"
                   title={accountUser.ldap_dn}
                 >
                   {accountUser.ldap_dn}

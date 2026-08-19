@@ -52,7 +52,7 @@ export const TerminalLog = memo(function TerminalLog({ text, partial, onDownload
   return (
     <div className="terminal overflow-hidden">
       {(partial || onDownloadFull) && (
-        <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5 text-[10px] text-slate-500">
+        <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5 text-[10px] text-slate-500 max-md:text-xs">
           {partial && (
             <span className="inline-flex items-center gap-1">
               <Info className="h-3 w-3" strokeWidth={1.5} />

@@ -180,9 +180,9 @@ export function ReleaseReview({ release }: { release: Release }) {
                 className="rounded-lg border border-slate-200 bg-white px-4 py-3"
               >
                 {/* 意见头 */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className={`h-2 w-2 rounded-full ${st.dot}`} />
-                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${st.cls}`}>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium max-md:text-xs ${st.cls}`}>
                     {issue.status_display || st.text}
                   </span>
                   <span className="text-[12px] font-medium text-slate-700">{issue.author_name || '-'}</span>
@@ -212,7 +212,7 @@ export function ReleaseReview({ release }: { release: Release }) {
                             <span className="text-[11px] font-medium text-slate-600">
                               {r.author_name || '-'}
                             </span>
-                            <span className="text-[10px] text-slate-400">
+                            <span className="text-[10px] text-slate-400 max-md:text-xs">
                               {dayjs(r.created_at).format('MM-DD HH:mm')}
                             </span>
                           </div>

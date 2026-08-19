@@ -63,7 +63,7 @@ export function OverviewTab({ project }: OverviewTabProps) {
         </p>
         <div className="mt-4 border-t border-indigo-100 pt-3">
           <div className="mb-2 text-[11px] font-medium text-indigo-700">版本规则示例</div>
-          <div className="rounded border border-indigo-100 bg-white p-2.5 font-mono text-[11px] text-slate-600">
+          <div className="rounded border border-indigo-100 bg-white p-2.5 font-mono text-[11px] text-slate-600 max-md:break-all">
             {JSON.stringify(project.version_rule || {})}
           </div>
         </div>

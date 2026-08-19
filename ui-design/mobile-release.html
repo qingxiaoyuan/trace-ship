@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>溯舟 · 移动端 发布</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.phone{ width:375px; height:812px; border-radius:44px; border:1px solid #E2E8F0; box-shadow:0 24px 70px -20px rgba(30,27,75,.25),0 0 0 10px #0F172A,0 0 0 11px #334155; overflow:hidden; position:relative; background:#F6F7FB; }
+.phone-screen{ position:absolute; inset:0; overflow-y:auto; scrollbar-width:none; }
+.phone-screen::-webkit-scrollbar{ display:none; }
+.tech-card{ background:rgba(255,255,255,.9); backdrop-filter:blur(12px); border:1px solid rgba(99,102,241,.12); }
+.grid-bg{ background-image:linear-gradient(rgba(79,70,229,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(79,70,229,.04) 1px,transparent 1px); background-size:40px 40px; }
+.icon-indigo{ background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; }
+.icon-emerald{ background:#ECFDF5; color:#047857; border:1px solid #A7F3D0; }
+.btn-glow{ background:linear-gradient(135deg,#6366F1 0%,#4F46E5 100%); box-shadow:0 1px 2px rgba(79,70,229,.3),0 8px 20px -6px rgba(99,102,241,.6); }
+.header-glass{ background:rgba(255,255,255,.75); backdrop-filter:blur(16px) saturate(160%); }
+.seg{ background:rgba(255,255,255,.7); border:1px solid rgba(99,102,241,.14); }
+.seg-btn{ color:#64748B; }
+.seg-btn.on{ background:#fff; color:#4F46E5; box-shadow:0 1px 2px rgba(79,70,229,.12),0 1px 1px rgba(0,0,0,.04); }
+@keyframes rise{ from{ transform:translateY(24px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+.rise{ animation:rise .5s ease-out both; }
+.rise-1{ animation-delay:.05s; } .rise-2{ animation-delay:.12s; } .rise-3{ animation-delay:.2s; }
+</style>
+</head>
+<body class="min-h-screen bg-slate-100 py-10 px-6" style="background-image:radial-gradient(rgba(99,102,241,.08) 1px,transparent 1px);background-size:24px 24px;">
+
+<div class="mx-auto max-w-5xl">
+  <div class="mb-8">
+    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-500">Trace Ship · Mobile</div>
+    <h1 class="mt-1 text-[26px] font-semibold tracking-tight text-slate-900">发布看板与发布详情</h1>
+    <p class="mt-1 text-[13px] text-slate-500">列表页用底部操作栏 · 详情页底部操作栏替换为业务操作（驳回 / 通过并发布）</p>
+  </div>
+
+  <div class="flex flex-wrap items-start justify-center gap-10">
+
+    <!-- ================= 屏 1：发布看板（底部操作栏） ================= -->
+    <div class="flex flex-col items-center gap-3">
+      <div class="phone">
+        <div class="phone-screen grid-bg">
+          <!-- 精简顶栏 -->
+          <div class="header-glass sticky top-0 z-20 flex h-[56px] items-center gap-2.5 border-b border-indigo-100/40 px-4">
+            <div class="flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-semibold text-white" style="background:linear-gradient(135deg,#6366F1,#22D3EE)">TS</div>
+            <div class="text-[14px] font-medium text-slate-800">发布看板</div>
+            <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-600">2 待审批</span>
+          </div>
+
+          <div class="space-y-3 px-4 py-4 pb-32">
+            <!-- 搜索 + 状态切换 -->
+            <div class="rise flex items-center gap-2 rounded-lg border border-indigo-100 bg-white px-3 py-2.5 text-[13px] text-slate-400">
+              <i data-lucide="search" class="h-4 w-4"></i>搜索版本号 / 项目…
+            </div>
+            <div class="seg rise flex rounded-lg p-1 text-[12px] font-medium">
+              <button class="seg-btn on flex-1 rounded-md py-1.5">全部</button>
+              <button class="seg-btn flex-1 rounded-md py-1.5">审批中</button>
+              <button class="seg-btn flex-1 rounded-md py-1.5">已发布</button>
+              <button class="seg-btn flex-1 rounded-md py-1.5">草稿</button>
+            </div>
+
+            <!-- 发布卡片 -->
+            <div class="tech-card rise rise-1 rounded-xl p-4">
+              <div class="flex items-center justify-between">
+                <span class="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">审批中</span>
+                <span class="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">正式发布</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span class="font-mono text-[17px] font-semibold tracking-tight text-slate-900">v2.4.0</span>
+                <span class="text-[12px] text-slate-400">交易网关</span>
+              </div>
+              <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
+                <i data-lucide="git-branch" class="h-3.5 w-3.5"></i><span class="font-mono">release/2.4</span>
+                <span class="text-slate-200">|</span><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5"></i>23 个提交
+              </div>
+              <div class="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                <div class="flex items-center gap-2">
+                  <div class="flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-semibold text-white" style="background:linear-gradient(135deg,#818CF8,#22D3EE)">陈</div>
+                  <span class="text-[12px] text-slate-500">陈舟 · 10 分钟前</span>
+                </div>
+                <button class="flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-[12px] font-medium text-indigo-600">
+                  去审批<i data-lucide="chevron-right" class="h-3.5 w-3.5"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="tech-card rise rise-2 rounded-xl p-4">
+              <div class="flex items-center justify-between">
+                <span class="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">已发布</span>
+                <span class="rounded bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-700">补丁</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span class="font-mono text-[17px] font-semibold tracking-tight text-slate-900">v1.9.2</span>
+                <span class="text-[12px] text-slate-400">用户中心</span>
+              </div>
+              <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
+                <i data-lucide="git-branch" class="h-3.5 w-3.5"></i><span class="font-mono">master</span>
+                <span class="text-slate-200">|</span><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5"></i>5 个提交
+              </div>
+              <div class="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                <div class="flex items-center gap-2">
+                  <div class="flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-semibold text-white" style="background:linear-gradient(135deg,#34D399,#22D3EE)">李</div>
+                  <span class="text-[12px] text-slate-500">李晓 · 2 小时前</span>
+                </div>
+                <div class="flex items-center gap-1.5 text-[11px] text-emerald-600">
+                  <i data-lucide="package-check" class="h-3.5 w-3.5"></i>已自动打包
+                </div>
+              </div>
+            </div>
+
+            <div class="tech-card rise rise-3 rounded-xl p-4">
+              <div class="flex items-center justify-between">
+                <span class="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">草稿</span>
+                <span class="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600">预发布</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span class="font-mono text-[17px] font-semibold tracking-tight text-slate-900">v3.1.0-beta</span>
+                <span class="text-[12px] text-slate-400">风控引擎</span>
+              </div>
+              <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
+                <i data-lucide="git-branch" class="h-3.5 w-3.5"></i><span class="font-mono">develop</span>
+                <span class="text-slate-200">|</span><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5"></i>41 个提交
+              </div>
+              <div class="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                <div class="flex items-center gap-2">
+                  <div class="flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-semibold text-white" style="background:linear-gradient(135deg,#A78BFA,#818CF8)">王</div>
+                  <span class="text-[12px] text-slate-500">王倩 · 昨天</span>
+                </div>
+                <button class="text-[12px] font-medium text-indigo-600">继续编辑</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部操作栏：双胶囊 + 中央 +（同高对齐） -->
+          <div class="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between px-4 pb-5">
+            <div class="header-glass flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5">
+              <button class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-indigo-50 hover:text-indigo-600" aria-label="菜单">
+                <i data-lucide="layout-grid" class="h-5 w-5"></i>
+              </button>
+              <div class="mx-1 flex h-10 max-w-[88px] flex-col justify-center rounded-xl bg-indigo-50/70 px-2.5">
+                <span class="text-[8px] font-medium uppercase tracking-wider text-indigo-400">当前</span>
+                <span class="truncate text-[11px] font-semibold leading-tight text-indigo-700">发布看板</span>
+              </div>
+            </div>
+            <button class="btn-glow flex shrink-0 items-center justify-center rounded-2xl text-white" style="width:52px;height:52px" aria-label="新建发布">
+              <i data-lucide="plus" class="h-6 w-6"></i>
+            </button>
+            <div class="header-glass flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5">
+              <button class="relative flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-indigo-50 hover:text-indigo-600" aria-label="消息">
+                <i data-lucide="bell" class="h-5 w-5"></i>
+                <span class="absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-semibold text-white ring-2 ring-white">3</span>
+              </button>
+              <button class="ml-1 flex h-10 items-center gap-1.5 rounded-xl px-2 hover:bg-indigo-50" aria-label="个人中心">
+                <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold text-white" style="background:linear-gradient(135deg,#818CF8,#22D3EE)">陈</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="text-[12px] text-slate-400">发布看板 · 底部操作栏</div>
+    </div>
+
+    <!-- ================= 屏 2：发布详情（业务操作栏） ================= -->
+    <div class="flex flex-col items-center gap-3">
+      <div class="phone">
+        <div class="phone-screen grid-bg">
+          <div class="header-glass sticky top-0 z-20 flex h-[56px] items-center gap-2 border-b border-indigo-100/40 px-4">
+            <button class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">
+              <i data-lucide="arrow-left" class="h-5 w-5"></i>
+            </button>
+            <div class="min-w-0 text-[14px] font-medium text-slate-800">发布详情</div>
+            <span class="ml-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">审批中</span>
+            <div class="ml-auto"></div>
+            <button class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">
+              <i data-lucide="ellipsis" class="h-4 w-4"></i>
+            </button>
+          </div>
+
+          <div class="space-y-3 px-4 py-4 pb-28">
+            <!-- 版本头 -->
+            <div class="tech-card rise rounded-xl p-4">
+              <div class="flex items-center gap-3">
+                <div class="icon-indigo flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"><i data-lucide="rocket" class="h-5 w-5"></i></div>
+                <div class="min-w-0">
+                  <div class="flex items-baseline gap-2">
+                    <span class="font-mono text-[19px] font-semibold tracking-tight text-slate-900">v2.4.0</span>
+                    <span class="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">正式发布</span>
+                  </div>
+                  <div class="mt-0.5 text-[12px] text-slate-400">交易网关 · 陈舟创建于 10 分钟前</div>
+                </div>
+              </div>
+              <div class="mt-4 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-3">
+                <div>
+                  <div class="text-[11px] text-slate-400">目标分支</div>
+                  <div class="mt-0.5 truncate font-mono text-[12px] font-medium text-slate-700">release/2.4</div>
+                </div>
+                <div>
+                  <div class="text-[11px] text-slate-400">Tag</div>
+                  <div class="mt-0.5 truncate font-mono text-[12px] font-medium text-slate-700">v2.4.0</div>
+                </div>
+                <div>
+                  <div class="text-[11px] text-slate-400">Git Hash</div>
+                  <div class="mt-0.5 truncate font-mono text-[12px] font-medium text-slate-700">a3f9c21e</div>
+                </div>
+                <div>
+                  <div class="text-[11px] text-slate-400">关联提交</div>
+                  <div class="mt-0.5 text-[12px] font-medium text-slate-700">23 commits · 4 MR</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 审批进度 -->
+            <div class="tech-card rise rise-1 rounded-xl p-4">
+              <div class="mb-3 text-[13px] font-medium text-slate-800">审批进度</div>
+              <div class="space-y-0">
+                <div class="flex gap-3">
+                  <div class="flex flex-col items-center">
+                    <div class="icon-emerald flex h-6 w-6 items-center justify-center rounded-full"><i data-lucide="check" class="h-3.5 w-3.5"></i></div>
+                    <div class="w-px flex-1 bg-indigo-100"></div>
+                  </div>
+                  <div class="pb-4">
+                    <div class="text-[13px] font-medium text-slate-800">技术负责人审批</div>
+                    <div class="mt-0.5 text-[11px] text-slate-400">李晓 已通过 · 5 分钟前</div>
+                  </div>
+                </div>
+                <div class="flex gap-3">
+                  <div class="flex flex-col items-center">
+                    <div class="flex h-6 w-6 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-600"><span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span></div>
+                    <div class="w-px flex-1 bg-indigo-100"></div>
+                  </div>
+                  <div class="pb-4">
+                    <div class="flex items-center gap-2 text-[13px] font-medium text-slate-800">测试负责人审批<span class="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">进行中</span></div>
+                    <div class="mt-0.5 text-[11px] text-slate-400">待处理：王倩、赵鹏（或签）</div>
+                  </div>
+                </div>
+                <div class="flex gap-3">
+                  <div class="flex flex-col items-center">
+                    <div class="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-300"><i data-lucide="minus" class="h-3.5 w-3.5"></i></div>
+                  </div>
+                  <div>
+                    <div class="text-[13px] font-medium text-slate-400">发布管理员确认</div>
+                    <div class="mt-0.5 text-[11px] text-slate-300">未开始</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 发布说明摘要 -->
+            <div class="tech-card rise rise-2 rounded-xl p-4">
+              <div class="mb-2 flex items-center justify-between">
+                <div class="text-[13px] font-medium text-slate-800">发布说明</div>
+                <button class="text-[12px] font-medium text-indigo-600">查看全文</button>
+              </div>
+              <div class="space-y-1.5 text-[12px] leading-relaxed text-slate-600">
+                <div class="flex gap-2"><span class="mt-0.5 shrink-0 rounded bg-emerald-50 px-1 py-px text-[10px] font-medium text-emerald-600">新增</span>支持子模块递归拉取与脚本内 push</div>
+                <div class="flex gap-2"><span class="mt-0.5 shrink-0 rounded bg-emerald-50 px-1 py-px text-[10px] font-medium text-emerald-600">新增</span>SVN 产物覆盖式提交模式</div>
+                <div class="flex gap-2"><span class="mt-0.5 shrink-0 rounded bg-sky-50 px-1 py-px text-[10px] font-medium text-sky-600">优化</span>移动端页面适配与弹窗底部弹出</div>
+              </div>
+            </div>
+
+            <!-- 打包状态 -->
+            <div class="tech-card rise rise-3 rounded-xl p-4">
+              <div class="mb-2 text-[13px] font-medium text-slate-800">自动打包</div>
+              <div class="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                <i data-lucide="loader-circle" class="h-4 w-4 shrink-0 animate-spin text-indigo-500"></i>
+                <div class="min-w-0 flex-1">
+                  <div class="text-[12px] font-medium text-slate-700">web-release:v2.4.0</div>
+                  <div class="text-[11px] text-slate-400">构建中 · 已运行 2 分 31 秒</div>
+                </div>
+                <span class="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">running</span>
+              </div>
+              <div class="mt-2 flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                <i data-lucide="package-check" class="h-4 w-4 shrink-0 text-emerald-500"></i>
+                <div class="min-w-0 flex-1">
+                  <div class="text-[12px] font-medium text-slate-700">api-service:v2.4.0</div>
+                  <div class="text-[11px] text-slate-400">SVN 已推送 · r4821</div>
+                </div>
+                <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">success</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部业务操作栏（详情页替换操作栏） -->
+          <div class="header-glass absolute inset-x-0 bottom-0 z-20 border-t border-indigo-100/50 px-4 pb-6 pt-3">
+            <div class="flex items-center gap-2.5">
+              <button class="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white text-[14px] font-medium text-rose-600 hover:bg-rose-50">
+                <i data-lucide="x" class="h-4 w-4"></i>驳回
+              </button>
+              <button class="btn-glow flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-xl text-[14px] font-medium text-white">
+                <i data-lucide="check" class="h-4 w-4"></i>通过并发布
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="text-[12px] text-slate-400">发布详情 · 业务操作栏替代底部栏</div>
+    </div>
+
+  </div>
+</div>
+
+<script>lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });</script>
+</body>
+</html>

@@ -9,6 +9,7 @@ import {
   Save,
   X,
   Check,
+  FileText,
 } from 'lucide-react';
 import { systemApi } from '@/api/system';
 import type { SystemConfig } from '@/api/system';
@@ -173,14 +174,14 @@ export default function SystemConfigPage() {
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
             <input
               type="text"
               value={keyword}
               onChange={(e) => { setKeyword(e.target.value); setPage(1); }}
               placeholder="搜索配置键 / 说明"
-              className="w-[220px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 sm:w-[220px]"
             />
           </div>
           <div className="ml-auto text-[12px] text-slate-400">共 {total} 项</div>
@@ -195,7 +196,7 @@ export default function SystemConfigPage() {
           <div className="col-span-1 text-right">操作</div>
         </div>
 
-        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto">
+        <div className="divide-y divide-indigo-50/50 max-h-[calc(100vh-340px)] overflow-y-auto max-md:max-h-none max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : filtered.length === 0 ? (
@@ -205,49 +206,103 @@ export default function SystemConfigPage() {
               <div
                 key={cfg.id || cfg.key}
                 onClick={() => openEdit(cfg)}
-                className="grid grid-cols-12 cursor-pointer items-center gap-3 px-5 py-3.5 transition-colors hover:bg-indigo-50/30"
+                className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
               >
-                <div className="col-span-12 font-mono text-[12px] font-medium text-indigo-600 md:col-span-3">{cfg.key}</div>
-                <div className="col-span-12 truncate font-mono text-[12px] text-slate-700 md:col-span-3">
-                  {isSensitiveKey(cfg.key) && cfg.value
-                    ? `••••${cfg.value.slice(-4)}`
-                    : cfg.value}
-                </div>
-                <div className="col-span-12 truncate text-[12px] text-slate-500 md:col-span-3">{cfg.description || '-'}</div>
-                <div className="col-span-3 text-center md:col-span-1">
-                  {cfg.is_public ? (
-                    <span className="inline-flex items-center rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700">是</span>
-                  ) : (
-                    <span className="inline-flex items-center rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500">否</span>
-                  )}
-                </div>
-                <div className="col-span-6 text-[11px] text-slate-400 md:col-span-1">{formatDate(cfg.updated_at)}</div>
-                <div className="col-span-3 flex items-center justify-end gap-1 md:col-span-1">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); openEdit(cfg); }}
-                    className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                    title="编辑"
-                  >
-                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  </button>
-                  <Popconfirm
-                    title="确定删除该配置？"
-                    onConfirm={(e) => {
-                      e?.stopPropagation();
-                      deleteMutation.mutate(cfg.key);
-                    }}
-                    onCancel={(e) => e?.stopPropagation()}
-                  >
+                {/* 桌面端网格行 */}
+                <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3.5 md:grid">
+                  <div className="col-span-12 font-mono text-[12px] font-medium text-indigo-600 md:col-span-3">{cfg.key}</div>
+                  <div className="col-span-12 truncate font-mono text-[12px] text-slate-700 md:col-span-3">
+                    {isSensitiveKey(cfg.key) && cfg.value
+                      ? `••••${cfg.value.slice(-4)}`
+                      : cfg.value}
+                  </div>
+                  <div className="col-span-12 truncate text-[12px] text-slate-500 md:col-span-3">{cfg.description || '-'}</div>
+                  <div className="col-span-3 text-center md:col-span-1">
+                    {cfg.is_public ? (
+                      <span className="inline-flex items-center rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700">是</span>
+                    ) : (
+                      <span className="inline-flex items-center rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] font-medium text-slate-500">否</span>
+                    )}
+                  </div>
+                  <div className="col-span-6 text-[11px] text-slate-400 md:col-span-1">{formatDate(cfg.updated_at)}</div>
+                  <div className="col-span-3 flex items-center justify-end gap-1 md:col-span-1">
                     <button
                       type="button"
-                      onClick={(e) => e.stopPropagation()}
-                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
-                      title="删除"
+                      onClick={(e) => { e.stopPropagation(); openEdit(cfg); }}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                      title="编辑"
                     >
-                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </button>
-                  </Popconfirm>
+                    <Popconfirm
+                      title="确定删除该配置？"
+                      onConfirm={(e) => {
+                        e?.stopPropagation();
+                        deleteMutation.mutate(cfg.key);
+                      }}
+                      onCancel={(e) => e?.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
+                        title="删除"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </button>
+                    </Popconfirm>
+                  </div>
+                </div>
+
+                {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                <div className="md:hidden">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate font-mono text-[15px] font-semibold tracking-tight text-indigo-600">{cfg.key}</span>
+                    {cfg.is_public ? (
+                      <span className="shrink-0 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">公开</span>
+                    ) : (
+                      <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">私有</span>
+                    )}
+                  </div>
+                  <div className="mt-1.5 truncate font-mono text-[12px] text-slate-700">
+                    {isSensitiveKey(cfg.key) && cfg.value
+                      ? `••••${cfg.value.slice(-4)}`
+                      : cfg.value}
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <FileText className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                    <span className="truncate">{cfg.description || '-'}</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                    <span className="text-[11px] text-slate-400">{formatDate(cfg.updated_at)}</span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openEdit(cfg); }}
+                        className="rounded-md p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                        title="编辑"
+                      >
+                        <Pencil className="h-4 w-4" strokeWidth={1.5} />
+                      </button>
+                      <Popconfirm
+                        title="确定删除该配置？"
+                        onConfirm={(e) => {
+                          e?.stopPropagation();
+                          deleteMutation.mutate(cfg.key);
+                        }}
+                        onCancel={(e) => e?.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded-md p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
+                          title="删除"
+                        >
+                          <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                        </button>
+                      </Popconfirm>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))
@@ -263,7 +318,7 @@ export default function SystemConfigPage() {
               type="button"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               ‹
             </button>
@@ -275,7 +330,7 @@ export default function SystemConfigPage() {
                   type="button"
                   onClick={() => setPage(p)}
                   className={[
-                    'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors',
+                    'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors max-md:h-9 max-md:w-9',
                     p === page
                       ? 'bg-indigo-500 text-white'
                       : 'border border-indigo-100 text-slate-600 hover:bg-indigo-50',
@@ -289,7 +344,7 @@ export default function SystemConfigPage() {
               type="button"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:opacity-40 max-md:h-9 max-md:w-9"
             >
               ›
             </button>

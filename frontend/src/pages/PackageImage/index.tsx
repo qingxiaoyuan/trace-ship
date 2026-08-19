@@ -24,6 +24,12 @@ const sourceLabelMap: Record<PackageImageSource, string> = {
   nexus: 'Nexus',
 };
 
+/** 移动端卡片顶行使用的软底色来源徽标（无描边） */
+const sourceSoftBadgeMap: Record<PackageImageSource, string> = {
+  local: 'bg-emerald-50 text-emerald-600',
+  nexus: 'bg-indigo-50 text-indigo-600',
+};
+
 export default function PackageImagePage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -154,7 +160,7 @@ export default function PackageImagePage() {
           <div className="col-span-1 text-center">来源</div>
         </div>
 
-        <div className="max-h-[calc(100vh-300px)] divide-y divide-indigo-50/50 overflow-y-auto">
+        <div className="max-h-[calc(100vh-300px)] divide-y divide-indigo-50/50 overflow-y-auto max-md:max-h-none max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
           ) : items.length === 0 ? (
@@ -251,32 +257,66 @@ export default function PackageImagePage() {
 
 function ImageRow({ item }: { item: AvailableImageItem }) {
   return (
-    <div className="grid grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30">
-      <div className="col-span-12 flex items-center gap-2 md:col-span-5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-indigo">
+    <div className="transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4">
+      {/* 桌面端网格行 */}
+      <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
+        <div className="col-span-12 flex items-center gap-2 md:col-span-5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg icon-indigo">
+            {item.source === 'local' ? (
+              <HardDrive className="h-4 w-4" strokeWidth={1.5} />
+            ) : (
+              <Container className="h-4 w-4" strokeWidth={1.5} />
+            )}
+          </div>
+          <span className="truncate font-mono text-[12px] text-slate-700">{item.image}</span>
+        </div>
+        <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
+          {item.name}
+          <span className="ml-1.5 rounded border border-slate-200 bg-slate-50 px-1 py-px font-mono text-[10px] text-slate-500">
+            {item.version}
+          </span>
+        </div>
+        <div className="col-span-6 truncate text-[12px] text-slate-500 md:col-span-2">{item.repository || '-'}</div>
+        <div className="col-span-4 text-[12px] text-slate-500 md:col-span-1">{item.size || '-'}</div>
+        <div className="col-span-4 font-mono text-[11px] text-slate-400 md:col-span-1">{item.image_id || '-'}</div>
+        <div className="col-span-4 flex items-center justify-center md:col-span-1">
+          <span
+            className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${sourceBadgeMap[item.source]}`}
+          >
+            {sourceLabelMap[item.source]}
+          </span>
+        </div>
+      </div>
+
+      {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+      <div className="md:hidden">
+        <div className="flex items-center justify-between">
+          <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${sourceSoftBadgeMap[item.source]}`}>
+            {sourceLabelMap[item.source]}
+          </span>
+          <span className="text-[11px] text-slate-400">{item.size || '-'}</span>
+        </div>
+        <div className="mt-2 flex items-baseline gap-2">
+          <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{item.name}</span>
+          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">{item.version}</span>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
           {item.source === 'local' ? (
-            <HardDrive className="h-4 w-4" strokeWidth={1.5} />
+            <HardDrive className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
           ) : (
-            <Container className="h-4 w-4" strokeWidth={1.5} />
+            <Container className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+          )}
+          <span className="truncate font-mono">{item.image}</span>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+          <span className="truncate">{item.repository || '-'}</span>
+          {item.image_id && (
+            <>
+              <span className="shrink-0 text-slate-200">|</span>
+              <span className="truncate font-mono">{item.image_id}</span>
+            </>
           )}
         </div>
-        <span className="truncate font-mono text-[12px] text-slate-700">{item.image}</span>
-      </div>
-      <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
-        {item.name}
-        <span className="ml-1.5 rounded border border-slate-200 bg-slate-50 px-1 py-px font-mono text-[10px] text-slate-500">
-          {item.version}
-        </span>
-      </div>
-      <div className="col-span-6 truncate text-[12px] text-slate-500 md:col-span-2">{item.repository || '-'}</div>
-      <div className="col-span-4 text-[12px] text-slate-500 md:col-span-1">{item.size || '-'}</div>
-      <div className="col-span-4 font-mono text-[11px] text-slate-400 md:col-span-1">{item.image_id || '-'}</div>
-      <div className="col-span-4 flex items-center justify-center md:col-span-1">
-        <span
-          className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${sourceBadgeMap[item.source]}`}
-        >
-          {sourceLabelMap[item.source]}
-        </span>
       </div>
     </div>
   );

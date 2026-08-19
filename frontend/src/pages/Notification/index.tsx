@@ -481,7 +481,7 @@ export default function NotificationPage() {
               <CircleDot className="h-3.5 w-3.5 text-cyan-500" strokeWidth={1.5} />
               仅未读
               {counts?.unread ? (
-                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-cyan-400 px-1 text-[10px] font-semibold text-white">
+                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-cyan-400 px-1 text-[10px] font-semibold text-white max-md:h-5 max-md:text-xs">
                   {counts.unread}
                 </span>
               ) : null}
@@ -490,7 +490,7 @@ export default function NotificationPage() {
         </div>
 
         {/* 通知列表 */}
-        <div className="divide-y divide-indigo-50/50">
+        <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
           {isLoading ? (
             <div className="flex items-center justify-center px-5 py-16 text-[13px] text-slate-400">
               加载中…
@@ -507,59 +507,114 @@ export default function NotificationPage() {
                 <div
                   key={n.id}
                   onClick={() => openDetail(n)}
-                  className={'group flex cursor-pointer items-start gap-3 px-5 py-4 transition-colors hover:bg-indigo-50/30 border-l-2 border-transparent'}
+                  className="group cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
-                  <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconCls}`}
-                  >
-                    <Icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
+                  {/* 桌面端行 */}
+                  <div className="hidden items-start gap-3 border-l-2 border-transparent px-5 py-4 md:flex">
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconCls}`}
+                    >
+                      <Icon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={[
+                            'text-[13px]',
+                            n.is_read ? 'font-medium text-slate-600' : 'font-semibold text-slate-900',
+                          ].join(' ')}
+                        >
+                          {n.title}
+                        </span>
+                        {!n.is_read && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                        )}
+                        <span
+                          className={`inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium max-md:text-xs ${tagTone[n.notification_type]}`}
+                        >
+                          {typeText[n.notification_type]}
+                        </span>
+                      </div>
+                      <p
                         className={[
-                          'text-[13px]',
-                          n.is_read ? 'font-medium text-slate-600' : 'font-semibold text-slate-900',
+                          'mt-0.5 truncate text-[12px]',
+                          n.is_read ? 'text-slate-500' : 'text-slate-600',
                         ].join(' ')}
                       >
-                        {n.title}
-                      </span>
-                      {!n.is_read && (
-                        <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                        {n.content}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
+                        <span>{formatRelativeTime(n.created_at)}</span>
+                        {!n.is_read && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMarkReadFromList(n);
+                            }}
+                            className="text-slate-400 transition-colors hover:text-indigo-600"
+                          >
+                            · 标记已读
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight
+                      className="mt-2 h-4 w-4 text-slate-300 transition-colors group-hover:text-indigo-400"
+                      strokeWidth={1.5}
+                    />
+                  </div>
+
+                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  <div className="md:hidden">
+                    <div className="flex items-center justify-between">
+                      {n.is_read ? (
+                        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+                          已读
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-600">
+                          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 pulse-dot" />
+                          未读
+                        </span>
                       )}
                       <span
-                        className={`inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium ${tagTone[n.notification_type]}`}
+                        className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${tagTone[n.notification_type]}`}
                       >
                         {typeText[n.notification_type]}
                       </span>
                     </div>
-                    <p
+                    <div
                       className={[
-                        'mt-0.5 truncate text-[12px]',
-                        n.is_read ? 'text-slate-500' : 'text-slate-600',
+                        'mt-2 text-[15px] tracking-tight',
+                        n.is_read ? 'font-medium text-slate-600' : 'font-semibold text-slate-900',
                       ].join(' ')}
                     >
+                      {n.title}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-slate-500">
                       {n.content}
                     </p>
-                    <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
-                      <span>{formatRelativeTime(n.created_at)}</span>
-                      {!n.is_read && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMarkReadFromList(n);
-                          }}
-                          className="text-slate-400 transition-colors hover:text-indigo-600"
-                        >
-                          · 标记已读
-                        </button>
-                      )}
+                    <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <Clock className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                        {formatRelativeTime(n.created_at)}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {!n.is_read && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMarkReadFromList(n);
+                            }}
+                            className="rounded-md px-2 py-1.5 text-[12px] font-medium text-indigo-600 transition-colors hover:bg-indigo-50"
+                          >
+                            标记已读
+                          </button>
+                        )}
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" strokeWidth={1.5} />
+                      </div>
                     </div>
                   </div>
-                  <ChevronRight
-                    className="mt-2 h-4 w-4 text-slate-300 transition-colors group-hover:text-indigo-400"
-                    strokeWidth={1.5}
-                  />
                 </div>
               );
             })
@@ -604,7 +659,7 @@ function Pager({
       <button
         onClick={() => onChange(Math.max(1, page - 1))}
         disabled={page <= 1}
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40 max-md:h-9 max-md:w-9"
       >
         <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
       </button>
@@ -613,7 +668,7 @@ function Pager({
           key={p}
           onClick={() => onChange(p)}
           className={[
-            'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors',
+            'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium transition-colors max-md:h-9 max-md:w-9',
             p === page
               ? 'bg-indigo-500 text-white'
               : 'border border-indigo-100 text-slate-600 hover:bg-indigo-50',
@@ -625,7 +680,7 @@ function Pager({
       <button
         onClick={() => onChange(Math.min(totalPages, page + 1))}
         disabled={page >= totalPages}
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 text-slate-400 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40 max-md:h-9 max-md:w-9"
       >
         <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
       </button>

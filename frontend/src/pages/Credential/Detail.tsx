@@ -411,7 +411,7 @@ export default function CredentialDetail() {
                       </span>
                       <span
                         className={[
-                          "rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
+                          "rounded-md border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap max-md:text-xs",
                           resultCfg.border,
                           resultCfg.bg,
                           resultCfg.text,

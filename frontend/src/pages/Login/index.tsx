@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { message } from "antd";
+import { Grid, message } from "antd";
 import { useNavigate } from "react-router-dom";
 import {
   User,
@@ -58,6 +58,10 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
+
+  // 移动端（<lg）采用常见手机登录 UI：无卡片、居中品牌区、分段 Tab、大号输入框
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.lg;
 
   useEffect(() => {
     if (hydrated && isAuthenticated) {
@@ -162,30 +166,41 @@ export default function Login() {
           </div>
 
           {/* 右侧登录表单区 */}
-          <div className="flex items-center justify-center p-6 sm:p-10 xl:p-20">
+          <div className="flex items-center justify-center p-6 max-lg:items-start max-lg:pt-[10vh] sm:p-10 sm:max-lg:pt-[10vh] xl:p-20">
             <div
-              className="glass w-full max-w-[400px] xl:max-w-[420px] rounded-2xl p-7 sm:p-8 xl:p-9"
-              style={{ boxShadow: "0 12px 40px -10px rgba(79,70,229,.15)" }}
+              className={
+                isMobile
+                  ? "w-full"
+                  : "glass w-full max-w-[400px] xl:max-w-[420px] rounded-2xl p-7 sm:p-8 xl:p-9"
+              }
+              style={
+                isMobile
+                  ? undefined
+                  : { boxShadow: "0 12px 40px -10px rgba(79,70,229,.15)" }
+              }
             >
-              {/* 移动端 Logo */}
-              <div className="flex lg:hidden items-center gap-2.5 mb-6">
-                <img
-                  src="/favicon.ico"
-                  alt="溯舟"
-                  className="h-8 w-8 rounded-lg object-contain"
-                />
-                <div className="flex flex-col leading-none">
-                  <span className="text-[15px] font-semibold tracking-tight text-slate-900">
+              {/* 移动端品牌区（居中） */}
+              {isMobile ? (
+                <div className="mb-8 flex flex-col items-center text-center">
+                  <img
+                    src="/favicon.ico"
+                    alt="溯舟"
+                    className="h-14 w-14 rounded-2xl object-contain"
+                  />
+                  <div className="mt-3 text-[18px] font-semibold tracking-tight text-slate-900">
                     溯舟
-                  </span>
-                  <span className="mt-0.5 text-[10px] font-medium tracking-[0.12em] text-indigo-400 uppercase">
+                  </div>
+                  <div className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-indigo-400">
                     Trace Ship
-                  </span>
+                  </div>
+                  <div className="mt-2 text-[12px] text-slate-400">
+                    让每一次发布可追溯
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {/* 标题 */}
-              <div className="mb-6">
+              <div className="mb-6 max-lg:text-center">
                 <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">
                   欢迎回来
                 </h2>
@@ -194,14 +209,28 @@ export default function Login() {
                 </p>
               </div>
 
-              {/* Tab 切换 */}
-              <div className="flex items-center gap-5 border-b border-slate-200 mb-6">
+              {/* Tab 切换（移动端为分段控件） */}
+              <div
+                className={`mb-6 flex items-center ${
+                  isMobile
+                    ? "gap-1 rounded-xl border border-indigo-100 bg-indigo-50/40 p-1"
+                    : "gap-5 border-b border-slate-200"
+                }`}
+              >
                 {tabs.map((tab) => (
                   <button
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
-                    className={`login-tab pb-2.5 text-[13px] font-medium text-slate-500 ${activeTab === tab.key ? "on" : ""}`}
+                    className={
+                      isMobile
+                        ? `login-tab flex-1 rounded-lg py-2 text-center text-[13px] font-medium after:hidden ${
+                            activeTab === tab.key
+                              ? "bg-white text-indigo-600 shadow-sm"
+                              : "text-slate-500"
+                          }`
+                        : `login-tab pb-2.5 text-[13px] font-medium text-slate-500 ${activeTab === tab.key ? "on" : ""}`
+                    }
                   >
                     {tab.label}
                   </button>
@@ -232,7 +261,7 @@ export default function Login() {
                           ? "请输入域账号 / 用户名"
                           : "请输入本地账号"
                       }
-                      className="input-field w-full rounded-lg border border-slate-200 bg-white/70 pl-9 pr-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none"
+                      className="input-field w-full rounded-lg border border-slate-200 bg-white/70 pl-9 pr-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none max-lg:rounded-xl max-lg:py-3 max-lg:text-[14px]"
                     />
                   </div>
                   {errors.username && (
@@ -258,7 +287,7 @@ export default function Login() {
                         if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
                       }}
                       placeholder="请输入密码"
-                      className="input-field w-full rounded-lg border border-slate-200 bg-white/70 pl-9 pr-10 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none"
+                      className="input-field w-full rounded-lg border border-slate-200 bg-white/70 pl-9 pr-10 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none max-lg:rounded-xl max-lg:py-3 max-lg:text-[14px]"
                     />
                     <button
                       type="button"
@@ -303,7 +332,7 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="btn-glow w-full rounded-lg py-2.5 text-[14px] font-medium text-white mt-2 border-0 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                  className="btn-glow w-full rounded-lg py-2.5 text-[14px] font-medium text-white mt-2 border-0 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed max-lg:rounded-xl max-lg:py-3 max-lg:text-[15px]"
                 >
                   {loading ? "登录中..." : "登 录"}
                 </button>

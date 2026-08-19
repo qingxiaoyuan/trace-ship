@@ -295,7 +295,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
             return (
               <div
                 key={def.id}
-                className="tech-card flex items-center gap-3 rounded-xl p-4"
+                className="tech-card flex flex-wrap items-center gap-3 rounded-xl p-4"
               >
                 <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${meta.iconCls}`}>
                   <Icon className="h-4 w-4" style={{ strokeWidth: 1.5 }} />
@@ -339,7 +339,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
         bodyStyle={{ maxHeight: '72vh' }}
         bodyClassName="space-y-5"
         footer={(
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <Info className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
               节点变更将重新生成流程图，已有进行中实例不受影响
@@ -421,7 +421,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                             <div>
                               <div className="text-[13px] font-semibold text-slate-900">{node.node_name || '未命名节点'}</div>
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${mode.chipCls}`}>
+                                <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] max-md:text-xs font-medium ${mode.chipCls}`}>
                                   <ModeIcon className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
                                   {mode.label}
                                 </span>
@@ -429,7 +429,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                                   const d = approverDisplay(apr, usersData);
                                   const AI = d.icon;
                                   return (
-                                    <span key={ai} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">
+                                    <span key={ai} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] max-md:text-xs font-medium text-indigo-600">
                                       <AI className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
                                       {d.label}
                                     </span>
@@ -443,14 +443,14 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                               <button
                                 onClick={(e) => { e.stopPropagation(); moveNode(idx, -1); }}
                                 disabled={idx === 0}
-                                className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-indigo-100 disabled:hover:text-indigo-500"
+                                className="flex h-7 w-7 max-md:h-9 max-md:w-9 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-indigo-100 disabled:hover:text-indigo-500"
                               >
                                 <ChevronUp className="h-4 w-4" style={{ strokeWidth: 2 }} />
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); moveNode(idx, 1); }}
                                 disabled={idx === nodes.length - 1}
-                                className="flex h-7 w-7 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-indigo-100 disabled:hover:text-indigo-500"
+                                className="flex h-7 w-7 max-md:h-9 max-md:w-9 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-indigo-100 disabled:hover:text-indigo-500"
                               >
                                 <ChevronDown className="h-4 w-4" style={{ strokeWidth: 2 }} />
                               </button>
@@ -558,7 +558,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                               </div>
                               <button
                                 onClick={() => removeApprover(i)}
-                                className="text-slate-300 transition-colors hover:text-rose-500"
+                                className="text-slate-300 transition-colors hover:text-rose-500 max-md:p-2"
                               >
                                 <X className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                               </button>
@@ -570,7 +570,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                       {/* 添加审批人 */}
                       {canManage && (
                         <div className="mt-2.5 rounded-lg border border-dashed border-slate-200 p-2.5">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Dropdown
                               value={pendingAprType}
                               onChange={setPendingAprType}

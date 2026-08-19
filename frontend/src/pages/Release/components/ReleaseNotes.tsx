@@ -163,7 +163,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
                 <tbody>
                   {docRows.map((row, idx) => (
                     <tr key={idx} className="border-b border-slate-100 last:border-0">
-                      <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-middle text-[12px] font-medium leading-[1.375] text-slate-500">
+                      <td className="w-[110px] shrink-0 bg-slate-50/60 px-4 py-2 align-middle text-[12px] font-medium leading-[1.375] text-slate-500 sm:w-[160px]">
                         {row.key}
                       </td>
                       <td className="px-3 py-2 align-middle">
@@ -216,7 +216,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
             <tbody>
               {rows.map((row, idx) => (
                 <tr key={idx} className="border-b border-slate-100 last:border-0">
-                  <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500">
+                  <td className="w-[110px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500 sm:w-[160px]">
                     {row.key}
                   </td>
                   <td className="px-3 py-2 text-[13px] text-slate-700">
@@ -238,7 +238,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
       </div>
 
       {/* 操作 */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {canDevelop && (
           <button
             type="button"
@@ -290,7 +290,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
               <tbody>
                 {docRows.map((row, idx) => (
                   <tr key={idx} className="border-b border-slate-100 last:border-0">
-                    <td className="w-[160px] shrink-0 bg-slate-50/60 px-4 py-2 align-middle text-[12px] font-medium leading-[1.375] text-slate-500">
+                    <td className="w-[110px] shrink-0 bg-slate-50/60 px-4 py-2 align-middle text-[12px] font-medium leading-[1.375] text-slate-500 sm:w-[160px]">
                       {row.key}
                     </td>
                     <td className="px-3 py-2 align-middle">
