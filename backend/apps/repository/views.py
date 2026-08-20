@@ -83,7 +83,7 @@ class RepositoryViewSet(StandardModelViewSet):
         Returns:
             权限实例列表
         """
-        if self.action in ["create", "update", "partial_update", "destroy"]:
+        if self.action in ["create", "update", "partial_update", "destroy", "delete_tag"]:
             return [IsAuthenticated(), IsProjectManager()]
         if self.action in ["test", "sync_commits", "sync_branches"]:
             return [IsAuthenticated(), IsProjectDeveloper()]
@@ -197,6 +197,33 @@ class RepositoryViewSet(StandardModelViewSet):
             return success_response(tags)
         except Exception as exc:
             return error_response(50000, f"获取标签失败: {exc}", status_code=500)
+
+    @action(detail=True, methods=["post"], url_path="delete-tag")
+    def delete_tag(self, request: Request, pk=None) -> Response:
+        """
+        删除仓库标签
+
+        远端 tag 与本地缓存一并删除；远端已不存在时幂等成功。
+        仅项目管理员可操作。
+
+        Args:
+            request: DRF Request，body 需包含 tag_name
+            pk: 仓库主键
+
+        Returns:
+            删除结果（tag_name、remote_deleted）
+        """
+        repo = self.get_object()
+        tag_name = (request.data.get("tag_name") or "").strip()
+        if not tag_name:
+            return error_response(40001, "tag_name 不能为空")
+        if repo.repo_type != "git":
+            return error_response(40001, "非 Git 仓库不支持标签删除")
+        try:
+            result = RepositoryService.delete_tag(repo, tag_name, request.user)
+            return success_response(result, message="标签删除成功")
+        except Exception as exc:
+            return error_response(50000, f"删除标签失败: {exc}", status_code=500)
 
     @action(detail=True, methods=["get"])
     def commits(self, request: Request, pk=None) -> Response:

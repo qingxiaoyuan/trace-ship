@@ -41,6 +41,11 @@ export const repositoryApi = {
   getVendors: () => get<{ value: string; label: string }[]>('/repositories/vendors/'),
   getBranches: (id: string) => get<RepositoryBranch[]>(`/repositories/${id}/branches/`),
   getTags: (id: string) => get<RepositoryTag[]>(`/repositories/${id}/tags/`),
+  /** 删除仓库标签：需输入完整 tag 名称二次确认（仅项目管理员） */
+  deleteTag: (id: string, tagName: string) =>
+    post<{ tag_name: string; remote_deleted: boolean }>(`/repositories/${id}/delete-tag/`, {
+      tag_name: tagName,
+    }),
   getRepositoryCommits: (id: string, params?: Record<string, unknown>) =>
     get<PaginatedData<CommitRecord>>(`/repositories/${id}/commits/`, { params }),
   getNextVersion: (id: string, releaseType: string) =>

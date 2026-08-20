@@ -128,3 +128,74 @@ def test_parse_plain_commit_with_embedded_a_or_f_is_not_auto_detected():
 
     assert result.updates == []
     assert result.is_valid is False
+
+
+def test_parse_prefix_content_strips_leading_af_marker():
+    """fix/feat 前缀路径下 content 不残留 A/F 标记。"""
+    result = CommitParser.parse("feat: A 新增扫描规则")
+
+    assert result.updates == [{"type": "A", "content": "新增扫描规则"}]
+
+    result = CommitParser.parse("<fix> F 修复版本号计算")
+
+    assert result.updates == [{"type": "F", "content": "修复版本号计算"}]
+
+
+def test_parse_angle_prefix_block_in_template_middle():
+    """<feat> 块位于模板中段（前面有 变更类型/更新内容 段落）也能解析。"""
+    message = """变更类型：
+☑ 无配置项改动 □有配置项改动
+
+更新内容：
+<feat>
+新增导出 PDF
+新增导出 Word
+"""
+    result = CommitParser.parse(message)
+
+    assert result.is_valid is True
+    assert result.updates == [
+        {"type": "A", "content": "新增导出 PDF"},
+        {"type": "A", "content": "新增导出 Word"},
+    ]
+
+
+def test_parse_angle_prefix_block_strips_leading_index():
+    """<feat> 块内带序号的内容行剥离序号。"""
+    message = "<feat>\n1. 功能一\n2、功能二"
+
+    result = CommitParser.parse(message)
+
+    assert result.updates == [
+        {"type": "A", "content": "功能一"},
+        {"type": "A", "content": "功能二"},
+    ]
+
+
+def test_parse_multiple_prefix_blocks_have_independent_types():
+    """多个 <feat>/<fix> 块混合时各块类型独立。"""
+    message = """<feat>
+新增打包配置
+
+<fix>
+修复推送失败
+"""
+    result = CommitParser.parse(message)
+
+    assert result.updates == [
+        {"type": "A", "content": "新增打包配置"},
+        {"type": "F", "content": "修复推送失败"},
+    ]
+
+
+def test_parse_prefix_block_stops_at_section_header():
+    """前缀块遇到后续段落标题即截止，标题内容不混入更新条目。"""
+    message = """<feat> 新增扫描规则
+
+配置项改动[详见相关软件配置文件管理]：
+[System]
+DeviceType=0
+"""
+    result = CommitParser.parse(message)
+
+    assert result.updates == [{"type": "A", "content": "新增扫描规则"}]

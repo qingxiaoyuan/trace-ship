@@ -26,6 +26,17 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.08.20',
+    date: '2026-08-20',
+    summary: '修复更新内容扫描问题，仓库详情支持标签删除与发布版本查看',
+    items: [
+      { category: 'fix', text: '修复自动扫描更新内容时 `<feat>`/`feat:` 类提交的变更条目残留 A/F 前缀的问题，扫描结果只保留纯内容，类型由系统单独标记' },
+      { category: 'fix', text: '修复 `<feat>`/`<fix>` 块不在提交信息首行时（如标准模板「更新内容：」段落内）整块更新内容扫描不到的问题，现支持任意位置识别且多个 `<feat>`/`<fix>` 块可混合解析、类型各自独立' },
+      { category: 'feature', text: '仓库详情「标签」支持删除：点击标签卡片删除按钮后需输入完整 Tag 名称二次确认，删除远程 Tag 并同步清理本地缓存（不可恢复，仅项目管理员可操作；远程 Tag 已不存在时幂等成功）' },
+      { category: 'feature', text: '仓库详情新增「发布版本」Tab：查看该仓库由系统发布的全部版本（版本号/Tag/发布类型/发布人/发布时间），支持搜索并点击跳转发布详情' },
+    ],
+  },
+  {
     version: '2026.08.18',
     date: '2026-08-18',
     summary: '发布创建时可勾选「发布后自动打包」配置，仅触发勾选的配置',

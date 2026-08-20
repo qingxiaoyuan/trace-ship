@@ -15,6 +15,7 @@ import { TagsTab } from './tabs/TagsTab';
 import { CredentialTab } from './tabs/CredentialTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { VersionRuleTab } from './tabs/VersionRuleTab';
+import { ReleaseTab } from '@/pages/Project/tabs/ReleaseTab';
 import type { Repository } from '@/types';
 
 /** 详情 Tab */
@@ -22,6 +23,7 @@ const tabs = [
   { key: 'commits', label: '最近提交' },
   { key: 'branches', label: '分支' },
   { key: 'tags', label: '标签' },
+  { key: 'releases', label: '发布版本' },
   { key: 'svn', label: 'SVN 制品' },
   { key: 'credential', label: '凭证配置' },
   { key: 'versionRule', label: '版本规则' },
@@ -208,6 +210,7 @@ export default function RepositoryDetail() {
           {activeTab === 'commits' && <CommitsTab repoId={repo.id} />}
           {activeTab === 'branches' && <BranchesTab repoId={repo.id} repoType={repo.repo_type} />}
           {activeTab === 'tags' && <TagsTab repoId={repo.id} repoType={repo.repo_type} />}
+          {activeTab === 'releases' && <ReleaseTab repositoryId={repo.id} />}
           {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}
           {activeTab === 'versionRule' && <VersionRuleTab repo={repo} />}

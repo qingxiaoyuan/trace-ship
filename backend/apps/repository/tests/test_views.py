@@ -452,3 +452,102 @@ def test_auditor_sees_all_project_commits(repository, commit):
     assert response.status_code == 200
     hashes = [c["commit_hash"] for c in response.data["data"]["results"]]
     assert commit.commit_hash in hashes
+
+
+@pytest.mark.django_db
+def test_delete_tag_success(api_client, repository):
+    """删除标签：调用远端删除并清理本地 RepositoryTag 缓存"""
+    from unittest.mock import MagicMock
+
+    from apps.repository.models import RepositoryTag
+
+    RepositoryTag.objects.create(repository=repository, name="VA.1.0.0", commit_hash="abc123")
+    mock_provider = MagicMock()
+    with patch("apps.repository.services.get_provider", return_value=mock_provider):
+        response = api_client.post(
+            f"/api/repositories/{repository.id}/delete-tag/",
+            {"tag_name": "VA.1.0.0"},
+            format="json",
+        )
+
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    assert response.data["data"]["remote_deleted"] is True
+    mock_provider.delete_tag.assert_called_once_with("test/backend", "VA.1.0.0")
+    assert not RepositoryTag.objects.filter(repository=repository, name="VA.1.0.0").exists()
+
+
+@pytest.mark.django_db
+def test_delete_tag_tolerates_missing_remote_tag(api_client, repository):
+    """远端 tag 已不存在时幂等成功并标记 remote_deleted=False"""
+    from unittest.mock import MagicMock
+
+    from utils.provider.exceptions import NotFoundError
+
+    mock_provider = MagicMock()
+    mock_provider.delete_tag.side_effect = NotFoundError("tag 不存在")
+    with patch("apps.repository.services.get_provider", return_value=mock_provider):
+        response = api_client.post(
+            f"/api/repositories/{repository.id}/delete-tag/",
+            {"tag_name": "VA.1.0.0"},
+            format="json",
+        )
+
+    assert response.status_code == 200
+    assert response.data["data"]["remote_deleted"] is False
+
+
+@pytest.mark.django_db
+def test_delete_tag_requires_tag_name(api_client, repository):
+    """缺少 tag_name 时返回参数错误"""
+    response = api_client.post(
+        f"/api/repositories/{repository.id}/delete-tag/",
+        {},
+        format="json",
+    )
+
+    assert response.data["code"] == 40001
+
+
+@pytest.mark.django_db
+def test_delete_tag_rejects_svn_repository(api_client, project, credential):
+    """SVN 仓库不支持标签删除"""
+    from apps.repository.models import Repository
+
+    svn_repo = Repository.objects.create(
+        project=project,
+        repo_type="svn",
+        vendor="svn",
+        name="SVN 仓库",
+        url="svn://svn.example.com/repo",
+        external_identity="repo",
+        credential=credential,
+        credential_mode="project",
+    )
+    response = api_client.post(
+        f"/api/repositories/{svn_repo.id}/delete-tag/",
+        {"tag_name": "v1.0.0"},
+        format="json",
+    )
+
+    assert response.data["code"] == 40001
+
+
+@pytest.mark.django_db
+def test_delete_tag_forbidden_for_non_manager(repository):
+    """非项目管理员（开发人员）不允许删除标签"""
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    developer = User.objects.create_user(username="dev", password="pass", nickname="开发")
+    ProjectMember.objects.create(project=repository.project, user=developer, role="developer")
+    client = APIClient()
+    client.force_authenticate(user=developer)
+
+    response = client.post(
+        f"/api/repositories/{repository.id}/delete-tag/",
+        {"tag_name": "VA.1.0.0"},
+        format="json",
+    )
+
+    assert response.status_code == 403

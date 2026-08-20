@@ -30,18 +30,26 @@ interface ReleaseTabItem {
   released_at?: string;
 }
 
-export function ReleaseTab({ projectId }: { projectId: string }) {
+interface ReleaseTabProps {
+  /** 项目维度过滤（项目详情页使用） */
+  projectId?: string;
+  /** 仓库维度过滤（仓库详情页「发布版本」Tab 使用） */
+  repositoryId?: string;
+}
+
+export function ReleaseTab({ projectId, repositoryId }: ReleaseTabProps) {
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState('');
   const { data, isLoading } = useQuery({
-    queryKey: ['project-releases', projectId],
+    queryKey: ['release-tab', projectId || '', repositoryId || ''],
     queryFn: () =>
       releaseApi.getReleases({
-        project: projectId,
+        project: projectId || undefined,
+        repository: repositoryId || undefined,
         status: 'released',
         page_size: 1000,
       }),
-    enabled: !!projectId,
+    enabled: !!(projectId || repositoryId),
   });
 
   const list = (data?.results || []) as ReleaseTabItem[];

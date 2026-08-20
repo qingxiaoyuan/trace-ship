@@ -13,7 +13,7 @@ from apps.repository.models import CommitRecord, Repository, RepositoryBranch, R
 from utils.commit_reviewer import CommitReviewer
 from utils.provider.base import CommitInfo
 from utils.provider.credential_resolver import resolve_credential
-from utils.provider.exceptions import ProviderError
+from utils.provider.exceptions import NotFoundError, ProviderError
 from utils.provider.factory import get_provider
 
 # GitLab UI 判定 stale（不活跃）分支的口径：最近 3 个月无提交
@@ -311,6 +311,39 @@ class RepositoryService:
             }
             for t in tags
         ]
+
+    @staticmethod
+    def delete_tag(repo: Repository, tag_name: str, request_user=None) -> dict:
+        """
+        删除仓库标签
+
+        调用远端 Provider 删除 tag，并清理本地 RepositoryTag 缓存行。
+        远端 tag 已不存在时幂等视为成功。仅 Git 类仓库支持。
+
+        Args:
+            repo: Repository 实例
+            tag_name: 要删除的 tag 名称
+            request_user: 当前请求用户
+
+        Returns:
+            删除结果字典（tag_name、remote_deleted）
+
+        Raises:
+            ValueError: 非 Git 仓库
+            ProviderError: 远端删除失败（认证/连接错误等）
+        """
+        if repo.repo_type != "git":
+            raise ValueError("非 Git 仓库不支持标签删除")
+        cred_data = resolve_credential(repo, request_user)
+        provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
+        remote_deleted = True
+        try:
+            provider.delete_tag(repo.external_identity, tag_name)
+        except NotFoundError:
+            # 远端已不存在：幂等成功，仅清理本地缓存
+            remote_deleted = False
+        RepositoryTag.objects.filter(repository=repo, name=tag_name).delete()
+        return {"tag_name": tag_name, "remote_deleted": remote_deleted}
 
     @staticmethod
     def list_commits(

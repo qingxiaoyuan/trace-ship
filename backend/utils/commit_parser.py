@@ -12,8 +12,9 @@ from typing import Dict, List, Optional
 # 限制为行首可避免把「提交A功能」等普通提交中的字母误判为更新类型。
 UPDATE_LINE_RE = re.compile(r"^\s*(?:\d+[.、][ \t]*)?([AF])[ \t]+(.+)$", re.MULTILINE)
 
-# Conventional Commit 与尖括号前缀。仅识别提交首个非空行，避免正文中的普通
-# fix/feat 文本被误解析为更新内容。
+# Conventional Commit 与尖括号前缀。逐行扫描（不再仅限首行），避免模板中段
+# 的 <feat>/<fix> 块被漏掉；正文中的普通 fix/feat 文本通过「行首锚定 + 段落
+# 标题截止」来控制误匹配范围。
 UPDATE_PREFIX_RE = re.compile(
     r"^\s*(?:"
     r"<(?P<angle_type>fix|feat)>\s*:?\s*"
@@ -22,14 +23,34 @@ UPDATE_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 内容行残留的类型标记：剥离行首可选序号 + A/F 标记（如「A 新增」「1. F 修复」），
+# 只在前缀路径下使用——该路径仅在全文无显式 A/F 行时触发，剥离是安全的。
+LEADING_TYPE_RE = re.compile(r"^(?:\d+[.、][ \t]*)?[AF][ \t]+")
+
+# 内容行前导序号（如「1. 」「1、」），用于 <feat> 块逐行内容的清理
+LEADING_INDEX_RE = re.compile(r"^\d+[.、][ \t]*")
+
+# 段落标题行：前缀块收集内容时遇到这些行即停止
+SECTION_HEADER_PREFIXES = ("变更类型", "更新内容", "配置项改动", "关联性改动")
+
+
+def _clean_prefix_content(line: str) -> str:
+    """清理前缀路径下的内容行：剥离残留 A/F 标记与前导序号"""
+    cleaned = LEADING_TYPE_RE.sub("", line.strip())
+    cleaned = LEADING_INDEX_RE.sub("", cleaned)
+    return cleaned.strip()
+
 
 def extract_update_lines(text: str) -> List[Dict[str, str]]:
     """
     从 commit message 或 MR description 中提取更新行
 
     优先识别显式「A 内容」或「F 内容」（可选前导序号如「1. 」「1、」）。
-    未命中显式 A/F 时，兼容首行 ``fix:`` / ``feat:``、带 scope 的 Conventional
-    Commit 以及 ``<fix>`` / ``<feat>`` 前缀；多行内容的每个非空行继承该前缀类型。
+    未命中显式 A/F 时，逐行扫描 ``fix:`` / ``feat:``（含带 scope 的 Conventional
+    Commit）与 ``<fix>`` / ``<feat>`` 前缀标记——标记可出现在文本任意行（如标准
+    模板「更新内容：」段落内），并支持多个标记块混合；每块收集其后内容行，
+    遇到段落标题（变更类型/更新内容/配置项改动/关联性改动）或下一个标记行截止，
+    内容行剥离前导序号与残留的 A/F 标记后继承所属块的类型。
     commit message 和 MR description 共用此规则。
 
     Args:
@@ -49,23 +70,28 @@ def extract_update_lines(text: str) -> List[Dict[str, str]]:
     if result:
         return result
 
-    lines = text.splitlines()
-    first_index = next((index for index, line in enumerate(lines) if line.strip()), None)
-    if first_index is None:
-        return []
-    prefix_match = UPDATE_PREFIX_RE.match(lines[first_index])
-    if not prefix_match:
-        return []
-
-    prefix_type = prefix_match.group("angle_type") or prefix_match.group("conventional_type")
-    update_type = "F" if prefix_type.lower() == "fix" else "A"
-    contents = [prefix_match.group("content").strip()]
-    contents.extend(line.strip() for line in lines[first_index + 1:] if line.strip())
-    return [
-        {"type": update_type, "content": content}
-        for content in contents
-        if content
-    ]
+    # 前缀路径：逐行扫描标记行，支持多块；内容行继承所属块类型
+    current_type: Optional[str] = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        prefix_match = UPDATE_PREFIX_RE.match(line)
+        if prefix_match:
+            prefix_type = prefix_match.group("angle_type") or prefix_match.group("conventional_type")
+            current_type = "F" if prefix_type.lower() == "fix" else "A"
+            inline = _clean_prefix_content(prefix_match.group("content"))
+            if inline:
+                result.append({"type": current_type, "content": inline})
+            continue
+        if current_type is None or not stripped:
+            continue
+        # 遇到段落标题行，当前块结束
+        if stripped.startswith(SECTION_HEADER_PREFIXES):
+            current_type = None
+            continue
+        content = _clean_prefix_content(stripped)
+        if content:
+            result.append({"type": current_type, "content": content})
+    return result
 
 
 @dataclass
@@ -187,6 +213,8 @@ class CommitParser:
 
         匹配 "A xxx" / "F xxx" / "1. A xxx" / "1、A xxx" 等格式；
         类型按单个大写字母提取，由审查规则校验是否为 A/F。
+        未命中显式 A/F 行时，兼容 ``<feat>`` / ``<fix>`` / ``feat:`` / ``fix:``
+        前缀块（可出现在文本任意行，支持多块）。
         """
         return extract_update_lines(message)
 
