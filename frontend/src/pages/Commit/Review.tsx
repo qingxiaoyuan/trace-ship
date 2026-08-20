@@ -25,9 +25,11 @@ import dayjs from 'dayjs';
 import { projectApi } from '@/api/project';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
+import { systemApi } from '@/api/system';
 import { ReleaseCommits } from '../Release/components/ReleaseCommits';
 import { ReleaseReview } from '../Release/components/ReleaseReview';
 import { buildMdTable, parseMdTable } from '@/utils/markdownTable';
+import { highlightKeywords, parseKeywords } from '@/utils/highlight';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAppMessage } from '@/hooks/useAppMessage';
 import { useProjectRole } from '@/hooks/useProjectRole';
@@ -152,7 +154,8 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
   const [keyword, setKeyword] = useState('');
   const [projectId, setProjectId] = useState('');
   const [repoId, setRepoId] = useState('');
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  // 已发布回溯默认只看正式版，审批中审查保持全部
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(status === 'released' ? 'formal' : 'all');
   const [selected, setSelected] = useState<Release | null>(null);
 
   // 项目列表
@@ -315,13 +318,20 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                       {r.commit_total ?? 0}
                     </div>
                     <div className="col-span-3 text-center md:col-span-1">
-                      {hasWarning ? (
-                        <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
-                          {noDoc ? '无文档' : `${warning} 警告`}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正常</span>
-                      )}
+                      <div className="flex flex-col items-center gap-1">
+                        {hasWarning ? (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                            {noDoc ? '无文档' : `${warning} 警告`}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正常</span>
+                        )}
+                        {(r.open_review_count ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
+                            待整改 {r.open_review_count}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="col-span-6 md:col-span-2">
                       <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
@@ -346,13 +356,20 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                   {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
                   <div className="md:hidden">
                     <div className="flex items-center justify-between gap-2">
-                      {hasWarning ? (
-                        <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
-                          {noDoc ? '无文档' : `${warning} 警告`}
-                        </span>
-                      ) : (
-                        <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">正常</span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {hasWarning ? (
+                          <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                            {noDoc ? '无文档' : `${warning} 警告`}
+                          </span>
+                        ) : (
+                          <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">正常</span>
+                        )}
+                        {(r.open_review_count ?? 0) > 0 && (
+                          <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
+                            待整改 {r.open_review_count}
+                          </span>
+                        )}
+                      </div>
                       <ReleaseTypeBadge type={r.release_type} soft />
                     </div>
                     <div className="mt-2 flex items-baseline gap-2">
@@ -441,6 +458,16 @@ function ReleaseReviewDetail({
     enabled: !!release.project_id,
   });
   const { canDevelop } = useProjectRole(project);
+
+  // 审查员查看变更文档时高亮关键字（关键字在系统配置维护，纯前端渲染）
+  const { data: publicConfigs } = useQuery({
+    queryKey: ['system-public-configs'],
+    queryFn: () => systemApi.getPublicConfigs(),
+    enabled: detail?.can_review === true,
+  });
+  const highlightKws = detail?.can_review
+    ? parseKeywords(publicConfigs?.review_doc_highlight_keywords)
+    : [];
 
   const updateDocMutation = useMutation({
     mutationFn: (doc: string) => releaseApi.updateDoc(release.id, doc),
@@ -585,6 +612,11 @@ function ReleaseReviewDetail({
                   <FileText className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={1.5} />
                   <span className="text-[13px] font-semibold text-slate-800">变更文档</span>
                   <span className="text-[12px] text-slate-400">发布说明</span>
+                  {highlightKws.length > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                      已高亮 {highlightKws.length} 个审查关键字
+                    </span>
+                  )}
                   {canDevelop && (
                     <button
                       type="button"
@@ -600,7 +632,7 @@ function ReleaseReviewDetail({
                   <table className="w-full border-collapse">
                     <tbody>
                       {rows.map((row, idx) => (
-                        <DocRow key={idx} row={row} hasWarning={warningCount > 0} />
+                        <DocRow key={idx} row={row} hasWarning={warningCount > 0} keywords={highlightKws} />
                       ))}
                     </tbody>
                   </table>
@@ -713,7 +745,16 @@ function ReleaseReviewDetail({
 }
 
 /** 发布说明表格行 */
-function DocRow({ row, hasWarning }: { row: MdTableRow; hasWarning: boolean }) {
+function DocRow({
+  row,
+  hasWarning,
+  keywords = [],
+}: {
+  row: MdTableRow;
+  hasWarning: boolean;
+  /** 审查员关键字高亮列表（非审查员传空数组，不高亮） */
+  keywords?: string[];
+}) {
   const isChangeContent = row.key === '变更内容';
   // 变更内容按 <br> 或字面换行分行（文档存储用 \n 多行），每行尝试提取类型标记
   const lines = row.value.split(/<br>|\n/);
@@ -749,15 +790,17 @@ function DocRow({ row, hasWarning }: { row: MdTableRow; hasWarning: boolean }) {
                     <span className={`font-mono text-[11px] rounded border px-1 py-0.5 shrink-0 ${typeCls}`}>
                       {type}
                     </span>
-                    <span>{content}</span>
+                    <span>{highlightKeywords(content, keywords)}</span>
                   </div>
                 );
               }
-              return <div key={i}>{line}</div>;
+              return <div key={i}>{highlightKeywords(line, keywords)}</div>;
             })}
           </div>
         ) : (
-          row.value.split(/<br>|\n/).map((line, i) => <div key={i}>{line}</div>)
+          row.value.split(/<br>|\n/).map((line, i) => (
+            <div key={i}>{highlightKeywords(line, keywords)}</div>
+          ))
         )}
       </td>
     </tr>

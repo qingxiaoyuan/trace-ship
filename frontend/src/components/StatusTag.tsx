@@ -1,6 +1,6 @@
 import { Tag } from 'antd';
 
-export type StatusType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+export type StatusType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'indigo';
 
 interface StatusTagProps {
   status: StatusType;
@@ -15,6 +15,7 @@ const colorMap: Record<StatusType, { bg: string; text: string }> = {
   danger: { bg: '#FDEBEC', text: '#9F2F2D' },
   info: { bg: '#E1F3FE', text: '#1F6C9F' },
   neutral: { bg: '#F1F5F9', text: '#787774' },
+  indigo: { bg: '#EEF2FF', text: '#4F46E5' },
 };
 
 export function StatusTag({ status, children, className }: StatusTagProps) {

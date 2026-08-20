@@ -30,12 +30,6 @@
 # 可选环境变量：
 #   SERVER_IP=192.168.x.x    第一次部署时指定服务器 IP（默认自动探测）
 #   FRONTEND_PORT=80         前端对外端口（默认 80）
-#
-# 清理环境（会删除容器、命名卷、.env.prod，数据不可恢复）：
-#   ./deploy.sh --clean [--force]
-#
-# 清空 LDAP 用户（删除 source=ldap 的账号及其角色关联，下次登录重新建档）：
-#   ./deploy.sh --clear-ldap-users
 # ============================================================
 set -e
 
@@ -83,125 +77,46 @@ if [ -z "${MODE}" ]; then
     echo "====================================="
     echo ""
     echo "请选择部署模式："
-    echo "  1) 第一次部署（自动生成环境变量，含第三方依赖组）"
-    echo "  2) 部署后端（复用已有环境变量）"
-    echo "  3) 部署前端（复用已有环境变量）"
-    echo "  4) 部署前后端（复用已有环境变量）"
-    echo "  5) 清理环境（删除容器、卷、.env.prod）"
-    echo "  6) 清空 LDAP 用户（重新建档用）"
-    echo "  0) 退出"
-    echo ""
-    read -rp "请输入编号 [0-6]: " choice
-    case "${choice}" in
-        1) MODE="--full" ;;
-        2) MODE="--backend" ;;
-        3) MODE="--frontend" ;;
-        4) MODE="--app" ;;
-        5) MODE="--clean" ;;
-        6) MODE="--clear-ldap-users" ;;
-        0) echo "👋 已取消"; exit 0 ;;
-        *) echo "❌ 无效选择"; exit 1 ;;
-    esac
+    if [ -f "${ENV_FILE}" ]; then
+        # 已部署过（.env.prod 存在）：不再提供「第一次部署」，避免误重置环境
+        echo "  1) 部署后端（复用已有环境变量）"
+        echo "  2) 部署前端（复用已有环境变量）"
+        echo "  3) 部署前后端（复用已有环境变量）"
+        echo "  0) 退出"
+        echo ""
+        read -rp "请输入编号 [0-3]: " choice
+        case "${choice}" in
+            1) MODE="--backend" ;;
+            2) MODE="--frontend" ;;
+            3) MODE="--app" ;;
+            0) echo "👋 已取消"; exit 0 ;;
+            *) echo "❌ 无效选择"; exit 1 ;;
+        esac
+    else
+        # 未部署过：只提供「第一次部署」（更新部署依赖 .env.prod，尚不可用）
+        echo "  1) 第一次部署（自动生成环境变量，含第三方依赖组）"
+        echo "  0) 退出"
+        echo ""
+        read -rp "请输入编号 [0-1]: " choice
+        case "${choice}" in
+            1) MODE="--full" ;;
+            0) echo "👋 已取消"; exit 0 ;;
+            *) echo "❌ 无效选择"; exit 1 ;;
+        esac
+    fi
 fi
 
 case "${MODE}" in
-    --full|--backend|--frontend|--app|--clean|--clear-ldap-users) ;;
-    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app/--clean/--clear-ldap-users）"; exit 1 ;;
+    --full|--backend|--frontend|--app) ;;
+    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app）"; exit 1 ;;
 esac
 
-# ---------- 2. 清理环境 ----------
-clean_env() {
-    local force="$1"
-    echo "====================================="
-    echo "⚠️  即将清理 Trace Ship 部署环境"
-    echo "====================================="
-    echo ""
-    echo "本次操作将删除以下内容（数据不可恢复）："
-    echo "  - 应用层容器（backend / frontend / celery-worker / celery-beat）"
-    echo "  - 数据层容器（postgres / redis / gitlab）"
-    echo "  - 命名数据卷（trace-ship-postgres-data / trace-ship-redis-data / trace-ship-gitlab-*）"
-    echo "  - 配置文件 .env.prod"
-    echo ""
-
-    if [ "${force}" != "--force" ]; then
-        read -rp "确认清理? 输入 yes 继续: " confirm
-        if [ "${confirm}" != "yes" ]; then
-            echo "👋 已取消清理"
-            exit 0
-        fi
-    fi
-
-    echo "🧹 停止并移除应用层服务..."
-    compose down --volumes --remove-orphans 2>/dev/null || true
-
-    echo "🧹 停止并移除数据层服务..."
-    compose_deps down --volumes --remove-orphans 2>/dev/null || true
-
-    echo "🧹 删除命名数据卷..."
-    for vol in trace-ship-postgres-data trace-ship-redis-data trace-ship-gitlab-config trace-ship-gitlab-logs trace-ship-gitlab-data trace-ship-backend-logs trace-ship-celerybeat-data; do
-        if docker volume inspect "${vol}" >/dev/null 2>&1; then
-            docker volume rm "${vol}" 2>/dev/null || true
-            echo "  已删除卷: ${vol}"
-        fi
-    done
-
-    if [ -f "${ENV_FILE}" ]; then
-        rm -f "${ENV_FILE}"
-        echo "🧹 已删除 .env.prod"
-    fi
-
-    echo ""
-    echo "✅ 清理完成，可重新执行 ./deploy.sh --full 进行全新部署"
-    exit 0
-}
-
-# ---------- 2.5 清空 LDAP 用户 ----------
-clear_ldap_users() {
-    echo "====================================="
-    echo "⚠️  即将清空所有 LDAP 来源用户"
-    echo "====================================="
-    echo ""
-
-    local deps_container="${COMPOSE_PROJECT_NAME:-trace-ship}-postgres"
-    if ! docker ps --format '{{.Names}}' | grep -qx "${deps_container}"; then
-        echo "❌ PostgreSQL 容器 ${deps_container} 未运行，请先启动数据层（./deploy.sh --full）"
-        exit 1
-    fi
-
-    local db_name db_user
-    db_name="$(grep '^POSTGRES_DB=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2)"
-    db_user="$(grep '^POSTGRES_USER=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2)"
-    db_name="${db_name:-release_manager}"
-    db_user="${db_user:-release_manager}"
-
-    echo "以下 LDAP 用户将被删除（角色关联、登录 Token 一并清理，操作日志保留并置空用户）："
-    echo ""
-    docker exec "${deps_container}" psql -U "${db_user}" -d "${db_name}" -c \
-        "SELECT username, nickname, department, created_at FROM sys_user WHERE source = 'ldap';"
-
-    read -rp "确认删除? 输入 yes 继续: " confirm
-    if [ "${confirm}" != "yes" ]; then
-        echo "👋 已取消"
-        exit 0
-    fi
-
-    docker exec "${deps_container}" psql -U "${db_user}" -d "${db_name}" -c \
-        "DELETE FROM token_blacklist_blacklistedtoken WHERE token_id IN (SELECT id FROM token_blacklist_outstandingtoken WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap'));
-         DELETE FROM token_blacklist_outstandingtoken WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap');
-         UPDATE sys_operation_log SET user_id = NULL WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap');
-         DELETE FROM sys_user_role WHERE user_id IN (SELECT id FROM sys_user WHERE source = 'ldap');
-         DELETE FROM sys_user WHERE source = 'ldap';"
-
-    echo ""
-    echo "✅ LDAP 用户已清空，域账号下次登录将重新建档并默认赋予开发人员角色"
-    exit 0
-}
-
-if [ "${MODE}" = "--clear-ldap-users" ]; then
-    clear_ldap_users
+# 已部署过时执行 --full 仅提示：.env.prod 复用逻辑本身幂等，允许用于分包追加应用镜像的场景
+if [ "${MODE}" = "--full" ] && [ -f "${ENV_FILE}" ]; then
+    echo "⚠️  检测到已完成第一次部署（.env.prod 已存在），将复用已有配置继续部署"
 fi
 
-# ---------- 3. 加载镜像 ----------
+# ---------- 2. 加载镜像 ----------
 load_tar() {
     local tar="$1"
     if [ -f "images/${tar}" ]; then
@@ -209,10 +124,6 @@ load_tar() {
         docker load -i "images/${tar}"
     fi
 }
-
-if [ "${MODE}" = "--clean" ]; then
-    clean_env "${2:-}"
-fi
 
 echo "📦 [1/4] 加载离线镜像..."
 case "${MODE}" in

@@ -8,7 +8,7 @@ import { releaseApi } from '@/api/release';
 import { getAvatarColor } from '@/utils/avatar';
 
 const typeDisplay: Record<string, { status: StatusType; text: string }> = {
-  formal: { status: 'primary', text: '正式' },
+  formal: { status: 'indigo', text: '正式' },
   rc: { status: 'info', text: 'RC' },
   beta: { status: 'warning', text: 'Beta' },
 };

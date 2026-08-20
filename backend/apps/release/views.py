@@ -142,7 +142,12 @@ class ReleaseViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return ReleaseRecord.objects.none()
         user = self.request.user
-        queryset = ReleaseRecord.objects.select_related("project", "repository", "publisher").prefetch_related("package_tasks")
+        queryset = (
+            ReleaseRecord.objects.select_related("project", "repository", "publisher")
+            .prefetch_related("package_tasks")
+            # 列表页「待整改」徽标：注记待整改（open）整改意见数，避免逐条查询
+            .annotate(open_review_count=Count("review_issues", filter=Q(review_issues__status="open")))
+        )
         if user.is_superuser:
             return queryset.all()
         project_ids = visible_project_ids(user)

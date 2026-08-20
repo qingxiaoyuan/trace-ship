@@ -195,6 +195,8 @@ class ReleaseListSerializer(serializers.ModelSerializer):
     warning_count = serializers.SerializerMethodField(read_only=True)
     illegal_count = serializers.SerializerMethodField(read_only=True)
     has_doc = serializers.SerializerMethodField(read_only=True)
+    # 待整改（open）整改意见数，由视图 get_queryset 注解提供
+    open_review_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = ReleaseRecord
@@ -203,6 +205,7 @@ class ReleaseListSerializer(serializers.ModelSerializer):
             "version", "tag_name", "release_type", "release_type_display",
             "status", "status_display", "branch", "publisher_name", "released_at", "created_at",
             "commit_total", "pass_count", "warning_count", "illegal_count", "has_doc",
+            "open_review_count",
         ]
 
     def _review_counts(self, obj: ReleaseRecord) -> dict:

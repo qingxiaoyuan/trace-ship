@@ -81,3 +81,47 @@ def test_log_accessible_by_permission_holder():
     client.force_authenticate(user=user)
     response = client.get("/api/system/logs/")
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_public_configs_accessible_by_any_authenticated_user():
+    """公开配置接口任意登录用户可读，仅返回 is_public=True 的配置"""
+    from apps.system.models import SystemConfig
+
+    SystemConfig.objects.create(key="review_doc_highlight_keywords", value="数据库\n接口变更", is_public=True)
+    SystemConfig.objects.create(key="nexus_password", value="secret123", is_public=False)
+
+    user = _make_user("public_reader")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get("/api/system/configs/public/")
+
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    assert response.data["data"] == {"review_doc_highlight_keywords": "数据库\n接口变更"}
+
+
+@pytest.mark.django_db
+def test_public_configs_exclude_sensitive_keys_even_if_marked_public():
+    """敏感键（password/token/secret 等）即使被误标为公开也不会从公开接口泄露"""
+    from apps.system.models import SystemConfig
+
+    SystemConfig.objects.create(key="nexus_password", value="secret123", is_public=True)
+    SystemConfig.objects.create(key="ai_api_key", value="sk-test", is_public=True)
+    SystemConfig.objects.create(key="review_doc_highlight_keywords", value="数据库", is_public=True)
+
+    user = _make_user("public_reader2")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get("/api/system/configs/public/")
+
+    assert response.status_code == 200
+    assert response.data["data"] == {"review_doc_highlight_keywords": "数据库"}
+
+
+@pytest.mark.django_db
+def test_public_configs_requires_authentication():
+    """未登录访问公开配置接口返回 401/403"""
+    client = APIClient()
+    response = client.get("/api/system/configs/public/")
+    assert response.status_code in (401, 403)

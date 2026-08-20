@@ -18,6 +18,7 @@ import { LdapIntegrationCard } from './LdapIntegrationCard';
 import { PackageNodeCard } from './PackageNodeCard';
 import { AiIntegrationCard } from './AiIntegrationCard';
 import { PackageKnowledgeCard } from './PackageKnowledgeCard';
+import { ReviewKeywordCard } from './ReviewKeywordCard';
 
 interface FormState {
   key: string;
@@ -169,6 +170,8 @@ export default function SystemConfigPage() {
       <AiIntegrationCard />
 
       <PackageKnowledgeCard />
+
+      <ReviewKeywordCard />
 
       <PackageNodeCard />
 

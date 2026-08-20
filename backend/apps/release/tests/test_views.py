@@ -360,6 +360,30 @@ class TestReleaseViews:
         assert response.status_code == 200
         assert response.data["data"]["total"] == 1
 
+    def test_list_releases_exposes_open_review_count(self, api_client, project, repository):
+        """列表接口返回待整改（open）整改意见数，用于列表「待整改」徽标"""
+        from apps.release.models import ReleaseReviewIssue
+
+        release = ReleaseRecord.objects.create(
+            project=project,
+            repository=repository,
+            version="VA.1.0.0",
+            tag_name="VA.1.0.0",
+            branch="main",
+            release_type="formal",
+            status="released",
+            publisher=api_client.handler._force_user,
+        )
+        user = api_client.handler._force_user
+        ReleaseReviewIssue.objects.create(release=release, author=user, content="待整改项一", status="open")
+        ReleaseReviewIssue.objects.create(release=release, author=user, content="待整改项二", status="open")
+        ReleaseReviewIssue.objects.create(release=release, author=user, content="已通过项", status="resolved")
+
+        response = api_client.get("/api/releases/")
+        assert response.status_code == 200
+        row = response.data["data"]["results"][0]
+        assert row["open_review_count"] == 2
+
     def test_release_commits_endpoint(self, api_client, project, repository, commit):
         """发布关联提交接口正常返回（回归：视图集 filterset 模型不匹配导致 500）"""
         from apps.release.models import ReleaseCommit

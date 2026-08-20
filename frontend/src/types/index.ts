@@ -146,6 +146,8 @@ export interface Release {
   illegal_count?: number;
   /** 是否已生成发布说明文档（列表接口返回） */
   has_doc?: boolean;
+  /** 待整改（open）整改意见数（列表接口返回，由后端注解聚合） */
+  open_review_count?: number;
   /** 发布时的基线 tag 快照（详情返回；空表示首个版本区间） */
   base_tag?: string;
   /** 整改意见聚合计数（详情返回） */

@@ -60,6 +60,8 @@ export const systemApi = {
     patch<SystemConfig>(`/system/configs/${key}/`, data),
   deleteConfig: (key: string) => del<null>(`/system/configs/${key}/`),
   testLdapConnection: () => post<{ detail: string }>('/system/configs/ldap-test/', {}),
+  /** 读取公开配置（is_public=true，仅需登录），返回 {key: value} 字典 */
+  getPublicConfigs: () => get<Record<string, string>>('/system/configs/public/'),
   getLogs: (params?: LogListParams) =>
     get<PaginatedData<SystemLog>>('/system/logs/', { params }),
 };
