@@ -1,6 +1,6 @@
 export const tokens = {
   colors: {
-    // Bright tech foundation from ui-design/trace-ship-light-redesign.html
+    // Bright tech foundation from docs/ui/overview/trace-ship-light-redesign.html
     primary: '#4F46E5',
     primaryLight: '#6366F1',
     primaryDark: '#3730A3',

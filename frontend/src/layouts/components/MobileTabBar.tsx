@@ -9,7 +9,7 @@ import { MobileUserSheet } from './MobileUserSheet';
 import { useCurrentRouteTitle } from './useCurrentRouteTitle';
 
 /**
- * 移动端底部操作栏（方案 C · 双胶囊 + 中央 +，见 ui-design/mobile-tabbar.html）
+ * 移动端底部操作栏（方案 C · 双胶囊 + 中央 +，见 docs/ui/mobile/mobile-tabbar.html）
  * 左胶囊：菜单入口 + 当前页指示；中央：新建发布快捷入口；右胶囊：消息 + 个人空间
  */
 export function MobileTabBar() {

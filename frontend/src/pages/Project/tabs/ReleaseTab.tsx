@@ -125,7 +125,7 @@ export function ReleaseTab({ projectId }: { projectId: string }) {
                   </div>
                 </div>
 
-                {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
                 <div className="md:hidden">
                   <div className="flex items-center justify-between">
                     <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">

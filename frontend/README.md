@@ -70,7 +70,7 @@ src/
 
 ## 后端接口
 
-开发环境通过 Vite 代理将 `/api` 转发到 `http://localhost:8000`。接口规范见 `docs/api-spec.md` 与后端 Swagger（`/swagger/`）。
+开发环境通过 Vite 代理将 `/api` 转发到 `http://localhost:8000`。接口规范见 `docs/api/api-spec.md` 与后端 Swagger（`/swagger/`）。
 
 ## 注意事项
 

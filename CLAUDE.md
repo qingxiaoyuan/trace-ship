@@ -228,5 +228,5 @@ npm run lint
 ## Important Notes
 
 - 后端目前没有配置 lint / format 工具链；如需引入，应保持与现有代码风格一致。
-- `docs/business-process-analysis.md` 是阶段规划文档，与当前实现存在差异（例如发布状态机、Jenkins 在流程中的位置、前端完成度），实现需求时以代码为准。
+- `docs/design/business-process-analysis.md` 是阶段规划文档，与当前实现存在差异（例如发布状态机、Jenkins 在流程中的位置、前端完成度），实现需求时以代码为准。
 - 根目录 `AGENTS.md` 与本文件保持同步，优先参考 `AGENTS.md` 的"重要注意事项"一节。

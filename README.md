@@ -97,11 +97,11 @@ trace-ship/
 │   ├── package/
 │   └── svn/
 ├── docs/                   # 项目文档
-│   ├── api-spec.md
-│   ├── business-process-analysis.md
-│   └── postman/
-├── feat/                   # 需求文档
-├── ui-design/              # UI 设计稿
+│   ├── requirements/           # 需求文档（需求 / 前端需求 / 后台需求）
+│   ├── design/                 # 设计文档（后台设计、业务流程分析、Windows 节点接入等）
+│   ├── api/                    # 接口文档与 Postman 集合
+│   ├── adr/                    # 架构决策记录
+│   └── ui/                     # UI 设计稿（overview / desktop / mobile / system）
 ├── scripts/                # dev.sh（开发环境管理）/ build.sh（发布包构建）/ deploy.sh（内网部署）
 ├── vscode-commit/          # VS Code 规范提交助手插件（AI 生成规范 commit 信息）
 └── README.md
@@ -202,7 +202,7 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 - **前端管理后台**：React + Ant Design 6 完整管理界面，覆盖工作台、项目、仓库、提交、发布、工作流、打包看板、使用指南、使用反馈、系统管理等页面，并内置浏览器兼容性检测与升级引导。
 - **周边工具**：vscode-commit VS Code 规范提交助手（AI 生成规范 commit 信息，apiProtocol 兼容多种 AI 服务）；scripts/build.sh + deploy.sh 离线构建与内网一键部署。
 
-后续里程碑规划可参考 `docs/business-process-analysis.md`（注意该文档为阶段规划，与当前实现可能存在差异，以代码为准）。
+后续里程碑规划可参考 `docs/design/business-process-analysis.md`（注意该文档为阶段规划，与当前实现可能存在差异，以代码为准）。
 
 ---
 
@@ -211,11 +211,11 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 | 文档 | 说明 |
 |------|------|
 | [backend/README.md](backend/README.md) | 后端详细说明 |
-| [docs/api-spec.md](docs/api-spec.md) | 接口文档 |
-| [docs/business-process-analysis.md](docs/business-process-analysis.md) | 业务流程分析与阶段规划 |
-| [docs/postman/trace-ship-v1.postman_collection.json](docs/postman/trace-ship-v1.postman_collection.json) | Postman 接口集合 |
-| [feat/后台需求.md](feat/后台需求.md) | 后台需求文档 |
-| [docs/后台设计.md](docs/后台设计.md) | 后台设计文档 |
+| [docs/api/api-spec.md](docs/api/api-spec.md) | 接口文档 |
+| [docs/design/business-process-analysis.md](docs/design/business-process-analysis.md) | 业务流程分析与阶段规划 |
+| [docs/api/postman/trace-ship-v1.postman_collection.json](docs/api/postman/trace-ship-v1.postman_collection.json) | Postman 接口集合 |
+| [docs/requirements/后台需求.md](docs/requirements/后台需求.md) | 后台需求文档 |
+| [docs/design/后台设计.md](docs/design/后台设计.md) | 后台设计文档 |
 | [vscode-commit/README.md](vscode-commit/README.md) | VS Code 规范提交助手插件说明 |
 
 ---

@@ -238,7 +238,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
                     </div>
                   </div>
 
-                  {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                  {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
                   <div className="md:hidden">
                     <div className="flex items-center justify-between gap-2">
                       <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">

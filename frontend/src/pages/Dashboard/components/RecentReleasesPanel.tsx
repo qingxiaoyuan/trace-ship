@@ -82,7 +82,7 @@ export function RecentReleasesPanel({
                   </div>
                 </div>
 
-                {/* 移动端简列表行（参考 ui-design/mobile-dashboard.html 最近发布） */}
+                {/* 移动端简列表行（参考 docs/ui/mobile/mobile-dashboard.html 最近发布） */}
                 <div className="flex items-center gap-3 px-4 py-3 lg:hidden">
                   <span
                     className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${mobileStatusBadge[status] || 'bg-slate-100 text-slate-500'}`}

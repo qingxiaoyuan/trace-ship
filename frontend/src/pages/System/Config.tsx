@@ -254,7 +254,7 @@ export default function SystemConfigPage() {
                   </div>
                 </div>
 
-                {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
                 <div className="md:hidden">
                   <div className="flex items-center justify-between gap-2">
                     <span className="min-w-0 truncate font-mono text-[15px] font-semibold tracking-tight text-indigo-600">{cfg.key}</span>

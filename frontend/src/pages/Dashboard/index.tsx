@@ -416,7 +416,7 @@ export default function Dashboard() {
     </div>
   );
 
-  // 移动端布局（对齐 ui-design/mobile-dashboard.html）：问候 → KPI 双列 → 趋势 → 待办 → 最近发布
+  // 移动端布局（对齐 docs/ui/mobile/mobile-dashboard.html）：问候 → KPI 双列 → 趋势 → 待办 → 最近发布
   if (isMobile) {
     return (
       <div className="space-y-4">

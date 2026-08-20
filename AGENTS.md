@@ -13,8 +13,7 @@ Trace Ship 是一个软件版本发布管理系统，围绕“项目”组织仓
 - `docker/`：Docker Compose 编排 PostgreSQL、Redis、GitLab；`test` profile 追加 OpenLDAP、phpLDAPadmin、SVN 模拟服务；`app` profile 可同时启动后端、前端、Celery。生产编排拆分为 `docker-compose.deps.yml`（数据层，独立项目 `trace-ship-deps`）与 `docker-compose.prod.yml`（应用层，项目 `trace-ship`），经共享网络 `trace-ship-net` 通信。
 - `vscode-commit/`：VS Code 规范提交助手插件子项目，通过 AI 自动生成规范 commit 信息；默认本地 DeepSeek 接口，`commit.apiProtocol` 配置（auto / openai / anthropic）兼容更多 AI 服务。
 - `scripts/`：开发环境管理（`dev.sh`）、发布包构建（`build.sh`）与内网部署（`deploy.sh`）脚本。
-- `docs/`：接口、业务流程、设计文档与 Postman Collection。
-- `feat/`、`ui-design/`：需求和 UI 设计相关资料。
+- `docs/`：全部项目文档，按用途分组——`requirements/`（需求）、`design/`（后台设计、业务流程分析等）、`api/`（接口文档与 Postman Collection）、`adr/`（架构决策记录）、`ui/`（UI 设计稿，再分 overview / desktop / mobile / system）。
 
 ## 常用命令
 
@@ -305,7 +304,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - 认证状态优先使用 `useAuthStore`，不要绕过 token 刷新机制直接创建新的 Axios 实例。
 - 页面内状态和表单尽量局部化；跨页面状态再放入 Zustand。
 - UI 要偏管理后台：信息密度适中、可扫描、少装饰，避免营销页式 hero 和大面积装饰渐变。
-- 移动端适配约定（见 `docs/adr/0014-frontend-mobile-adaptation.md`）：沿用 Tailwind 断点（sm/md/lg），适配一律追加 `max-md:`/`sm:`/`md:` 前缀类、不动桌面样式；<lg 时操作区在底部操作栏 `MobileTabBar`（左胶囊=菜单+当前页、中央=新建发布、右胶囊=消息+个人空间，顶栏只留标题），菜单数据与渲染统一来自 `navMenu.ts`/`SidebarNav.tsx`，勿另建菜单源；Modal 与 Drawer 在 ≤768px 由 `index.css` 全局媒体查询自动贴底弹出，页面代码不要写弹窗定位覆盖；新页面需自检 375px 下搜索框不溢出、表格有横滚兜底、可点按钮触控目标 ≥36px、内容区底部留出操作栏空间；PC 端 grid 列表行在 <md 下应卡片化（`max-md:flex-col` + 圆角边框白底），只保留名称/状态徽标/一行 meta/主操作，次要字段加 `max-md:hidden`，参考 `ui-design/mobile-release.html`。
+- 移动端适配约定（见 `docs/adr/0014-frontend-mobile-adaptation.md`）：沿用 Tailwind 断点（sm/md/lg），适配一律追加 `max-md:`/`sm:`/`md:` 前缀类、不动桌面样式；<lg 时操作区在底部操作栏 `MobileTabBar`（左胶囊=菜单+当前页、中央=新建发布、右胶囊=消息+个人空间，顶栏只留标题），菜单数据与渲染统一来自 `navMenu.ts`/`SidebarNav.tsx`，勿另建菜单源；Modal 与 Drawer 在 ≤768px 由 `index.css` 全局媒体查询自动贴底弹出，页面代码不要写弹窗定位覆盖；新页面需自检 375px 下搜索框不溢出、表格有横滚兜底、可点按钮触控目标 ≥36px、内容区底部留出操作栏空间；PC 端 grid 列表行在 <md 下应卡片化（`max-md:flex-col` + 圆角边框白底），只保留名称/状态徽标/一行 meta/主操作，次要字段加 `max-md:hidden`，参考 `docs/ui/mobile/mobile-release.html`。
 
 ## 环境与默认值
 
@@ -322,7 +321,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 ## 重要注意事项
 
 - 根目录 README 和部分文档可能滞后于代码，例如前端不再是“待实现”，发布流程也已从旧的构建状态链调整为审批后推 tag。实现前优先以代码为准。
-- `docs/business-process-analysis.md` 是阶段规划，不等同于当前实现。处理需求时要区分“已实现能力”和“规划能力”。
+- `docs/design/business-process-analysis.md` 是阶段规划，不等同于当前实现。处理需求时要区分“已实现能力”和“规划能力”。
 - 工作区可能已有用户改动。不要回滚未由自己产生的改动；如遇冲突，先读懂现状再最小化修改。
 - 前端 `src/mock/` 已彻底清理，页面一律对接真实接口；`src/pages/TagGenerator/` 为未注册的历史遗留页面，不要在路由或新代码中引用。
 - 不要使用破坏性 git 命令。提交、部署、重置等操作必须在用户明确要求后进行。

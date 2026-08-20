@@ -25,7 +25,7 @@
    `layouts/components/navMenu.ts`，分组渲染抽为 `SidebarNav.tsx`；桌面 `Sidebar`
    外壳不变。移动端（<lg）顶栏只保留 logo + 当前页标题，操作区集中在
    **底部操作栏 `MobileTabBar`**（双胶囊 + 中央「+」同高对齐，见
-   `ui-design/mobile-tabbar.html` 方案 C）：左胶囊为菜单入口（唤起底部导航抽屉
+   `docs/ui/mobile/mobile-tabbar.html` 方案 C）：左胶囊为菜单入口（唤起底部导航抽屉
    `MobileNavDrawer`）+ 当前页指示，中央为「新建发布」快捷入口，右胶囊为消息
    （未读角标，进 `/notifications`）+ 个人空间（`MobileUserSheet` 底部弹层，
    聚合最近通知、个人中心、使用说明/反馈、退出登录）。顶栏右侧操作（新建/通知/

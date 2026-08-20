@@ -120,7 +120,7 @@ export function CommitsTab({ repoId }: { repoId: string }) {
                   <span className="font-mono text-[10px] text-slate-400">{c.commit_hash?.slice(0, 10)}</span>
                 </div>
 
-                {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
                 <div className="md:hidden">
                   <div className="flex items-center justify-between gap-2">
                     <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-indigo-600">

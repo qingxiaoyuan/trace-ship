@@ -113,7 +113,7 @@ export function ReleaseCommits({ release }: { release: Release }) {
                       </span>
                     </div>
 
-                    {/* 移动端卡片（参考 ui-design/mobile-release.html） */}
+                    {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
                     <div className="md:hidden">
                       {/* 顶行徽标：与桌面端一致，未审查时不显示审查徽标 */}
                       {(c.review_status !== 'unreviewed' || c.is_included === false) && (

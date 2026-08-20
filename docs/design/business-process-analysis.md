@@ -1,6 +1,6 @@
 # 业务流程详细分析
 
-> 基于 [feat/后台设计.md](../feat/后台设计.md)、[feat/后台需求.md](../feat/后台需求.md) 与 [feat/需求.md](../feat/需求.md) 整理。
+> 基于 [design/后台设计.md](后台设计.md)、[requirements/后台需求.md](../requirements/后台需求.md) 与 [requirements/需求.md](../requirements/需求.md) 整理。
 >
 > **实现状态说明（2026-07 核对代码后更新）**：本文档原为阶段规划文档，现已按当前代码核对修订。
 > 文中标注「（规划中，未实现）」的内容表示代码中尚未落地，其余描述以当前实现为准。主要差异：
@@ -698,7 +698,7 @@ flowchart TD
 | 项目 CRUD | 项目增删改查、成员管理可用 | Postman 完整调用项目接口 |
 | 凭证管理 | 凭证增删改查、加密存储、脱敏展示 | 数据库验证 `encrypted_data` 非明文 |
 | 接口文档 | Swagger/Redoc 可访问 | 访问 `/swagger/`、`/redoc/` |
-| 交付物 | Postman Collection V1、接口说明文档 | 文件提交到 `docs/api-spec.md` |
+| 交付物 | Postman Collection V1、接口说明文档 | 文件提交到 `docs/api/api-spec.md` |
 
 ### 9.3 Milestone 2：仓库接入与 Commit 审查验收标准（第 4 周末）
 
@@ -755,8 +755,8 @@ flowchart TD
 | 交付物 | 说明 | 位置建议 |
 |--------|------|---------|
 | 源码 | 对应功能的后端代码 | `backend/` |
-| 接口文档 | Swagger/Redoc + Markdown 文档 | `docs/api-spec.md` |
-| Postman Collection | 可导入直接调用 | `docs/postman/` |
+| 接口文档 | Swagger/Redoc + Markdown 文档 | `docs/api/api-spec.md` |
+| Postman Collection | 可导入直接调用 | `docs/api/postman/` |
 | 数据库迁移脚本 | Django migrations | `backend/apps/**/migrations/` |
 | Docker 配置 | 可一键启动 | `docker/` |
 | 单元测试 | 核心逻辑覆盖 | `backend/apps/**/tests/` |

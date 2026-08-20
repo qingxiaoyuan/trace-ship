@@ -28,7 +28,7 @@ ADR-0002 确立的内置打包仅支持在平台宿主机以本地 Docker 容器
 - 节点信息（host/port/work_root/credential_id）写入 `config_snapshot`，凭证明文不落快照，运行时解析。
 - 取消任务通过关闭 SSH 会话终止远程进程；产物回传完成后清理远程任务目录。
 
-节点准入要求（OpenSSH Server、git、构建环境、目录约定）见 `docs/package-windows-node.md`。
+节点准入要求（OpenSSH Server、git、构建环境、目录约定）见 `docs/design/package-windows-node.md`。
 
 ## 2026-08-11 演进
 
