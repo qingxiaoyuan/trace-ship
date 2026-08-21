@@ -9,7 +9,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.account.models import User, Role, UserRole, Permission
+from apps.account.models import Permission, Role, User, UserRole
 
 
 def _make_user(username: str, **kwargs) -> User:

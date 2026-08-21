@@ -8,9 +8,8 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.release.services import ReleaseService
-from utils.provider.exceptions import NotFoundError
 from utils.provider.base import TagInfo
-from utils.provider.exceptions import ProviderError
+from utils.provider.exceptions import NotFoundError, ProviderError
 
 pytestmark = pytest.mark.django_db
 
@@ -535,3 +534,127 @@ def test_delete_released_tag_provider_error_keeps_record(repository, project, us
     with pytest.raises(ProviderError):
         ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
     assert ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+# ======================== retry_push_tag 测试 ========================
+
+
+def _make_rejected_release(repository, project, user, workflow_instance=None):
+    """构造一条推 tag 失败后的已驳回发布记录"""
+    from apps.release.models import ReleaseRecord
+
+    return ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="rejected",
+        rejected_reason="推 tag 失败: 远端临时不可用",
+        publisher=user,
+        workflow_instance=workflow_instance,
+    )
+
+
+def _make_workflow_instance(project, user, release, status):
+    """构造指定状态的工作流实例"""
+    from apps.workflow.models import WorkflowDefinition, WorkflowInstance
+
+    definition = WorkflowDefinition.objects.create(
+        project=project,
+        name="发布审批",
+        biz_type="release",
+        release_type="formal",
+        node_config=[{"id": "n1", "name": "审批"}],
+        created_by=user,
+    )
+    return WorkflowInstance.objects.create(
+        definition=definition,
+        biz_type="release",
+        biz_id=str(release.id),
+        status=status,
+        created_by=user,
+    )
+
+
+def test_retry_push_tag_success_without_workflow(repository, project, user, mock_git_provider, monkeypatch):
+    """直连发布（无审批流程实例）推 tag 失败后可重试，成功后转为已发布。"""
+    release = _make_rejected_release(repository, project, user)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    tag_info = ReleaseService.retry_push_tag(release, request_user=user)
+
+    release.refresh_from_db()
+    assert tag_info.name == "VA.1.0.0"
+    assert release.status == "released"
+    assert release.rejected_reason == ""
+    assert release.released_at is not None
+
+
+def test_retry_push_tag_success_with_completed_workflow(repository, project, user, mock_git_provider, monkeypatch):
+    """审批已通过（流程实例 completed）但推 tag 失败的发布单可重试。"""
+    from apps.release.models import ReleaseRecord
+
+    release = _make_rejected_release(repository, project, user)
+    instance = _make_workflow_instance(project, user, release, "completed")
+    release.workflow_instance = instance
+    release.save(update_fields=["workflow_instance", "updated_at"])
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    ReleaseService.retry_push_tag(release, request_user=user)
+
+    release.refresh_from_db()
+    assert release.status == "released"
+    assert ReleaseRecord.objects.filter(id=release.id, status="released").exists()
+
+
+def test_retry_push_tag_rejects_non_rejected_status(repository, project, user):
+    """非 rejected 状态不允许走重试入口。"""
+    from apps.release.models import ReleaseRecord
+
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="draft",
+        publisher=user,
+    )
+
+    with pytest.raises(serializers.ValidationError, match="只有已驳回状态才能重试推 tag"):
+        ReleaseService.retry_push_tag(release, request_user=user)
+
+
+def test_retry_push_tag_rejects_unapproved_workflow(repository, project, user):
+    """审批被驳回（流程实例非 completed）的发布单不允许重试推 tag。"""
+    release = _make_rejected_release(repository, project, user)
+    instance = _make_workflow_instance(project, user, release, "rejected")
+    release.workflow_instance = instance
+    release.save(update_fields=["workflow_instance", "updated_at"])
+
+    with pytest.raises(serializers.ValidationError, match="审批未通过"):
+        ReleaseService.retry_push_tag(release, request_user=user)
+
+    release.refresh_from_db()
+    assert release.status == "rejected"
+
+
+def test_retry_push_tag_failure_returns_to_rejected(repository, project, user, mock_git_provider, monkeypatch):
+    """重试推 tag 再次失败时回到 rejected 并刷新失败原因。"""
+    release = _make_rejected_release(repository, project, user)
+
+    def raise_provider_error(repo_identity, tag_name, commit_hash, message=""):
+        raise ProviderError("远端仍然不可用")
+
+    mock_git_provider.create_tag = raise_provider_error
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+
+    with pytest.raises(serializers.ValidationError, match="推 tag 失败"):
+        ReleaseService.retry_push_tag(release, request_user=user)
+
+    release.refresh_from_db()
+    assert release.status == "rejected"
+    assert "远端仍然不可用" in release.rejected_reason

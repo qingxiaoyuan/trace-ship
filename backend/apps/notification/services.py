@@ -3,9 +3,7 @@
 
 封装站内消息的创建、标记已读等能力。
 """
-from typing import Optional
 
-from django.db import transaction
 from django.utils import timezone
 
 from apps.notification.models import Notification

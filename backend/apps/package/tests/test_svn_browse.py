@@ -11,7 +11,6 @@ from apps.project.models import Project, ProjectMember
 from apps.repository.models import Repository
 from utils.provider.svn import SVNProvider
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

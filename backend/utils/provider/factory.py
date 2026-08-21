@@ -7,7 +7,6 @@ from .exceptions import NotSupportedError
 from .gitlab import GitLabProvider
 from .svn import SVNProvider
 
-
 # vendor 到 Provider 类的映射
 PROVIDER_MAP = {
     "gitlab": GitLabProvider,

@@ -3,7 +3,6 @@
 
 包含仓库（Repository）和提交记录（CommitRecord）的序列化器。
 """
-from typing import Set
 from urllib.parse import urlparse
 
 from rest_framework import serializers
@@ -240,7 +239,7 @@ class CommitRecordSerializer(serializers.ModelSerializer):
         updates = obj.parsed_message.get("updates", [])
         if not updates:
             return "-"
-        types: Set[str] = {u.get("type") for u in updates if u.get("type")}
+        types: set[str] = {u.get("type") for u in updates if u.get("type")}
         if types == {"A"}:
             return "A类"
         if types == {"F"}:

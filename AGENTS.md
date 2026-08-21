@@ -121,10 +121,11 @@ npm install
 npm run dev       # Vite 默认 8855，/api 代理到后端
 npm run build     # tsc -b && vite build
 npm run lint      # ESLint
+npm run test      # vitest（jsdom），测试文件为 src/**/*.test.ts(x)
 npm run preview
 ```
 
-前端没有独立 format 命令；修改时保持现有 TypeScript、组件和样式风格。
+前端没有独立 format 命令；修改时保持现有 TypeScript、组件和样式风格。新增 `src/utils/` 纯函数应补充 vitest 用例。
 
 ## 后端架构
 
@@ -176,7 +177,7 @@ npm run preview
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：工作流定义、实例和审批任务。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
 - `PackageConfig`：项目级打包配置，包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（含提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
-- `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。
+- `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
 - `Credential`：凭证密文与凭证元数据。
 - `Notification`：站内通知。
 - `Feedback`：使用反馈，包含分类、点赞用户集合、处理状态（`open` / `processed`）、处理人与处理时间。
@@ -291,8 +292,10 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 ### 后端
 
 - 后端代码使用中文注释和 type hints，与现有风格一致。
+- 后端使用 ruff 做 lint/format（`backend/pyproject.toml`，`pip install -r requirements-dev.txt` 后 `ruff check .`），提交前应通过检查。
 - 模型字段应设置 `verbose_name`；系统类表通常以 `sys_` 开头，业务表按 app 语义命名。
-- 新业务逻辑优先放在 `services.py`，视图只做参数、权限、序列化和响应封装。
+- 新业务逻辑优先放在 `services.py`（体量较大时按职责拆分为 `services/` 包，如 `apps/package/services/`，对外保留统一门面类），视图只做参数、权限、序列化和响应封装。
+- 修改业务流程（状态机、主流程步骤、模块上下线）时，须同步更新 `CLAUDE.md` 对应章节与本文件，保持两文件一致。
 - 修改模型后必须考虑迁移文件、测试数据和序列化器。
 - 涉及发布、工作流、凭证、权限的改动要补充或更新测试。
 - 不要恢复旧的 `ProjectIntegration` 设计；当前仓库直接归属项目并各自绑定凭证。
@@ -321,7 +324,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 ## 重要注意事项
 
 - 根目录 README 和部分文档可能滞后于代码，例如前端不再是“待实现”，发布流程也已从旧的构建状态链调整为审批后推 tag。实现前优先以代码为准。
-- `docs/design/business-process-analysis.md` 是阶段规划，不等同于当前实现。处理需求时要区分“已实现能力”和“规划能力”。
+- `docs/design/business-process-analysis.md` 原为阶段规划，2026-07 已按代码核对修订（文中标注「规划中，未实现」的除外）；处理需求时仍以代码为准。
 - 工作区可能已有用户改动。不要回滚未由自己产生的改动；如遇冲突，先读懂现状再最小化修改。
 - 前端 `src/mock/` 已彻底清理，页面一律对接真实接口；`src/pages/TagGenerator/` 为未注册的历史遗留页面，不要在路由或新代码中引用。
 - 不要使用破坏性 git 命令。提交、部署、重置等操作必须在用户明确要求后进行。

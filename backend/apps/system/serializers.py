@@ -3,9 +3,10 @@
 
 包含系统参数和操作日志的序列化器。
 """
-from typing import Optional, Dict
+
 from rest_framework import serializers
-from apps.system.models import SystemConfig, OperationLog
+
+from apps.system.models import OperationLog, SystemConfig
 
 
 class SystemConfigSerializer(serializers.ModelSerializer):
@@ -35,7 +36,7 @@ class OperationLogSerializer(serializers.ModelSerializer):
             "detail", "description", "result", "ip", "created_at",
         ]
 
-    def get_user(self, obj: OperationLog) -> Optional[Dict[str, str]]:
+    def get_user(self, obj: OperationLog) -> dict[str, str] | None:
         """
         获取操作人简要信息
 

@@ -5,8 +5,6 @@
 """
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-
 
 # 更新内容行正则：匹配行首 A/F 标记，允许可选前导序号如「1. 」或「1、」。
 # 限制为行首可避免把「提交A功能」等普通提交中的字母误判为更新类型。
@@ -41,7 +39,7 @@ def _clean_prefix_content(line: str) -> str:
     return cleaned.strip()
 
 
-def extract_update_lines(text: str) -> List[Dict[str, str]]:
+def extract_update_lines(text: str) -> list[dict[str, str]]:
     """
     从 commit message 或 MR description 中提取更新行
 
@@ -61,7 +59,7 @@ def extract_update_lines(text: str) -> List[Dict[str, str]]:
     """
     if not text:
         return []
-    result: List[Dict[str, str]] = []
+    result: list[dict[str, str]] = []
     for match in UPDATE_LINE_RE.finditer(text):
         result.append({
             "type": match.group(1).upper(),
@@ -71,7 +69,7 @@ def extract_update_lines(text: str) -> List[Dict[str, str]]:
         return result
 
     # 前缀路径：逐行扫描标记行，支持多块；内容行继承所属块类型
-    current_type: Optional[str] = None
+    current_type: str | None = None
     for line in text.splitlines():
         stripped = line.strip()
         prefix_match = UPDATE_PREFIX_RE.match(line)
@@ -108,12 +106,12 @@ class ParsedCommit:
         errors: 校验错误信息列表
     """
 
-    change_type: Optional[str] = None  # 无配置项改动 / 有配置项改动
-    updates: List[Dict[str, str]] = field(default_factory=list)
-    config_changes: Dict[str, Dict[str, str]] = field(default_factory=dict)
-    related_changes: Dict[str, str] = field(default_factory=dict)
+    change_type: str | None = None  # 无配置项改动 / 有配置项改动
+    updates: list[dict[str, str]] = field(default_factory=list)
+    config_changes: dict[str, dict[str, str]] = field(default_factory=dict)
+    related_changes: dict[str, str] = field(default_factory=dict)
     is_valid: bool = True
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """转换为普通字典，便于序列化"""
@@ -182,7 +180,7 @@ class CommitParser:
         return result
 
     @classmethod
-    def _extract_change_type(cls, message: str) -> Optional[str]:
+    def _extract_change_type(cls, message: str) -> str | None:
         """
         提取变更类型
 
@@ -207,7 +205,7 @@ class CommitParser:
         return "无配置项改动"
 
     @classmethod
-    def _extract_updates(cls, message: str) -> List[Dict[str, str]]:
+    def _extract_updates(cls, message: str) -> list[dict[str, str]]:
         """
         提取更新内容列表
 
@@ -219,13 +217,13 @@ class CommitParser:
         return extract_update_lines(message)
 
     @classmethod
-    def _extract_config_changes(cls, message: str) -> Dict[str, Dict[str, str]]:
+    def _extract_config_changes(cls, message: str) -> dict[str, dict[str, str]]:
         """
         提取配置项改动
 
         按 [Section] 分组解析 key=value 配置项。
         """
-        config: Dict[str, Dict[str, str]] = {}
+        config: dict[str, dict[str, str]] = {}
         in_section = False
         current_section = None
         started = False
@@ -255,13 +253,13 @@ class CommitParser:
         return config
 
     @classmethod
-    def _extract_related_changes(cls, message: str) -> Dict[str, str]:
+    def _extract_related_changes(cls, message: str) -> dict[str, str]:
         """
         提取关联性改动
 
         解析 "关联性改动" 段落下的 key:value 键值对。
         """
-        related: Dict[str, str] = {}
+        related: dict[str, str] = {}
         started = False
         for raw_line in message.splitlines():
             line = raw_line.strip()

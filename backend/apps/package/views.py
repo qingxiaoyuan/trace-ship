@@ -8,21 +8,23 @@ import shutil
 import tempfile
 import threading
 import zipfile
-from queue import Queue
 from pathlib import Path
+from queue import Queue
 
+import django_filters
 from django.core.cache import cache
-from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django.db.models import Prefetch
+from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
 from rest_framework.mixins import DestroyModelMixin
 from rest_framework.permissions import IsAuthenticated
 
-from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
+from apps.credential.models import Credential
 from apps.package.ai import PackageScriptAIError, PackageScriptAIService
 from apps.package.docker_local import LocalDockerError, LocalDockerService
+from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
 from apps.package.nexus import NexusError, NexusService
 from apps.package.remote_windows import RemoteNodeError, test_node_connection
 from apps.package.serializers import (
@@ -33,13 +35,17 @@ from apps.package.serializers import (
     PackageTaskSerializer,
 )
 from apps.package.services import PackageService
-from apps.credential.models import Credential
-from apps.project.models import Project
-from apps.project.models import ProjectMember
+from apps.project.models import Project, ProjectMember
 from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
 from apps.system.services import OperationLogService
-from utils.permissions import IsProjectManager, IsProjectMember, IsProjectPackager, IsProjectDeveloper, IsProjectPackageAdmin, HasPermission
+from utils.permissions import (
+    HasPermission,
+    IsProjectDeveloper,
+    IsProjectMember,
+    IsProjectPackageAdmin,
+    IsProjectPackager,
+)
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 from utils.provider.factory import get_provider
 from utils.response import error_response, success_response
@@ -562,13 +568,23 @@ class PackageConfigViewSet(StandardModelViewSet):
         return StreamingHttpResponse(sse_stream(), content_type="text/event-stream")
 
 
+class PackageTaskFilter(django_filters.FilterSet):
+    """打包任务过滤器；status 支持逗号分隔多值（如 ?status=queued,running）。"""
+
+    status = django_filters.BaseInFilter(field_name="status")
+
+    class Meta:
+        model = PackageTask
+        fields = ["project", "repository", "release", "config", "status", "build_type", "release_type"]
+
+
 class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
     """打包任务视图集（只读 + 按独立权限删除已结束任务）。"""
 
     queryset = PackageTask.objects.all()
     serializer_class = PackageTaskSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repository", "release", "config", "status", "build_type", "release_type"]
+    filterset_class = PackageTaskFilter
     search_fields = ["name", "version", "tag_name", "project__name", "repository__name"]
     ordering_fields = ["created_at", "started_at", "finished_at"]
     ordering = ["-created_at"]

@@ -3,7 +3,6 @@
 from django.conf import settings
 from django.db import migrations, models
 
-
 BUILTIN_NAMES = {
     "formal": "正式发布审批",
     "rc": "RC 发布审批",

@@ -16,6 +16,7 @@ import type { SystemConfig } from '@/api/system';
 import { NexusIntegrationCard } from './NexusIntegrationCard';
 import { LdapIntegrationCard } from './LdapIntegrationCard';
 import { PackageNodeCard } from './PackageNodeCard';
+import { PackageCleanupCard } from './PackageCleanupCard';
 import { AiIntegrationCard } from './AiIntegrationCard';
 import { PackageKnowledgeCard } from './PackageKnowledgeCard';
 import { ReviewKeywordCard } from './ReviewKeywordCard';
@@ -174,6 +175,8 @@ export default function SystemConfigPage() {
       <ReviewKeywordCard />
 
       <PackageNodeCard />
+
+      <PackageCleanupCard />
 
       <div className="tech-card overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">

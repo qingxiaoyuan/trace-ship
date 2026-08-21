@@ -7,12 +7,12 @@ release_doc 为 Markdown 字符串（2 列表格），导出器解析表格行�
 """
 import io
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from apps.release.models import ReleaseRecord
 
 
-def _parse_md_table(md: str) -> List[Tuple[str, str]]:
+def _parse_md_table(md: str) -> list[tuple[str, str]]:
     """
     解析 Markdown 2 列表格为行列表
 
@@ -24,7 +24,7 @@ def _parse_md_table(md: str) -> List[Tuple[str, str]]:
     """
     if not md:
         return []
-    rows: List[Tuple[str, str]] = []
+    rows: list[tuple[str, str]] = []
     for line in md.strip().splitlines():
         line = line.strip()
         if not line or not line.startswith("|"):
@@ -65,7 +65,7 @@ class ReleaseDocExporter:
     """
 
     @staticmethod
-    def _get_context(release: ReleaseRecord) -> Dict[str, Any]:
+    def _get_context(release: ReleaseRecord) -> dict[str, Any]:
         """
         构建导出上下文
 
@@ -113,12 +113,10 @@ class ReleaseDocExporter:
         """
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.platypus import (
-            SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-        )
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         # 尝试注册中文字体
         try:

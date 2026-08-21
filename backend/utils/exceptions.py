@@ -3,11 +3,11 @@
 
 统一 DRF 异常响应格式为 {code, message, data}，便于前端统一处理。
 """
-from rest_framework.views import exception_handler
-from rest_framework.response import Response
-from rest_framework import status
-from django.core.exceptions import ValidationError, PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import exception_handler
 
 
 def custom_exception_handler(exc, context) -> Response:

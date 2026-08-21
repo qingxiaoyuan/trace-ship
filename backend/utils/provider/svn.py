@@ -9,7 +9,6 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import List, Optional
 
 from django.utils.dateparse import parse_datetime
 
@@ -34,7 +33,7 @@ class SVNProvider:
         self.username = credential_data.get("username", "")
         self.password = credential_data.get("password", "")
 
-    def _base_cmd(self) -> List[str]:
+    def _base_cmd(self) -> list[str]:
         """构造带认证的 svn 基础命令"""
         cmd = ["svn", "--non-interactive", "--no-auth-cache"]
         if self.username:
@@ -43,7 +42,7 @@ class SVNProvider:
             cmd.extend(["--password", self.password])
         return cmd
 
-    def _run(self, cmd: List[str], timeout: int = 60) -> str:
+    def _run(self, cmd: list[str], timeout: int = 60) -> str:
         """
         执行 svn 命令
 
@@ -131,10 +130,10 @@ class SVNProvider:
     def list_commits(
         self,
         branch: str = None,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         per_page: int = 100,
-    ) -> List[CommitInfo]:
+    ) -> list[CommitInfo]:
         """
         拉取 SVN 提交日志
 
@@ -151,7 +150,7 @@ class SVNProvider:
         xml_data = self._run(cmd, timeout=60)
         return self._parse_xml_log(xml_data)
 
-    def _parse_xml_log(self, xml_data: str) -> List[CommitInfo]:
+    def _parse_xml_log(self, xml_data: str) -> list[CommitInfo]:
         """
         解析 SVN log XML
 
@@ -187,7 +186,7 @@ class SVNProvider:
         return commits
 
     @staticmethod
-    def _parse_svn_date(value: str) -> Optional[datetime]:
+    def _parse_svn_date(value: str) -> datetime | None:
         """
         解析 SVN 日期格式
 
@@ -202,12 +201,12 @@ class SVNProvider:
         self,
         repo_identity: str,
         target_branch: str,
-        since: Optional[datetime] = None,
-    ) -> List[MergeRequestInfo]:
+        since: datetime | None = None,
+    ) -> list[MergeRequestInfo]:
         """SVN 不支持 MR 概念，返回空列表"""
         return []
 
-    def list_dir(self, url: str = None) -> List[dict]:
+    def list_dir(self, url: str = None) -> list[dict]:
         """
         列出 SVN 远程目录的直接子项（不递归）。
 
@@ -226,7 +225,7 @@ class SVNProvider:
         xml_data = self._run(cmd, timeout=60)
         return self._parse_xml_list(xml_data)
 
-    def _parse_xml_list(self, xml_data: str) -> List[dict]:
+    def _parse_xml_list(self, xml_data: str) -> list[dict]:
         """
         解析 svn list --xml 输出
 

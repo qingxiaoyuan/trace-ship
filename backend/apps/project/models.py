@@ -5,8 +5,9 @@
 仓库与打包配置直接归属项目并绑定凭证，不再经过外站绑定层。
 """
 import uuid
-from django.db import models
+
 from django.conf import settings
+from django.db import models
 
 
 class Project(models.Model):

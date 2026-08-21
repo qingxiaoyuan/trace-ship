@@ -4,7 +4,6 @@
 包含发布记录（ReleaseRecord）和发布关联提交（ReleaseCommit）。
 """
 import uuid
-from typing import Optional
 
 from django.conf import settings
 from django.db import models

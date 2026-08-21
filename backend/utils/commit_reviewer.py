@@ -3,7 +3,7 @@
 
 基于 CommitParser 的解析结果，按规则判定提交信息是否合法、警告或通过。
 """
-from typing import Tuple
+
 from .commit_parser import CommitParser
 
 
@@ -36,7 +36,7 @@ class CommitReviewer:
     ]
 
     @classmethod
-    def review(cls, message: str) -> Tuple[str, str, dict]:
+    def review(cls, message: str) -> tuple[str, str, dict]:
         """
         审查提交信息
 

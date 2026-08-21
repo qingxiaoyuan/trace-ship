@@ -4,17 +4,17 @@
 提供通知列表、未读数、标记已读等 API。
 """
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, viewsets
+from rest_framework import filters
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.notification.models import Notification
 from apps.notification.serializers import NotificationSerializer
 from apps.notification.services import NotificationService
 from utils.response import error_response, success_response
+from utils.viewsets import StandardReadOnlyModelViewSet
 
 
 class NotificationViewSet(StandardReadOnlyModelViewSet):

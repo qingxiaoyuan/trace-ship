@@ -5,20 +5,21 @@
 """
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters as drf_filters, serializers, viewsets
+from rest_framework import filters as drf_filters
+from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.project.services import visible_project_ids
+from apps.release.exporters import ReleaseDocExporter
 from apps.release.models import ReleaseRecord
 from apps.release.serializers import (
     ReleaseCommitSerializer,
@@ -33,10 +34,10 @@ from apps.release.services import (
     ReleaseTagExistsError,
     ReleaseValidator,
 )
-from apps.release.exporters import ReleaseDocExporter
 from utils.permissions import IsProjectDeveloper, IsProjectManager
 from utils.provider.exceptions import ProviderError
 from utils.response import error_response, success_response
+from utils.viewsets import StandardModelViewSet
 
 logger = logging.getLogger(__name__)
 
@@ -163,14 +164,14 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         if self.action in [
             "create", "update", "partial_update", "destroy",
-            "generate_doc", "update_doc", "submit_audit", "push_tag",
+            "generate_doc", "update_doc", "submit_audit", "push_tag", "retry_push_tag",
         ]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         if self.action == "delete_released":
             return [IsAuthenticated(), IsProjectManager()]
         return super().get_permissions()
 
-    def _serialize_release(self, release: ReleaseRecord) -> Dict[str, Any]:
+    def _serialize_release(self, release: ReleaseRecord) -> dict[str, Any]:
         """
         序列化单条发布记录
 
@@ -325,7 +326,7 @@ class ReleaseViewSet(StandardModelViewSet):
             发布说明文档
         """
         release = self.get_object()
-        commit_ids: List[str] = request.data.get("commit_ids") or None
+        commit_ids: list[str] = request.data.get("commit_ids") or None
         merge_similar: bool = request.data.get("merge_similar", True)
         try:
             doc = ReleaseService.generate_doc(
@@ -450,6 +451,29 @@ class ReleaseViewSet(StandardModelViewSet):
             "git_hash": tag_info.commit_hash,
             "pushed_at": release.released_at,
         }, message="推 tag 成功")
+
+    @action(detail=True, methods=["post"], url_path="retry-push-tag")
+    def retry_push_tag(self, request: Request, pk=None) -> Response:
+        """
+        推 tag 失败后重试（仅审批已通过、推 tag 环节失败的发布单可用）
+
+        Args:
+            request: DRF Request
+            pk: 发布主键
+
+        Returns:
+            创建的 tag 信息
+        """
+        release = self.get_object()
+        try:
+            tag_info = ReleaseService.retry_push_tag(release, request.user)
+        except Exception as exc:
+            return _handle_service_error(exc, "重试推 tag")
+        return success_response({
+            "tag_name": tag_info.name,
+            "git_hash": tag_info.commit_hash,
+            "pushed_at": release.released_at,
+        }, message="重试推 tag 成功")
 
     @action(detail=True, methods=["post"], url_path="delete-released")
     def delete_released(self, request: Request, pk=None) -> Response:

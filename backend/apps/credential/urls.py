@@ -3,8 +3,9 @@
 
 将凭证 CRUD 及扩展 action 注册到 /api/credentials/ 下。
 """
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
 from apps.credential.views import CredentialViewSet
 
 router = DefaultRouter()

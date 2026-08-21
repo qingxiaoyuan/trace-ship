@@ -567,10 +567,10 @@ def test_run_command_terminates_process_group_when_task_canceled(project, reposi
         popen_calls.update(kwargs)
         return fake_process
 
-    monkeypatch.setattr("apps.package.services.subprocess.Popen", fake_popen)
-    monkeypatch.setattr("apps.package.services.select.select", lambda *args, **kwargs: ([], [], []))
+    monkeypatch.setattr("apps.package.services.base.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("apps.package.services.base.select.select", lambda *args, **kwargs: ([], [], []))
     monkeypatch.setattr(PackageService, "_ensure_task_not_canceled", lambda task: (_ for _ in ()).throw(PackageTaskCanceledError("任务已被用户取消")))
-    monkeypatch.setattr("apps.package.services.os.killpg", lambda pid, sig: signal_calls.append((pid, sig)))
+    monkeypatch.setattr("apps.package.services.base.os.killpg", lambda pid, sig: signal_calls.append((pid, sig)))
 
     with pytest.raises(PackageTaskCanceledError):
         PackageService._run_command(task, ["echo", "test"], Path("."))
@@ -632,9 +632,9 @@ def test_run_command_drains_remaining_output_after_process_exit(project, reposit
         def wait(self, timeout=None):
             return 0
 
-    monkeypatch.setattr("apps.package.services.subprocess.Popen", lambda *a, **k: FakeProcess())
+    monkeypatch.setattr("apps.package.services.base.subprocess.Popen", lambda *a, **k: FakeProcess())
     # select 永不报告就绪：模拟"输出到达晚于进程退出"，旧实现会直接 break
-    monkeypatch.setattr("apps.package.services.select.select", lambda *a, **k: ([], [], []))
+    monkeypatch.setattr("apps.package.services.base.select.select", lambda *a, **k: ([], [], []))
     monkeypatch.setattr(PackageService, "_ensure_task_not_canceled", lambda task: None)
 
     PackageService._run_command(task, ["/bin/sh", "-ec", "false"], tmp_path)

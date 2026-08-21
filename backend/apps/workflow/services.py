@@ -5,7 +5,7 @@
 支持节点或签（any）与会签（all）模式。
 """
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
@@ -17,9 +17,8 @@ from apps.project.models import Project, ProjectMember
 from apps.system.services import OperationLogService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 
-
 # 内置发布类型 → 流程名称
-BUILTIN_RELEASE_FLOW_NAMES: Dict[str, str] = {
+BUILTIN_RELEASE_FLOW_NAMES: dict[str, str] = {
     "formal": "正式发布审批",
     "rc": "RC 发布审批",
     "beta": "Beta 发布审批",
@@ -47,7 +46,6 @@ def ensure_builtin_workflow_definitions(project: Project) -> None:
     Args:
         project: 项目实例
     """
-    from apps.workflow.serializers import WorkflowDefinitionSerializer
 
     existing_types = set(
         WorkflowDefinition.objects.filter(
@@ -130,7 +128,7 @@ class WorkflowEngine:
             return instance
 
     @staticmethod
-    def _normalize_node_config(node_config: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _normalize_node_config(node_config: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         归一化审批链配置，兼容旧数据缺少 node_id 等字段的情况。
 
@@ -140,7 +138,7 @@ class WorkflowEngine:
         Returns:
             补齐必需字段后的审批链配置
         """
-        normalized: List[Dict[str, Any]] = []
+        normalized: list[dict[str, Any]] = []
         for index, node in enumerate(node_config or []):
             item = dict(node or {})
             item.setdefault("node_id", f"approval_{index + 1}_{uuid.uuid4().hex[:8]}")
@@ -156,8 +154,8 @@ class WorkflowEngine:
         task: WorkflowTask,
         action: str,
         comment: str = "",
-        to_user: Optional[User] = None,
-        rollback_target: Optional[str] = None,
+        to_user: User | None = None,
+        rollback_target: str | None = None,
     ) -> WorkflowInstance:
         """
         处理审批任务
@@ -304,7 +302,7 @@ class WorkflowEngine:
         cls,
         task: WorkflowTask,
         comment: str,
-        to_user: Optional[User],
+        to_user: User | None,
         now,
     ) -> None:
         """处理转交动作"""
@@ -338,7 +336,7 @@ class WorkflowEngine:
         cls,
         task: WorkflowTask,
         comment: str,
-        rollback_target: Optional[str],
+        rollback_target: str | None,
         now,
     ) -> None:
         """
@@ -451,10 +449,10 @@ class WorkflowEngine:
     def _create_node_tasks(
         cls,
         instance: WorkflowInstance,
-        node: Dict[str, Any],
-        graph_data: Dict[str, Any],
+        node: dict[str, Any],
+        graph_data: dict[str, Any],
         is_rollback: bool = False,
-    ) -> List[WorkflowTask]:
+    ) -> list[WorkflowTask]:
         """
         为指定节点创建审批任务
 
@@ -496,9 +494,9 @@ class WorkflowEngine:
     @classmethod
     def _resolve_node_approvers(
         cls,
-        approvers_config: List[Dict[str, Any]],
+        approvers_config: list[dict[str, Any]],
         instance: WorkflowInstance,
-    ) -> List[User]:
+    ) -> list[User]:
         """
         解析节点审批人配置
 
@@ -510,14 +508,14 @@ class WorkflowEngine:
             去重后的 User 列表
         """
         project = instance.definition.project
-        all_approvers: List[User] = []
+        all_approvers: list[User] = []
 
         for config in approvers_config:
             users = cls._resolve_approvers_from_config(config, project, instance)
             all_approvers.extend(users)
 
         seen = set()
-        unique_approvers: List[User] = []
+        unique_approvers: list[User] = []
         for user in all_approvers:
             if user and user.id not in seen:
                 seen.add(user.id)
@@ -528,10 +526,10 @@ class WorkflowEngine:
     @classmethod
     def _resolve_approvers_from_config(
         cls,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         project: Project,
         instance: WorkflowInstance,
-    ) -> List[User]:
+    ) -> list[User]:
         """
         从审批链配置解析审批人
 
@@ -573,7 +571,7 @@ class WorkflowEngine:
         return []
 
     @classmethod
-    def _build_graph_data(cls, node_config: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _build_graph_data(cls, node_config: list[dict[str, Any]]) -> dict[str, Any]:
         """
         将审批链配置转换为 LogicFlow 图数据
 
@@ -652,7 +650,7 @@ class WorkflowEngine:
     # 以下方法为兼容旧 graph_data 保留，新逻辑不再使用
 
     @classmethod
-    def _find_first_approval_node(cls, graph_data: dict) -> Optional[dict]:
+    def _find_first_approval_node(cls, graph_data: dict) -> dict | None:
         """
         查找开始节点后的第一个审批节点（兼容旧 graph_data）
         """
@@ -683,7 +681,7 @@ class WorkflowEngine:
         return None
 
     @classmethod
-    def _find_next_approval_node(cls, graph_data: dict, current_node_id: str) -> Optional[dict]:
+    def _find_next_approval_node(cls, graph_data: dict, current_node_id: str) -> dict | None:
         """
         查找当前审批节点的下一个审批节点（兼容旧 graph_data）
         """
@@ -705,7 +703,7 @@ class WorkflowEngine:
         return None
 
     @staticmethod
-    def _find_next_node_id(edges: List[dict], current_node_id: str) -> Optional[str]:
+    def _find_next_node_id(edges: list[dict], current_node_id: str) -> str | None:
         """
         查找当前节点的下一个节点 ID（兼容旧 graph_data）
         """
@@ -722,7 +720,7 @@ class WorkflowEngine:
         node: dict,
         project: Project,
         instance: WorkflowInstance,
-    ) -> List[User]:
+    ) -> list[User]:
         """
         解析节点审批人（兼容旧 graph_data）
         """

@@ -1,8 +1,9 @@
 """
 发布说明生成器单元测试
 """
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone as tz
 
 from apps.release.services import ReleaseDocGenerator
 from utils.provider.base import CommitInfo
@@ -74,7 +75,7 @@ class TestReleaseDocGenerator:
                 author="张三",
                 author_email="",
                 message="A 新增功能",
-                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=UTC),
             ),
         ]
         provider = MockProvider(commits=commits)
@@ -99,7 +100,7 @@ class TestReleaseDocGenerator:
                 author="张三",
                 author_email="",
                 message="A 新增功能",
-                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=UTC),
             ),
         ]
         provider = MockProvider(commits=commits)
@@ -118,14 +119,14 @@ class TestReleaseDocGenerator:
                 author="张三",
                 author_email="",
                 message="A 新增功能",
-                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=UTC),
             ),
             CommitInfo(
                 hash="h2",
                 author="李四",
                 author_email="",
                 message="F 修复 bug",
-                committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=UTC),
             ),
         ]
         provider = MockProvider(commits=commits)
@@ -143,14 +144,14 @@ class TestReleaseDocGenerator:
                 author="张三",
                 author_email="",
                 message="A 功能1",
-                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=UTC),
             ),
             CommitInfo(
                 hash="h2",
                 author="李四",
                 author_email="",
                 message="F 修复 bug",
-                committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=UTC),
             ),
         ]
         provider = MockProvider(commits=commits)
@@ -184,19 +185,19 @@ class TestReleaseDocGenerator:
                 author="张三",
                 author_email="",
                 message="bad message",
-                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 20, 10, 0, 0, tzinfo=UTC),
             ),
             CommitInfo(
                 hash="pass001",
                 author="李四",
                 author_email="",
                 message="A 合法功能",
-                committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=tz.utc),
+                committed_at=datetime(2026, 6, 21, 10, 0, 0, tzinfo=UTC),
             ),
         ]
         provider = MockProvider(commits=commits)
         generator = ReleaseDocGenerator(release, provider)
-        md = generator.generate()
+        generator.generate()
 
         # 非法提交应被过滤，不创建 ReleaseCommit
         assert not release.release_commits.filter(commit__commit_hash="illegal001").exists()

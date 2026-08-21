@@ -1,5 +1,6 @@
 """将旧 version_rule 格式（format/initial）迁移为结构化格式（prefix/major/minor/patch/suffixes）"""
 import re
+
 from django.db import migrations
 
 

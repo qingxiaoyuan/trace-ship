@@ -3,9 +3,10 @@
 
 注册项目 CRUD 以及嵌套的项目成员接口。
 """
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from apps.project.views import ProjectViewSet, ProjectMemberViewSet
+
+from apps.project.views import ProjectMemberViewSet, ProjectViewSet
 
 router = DefaultRouter()
 router.register(r"", ProjectViewSet, basename="project")

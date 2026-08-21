@@ -255,7 +255,7 @@ class TestPushArtifactsOverwriteMode:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = True
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService._push_artifacts_to_svn(task, workspace)
 
         mock_provider.sync_directory.assert_called_once()
@@ -276,7 +276,7 @@ class TestPushArtifactsOverwriteMode:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             PackageService._push_artifacts_to_svn(task, workspace)
 
         mock_provider.import_path.assert_called_once()
@@ -292,7 +292,7 @@ class TestPushArtifactsOverwriteMode:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = True
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             with pytest.raises(RuntimeError, match="SVN 目录已存在"):
                 PackageService._push_artifacts_to_svn(task, workspace)
 

@@ -1,19 +1,16 @@
 """
 发布管理接口集成测试
 """
-import pytest
-from unittest.mock import MagicMock
 
+import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.release.models import ReleaseRecord
+from apps.workflow.models import WorkflowDefinition
 from utils.provider.base import TagInfo
 
 TODAY = timezone.now().strftime("%Y%m%d")
-
-
-from apps.workflow.models import WorkflowDefinition
 
 
 pytestmark = pytest.mark.django_db

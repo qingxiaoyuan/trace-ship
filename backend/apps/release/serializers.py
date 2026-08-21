@@ -6,7 +6,7 @@
 from django.db.models import Count, Q
 from rest_framework import serializers
 
-from apps.project.models import Project, ProjectMember
+from apps.project.models import Project
 from apps.release.models import (
     ReleaseCommit,
     ReleaseRecord,

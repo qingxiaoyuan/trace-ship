@@ -3,7 +3,8 @@
 
 封装成功/失败响应格式为 {code, message, data}。
 """
-from typing import Any, Optional
+from typing import Any
+
 from rest_framework.response import Response
 
 

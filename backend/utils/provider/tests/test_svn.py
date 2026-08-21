@@ -3,12 +3,12 @@ SVNProvider 单元测试
 
 使用 mock 模拟 svn 命令行输出。
 """
-import pytest
 from unittest.mock import patch
 
-from utils.provider.svn import SVNProvider
-from utils.provider.exceptions import ConnectionError
+import pytest
 
+from utils.provider.exceptions import ConnectionError
+from utils.provider.svn import SVNProvider
 
 SAMPLE_LOG_XML = """<?xml version="1.0"?>
 <log>

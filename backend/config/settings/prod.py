@@ -3,9 +3,11 @@
 
 继承 base.py 并关闭调试模式，启用安全校验和文件日志。
 """
-from .base import *
 import os
+
 from django.core.exceptions import ImproperlyConfigured
+
+from .base import *
 
 # 生产环境关闭调试模式
 DEBUG = False

@@ -647,7 +647,7 @@ class TestRemoteHelpers:
 class TestAuthCloneArgs:
     def test_builds_basic_auth_header(self, repository, user, monkeypatch):
         monkeypatch.setattr(
-            "apps.package.services.resolve_credential",
+            "apps.package.services.source.resolve_credential",
             lambda repo, user=None: {"token": "tok@en/1"},
         )
         args = PackageService._auth_clone_args(repository, user)
@@ -657,7 +657,7 @@ class TestAuthCloneArgs:
 
     def test_custom_username(self, repository, user, monkeypatch):
         monkeypatch.setattr(
-            "apps.package.services.resolve_credential",
+            "apps.package.services.source.resolve_credential",
             lambda repo, user=None: {"username": "deploy", "token": "t"},
         )
         args = PackageService._auth_clone_args(repository, user)
@@ -666,7 +666,7 @@ class TestAuthCloneArgs:
 
     def test_no_token_returns_empty(self, repository, user, monkeypatch):
         monkeypatch.setattr(
-            "apps.package.services.resolve_credential",
+            "apps.package.services.source.resolve_credential",
             lambda repo, user=None: {},
         )
         assert PackageService._auth_clone_args(repository, user) == []
@@ -783,7 +783,7 @@ class TestRemoteRunTask:
     def test_remote_checkout_command_uses_auth_header(self, project, repository, node, release, user, monkeypatch, tmp_path):
         monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
         monkeypatch.setattr(
-            "apps.package.services.resolve_credential",
+            "apps.package.services.source.resolve_credential",
             lambda repo, user=None: {"token": "abc123"},
         )
         client = self._mock_client(monkeypatch)

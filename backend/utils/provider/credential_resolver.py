@@ -11,7 +11,6 @@ from django.utils import timezone
 
 from .exceptions import ProviderError
 
-
 # vendor 与凭证类型的对应关系（供序列化器绑定时校验）
 # svn 保留：打包产物推送（PackageConfig.svn_credential）仍使用 svn_password 凭证
 VENDOR_TO_CRED_TYPE = {

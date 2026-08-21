@@ -4,6 +4,7 @@
 包含代码仓库（Repository）和提交记录（CommitRecord）。
 """
 import uuid
+
 from django.db import models
 
 from apps.repository.managers import CommitRecordManager

@@ -3,8 +3,9 @@
 
 基于 Fernet 对称加密实现凭证敏感数据的加密、解密和脱敏展示。
 """
-import json
 import base64
+import json
+
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 

@@ -1,5 +1,5 @@
 """SVN 推送相关测试。"""
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from rest_framework.test import APIClient
@@ -13,7 +13,6 @@ from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
 from utils.provider.svn import SVNProvider
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -302,7 +301,7 @@ class TestPushArtifactsToSVN:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService._push_artifacts_to_svn(task, workspace)
 
         assert result["remote_url"] == "svn://host/releases/V1.0.0"
@@ -342,7 +341,7 @@ class TestPushArtifactsToSVN:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             PackageService._push_artifacts_to_svn(task, workspace)
 
         message = mock_provider.import_path.call_args.args[2]
@@ -375,7 +374,7 @@ class TestPushArtifactsToSVN:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             PackageService._push_artifacts_to_svn(task, workspace)
 
         doc_text = (workspace / "tmp" / "svn_upload" / f"release-{release.version}.md").read_text(encoding="utf-8")
@@ -411,7 +410,7 @@ class TestPushArtifactsToSVN:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = True
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             with pytest.raises(RuntimeError, match="SVN 目录已存在"):
                 PackageService._push_artifacts_to_svn(task, workspace)
 
@@ -491,7 +490,7 @@ class TestPushArtifactsToSVN:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             with pytest.raises(RuntimeError, match="同名文件"):
                 PackageService._push_artifacts_to_svn(task, workspace)
         mock_provider.import_path.assert_not_called()
@@ -520,7 +519,7 @@ class TestPushArtifactsToSVN:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService._push_artifacts_to_svn(task, workspace)
 
         assert result["remote_url"] == "svn://host/releases/SVNP/V1.0.0"
@@ -566,7 +565,7 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
 
     mock_provider = MagicMock()
     mock_provider.remote_exists.return_value = False
-    monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+    monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
     PackageService.run_task(task)
     task.refresh_from_db()
@@ -615,7 +614,7 @@ def test_run_task_with_svn_push_failure_keeps_task_success(project, repository, 
 
     mock_provider = MagicMock()
     mock_provider.remote_exists.return_value = True  # 目录已存在
-    monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+    monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
     PackageService.run_task(task)
     task.refresh_from_db()
@@ -714,7 +713,7 @@ class TestManualPushSvn:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService.manual_push_svn(task)
 
         assert result["remote_url"] == "svn://host/releases/V1.0.0"
@@ -793,7 +792,7 @@ class TestManualPushSvn:
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
 
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService.manual_push_svn(task)
 
         assert result["remote_url"] == "svn://host/releases/V1.0.0"
@@ -843,7 +842,7 @@ class TestReleaseTypeDistinction:
         (workspace / "artifacts" / artifacts_name).write_bytes(b"fake artifact")
         mock_provider = MagicMock()
         mock_provider.remote_exists.return_value = False
-        with patch("apps.package.services.get_provider", return_value=mock_provider):
+        with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService._push_artifacts_to_svn(task, workspace)
         return result["remote_url"]
 
@@ -936,7 +935,7 @@ def test_run_task_with_svn_push_for_branch_task(
     mock_provider = MagicMock()
     # remote_exists：对最末目录返回 False（不存在可推送），对父目录 releases/feature 也返回 False（需创建）
     mock_provider.remote_exists.side_effect = lambda url: False
-    monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+    monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
     PackageService.run_task(task)
     task.refresh_from_db()
@@ -1009,9 +1008,9 @@ class TestSyncReleaseDocToSvn:
 
     def test_sync_success(self, project, repository, release, svn_credential, monkeypatch):
         """已推送 SVN 的任务成功替换文档。"""
-        task = self._make_pushed_task(project, repository, release, svn_credential)
+        self._make_pushed_task(project, repository, release, svn_credential)
         mock_provider = MagicMock()
-        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+        monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
         results = PackageService.sync_release_docs_to_svn(release)
 
@@ -1029,7 +1028,7 @@ class TestSyncReleaseDocToSvn:
         self._make_pushed_task(project, repository, release, svn_credential)
         mock_provider = MagicMock()
         mock_provider.replace_file.side_effect = RuntimeError("SVN 连接失败")
-        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+        monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
         results = PackageService.sync_release_docs_to_svn(release)
 
@@ -1056,7 +1055,7 @@ class TestSyncReleaseDocToSvn:
             stage_info={},
         )
         mock_provider = MagicMock()
-        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+        monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
         results = PackageService.sync_release_docs_to_svn(release)
 
@@ -1069,7 +1068,7 @@ class TestSyncReleaseDocToSvn:
         release.release_doc = ""
         release.save(update_fields=["release_doc"])
         mock_provider = MagicMock()
-        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+        monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
         results = PackageService.sync_release_docs_to_svn(release)
 
@@ -1083,7 +1082,7 @@ class TestSyncReleaseDocToSvn:
         self._make_pushed_task(project, repository, release, svn_credential, remote_url="svn://host/releases/V1.0.0")
         self._make_pushed_task(project, repository, release, svn_credential, remote_url="svn://host/releases/V1.0.0-rc")
         mock_provider = MagicMock()
-        monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+        monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
         results = PackageService.sync_release_docs_to_svn(release)
 
@@ -1150,7 +1149,7 @@ def test_update_doc_logs_svn_sync_failure(
     )
     mock_provider = MagicMock()
     mock_provider.replace_file.side_effect = RuntimeError("SVN 连接失败")
-    monkeypatch.setattr("apps.package.services.get_provider", lambda vendor, url, cred: mock_provider)
+    monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
     resp = api_client.post(
         f"/api/releases/{release.id}/update-doc/",

@@ -5,7 +5,7 @@
 """
 import pytest
 
-from apps.repository.models import CommitRecord, Repository
+from apps.repository.models import CommitRecord
 
 
 @pytest.mark.django_db

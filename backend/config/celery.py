@@ -4,6 +4,7 @@ Celery 应用配置
 为异步任务和定时任务提供 Celery app 入口，Django 启动时自动发现任务。
 """
 import os
+
 from celery import Celery
 
 # 设置默认 Django 配置模块

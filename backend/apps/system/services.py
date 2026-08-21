@@ -3,7 +3,7 @@
 
 提供业务语义化日志记录能力。
 """
-from typing import Any, Dict, Optional
+from typing import Any
 
 from apps.system.models import OperationLog, SystemConfig
 
@@ -46,7 +46,7 @@ class OperationLogService:
         resource_id: str = "",
         description: str = "",
         result: str = "success",
-        detail: Optional[Dict[str, Any]] = None,
+        detail: dict[str, Any] | None = None,
         ip: str = "",
     ) -> OperationLog:
         """
@@ -79,7 +79,7 @@ class OperationLogService:
         )
 
     @staticmethod
-    def log_release(user, release, action: str, result: str = "success", detail: Optional[Dict[str, Any]] = None) -> OperationLog:
+    def log_release(user, release, action: str, result: str = "success", detail: dict[str, Any] | None = None) -> OperationLog:
         """
         记录发布相关操作
         """
@@ -93,6 +93,7 @@ class OperationLogService:
             "build_success": "构建成功",
             "build_failure": "构建失败",
             "push_tag": "推 tag",
+            "retry_push_tag": "重试推 tag",
             "delete_released": "删除已发布版本",
         }
         return OperationLogService.log(
@@ -107,7 +108,7 @@ class OperationLogService:
         )
 
     @staticmethod
-    def log_workflow(user, task, action: str, result: str = "success", detail: Optional[Dict[str, Any]] = None) -> OperationLog:
+    def log_workflow(user, task, action: str, result: str = "success", detail: dict[str, Any] | None = None) -> OperationLog:
         """
         记录审批相关操作
         """

@@ -5,6 +5,7 @@
 """
 import pytest
 from rest_framework.test import APIClient
+
 from apps.account.models import User
 
 
@@ -15,7 +16,7 @@ def test_local_user_login():
 
     期望：HTTP 200，响应 code 为 0，data 中包含 access_token
     """
-    user = User.objects.create_user(
+    User.objects.create_user(
         username="testuser",
         password="testpass123",
         source="local",
@@ -219,7 +220,7 @@ def test_menus_granular_system_permissions():
     期望：拥有 system.user + system.package_image 的用户仅看到用户管理与打包镜像，
     看不到角色管理/系统配置/操作日志
     """
-    from apps.account.models import Role, UserRole, Permission
+    from apps.account.models import Permission, Role, UserRole
 
     perm_user = Permission.objects.get(code="system.user")
     perm_image = Permission.objects.get(code="system.package_image")
@@ -261,7 +262,7 @@ def test_menus_non_member_without_role_sees_no_business_menus():
 
 def _grant_system_permission(user, code):
     """为用户授予指定 system.* 权限（通过临时角色绑定）"""
-    from apps.account.models import Role, UserRole, Permission
+    from apps.account.models import Permission, Role, UserRole
     perm = Permission.objects.get(code=code)
     role = Role.objects.create(name=f"role_{code}_{user.username}", code=f"role_{code}_{user.username}")
     role.permissions.add(perm)

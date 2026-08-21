@@ -4,8 +4,9 @@
 包含系统参数（SystemConfig）和操作日志（OperationLog）。
 """
 import uuid
-from django.db import models
+
 from django.conf import settings
+from django.db import models
 
 
 class SystemConfig(models.Model):

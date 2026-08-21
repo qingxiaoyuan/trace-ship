@@ -27,6 +27,8 @@ export const releaseApi = {
   submitAudit: (id: string) =>
     post<{ id: string; status: string; workflow_instance_id?: string }>(`/releases/${id}/submit-audit/`, {}),
   pushTag: (id: string) => post<Release>(`/releases/${id}/push-tag/`, {}),
+  /** 推 tag 失败后重试（仅审批已通过、推 tag 环节失败的已驳回发布可用） */
+  retryPushTag: (id: string) => post<Release>(`/releases/${id}/retry-push-tag/`, {}),
   /** 删除已发布版本：需输入完整 tag 名称二次确认 */
   deleteReleased: (id: string, tagName: string) =>
     post<{ tag_name: string; remote_deleted: boolean }>(`/releases/${id}/delete-released/`, {

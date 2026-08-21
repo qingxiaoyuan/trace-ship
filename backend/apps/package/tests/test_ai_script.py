@@ -6,19 +6,18 @@ from rest_framework.test import APIClient
 
 from apps.account.models import User
 from apps.credential.models import Credential
-from apps.package.ai import PackageScriptAIError, PackageScriptAIService
+from apps.package.ai import MAX_KNOWLEDGE_ENTRIES, PackageScriptAIError, PackageScriptAIService
 from apps.package.docker_local import IMAGE_PROBE_SH, LocalDockerService
-from apps.package.ai import MAX_KNOWLEDGE_ENTRIES
 from apps.package.models import PackageKnowledge, PackageNode, PackageTask
 from apps.package.remote_windows import NODE_PROBE_CMD, RemoteNodeError, probe_node_tools
 from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
 from apps.system.models import OperationLog, SystemConfig
+from utils.probe_output import parse_probe_output
 from utils.provider.ai import AIClientError, call_ai_chat, call_ai_chat_stream
 from utils.provider.exceptions import AuthenticationError, NotFoundError, ProviderError
 from utils.provider.gitlab import GitLabProvider
-from utils.probe_output import parse_probe_output
 
 pytestmark = pytest.mark.django_db
 

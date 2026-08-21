@@ -135,9 +135,10 @@ npm install
 npm run dev       # 默认端口 5173，/api 代理到 localhost:8000
 npm run build
 npm run lint
+npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(x)
 ```
 
-前端目前未配置独立的格式化命令；`npm run lint` 使用 ESLint。
+前端目前未配置独立的格式化命令；`npm run lint` 使用 ESLint；`npm run test` 使用 vitest，优先覆盖 `src/utils/` 纯函数与关键 hooks/stores。
 
 ## Architecture
 
@@ -186,7 +187,7 @@ npm run lint
 3. 生成发布说明（`ReleaseService.generate_doc`）：保存 Markdown 发布说明。
 4. 提交审批（`ReleaseService.submit_audit`）：要求 `draft` 状态且发布说明非空；按发布类型查找启用的 `WorkflowDefinition` 创建 `WorkflowInstance`，状态改为 `pending`。
 5. 审批流转（`WorkflowEngine`）：支持通过、驳回、转交、回退、撤销。
-6. 审批完成（`ReleaseService.handle_workflow_completed`）：调用 `push_tag`，成功后状态为 `released`；推 tag 失败则状态为 `rejected` 并写入 `rejected_reason`。
+6. 审批完成（`ReleaseService.handle_workflow_completed`）：调用 `push_tag`，成功后状态为 `released`；推 tag 失败则状态为 `rejected` 并写入 `rejected_reason`。审批已通过、仅推 tag 失败的发布单可通过 `ReleaseService.retry_push_tag`（`POST /api/releases/{id}/retry-push-tag/`）重试，无需重新走审批。
 7. 自动打包：推 tag 成功后调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。
 8. 审批驳回（`ReleaseService.handle_workflow_rejected`）：状态改为 `rejected`；回退到初始节点时可恢复为 `draft`。
 
@@ -196,7 +197,8 @@ npm run lint
 - `PackageConfig`：项目级打包配置，包含镜像引用、可选 `custom_script` 自定义脚本、环境变量、构建/产物目录、发布后自动打包开关、SVN 推送配置（svn_url / svn_credential / svn_path_template）。
 - `PackageTask`：打包任务记录，状态 `queued` / `running` / `success` / `failure` / `canceled`，保存配置快照、工作区路径、日志路径、产物信息、SVN 推送结果。
 - 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 准备 `workspace/{source,artifacts,tmp}` → `git clone` 源码 → 以 `--entrypoint /bin/sh` 启动容器（只挂载 source / artifacts / tmp，容器内工作目录 `/workspace/source`）→ 有 `custom_script` 则以 `sh -ec`（遇错即停）执行，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）→ 扫描 `workspace/artifacts` 产物 → 可选推送 SVN → 更新状态与耗时。
-- 手动能力：`PackageConfigViewSet.trigger` 手动触发某个已发布版本的打包；`PackageTaskViewSet.cancel` 取消任务、`push_svn` 手动推送产物、`logs` 读取日志、`download_artifact` 下载产物。
+- 手动能力：`PackageConfigViewSet.trigger` 手动触发某个已发布版本的打包；`PackageTaskViewSet.cancel` 取消任务、`push_svn` 手动推送产物、`logs` 读取日志、`download_artifact` 下载产物；任务列表 `status` 过滤支持逗号分隔多值（如 `?status=queued,running`）。
+- 工作区清理（`apps/package/services/cleanup.py`）：任务结束（成功/失败/取消）即删本地工作区 `source` 与 `tmp`（产物、日志保留）；远程任务失败/取消时按 `cleanup_workspace` 快照兜底回收节点目录；每天 0:00 清理各节点 `work_root` 下残留任务目录（跳过运行中任务）；每天 8:00 删除超期产物（仅 artifacts，`artifact_info` 同步清空），保留天数由「系统配置」`package_artifact_retention_days` 维护（默认 30，环境变量 `PACKAGE_ARTIFACT_RETENTION_DAYS` 兜底）。
 - Jenkins 模块已整体下线（模型、服务、API、`python-jenkins` 依赖均已移除），打包统一走 `apps.package`；不要在新代码中恢复 Jenkins 相关逻辑。
 
 ### Celery
@@ -206,13 +208,15 @@ npm run lint
   - `apps.package.tasks.run_package_task`：执行打包任务（Docker 镜像构建 / 本地脚本 / SVN 推送）。
   - `apps.repository.tasks`：提交同步相关任务。
   - `apps.release.tasks`：发布相关异步任务。
+- 周期任务（`CELERY_BEAT_SCHEDULE`，beat 服务在 dev/prod compose 均已定义）：整点清理草稿发布；每天 0:00 清理远程节点任务目录；每天 8:00 清理超期打包产物。
 
 ## Code Conventions
 
 - 后端代码要求 **中文注释 + type hints**，与现有代码保持一致。
 - 模型字段应加 `verbose_name`；系统类模型表名常以 `sys_` 开头，业务类模型表名常按 app 命名（如 `release_record`、`package_task`）。
 - 新增 API 应通过 `config/urls.py` 注册，统一以 `/api/<resource>/` 开头。
-- 新增业务逻辑优先放到 `services.py`，视图层保持薄封装。
+- 新增业务逻辑优先放到 `services.py`（体量较大时按职责拆分为 `services/` 包，如 `apps/package/services/`，对外保留统一门面类），视图层保持薄封装。
+- 修改业务流程（状态机、主流程步骤、模块上下线）时，须同步更新本文件对应章节与 `AGENTS.md`，保持两文件一致。
 
 ## Environment & Defaults
 
@@ -227,6 +231,6 @@ npm run lint
 
 ## Important Notes
 
-- 后端目前没有配置 lint / format 工具链；如需引入，应保持与现有代码风格一致。
-- `docs/design/business-process-analysis.md` 是阶段规划文档，与当前实现存在差异（例如发布状态机、Jenkins 在流程中的位置、前端完成度），实现需求时以代码为准。
+- 后端使用 ruff 做 lint/format（配置在 `backend/pyproject.toml`，`pip install -r requirements-dev.txt` 后 `ruff check .`）；规则集渐进启用，存量代码已清零告警。
+- `docs/design/business-process-analysis.md` 原为阶段规划文档，2026-07 已按代码核对修订（文中标注「规划中，未实现」的除外）；实现需求时仍以代码为准。
 - 根目录 `AGENTS.md` 与本文件保持同步，优先参考 `AGENTS.md` 的"重要注意事项"一节。

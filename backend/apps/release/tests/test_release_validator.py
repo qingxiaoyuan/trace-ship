@@ -1,15 +1,11 @@
 """
 发布校验器单元测试
 """
+
 import pytest
-from datetime import timedelta
 
-from django.utils import timezone
-
-from apps.project.models import Project
 from apps.release.models import ReleaseRecord
 from apps.release.services import ReleaseValidator
-
 
 pytestmark = pytest.mark.django_db
 

@@ -214,11 +214,24 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 
-# Celery beat 定时任务：每个整点清理草稿发布申请
+# Celery beat 定时任务：
+# - 每个整点清理草稿发布申请
+# - 每天 0:00 清理远程 Windows 打包节点残留的任务目录（跳过运行中任务）
+# - 每天 8:00 删除超过保留天数的打包产物（仅 artifacts，日志保留）
 CELERY_BEAT_SCHEDULE = {
     "cleanup-draft-releases-hourly": {
         "task": "apps.release.tasks.cleanup_draft_releases",
         "schedule": crontab(minute=0),
+        "args": (),
+    },
+    "cleanup-remote-node-workspaces-daily": {
+        "task": "apps.package.tasks.cleanup_remote_node_workspaces",
+        "schedule": crontab(minute=0, hour=0),
+        "args": (),
+    },
+    "cleanup-expired-package-artifacts-daily": {
+        "task": "apps.package.tasks.cleanup_expired_package_artifacts",
+        "schedule": crontab(minute=0, hour=8),
         "args": (),
     },
 }
@@ -230,6 +243,10 @@ RELEASE_PREVIEW_MAX_COMMITS = int(os.getenv("RELEASE_PREVIEW_MAX_COMMITS", "10")
 
 # 系统内置打包工作区根目录
 PACKAGE_WORKSPACE_ROOT = os.getenv("PACKAGE_WORKSPACE_ROOT", str(BASE_DIR / "package_workspaces"))
+
+# 打包产物保留天数（每天 8:00 定时清理超期产物）；「系统配置」页面的
+# package_artifact_retention_days 可覆盖此默认值
+PACKAGE_ARTIFACT_RETENTION_DAYS = int(os.getenv("PACKAGE_ARTIFACT_RETENTION_DAYS", "30"))
 
 # Nexus 仓库（Nexus Repository Manager 3.x）连接配置，用于打包镜像选择
 NEXUS_BASE_URL = os.getenv("NEXUS_BASE_URL", "")

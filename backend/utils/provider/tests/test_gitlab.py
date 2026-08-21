@@ -3,12 +3,13 @@ GitLabProvider 单元测试
 
 使用 responses 库模拟 GitLab REST API。
 """
-import pytest
-import responses
 from urllib.parse import quote
 
-from utils.provider.gitlab import GitLabProvider
+import pytest
+import responses
+
 from utils.provider.exceptions import AuthenticationError, NotFoundError, ProviderError
+from utils.provider.gitlab import GitLabProvider
 
 
 @pytest.fixture

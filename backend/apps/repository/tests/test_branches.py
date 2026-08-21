@@ -3,7 +3,7 @@
 
 覆盖分支同步落库、删除远端已不存在分支、分支列表读取、SVN 拒绝同步等场景。
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,7 +15,7 @@ from utils.provider.base import BranchInfo, TagInfo
 
 def _dt(*args):
     """构造带时区的 datetime，避免 naive datetime 警告"""
-    return datetime(*args, tzinfo=timezone.utc)
+    return datetime(*args, tzinfo=UTC)
 
 
 @pytest.fixture

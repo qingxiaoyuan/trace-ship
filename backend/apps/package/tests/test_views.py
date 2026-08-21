@@ -1,7 +1,7 @@
 """打包视图接口测试。"""
+import zipfile
 from io import BytesIO
 from pathlib import Path
-import zipfile
 
 import pytest
 from rest_framework.test import APIClient

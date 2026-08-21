@@ -5,6 +5,7 @@
 用户-角色、角色-权限关联表，实现 RBAC 权限控制。
 """
 import uuid
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 

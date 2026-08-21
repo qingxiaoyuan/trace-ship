@@ -8,9 +8,10 @@
 """
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PureWindowsPath
-from typing import Any, Callable
+from typing import Any
 
 from apps.credential.models import Credential
 from utils.probe_output import parse_probe_output

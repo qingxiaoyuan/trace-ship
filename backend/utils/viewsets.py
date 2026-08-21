@@ -4,7 +4,6 @@
 扩展 DRF 默认 ModelViewSet / ReadOnlyModelViewSet，自动把成功响应包装为
 项目标准格式 {code, message, data}。
 """
-from typing import Any
 
 from rest_framework import viewsets
 from rest_framework.response import Response

@@ -20,7 +20,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from django.conf import settings
 
@@ -178,7 +178,7 @@ def _load_ldap_modules() -> tuple[Any, Any, Any]:
     return ldap, LDAPBackend, LDAPSearch
 
 
-def authenticate_ldap(request: Any, username: str, password: str) -> Optional[Any]:
+def authenticate_ldap(request: Any, username: str, password: str) -> Any | None:
     """
     使用当前生效的 LDAP 配置尝试认证用户
 

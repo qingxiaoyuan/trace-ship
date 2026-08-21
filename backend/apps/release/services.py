@@ -1468,6 +1468,40 @@ class ReleaseService:
         return cls.push_tag(release, request_user)
 
     @classmethod
+    def retry_push_tag(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
+        """
+        推 tag 失败后重试（不改动状态机，复用 rejected -> pending -> push_tag 路径）
+
+        仅允许「审批已通过、仅推 tag 环节失败」的发布单重试：
+        - 状态必须为 rejected；
+        - 关联的审批流程实例必须已 completed（无中间节点的直连发布无流程实例，直接放行）。
+        审批被驳回的发布单（流程实例非 completed）不允许走此入口，
+        需回退草稿后重新提交审批。
+
+        Args:
+            release: ReleaseRecord 实例
+            request_user: 当前请求用户
+
+        Returns:
+            创建的 TagInfo
+        """
+        if release.status != "rejected":
+            raise serializers.ValidationError({"status": "只有已驳回状态才能重试推 tag"})
+        if release.workflow_instance_id and release.workflow_instance.status != "completed":
+            raise serializers.ValidationError(
+                {"workflow": "审批未通过，无法重试推 tag，请回退草稿后重新提交审批"}
+            )
+        release.status = "pending"
+        release.rejected_reason = ""
+        release.save(update_fields=["status", "rejected_reason", "updated_at"])
+        OperationLogService.log_release(
+            user=request_user or release.publisher,
+            release=release,
+            action="retry_push_tag",
+        )
+        return cls.push_tag(release, request_user=request_user)
+
+    @classmethod
     def delete_released_tag(
         cls,
         release: ReleaseRecord,

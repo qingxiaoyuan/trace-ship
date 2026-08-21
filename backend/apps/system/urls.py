@@ -3,9 +3,10 @@
 
 将系统参数和操作日志接口注册到 /api/system/ 下。
 """
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from apps.system.views import SystemConfigViewSet, OperationLogViewSet
+
+from apps.system.views import OperationLogViewSet, SystemConfigViewSet
 
 router = DefaultRouter()
 router.register(r"configs", SystemConfigViewSet, basename="config")

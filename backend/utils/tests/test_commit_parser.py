@@ -3,11 +3,10 @@ CommitParser 单元测试
 
 覆盖标准提交信息、缺少变更类型、缺少更新内容、配置项不一致等场景。
 """
+
 import pytest
-from datetime import datetime
 
 from utils.commit_parser import CommitParser
-
 
 VALID_MESSAGE = """变更类型：
 □ 无配置项改动 ☑有配置项改动

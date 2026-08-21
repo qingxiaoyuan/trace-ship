@@ -5,6 +5,7 @@ WSGI 入口文件
 默认使用生产环境配置 config.settings.prod。
 """
 import os
+
 from django.core.wsgi import get_wsgi_application
 
 # 设置默认环境变量为生产配置

@@ -6,8 +6,8 @@ from rest_framework.test import APIClient
 
 from apps.account.models import User
 from apps.project.models import Project, ProjectMember
-from apps.repository.models import Repository
 from apps.release.models import ReleaseRecord
+from apps.repository.models import Repository
 
 pytestmark = pytest.mark.django_db
 

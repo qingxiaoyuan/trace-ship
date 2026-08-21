@@ -4,30 +4,33 @@
 提供认证相关接口（登录、登出、Token 刷新、用户信息、菜单）以及
 用户、角色、权限的 CRUD 管理接口。
 """
-from typing import Optional
-from django.conf import settings
+
 from django.contrib.auth import authenticate
 from django.utils import timezone
-from django.http import HttpRequest
-from rest_framework import viewsets, status
-from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.account.models import User, Role, Permission, UserRole
+from apps.account.models import Permission, Role, User, UserRole
 from apps.account.serializers import (
-    UserSerializer, UserBriefSerializer, UserCreateSerializer, RoleSerializer,
-    PermissionSerializer, LoginSerializer, UserInfoSerializer,
+    LoginSerializer,
+    PermissionSerializer,
+    RoleSerializer,
+    UserBriefSerializer,
+    UserCreateSerializer,
+    UserInfoSerializer,
+    UserSerializer,
 )
 from utils.permissions import HasPermission
-from utils.response import success_response, error_response
+from utils.response import error_response, success_response
+from utils.viewsets import StandardModelViewSet
 
 
 def create_operation_log(
-    user: Optional[User],
+    user: User | None,
     module: str,
     action: str,
     resource_type: str,
@@ -113,7 +116,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         username: str = serializer.validated_data["username"]
         password: str = serializer.validated_data["password"]
 
-        user: Optional[User] = None
+        user: User | None = None
         error_msg = ""
 
         # 1. 尝试 LDAP 认证（配置来源：「系统配置」页面 ldap_* 键优先，环境变量兜底）

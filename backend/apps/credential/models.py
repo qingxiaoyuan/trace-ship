@@ -4,9 +4,9 @@
 Credential 模型用于统一存储各类外部系统凭证，敏感内容加密后落库。
 """
 import uuid
-from typing import Dict
-from django.db import models
+
 from django.conf import settings
+from django.db import models
 
 
 class Credential(models.Model):
@@ -87,7 +87,7 @@ class Credential(models.Model):
         """是否全系统共享（SVN 凭证共享给所有登录用户）"""
         return self.cred_type in self.SYSTEM_SHARED_CRED_TYPES
 
-    def set_data(self, data: Dict[str, str]) -> None:
+    def set_data(self, data: dict[str, str]) -> None:
         """
         设置凭证数据（自动加密）
 
@@ -97,7 +97,7 @@ class Credential(models.Model):
         from utils.crypto import encrypt_credential
         self.encrypted_data = encrypt_credential(data)
 
-    def get_data(self) -> Dict[str, str]:
+    def get_data(self) -> dict[str, str]:
         """
         获取凭证数据（自动解密）
 

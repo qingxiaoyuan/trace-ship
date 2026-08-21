@@ -34,7 +34,7 @@ def admin_client(db):
 @pytest.fixture
 def image_mgr_client(db):
     """拥有 system.package_image 权限的普通用户客户端。"""
-    from apps.account.models import Role, UserRole, Permission
+    from apps.account.models import Permission, Role, UserRole
     perm = Permission.objects.get(code="system.package_image")
     role = Role.objects.create(name="镜像管理员", code="image_mgr")
     role.permissions.add(perm)

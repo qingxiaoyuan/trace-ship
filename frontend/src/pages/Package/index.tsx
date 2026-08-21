@@ -48,6 +48,8 @@ export default function PackageTaskPage() {
   const [userView, setUserView] = useState<'list' | 'detail' | 'build'>('list');
   const view: 'list' | 'detail' | 'build' = routeTaskId ? 'build' : userView;
   const [activeTab, setActiveTab] = useState<TabKey>('running');
+  // 构建列表子 Tab：默认只显示进行中任务，历史任务切 Tab 才加载
+  const [taskTab, setTaskTab] = useState<'active' | 'history'>('active');
   const [selectedTask, setSelectedTask] = useState<PackageTask | null>(null);
   const [selectedConfig, setSelectedConfig] = useState<PackageConfig | null>(null);
   const [logText, setLogText] = useState('');
@@ -94,20 +96,54 @@ export default function PackageTaskPage() {
       }),
   });
 
-  const { data: tasksData, isLoading: tasksLoading, error: tasksError } = useQuery({
-    queryKey: ['package-tasks', taskPage, taskSearch, filterProject],
+  // 进行中任务：默认进入即加载，5 秒轮询自动刷新
+  const { data: activeTasksData, error: activeTasksError } = useQuery({
+    queryKey: ['package-tasks', 'active', taskPage, taskSearch, filterProject],
     queryFn: () =>
       packageApi.getTasks({
         page: taskPage,
         page_size: TASK_PAGE_SIZE,
         search: taskSearch || undefined,
         project: filterProject || undefined,
+        status: 'queued,running',
       }),
+    enabled: view === 'list' && activeTab === 'running' && taskTab === 'active',
+    refetchInterval: 5000,
+  });
+
+  // 打包历史：切换到「打包历史」Tab 才加载
+  const { data: historyTasksData, error: historyTasksError } = useQuery({
+    queryKey: ['package-tasks', 'history', taskPage, taskSearch, filterProject],
+    queryFn: () =>
+      packageApi.getTasks({
+        page: taskPage,
+        page_size: TASK_PAGE_SIZE,
+        search: taskSearch || undefined,
+        project: filterProject || undefined,
+        status: 'success,failure,canceled',
+      }),
+    enabled: view === 'list' && activeTab === 'running' && taskTab === 'history',
+  });
+
+  // 打包配置卡片需要各配置的最新任务（不分状态），仅配置 Tab 下加载
+  const { data: configLatestTasksData } = useQuery({
+    queryKey: ['package-tasks', 'latest-by-config', filterProject],
+    queryFn: () =>
+      packageApi.getTasks({
+        page: 1,
+        page_size: TASK_PAGE_SIZE,
+        project: filterProject || undefined,
+      }),
+    enabled: view === 'list' && activeTab === 'configs',
   });
 
   const configs = useMemo(() => configsData?.results || [], [configsData]);
+  const tasksData = taskTab === 'active' ? activeTasksData : historyTasksData;
+  const tasksError = taskTab === 'active' ? activeTasksError : historyTasksError;
   const tasks = useMemo(() => tasksData?.results || [], [tasksData]);
   const tasksTotal = tasksData?.total || 0;
+  const activeTasksTotal = activeTasksData?.total || 0;
+  const configLatestTasks = useMemo(() => configLatestTasksData?.results || [], [configLatestTasksData]);
 
   const projectOptions = useMemo(
     () => (projectsData?.results || []).map((p) => ({ label: p.name, value: p.id })),
@@ -525,8 +561,8 @@ export default function PackageTaskPage() {
               >
                 <Hammer className="h-3.5 w-3.5" strokeWidth={1.5} />
                 构建列表
-                {tasksTotal > 0 && (
-                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{tasksTotal}</span>
+                {activeTasksTotal > 0 && (
+                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{activeTasksTotal}</span>
                 )}
               </button>
               <button
@@ -556,8 +592,8 @@ export default function PackageTaskPage() {
           {activeTab === 'configs' && (
             <ConfigList
               configs={configs}
-              tasks={tasks}
-              loading={configsLoading || tasksLoading}
+              tasks={configLatestTasks}
+              loading={configsLoading}
               onEdit={openEditConfig}
               onDelete={handleDeleteConfig}
               onTrigger={openTriggerBuild}
@@ -566,8 +602,25 @@ export default function PackageTaskPage() {
           )}
           {activeTab === 'running' && (
             <div className="space-y-3">
-              {/* 构建列表工具栏：搜索 + 项目过滤 */}
+              {/* 构建列表工具栏：进行中/历史切换 + 搜索 */}
               <div className="tech-card flex flex-wrap items-center gap-2 rounded-xl px-4 py-2.5">
+                <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
+                  <button
+                    className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${taskTab === 'active' ? 'on' : ''}`}
+                    onClick={() => { setTaskTab('active'); setTaskPage(1); }}
+                  >
+                    进行中
+                    {activeTasksTotal > 0 && (
+                      <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{activeTasksTotal}</span>
+                    )}
+                  </button>
+                  <button
+                    className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${taskTab === 'history' ? 'on' : ''}`}
+                    onClick={() => { setTaskTab('history'); setTaskPage(1); }}
+                  >
+                    打包历史
+                  </button>
+                </div>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
                   <input

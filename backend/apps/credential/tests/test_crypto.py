@@ -3,8 +3,7 @@
 
 覆盖 encrypt/decrypt 完整性和 mask_credential 脱敏规则。
 """
-import pytest
-from utils.crypto import encrypt_credential, decrypt_credential, mask_credential
+from utils.crypto import decrypt_credential, encrypt_credential, mask_credential
 
 
 def test_encrypt_decrypt():

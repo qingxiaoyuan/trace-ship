@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Empty, Button, Input, Modal, Typography } from 'antd';
-import { AlertTriangle, ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, Rocket, Tag, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
@@ -29,12 +29,29 @@ export default function ReleaseDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
+  const queryClient = useQueryClient();
   const { data: release, isLoading, error } = useQuery({
     queryKey: ['release', id],
     queryFn: () => releaseApi.getRelease(id || ''),
     enabled: !!id,
   });
+
+  /** 重试推 tag：仅推 tag 环节失败的已驳回发布展示入口（后端仍会二次校验审批状态） */
+  const handleRetryPushTag = async () => {
+    if (!release) return;
+    setRetrying(true);
+    try {
+      await releaseApi.retryPushTag(release.id);
+      message.success(`Tag ${release.tag_name} 推送成功，发布完成`);
+      queryClient.invalidateQueries({ queryKey: ['release', id] });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const handleDeleteReleased = async () => {
     if (!release || deleteInput !== release.tag_name) return;
@@ -157,14 +174,26 @@ export default function ReleaseDetail() {
             </Button>
           ) : null}
           {status === 'draft' || status === 'rejected' ? (
-            <Button
-              danger
-              icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
-              onClick={handleDeleteDraft}
-              className="shrink-0"
-            >
-              {status === 'draft' ? '删除草稿' : '删除'}
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* 推 tag 失败的发布（驳回原因以「推 tag 失败」开头）提供重试入口 */}
+              {status === 'rejected' && (release.rejected_reason || '').startsWith('推 tag 失败') ? (
+                <Button
+                  type="primary"
+                  icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                  loading={retrying}
+                  onClick={handleRetryPushTag}
+                >
+                  重试推 tag
+                </Button>
+              ) : null}
+              <Button
+                danger
+                icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                onClick={handleDeleteDraft}
+              >
+                {status === 'draft' ? '删除草稿' : '删除'}
+              </Button>
+            </div>
           ) : null}
         </div>
         {/* 小信息栏 */}

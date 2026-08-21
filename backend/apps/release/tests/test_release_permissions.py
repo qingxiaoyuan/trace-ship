@@ -208,7 +208,6 @@ def test_developer_cannot_delete_released(project, repository, developer_user, m
 def test_manager_can_delete_released(project, repository, manager_user, monkeypatch):
     """项目管理员可删除已发布版本（含远端 tag 删除调用）"""
     from apps.release.services import ReleaseService
-    from utils.provider.exceptions import NotFoundError
 
     release = _make_release(project, repository, manager_user, status="released")
     deleted = []

@@ -4,8 +4,10 @@
 负责 Credential 的序列化、反序列化以及创建/更新时的加密和一致性校验。
 凭证录入无需选择范围：统一为个人凭证，SVN 凭证（svn_password）全系统共享。
 """
-from typing import Dict, Any
+from typing import Any
+
 from rest_framework import serializers
+
 from apps.credential.models import Credential
 
 
@@ -38,7 +40,7 @@ class CredentialSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "masked_data", "owner", "last_used_at", "created_at", "updated_at"]
 
-    def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """
         校验凭证类型与认证模式的一致性
 
@@ -79,7 +81,7 @@ class CredentialSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def create(self, validated_data: Dict[str, Any]) -> Credential:
+    def create(self, validated_data: dict[str, Any]) -> Credential:
         """
         创建凭证并加密敏感数据
 
@@ -95,7 +97,7 @@ class CredentialSerializer(serializers.ModelSerializer):
         credential.save()
         return credential
 
-    def update(self, instance: Credential, validated_data: Dict[str, Any]) -> Credential:
+    def update(self, instance: Credential, validated_data: dict[str, Any]) -> Credential:
         """
         更新凭证信息，若传入 data 则重新加密
 

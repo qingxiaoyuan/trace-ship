@@ -3,8 +3,9 @@
 
 将登录、登出、Token 刷新、用户信息、菜单等接口注册到 /api/auth/ 下。
 """
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
 from apps.account.views import AuthViewSet
 
 # 创建默认路由器，空路径由 AuthViewSet 处理

@@ -1,8 +1,9 @@
 """
 仓库统计与标签接口测试
 """
-import pytest
 from unittest.mock import patch
+
+import pytest
 from rest_framework.test import APIClient
 
 from apps.repository.models import Repository

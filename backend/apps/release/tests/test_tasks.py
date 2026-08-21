@@ -7,7 +7,6 @@ from django.utils import timezone
 from apps.release.models import ReleaseRecord
 from apps.release.tasks import cleanup_draft_releases
 
-
 pytestmark = pytest.mark.django_db
 
 

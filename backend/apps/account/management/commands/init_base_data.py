@@ -4,9 +4,10 @@
 创建默认权限、基础角色、超管账号，并将超管绑定到 super_admin 角色。
 可重复执行，使用 get_or_create 保证幂等。
 """
-from typing import Dict, List
+
 from django.core.management.base import BaseCommand
-from apps.account.models import User, Role, Permission, UserRole, RolePermission
+
+from apps.account.models import Permission, Role, RolePermission, User, UserRole
 
 
 class Command(BaseCommand):
@@ -58,7 +59,7 @@ class Command(BaseCommand):
             {"name": "打包镜像", "code": "system.package_image", "module": "system"},
             {"name": "操作日志", "code": "system.log", "module": "system"},
         ]
-        permission_map: Dict[str, Permission] = {}
+        permission_map: dict[str, Permission] = {}
         for item in permissions_data:
             perm, _ = Permission.objects.get_or_create(
                 code=item["code"],
@@ -67,7 +68,7 @@ class Command(BaseCommand):
             permission_map[item["code"]] = perm
 
         # 创建基础角色及权限绑定关系
-        roles_data: List[Dict[str, any]] = [
+        roles_data: list[dict[str, any]] = [
            {"name": "超级管理员", "code": "super_admin", "perms": list(permission_map.keys())},
             {"name": "开发人员", "code": "developer", "perms": [
                 "project.view", "repository.view",
@@ -89,7 +90,7 @@ class Command(BaseCommand):
                 "release.view", "workflow.view",
             ]},
         ]
-        role_map: Dict[str, Role] = {}
+        role_map: dict[str, Role] = {}
         for item in roles_data:
             role, _ = Role.objects.get_or_create(
                 code=item["code"],

@@ -5,7 +5,6 @@
 支持基于审批链的串行审批、节点或签/会签以及回退。
 """
 import uuid
-from typing import List, Optional
 
 from django.conf import settings
 from django.db import models

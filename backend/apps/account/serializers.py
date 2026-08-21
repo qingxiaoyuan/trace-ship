@@ -3,9 +3,10 @@
 
 负责 User、Role、Permission 以及登录、用户信息、菜单等 DTO 的序列化与校验。
 """
-from typing import List
+
 from rest_framework import serializers
-from apps.account.models import User, Role, Permission
+
+from apps.account.models import Permission, Role, User
 
 
 class RoleBriefSerializer(serializers.ModelSerializer):
@@ -143,7 +144,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         Returns:
             创建成功的 User 实例
         """
-        role_ids: List[str] = validated_data.pop("role_ids", [])
+        role_ids: list[str] = validated_data.pop("role_ids", [])
         password: str = validated_data.pop("password")
         user = User.objects.create(**validated_data)
         user.set_password(password)
@@ -224,7 +225,7 @@ class RoleSerializer(serializers.ModelSerializer):
         Returns:
             创建成功的 Role 实例
         """
-        permission_ids: List[str] = validated_data.pop("permission_ids", [])
+        permission_ids: list[str] = validated_data.pop("permission_ids", [])
         role = Role.objects.create(**validated_data)
         from apps.account.models import RolePermission
         for perm_id in permission_ids:
@@ -290,7 +291,7 @@ class UserInfoSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "username", "nickname", "email", "department", "source", "roles", "permissions", "is_superuser"]
 
-    def get_roles(self, obj: User) -> List[str]:
+    def get_roles(self, obj: User) -> list[str]:
         """
         获取用户角色编码列表
 
@@ -302,7 +303,7 @@ class UserInfoSerializer(serializers.ModelSerializer):
         """
         return list(obj.user_roles.values_list("role__code", flat=True))
 
-    def get_permissions(self, obj: User) -> List[str]:
+    def get_permissions(self, obj: User) -> list[str]:
         """
         获取用户通过角色关联的全部权限编码列表
 

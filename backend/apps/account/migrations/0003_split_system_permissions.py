@@ -6,7 +6,6 @@
 """
 from django.db import migrations
 
-
 NEW_PERMISSIONS = [
     {"name": "用户管理", "code": "system.user", "module": "system"},
     {"name": "角色管理", "code": "system.role", "module": "system"},

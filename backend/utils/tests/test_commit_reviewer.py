@@ -3,10 +3,8 @@ CommitReviewer 单元测试
 
 覆盖通过、非法等规则审查场景。
 """
-import pytest
 
 from utils.commit_reviewer import CommitReviewer
-
 
 VALID_MESSAGE = """变更类型：
 □ 无配置项改动 ☑有配置项改动

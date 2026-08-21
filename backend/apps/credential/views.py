@@ -4,20 +4,19 @@
 提供凭证的增删改查、有效性测试、使用记录查询以及凭证类型枚举接口。
 """
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import serializers, viewsets, filters, status
+from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 from apps.credential.models import Credential
-from apps.credential.serializers import CredentialSerializer, CredentialListSerializer
+from apps.credential.serializers import CredentialListSerializer, CredentialSerializer
 from apps.credential.services import CredentialService
 from apps.system.models import OperationLog
 from apps.system.serializers import OperationLogSerializer
-from utils.pagination import StandardPagination
-from utils.response import success_response, error_response
+from utils.response import error_response, success_response
+from utils.viewsets import StandardModelViewSet
 
 
 class CredentialViewSet(StandardModelViewSet):

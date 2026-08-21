@@ -12,7 +12,7 @@ import requests
 from django.utils.dateparse import parse_datetime
 
 from .base import BranchInfo, CommitInfo, GitProvider, MergeRequestInfo, TagInfo
-from .exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
+from .exceptions import AuthenticationError, ConnectionError, NotFoundError
 
 logger = logging.getLogger(__name__)
 

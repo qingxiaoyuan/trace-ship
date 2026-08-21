@@ -4,6 +4,7 @@
 用于生产/本地部署后 admin 无法登录时的紧急恢复，或按需求强制恢复默认密码。
 """
 from django.core.management.base import BaseCommand
+
 from apps.account.models import User
 
 
