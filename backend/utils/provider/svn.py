@@ -10,10 +10,20 @@ import tempfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
+from django.conf import settings
 from django.utils.dateparse import parse_datetime
 
 from .base import CommitInfo, MergeRequestInfo
 from .exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
+
+
+def _push_timeout() -> int:
+    """上传类操作（import / checkout / commit）超时秒数，默认 7200。
+
+    打包产物可达 GB 级，慢速内网全量上传 30 分钟常常不够；可用
+    settings.SVN_PUSH_TIMEOUT（环境变量 SVN_PUSH_TIMEOUT）覆盖。
+    """
+    return int(getattr(settings, "SVN_PUSH_TIMEOUT", 7200) or 7200)
 
 
 class SVNProvider:
@@ -65,7 +75,11 @@ class SVNProvider:
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise ConnectionError(f"SVN 命令执行超时: {' '.join(cmd)}") from exc
+            # 超时异常消息会写入任务日志，命令行中的密码必须脱敏（与非超时分支一致）
+            display = " ".join(cmd)
+            if self.password:
+                display = display.replace(self.password, "***")
+            raise ConnectionError(f"SVN 命令执行超时: {display}") from exc
         except FileNotFoundError as exc:
             raise ConnectionError("未找到 svn 命令行工具，请安装 subversion") from exc
 
@@ -306,7 +320,7 @@ class SVNProvider:
             ConnectionError: 命令执行失败或超时
         """
         cmd = self._base_cmd() + ["import", local_path, remote_url, "-m", message]
-        self._run(cmd, timeout=300)
+        self._run(cmd, timeout=_push_timeout())
 
     def replace_file(self, remote_url: str, local_path: str, message: str = "") -> None:
         """
@@ -382,7 +396,7 @@ class SVNProvider:
         try:
             # 全量检出：覆盖式同步需比对整棵目录树（含子目录），不能用 --depth files；
             # 忽略 svn:externals，避免外部引用内容被误纳入同步范围
-            self._run(self._base_cmd() + ["checkout", "--ignore-externals", remote_url, workcopy], timeout=300)
+            self._run(self._base_cmd() + ["checkout", "--ignore-externals", remote_url, workcopy], timeout=_push_timeout())
 
             # 本地内容覆盖拷贝进工作副本（跳过 .svn 元数据）
             for root, dirs, files in os.walk(local_dir):
@@ -412,6 +426,6 @@ class SVNProvider:
             # 重新确认存在变更（新增/删除/修改）后再提交；无变更跳过，避免 "no changes" 误报
             changed = {"added", "deleted", "modified", "replaced"}
             if any(item in changed for item, _ in self._status_entries(workcopy)):
-                self._run(self._base_cmd() + ["commit", workcopy, "-m", message], timeout=300)
+                self._run(self._base_cmd() + ["commit", workcopy, "-m", message], timeout=_push_timeout())
         finally:
             shutil.rmtree(workcopy, ignore_errors=True)
