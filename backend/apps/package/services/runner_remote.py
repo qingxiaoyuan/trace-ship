@@ -75,9 +75,14 @@ class RemoteRunnerMixin:
                     should_stop=lambda: cls._ensure_task_not_canceled(task),
                 )
                 if clone_submodules:
-                    foreach_cmd = f'git config http.extraHeader "{header_value}"'
+                    # foreach 命令在节点上由 Git Bash 的 sh -c 执行，内层必须用单引号：
+                    # cmd_quote 的双引号转义（""）经 sshd → cmd /c → git.exe 参数解析后
+                    # 会被吞掉，命令在空格处截断，sh 报 unexpected EOF（退出码 128）；
+                    # 单引号对 cmd / git.exe 均透明，最终由 sh 解释。
+                    # --quiet 抑制 foreach 回显命令本身，避免认证头明文进入构建日志。
+                    foreach_cmd = f"git config http.extraHeader '{header_value}'"
                     client.run_checked(
-                        f"git -C {cmd_quote(str(source_dir))} submodule foreach --recursive "
+                        f"git -C {cmd_quote(str(source_dir))} submodule foreach --recursive --quiet "
                         f"{cmd_quote(foreach_cmd)}",
                         on_line=log_line,
                         should_stop=lambda: cls._ensure_task_not_canceled(task),

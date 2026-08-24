@@ -825,6 +825,36 @@ class TestRemoteRunTask:
         assert path == expected
         assert content == table_newlines_to_br(release.release_doc)
 
+    def test_remote_checkout_injects_credential_into_submodules(
+        self, project, repository, node, release, user, monkeypatch
+    ):
+        """注入凭证 + 拉取子模块：foreach 命令内层用单引号。
+
+        双引号经 sshd → cmd /c → git.exe 参数解析链路会被吞掉，
+        命令在空格处截断，Git Bash sh -c 报 unexpected EOF（退出码 128）。
+        """
+        monkeypatch.setattr(
+            "apps.package.services.source.resolve_credential",
+            lambda repo, user=None: {"token": "abc123"},
+        )
+        task = self._make_task(project, repository, node, release, user)
+        snapshot = task.config_snapshot
+        snapshot["inject_git_credential"] = True
+        snapshot["clone_submodules"] = True
+        task.config_snapshot = snapshot
+        client = MagicMock()
+
+        PackageService._checkout_source_remote(task, client)
+
+        commands = [call.args[0] for call in client.run_checked.call_args_list]
+        foreach = next(cmd for cmd in commands if "submodule foreach" in cmd)
+        expected = base64.b64encode(b"oauth2:abc123").decode("ascii")
+        assert f"git config http.extraHeader 'Authorization: Basic {expected}'" in foreach
+        # 内层不得出现双引号（cmd_quote 的 "" 转义会被 Windows 参数解析吞掉）
+        assert '""' not in foreach
+        # --quiet 抑制 foreach 回显命令，避免认证头明文进入构建日志
+        assert "--quiet" in foreach
+
 
 @pytest.mark.django_db
 class TestNodeConcurrencyGate:
