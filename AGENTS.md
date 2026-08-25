@@ -159,6 +159,7 @@ npm run preview
 - `/api/workflow/`
 - `/api/notifications/`
 - `/api/feedback/`
+- `/api/open/`（对外开放只读接口，Access Token + scope 授权，路由集中在 `backend/config/urls_open.py`）
 - `/api/schema/`、`/swagger/`、`/redoc/`
 - `/health/`
 
@@ -240,6 +241,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - 异常由 `utils.exceptions.custom_exception_handler` 统一包装。
 - 默认分页器为 `utils.pagination.StandardPagination`。
 - 权限类在 `utils.permissions`，项目资源通常使用项目成员权限；超管默认放行。
+- 对外开放接口（供外部系统服务端调用）：统一挂 `/api/open/` 前缀，认证用 `utils.authentication.AccessTokenAuthentication`（`Authorization: Bearer tsat_xxx` 请求头），授权用 `utils.permissions.HasAccessTokenScope`（视图声明 `open_scope`）。token 存于 `sys_access_token` 表（只存 SHA-256 哈希，明文仅创建时返回一次），由超管在「系统 · 访问令牌」页面签发/禁用；scope 编码常量见 `apps/system/models.py` 的 `OPEN_API_SCOPES`，新增开放接口需先在其中登记 scope。接入说明见 `docs/api/open-api-access.md`。
 
 ## 前端架构
 
@@ -281,7 +283,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - `/notifications`
 - `/guide`（使用说明）
 - `/feedback`（使用反馈）
-- `/system/users`、`/system/roles`、`/system/configs`、`/system/package-images`、`/system/logs`
+- `/system/users`、`/system/roles`、`/system/configs`、`/system/package-images`、`/system/logs`、`/system/access-tokens`（访问令牌，仅超管）
 - `/profile`
 - `/browser-upgrade`（浏览器升级引导页，无需登录）
 

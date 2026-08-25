@@ -31,6 +31,45 @@ export interface SystemLog {
   created_at: string;
 }
 
+/** Access Token 接口范围（与后端常量保持一致） */
+export type AccessTokenScope = 'release.doc' | 'repo.compare';
+
+/** Access Token 列表项 */
+export interface AccessToken {
+  id: string;
+  name: string;
+  token_prefix: string;
+  scopes: AccessTokenScope[];
+  is_active: boolean;
+  expires_at?: string | null;
+  last_used_at?: string | null;
+  last_used_ip?: string | null;
+  remark?: string;
+  created_by?: { id: string; username: string; nickname?: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 创建 Access Token 响应，额外带一次性明文 token */
+export interface AccessTokenCreated extends AccessToken {
+  token: string;
+}
+
+export interface AccessTokenPayload {
+  name: string;
+  scopes: AccessTokenScope[];
+  expires_at?: string | null;
+  remark?: string;
+  is_active?: boolean;
+}
+
+export interface AccessTokenListParams {
+  search?: string;
+  is_active?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
 export interface ConfigListParams {
   keyword?: string;
   page?: number;
@@ -64,4 +103,11 @@ export const systemApi = {
   getPublicConfigs: () => get<Record<string, string>>('/system/configs/public/'),
   getLogs: (params?: LogListParams) =>
     get<PaginatedData<SystemLog>>('/system/logs/', { params }),
+  listAccessTokens: (params?: AccessTokenListParams) =>
+    get<PaginatedData<AccessToken>>('/system/access-tokens/', { params }),
+  createAccessToken: (data: AccessTokenPayload) =>
+    post<AccessTokenCreated>('/system/access-tokens/', data),
+  updateAccessToken: (id: string, data: Partial<AccessTokenPayload>) =>
+    patch<AccessToken>(`/system/access-tokens/${id}/`, data),
+  deleteAccessToken: (id: string) => del<null>(`/system/access-tokens/${id}/`),
 };

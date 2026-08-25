@@ -88,6 +88,8 @@ urlpatterns = [
     path("api/workflow/", include("apps.workflow.urls")),
     path("api/notifications/", include("apps.notification.urls")),
     path("api/feedback/", include("apps.feedback.urls")),
+    # 对外开放接口（Access Token 认证 + scope 授权，只读）
+    path("api/open/", include("config.urls_open")),
     # API 文档（OpenAPI Schema、Swagger UI、ReDoc）
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("swagger/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

@@ -143,3 +143,28 @@ class IsProjectPackager(ProjectRolePermission):
     """项目打包触发权限（管理员/开发/测试）"""
     required_roles = ["manager", "developer", "tester"]
 
+
+class HasAccessTokenScope(permissions.BasePermission):
+    """
+    开放接口 Access Token 权限
+
+    视图需声明 open_scope 类属性（OPEN_API_SCOPES 中的编码）。
+    校验：request.auth 为 AccessToken 实例、请求方法只读、
+    视图 open_scope 在 token 的 scopes 内，缺一不可。
+    """
+
+    message = "访问令牌无效或未授权访问该接口"
+
+    def has_permission(self, request, view) -> bool:
+        """校验 token 身份、只读方法与 scope 授权"""
+        from apps.system.models import AccessToken
+
+        if not isinstance(request.auth, AccessToken):
+            return False
+        if request.method not in permissions.SAFE_METHODS:
+            return False
+        open_scope = getattr(view, "open_scope", None)
+        if not open_scope:
+            return False
+        return open_scope in (request.auth.scopes or [])
+

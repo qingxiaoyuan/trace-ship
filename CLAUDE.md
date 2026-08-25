@@ -164,6 +164,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
   - `IsProjectMember`：对象级，检查用户是否属于 `obj.project`。
   - `IsProjectManager` / `IsProjectDeveloper` 等：检查 `ProjectMember.role`。
   - 超管始终放行。
+- 对外开放接口（供外部系统调用）：挂 `/api/open/` 前缀（`config/urls_open.py`），使用 `utils.authentication.AccessTokenAuthentication`（`Authorization: Bearer tsat_xxx`）+ `utils.permissions.HasAccessTokenScope`（视图声明 `open_scope`），token 存于 `sys_access_token` 表（只存 SHA-256，明文仅创建时返回一次），由超管在「系统 · 访问令牌」页面签发/吊销；scope 编码常量见 `apps/system/models.py` 的 `OPEN_API_SCOPES`，新增开放接口需先登记 scope。
 
 ### 统一响应与异常
 

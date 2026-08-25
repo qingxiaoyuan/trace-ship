@@ -276,6 +276,7 @@ class AuthViewSet(viewsets.GenericViewSet):
                     {"id": "system_roles", "name": "角色管理", "path": "/system/roles", "icon": "SafetyCertificateOutlined", "permission": "system.role"},
                     {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined", "permission": "system.config"},
                     {"id": "system_package_images", "name": "打包镜像", "path": "/system/package-images", "icon": "BoxPlotOutlined", "permission": "system.package_image"},
+                    {"id": "system_access_tokens", "name": "访问令牌", "path": "/system/access-tokens", "icon": "KeyOutlined", "permission": "system.access_token"},
                     {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined", "permission": "system.log"},
                 ],
             },

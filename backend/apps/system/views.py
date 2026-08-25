@@ -15,9 +15,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.system.models import OperationLog, SystemConfig
-from apps.system.serializers import OperationLogSerializer, SystemConfigSerializer
-from utils.permissions import HasPermission
+from apps.system.models import AccessToken, OperationLog, SystemConfig
+from apps.system.serializers import AccessTokenSerializer, OperationLogSerializer, SystemConfigSerializer
+from apps.system.services import OperationLogService
+from utils.permissions import HasPermission, IsSuperUser
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
@@ -107,3 +108,69 @@ class OperationLogViewSet(StandardReadOnlyModelViewSet):
     filterset_class = OperationLogFilter
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]
+
+
+class AccessTokenViewSet(StandardModelViewSet):
+    """
+    访问令牌视图集（/api/system/access-tokens/）
+
+    供超管签发/吊销外部系统调用 /api/open/ 接口所用的 Access Token。
+    token 明文只在创建响应中返回一次，此后任何接口不再暴露。
+    """
+
+    queryset = AccessToken.objects.select_related("created_by")
+    serializer_class = AccessTokenSerializer
+    permission_classes = [IsAuthenticated, IsSuperUser]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name", "token_prefix", "remark"]
+
+    def create(self, request: Request) -> Response:
+        """
+        创建令牌并一次性返回明文 token
+
+        Returns:
+            令牌信息 + token 明文（仅此一次，请妥善保存）
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        plain_token = AccessToken.generate_token()
+        instance = AccessToken(
+            name=serializer.validated_data["name"],
+            scopes=serializer.validated_data["scopes"],
+            expires_at=serializer.validated_data.get("expires_at"),
+            remark=serializer.validated_data.get("remark", ""),
+            created_by=request.user,
+        )
+        instance.set_token(plain_token)
+        instance.save()
+        self._log(request, instance, "签发令牌", detail={"scopes": instance.scopes})
+        data = self.get_serializer(instance).data
+        data["token"] = plain_token
+        return success_response(data, "创建成功，Token 仅此一次展示，请妥善保存")
+
+    def perform_update(self, serializer) -> None:
+        """更新（含禁用/启用）令牌并记操作日志"""
+        instance = serializer.save()
+        self._log(self.request, instance, "更新令牌", detail=serializer.validated_data)
+
+    def perform_destroy(self, instance: AccessToken) -> None:
+        """删除令牌并记操作日志"""
+        self._log(self.request, instance, "删除令牌")
+        instance.delete()
+
+    @staticmethod
+    def _log(request: Request, instance: AccessToken, action: str, detail: dict | None = None) -> None:
+        """记录令牌管理操作日志（审计），失败不影响主流程"""
+        try:
+            OperationLogService.log(
+                user=request.user,
+                module="系统管理",
+                action=action,
+                resource_type="access_token",
+                resource_id=str(instance.id),
+                description=f"{action}：{instance.name}（{instance.token_prefix}…）",
+                detail=detail or {},
+            )
+        except Exception:
+            pass
