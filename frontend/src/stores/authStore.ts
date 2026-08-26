@@ -12,6 +12,7 @@ interface AuthState {
   hydrated: boolean;
   isInitializing: boolean;
   login: (username: string, password: string) => Promise<void>;
+  ssoLogin: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   clearAuth: () => void;
   fetchUserInfo: () => Promise<void>;
@@ -34,6 +35,16 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (username, password) => {
         const data = await authApi.login({ username, password });
+        get().setTokens(data.access_token, data.refresh_token);
+        try {
+          await get().fetchUserInfo();
+        } catch (e) {
+          console.warn('获取用户信息失败，已保持登录状态', e);
+        }
+      },
+
+      ssoLogin: async (token) => {
+        const data = await authApi.ssoLogin(token);
         get().setTokens(data.access_token, data.refresh_token);
         try {
           await get().fetchUserInfo();

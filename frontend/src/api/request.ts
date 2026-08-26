@@ -91,7 +91,7 @@ function onRefreshed(token: string) {
 }
 
 function isAuthRequest(url?: string) {
-  return url?.includes('/auth/token/refresh') || url?.includes('/auth/login');
+  return url?.includes('/auth/token/refresh') || url?.includes('/auth/login') || url?.includes('/auth/sso/');
 }
 
 /** 从后端响应体与 HTTP 状态码中提取面向用户的具体错误原因 */

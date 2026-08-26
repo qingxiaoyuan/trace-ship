@@ -336,3 +336,109 @@ def test_menus_package_image_requires_system_permission():
     assert "/system/package-images" not in paths
     assert "/system/users" not in paths
     assert "/system/configs" not in paths
+
+
+def _make_fake_ldap_for_search(entries: list | None = None, captured: dict | None = None) -> ModuleType:
+    """构造用于 search_ldap_user 测试的 fake python-ldap 模块（含 ldap.filter 子模块）"""
+    fake = ModuleType("ldap")
+    fake.SCOPE_SUBTREE = 2
+    fake.OPT_NETWORK_TIMEOUT = 1
+    fake.OPT_TIMEOUT = 2
+    fake.OPT_X_TLS_REQUIRE_CERT = 3
+    fake.OPT_X_TLS_CACERTFILE = 4
+    fake.OPT_X_TLS_DEMAND = 10
+    fake.set_option = lambda *args, **kwargs: None
+
+    class FakeConn:
+        protocol_version = 3
+
+        def set_option(self, *args):
+            pass
+
+        def simple_bind_s(self, dn, password):
+            pass
+
+        def search_s(self, base, scope, filter_str, attrs):
+            if captured is not None:
+                captured["filter"] = filter_str
+            return entries if entries is not None else []
+
+        def unbind_s(self):
+            pass
+
+    fake.initialize = lambda uri: FakeConn()
+
+    fake_filter = ModuleType("ldap.filter")
+    # 测试用转义函数加标记，便于断言用户名确实经过了转义
+    fake_filter.escape_filter_chars = lambda s: f"ESC<{s}>"
+    fake.filter = fake_filter
+    return fake
+
+
+def _patch_fake_ldap_for_search(fake: ModuleType):
+    """同时注入 fake ldap 主模块与 ldap.filter 子模块"""
+    return mock.patch.dict(sys.modules, {"ldap": fake, "ldap.filter": fake.filter})
+
+
+@pytest.mark.django_db
+def test_search_ldap_user_returns_attrs():
+    """
+    测试 LDAP 用户查询返回 cn/mail 属性
+
+    期望：字节属性解码为字符串字典
+    """
+    _set_config("ldap_server_uri", "ldap://ldap.example.com:389")
+    _set_config("ldap_user_search_base", "ou=users,dc=example,dc=com")
+    entries = [("uid=zhangsan,ou=users,dc=example,dc=com", {"cn": [b"<dev>zhangsan"], "mail": [b"zs@example.com"]})]
+    fake = _make_fake_ldap_for_search(entries=entries)
+    from apps.account.ldap_config import search_ldap_user
+
+    with _patch_fake_ldap_for_search(fake):
+        attrs = search_ldap_user("zhangsan")
+    assert attrs == {"cn": "<dev>zhangsan", "mail": "zs@example.com"}
+
+
+@pytest.mark.django_db
+def test_search_ldap_user_not_found():
+    """
+    测试 LDAP 查不到用户时返回 None
+
+    期望：返回 None，不抛异常
+    """
+    _set_config("ldap_server_uri", "ldap://ldap.example.com:389")
+    _set_config("ldap_user_search_base", "ou=users,dc=example,dc=com")
+    fake = _make_fake_ldap_for_search(entries=[])
+    from apps.account.ldap_config import search_ldap_user
+
+    with _patch_fake_ldap_for_search(fake):
+        assert search_ldap_user("nobody") is None
+
+
+@pytest.mark.django_db
+def test_search_ldap_user_escapes_username():
+    """
+    测试用户名格式化进 LDAP 过滤器前经过转义
+
+    期望：过滤器中出现转义标记而不是原始用户名
+    """
+    _set_config("ldap_server_uri", "ldap://ldap.example.com:389")
+    _set_config("ldap_user_search_base", "ou=users,dc=example,dc=com")
+    captured: dict = {}
+    fake = _make_fake_ldap_for_search(entries=[], captured=captured)
+    from apps.account.ldap_config import search_ldap_user
+
+    with _patch_fake_ldap_for_search(fake):
+        search_ldap_user("zhang*san")
+    assert captured["filter"] == "(uid=ESC<zhang*san>)"
+
+
+@pytest.mark.django_db
+def test_search_ldap_user_disabled_returns_none():
+    """
+    测试 LDAP 未配置时查询直接返回 None（不加载 ldap 模块）
+
+    期望：返回 None
+    """
+    from apps.account.ldap_config import search_ldap_user
+
+    assert search_ldap_user("zhangsan") is None

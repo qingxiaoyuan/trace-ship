@@ -218,6 +218,61 @@ def authenticate_ldap(request: Any, username: str, password: str) -> Any | None:
         return None
 
 
+def search_ldap_user(username: str) -> dict[str, str] | None:
+    """
+    按登录过滤器搜索 LDAP 用户属性（用于 SSO 登录回填用户资料）
+
+    使用服务账号绑定（未配置则匿名），返回 cn/mail 属性；
+    LDAP 未启用、连接失败或查不到用户时返回 None，由调用方降级处理。
+
+    Args:
+        username: 登录账号（与 ldap_user_filter 匹配的 uid）
+
+    Returns:
+        {"cn": ..., "mail": ...} 属性字典，查不到返回 None
+    """
+    cfg = resolve_ldap_config()
+    if not cfg["enabled"] or not cfg["server_uri"] or not cfg["user_search_base"]:
+        return None
+    try:
+        ldap = _load_ldap_module()
+        from ldap.filter import escape_filter_chars
+    except (LdapConfigError, ImportError) as exc:
+        logger.warning("LDAP 用户查询不可用：%s", exc)
+        return None
+
+    _apply_tls_options(ldap, cfg)
+
+    try:
+        conn = ldap.initialize(cfg["server_uri"])
+        conn.set_option(ldap.OPT_NETWORK_TIMEOUT, 5)
+        conn.set_option(ldap.OPT_TIMEOUT, 5)
+        conn.protocol_version = 3
+        conn.simple_bind_s(cfg["bind_dn"], cfg["bind_password"])
+        # username 来自 OA 验票响应（半可信输入），格式化进过滤器前需转义
+        results = conn.search_s(
+            cfg["user_search_base"],
+            ldap.SCOPE_SUBTREE,
+            cfg["user_filter"] % {"user": escape_filter_chars(username)},
+            ["cn", "mail"],
+        )
+        conn.unbind_s()
+    except Exception as exc:
+        logger.warning("LDAP 用户查询失败（username=%s）：%s", username, exc)
+        return None
+
+    for _dn, attrs in results:
+        if not attrs:
+            continue
+        cn_values = attrs.get("cn") or []
+        mail_values = attrs.get("mail") or []
+        return {
+            "cn": cn_values[0].decode("utf-8", errors="ignore") if cn_values else "",
+            "mail": mail_values[0].decode("utf-8", errors="ignore") if mail_values else "",
+        }
+    return None
+
+
 def test_ldap_connection() -> str:
     """
     使用当前生效的配置测试 LDAP 连通性

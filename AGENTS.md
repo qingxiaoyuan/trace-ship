@@ -143,6 +143,10 @@ npm run preview
 - `apps.feedback`：使用反馈，全员可提交/点赞/查看，删除仅限本人或超管；超管可将反馈标记为已处理（记录处理人与处理时间）。
 - `apps.system`：系统参数、操作日志等系统管理能力；LDAP 连接参数也可在「系统配置」页面维护（页面配置优先，环境变量兜底），并提供 LDAP 连接测试接口。
 
+### 单点登录（EKP OA）
+
+支持从 EKP OA 门户免登录跳转进入：OA 门户跳转前端 `/sso?token=xxx`，前端调 `POST /api/auth/sso/login`，后端回 OA 中间件验票（`apps.account.sso`，配置为 sys_config `sso_*` 键，页面优先、环境变量 `SSO_VERIFY_URL` 兜底）换取域账号，自动开通用户（LDAP 回填昵称/部门/邮箱，默认开发人员角色）后颁发 JWT；验票配置在「系统配置」页面的「OA 单点登录（EKP）」卡片维护。
+
 ### 路由入口
 
 统一在 `backend/config/urls.py` 注册：

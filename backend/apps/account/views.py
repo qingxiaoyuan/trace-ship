@@ -19,6 +19,7 @@ from apps.account.serializers import (
     LoginSerializer,
     PermissionSerializer,
     RoleSerializer,
+    SsoLoginSerializer,
     UserBriefSerializer,
     UserCreateSerializer,
     UserInfoSerializer,
@@ -73,6 +74,7 @@ class AuthViewSet(viewsets.GenericViewSet):
 
     开放接口（无需登录）：
         POST /login/          登录（LDAP 优先，本地兜底）
+        POST /sso/login/      EKP OA 单点登录（token 验票）
         POST /token/refresh/  刷新 Access Token
         POST /logout/         登出并黑名单 Refresh Token
 
@@ -163,6 +165,102 @@ class AuthViewSet(viewsets.GenericViewSet):
             user=user,
             module="auth",
             action="login",
+            resource_type="user",
+            resource_id=str(user.id),
+            detail={"ip": self.get_client_ip(request)},
+            ip=self.get_client_ip(request),
+        )
+
+        return success_response({
+            "user_id": str(user.id),
+            "username": user.username,
+            "nickname": user.nickname,
+            "access_token": str(refresh.access_token),
+            "refresh_token": str(refresh),
+            "expires_in": 3600,
+        })
+
+    @action(detail=False, methods=["post"], url_path="sso/login")
+    def sso_login(self, request: Request) -> Response:
+        """
+        EKP OA 单点登录接口
+
+        接收 OA 重定向携带的一次性 token，回 OA 中间件验票换取用户身份，
+        按域账号自动开通/更新用户后颁发 JWT Token（响应格式与普通登录一致）。
+
+        Args:
+            request: DRF Request，body 需包含 token
+
+        Returns:
+            成功返回用户信息及双 Token，验票失败返回 401
+        """
+        from apps.account.ldap_config import parse_ldap_display_name, search_ldap_user
+        from apps.account.sso import SsoVerifyError, verify_sso_token
+
+        serializer = SsoLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token: str = serializer.validated_data["token"]
+
+        # 1. 回 OA 中间件验票，换取用户身份（userId 即域账号）
+        try:
+            user_detail = verify_sso_token(token)
+        except SsoVerifyError as exc:
+            return error_response(40100, str(exc), status_code=status.HTTP_401_UNAUTHORIZED)
+
+        user_id: str = user_detail["userId"].strip()
+
+        # 2. 用域账号去 LDAP 回填资料（查不到时回退 OA 返回值）
+        ldap_attrs = search_ldap_user(user_id) or {}
+        department, real_name = parse_ldap_display_name(ldap_attrs.get("cn", ""))
+        nickname = real_name or (user_detail.get("userName") or "").strip() or user_id
+        email = ldap_attrs.get("mail") or (user_detail.get("email") or "").strip()
+        department = department or (user_detail.get("department") or "").strip()
+
+        # 3. 按 iexact 查找避免大小写重复用户；首次 SSO 自动开通（与 LDAP 登录语义一致）
+        user = User.objects.filter(username__iexact=user_id).first()
+        if user is not None:
+            # 本地账号不允许被 SSO 静默接管（无密码校验环节，存在账号接管风险）
+            if user.source == "local":
+                create_operation_log(
+                    user=user,
+                    module="auth",
+                    action="sso_login_rejected",
+                    resource_type="user",
+                    resource_id=str(user.id),
+                    detail={"reason": "local_account", "sso_user_id": user_id, "ip": self.get_client_ip(request)},
+                    ip=self.get_client_ip(request),
+                )
+                return error_response(
+                    40100,
+                    "该账号为本地账号，请使用账号密码登录",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                )
+            # 停用校验前置：停用账号不应再被更新资料
+            if not user.is_active:
+                return error_response(40100, "账号已停用", status_code=status.HTTP_401_UNAUTHORIZED)
+        else:
+            user = User(username=user_id.lower())
+        user.source = "ldap"
+        user.nickname = nickname
+        user.email = email
+        user.department = department
+        user.last_login = timezone.now()
+        user.save()
+
+        # 新用户没有任何角色时默认赋予开发人员角色
+        if not user.user_roles.exists():
+            developer_role = Role.objects.filter(code="developer").first()
+            if developer_role:
+                UserRole.objects.get_or_create(user=user, role=developer_role)
+
+        # 生成 JWT Token
+        refresh = RefreshToken.for_user(user)
+
+        # 记录登录日志
+        create_operation_log(
+            user=user,
+            module="auth",
+            action="sso_login",
             resource_type="user",
             resource_id=str(user.id),
             detail={"ip": self.get_client_ip(request)},

@@ -265,6 +265,16 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(required=True, write_only=True)
 
 
+class SsoLoginSerializer(serializers.Serializer):
+    """
+    SSO 登录请求序列化器
+
+    校验 OA 重定向携带的一次性 token 必填，只写不返回。
+    """
+
+    token = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True, write_only=True)
+
+
 class TokenResponseSerializer(serializers.Serializer):
     """
     登录成功响应序列化器

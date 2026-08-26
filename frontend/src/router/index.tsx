@@ -26,6 +26,7 @@ import {
   ReleaseDetail,
   RepositoryDetail,
   RepositoryList,
+  SsoEntry,
   SystemAccessTokenList,
   SystemConfig,
   SystemLogList,
@@ -57,6 +58,15 @@ const routes: AppRouteObject[] = [
     element: (
       <PageLoader>
         <BrowserUpgrade />
+      </PageLoader>
+    ),
+  },
+  {
+    // EKP OA 单点登录免登录入口（OA 门户跳转携带一次性 token）
+    path: '/sso',
+    element: (
+      <PageLoader>
+        <SsoEntry />
       </PageLoader>
     ),
   },
