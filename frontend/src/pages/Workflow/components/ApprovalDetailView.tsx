@@ -78,7 +78,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                   </span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
-                  <span>{detailSource.projectName || '-'}</span>
+                  <span className="font-medium text-slate-700">{detailSource.projectName || '-'}</span>
                   <span className="h-1 w-1 rounded-full bg-slate-300" />
                   <span>
                     {detailSource.releaseType ? releaseTypeText[detailSource.releaseType as ReleaseType] + '发布' : '发布审批'}

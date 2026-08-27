@@ -3,7 +3,7 @@ import { Chart } from 'chart.js';
 import { tokens } from '@/styles/theme';
 import type { BuildTrendItem } from '../types';
 
-/** 打包趋势柱状图（最近 7 天成功/失败） */
+/** 发布趋势柱状图（最近 7 天发布成功/失败） */
 export function BuildTrendChart({ data }: { data: BuildTrendItem[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -24,17 +24,17 @@ export function BuildTrendChart({ data }: { data: BuildTrendItem[] }) {
         labels: data.map((item) => item.day),
         datasets: [
           {
-            label: '成功',
+            label: '发布成功',
             data: data.map((item) => item.success),
-            backgroundColor: '#10B981',
+            backgroundColor: '#6366F1',
             borderRadius: 3,
             barPercentage: 0.6,
             categoryPercentage: 0.7,
           },
           {
-            label: '失败',
+            label: '发布失败',
             data: data.map((item) => item.failed),
-            backgroundColor: '#F43F5E',
+            backgroundColor: '#FB7185',
             borderRadius: 3,
             barPercentage: 0.6,
             categoryPercentage: 0.7,

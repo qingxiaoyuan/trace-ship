@@ -1,4 +1,4 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ChevronRight } from 'lucide-react';
 import type { Release } from '@/types';
 import {
   releaseStatusText,
@@ -17,20 +17,22 @@ const mobileStatusBadge: Record<string, string> = {
   rejected: 'bg-rose-50 text-rose-600',
 };
 
-/** 最近发布列表面板 */
+/** 最近发布列表面板，行点击跳发布详情 */
 export function RecentReleasesPanel({
   releases,
   onViewAll,
+  onRowClick,
 }: {
   releases: Release[];
   onViewAll: () => void;
+  onRowClick: (release: Release) => void;
 }) {
   return (
     <div className="tech-card rounded-xl lg:col-span-2">
       <div className="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
         <div>
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">最近发布</h2>
-          <p className="mt-0.5 text-[12px] text-slate-500">最近 10 条发布记录</p>
+          <p className="mt-0.5 text-[12px] text-slate-500">最近 10 条发布记录，点击查看详情</p>
         </div>
         <button
           type="button"
@@ -43,11 +45,12 @@ export function RecentReleasesPanel({
       </div>
 
       <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 lg:grid">
-        <div className="col-span-3">版本</div>
+        <div className="col-span-2">版本</div>
         <div className="col-span-3">项目 / 仓库</div>
         <div className="col-span-2">类型</div>
         <div className="col-span-2">发布人</div>
-        <div className="col-span-2 text-right">状态</div>
+        <div className="col-span-1">状态</div>
+        <div className="col-span-2 text-right">时间</div>
       </div>
 
       <div className="divide-y divide-indigo-50/50">
@@ -55,10 +58,20 @@ export function RecentReleasesPanel({
           releases.map((release) => {
             const status = release.status as string;
             return (
-              <div key={release.id}>
+              <div
+                key={release.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onRowClick(release)}
+                onKeyDown={(e) => {
+                  if (e.key === ' ') e.preventDefault();
+                  if (e.key === 'Enter' || e.key === ' ') onRowClick(release);
+                }}
+                className="cursor-pointer"
+              >
                 {/* 桌面端网格行 */}
-                <div className="hidden cursor-pointer grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30 lg:grid">
-                  <div className="col-span-3 flex items-center gap-2">
+                <div className="group hidden grid-cols-12 items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30 lg:grid">
+                  <div className="col-span-2 flex items-center gap-2">
                     <span className="font-mono text-[13px] font-medium text-slate-900">{release.version}</span>
                   </div>
                   <div className="col-span-3 text-[13px] text-slate-600">
@@ -72,18 +85,25 @@ export function RecentReleasesPanel({
                   </div>
                   <div className="col-span-2 flex items-center gap-1.5">
                     <InitialAvatar name={release.publisher} size={16} />
-                    <span className="text-[12px] text-slate-600">{release.publisher || '系统'}</span>
+                    <span className="truncate text-[12px] text-slate-600">{release.publisher || '系统'}</span>
                   </div>
-                  <div className="col-span-2 flex items-center justify-end gap-1.5">
-                    <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass[status] || 'bg-slate-400'}`} />
-                    <span className={`text-[12px] font-medium ${statusTextClass[status] || 'text-slate-500'}`}>
+                  <div className="col-span-1 flex items-center gap-1.5">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass[status] || 'bg-slate-400'}`} />
+                    <span className={`whitespace-nowrap text-[12px] font-medium ${statusTextClass[status] || 'text-slate-500'}`}>
                       {releaseStatusText[status] || status}
                     </span>
+                  </div>
+                  <div className="col-span-2 flex items-center justify-end gap-1 text-[12px] text-slate-400">
+                    <span className="whitespace-nowrap">{formatRelative(release.created_at)}</span>
+                    <ChevronRight
+                      className="h-4 w-4 shrink-0 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-indigo-500"
+                      strokeWidth={1.5}
+                    />
                   </div>
                 </div>
 
                 {/* 移动端简列表行（参考 docs/ui/mobile/mobile-dashboard.html 最近发布） */}
-                <div className="flex items-center gap-3 px-4 py-3 lg:hidden">
+                <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-indigo-50/30 lg:hidden">
                   <span
                     className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${mobileStatusBadge[status] || 'bg-slate-100 text-slate-500'}`}
                   >
@@ -98,6 +118,7 @@ export function RecentReleasesPanel({
                       {release.publisher || '系统'} · {formatRelative(release.created_at)}
                     </div>
                   </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" strokeWidth={1.5} />
                 </div>
               </div>
             );

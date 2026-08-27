@@ -1,10 +1,10 @@
 import type { ComponentType, ReactNode } from 'react';
-import type { Release } from '@/types';
+import type { PackageTask, Release } from '@/types';
 
 /** Lucide 图标组件类型 */
 export type LucideIcon = ComponentType<{ className?: string; strokeWidth?: number }>;
 
-/** 发布流水线卡片状态 */
+/** 发布流水线卡片状态（building 列展示运行中的打包任务） */
 export type PipelineStatus = 'draft' | 'building' | 'pending' | 'released' | 'rejected';
 
 /** KPI 指标卡片数据 */
@@ -15,6 +15,8 @@ export interface KpiCard {
   description: ReactNode;
   icon: LucideIcon;
   iconClass: string;
+  /** 整卡点击跳转 */
+  onClick?: () => void;
   action?: ReactNode;
   footer?: ReactNode;
 }
@@ -27,19 +29,30 @@ export interface PipelineColumn {
   tone: string;
   dot: string;
   cardBorder: string;
+  /** 列点击跳转目标 */
+  to: string;
   releases: Release[];
+  /** building 列展示的运行中打包任务 */
+  builds?: PackageTask[];
 }
 
 /** 我的待办项数据 */
 export interface TodoItem {
   key: string;
+  /** 待办大类，用于过滤 */
+  type: 'audit' | 'build';
+  /** 具体形态，决定右侧快捷操作 */
+  kind: 'audit' | 'build-failure' | 'build-running';
   title: string;
-  project: string;
+  badge?: string;
+  badgeClass?: string;
   meta: string;
   icon: LucideIcon;
   iconClass: string;
-  actions: ReactNode;
-  type: 'audit' | 'build';
+  /** 整行点击跳转目标 */
+  to: string;
+  /** 审批任务的 task id（kind = audit 时必有） */
+  taskId?: string;
 }
 
 /** 发布流水线时间范围过滤 */
@@ -48,7 +61,7 @@ export type PipelineRange = 'all' | 'today' | 'week';
 /** 我的待办类型过滤 */
 export type TodoFilter = 'all' | 'audit' | 'build';
 
-/** 打包趋势单日数据 */
+/** 趋势图单日数据 */
 export interface BuildTrendItem {
   day: string;
   success: number;

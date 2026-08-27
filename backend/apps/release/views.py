@@ -696,7 +696,7 @@ class ReleaseViewSet(StandardModelViewSet):
 
         queryset = self.get_queryset().filter(created_at__date__gte=start_date)
         stats = (
-            queryset.extra(select={"date": "DATE(created_at)"})
+            queryset.extra(select={"date": "DATE(release_record.created_at)"})
             .values("date")
             .annotate(
                 count=Count("id"),
@@ -707,7 +707,8 @@ class ReleaseViewSet(StandardModelViewSet):
         )
 
         result = []
-        date_map = {item["date"]: item for item in stats}
+        # PostgreSQL 的 DATE() 返回 date 对象，统一转成 ISO 字符串再匹配（SQLite 返回字符串，str() 对两者都安全）
+        date_map = {str(item["date"]): item for item in stats}
         for i in range(days):
             date = (start_date + __import__("datetime").timedelta(days=i)).isoformat()
             item = date_map.get(date, {"count": 0, "success_count": 0, "failure_count": 0})

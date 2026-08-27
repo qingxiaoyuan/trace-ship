@@ -1,5 +1,8 @@
 import type { PackageTask, Release } from '@/types';
-import type { BuildTrendItem, PipelineStatus } from './types';
+import type { BuildTrendItem } from './types';
+
+/** 发布状态（与后端 ReleaseRecord.status 对齐） */
+export type ReleaseStatus = 'draft' | 'pending' | 'released' | 'rejected';
 
 /** 取日期字符串的日期部分（YYYY-MM-DD） */
 export function formatDate(value?: string): string {
@@ -31,20 +34,21 @@ export function formatTrendDay(date: Date): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
-/** 基于打包任务统计最近 7 天的成功/失败趋势 */
-export function buildSevenDayTrend(tasks: PackageTask[]): BuildTrendItem[] {
+/** 将后端按天发布趋势映射为图表数据（M/D 标签，不足 7 天前端补零） */
+export function mapReleaseTrend(
+  trend: Array<{ date: string; success_count: number; failure_count: number }>,
+): BuildTrendItem[] {
+  const byDate = new Map(trend.map((item) => [item.date, item]));
   const today = new Date();
 
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(today);
     date.setDate(today.getDate() - (6 - index));
-    const key = getDateKey(date);
-    const matchedTasks = tasks.filter((task) => getDateKey(new Date(task.created_at)) === key);
-
+    const item = byDate.get(getDateKey(date));
     return {
       day: formatTrendDay(date),
-      success: matchedTasks.filter((task) => task.status === 'success').length,
-      failed: matchedTasks.filter((task) => task.status === 'failure' || task.status === 'canceled').length,
+      success: item?.success_count || 0,
+      failed: item?.failure_count || 0,
     };
   });
 }
@@ -103,15 +107,22 @@ export function getGreeting(): string {
   return '晚上好';
 }
 
-/** 将发布状态归一化为流水线卡片状态（auditing 归入 pending） */
-export function normalizeStatus(release: Release): PipelineStatus {
+/** 将发布状态归一化（仅保留当前 ReleaseRecord 的四个状态，未知状态按草稿处理） */
+export function normalizeStatus(release: Release): ReleaseStatus {
   const status = release.status as string;
-  if (status === 'building') return 'building';
-  if (status === 'auditing') return 'pending';
-  if (status === 'released' || status === 'rejected' || status === 'pending' || status === 'draft') {
+  if (status === 'released' || status === 'rejected' || status === 'pending') {
     return status;
   }
   return 'draft';
+}
+
+/** 计算运行中打包任务的已运行秒数 */
+export function getRunningElapsedSeconds(task: PackageTask): number | null {
+  if (!task.started_at) return null;
+  const startedAt = new Date(task.started_at).getTime();
+  if (!Number.isFinite(startedAt)) return null;
+  const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+  return elapsed > 0 ? elapsed : null;
 }
 
 /** 判断打包任务是否处于运行中（排队或打包中） */
