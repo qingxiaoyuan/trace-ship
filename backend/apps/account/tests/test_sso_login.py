@@ -242,3 +242,110 @@ def test_sso_login_missing_token():
     """
     response = APIClient().post(SSO_URL, {})
     assert response.status_code == 400
+
+
+TRUSTED_URL = "/api/auth/sso/login-trusted/"
+SSO_CONFIG_URL = "/api/auth/sso/config/"
+
+
+def _enable_frontend_fallback():
+    """开启前端直连兜底开关"""
+    SystemConfig.objects.update_or_create(
+        key="sso_frontend_fallback_enabled", defaults={"value": "true"}
+    )
+
+
+@pytest.mark.django_db
+def test_sso_trusted_login_disabled_by_default():
+    """
+    测试前端直连兜底默认关闭时拒绝登录
+
+    期望：HTTP 403，提示未启用
+    """
+    response = APIClient().post(TRUSTED_URL, {"user_id": "TH2005070101"})
+
+    assert response.status_code == 403
+    assert "未启用" in response.data["message"]
+
+
+@pytest.mark.django_db
+def test_sso_trusted_login_success(developer_role):
+    """
+    测试开启兜底开关后凭上报身份登录并自动开通用户
+
+    期望：HTTP 200 返回双 Token；用户按小写落库，昵称取上报姓名
+    """
+    _enable_frontend_fallback()
+    with mock.patch("apps.account.ldap_config.search_ldap_user", return_value=None):
+        response = APIClient().post(
+            TRUSTED_URL,
+            {"user_id": "TH2005070101", "user_name": "张三", "email": "", "department": ""},
+        )
+
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    assert "access_token" in response.data["data"]
+
+    user = User.objects.get(username="th2005070101")
+    assert user.nickname == "张三"
+    assert user.source == "ldap"
+    assert user.user_roles.filter(role__code="developer").exists()
+
+
+@pytest.mark.django_db
+def test_sso_trusted_login_local_account_rejected(developer_role):
+    """
+    测试兜底登录同样不允许接管同名本地账号
+
+    期望：HTTP 401，本地账号资料不被改写
+    """
+    _enable_frontend_fallback()
+    User.objects.create_user(
+        username="th2005070101", password="localpass123", source="local", nickname="本地运维"
+    )
+    response = APIClient().post(TRUSTED_URL, {"user_id": "TH2005070101"})
+
+    assert response.status_code == 401
+    assert "本地账号" in response.data["message"]
+    assert User.objects.get(username="th2005070101").nickname == "本地运维"
+
+
+@pytest.mark.django_db
+def test_sso_trusted_login_missing_user_id():
+    """
+    测试兜底登录缺少 user_id 时返回参数校验错误
+
+    期望：HTTP 400
+    """
+    _enable_frontend_fallback()
+    response = APIClient().post(TRUSTED_URL, {})
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_sso_config_hides_verify_url_when_fallback_off():
+    """
+    测试兜底开关关闭时配置接口不暴露验票地址
+
+    期望：frontend_fallback_enabled 为 False，verify_url 为空
+    """
+    response = APIClient().get(SSO_CONFIG_URL)
+
+    assert response.status_code == 200
+    assert response.data["data"]["frontend_fallback_enabled"] is False
+    assert response.data["data"]["verify_url"] == ""
+
+
+@pytest.mark.django_db
+def test_sso_config_returns_verify_url_when_fallback_on():
+    """
+    测试兜底开关开启时配置接口返回验票地址
+
+    期望：frontend_fallback_enabled 为 True，verify_url 为页面配置值
+    """
+    _enable_frontend_fallback()
+    response = APIClient().get(SSO_CONFIG_URL)
+
+    assert response.status_code == 200
+    assert response.data["data"]["frontend_fallback_enabled"] is True
+    assert response.data["data"]["verify_url"] == VERIFY_URL

@@ -77,13 +77,19 @@ export const useAuthStore = create<AuthState>()(
 
       initializeAuth: async () => {
         set({ isInitializing: true });
+        // 记录本次恢复使用的 refresh token。SSO/普通登录若在恢复期间完成，
+        // 会替换该值，此次恢复不得再覆盖新会话或清理新会话。
+        const refreshTokenAtStart = get().refreshToken || localStorage.getItem('refreshToken');
         try {
-          const refreshToken = get().refreshToken || localStorage.getItem('refreshToken');
+          const refreshToken = refreshTokenAtStart;
           if (!refreshToken) {
             get().clearAuth();
             return false;
           }
           const data = await authApi.refresh(refreshToken);
+          if (localStorage.getItem('refreshToken') !== refreshTokenAtStart) {
+            return true;
+          }
           const newRefreshToken = data.refresh || refreshToken;
           get().setTokens(data.access, newRefreshToken);
           try {
@@ -94,7 +100,10 @@ export const useAuthStore = create<AuthState>()(
           return true;
         } catch (e) {
           console.warn('恢复会话失败', e);
-          get().clearAuth();
+          // 登录流程可能已替换 refresh token；旧恢复请求失败时不能清理新会话。
+          if (localStorage.getItem('refreshToken') === refreshTokenAtStart) {
+            get().clearAuth();
+          }
           return false;
         } finally {
           set({ isInitializing: false });

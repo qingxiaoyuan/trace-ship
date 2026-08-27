@@ -20,6 +20,7 @@ from apps.account.serializers import (
     PermissionSerializer,
     RoleSerializer,
     SsoLoginSerializer,
+    SsoTrustedLoginSerializer,
     UserBriefSerializer,
     UserCreateSerializer,
     UserInfoSerializer,
@@ -73,10 +74,12 @@ class AuthViewSet(viewsets.GenericViewSet):
     认证视图集
 
     开放接口（无需登录）：
-        POST /login/          登录（LDAP 优先，本地兜底）
-        POST /sso/login/      EKP OA 单点登录（token 验票）
-        POST /token/refresh/  刷新 Access Token
-        POST /logout/         登出并黑名单 Refresh Token
+        POST /login/             登录（LDAP 优先，本地兜底）
+        POST /sso/login/         EKP OA 单点登录（token 验票）
+        GET  /sso/config/        SSO 前端兜底配置查询
+        POST /sso/login-trusted/ SSO 前端直连兜底登录（临时方案，默认关闭）
+        POST /token/refresh/     刷新 Access Token
+        POST /logout/            登出并黑名单 Refresh Token
 
     需登录接口：
         GET  /user-info/      当前用户信息
@@ -194,7 +197,6 @@ class AuthViewSet(viewsets.GenericViewSet):
         Returns:
             成功返回用户信息及双 Token，验票失败返回 401
         """
-        from apps.account.ldap_config import parse_ldap_display_name, search_ldap_user
         from apps.account.sso import SsoVerifyError, verify_sso_token
 
         serializer = SsoLoginSerializer(data=request.data)
@@ -207,14 +209,91 @@ class AuthViewSet(viewsets.GenericViewSet):
         except SsoVerifyError as exc:
             return error_response(40100, str(exc), status_code=status.HTTP_401_UNAUTHORIZED)
 
-        user_id: str = user_detail["userId"].strip()
+        return self._provision_sso_user(
+            request,
+            user_id=user_detail["userId"],
+            user_name=user_detail.get("userName") or "",
+            email=user_detail.get("email") or "",
+            department=user_detail.get("department") or "",
+            log_action="sso_login",
+        )
 
-        # 2. 用域账号去 LDAP 回填资料（查不到时回退 OA 返回值）
+    @action(detail=False, methods=["get"], url_path="sso/config")
+    def sso_config(self, request: Request) -> Response:
+        """
+        SSO 前端兜底配置查询（无需登录）
+
+        仅在「前端直连兜底」开关开启时返回验票地址，供 /sso 页面在后端验票失败时
+        由浏览器直连 OA 验票；开关关闭时不暴露任何信息。
+        """
+        from apps.account.sso import resolve_sso_config
+
+        cfg = resolve_sso_config()
+        fallback = bool(cfg["frontend_fallback_enabled"] and cfg["verify_url"])
+        return success_response({
+            "frontend_fallback_enabled": fallback,
+            "verify_url": cfg["verify_url"] if fallback else "",
+        })
+
+    @action(detail=False, methods=["post"], url_path="sso/login-trusted")
+    def sso_login_trusted(self, request: Request) -> Response:
+        """
+        SSO 前端直连兜底登录（临时方案，默认关闭）
+
+        浏览器直接调 OA 验票接口后上报用户身份，后端不再验票。
+        仅在 sys_config 开启 sso_frontend_fallback_enabled 时可用；
+        开启期间任何客户端可凭任意 user_id 登录，务必在网络问题修复后关闭。
+        """
+        import logging
+
+        from apps.account.sso import resolve_sso_config
+
+        cfg = resolve_sso_config()
+        if not cfg["frontend_fallback_enabled"]:
+            return error_response(40300, "SSO 前端直连兜底未启用", status_code=status.HTTP_403_FORBIDDEN)
+
+        serializer = SsoTrustedLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        logging.getLogger(__name__).warning(
+            "SSO 前端直连兜底登录（未验票）：user_id=%s, ip=%s",
+            data["user_id"],
+            self.get_client_ip(request),
+        )
+        return self._provision_sso_user(
+            request,
+            user_id=data["user_id"],
+            user_name=data["user_name"],
+            email=data["email"],
+            department=data["department"],
+            log_action="sso_login_trusted",
+        )
+
+    def _provision_sso_user(
+        self,
+        request: Request,
+        user_id: str,
+        user_name: str,
+        email: str,
+        department: str,
+        log_action: str,
+    ) -> Response:
+        """
+        SSO 用户开通/更新并颁发 JWT（后端验票登录与前端兜底登录共用）
+
+        按域账号回填 LDAP 资料、自动开通用户、颁发双 Token 并记录登录日志。
+        """
+        from apps.account.ldap_config import parse_ldap_display_name, search_ldap_user
+
+        user_id = user_id.strip()
+
+        # 2. 用域账号去 LDAP 回填资料（查不到时回退上报值）
         ldap_attrs = search_ldap_user(user_id) or {}
-        department, real_name = parse_ldap_display_name(ldap_attrs.get("cn", ""))
-        nickname = real_name or (user_detail.get("userName") or "").strip() or user_id
-        email = ldap_attrs.get("mail") or (user_detail.get("email") or "").strip()
-        department = department or (user_detail.get("department") or "").strip()
+        department_parsed, real_name = parse_ldap_display_name(ldap_attrs.get("cn", ""))
+        nickname = real_name or user_name.strip() or user_id
+        email = ldap_attrs.get("mail") or email.strip()
+        department = department_parsed or department.strip()
 
         # 3. 按 iexact 查找避免大小写重复用户；首次 SSO 自动开通（与 LDAP 登录语义一致）
         user = User.objects.filter(username__iexact=user_id).first()
@@ -260,7 +339,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         create_operation_log(
             user=user,
             module="auth",
-            action="sso_login",
+            action=log_action,
             resource_type="user",
             resource_id=str(user.id),
             detail={"ip": self.get_client_ip(request)},

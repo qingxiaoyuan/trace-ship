@@ -160,7 +160,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 
 - 认证：JWT（`rest_framework_simplejwt`）为主；LDAP/AD（`django-auth-ldap`）可选，未配置时回退到 Django 本地认证。
 - LDAP 连接参数可在「系统配置」页面维护（`apps.account.ldap_config`，页面配置优先、环境变量 `LDAP_*` 兜底），`apps.system` 提供 LDAP 连接测试接口；LDAP 首次登录会自动创建用户并赋予默认角色。
-- EKP OA 单点登录（`apps.account.sso`）：OA 门户跳转前端 `/sso?token=xxx` 免登录入口，前端调 `POST /api/auth/sso/login`，后端回 OA 中间件验票（配置为 sys_config `sso_*` 键，页面优先、环境变量 `SSO_VERIFY_URL` 兜底）换取域账号，自动开通用户（LDAP 回填昵称/部门/邮箱，默认开发人员角色）后颁发 JWT。
+- EKP OA 单点登录（`apps.account.sso`）：OA 门户跳转前端 `/sso?token=xxx` 免登录入口，前端调 `POST /api/auth/sso/login`，后端回 OA 中间件验票（配置为 sys_config `sso_*` 键，页面优先、环境变量 `SSO_VERIFY_URL` 兜底）换取域账号，自动开通用户（LDAP 回填昵称/部门/邮箱，默认开发人员角色）后颁发 JWT。另有「前端直连兜底」临时方案（`sso_frontend_fallback_enabled` 开关，默认关闭）：后端验票失败时浏览器直连 OA 验票（`GET /api/auth/sso/config` 下发验票地址，依赖 OA CORS 放行），再上报身份到 `POST /api/auth/sso/login-trusted` 完成登录（后端不验票，仅作网络故障应急，用后须关闭）。
 - 权限类在 `utils.permissions`：
   - `IsProjectMember`：对象级，检查用户是否属于 `obj.project`。
   - `IsProjectManager` / `IsProjectDeveloper` 等：检查 `ProjectMember.role`。

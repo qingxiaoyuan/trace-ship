@@ -8,6 +8,8 @@ SSO 登录时动态读取配置，无需重启服务。
 
 - sso_enabled / -：是否启用 OA 单点登录（仅页面配置，环境变量配置即视为启用）
 - sso_verify_url / SSO_VERIFY_URL：OA 中间件验票接口完整地址（按系统注册入口分配）
+- sso_frontend_fallback_enabled / -：前端直连兜底开关（仅页面配置，默认关闭；
+  网络故障临时方案，开启后浏览器直接验票、后端信任前端上报的 userId，有伪造风险）
 
 验票接口契约（OA 中间件提供）：
 
@@ -25,14 +27,18 @@ logger = logging.getLogger(__name__)
 
 CONFIG_KEY_ENABLED = "sso_enabled"
 CONFIG_KEY_VERIFY_URL = "sso_verify_url"
+CONFIG_KEY_FRONTEND_FALLBACK = "sso_frontend_fallback_enabled"
 
 SSO_CONFIG_KEYS = [
     CONFIG_KEY_ENABLED,
     CONFIG_KEY_VERIFY_URL,
+    CONFIG_KEY_FRONTEND_FALLBACK,
 ]
 
-# 验票请求超时时间（秒）
-VERIFY_TIMEOUT = 5
+# 连接和读取超时均默认 30 秒，避免 OA 或中间网络偶发较慢时过早失败。
+# 生产环境可按实际网络情况通过环境变量调整。
+VERIFY_CONNECT_TIMEOUT = float(os.getenv("SSO_VERIFY_CONNECT_TIMEOUT", "30"))
+VERIFY_READ_TIMEOUT = float(os.getenv("SSO_VERIFY_READ_TIMEOUT", "30"))
 
 # 验票成功结果码
 VERIFY_RESULT_SUCCESS = 100
@@ -68,9 +74,14 @@ def resolve_sso_config() -> dict[str, Any]:
         # 页面未配置开关时：验票地址非空即视为启用（与 LDAP 语义一致）
         enabled = bool(verify_url)
 
+    # 前端直连兜底：默认关闭，需页面显式开启（开启期间登录不验票，仅作网络故障临时方案）
+    fallback_raw = stored.get(CONFIG_KEY_FRONTEND_FALLBACK)
+    frontend_fallback_enabled = bool(fallback_raw) and fallback_raw.strip().lower() in ("1", "true", "yes", "on")
+
     return {
         "enabled": enabled,
         "verify_url": verify_url,
+        "frontend_fallback_enabled": frontend_fallback_enabled,
     }
 
 
@@ -92,16 +103,28 @@ def verify_sso_token(token: str) -> dict[str, Any]:
         raise SsoVerifyError("SSO 单点登录未启用")
 
     try:
+        # Connection: close：部分验票站点未正确声明响应长度（无 Content-Length/非 chunked），
+        # 依赖连接关闭界定响应结束，keep-alive 下会挂起读到超时；显式关闭规避该问题。
         # 不跟随重定向：验票地址被误配成 302 时避免一次性 token 泄露给重定向目标
         resp = requests.post(
-            cfg["verify_url"], json={"token": token}, timeout=VERIFY_TIMEOUT, allow_redirects=False
+            cfg["verify_url"],
+            json={"token": token},
+            headers={"Connection": "close"},
+            timeout=(VERIFY_CONNECT_TIMEOUT, VERIFY_READ_TIMEOUT),
+            allow_redirects=False,
         )
-        payload = resp.json()
     except requests.RequestException as exc:
         logger.warning("SSO 验票请求失败：%s", exc)
         raise SsoVerifyError("SSO 验票服务不可用，请稍后重试") from exc
+    try:
+        payload = resp.json()
     except ValueError as exc:
-        logger.warning("SSO 验票返回非 JSON：%s", exc)
+        logger.warning(
+            "SSO 验票返回非 JSON：status=%s, headers=%s, body=%r",
+            resp.status_code,
+            dict(resp.headers),
+            resp.text[:500],
+        )
         raise SsoVerifyError("SSO 验票服务返回异常") from exc
 
     data = payload.get("data") or {}

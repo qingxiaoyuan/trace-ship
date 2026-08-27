@@ -275,6 +275,20 @@ class SsoLoginSerializer(serializers.Serializer):
     token = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True, write_only=True)
 
 
+class SsoTrustedLoginSerializer(serializers.Serializer):
+    """
+    SSO 前端直连兜底登录请求序列化器（临时方案）
+
+    前端直接调 OA 验票接口后，把验票返回的用户身份上报给后端。
+    注意：后端不做验票，仅依赖 sso_frontend_fallback_enabled 开关与审计日志兜底。
+    """
+
+    user_id = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True, write_only=True)
+    user_name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, default="", write_only=True)
+    email = serializers.EmailField(required=False, allow_blank=True, default="", write_only=True)
+    department = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, default="", write_only=True)
+
+
 class TokenResponseSerializer(serializers.Serializer):
     """
     登录成功响应序列化器

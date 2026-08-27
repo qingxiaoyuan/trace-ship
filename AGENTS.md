@@ -147,6 +147,8 @@ npm run preview
 
 支持从 EKP OA 门户免登录跳转进入：OA 门户跳转前端 `/sso?token=xxx`，前端调 `POST /api/auth/sso/login`，后端回 OA 中间件验票（`apps.account.sso`，配置为 sys_config `sso_*` 键，页面优先、环境变量 `SSO_VERIFY_URL` 兜底）换取域账号，自动开通用户（LDAP 回填昵称/部门/邮箱，默认开发人员角色）后颁发 JWT；验票配置在「系统配置」页面的「OA 单点登录（EKP）」卡片维护。
 
+另有「前端直连兜底」临时方案（`sso_frontend_fallback_enabled` 开关，默认关闭，同卡片维护）：后端验票失败时由浏览器直连 OA 验票（`GET /api/auth/sso/config` 下发验票地址，依赖 OA 接口 CORS 放行），再把用户身份上报 `POST /api/auth/sso/login-trusted` 完成登录（后端不验票，仅作网络故障应急，登录日志 action 为 `sso_login_trusted`，用后须关闭）。
+
 ### 路由入口
 
 统一在 `backend/config/urls.py` 注册：

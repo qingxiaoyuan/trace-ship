@@ -33,7 +33,8 @@ function App() {
   const hydrated = useAuthStore((state) => state.hydrated);
 
   useEffect(() => {
-    if (hydrated) {
+    // SSO 页面正在用 OA 一次性凭证建立新会话时，不要并发恢复旧会话。
+    if (hydrated && window.location.pathname !== '/sso') {
       const refreshToken = useAuthStore.getState().refreshToken;
       if (refreshToken) {
         useAuthStore.getState().initializeAuth();
