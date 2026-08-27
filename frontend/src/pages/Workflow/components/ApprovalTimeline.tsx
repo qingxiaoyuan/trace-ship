@@ -11,8 +11,24 @@ interface GraphNode {
   properties?: Record<string, unknown>;
 }
 
+/** 节点审批人配置项（properties._approvers 的元素） */
+interface ApproverConfig {
+  type?: string;
+  role?: string;
+  user_id?: string;
+}
+
 /** 节点展示状态 */
 type NodeState = 'done' | 'running' | 'pending';
+
+/** 项目成员角色文案（与 WorkflowTab 的 ROLE_LABELS 对齐） */
+const ROLE_LABELS: Record<string, string> = {
+  developer: '开发人员',
+  tester: '测试人员',
+  manager: '项目管理员',
+  auditor: '审核人',
+  viewer: '只读人员',
+};
 
 /** 取节点名称：text 可能是字符串或 { value } */
 function nodeName(node: GraphNode): string {
@@ -25,6 +41,18 @@ function nodeName(node: GraphNode): string {
 /** 取节点审批模式 */
 function nodeMode(node: GraphNode): 'any' | 'all' | undefined {
   return node.properties?.mode as 'any' | 'all' | undefined;
+}
+
+/** 节点尚未生成审批任务时，从配置的审批人（properties._approvers）推导展示文案 */
+function configuredApproverText(node: GraphNode): string {
+  const configs = (node.properties?._approvers || []) as ApproverConfig[];
+  const labels = configs.map((config) => {
+    if (config.type === 'leader') return '项目负责人';
+    if (config.type === 'self') return '发起人';
+    if (config.type === 'role') return ROLE_LABELS[config.role || ''] || config.role || '指定角色';
+    return '指定用户';
+  });
+  return [...new Set(labels)].join('、');
 }
 
 /** 审批流程节点时间线 */
@@ -46,24 +74,23 @@ export function ApprovalTimeline({ instance }: { instance: WorkflowInstance }) {
     return 'pending';
   };
 
-  /** 取该节点的审批任务（用于显示审批人 / 时间 / 意见） */
-  const taskOf = (node: GraphNode): WorkflowTask | undefined =>
-    tasks.find((t) => t.node_id === node.id);
+  /** 取该节点的全部审批任务（会签/或签时一个审批人一条任务） */
+  const tasksOf = (node: GraphNode): WorkflowTask[] =>
+    tasks.filter((t) => t.node_id === node.id);
 
   return (
     <div className="space-y-0">
       {nodes.map((node, index) => {
         const state = stateOf(node);
         const isLast = index === nodes.length - 1;
-        const task = taskOf(node);
-        const mode = nodeMode(node);
         return (
           <TimelineNode
             key={node.id}
             name={nodeName(node)}
             state={state}
-            mode={mode}
-            task={task}
+            mode={nodeMode(node)}
+            tasks={tasksOf(node)}
+            node={node}
             isLast={isLast}
             nodeType={node.type}
           />
@@ -78,14 +105,16 @@ function TimelineNode({
   name,
   state,
   mode,
-  task,
+  tasks,
+  node,
   isLast,
   nodeType,
 }: {
   name: string;
   state: NodeState;
   mode?: 'any' | 'all';
-  task?: WorkflowTask;
+  tasks: WorkflowTask[];
+  node: GraphNode;
   isLast: boolean;
   nodeType: string;
 }) {
@@ -105,6 +134,23 @@ function TimelineNode({
 
   const nameClass = state === 'pending' ? 'text-slate-400' : state === 'running' ? 'text-amber-700' : 'text-slate-900';
 
+  // 审批人展示：聚合该节点全部任务的审批人；尚无任务（未激活节点）时回退到配置的审批人
+  const approverNames = [
+    ...new Set(
+      tasks
+        .map((t) => t.approver_name || t.approver_username)
+        .filter((n): n is string => Boolean(n)),
+    ),
+  ];
+  const approverText = approverNames.length
+    ? approverNames.join('、')
+    : configuredApproverText(node) || '待分配审批人';
+  const latestActionTime = tasks
+    .map((t) => t.action_time)
+    .filter((t): t is string => Boolean(t))
+    .sort()
+    .pop();
+
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
@@ -120,7 +166,7 @@ function TimelineNode({
             <div className="mt-0.5 text-[11px] text-slate-400">
               {nodeType === 'approval-node'
                 ? [
-                    task?.approver_name || task?.approver_username || '待分配审批人',
+                    approverText,
                     mode ? (mode === 'all' ? '会签模式' : '或签模式') : null,
                   ]
                     .filter(Boolean)
@@ -134,9 +180,9 @@ function TimelineNode({
             {badge.text}
           </span>
         </div>
-        {task?.action_time ? (
+        {latestActionTime ? (
           <div className="mt-0.5 text-[11px] text-slate-400">
-            {dayjs(task.action_time).format('MM-DD HH:mm')}
+            {dayjs(latestActionTime).format('MM-DD HH:mm')}
           </div>
         ) : null}
       </div>

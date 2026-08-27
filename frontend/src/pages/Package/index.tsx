@@ -495,6 +495,26 @@ export default function PackageTaskPage() {
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [tasks, configTasksData, selectedConfig, selectedTask]);
 
+  // 配置历史视图：构建列表当前页可能不含该配置的任务（尤其已结束的），
+  // 等按配置拉取的完整列表返回后自动选中最新一条，避免误显示「暂无打包记录」。
+  // setTimeout 回调内更新状态，与 routeTaskId 加载保持一致（避免 effect 内同步 setState）
+  useEffect(() => {
+    if (view !== 'detail' || !selectedConfig || !configTasksData) return;
+    if (selectedTask?.config === selectedConfig.id) return;
+    const latest = [...configTasksData.results].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
+    const timer = window.setTimeout(() => {
+      if (latest) {
+        loadTaskDetail(latest.id).catch(() => {});
+      } else {
+        setSelectedTask(null);
+        setLogText('');
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [view, selectedConfig, configTasksData, selectedTask, loadTaskDetail]);
+
   const closeTrigger = useCallback(() => {
     setTriggerOpen(false);
     setTriggerConfig(null);
@@ -699,11 +719,13 @@ export default function PackageTaskPage() {
               onTriggerBuild={() => openTriggerBuild(selectedConfig)}
               hideHeader
             />
-          ) : (
+          ) : configTasksData ? (
             <div className="tech-card rounded-xl p-12 text-center">
               <History className="mx-auto h-10 w-10 text-slate-300" strokeWidth={1.5} />
               <p className="mt-3 text-[13px] text-slate-400">该配置暂无打包记录</p>
             </div>
+          ) : (
+            <div className="tech-card rounded-xl p-12 text-center text-[13px] text-slate-400">加载中…</div>
           )}
         </div>
       )}
