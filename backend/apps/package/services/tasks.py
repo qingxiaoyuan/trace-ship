@@ -35,6 +35,7 @@ class TaskLifecycleMixin:
             "node_host": node.host if node else "",
             "node_port": node.port if node else 22,
             "node_os_type": node.os_type if node else "",
+            "node_arch": node.arch if node else "",
             "node_work_root": node.work_root if node else "",
             "node_credential_id": str(node.credential_id) if node and node.credential_id else None,
             # 资源限制生效值：配置级优先，未设置（0/空串）时跟随节点；内存上限仅配置级

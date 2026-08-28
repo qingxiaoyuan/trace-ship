@@ -84,16 +84,56 @@ def test_outsider_cannot_list_members(project, outsider):
 
 
 @pytest.mark.django_db
-def test_project_developer_cannot_add_member(project, developer, outsider):
+def test_project_developer_can_add_member_with_dev_or_tester_role(project, developer, outsider):
     """
-    项目普通成员不能添加成员（写操作仅项目管理员）
+    项目普通成员（开发人员）可拉人进项目，但只能授予 developer / tester 角色
     """
     response = auth_client(developer).post(f"/api/projects/{project.id}/members/", {
-        "user": str(outsider.id),
-        "role": "developer",
+        "user_id": str(outsider.id),
+        "role": "tester",
     })
 
+    assert response.status_code == 201
+    assert ProjectMember.objects.filter(project=project, user=outsider, role="tester").exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("role", ["manager", "software_admin", "auditor", "viewer"])
+def test_project_developer_cannot_grant_other_roles(project, developer, outsider, role):
+    """
+    项目普通成员（开发人员）拉人时不能授予 developer / tester 之外的角色
+    """
+    response = auth_client(developer).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(outsider.id)],
+        "role": role,
+    }, format="json")
+
     assert response.status_code == 403
+    assert response.data["code"] == 40301
+    assert not ProjectMember.objects.filter(project=project, user=outsider).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("member_role", ["auditor", "viewer", "tester"])
+def test_other_member_roles_can_only_grant_dev_or_tester(project, outsider, member_role):
+    """
+    审核人 / 只读人员 / 测试人员拉人进项目同样只能授予 developer / tester
+    """
+    member = User.objects.create_user(username=f"member_{member_role}", password="pass")
+    ProjectMember.objects.create(project=project, user=member, role=member_role)
+
+    ok_response = auth_client(member).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(outsider.id)],
+        "role": "developer",
+    }, format="json")
+    assert ok_response.status_code == 201
+
+    other = User.objects.create_user(username=f"other_{member_role}", password="pass")
+    denied_response = auth_client(member).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(other.id)],
+        "role": "auditor",
+    }, format="json")
+    assert denied_response.data["code"] == 40301
 
 
 @pytest.mark.django_db
@@ -344,6 +384,58 @@ def test_software_admin_can_update_member_role(project, software_admin, develope
     assert response.data["code"] == 0
     member.refresh_from_db()
     assert member.role == "tester"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("role", ["manager", "software_admin"])
+def test_software_admin_cannot_grant_manager_or_software_admin(project, software_admin, outsider, role):
+    """
+    软件管理员拉人 / 改角色时不能授予项目负责人、软件管理员角色
+    """
+    ProjectMember.objects.create(project=project, user=software_admin, role="software_admin")
+
+    response = auth_client(software_admin).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(outsider.id)],
+        "role": role,
+    }, format="json")
+
+    assert response.status_code == 403
+    assert response.data["code"] == 40301
+    assert not ProjectMember.objects.filter(project=project, user=outsider).exists()
+
+
+@pytest.mark.django_db
+def test_software_admin_cannot_update_member_to_manager(project, software_admin, developer):
+    """
+    软件管理员修改成员角色时不能改为项目负责人 / 软件管理员
+    """
+    ProjectMember.objects.create(project=project, user=software_admin, role="software_admin")
+    member = ProjectMember.objects.get(project=project, user=developer)
+
+    response = auth_client(software_admin).patch(
+        f"/api/projects/{project.id}/members/{member.id}/",
+        {"role": "software_admin"},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert response.data["code"] == 40301
+    member.refresh_from_db()
+    assert member.role == "developer"
+
+
+@pytest.mark.django_db
+def test_manager_can_grant_any_role(project, manager, outsider):
+    """
+    项目负责人（manager）可授予包括 software_admin 在内的全部角色
+    """
+    response = auth_client(manager).post(f"/api/projects/{project.id}/members/", {
+        "user_ids": [str(outsider.id)],
+        "role": "software_admin",
+    }, format="json")
+
+    assert response.status_code == 201
+    assert ProjectMember.objects.filter(project=project, user=outsider, role="software_admin").exists()
 
 
 @pytest.mark.django_db

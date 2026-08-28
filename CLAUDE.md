@@ -147,7 +147,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 所有业务资源都围绕 `Project` 组织：
 
 - `apps.project.Project`：项目主体，包含 `version_rule` 和 `release_rule` JSON 规则。
-- `apps.project.ProjectMember`：用户与项目的关联，角色为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行）。
+- `apps.project.ProjectMember`：用户与项目的关联，角色为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行）。成员添加对全体项目成员开放，可授予角色按操作者角色收缩（`apps.project.services.get_grantable_roles`）：manager 全部、software_admin 除 manager/software_admin、其他成员仅 developer/tester；修改角色与移除成员仍仅项目管理员。
 - `apps.repository.Repository` 与 `CommitRecord`：代码仓库（仅 Git/GitLab，直接归属项目并各自绑定凭证；SVN 仅作为打包产物推送目标）与提交记录。
 - `apps.release.ReleaseRecord` 与 `ReleaseCommit`：发布记录与关联提交。
 - `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：审批工作流定义、实例与任务。
@@ -197,7 +197,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 
 - `PackageImage`：打包镜像记录，来源为本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键），按镜像坐标唯一，由选择时自动创建，定义镜像、`script_entry` 入口、默认构建/产物目录。
 - `PackageConfig`：项目级打包配置，包含镜像引用、可选 `custom_script` 自定义脚本、环境变量、构建/产物目录、发布后自动打包开关、SVN 推送配置（svn_url / svn_credential / svn_path_template）。
-- `PackageNode`：远程打包节点（`os_type` 支持 `windows` / `kylin` 麒麟 Linux，SSH/SFTP 接入；`PackageConfig.executor_type=remote_node` 时按节点 OS 语义下发 bat/sh 脚本执行，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；登录凭证 Windows 用 `windows_password`、麒麟用 `ssh_password`）。
+- `PackageNode`：远程打包节点（`os_type` 支持 `windows` / `kylin` 麒麟 Linux，`arch` 记录芯片架构 `x86_64` / `x86_32` / `arm64` / `arm32` 默认 `x86_64`，SSH/SFTP 接入；`PackageConfig.executor_type=remote_node` 时按节点 OS 语义下发 bat/sh 脚本执行，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；登录凭证 Windows 用 `windows_password`、麒麟用 `ssh_password`）。
 - `PackageTask`：打包任务记录，状态 `queued` / `running` / `success` / `failure` / `canceled`，保存配置快照、工作区路径、日志路径、产物信息、SVN 推送结果。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一）；`POST /api/packages/configs/{id}/favorite/` 切换收藏、`GET /api/packages/configs/favorites/` 返回收藏配置及最近任务摘要；任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（我发起的、近 N 天、仅终态）供工作台「打包速览」与成功率 KPI 使用。
 - 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 准备 `workspace/{source,artifacts,tmp}` → `git clone` 源码 → 以 `--entrypoint /bin/sh` 启动容器（只挂载 source / artifacts / tmp，容器内工作目录 `/workspace/source`）→ 有 `custom_script` 则以 `sh -ec`（遇错即停）执行，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）→ 扫描 `workspace/artifacts` 产物 → 可选推送 SVN → 更新状态与耗时。

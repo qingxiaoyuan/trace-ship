@@ -11,8 +11,9 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.notification.models import Notification
-from apps.notification.serializers import NotificationSerializer
+from apps.notification.serializers import NotificationBroadcastSerializer, NotificationSerializer
 from apps.notification.services import NotificationService
+from utils.permissions import HasPermission
 from utils.response import error_response, success_response
 from utils.viewsets import StandardReadOnlyModelViewSet
 
@@ -31,6 +32,12 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
     filterset_fields = ["notification_type", "is_read"]
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]
+
+    def get_permissions(self):
+        """系统通知发送需 system.notification 权限（超管自动放行），其余仅登录"""
+        if self.action == "broadcast":
+            return [IsAuthenticated(), HasPermission("system.notification")]
+        return super().get_permissions()
 
     def get_queryset(self):
         """仅返回当前用户的通知"""
@@ -101,3 +108,30 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
         """
         count, _ = self.get_queryset().delete()
         return success_response({"count": count}, message="清除成功")
+
+    @action(detail=False, methods=["post"], url_path="broadcast")
+    def broadcast(self, request: Request) -> Response:
+        """
+        发送系统通知（管理员）
+
+        scope=all 下发全部启用用户；scope=users 按 user_ids 指定接收人。
+
+        Args:
+            request: DRF Request，body 含 title / content / scope / user_ids
+
+        Returns:
+            发送条数
+        """
+        from apps.account.models import User
+
+        serializer = NotificationBroadcastSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if data["scope"] == "all":
+            users = list(User.objects.filter(is_active=True))
+        else:
+            users = list(User.objects.filter(id__in=data["user_ids"], is_active=True))
+            if not users:
+                return error_response(40001, "所选用户不存在或已停用")
+        count = NotificationService.notify_system(users, data["title"], data["content"])
+        return success_response({"count": count}, message=f"已发送给 {count} 位用户")

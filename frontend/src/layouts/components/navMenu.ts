@@ -62,6 +62,7 @@ const fallbackMenus: MenuItem[] = [
       { id: 'system_roles', name: '角色管理', path: '/system/roles', icon: 'SafetyCertificateOutlined' },
       { id: 'system_configs', name: '系统配置', path: '/system/configs', icon: 'SettingOutlined' },
       { id: 'system_access_tokens', name: '访问令牌', path: '/system/access-tokens', icon: 'KeyOutlined' },
+      { id: 'system_notifications', name: '通知发送', path: '/system/notifications', icon: 'BellOutlined' },
       { id: 'system_package_images', name: '打包镜像', path: '/system/package-images', icon: 'BoxPlotOutlined' },
       { id: 'system_logs', name: '操作日志', path: '/system/logs', icon: 'FileTextOutlined' },
     ],
@@ -86,6 +87,7 @@ const pathIconMap: Record<string, LucideIcon> = {
   '/system/roles': ShieldCheck,
   '/system/configs': Settings,
   '/system/access-tokens': KeySquare,
+  '/system/notifications': Bell,
   '/system/package-images': Box,
   '/system/logs': ScrollText,
 };
@@ -94,7 +96,7 @@ const groupRules = [
   { title: '概览', paths: ['/dashboard', '/releases', '/workflows', '/notifications', '/guide', '/feedback', '/changelog'] },
   { title: '资源', paths: ['/projects', '/repositories', '/credentials', '/packages'] },
   { title: '质量', paths: ['/commits', '/releases/create'] },
-  { title: '系统', paths: ['/system/users', '/system/roles', '/system/configs', '/system/access-tokens', '/system/package-images', '/system/logs'] },
+  { title: '系统', paths: ['/system/users', '/system/roles', '/system/configs', '/system/access-tokens', '/system/notifications', '/system/package-images', '/system/logs'] },
 ];
 
 const labelMap: Record<string, string> = {

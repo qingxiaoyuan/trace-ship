@@ -198,7 +198,7 @@ class PackageNodeViewSet(StandardModelViewSet):
     queryset = PackageNode.objects.select_related("credential", "created_by").all()
     serializer_class = PackageNodeSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["os_type", "is_active"]
+    filterset_fields = ["os_type", "arch", "is_active"]
     search_fields = ["name", "host"]
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]

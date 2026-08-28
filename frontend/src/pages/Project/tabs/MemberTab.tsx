@@ -23,10 +23,10 @@ const roleMap: Record<ProjectMemberRole, string> = {
   software_admin: '软件管理员',
 };
 
-const roleOptions = Object.entries(roleMap).map(([value, label]) => ({
-  value,
-  label,
-}));
+/** 按可授予角色集合过滤出角色下拉选项 */
+function buildRoleOptions(grantableRoles: ProjectMemberRole[]) {
+  return grantableRoles.map((value) => ({ value, label: roleMap[value] }));
+}
 
 interface MemberTabProps {
   projectId: string;
@@ -45,13 +45,14 @@ export function MemberTab({ projectId }: MemberTabProps) {
     enabled: !!projectId,
   });
 
-  // 仅项目管理员（含项目 leader / 超管）可增删改成员，普通成员只读
+  // 任意项目成员均可拉人（可授予角色按当前用户角色收缩）；改角色/移除仅项目管理员
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
     enabled: !!projectId,
   });
-  const { canManage } = useProjectRole(project);
+  const { canManage, canAddMember, grantableRoles } = useProjectRole(project);
+  const roleOptions = useMemo(() => buildRoleOptions(grantableRoles), [grantableRoles]);
 
   const { data: usersData, isLoading: usersLoading } = useQuery({
     queryKey: ['account-users-all'],
@@ -111,10 +112,10 @@ export function MemberTab({ projectId }: MemberTabProps) {
   );
 
   const userOptions = useMemo(() => {
-    // 过滤掉已在项目中的用户，避免重复添加
+    // 过滤掉已在项目中的用户与已停用用户，避免重复添加、避免拉入停用账号
     const existingIds = new Set((data?.results || []).map((m) => String(m.user_id)));
     return (usersData?.results || [])
-      .filter((u: AccountUser) => !existingIds.has(String(u.id)))
+      .filter((u: AccountUser) => u.is_active !== false && !existingIds.has(String(u.id)))
       .map((u: AccountUser) => ({
         value: u.id,
         label: `${u.nickname || u.username} (${u.username})`,
@@ -139,10 +140,12 @@ export function MemberTab({ projectId }: MemberTabProps) {
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">项目成员</h1>
           <p className="mt-1 text-[13px] text-slate-500">
-            {canManage ? '管理项目成员、角色与权限' : '项目成员与角色（仅项目管理员可调整）'}
+            {canManage
+              ? '管理项目成员、角色与权限'
+              : '项目成员与角色（可添加成员，角色调整仅项目管理员）'}
           </p>
         </div>
-        {canManage && (
+        {canAddMember && (
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
@@ -192,6 +195,10 @@ export function MemberTab({ projectId }: MemberTabProps) {
             filteredMembers.map((member) => {
               const name = member.user.nickname || member.user.username;
               const initial = name.charAt(0);
+              // 行内角色 Select：可授选项之外的当前角色仅作回显（不可再选中授予）
+              const memberRoleOptions = roleOptions.some((o) => o.value === member.role)
+                ? roleOptions
+                : [...roleOptions, { value: member.role, label: roleMap[member.role] }];
               return (
                 <div
                   key={member.id}
@@ -213,7 +220,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
                     <div className="col-span-2">
                       <Select
                         value={member.role}
-                        options={roleOptions}
+                        options={memberRoleOptions}
                         disabled={!canManage}
                         onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
                         loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
@@ -269,7 +276,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
                       <Select
                         value={member.role}
-                        options={roleOptions}
+                        options={memberRoleOptions}
                         disabled={!canManage}
                         onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
                         loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}

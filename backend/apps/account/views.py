@@ -454,6 +454,7 @@ class AuthViewSet(viewsets.GenericViewSet):
                     {"id": "system_configs", "name": "系统配置", "path": "/system/configs", "icon": "SettingOutlined", "permission": "system.config"},
                     {"id": "system_package_images", "name": "打包镜像", "path": "/system/package-images", "icon": "BoxPlotOutlined", "permission": "system.package_image"},
                     {"id": "system_access_tokens", "name": "访问令牌", "path": "/system/access-tokens", "icon": "KeyOutlined", "permission": "system.access_token"},
+                    {"id": "system_notifications", "name": "通知发送", "path": "/system/notifications", "icon": "BellOutlined", "permission": "system.notification"},
                     {"id": "system_logs", "name": "操作日志", "path": "/system/logs", "icon": "FileTextOutlined", "permission": "system.log"},
                 ],
             },

@@ -49,6 +49,27 @@ class NotificationService:
         )
 
     @staticmethod
+    def notify_system(users, title: str, content: str) -> int:
+        """
+        系统通知批量下发（管理员在「系统管理 · 通知发送」触发）
+
+        逐用户创建一条 system 类型通知，bulk_create 一次落库。
+
+        Args:
+            users: 接收用户列表
+            title: 通知标题
+            content: 通知内容
+
+        Returns:
+            创建的通知条数
+        """
+        notifications = [
+            Notification(user=user, notification_type="system", title=title, content=content)
+            for user in users
+        ]
+        return len(Notification.objects.bulk_create(notifications))
+
+    @staticmethod
     def mark_all_read(user) -> int:
         """
         标记用户所有未读通知为已读

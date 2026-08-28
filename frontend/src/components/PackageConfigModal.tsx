@@ -133,6 +133,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const projectId = Form.useWatch('project', form) ?? fixedProjectId;
   const executorType = Form.useWatch('executor_type', form) ?? 'local_docker';
   const isRemote = executorType === 'remote_node';
+  const nodeId = Form.useWatch('node', form);
   const autoCollectOutput = Form.useWatch('auto_collect_output', form) ?? false;
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
   const svnUrl = Form.useWatch('svn_url', form);
@@ -166,6 +167,27 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     queryFn: () => packageApi.getNodes({ is_active: true, page_size: 100 }),
     enabled: open && isRemote,
   });
+
+  // 脚本语言按所选节点 OS 决定：麒麟 Linux 节点用 sh，Windows 节点用 bat；
+  // 节点停用不在启用列表时回退到配置自带的 node_os_type；均未知时按 bat 兼容
+  const selectedNodeOs = useMemo(
+    () =>
+      (nodesData?.results || []).find((n) => n.id === nodeId)?.os_type ??
+      (nodeId && editing?.node === nodeId ? editing.node_os_type || undefined : undefined),
+    [nodesData, nodeId, editing],
+  );
+  const isKylinRemote = isRemote && selectedNodeOs === 'kylin';
+  const scriptLang: 'sh' | 'bat' = !isRemote || isKylinRemote ? 'sh' : 'bat';
+  const scriptFilename = !isRemote
+    ? 'custom-script.sh'
+    : isKylinRemote
+      ? 'pack-custom.sh'
+      : 'pack-custom.bat';
+  const scriptHint = !isRemote
+    ? '留空则执行镜像内置脚本；填写后在 /workspace/source 目录以 sh -ec 执行（遇错即停，编译失败会自动判为打包失败）'
+    : isKylinRemote
+      ? '留空则执行源码根目录 pack.sh；填写后上传为 pack-custom.sh，在构建目录以 sh -e 执行（遇错即停，编译失败会自动判为打包失败）'
+      : 'Windows 批处理：BAT 无 set -e，平台按脚本最终退出码判定，失败须逐级返回非零——调用内部脚本后加 "if errorlevel 1 exit /b 1"，内部脚本内关键命令失败也请 "|| exit /b 1"';
 
   const { data: svnCredsData } = useQuery({
     queryKey: ['package-modal-svn-creds', projectId],
@@ -262,7 +284,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const nodeOptions = useMemo(
     () =>
       (nodesData?.results || []).map((n) => ({
-        label: `${n.name}（${n.os_type_display || n.host}）`,
+        label: `${n.name}（${[n.os_type_display || n.host, n.arch_display || n.arch].filter(Boolean).join(' · ')}）`,
         value: n.id,
       })),
     [nodesData],
@@ -285,13 +307,16 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     }
     const ref = values.image_ref;
     const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
-    const isRemote = values.executor_type === 'remote_node';
+    // 直接读表单当前值（AI 弹窗可能未触发外层 useWatch 刷新），避免依赖渲染态
+    const remoteNode = values.executor_type === 'remote_node';
     const payload: AIGenerateScriptPayload = {
       project,
       repository,
-      executor_type: isRemote ? 'remote_node' : 'local_docker',
-      node: isRemote ? values.node : undefined,
-      image_ref: isRemote ? undefined : ref,
+      executor_type: remoteNode ? 'remote_node' : 'local_docker',
+      node: remoteNode ? values.node : undefined,
+      // 节点 OS 决定生成 sh 还是 bat；后端在 node 已落库时也会自行补齐
+      node_os_type: remoteNode ? selectedNodeOs : undefined,
+      image_ref: remoteNode ? undefined : ref,
       image_info: item ? toImageInfo(item) : undefined,
       build_path: values.build_path || '.',
       output_path: values.output_path || 'dist',
@@ -520,7 +545,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         <SectionLabel
           extra={
             <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-600">
-              {isRemote ? 'bat' : 'sh'}
+              {scriptLang}
             </span>
           }
         >
@@ -529,15 +554,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
 
         <Form.Item name="custom_script" noStyle>
           <ScriptEditorField
-            lang={isRemote ? 'bat' : 'sh'}
-            filename={isRemote ? 'pack-custom.bat' : 'custom-script.sh'}
+            lang={scriptLang}
+            filename={scriptFilename}
             readOnly={readOnly}
             onAiGenerate={readOnly ? undefined : () => setAiModalOpen(true)}
-            hint={
-              isRemote
-                ? 'Windows 批处理：BAT 无 set -e，平台按脚本最终退出码判定，失败须逐级返回非零——调用内部脚本后加 "if errorlevel 1 exit /b 1"，内部脚本内关键命令失败也请 "|| exit /b 1"'
-                : '留空则执行镜像内置脚本；填写后在 /workspace/source 目录以 sh -ec 执行（遇错即停，编译失败会自动判为打包失败）'
-            }
+            hint={scriptHint}
           />
         </Form.Item>
 
@@ -679,8 +700,8 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
       </ConfigProvider>
       <AIScriptModal
         open={aiModalOpen}
-        lang={isRemote ? 'bat' : 'sh'}
-        filename={isRemote ? 'pack-custom.bat' : 'custom-script.sh'}
+        lang={scriptLang}
+        filename={scriptFilename}
         onGenerate={handleAiGenerate}
         onGenerateStream={handleAiGenerateStream}
         onApply={handleAiApply}

@@ -64,6 +64,46 @@ class ProjectService:
         )
 
 
+# 全部可授予的项目角色
+ALL_GRANTABLE_ROLES = [role for role, _ in ProjectMember.ROLE_CHOICES]
+# 软件管理员可授予的角色（除项目负责人、软件管理员）
+SOFTWARE_ADMIN_GRANTABLE_ROLES = [
+    role for role in ALL_GRANTABLE_ROLES if role not in ("manager", "software_admin")
+]
+# 普通成员拉人进项目时可授予的角色（仅开发 / 测试）
+MEMBER_GRANTABLE_ROLES = ["developer", "tester"]
+
+
+def get_grantable_roles(project, user) -> list[str]:
+    """
+    按操作者在项目中的有效角色返回其可授予的成员角色集合
+
+    规则：超管 / 项目负责人（leader）/ manager 可授全部角色；
+    software_admin 可授除 manager、software_admin 之外的角色；
+    其余成员角色（developer/tester/auditor/viewer）拉人进项目仅能授 developer/tester；
+    非项目成员返回空列表。
+
+    Args:
+        project: 项目实例
+        user: 操作者用户
+
+    Returns:
+        可授予的角色值列表
+    """
+    if user.is_superuser:
+        return ALL_GRANTABLE_ROLES
+    from utils.permissions import ProjectRolePermission
+
+    role = ProjectRolePermission._effective_role(project, user)
+    if role == "manager":
+        return ALL_GRANTABLE_ROLES
+    if role == "software_admin":
+        return SOFTWARE_ADMIN_GRANTABLE_ROLES
+    if role is None:
+        return []
+    return MEMBER_GRANTABLE_ROLES
+
+
 def visible_project_ids(user):
     """
     用户可见的项目 ID 查询集

@@ -331,6 +331,11 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                             待整改 {r.open_review_count}
                           </span>
                         )}
+                        {(r.replied_review_count ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-600">
+                            待复核 {r.replied_review_count}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="col-span-6 md:col-span-2">
@@ -367,6 +372,11 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                         {(r.open_review_count ?? 0) > 0 && (
                           <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
                             待整改 {r.open_review_count}
+                          </span>
+                        )}
+                        {(r.replied_review_count ?? 0) > 0 && (
+                          <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-600">
+                            待复核 {r.replied_review_count}
                           </span>
                         )}
                       </div>

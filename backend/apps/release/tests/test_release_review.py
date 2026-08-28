@@ -331,6 +331,26 @@ class TestAggregateAndBaseTag:
         assert data[0]["replies"][0]["content"] == "已补充"
         assert data[0]["can_judge"] is True
 
+    def test_release_list_returns_open_and_replied_counts(
+        self, reviewer_client, publisher_client, released_release
+    ):
+        """发布列表注记待整改（open）与待复核（replied）意见数，两者可共存"""
+        author = reviewer_client.handler._force_user
+        ReleaseReviewIssue.objects.create(
+            release=released_release, author=author, content="待整改意见", status="open",
+        )
+        ReleaseReviewIssue.objects.create(
+            release=released_release, author=author, content="待复核意见", status="replied",
+        )
+        ReleaseReviewIssue.objects.create(
+            release=released_release, author=author, content="已通过意见", status="resolved",
+        )
+        resp = publisher_client.get("/api/releases/")
+        assert resp.status_code == 200
+        row = next(r for r in resp.data["data"]["results"] if r["id"] == str(released_release.id))
+        assert row["open_review_count"] == 1
+        assert row["replied_review_count"] == 1
+
 
 class TestInvalidIssueId:
     def test_reply_invalid_uuid_returns_404(self, reviewer_client, released_release):

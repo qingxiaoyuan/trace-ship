@@ -20,6 +20,7 @@ export const SystemRoleList = lazy(() => import('@/pages/System/RoleList'));
 export const SystemConfig = lazy(() => import('@/pages/System/Config'));
 export const SystemLogList = lazy(() => import('@/pages/System/LogList'));
 export const SystemAccessTokenList = lazy(() => import('@/pages/System/AccessTokenList'));
+export const SystemNotificationSend = lazy(() => import('@/pages/System/NotificationSend'));
 export const Notification = lazy(() => import('@/pages/Notification'));
 export const Guide = lazy(() => import('@/pages/Guide'));
 export const Feedback = lazy(() => import('@/pages/Feedback'));

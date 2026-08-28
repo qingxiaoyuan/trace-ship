@@ -981,15 +981,32 @@ class TestPackageNodeViews:
             "name": "节点 A",
             "host": "10.0.0.1",
             "port": 22,
+            "arch": "arm64",
             "credential": str(windows_credential.id),
             "work_root": r"C:\trace-ship\workspaces",
         }, format="json")
         assert resp.status_code == 200, resp.json()
-        node_id = resp.json()["data"]["id"]
+        data = resp.json()["data"]
+        node_id = data["id"]
+        assert data["arch"] == "arm64"
+        assert data["arch_display"] == "ARM 64位"
 
         resp = client.get("/api/packages/nodes/")
         assert resp.status_code == 200
         assert any(n["id"] == node_id for n in resp.json()["data"]["results"])
+
+    def test_node_arch_default_x86_64(self, windows_credential):
+        """不传 arch 时默认 x86 64位。"""
+        client = self._superuser_client()
+        resp = client.post("/api/packages/nodes/", {
+            "name": "节点默认架构",
+            "host": "10.0.0.3",
+            "port": 22,
+            "credential": str(windows_credential.id),
+            "work_root": r"C:\trace-ship\workspaces",
+        }, format="json")
+        assert resp.status_code == 200, resp.json()
+        assert resp.json()["data"]["arch"] == "x86_64"
 
     def test_delete_blocked_when_referenced(self, project, repository, node):
         PackageConfig.objects.create(

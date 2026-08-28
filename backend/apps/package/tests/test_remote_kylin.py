@@ -240,6 +240,7 @@ class TestKylinSnapshot:
         snapshot = PackageService._snapshot(config)
         assert snapshot["executor_type"] == "remote_node"
         assert snapshot["node_os_type"] == "kylin"
+        assert snapshot["node_arch"] == kylin_node.arch
         assert snapshot["node_work_root"] == "/data/trace-ship/workspaces"
 
     def test_build_remote_client_dispatch(self, kylin_node):

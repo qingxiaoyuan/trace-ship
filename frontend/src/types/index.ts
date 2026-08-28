@@ -148,6 +148,8 @@ export interface Release {
   has_doc?: boolean;
   /** 待整改（open）整改意见数（列表接口返回，由后端注解聚合） */
   open_review_count?: number;
+  /** 待复核（replied）整改意见数（列表接口返回，由后端注解聚合） */
+  replied_review_count?: number;
   /** 发布时的基线 tag 快照（详情返回；空表示首个版本区间） */
   base_tag?: string;
   /** 整改意见聚合计数（详情返回） */
@@ -481,6 +483,8 @@ export interface AIGenerateScriptPayload {
   repository: string;
   executor_type: 'local_docker' | 'remote_node';
   node?: string | null;
+  /** 远程节点操作系统（决定生成 sh 还是 bat）；未传时后端按 node 落库信息补齐 */
+  node_os_type?: 'windows' | 'kylin';
   image_ref?: string;
   image_info?: PackageImageInfo;
   build_path?: string;
@@ -513,6 +517,9 @@ export interface PackageNode {
   port: number;
   os_type: 'windows' | 'kylin';
   os_type_display?: string;
+  /** 芯片架构 */
+  arch: 'x86_64' | 'x86_32' | 'arm64' | 'arm32';
+  arch_display?: string;
   credential?: string | null;
   credential_id?: string | null;
   credential_name?: string;
@@ -552,6 +559,8 @@ export interface PackageConfig {
   executor_type_display?: string;
   node?: string | null;
   node_id?: string | null;
+  /** 节点操作系统（只读）：节点停用不在启用列表时也能据此决定脚本语言 */
+  node_os_type?: 'windows' | 'kylin' | '';
   node_name?: string;
   node_host?: string;
   image?: string | null;

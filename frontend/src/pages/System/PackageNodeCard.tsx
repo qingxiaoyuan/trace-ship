@@ -11,6 +11,7 @@ interface NodeFormValues {
   host: string;
   port: number;
   os_type: 'windows' | 'kylin';
+  arch: 'x86_64' | 'x86_32' | 'arm64' | 'arm32';
   credential: string;
   work_root: string;
   max_concurrency: number;
@@ -25,6 +26,19 @@ const OS_OPTIONS = [
   { label: 'Windows', value: 'windows' },
   { label: '麒麟 Linux', value: 'kylin' },
 ] as const;
+
+/** 芯片架构选项 */
+const ARCH_OPTIONS = [
+  { label: 'x86 64位', value: 'x86_64' },
+  { label: 'x86 32位', value: 'x86_32' },
+  { label: 'ARM 64位', value: 'arm64' },
+  { label: 'ARM 32位', value: 'arm32' },
+] as const;
+
+/** 架构值 → 展示文案（列表徽标用，接口未返回 arch_display 时兜底） */
+const ARCH_LABELS: Record<string, string> = Object.fromEntries(
+  ARCH_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 /** 各操作系统的默认远程工作根目录 */
 const WORK_ROOT_DEFAULTS: Record<'windows' | 'kylin', string> = {
@@ -123,6 +137,7 @@ export function PackageNodeCard() {
       host: '',
       port: 22,
       os_type: 'windows',
+      arch: 'x86_64',
       credential: undefined as unknown as string,
       work_root: WORK_ROOT_DEFAULTS.windows,
       max_concurrency: 1,
@@ -141,6 +156,7 @@ export function PackageNodeCard() {
       host: node.host,
       port: node.port,
       os_type: node.os_type,
+      arch: node.arch ?? 'x86_64',
       credential: node.credential || undefined,
       work_root: node.work_root,
       max_concurrency: node.max_concurrency ?? 1,
@@ -227,7 +243,12 @@ export function PackageNodeCard() {
             >
               {/* 桌面端网格行 */}
               <div className="hidden grid-cols-12 items-center gap-3 px-4 py-2.5 text-[13px] md:grid">
-                <div className="col-span-1 font-medium text-slate-800 md:col-span-2">{node.name}</div>
+                <div className="col-span-1 font-medium text-slate-800 md:col-span-2">
+                  {node.name}
+                  <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 align-middle text-[10px] font-normal text-slate-500">
+                    {node.arch_display || ARCH_LABELS[node.arch] || node.arch}
+                  </span>
+                </div>
                 <div className="col-span-1 font-mono text-[12px] text-slate-600 md:col-span-2">
                   {node.host}:{node.port}
                 </div>
@@ -294,6 +315,9 @@ export function PackageNodeCard() {
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{node.name}</span>
+                  <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500">
+                    {node.arch_display || ARCH_LABELS[node.arch] || node.arch}
+                  </span>
                   <span className="shrink-0 font-mono text-[12px] text-slate-400">{node.host}:{node.port}</span>
                 </div>
                 <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -369,6 +393,13 @@ export function PackageNodeCard() {
               rules={[{ required: true, message: '请选择操作系统' }]}
             >
               <Select options={[...OS_OPTIONS]} onChange={handleOsTypeChange} />
+            </Form.Item>
+            <Form.Item
+              name="arch"
+              label="芯片架构"
+              rules={[{ required: true, message: '请选择芯片架构' }]}
+            >
+              <Select options={[...ARCH_OPTIONS]} />
             </Form.Item>
             <Form.Item
               name="credential"

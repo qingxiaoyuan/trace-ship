@@ -38,7 +38,9 @@ leader）对项目资源不可见、不可写；流程节点编辑等高权限�
 
 | 动作 | 所需角色（含 manager） |
 |------|------------------------|
-| 项目/仓库/打包配置/成员/流程定义 增删改 | manager |
+| 项目/仓库/打包配置/流程定义 增删改 | manager |
+| 成员添加 | 全体成员（可授予角色按操作者收缩，见 2026-08-28 修订） |
+| 成员角色修改 / 移除 | manager |
 | 流程定义节点编辑 | manager（替代原 `IsProjectLeader`） |
 | 发布创建/编辑/生成说明/提交审批/推 tag | developer |
 | 发布删除 | manager 任意草稿/已驳回；developer 仅本人草稿 |
@@ -83,3 +85,19 @@ leader）对项目资源不可见、不可写；流程节点编辑等高权限�
 
 `software_admin` 与 `manager` 区别：前者在项目内拥有全部操作权限（含通常仅 manager
 可做的成员管理），后者仍受 `required_roles` 约束。
+
+## Update (2026-08-28)
+
+成员授权收缩（拉人进项目放开、可授角色分级）：
+
+- 「添加成员」从仅 manager 放宽为全体项目成员（含 leader 隐含成员），但可授予的
+  角色按操作者有效角色收缩，规则集中在
+  `apps.project.services.get_grantable_roles`：
+  - 超管 / leader / manager：全部角色；
+  - software_admin：除 manager、software_admin 之外的角色；
+  - 其他成员角色（developer/tester/auditor/viewer）：仅 developer、tester。
+- 「修改成员角色 / 移除成员」仍仅 manager（software_admin 由 `_check` 放行，但
+  修改角色时同样受上述可授集合约束）。
+- 校验落在 `ProjectMemberViewSet`（单个/批量添加、更新均走
+  `_check_grantable_role`，越权返回 40301）；前端 `useProjectRole` 暴露
+  `canAddMember` / `grantableRoles`，角色下拉按同一规则过滤，前后端规则同源。

@@ -233,7 +233,10 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):
     """
     项目成员视图集
 
-    查询（列表/详情）对项目全体成员开放，增删改仅项目管理员可操作。
+    查询（列表/详情）对项目全体成员开放；添加成员全体项目成员均可，
+    但可授予的角色按操作者角色收缩（manager 全部 / software_admin 除
+    manager 与 software_admin / 其他成员仅 developer、tester）；
+    修改角色与移除成员仅项目管理员（含软件管理员）可操作。
     """
 
     queryset = ProjectMember.objects.all()
@@ -242,14 +245,25 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):
 
     def get_permissions(self):
         """
-        写操作需项目管理员，读操作项目成员即可
+        读操作项目成员即可；添加成员全体项目成员均可（可授予的角色按操作者
+        角色收缩，见 apps.project.services.get_grantable_roles）；
+        修改角色 / 移除成员仍需项目管理员。
 
         Returns:
             权限实例列表
         """
-        if self.action in ["create", "update", "partial_update", "destroy"]:
+        if self.action in ["update", "partial_update", "destroy"]:
             return [IsAuthenticated(), IsProjectManager()]
         return [IsAuthenticated(), IsProjectMember()]
+
+    def _check_grantable_role(self, request: Request, role: str):
+        """校验操作者是否有权授予指定角色，无权时返回错误响应，有权返回 None。"""
+        from apps.project.services import get_grantable_roles
+
+        project = self.get_parent_project()
+        if role not in get_grantable_roles(project, request.user):
+            return error_response(40301, "当前角色无权授予该成员角色", status_code=403)
+        return None
 
     def get_queryset(self):
         """
@@ -273,6 +287,12 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):
         if user_ids is None:
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
+            # 先由序列化器校验角色合法性（400），再校验操作者是否有权授予（403）
+            denied = self._check_grantable_role(
+                request, serializer.validated_data.get("role", "developer")
+            )
+            if denied is not None:
+                return denied
             self.perform_create(serializer)
             return success_response(serializer.data, "添加成功", status=status.HTTP_201_CREATED)
         return self._create_members_batch(request, user_ids)
@@ -295,6 +315,9 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):
         role = request.data.get("role", "developer")
         if role not in dict(ProjectMember.ROLE_CHOICES):
             return error_response(40001, "无效的角色")
+        denied = self._check_grantable_role(request, role)
+        if denied is not None:
+            return denied
 
         from apps.account.models import User
 
@@ -335,11 +358,17 @@ class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):
         return success_response(serializer.data)
 
     def update(self, request: Request, *args, **kwargs) -> Response:
-        """更新成员角色"""
+        """更新成员角色（目标角色同样受操作者可授予角色集合约束）"""
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
+        # 先由序列化器校验角色合法性（400），再校验操作者是否有权授予（403）
+        role = serializer.validated_data.get("role")
+        if role is not None:
+            denied = self._check_grantable_role(request, role)
+            if denied is not None:
+                return denied
         self.perform_update(serializer)
         return success_response(serializer.data, "更新成功")
 

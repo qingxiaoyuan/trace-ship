@@ -58,6 +58,7 @@ class Command(BaseCommand):
             {"name": "系统配置", "code": "system.config", "module": "system"},
             {"name": "打包镜像", "code": "system.package_image", "module": "system"},
             {"name": "操作日志", "code": "system.log", "module": "system"},
+            {"name": "通知发送", "code": "system.notification", "module": "system"},
         ]
         permission_map: dict[str, Permission] = {}
         for item in permissions_data:

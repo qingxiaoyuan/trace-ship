@@ -74,18 +74,19 @@ class PackageNodeSerializer(serializers.ModelSerializer):
     credential_id = serializers.UUIDField(source="credential.id", read_only=True)
     credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
     os_type_display = serializers.CharField(source="get_os_type_display", read_only=True)
+    arch_display = serializers.CharField(source="get_arch_display", read_only=True)
     created_by_name = serializers.CharField(source="created_by.nickname", read_only=True, default="")
 
     class Meta:
         model = PackageNode
         fields = [
-            "id", "name", "host", "port", "os_type", "os_type_display",
+            "id", "name", "host", "port", "os_type", "os_type_display", "arch", "arch_display",
             "credential", "credential_id", "credential_name",
             "work_root", "max_concurrency", "cpu_cores", "cpu_priority", "description", "is_active",
             "created_by", "created_by_name", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "credential_id", "credential_name", "os_type_display",
+            "id", "credential_id", "credential_name", "os_type_display", "arch_display",
             "created_by", "created_by_name", "created_at", "updated_at",
         ]
 
@@ -158,6 +159,8 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     node_id = serializers.UUIDField(source="node.id", read_only=True)
     node_name = serializers.CharField(source="node.name", read_only=True, default="")
     node_host = serializers.CharField(source="node.host", read_only=True, default="")
+    # 节点 OS（只读）：前端据此决定脚本语言 sh/bat，节点停用不在启用列表时也能正确回显
+    node_os_type = serializers.CharField(source="node.os_type", read_only=True, default="")
     executor_type_display = serializers.CharField(source="get_executor_type_display", read_only=True)
     svn_commit_mode_display = serializers.CharField(source="get_svn_commit_mode_display", read_only=True)
     svn_credential_id = serializers.UUIDField(source="svn_credential.id", read_only=True)
@@ -172,6 +175,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "repository", "repository_id", "repository_name",
             "name",
             "executor_type", "executor_type_display", "node", "node_id", "node_name", "node_host",
+            "node_os_type",
             "image", "image_id", "image_name", "image_ref", "image_source", "image_info", "custom_script",
             "cpu_cores", "cpu_priority", "mem_limit_mb",
             "build_path", "output_path", "auto_collect_output", "auto_compress", "env_vars",
@@ -185,7 +189,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "project_id", "project_name", "repository_id", "repository_name",
             "image_id", "image_name", "image_ref", "image_source",
-            "executor_type_display", "node_id", "node_name", "node_host",
+            "executor_type_display", "node_id", "node_name", "node_host", "node_os_type",
             "svn_credential_id", "svn_credential_name", "svn_commit_mode_display", "my_role",
             "is_favorite",
             "created_at", "updated_at",

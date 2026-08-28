@@ -139,7 +139,7 @@ npm run preview
 - `apps.package`：打包镜像、项目级打包配置、打包任务；支持 Docker 镜像打包、本地脚本打包、产物 SVN 推送、发布后自动触发。
 - `apps.jenkins`：已下线，仅保留迁移 tombstone（空 models + 历史迁移），无 API 与业务逻辑。
 - `apps.credential`：凭证加密存储、脱敏展示、凭证解析。
-- `apps.notification`：站内通知，覆盖审批、构建、发布和系统消息。
+- `apps.notification`：站内通知，覆盖审批、构建、发布和系统消息；管理员可在「系统 · 通知发送」页面向全员或指定用户发送系统通知（`POST /api/notifications/broadcast/`，需 `system.notification` 权限，超管放行）。
 - `apps.feedback`：使用反馈，全员可提交/点赞/查看，删除仅限本人或超管；超管可将反馈标记为已处理（记录处理人与处理时间）。
 - `apps.system`：系统参数、操作日志等系统管理能力；LDAP 连接参数也可在「系统配置」页面维护（页面配置优先，环境变量兜底），并提供 LDAP 连接测试接口。
 
@@ -176,7 +176,7 @@ npm run preview
 项目是主要聚合根：
 
 - `Project`：项目主体，包含 `version_rule`、`release_rule`、负责人和启停状态。
-- `ProjectMember`：项目成员角色，角色值为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行，等同项目内全权限）。
+- `ProjectMember`：项目成员角色，角色值为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行，等同项目内全权限）。成员添加对全体项目成员开放，但可授予的角色按操作者角色收缩（`apps.project.services.get_grantable_roles`）：manager（含项目负责人、超管）可授全部角色，software_admin 可授除 manager / software_admin 外的角色，其他成员角色仅能授 developer / tester；修改角色与移除成员仍仅项目管理员（含软件管理员）。
 - `Repository`：项目下代码仓库，仅支持 Git（GitLab）；SVN 仅作为打包产物推送目标（见 `PackageConfig` 的 SVN 推送配置）。
 - `CommitRecord`：提交记录与提交规范审查结果。
 - `ReleaseRecord`：发布申请，当前状态为 `draft` / `pending` / `released` / `rejected`。
@@ -184,7 +184,7 @@ npm run preview
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：工作流定义、实例和审批任务。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
 - `PackageConfig`：项目级打包配置，包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（含提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
-- `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
+- `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），`arch` 记录芯片架构（`x86_64` / `x86_32` / `arm64` / `arm32`，默认 `x86_64`，选择节点时随节点名展示），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
 - `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一），「打包配置」列表默认收藏优先排序，并驱动工作台「打包速览」面板的常用配置区；接口为 `POST /api/packages/configs/{id}/favorite/`（toggle）、`GET /api/packages/configs/favorites/`（附最近任务摘要）。任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（口径：我发起的、近 N 天、仅终态），工作台打包成功率 KPI 与速览面板统一使用。
 - `Credential`：凭证密文与凭证元数据。
@@ -291,7 +291,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - `/notifications`
 - `/guide`（使用说明）
 - `/feedback`（使用反馈）
-- `/system/users`、`/system/roles`、`/system/configs`、`/system/package-images`、`/system/logs`、`/system/access-tokens`（访问令牌，仅超管）
+- `/system/users`、`/system/roles`、`/system/configs`、`/system/package-images`、`/system/logs`、`/system/access-tokens`（访问令牌，仅超管）、`/system/notifications`（通知发送，需 `system.notification` 权限）
 - `/profile`
 - `/browser-upgrade`（浏览器升级引导页，无需登录）
 

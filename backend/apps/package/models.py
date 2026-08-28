@@ -91,12 +91,22 @@ class PackageNode(models.Model):
         ("kylin", "麒麟 Linux"),
     ]
 
+    ARCH_CHOICES = [
+        ("x86_64", "x86 64位"),
+        ("x86_32", "x86 32位"),
+        ("arm64", "ARM 64位"),
+        ("arm32", "ARM 32位"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name="节点名称")
     host = models.CharField(max_length=300, verbose_name="主机地址")
     port = models.IntegerField(default=22, verbose_name="SSH 端口")
     os_type = models.CharField(
         max_length=20, choices=OS_TYPE_CHOICES, default="windows", verbose_name="操作系统"
+    )
+    arch = models.CharField(
+        max_length=20, choices=ARCH_CHOICES, default="x86_64", verbose_name="芯片架构"
     )
     credential = models.ForeignKey(
         "credential.Credential",
