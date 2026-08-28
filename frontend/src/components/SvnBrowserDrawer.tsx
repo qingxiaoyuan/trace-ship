@@ -122,10 +122,9 @@ export function SvnBrowserDrawer({ open, config, onClose }: SvnBrowserDrawerProp
     <Drawer
       open={open}
       onClose={handleClose}
-      width={720}
+      size={isMobile ? '80vh' : 720}
       placement={isMobile ? 'bottom' : 'right'}
-      height={isMobile ? '80vh' : undefined}
-      styles={isMobile ? { content: { borderRadius: '16px 16px 0 0' } } : undefined}
+      styles={isMobile ? { section: { borderRadius: '16px 16px 0 0' } } : undefined}
       title={
         <div>
           <div className="text-[15px] font-semibold text-slate-900">SVN 制品浏览</div>

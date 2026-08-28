@@ -27,11 +27,11 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
       open={open}
       onClose={onClose}
       placement="bottom"
-      height="75vh"
+      size="75vh"
       closable={false}
       styles={{
         body: { padding: '8px 0 16px', display: 'flex', flexDirection: 'column' },
-        content: { borderRadius: '16px 16px 0 0' },
+        section: { borderRadius: '16px 16px 0 0' },
       }}
     >
       <div className="mx-auto mb-2 h-1 w-10 shrink-0 rounded-full bg-slate-200" />

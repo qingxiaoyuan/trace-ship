@@ -66,11 +66,11 @@ export function MobileUserSheet({ open, onClose }: MobileUserSheetProps) {
       open={open}
       onClose={onClose}
       placement="bottom"
-      height="auto"
+      size="auto"
       closable={false}
       styles={{
         body: { padding: '8px 0 20px' },
-        content: { borderRadius: '16px 16px 0 0' },
+        section: { borderRadius: '16px 16px 0 0' },
       }}
     >
       <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-200" />

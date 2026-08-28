@@ -496,7 +496,7 @@ export default function AccessTokenList() {
         open={Boolean(createdToken)}
         footer={null}
         closable={false}
-        maskClosable={false}
+        mask={{ closable: false }}
         onCancel={() => {
           setCreatedToken(null);
           setCreatedPlain('');
