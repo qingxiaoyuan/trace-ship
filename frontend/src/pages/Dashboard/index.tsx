@@ -32,7 +32,6 @@ import {
   normalizeStatus,
 } from './utils';
 import { KpiCardView } from './components/KpiCardView';
-import { BuildSuccessChart } from './components/BuildSuccessChart';
 import { BuildTrendChart } from './components/BuildTrendChart';
 import { PackageGlancePanel } from './components/PackageGlancePanel';
 import { PipelinePanel } from './components/PipelinePanel';
@@ -343,49 +342,6 @@ export default function Dashboard() {
     },
   ];
 
-  const successChartCard = (
-    <div className="tech-card rounded-xl p-5">
-      <div className="mb-2 flex items-start justify-between">
-        <div>
-          <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包成功率</h2>
-          <p className="mt-0.5 text-[12px] text-slate-500">我发起的任务 · 统计口径近 30 天</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => navigate('/packages')}
-          className="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500"
-        >
-          打包看板
-          <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </button>
-      </div>
-      <BuildSuccessChart
-        rate={buildSuccessRate}
-        successCount={buildSuccess}
-        failureCount={buildFailed}
-      />
-      <div className="mt-4 space-y-1 border-t border-indigo-50 pt-3">
-        {[
-          { label: '成功', value: buildSuccess, color: 'bg-emerald-400', hover: 'hover:bg-emerald-50/60' },
-          { label: '失败', value: buildFailed, color: 'bg-rose-400', hover: 'hover:bg-rose-50/60' },
-        ].map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            onClick={() => navigate('/packages')}
-            className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 transition-colors ${item.hover}`}
-          >
-            <span className="flex items-center gap-2 text-[12px] text-slate-600">
-              <span className={`h-2 w-2 rounded-full ${item.color}`} />
-              {item.label}
-            </span>
-            <span className="font-mono text-[12px] font-semibold text-slate-800">{item.value}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
   const trendChartCard = (
     <div className="tech-card rounded-xl p-5">
       <div className="mb-4">
@@ -540,7 +496,6 @@ export default function Dashboard() {
           onRowClick={(release) => navigate(`/releases/${release.id}`)}
         />
         {trendChartCard}
-        {successChartCard}
         {packageTriggerModal}
       </div>
     );
@@ -559,19 +514,18 @@ export default function Dashboard() {
       <PipelinePanel columns={pipelineColumns} range={pipelineRange} onRangeChange={setPipelineRange} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* 左列：打包速览 + 待办 + 最近发布 */}
+        {/* 左列：打包速览 + 最近发布 */}
         <div className="space-y-5 lg:col-span-2">
           {packageGlancePanel}
-          <TodoPanel items={todoItems} total={allTodoItems.length} filter={todoFilter} onFilterChange={setTodoFilter} />
           <RecentReleasesPanel
             releases={recentReleases}
             onViewAll={() => navigate('/releases')}
             onRowClick={(release) => navigate(`/releases/${release.id}`)}
           />
         </div>
-        {/* 右列：图表 */}
+        {/* 右列：我的待办 + 发布趋势 */}
         <div className="space-y-5">
-          {successChartCard}
+          <TodoPanel items={todoItems} total={allTodoItems.length} filter={todoFilter} onFilterChange={setTodoFilter} />
           {trendChartCard}
         </div>
       </div>

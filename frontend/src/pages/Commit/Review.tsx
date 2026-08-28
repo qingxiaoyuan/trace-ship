@@ -66,6 +66,15 @@ const typeFilterLabels: Record<TypeFilter, string> = {
   rc: 'RC',
 };
 
+/** 整改状态筛选选项（open=待整改，replied=待复核） */
+type ReviewFilter = 'all' | 'open' | 'replied';
+
+const reviewFilterLabels: Record<ReviewFilter, string> = {
+  all: '全部',
+  open: '待整改',
+  replied: '待复核',
+};
+
 /** 审查状态归一为 正常 / 警告（illegal 归入警告） */
 function isWarning(status: ReviewStatus): boolean {
   return status === 'warning' || status === 'illegal';
@@ -156,6 +165,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
   const [repoId, setRepoId] = useState('');
   // 已发布回溯默认只看正式版，审批中审查保持全部
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(status === 'released' ? 'formal' : 'all');
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   const [selected, setSelected] = useState<Release | null>(null);
 
   // 项目列表
@@ -177,7 +187,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
 
   // 发布列表
   const releasesQ = useQuery({
-    queryKey: ['releases', 'review', status, projectId, repoId, typeFilter],
+    queryKey: ['releases', 'review', status, projectId, repoId, typeFilter, reviewFilter],
     queryFn: () =>
       releaseApi.getReleases({
         status,
@@ -186,6 +196,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
         ...(projectId ? { project: projectId } : {}),
         ...(repoId ? { repository: repoId } : {}),
         ...(typeFilter !== 'all' ? { release_type: typeFilter } : {}),
+        ...(reviewFilter !== 'all' ? { review_status: reviewFilter } : {}),
       }),
   });
 
@@ -267,6 +278,25 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
               </button>
             ))}
           </div>
+          {/* 整改状态按钮组（仅已发布回溯） */}
+          {status === 'released' && (
+            <div className="flex items-center gap-0.5 rounded-lg border border-indigo-100 bg-white p-0.5">
+              {(Object.keys(reviewFilterLabels) as ReviewFilter[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setReviewFilter(t)}
+                  className={[
+                    'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+                    reviewFilter === t
+                      ? 'bg-indigo-50 text-indigo-600'
+                      : 'text-slate-500 hover:text-indigo-600',
+                  ].join(' ')}
+                >
+                  {reviewFilterLabels[t]}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="ml-auto text-[12px] text-slate-400">
             共 {rows.length} 个{status === 'released' ? '已发布' : '审批中'}
           </div>
@@ -294,6 +324,8 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
               const warning = (r.warning_count ?? 0) + (r.illegal_count ?? 0);
               const noDoc = r.has_doc !== true;
               const hasWarning = warning > 0 || noDoc;
+              // 存在未闭环整改意见（待整改/待复核）时不应再显示「正常」
+              const hasReviewIssue = (r.open_review_count ?? 0) + (r.replied_review_count ?? 0) > 0;
               const publisherLabel = r.publisher_name || r.publisher || '-';
               return (
                 <div
@@ -304,7 +336,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                   {/* 桌面端网格行 */}
                   <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3.5 md:grid">
                     <div className="col-span-12 flex items-center gap-2 md:col-span-3">
-                      <span className={`inline-flex h-2 w-2 rounded-full ${hasWarning ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                      <span className={`inline-flex h-2 w-2 rounded-full ${hasWarning || hasReviewIssue ? 'bg-amber-400' : 'bg-emerald-500'}`} />
                       <div>
                         <div className="font-mono text-[13px] font-medium text-slate-900">{r.version}</div>
                         <div className="text-[11px] text-slate-400">{r.repository_name || '-'}</div>
@@ -323,9 +355,9 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                           <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
                             {noDoc ? '无文档' : `${warning} 警告`}
                           </span>
-                        ) : (
+                        ) : !hasReviewIssue ? (
                           <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">正常</span>
-                        )}
+                        ) : null}
                         {(r.open_review_count ?? 0) > 0 && (
                           <span className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
                             待整改 {r.open_review_count}
@@ -366,9 +398,9 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                           <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
                             {noDoc ? '无文档' : `${warning} 警告`}
                           </span>
-                        ) : (
+                        ) : !hasReviewIssue ? (
                           <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">正常</span>
-                        )}
+                        ) : null}
                         {(r.open_review_count ?? 0) > 0 && (
                           <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
                             待整改 {r.open_review_count}

@@ -98,7 +98,7 @@ export function TodoPanel({
   };
 
   return (
-    <div className="tech-card rounded-xl lg:col-span-2">
+    <div className="tech-card rounded-xl">
       <div className="flex items-center justify-between border-b border-indigo-50 px-5 py-4">
         <div className="flex items-center gap-2">
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">我的待办</h2>

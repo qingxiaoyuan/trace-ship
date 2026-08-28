@@ -352,6 +352,63 @@ class TestAggregateAndBaseTag:
         assert row["replied_review_count"] == 1
 
 
+class TestReviewStatusFilter:
+    """发布列表按整改意见状态（review_status）过滤"""
+
+    @pytest.fixture
+    def filter_releases(self, project, repository, user, reviewer):
+        """三条已发布记录：待整改 / 待复核 / 无意见"""
+
+        def make(version):
+            return ReleaseRecord.objects.create(
+                project=project, repository=repository, version=version,
+                tag_name=version, branch="main", release_type="formal",
+                status="released", publisher=user,
+            )
+
+        open_rel = make("VA.2.0.0")
+        replied_rel = make("VA.2.1.0")
+        clean_rel = make("VA.2.2.0")
+        ReleaseReviewIssue.objects.create(
+            release=open_rel, author=reviewer, content="待整改意见", status="open",
+        )
+        ReleaseReviewIssue.objects.create(
+            release=replied_rel, author=reviewer, content="待复核意见", status="replied",
+        )
+        return {"open": open_rel, "replied": replied_rel, "clean": clean_rel}
+
+    @staticmethod
+    def _ids(resp):
+        return {r["id"] for r in resp.data["data"]["results"]}
+
+    def test_filter_open(self, publisher_client, filter_releases):
+        """review_status=open 只返回有待整改意见的发布"""
+        resp = publisher_client.get("/api/releases/?review_status=open")
+        assert resp.status_code == 200
+        assert self._ids(resp) == {str(filter_releases["open"].id)}
+
+    def test_filter_replied(self, publisher_client, filter_releases):
+        """review_status=replied 只返回有待复核意见的发布"""
+        resp = publisher_client.get("/api/releases/?review_status=replied")
+        assert resp.status_code == 200
+        assert self._ids(resp) == {str(filter_releases["replied"].id)}
+
+    def test_invalid_value_not_filtered(self, publisher_client, filter_releases):
+        """非法值不过滤，返回全部"""
+        resp = publisher_client.get("/api/releases/?review_status=resolved")
+        assert resp.status_code == 200
+        assert len(self._ids(resp)) == 3
+
+    def test_multiple_issues_no_duplicate_rows(self, publisher_client, filter_releases, reviewer):
+        """同一发布有多条待整改意见时结果不重复"""
+        ReleaseReviewIssue.objects.create(
+            release=filter_releases["open"], author=reviewer, content="第二条意见", status="open",
+        )
+        resp = publisher_client.get("/api/releases/?review_status=open")
+        assert resp.status_code == 200
+        assert len(resp.data["data"]["results"]) == 1
+
+
 class TestInvalidIssueId:
     def test_reply_invalid_uuid_returns_404(self, reviewer_client, released_release):
         """非法 UUID 的意见 id 应返回 404 而非 500"""

@@ -20,7 +20,7 @@ from rest_framework.response import Response
 
 from apps.project.services import visible_project_ids
 from apps.release.exporters import ReleaseDocExporter
-from apps.release.models import ReleaseRecord
+from apps.release.models import ReleaseRecord, ReleaseReviewIssue
 from apps.release.serializers import (
     ReleaseCommitSerializer,
     ReleaseListSerializer,
@@ -96,12 +96,23 @@ class ReleaseFilter(filters.FilterSet):
     created_at__gte = filters.DateTimeFilter(field_name="created_at", lookup_expr="gte")
     created_at__lte = filters.DateTimeFilter(field_name="created_at", lookup_expr="lte")
     version__icontains = filters.CharFilter(field_name="version", lookup_expr="icontains")
+    review_status = filters.CharFilter(method="filter_review_status")
 
     class Meta:
         model = ReleaseRecord
         fields = [
             "project", "repository", "release_type", "status", "publisher",
         ]
+
+    def filter_review_status(self, queryset, name, value):
+        """
+        按整改意见状态过滤发布记录
+
+        open=待整改（存在待整改意见），replied=待复核（存在待复核意见），其他值不过滤。
+        """
+        if value in (ReleaseReviewIssue.STATUS_OPEN, ReleaseReviewIssue.STATUS_REPLIED):
+            return queryset.filter(review_issues__status=value).distinct()
+        return queryset
 
 
 class ReleaseViewSet(StandardModelViewSet):
@@ -148,8 +159,12 @@ class ReleaseViewSet(StandardModelViewSet):
             .prefetch_related("package_tasks")
             # 列表页「待整改 / 待复核」徽标：注记待整改（open）与待复核（replied）整改意见数，避免逐条查询
             .annotate(
-                open_review_count=Count("review_issues", filter=Q(review_issues__status="open")),
-                replied_review_count=Count("review_issues", filter=Q(review_issues__status="replied")),
+                open_review_count=Count(
+                    "review_issues", filter=Q(review_issues__status=ReleaseReviewIssue.STATUS_OPEN)
+                ),
+                replied_review_count=Count(
+                    "review_issues", filter=Q(review_issues__status=ReleaseReviewIssue.STATUS_REPLIED)
+                ),
             )
         )
         if user.is_superuser:

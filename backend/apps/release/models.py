@@ -260,10 +260,14 @@ class ReleaseReviewIssue(models.Model):
         updated_at: 更新时间
     """
 
+    STATUS_OPEN = "open"
+    STATUS_REPLIED = "replied"
+    STATUS_RESOLVED = "resolved"
+
     STATUS_CHOICES = [
-        ("open", "待整改"),
-        ("replied", "待复核"),
-        ("resolved", "已通过"),
+        (STATUS_OPEN, "待整改"),
+        (STATUS_REPLIED, "待复核"),
+        (STATUS_RESOLVED, "已通过"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
