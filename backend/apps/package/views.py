@@ -575,7 +575,7 @@ class PackageTaskFilter(django_filters.FilterSet):
 
     class Meta:
         model = PackageTask
-        fields = ["project", "repository", "release", "config", "status", "build_type", "release_type"]
+        fields = ["project", "repository", "release", "config", "status", "build_type", "release_type", "triggered_by"]
 
 
 class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):

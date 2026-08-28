@@ -53,6 +53,7 @@ export interface PackageTaskListParams {  project?: string;
   status?: string;
   mode?: string;
   search?: string;
+  triggered_by?: string;
   page?: number;
   page_size?: number;
 }

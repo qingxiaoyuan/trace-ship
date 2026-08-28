@@ -210,16 +210,16 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="todo")
     def todo(self, request: Request) -> Response:
-        """我的待办"""
-        queryset = self.get_queryset().filter(status="pending")
+        """我的待办（严格按审批人过滤，超管也不放开全量）"""
+        queryset = self.get_queryset().filter(approver=request.user, status="pending")
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)
 
     @action(detail=False, methods=["get"], url_path="done")
     def done(self, request: Request) -> Response:
-        """我的已办"""
-        queryset = self.get_queryset().exclude(status="pending")
+        """我的已办（同样只限本人审批过的任务）"""
+        queryset = self.get_queryset().filter(approver=request.user).exclude(status="pending")
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)

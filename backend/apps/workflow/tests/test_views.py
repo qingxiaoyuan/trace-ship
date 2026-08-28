@@ -324,3 +324,74 @@ class TestRollbackToStart:
         assert WorkflowTask.objects.filter(
             instance=instance, node_id="node_2", status="pending"
         ).exists()
+
+
+class TestTodoDoneScope:
+    """待办/已办严格按审批人过滤（超管也不放开全量）"""
+
+    def test_superuser_todo_done_only_own(self, user, other_user, instance):
+        from apps.workflow.models import WorkflowTask
+
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=other_user,
+            mode="any",
+            status="pending",
+        )
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=other_user,
+            mode="any",
+            status="approved",
+        )
+        user.is_superuser = True
+        user.save()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        todo = client.get("/api/workflow/tasks/todo/")
+        assert todo.status_code == 200
+        assert todo.data["data"]["results"] == []
+        done = client.get("/api/workflow/tasks/done/")
+        assert done.status_code == 200
+        assert done.data["data"]["results"] == []
+
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=user,
+            mode="any",
+            status="pending",
+        )
+        todo = client.get("/api/workflow/tasks/todo/")
+        assert len(todo.data["data"]["results"]) == 1
+
+    def test_non_superuser_todo_only_own(self, api_client, user, other_user, instance):
+        from apps.workflow.models import WorkflowTask
+
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=other_user,
+            mode="any",
+            status="pending",
+        )
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=user,
+            mode="any",
+            status="pending",
+        )
+        response = api_client.get("/api/workflow/tasks/todo/")
+        assert response.status_code == 200
+        results = response.data["data"]["results"]
+        assert len(results) == 1
+        assert results[0]["approver_name"] == (user.nickname or user.username)

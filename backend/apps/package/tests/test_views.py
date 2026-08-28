@@ -294,3 +294,24 @@ class TestTaskLogsIncremental:
         response = api_client.get(f"/api/packages/tasks/{task.id}/logs/?offset=0")
         assert response.status_code == 200
         assert response.json()["data"]["content"] == ""
+
+
+@pytest.mark.django_db
+def test_task_list_filter_by_triggered_by(
+    api_client, package_config, release, project, repository, user, other_user
+):
+    """任务列表支持按发起人过滤（工作台「打包发起人是当前登录人」口径）。"""
+    mine = PackageTask.objects.create(
+        config=package_config, release=release, project=project, repository=repository,
+        triggered_by=user, name="我的打包", build_type="web", tag_name="V1.0.0",
+        version="V1.0.0", status="failure",
+    )
+    PackageTask.objects.create(
+        config=package_config, release=release, project=project, repository=repository,
+        triggered_by=other_user, name="他人的打包", build_type="web", tag_name="V1.0.0",
+        version="V1.0.0", status="failure",
+    )
+    response = api_client.get(f"/api/packages/tasks/?triggered_by={user.id}")
+    assert response.status_code == 200
+    results = response.json()["data"]["results"]
+    assert [t["id"] for t in results] == [str(mine.id)]

@@ -78,9 +78,11 @@ export default function Dashboard() {
     gcTime: 300_000,
   });
 
+  // 工作台的打包数据只看「我发起的」任务（失败/打包中/成功率均为此口径）
   const { data: packageTaskData } = useQuery({
-    queryKey: ['dashboard-package-tasks'],
-    queryFn: () => packageApi.getTasks({ page_size: 20 }),
+    queryKey: ['dashboard-package-tasks', user?.id],
+    queryFn: () => packageApi.getTasks({ page_size: 20, triggered_by: user!.id }),
+    enabled: !!user,
     staleTime: 30_000,
     gcTime: 300_000,
   });
