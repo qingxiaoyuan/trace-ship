@@ -315,3 +315,45 @@ def test_task_list_filter_by_triggered_by(
     assert response.status_code == 200
     results = response.json()["data"]["results"]
     assert [t["id"] for t in results] == [str(mine.id)]
+
+
+@pytest.mark.django_db
+def test_migration_0022_updates_unfinished_task_snapshots(
+    package_config, release, project, repository, user
+):
+    """0022 数据迁移：配置与未结束任务快照中的 remote_windows 一并迁为 remote_node。"""
+    import importlib
+
+    from django.apps import apps as global_apps
+
+    mig = importlib.import_module(
+        "apps.package.migrations.0022_alter_packageconfig_executor_type_and_more"
+    )
+    package_config.executor_type = "remote_windows"
+    package_config.save(update_fields=["executor_type"])
+    queued = PackageTask.objects.create(
+        config=package_config, release=release, project=project, repository=repository,
+        triggered_by=user, name="排队任务", build_type="web", tag_name="V1.0.0",
+        version="V1.0.0", status="queued",
+        config_snapshot={"executor_type": "remote_windows"},
+    )
+    finished = PackageTask.objects.create(
+        config=package_config, release=release, project=project, repository=repository,
+        triggered_by=user, name="已结束任务", build_type="web", tag_name="V1.0.0",
+        version="V1.0.0", status="success",
+        config_snapshot={"executor_type": "remote_windows"},
+    )
+
+    mig.executor_type_to_remote_node(global_apps, None)
+
+    package_config.refresh_from_db()
+    queued.refresh_from_db()
+    finished.refresh_from_db()
+    assert package_config.executor_type == "remote_node"
+    assert queued.config_snapshot["executor_type"] == "remote_node"
+    # 已结束任务的快照不再执行，保持原样
+    assert finished.config_snapshot["executor_type"] == "remote_windows"
+
+    mig.executor_type_back_to_remote_windows(global_apps, None)
+    queued.refresh_from_db()
+    assert queued.config_snapshot["executor_type"] == "remote_windows"

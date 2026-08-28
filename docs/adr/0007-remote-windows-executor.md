@@ -53,6 +53,28 @@ ADR-0002 确立的内置打包仅支持在平台宿主机以本地 Docker 容器
   压缩包根目录，行为一致，均有单测覆盖。
 - 未开启 `auto_collect_output` 时该开关无意义，前端禁用、后端序列化器校验。
 
+## 2026-08-28 演进
+
+- **执行器语义泛化：`remote_windows` 更名为 `remote_node`**（语义中性），远程执行改按任务快照
+  中的 `node_os_type` 分发；旧快照无该字段时默认按 Windows 处理，完全兼容。迁移
+  `package.0022` 同步改写存量 `PackageConfig.executor_type` 与未结束任务
+  （queued/running）的 `config_snapshot`——快照固化 executor_type，漏迁会导致升级后
+  排队任务被当本地 Docker 执行并绕过节点并发闸门。
+- **节点支持麒麟 Linux**：`PackageNode.os_type` 增加 `kylin`。SSH/SFTP 连接层抽取为
+  OS 无关基类 `remote_base.RemoteSSHClient`（paramiko 连接/重试、SFTP 回传、凭证解析），
+  Windows 与麒麟各自实现命令语义子类（`remote_windows.RemoteWindowsClient` /
+  `remote_kylin.RemoteKylinClient`）。
+- **凭证按 OS 分流**：新增系统共享凭证类型 `ssh_password`，麒麟节点登录必须使用；
+  Windows 节点仍用 `windows_password`；保存与「测试连接」接口均按 os_type 校验凭证类型。
+- **麒麟侧实现要点**：sh 语义（`shlex.quote` 转义、`export` 注入环境变量、LF 脚本、
+  POSIX 路径）；构建包装脚本 `pack-run.sh` 以 `sh -e` 执行目标脚本；产物收集用
+  `cp -r`，压缩用节点自带 `tar -czf`（产物为 `.tar.gz`）。
+- **资源限制语义差异（重要）**：麒麟用 `ulimit -v`（每进程虚拟地址空间上限，子进程各自
+  继承）+ `taskset` + `nice`（normal/belownormal/low → 0/10/19），与 Windows JobObject
+  的进程树聚合硬顶**不对等**，配置相同的 mem_limit_mb 在两类节点上约束强度不同。
+- **work_root 按 OS 校验**：麒麟须 POSIX 绝对路径且拒绝根目录，Windows 须盘符路径且
+  拒绝盘符根目录（与 `cleanup._safe_work_root` 口径对齐）。
+
 ## Consequences
 
 - `requirements.txt` 新增 `paramiko`，外网构建后端镜像时自动装入。

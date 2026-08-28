@@ -99,6 +99,7 @@ export const packageApi = {
     port?: number;
     credential_id: string;
     work_root?: string;
+    os_type?: 'windows' | 'kylin';
   }) => post<PackageNodeTestResult>('/packages/nodes/test-connection/', data),
 
   getConfigs: (params?: PackageConfigListParams) =>

@@ -32,7 +32,7 @@ def cleanup_expired_package_artifacts() -> dict:
 
 @shared_task
 def cleanup_remote_node_workspaces() -> dict:
-    """每天 0:00 清理远程 Windows 节点上残留的打包任务目录（跳过运行中任务）。"""
+    """每天 0:00 清理远程节点（Windows / 麒麟 Linux）上残留的打包任务目录（跳过运行中任务）。"""
     from apps.package.services.cleanup import cleanup_remote_node_workspaces
 
     return cleanup_remote_node_workspaces()

@@ -35,6 +35,7 @@ const passwordOnlyTypes: CredentialType[] = [
   'svn_password',
   'ldap_password',
   'windows_password',
+  'ssh_password',
 ];
 
 const selectCommonProps = {
@@ -66,7 +67,7 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
   const isTokenOnly = tokenOnlyTypes.includes(credType);
   const isPasswordOnly = passwordOnlyTypes.includes(credType);
   const isGitlabToken = credType === 'gitlab_token';
-  const isSystemShared = credType === 'svn_password' || credType === 'windows_password';
+  const isSystemShared = credType === 'svn_password' || credType === 'windows_password' || credType === 'ssh_password';
   // 有效认证模式：token/密码类凭证由类型直接锁定，不依赖表单里的 auth_mode 字段
   const effectiveAuthMode = isTokenOnly ? 'token' : isPasswordOnly ? 'password' : authMode;
 

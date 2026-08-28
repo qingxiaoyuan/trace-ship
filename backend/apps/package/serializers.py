@@ -1,6 +1,9 @@
 """
 系统内置打包序列化器
 """
+import re
+from pathlib import PurePosixPath, PureWindowsPath
+
 from rest_framework import serializers
 
 from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
@@ -80,14 +83,41 @@ class PackageNodeSerializer(serializers.ModelSerializer):
         ]
 
     def validate_credential(self, value):
-        """节点登录凭证必须是 Windows 密码类型且启用。"""
+        """节点登录凭证必填且启用；类型与 os_type 的匹配在 validate 中校验。"""
         if value is None:
             raise serializers.ValidationError("必须选择登录凭证")
-        if value.cred_type != "windows_password":
-            raise serializers.ValidationError("节点登录凭证类型必须为 windows_password")
         if not value.is_active:
             raise serializers.ValidationError("登录凭证已停用")
         return value
+
+    def validate(self, attrs: dict) -> dict:
+        """按 os_type 校验凭证类型与 work_root 路径风格。"""
+        os_type = attrs.get("os_type", getattr(self.instance, "os_type", "windows"))
+        credential = attrs.get("credential", getattr(self.instance, "credential", None))
+        if credential is not None:
+            # 麒麟节点用 SSH 密码（ssh_password），Windows 节点用 Windows 密码
+            expected = "ssh_password" if os_type == "kylin" else "windows_password"
+            if credential.cred_type != expected:
+                raise serializers.ValidationError(
+                    {"credential": f"节点登录凭证类型必须为 {expected}"}
+                )
+        work_root = attrs.get("work_root", getattr(self.instance, "work_root", "") or "")
+        if work_root:
+            if os_type == "kylin":
+                # 拒绝根目录等危险路径（与 cleanup._safe_work_root 对齐）
+                if (
+                    "\\" in work_root
+                    or not PurePosixPath(work_root).is_absolute()
+                    or len(PurePosixPath(work_root).parts) < 2
+                ):
+                    raise serializers.ValidationError(
+                        {"work_root": "麒麟节点工作目录必须为 POSIX 绝对路径（如 /data/trace-ship/workspaces），且不能是根目录"}
+                    )
+            elif not re.match(r"^[A-Za-z]:[\\/]", work_root) or len(PureWindowsPath(work_root).parts) < 2:
+                raise serializers.ValidationError(
+                    {"work_root": r"Windows 节点工作目录必须为盘符路径（如 C:\trace-ship\workspaces），且不能是盘符根目录"}
+                )
+        return attrs
 
     def validate_port(self, value: int) -> int:
         if not (1 <= value <= 65535):
@@ -255,9 +285,9 @@ class PackageConfigSerializer(serializers.ModelSerializer):
 
         executor_type = attrs.get("executor_type", getattr(self.instance, "executor_type", "local_docker")) or "local_docker"
         node = attrs.get("node", getattr(self.instance, "node", None))
-        if executor_type == "remote_windows":
+        if executor_type == "remote_node":
             if node is None:
-                raise serializers.ValidationError({"node": "远程 Windows 打包必须选择打包节点"})
+                raise serializers.ValidationError({"node": "远程节点打包必须选择打包节点"})
             if not node.is_active:
                 raise serializers.ValidationError({"node": "打包节点已停用"})
         else:

@@ -137,7 +137,7 @@ class CredentialViewSet(StandardModelViewSet):
         """
         支持的凭证类型与认证模式枚举
 
-        SVN 凭证（svn_password）全系统共享，其余类型均为个人凭证。
+        系统共享类型（svn_password / windows_password / ssh_password）全员可见可用，其余类型均为个人凭证。
 
         Args:
             request: DRF Request
@@ -151,6 +151,7 @@ class CredentialViewSet(StandardModelViewSet):
                 {"value": "svn_password", "label": "SVN 密码（系统共享）"},
                 {"value": "ldap_password", "label": "LDAP 密码"},
                 {"value": "windows_password", "label": "Windows 密码（系统共享）"},
+                {"value": "ssh_password", "label": "SSH 密码（系统共享）"},
                 {"value": "ai_api_key", "label": "AI API Key"},
             ],
             "auth_modes": [

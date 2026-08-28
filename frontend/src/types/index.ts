@@ -451,7 +451,7 @@ export interface AIScriptDraft {
   container_probed: boolean;
   /** 容器探测失败时的降级提示 */
   container_probe_warning?: string;
-  /** 是否成功探测远程 Windows 节点工具链 */
+  /** 是否成功探测远程节点工具链 */
   node_probed: boolean;
   /** 节点工具探测失败时的降级提示 */
   node_probe_warning?: string;
@@ -479,7 +479,7 @@ export type AIScriptStreamEvent =
 export interface AIGenerateScriptPayload {
   project: string;
   repository: string;
-  executor_type: 'local_docker' | 'remote_windows';
+  executor_type: 'local_docker' | 'remote_node';
   node?: string | null;
   image_ref?: string;
   image_info?: PackageImageInfo;
@@ -505,13 +505,13 @@ export interface PackageKnowledge {
   updated_at: string;
 }
 
-/** 远程打包节点（系统级节点池，当前支持 Windows，SSH/SFTP 接入） */
+/** 远程打包节点（系统级节点池，支持 Windows / 麒麟 Linux，SSH/SFTP 接入） */
 export interface PackageNode {
   id: string;
   name: string;
   host: string;
   port: number;
-  os_type: 'windows';
+  os_type: 'windows' | 'kylin';
   os_type_display?: string;
   credential?: string | null;
   credential_id?: string | null;
@@ -548,7 +548,7 @@ export interface PackageConfig {
   repository_id?: string;
   repository_name?: string;
   name: string;
-  executor_type?: 'local_docker' | 'remote_windows';
+  executor_type?: 'local_docker' | 'remote_node';
   executor_type_display?: string;
   node?: string | null;
   node_id?: string | null;
@@ -679,6 +679,7 @@ export type CredentialType =
   | 'svn_password'
   | 'ldap_password'
   | 'windows_password'
+  | 'ssh_password'
   | 'ai_api_key';
 
 export interface Credential {

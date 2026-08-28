@@ -5,6 +5,7 @@ import {
   Shield,
   KeyRound,
   Monitor,
+  Terminal,
   User,
   Users,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ export const credentialTypeMap: Record<CredentialType, string> = {
   svn_password: 'SVN',
   ldap_password: 'LDAP',
   windows_password: 'Windows',
+  ssh_password: 'SSH',
   ai_api_key: 'AI API Key',
 };
 
@@ -33,6 +35,7 @@ export const credentialTypeIconMap: Record<CredentialType, LucideIcon> = {
   svn_password: FolderTree,
   ldap_password: Shield,
   windows_password: Monitor,
+  ssh_password: Terminal,
   ai_api_key: KeyRound,
 };
 
@@ -44,6 +47,7 @@ export const credentialTypeColorMap: Record<
   svn_password: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-600' },
   ldap_password: { border: 'border-rose-200', bg: 'bg-rose-50', text: 'text-rose-500' },
   windows_password: { border: 'border-sky-200', bg: 'bg-sky-50', text: 'text-sky-600' },
+  ssh_password: { border: 'border-teal-200', bg: 'bg-teal-50', text: 'text-teal-600' },
   ai_api_key: { border: 'border-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-600' },
 };
 
@@ -68,7 +72,9 @@ export const credentialShareOptions: [CredentialShare, string][] = Object.entrie
   credentialShareMap
 ) as [CredentialShare, string][];
 
-/** 由凭证推导共享范围（与后端 is_system_shared 规则一致：svn/windows 密码全系统共享） */
+/** 由凭证推导共享范围（与后端 is_system_shared 规则一致：svn/windows/ssh 密码全系统共享） */
 export function getCredentialShare(credType: CredentialType): CredentialShare {
-  return credType === 'svn_password' || credType === 'windows_password' ? 'system' : 'personal';
+  return credType === 'svn_password' || credType === 'windows_password' || credType === 'ssh_password'
+    ? 'system'
+    : 'personal';
 }

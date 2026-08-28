@@ -428,7 +428,7 @@ class TestNodeProbe:
             def shutdown(self, wait=True, cancel_futures=False):
                 self.shutdown_called = True
 
-        monkeypatch.setattr("apps.package.remote_windows.ThreadPoolExecutor", FakePool)
+        monkeypatch.setattr("apps.package.remote_base.ThreadPoolExecutor", FakePool)
         start = time.monotonic()
         result, reason = probe_node_tools("10.0.0.10", 22, str(node_credential.id), timeout=1)
         assert result is None
@@ -602,7 +602,7 @@ class TestPromptAndParse:
 
     def test_remote_windows_prompt_uses_bat(self):
         normalized = PackageScriptAIService._normalize_payload(
-            {"project": "p1", "repository": "r1", "executor_type": "remote_windows"}
+            {"project": "p1", "repository": "r1", "executor_type": "remote_node"}
         )
         system, user = PackageScriptAIService._build_prompt(
             normalized,
@@ -766,7 +766,7 @@ class TestGenerateService:
         )
         result = PackageScriptAIService.generate(
             self._payload(
-                repository, executor_type="remote_windows", image_ref="", node="node-1"
+                repository, executor_type="remote_node", image_ref="", node="node-1"
             ),
             admin_user,
         )
@@ -793,7 +793,7 @@ class TestGenerateService:
         )
         result = PackageScriptAIService.generate(
             self._payload(
-                repository, executor_type="remote_windows", image_ref="", node="node-1"
+                repository, executor_type="remote_node", image_ref="", node="node-1"
             ),
             admin_user,
         )

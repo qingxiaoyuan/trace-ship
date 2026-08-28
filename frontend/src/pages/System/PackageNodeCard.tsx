@@ -10,6 +10,7 @@ interface NodeFormValues {
   name: string;
   host: string;
   port: number;
+  os_type: 'windows' | 'kylin';
   credential: string;
   work_root: string;
   max_concurrency: number;
@@ -19,7 +20,25 @@ interface NodeFormValues {
   is_active: boolean;
 }
 
-/** 系统配置页面：远程打包节点（Windows，SSH/SFTP 接入）管理卡片 */
+/** 节点操作系统选项 */
+const OS_OPTIONS = [
+  { label: 'Windows', value: 'windows' },
+  { label: '麒麟 Linux', value: 'kylin' },
+] as const;
+
+/** 各操作系统的默认远程工作根目录 */
+const WORK_ROOT_DEFAULTS: Record<'windows' | 'kylin', string> = {
+  windows: 'C:\\trace-ship\\workspaces',
+  kylin: '/data/trace-ship/workspaces',
+};
+
+/** 各操作系统的节点登录凭证类型 */
+const OS_CRED_TYPE: Record<'windows' | 'kylin', 'windows_password' | 'ssh_password'> = {
+  windows: 'windows_password',
+  kylin: 'ssh_password',
+};
+
+/** 系统配置页面：远程打包节点（Windows / 麒麟 Linux，SSH/SFTP 接入）管理卡片 */
 export function PackageNodeCard() {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
@@ -33,9 +52,12 @@ export function PackageNodeCard() {
   });
   const nodes = data?.results || [];
 
+  // 按表单所选操作系统联动凭证类型：Windows 用 Windows 密码，麒麟 Linux 用 SSH 密码
+  const osType = Form.useWatch('os_type', form) ?? 'windows';
+  const credType = OS_CRED_TYPE[osType] ?? OS_CRED_TYPE.windows;
   const { data: credData } = useQuery({
-    queryKey: ['credentials', 'windows_password'],
-    queryFn: () => credentialApi.getCredentials({ cred_type: 'windows_password', page_size: 100 }),
+    queryKey: ['credentials', credType],
+    queryFn: () => credentialApi.getCredentials({ cred_type: credType, page_size: 100 }),
   });
   const credentialOptions = (credData?.results || []).map((c) => ({
     value: c.id,
@@ -70,8 +92,8 @@ export function PackageNodeCard() {
     onSuccess: (result) => {
       message.success(
         result.git
-          ? `连接成功：${result.os || 'Windows'}，检测到 git`
-          : `连接成功：${result.os || 'Windows'}，但未检测到 git，打包时将无法拉取源码`,
+          ? `连接成功：${result.os || '远程节点'}，检测到 git`
+          : `连接成功：${result.os || '远程节点'}，但未检测到 git，打包时将无法拉取源码`,
       );
     },
   });
@@ -83,12 +105,13 @@ export function PackageNodeCard() {
         port: values.port,
         credential_id: values.credential,
         work_root: values.work_root,
+        os_type: values.os_type,
       }),
     onSuccess: (result) => {
       message.success(
         result.git
-          ? `连接成功：${result.os || 'Windows'}，检测到 git`
-          : `连接成功：${result.os || 'Windows'}，但未检测到 git，打包时将无法拉取源码`,
+          ? `连接成功：${result.os || '远程节点'}，检测到 git`
+          : `连接成功：${result.os || '远程节点'}，但未检测到 git，打包时将无法拉取源码`,
       );
     },
   });
@@ -99,8 +122,9 @@ export function PackageNodeCard() {
       name: '',
       host: '',
       port: 22,
+      os_type: 'windows',
       credential: undefined as unknown as string,
-      work_root: 'C:\\trace-ship\\workspaces',
+      work_root: WORK_ROOT_DEFAULTS.windows,
       max_concurrency: 1,
       cpu_cores: 0,
       cpu_priority: 'belownormal',
@@ -116,6 +140,7 @@ export function PackageNodeCard() {
       name: node.name,
       host: node.host,
       port: node.port,
+      os_type: node.os_type,
       credential: node.credential || undefined,
       work_root: node.work_root,
       max_concurrency: node.max_concurrency ?? 1,
@@ -125,6 +150,15 @@ export function PackageNodeCard() {
       is_active: node.is_active,
     });
     setModalOpen(true);
+  };
+
+  /** 切换操作系统：工作目录仍为默认值（未手改）时同步切换；登录凭证类型随之变化，需重新选择 */
+  const handleOsTypeChange = (value: 'windows' | 'kylin') => {
+    const current = form.getFieldValue('work_root') as string | undefined;
+    if (!current || current === WORK_ROOT_DEFAULTS.windows || current === WORK_ROOT_DEFAULTS.kylin) {
+      form.setFieldValue('work_root', WORK_ROOT_DEFAULTS[value]);
+    }
+    form.setFieldValue('credential', undefined);
   };
 
   const handleTestInModal = () => {
@@ -155,7 +189,7 @@ export function PackageNodeCard() {
           <div>
             <div className="text-[14px] font-semibold text-slate-900">远程打包节点</div>
             <div className="text-[11px] text-slate-400">
-              Windows 节点通过 SSH/SFTP 接入，需预装 OpenSSH Server、git 与构建环境
+              支持 Windows / 麒麟 Linux 节点，通过 SSH/SFTP 接入，需预装 OpenSSH Server、git 与构建环境
             </div>
           </div>
         </div>
@@ -183,7 +217,7 @@ export function PackageNodeCard() {
           <div className="py-6 text-center text-[13px] text-slate-400">加载中…</div>
         ) : nodes.length === 0 ? (
           <div className="py-6 text-center text-[13px] text-slate-400">
-            暂无节点，点击右上角「新增节点」接入 Windows 打包机
+            暂无节点，点击右上角「新增节点」接入 Windows / 麒麟 Linux 打包机
           </div>
         ) : (
           nodes.map((node) => (
@@ -327,15 +361,24 @@ export function PackageNodeCard() {
               label="节点名称"
               rules={[{ required: true, message: '请输入节点名称' }]}
             >
-              <Input placeholder="如：Windows 打包机-01" />
+              <Input placeholder="如：麒麟打包机-01" />
+            </Form.Item>
+            <Form.Item
+              name="os_type"
+              label="操作系统"
+              rules={[{ required: true, message: '请选择操作系统' }]}
+            >
+              <Select options={[...OS_OPTIONS]} onChange={handleOsTypeChange} />
             </Form.Item>
             <Form.Item
               name="credential"
-              label="登录凭证（Windows 密码）"
+              label={osType === 'kylin' ? '登录凭证（SSH 密码）' : '登录凭证（Windows 密码）'}
               rules={[{ required: true, message: '请选择登录凭证' }]}
             >
               <Select
-                placeholder="请先在「凭证」页新增 Windows 凭证"
+                placeholder={
+                  osType === 'kylin' ? '请先在「凭证」页新增 SSH 凭证' : '请先在「凭证」页新增 Windows 凭证'
+                }
                 options={credentialOptions}
                 showSearch
                 optionFilterProp="label"
@@ -387,9 +430,14 @@ export function PackageNodeCard() {
           <Form.Item
             name="work_root"
             label="远程工作根目录"
-            rules={[{ required: true, message: '请输入远程工作根目录' }]}
+            rules={[
+              { required: true, message: '请输入远程工作根目录' },
+              osType === 'kylin'
+                ? { pattern: /^\//, message: '麒麟 Linux 节点需使用 POSIX 绝对路径，如 /data/trace-ship/workspaces' }
+                : { pattern: /^[A-Za-z]:[\\/]/, message: 'Windows 节点需使用盘符路径，如 C:\\trace-ship\\workspaces' },
+            ]}
           >
-            <Input placeholder="如：C:\trace-ship\workspaces" />
+            <Input placeholder={`如：${WORK_ROOT_DEFAULTS[osType] ?? WORK_ROOT_DEFAULTS.windows}`} />
           </Form.Item>
           <Form.Item name="description" label="备注">
             <Input placeholder="可选" />

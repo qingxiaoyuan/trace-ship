@@ -53,7 +53,7 @@ interface ExecutorSegmentProps {
 
 const EXECUTOR_OPTIONS = [
   { value: 'local_docker', icon: Container, title: '本地 Docker', desc: '镜像内执行 pack.sh' },
-  { value: 'remote_windows', icon: Monitor, title: '远程 Windows', desc: 'SSH 下发脚本执行' },
+  { value: 'remote_node', icon: Monitor, title: '远程节点', desc: 'SSH 下发脚本执行' },
 ];
 
 /** 执行方式分段选择器 */
@@ -132,7 +132,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
 
   const projectId = Form.useWatch('project', form) ?? fixedProjectId;
   const executorType = Form.useWatch('executor_type', form) ?? 'local_docker';
-  const isRemote = executorType === 'remote_windows';
+  const isRemote = executorType === 'remote_node';
   const autoCollectOutput = Form.useWatch('auto_collect_output', form) ?? false;
   const svnPushEnabled = Form.useWatch('svn_push_enabled', form) ?? false;
   const svnUrl = Form.useWatch('svn_url', form);
@@ -215,8 +215,8 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     mutationFn: (values: Partial<PackageConfig>) => {
       const payload: Partial<PackageConfig> = { ...values };
       if (fixedProjectId) payload.project = fixedProjectId;
-      if (payload.executor_type === 'remote_windows') {
-        // 远程 Windows 不使用镜像；清理本地镜像字段避免后端校验冲突
+      if (payload.executor_type === 'remote_node') {
+        // 远程节点不使用镜像；清理本地镜像字段避免后端校验冲突
         payload.image = null;
         delete payload.image_info;
       } else {
@@ -262,7 +262,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const nodeOptions = useMemo(
     () =>
       (nodesData?.results || []).map((n) => ({
-        label: `${n.name}（${n.host}）`,
+        label: `${n.name}（${n.os_type_display || n.host}）`,
         value: n.id,
       })),
     [nodesData],
@@ -285,11 +285,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     }
     const ref = values.image_ref;
     const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
-    const isRemote = values.executor_type === 'remote_windows';
+    const isRemote = values.executor_type === 'remote_node';
     const payload: AIGenerateScriptPayload = {
       project,
       repository,
-      executor_type: isRemote ? 'remote_windows' : 'local_docker',
+      executor_type: isRemote ? 'remote_node' : 'local_docker',
       node: isRemote ? values.node : undefined,
       image_ref: isRemote ? undefined : ref,
       image_info: item ? toImageInfo(item) : undefined,
@@ -470,7 +470,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
               >
                 <Select
                   options={nodeOptions}
-                  placeholder="选择远程 Windows 节点"
+                  placeholder="选择远程节点"
                   showSearch
                   optionFilterProp="label"
                   optionRender={(opt) => (

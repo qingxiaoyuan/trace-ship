@@ -191,7 +191,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
                     </span>
                   </div>
                   <div className="col-span-3 truncate font-mono text-[12px] text-slate-500">
-                    {config.executor_type === 'remote_windows'
+                    {config.executor_type === 'remote_node'
                       ? `远程: ${config.node_name || config.node_host || '-'}`
                       : config.image_ref || (config.custom_script ? '自定义脚本' : '-')}
                   </div>
@@ -287,7 +287,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
                   <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
                     <Container className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
                     <span className="truncate font-mono">
-                      {config.executor_type === 'remote_windows'
+                      {config.executor_type === 'remote_node'
                         ? `远程: ${config.node_name || config.node_host || '-'}`
                         : config.image_ref || (config.custom_script ? '自定义脚本' : '-')}
                     </span>

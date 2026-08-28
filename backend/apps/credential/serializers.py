@@ -2,7 +2,7 @@
 凭证管理序列化器
 
 负责 Credential 的序列化、反序列化以及创建/更新时的加密和一致性校验。
-凭证录入无需选择范围：统一为个人凭证，SVN 凭证（svn_password）全系统共享。
+凭证录入无需选择范围：统一为个人凭证，系统共享类型（svn_password / windows_password / ssh_password）全系统共享。
 """
 from typing import Any
 
@@ -60,7 +60,7 @@ class CredentialSerializer(serializers.ModelSerializer):
         auth_mode = attrs.get("auth_mode", getattr(self.instance, "auth_mode", None))
 
         token_types = {"gitlab_token"}
-        password_types = {"svn_password", "ldap_password", "windows_password"}
+        password_types = {"svn_password", "ldap_password", "windows_password", "ssh_password"}
 
         # 凭证类型友好名称映射
         CRED_TYPE_LABELS = {
@@ -68,6 +68,7 @@ class CredentialSerializer(serializers.ModelSerializer):
             "svn_password": "SVN 密码",
             "ldap_password": "LDAP 密码",
             "windows_password": "Windows 密码",
+            "ssh_password": "SSH 密码",
         }
 
         if cred_type in token_types and auth_mode != "token":

@@ -158,8 +158,11 @@ class PackageScriptAIService:
         if not project_id or not repository_id:
             raise PackageScriptAIError("必须指定项目与关联仓库")
         executor_type = payload.get("executor_type") or "local_docker"
-        if executor_type not in ("local_docker", "remote_windows"):
-            raise PackageScriptAIError("执行方式仅支持本地 Docker / 远程 Windows")
+        if executor_type not in ("local_docker", "remote_node"):
+            raise PackageScriptAIError("执行方式仅支持本地 Docker / 远程节点")
+        node_os_type = (payload.get("node_os_type") or "").strip().lower()
+        if node_os_type not in ("", "windows", "kylin"):
+            raise PackageScriptAIError("节点操作系统仅支持 windows / kylin")
         try:
             build_path = validate_safe_rel_path(payload.get("build_path") or ".", "build_path")
             output_path = validate_safe_rel_path(
@@ -180,6 +183,7 @@ class PackageScriptAIService:
             "repository_id": repository_id,
             "executor_type": executor_type,
             "node": payload.get("node"),
+            "node_os_type": node_os_type,
             "image_ref": str(payload.get("image_ref") or "").strip(),
             "image_info": payload.get("image_info")
             if isinstance(payload.get("image_info"), dict)
@@ -297,7 +301,7 @@ class PackageScriptAIService:
 
     @staticmethod
     def _probe_node(node_id) -> tuple[dict | None, str | None]:
-        """对远程 Windows 节点执行只读工具探测；未选择节点时直接跳过。"""
+        """对远程节点执行只读工具探测（按节点 OS 分发）；未选择节点时直接跳过。"""
         if not node_id:
             return None, None
         try:
@@ -308,6 +312,10 @@ class PackageScriptAIService:
             return None, "远程打包节点已停用"
         if not node.credential_id:
             return None, "远程打包节点未配置登录凭证"
+        if (node.os_type or "windows").lower() == "kylin":
+            from apps.package.remote_kylin import probe_node_tools as probe_kylin_node_tools
+
+            return probe_kylin_node_tools(node.host, node.port, str(node.credential_id))
         return probe_node_tools(node.host, node.port, str(node.credential_id))
 
     @staticmethod
@@ -484,11 +492,21 @@ class PackageScriptAIService:
     ) -> tuple[str, str]:
         """组装系统提示与用户提示，prompt 中不含凭证/token/密码。"""
         executor = normalized["executor_type"]
-        is_remote = executor == "remote_windows"
+        is_remote = executor == "remote_node"
+        node_os = (normalized.get("node_os_type") or "windows").lower()
         lines: list[str] = ["请为以下软件打包配置生成自定义打包脚本。", ""]
 
         lines.append("【平台执行约定】")
-        if is_remote:
+        if is_remote and node_os == "kylin":
+            lines.extend([
+                "- 执行方式：远程麒麟 Linux 节点。脚本保存为 pack-custom.sh，由平台包装脚本先 cd 到构建目录、再 export 注入环境变量，随后以 sh -e 执行（遇错即停，脚本本身不需要写 set -e）。",
+                "- 脚本语言：POSIX sh，变量引用用 $VAR。",
+                "- 平台透传脚本最终退出码；多步骤失败务必返回非零。",
+                "- 产物必须输出到 $ARTIFACTS_DIR；不要依赖除下列环境变量外的任何路径。",
+                "- 不要修改平台已注入的变量；不要访问平台外部目录。",
+                "- 构建工具以节点探测结果为准，未探测到的工具不得假定存在。",
+            ])
+        elif is_remote:
             lines.extend([
                 "- 执行方式：远程 Windows 节点。脚本保存为 pack-custom.bat，由平台包装脚本先 cd 到构建目录、再 set 注入环境变量，随后 call 调用。",
                 "- 脚本语言：Windows 批处理，变量引用用 %VAR%。",
@@ -691,8 +709,15 @@ class PackageScriptAIService:
             probe, probe_warning = cls._probe_container(normalized["image_ref"])
         node_probe = None
         node_probe_warning = None
-        if normalized["executor_type"] == "remote_windows" and normalized["node"]:
+        if normalized["executor_type"] == "remote_node" and normalized["node"]:
             node_probe, node_probe_warning = cls._probe_node(normalized["node"])
+            if not normalized.get("node_os_type"):
+                # 请求未带节点 OS 时从数据库补齐，供 prompt 按 OS 生成对应脚本约定
+                try:
+                    node_obj = PackageNode.objects.only("os_type").get(id=normalized["node"])
+                    normalized["node_os_type"] = (node_obj.os_type or "windows").lower()
+                except Exception:
+                    pass
         knowledge = cls._load_knowledge(max_chars=limits["knowledge_chars"])
         exemplars: list[dict] = []
         if normalized["reference_exemplars"]:

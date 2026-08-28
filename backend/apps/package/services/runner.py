@@ -7,7 +7,7 @@ from typing import Any
 from django.utils import timezone
 
 from apps.package.models import PackageTask
-from apps.package.remote_windows import RemoteWindowsClient
+from apps.package.remote_base import RemoteSSHClient, build_remote_client
 from apps.package.services.base import PackageTaskCanceledError
 
 logger = logging.getLogger(__name__)
@@ -32,13 +32,13 @@ class TaskRunnerMixin:
         svn_push_enabled = bool(snapshot.get("svn_push_enabled"))
         executor_type = snapshot.get("executor_type") or "local_docker"
         # 远程执行全程复用同一条 SSH 连接：分阶段建连在并发/节点繁忙时
-        # 容易在握手阶段被 Windows OpenSSH 断开（No existing session）
-        remote_client: RemoteWindowsClient | None = None
+        # 容易在握手阶段被节点 OpenSSH 断开（No existing session）
+        remote_client: RemoteSSHClient | None = None
         try:
             cls._append_log(task, f"开始打包 {task.version} ({task.tag_name})")
             cls._update_stage(task, "checkout", 5, "正在拉取源码…")
-            if executor_type == "remote_windows":
-                remote_client = RemoteWindowsClient.from_snapshot(snapshot)
+            if executor_type == "remote_node":
+                remote_client = build_remote_client(snapshot)
                 remote_client.connect()
                 cls._checkout_source_remote(task, remote_client)
             else:
@@ -47,7 +47,7 @@ class TaskRunnerMixin:
             build_progress = 25 if svn_push_enabled else 30
             cls._update_stage(task, "build", build_progress, "开始执行打包…")
             artifacts_progress = 65 if svn_push_enabled else 80
-            if executor_type == "remote_windows":
+            if executor_type == "remote_node":
                 try:
                     cls._run_remote_build(task, remote_client)
                 finally:

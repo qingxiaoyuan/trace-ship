@@ -150,7 +150,7 @@ class TestPackageConfigRemoteValidation:
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "name": "远程打包",
-                "executor_type": "remote_windows",
+                "executor_type": "remote_node",
             },
             context={"request": _fake_request(user)},
         )
@@ -163,7 +163,7 @@ class TestPackageConfigRemoteValidation:
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "name": "远程打包",
-                "executor_type": "remote_windows",
+                "executor_type": "remote_node",
                 "node": str(node.id),
             },
             context={"request": _fake_request(user)},
@@ -207,11 +207,11 @@ class TestSnapshot:
             project=project,
             repository=repository,
             name="远程打包",
-            executor_type="remote_windows",
+            executor_type="remote_node",
             node=node,
         )
         snapshot = PackageService._snapshot(config)
-        assert snapshot["executor_type"] == "remote_windows"
+        assert snapshot["executor_type"] == "remote_node"
         assert snapshot["node_host"] == "192.168.1.100"
         assert snapshot["node_port"] == 22
         assert snapshot["node_work_root"] == r"C:\trace-ship\workspaces"
@@ -258,7 +258,7 @@ class TestCpuLimitBuild:
             project=project,
             repository=repository,
             name="远程打包",
-            executor_type="remote_windows",
+            executor_type="remote_node",
             node=node,
             custom_script=custom,
         )
@@ -348,7 +348,7 @@ class TestConfigLevelResourceLimits:
             project=project,
             repository=repository,
             name="远程打包",
-            executor_type="remote_windows",
+            executor_type="remote_node",
             node=node,
             custom_script="echo hi",
             **cfg,
@@ -420,7 +420,7 @@ class TestConfigLevelResourceLimits:
             "project": str(project.id),
             "repository": str(repository.id),
             "name": "限制校验",
-            "executor_type": "remote_windows",
+            "executor_type": "remote_node",
             "node": str(node.id),
         }
         serializer = PackageConfigSerializer(
@@ -563,6 +563,7 @@ class TestConnectRetry:
     """建连重试：握手阶段瞬时失败（并发场景常见）重试，认证失败不重试。"""
 
     def _fake_paramiko(self, monkeypatch, connect_side_effect):
+        import apps.package.remote_base as rb
         import apps.package.remote_windows as rw
 
         class FakeSSHException(Exception):
@@ -588,8 +589,8 @@ class TestConnectRetry:
         fake.SSHClient.side_effect = lambda: FakeClient()
         fake.SSHException = FakeSSHException
         fake.AuthenticationException = FakeAuthException
-        monkeypatch.setattr(rw, "_import_paramiko", lambda: fake)
-        monkeypatch.setattr(rw.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(rb, "_import_paramiko", lambda: fake)
+        monkeypatch.setattr(rb.time, "sleep", lambda _s: None)
         return rw, calls
 
     def test_retry_on_transient_handshake_error(self, monkeypatch):
@@ -679,7 +680,7 @@ class TestRemoteRunTask:
             project=project,
             repository=repository,
             name="远程打包",
-            executor_type="remote_windows",
+            executor_type="remote_node",
             node=node,
             custom_script="echo building %VERSION%",
             cleanup_workspace=cleanup_workspace,
@@ -865,7 +866,7 @@ class TestNodeConcurrencyGate:
             project=project,
             repository=repository,
             name="远程打包",
-            executor_type="remote_windows",
+            executor_type="remote_node",
             node=node,
         )
         return PackageTask.objects.create(
@@ -995,7 +996,7 @@ class TestPackageNodeViews:
             project=project,
             repository=repository,
             name="远程打包",
-            executor_type="remote_windows",
+            executor_type="remote_node",
             node=node,
         )
         client = self._superuser_client()
@@ -1026,7 +1027,7 @@ class TestPackageNodeViews:
     def test_test_saved_node(self, node, monkeypatch):
         monkeypatch.setattr(
             "apps.package.views.test_node_connection",
-            lambda host, port, credential_id, work_root="": {
+            lambda host, port, credential_id, work_root="", os_type="windows": {
                 "ok": True, "os": "Windows Server 2022", "git": r"C:\Program Files\Git\cmd\git.exe",
                 "work_root_ready": True,
             },

@@ -26,7 +26,7 @@ from apps.package.ai import PackageScriptAIError, PackageScriptAIService
 from apps.package.docker_local import LocalDockerError, LocalDockerService
 from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
 from apps.package.nexus import NexusError, NexusService
-from apps.package.remote_windows import RemoteNodeError, test_node_connection
+from apps.package.remote_base import RemoteNodeError, test_node_connection
 from apps.package.serializers import (
     PackageConfigSerializer,
     PackageImageSerializer,
@@ -210,10 +210,10 @@ class PackageNodeViewSet(StandardModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """节点仍被远程打包配置引用时禁止删除。"""
         node = self.get_object()
-        if node.package_configs.filter(executor_type="remote_windows").exists():
+        if node.package_configs.filter(executor_type="remote_node").exists():
             return error_response(
                 40900,
-                "节点仍被远程 Windows 打包配置引用，请先将相关配置改为本地 Docker 或删除配置",
+                "节点仍被远程节点打包配置引用，请先将相关配置改为本地 Docker 或删除配置",
                 status_code=status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
@@ -230,6 +230,7 @@ class PackageNodeViewSet(StandardModelViewSet):
                 port=node.port,
                 credential_id=str(node.credential_id),
                 work_root=node.work_root,
+                os_type=node.os_type,
             )
         except RemoteNodeError as exc:
             return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
@@ -240,12 +241,13 @@ class PackageNodeViewSet(StandardModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="test-connection")
     def test_connection(self, request):
-        """测试未保存的节点连接参数（host / port / credential_id / work_root）。"""
+        """测试未保存的节点连接参数（host / port / credential_id / work_root / os_type）。"""
         data = request.data or {}
         host = (data.get("host") or "").strip()
         port = data.get("port") or 22
         credential_id = data.get("credential_id")
         work_root = (data.get("work_root") or "").strip()
+        os_type = (data.get("os_type") or "windows").strip()
         if not host:
             return error_response(40000, "请输入主机地址", status_code=status.HTTP_400_BAD_REQUEST)
         if not credential_id:
@@ -254,9 +256,21 @@ class PackageNodeViewSet(StandardModelViewSet):
             port = int(port)
         except (TypeError, ValueError):
             return error_response(40000, "端口号不合法", status_code=status.HTTP_400_BAD_REQUEST)
+        # 与保存校验一致：凭证类型需匹配节点 OS，避免「测通后保存才报错」的体验割裂
+        credential = Credential.objects.filter(id=credential_id).first()
+        if credential is None:
+            return error_response(40000, "登录凭证不存在", status_code=status.HTTP_400_BAD_REQUEST)
+        expected_cred_type = "ssh_password" if os_type == "kylin" else "windows_password"
+        if credential.cred_type != expected_cred_type:
+            return error_response(
+                40000,
+                f"节点登录凭证类型必须为 {expected_cred_type}",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             result = test_node_connection(
-                host=host, port=port, credential_id=str(credential_id), work_root=work_root,
+                host=host, port=port, credential_id=str(credential_id),
+                work_root=work_root, os_type=os_type,
             )
         except RemoteNodeError as exc:
             return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)

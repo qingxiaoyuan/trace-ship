@@ -29,6 +29,7 @@ const typeVariantMap: Record<CredentialType, Variant> = {
   svn_password: 'amber',
   ldap_password: 'rose',
   windows_password: 'cyan',
+  ssh_password: 'slate',
   ai_api_key: 'emerald',
 };
 

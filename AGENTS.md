@@ -184,6 +184,7 @@ npm run preview
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：工作流定义、实例和审批任务。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
 - `PackageConfig`：项目级打包配置，包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（含提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
+- `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
 - `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
 - `Credential`：凭证密文与凭证元数据。
 - `Notification`：站内通知。
@@ -206,13 +207,13 @@ npm run preview
 
 ### 打包流程
 
-打包统一由 `apps.package` 执行，镜像可来自本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键）：
+打包统一由 `apps.package` 执行，镜像可来自本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键）。执行方式 `executor_type` 支持 `local_docker`（本地 Docker）与 `remote_node`（远程节点，SSH/SFTP 下发执行；`PackageNode.os_type` 支持 `windows` / `kylin` 麒麟 Linux，按节点 OS 语义执行 bat/sh 脚本，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；麒麟节点登录凭证为 `ssh_password` 类型）：
 
 1. 「打包镜像」页面实时聚合本地与 Nexus 镜像列表，支持上传 tar 包导入本地（`docker load`）。
 2. 项目管理员在「打包配置」中直接选择镜像（按坐标 get_or_create 镜像记录）、构建目录、产物目录，可选填写自定义脚本。
 3. 打包任务执行流程：
    - 准备 `workspace/{source,artifacts,tmp}`；
-   - `git clone` 源码到 `workspace/source`（配置开启「拉取 Git 子模块」时追加 `--recurse-submodules`，子模块完整克隆；开启「注入 Git 凭证」时以 GIT_ASKPASS 方式把凭证与提交身份注入构建环境，打包脚本可自行在（子）仓库内 git push，远程 Windows 节点则写入 `.git/config` 的 `http.extraHeader`、构建结束即自动回收）；
+   - `git clone` 源码到 `workspace/source`（配置开启「拉取 Git 子模块」时追加 `--recurse-submodules`，子模块完整克隆；开启「注入 Git 凭证」时以 GIT_ASKPASS 方式把凭证与提交身份注入构建环境，打包脚本可自行在（子）仓库内 git push，远程节点则写入 `.git/config` 的 `http.extraHeader`、构建结束即自动回收）；
    - 只挂载 `source` / `artifacts` / `tmp` 到容器 `/workspace` 对应目录，`scripts` / `deploy` 使用镜像自身内容；
    - 容器内工作目录为 `/workspace/source`，通过环境变量传入 `DEPLOY_DIR`、`SCRIPTS_DIR` 等；
    - 统一以 `--entrypoint /bin/sh` 启动，镜像自身 ENTRYPOINT 不生效；

@@ -216,7 +216,7 @@ CELERY_ENABLE_UTC = True
 
 # Celery beat 定时任务：
 # - 每个整点清理草稿发布申请
-# - 每天 0:00 清理远程 Windows 打包节点残留的任务目录（跳过运行中任务）
+# - 每天 0:00 清理远程打包节点残留的任务目录（跳过运行中任务）
 # - 每天 8:00 删除超过保留天数的打包产物（仅 artifacts，日志保留）
 CELERY_BEAT_SCHEDULE = {
     "cleanup-draft-releases-hourly": {

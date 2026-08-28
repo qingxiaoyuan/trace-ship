@@ -84,10 +84,11 @@ class PackageImage(models.Model):
 
 
 class PackageNode(models.Model):
-    """远程打包节点（当前支持 Windows，通过 SSH/SFTP 接入）。"""
+    """远程打包节点（支持 Windows / 麒麟 Linux，通过 SSH/SFTP 接入）。"""
 
     OS_TYPE_CHOICES = [
         ("windows", "Windows"),
+        ("kylin", "麒麟 Linux"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -146,7 +147,7 @@ class PackageConfig(models.Model):
 
     EXECUTOR_CHOICES = [
         ("local_docker", "本地 Docker"),
-        ("remote_windows", "远程 Windows"),
+        ("remote_node", "远程节点"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

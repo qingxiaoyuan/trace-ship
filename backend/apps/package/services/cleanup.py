@@ -3,11 +3,11 @@
 
 - 任务结束：删除本地工作区源码与临时目录（产物、日志保留）
 - 每日 8:00：删除超过保留天数的打包产物（仅 artifacts，日志保留）
-- 每日 0:00：清理远程 Windows 节点上残留的任务目录（跳过运行中任务）
+- 每日 0:00：清理远程节点（Windows / 麒麟 Linux）上残留的任务目录（跳过运行中任务）
 """
 import logging
 import shutil
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from django.conf import settings
@@ -15,7 +15,9 @@ from django.utils import timezone
 
 from apps.credential.models import Credential
 from apps.package.models import PackageNode, PackageTask
-from apps.package.remote_windows import RemoteNodeError, RemoteWindowsClient, cmd_quote
+from apps.package.remote_base import RemoteNodeError
+from apps.package.remote_kylin import RemoteKylinClient, sh_quote
+from apps.package.remote_windows import RemoteWindowsClient, cmd_quote
 
 logger = logging.getLogger(__name__)
 
@@ -111,15 +113,20 @@ def _running_task_dirs_on_node(node: PackageNode) -> set[str]:
     return {str(task_id) for task_id in running_ids}
 
 
-def _safe_work_root(work_root: str) -> PureWindowsPath:
-    """校验节点工作根目录，拒绝盘符根目录等危险配置。
+def _safe_work_root(work_root: str, os_type: str = "windows"):
+    """校验节点工作根目录，拒绝盘符根 / 文件系统根等危险配置。
 
-    每日清理会对 work_root 下所有子目录执行 rmdir /s /q，若节点被误配置为
-    盘符根目录（如 C:\\）将删除整盘目录，必须防御。
+    每日清理会对 work_root 下所有子目录执行递归删除，若节点被误配置为
+    盘符根目录（如 C:\\）或 Linux 根目录（/）将删除整盘/整系统目录，必须防御。
     """
-    root = (work_root or r"C:\trace-ship\workspaces").strip()
-    path = PureWindowsPath(root)
-    # parts 形如 ('C:\\', 'trace-ship', 'workspaces')；仅盘符根（如 'C:\\'）时长度为 1
+    if (os_type or "windows").lower() == "kylin":
+        root = (work_root or "/data/trace-ship/workspaces").strip()
+        path = PurePosixPath(root)
+    else:
+        root = (work_root or r"C:\trace-ship\workspaces").strip()
+        path = PureWindowsPath(root)
+    # parts 形如 ('C:\\', 'trace-ship', 'workspaces') 或 ('/', 'data', ...)；
+    # 仅根（'C:\\' / '/'）时长度为 1
     if len(path.parts) < 2:
         raise RemoteNodeError(f"节点工作目录配置过于危险，拒绝清理: {root}")
     return path
@@ -145,14 +152,23 @@ def _cleanup_one_node(node: PackageNode) -> dict[str, Any]:
     if not username or not password:
         raise RemoteNodeError("凭证缺少用户名或密码")
 
-    work_root = _safe_work_root(node.work_root)
+    kylin = (node.os_type or "windows").lower() == "kylin"
+    work_root = _safe_work_root(node.work_root, node.os_type)
     protected = _running_task_dirs_on_node(node)
     removed: list[str] = []
-    with RemoteWindowsClient(host=node.host, port=int(node.port or 22), username=username, password=password) as client:
+    client_cls = RemoteKylinClient if kylin else RemoteWindowsClient
+    with client_cls(host=node.host, port=int(node.port or 22), username=username, password=password) as client:
         lines: list[str] = []
-        # run 合并了 stderr：work_root 不存在时 dir 输出 "File Not Found" 且退出码非零，
+        # run 合并了 stderr：work_root 不存在时列目录命令退出码非零，
         # 必须按退出码判断，否则会把错误行当目录名处理
-        code = client.run(f"dir /b /ad {cmd_quote(str(work_root))}", on_line=lines.append)
+        if kylin:
+            # -printf '%f\n' 只输出目录名本身，便于与任务 id 比对
+            code = client.run(
+                f"find {sh_quote(str(work_root))} -mindepth 1 -maxdepth 1 -type d -printf '%f\\n'",
+                on_line=lines.append,
+            )
+        else:
+            code = client.run(f"dir /b /ad {cmd_quote(str(work_root))}", on_line=lines.append)
         if code != 0:
             return {"removed": [], "skipped": sorted(protected)}
         for name in (line.strip() for line in lines):
@@ -166,7 +182,7 @@ def _cleanup_one_node(node: PackageNode) -> dict[str, Any]:
 def cleanup_remote_node_workspaces() -> dict[str, Any]:
     """清理所有启用节点上残留的打包任务目录（每天 0 点执行）。
 
-    节点任务目录命名约定为 {work_root}\\{task.id}；正在运行的任务目录跳过不删。
+    节点任务目录命名约定为 {work_root}/{task.id}；正在运行的任务目录跳过不删。
     单节点失败仅记日志，不影响其他节点。
 
     Returns:

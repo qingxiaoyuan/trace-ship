@@ -16,7 +16,7 @@ class Credential(models.Model):
     支持多种凭证类型（GitLab/SVN/LDAP）和认证模式（Token/用户名密码）。
     可见性规则（录入时无需选择范围）：
     - 默认均为个人凭证，仅归属用户与超管可见可用
-    - SVN 凭证（svn_password）全系统共享，所有登录用户可见可用
+    - 系统共享类型（svn_password / windows_password / ssh_password）所有登录用户可见可用
 
     Attributes:
         id: UUID 主键
@@ -39,13 +39,14 @@ class Credential(models.Model):
         ("svn_password", "SVN 密码"),
         ("ldap_password", "LDAP 密码"),
         ("windows_password", "Windows 密码"),
+        ("ssh_password", "SSH 密码"),
     ]
     AUTH_MODE_CHOICES = [
         ("token", "Token"),
         ("password", "用户名密码"),
     ]
     # 全系统共享的凭证类型：所有登录用户可见可用
-    SYSTEM_SHARED_CRED_TYPES = {"svn_password", "windows_password"}
+    SYSTEM_SHARED_CRED_TYPES = {"svn_password", "windows_password", "ssh_password"}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, verbose_name="凭证名称")
@@ -84,7 +85,7 @@ class Credential(models.Model):
 
     @property
     def is_system_shared(self) -> bool:
-        """是否全系统共享（SVN 凭证共享给所有登录用户）"""
+        """是否全系统共享（系统共享类型对所有登录用户可见可用）"""
         return self.cred_type in self.SYSTEM_SHARED_CRED_TYPES
 
     def set_data(self, data: dict[str, str]) -> None:

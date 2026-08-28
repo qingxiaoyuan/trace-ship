@@ -54,3 +54,12 @@ SVN 产物推送只支持 `svn import` 新建版本目录，目录已存在即�
   的 `remote_url`，两种提交模式下该结构不变，文档同步在覆盖模式下继续可用。
 - 新增迁移 `package.0021`（`clone_submodules` / `inject_git_credential` /
   `svn_commit_mode`）。
+
+## 2026-08-28 演进
+
+- 远程节点支持麒麟 Linux 后（见 0007 同日演进），凭证注入/回收约定被麒麟分支完整继承：
+  clone 后向节点工作副本（含 `submodule foreach --recursive` 全部子模块）的 `.git/config`
+  写入 `http.extraHeader`，构建结束（无论成败）即回收、`cleanup_workspace` 整体删除兜底。
+- 麒麟侧差异：远程命令插值统一经 `shlex.quote`（替代 Windows 的 cmd 转义约定）；回收改用
+  `git config --unset-all http.extraHeader`（覆盖键不存在与多值场景，较 Windows 的
+  `--unset` 更稳），回收失败同样仅记日志。
