@@ -66,6 +66,69 @@ class NotificationService:
         return count
 
     @staticmethod
+    def remind_summary(user) -> dict:
+        """
+        强提醒聚合
+
+        统计当前用户「需要审批」的待办任务与「需要整改」的发布文档意见，
+        各取最近 5 条供强提醒弹窗展示。口径为严格待办（与通知是否已读无关）：
+        审批取 approver=本人且 status=pending 的任务（超管同样只看自己的，
+        不放开全量）；整改取本人发布且 status=open 的整改意见。
+
+        Args:
+            user: 当前用户
+
+        Returns:
+            强提醒聚合数据：todo_task_count / todo_tasks / open_issue_count / open_issues
+        """
+        from apps.release.models import ReleaseReviewIssue
+        from apps.workflow.models import WorkflowTask
+        from apps.workflow.serializers import resolve_release
+
+        todo_qs = (
+            WorkflowTask.objects.filter(approver=user, status="pending")
+            .select_related("instance", "instance__definition", "instance__definition__project")
+            .order_by("-created_at")
+        )
+        todo_tasks = []
+        for task in todo_qs[:5]:
+            release = resolve_release(task.instance)
+            todo_tasks.append(
+                {
+                    "id": str(task.id),
+                    "title": f"审批发布 {release.version}" if release else task.node_name,
+                    "version": release.version if release else "",
+                    "project_name": release.project.name
+                    if release
+                    else task.instance.definition.project.name,
+                    "created_at": task.created_at,
+                }
+            )
+
+        issue_qs = (
+            ReleaseReviewIssue.objects.filter(release__publisher=user, status="open")
+            .select_related("release")
+            .order_by("-created_at")
+        )
+        open_issues = [
+            {
+                "id": str(issue.id),
+                "release_id": str(issue.release_id),
+                "version": issue.release.version,
+                "content": issue.content,
+                "created_at": issue.created_at,
+            }
+            for issue in issue_qs[:5]
+        ]
+
+        return {
+            "todo_task_count": todo_qs.count(),
+            "todo_tasks": todo_tasks,
+            "open_issue_count": issue_qs.count(),
+            "open_issues": open_issues,
+        }
+
+    @staticmethod
     def notify_task_created(task) -> None:
         """
         审批任务创建时通知审批人

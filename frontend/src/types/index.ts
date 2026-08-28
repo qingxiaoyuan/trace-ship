@@ -915,7 +915,7 @@ export interface WorkflowInstanceListItem {
 
 export interface Notification {
   id: string;
-  notification_type: 'audit' | 'build' | 'release' | 'system';
+  notification_type: 'audit' | 'build' | 'release' | 'review' | 'system';
   title: string;
   content: string;
   is_read: boolean;
@@ -923,6 +923,32 @@ export interface Notification {
   related_type: string;
   related_id: string;
   created_at: string;
+}
+
+/** 强提醒：待我审批的任务摘要 */
+export interface RemindTodoTask {
+  id: string;
+  title: string;
+  version: string;
+  project_name: string;
+  created_at: string;
+}
+
+/** 强提醒：待我整改的意见摘要 */
+export interface RemindOpenIssue {
+  id: string;
+  release_id: string;
+  version: string;
+  content: string;
+  created_at: string;
+}
+
+/** 通知强提醒汇总（待审批 + 待整改） */
+export interface RemindSummary {
+  todo_task_count: number;
+  todo_tasks: RemindTodoTask[];
+  open_issue_count: number;
+  open_issues: RemindOpenIssue[];
 }
 
 export type FeedbackCategory = 'suggestion' | 'bug' | 'experience' | 'other';

@@ -51,6 +51,12 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
         count = self.get_queryset().filter(is_read=False).count()
         return success_response({"count": count})
 
+    @action(detail=False, methods=["get"], url_path="remind-summary")
+    def remind_summary(self, request: Request) -> Response:
+        """强提醒聚合：我需要审批的待办任务与需要我整改的意见"""
+        data = NotificationService.remind_summary(request.user)
+        return success_response(data)
+
     @action(detail=True, methods=["post"], url_path="read")
     def read(self, request: Request, pk=None) -> Response:
         """标记单条已读"""

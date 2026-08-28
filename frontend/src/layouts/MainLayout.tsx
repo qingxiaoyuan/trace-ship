@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { MobileTabBar } from './components/MobileTabBar';
+import { StrongRemindModal } from '@/components/StrongRemindModal';
 import { tokens } from '@/styles/theme';
 
 export function MainLayout() {
@@ -24,6 +25,7 @@ export function MainLayout() {
           </div>
         </main>
         <MobileTabBar />
+        <StrongRemindModal />
       </div>
     </div>
   );

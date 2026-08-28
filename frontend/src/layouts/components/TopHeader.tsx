@@ -12,6 +12,7 @@ const typeMap: Record<string, string> = {
   audit: "审批",
   build: "打包",
   release: "发布",
+  review: "审查整改",
   system: "系统",
 };
 

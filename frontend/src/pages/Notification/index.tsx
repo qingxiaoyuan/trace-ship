@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDot,
+  ClipboardList,
   Clock,
   ExternalLink,
   GitPullRequestArrow,
@@ -26,13 +27,14 @@ import { formatRelativeTime } from '@/utils/time';
 import type { Notification } from '@/types';
 
 /** 通知类型筛选键 */
-type FilterKey = 'all' | 'audit' | 'build' | 'release' | 'system';
+type FilterKey = 'all' | 'audit' | 'build' | 'release' | 'review' | 'system';
 
 /** 通知类型 → 文案 */
 const typeText: Record<Notification['notification_type'], string> = {
   audit: '审批',
   build: '打包',
   release: '发布',
+  review: '审查整改',
   system: '系统',
 };
 
@@ -42,6 +44,7 @@ const relatedTypeText: Record<string, string> = {
   workflow_instance: '审批实例',
   package_task: '打包任务',
   release_record: '发布记录',
+  release: '发布记录',
 };
 
 /** 类型标签样式（边框/背景/文字） */
@@ -49,6 +52,7 @@ const tagTone: Record<Notification['notification_type'], string> = {
   audit: 'border-violet-200 bg-violet-50 text-violet-700',
   build: 'border-cyan-200 bg-cyan-50 text-cyan-700',
   release: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  review: 'border-rose-200 bg-rose-50 text-rose-700',
   system: 'border-amber-200 bg-amber-50 text-amber-700',
 };
 
@@ -58,6 +62,7 @@ const filterTabs: { key: FilterKey; label: string; icon?: typeof Hammer; iconCol
   { key: 'audit', label: '审批', icon: GitPullRequestArrow, iconColor: 'text-violet-500' },
   { key: 'build', label: '打包', icon: Hammer, iconColor: 'text-cyan-500' },
   { key: 'release', label: '发布', icon: Rocket, iconColor: 'text-emerald-500' },
+  { key: 'review', label: '审查整改', icon: ClipboardList, iconColor: 'text-rose-500' },
   { key: 'system', label: '系统', icon: Settings, iconColor: 'text-amber-500' },
 ];
 
@@ -85,6 +90,8 @@ function getNotiVisual(n: Notification): NotiVisual {
       return negative
         ? { Icon: XCircle, iconCls: 'icon-rose' }
         : { Icon: CheckCircle2, iconCls: 'icon-emerald' };
+    case 'review':
+      return { Icon: ClipboardList, iconCls: 'icon-rose' };
     default:
       return { Icon: Settings, iconCls: 'icon-amber' };
   }
@@ -123,7 +130,7 @@ export default function NotificationPage() {
   const { data: counts } = useQuery({
     queryKey: ['notifications', 'counts'],
     queryFn: async () => {
-      const types: FilterKey[] = ['all', 'audit', 'build', 'release', 'system'];
+      const types: FilterKey[] = ['all', 'audit', 'build', 'release', 'review', 'system'];
       const list = await Promise.all(
         types.map((t) =>
           notificationApi.getNotifications(
