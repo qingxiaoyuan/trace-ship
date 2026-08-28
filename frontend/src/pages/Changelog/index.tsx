@@ -73,8 +73,9 @@ export default function Changelog() {
 
       {/* 时间线 */}
       <div className="relative space-y-5 before:absolute before:bottom-4 before:left-[7px] before:top-2 before:w-px before:bg-indigo-100">
-        {filteredEntries.map((entry) => (
-          <div key={entry.version} className="relative pl-8">
+        {filteredEntries.map((entry, index) => (
+          // 同一天可能有多条更新记录（版本号相同），key 需带序号区分
+          <div key={`${entry.version}-${index}`} className="relative pl-8">
             {/* 时间线节点 */}
             <span className="absolute left-0 top-6 flex h-4 w-4 items-center justify-center rounded-full border-2 border-indigo-200 bg-white">
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
