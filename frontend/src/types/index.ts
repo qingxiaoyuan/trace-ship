@@ -592,9 +592,47 @@ export interface PackageConfig {
   inject_git_credential?: boolean;
   /** 当前用户在配置所属项目中的角色（超管返回 software_admin），用于控制配置编辑入口 */
   my_role?: string | null;
+  /** 当前用户是否已收藏该配置 */
+  is_favorite?: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** 收藏的打包配置（常用配置面板条目，含最近一次任务摘要） */
+export interface FavoritePackageConfig {
+  id: string;
+  name: string;
+  project_id?: string;
+  project_name?: string;
+  repository_id?: string;
+  repository_name?: string;
+  executor_type?: 'local_docker' | 'remote_node';
+  executor_type_display?: string;
+  image_name?: string;
+  node_name?: string;
+  favorited_at?: string;
+  last_task: {
+    id: string;
+    status: PackageTaskStatus;
+    status_display?: string;
+    version?: string;
+    finished_at?: string | null;
+    duration?: number;
+  } | null;
+}
+
+/** 打包任务统计（我发起的、近 N 天、仅终态任务） */
+export interface PackageTaskStats {
+  days: number;
+  total: number;
+  success: number;
+  failure: number;
+  canceled: number;
+  /** 成功率（百分比数值，如 93.3） */
+  success_rate: number;
+  /** 平均耗时（秒），无终态任务时为 0 */
+  avg_duration_seconds: number;
 }
 
 export interface PackageTask {

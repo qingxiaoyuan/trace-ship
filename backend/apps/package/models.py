@@ -268,6 +268,40 @@ class PackageConfig(models.Model):
         return self.name
 
 
+class PackageConfigFavorite(models.Model):
+    """打包配置收藏（用户级常用配置入口）。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="package_config_favorites",
+        verbose_name="用户",
+    )
+    config = models.ForeignKey(
+        PackageConfig,
+        on_delete=models.CASCADE,
+        related_name="favorited_by",
+        verbose_name="打包配置",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="收藏时间")
+
+    class Meta:
+        db_table = "package_config_favorite"
+        verbose_name = "打包配置收藏"
+        verbose_name_plural = "打包配置收藏"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "config"],
+                name="package_config_favorite_unique_user_config",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} - {self.config_id}"
+
+
 class PackageTask(models.Model):
     """系统内置打包任务记录。"""
 

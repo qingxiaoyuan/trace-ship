@@ -5,6 +5,7 @@ import type {
   AIScriptDraft,
   AIScriptStreamEvent,
   AvailableImageResult,
+  FavoritePackageConfig,
   NexusImageSearchResult,
   NexusRepository,
   PackageConfig,
@@ -14,6 +15,7 @@ import type {
   PackageNode,
   PackageNodeTestResult,
   PackageTask,
+  PackageTaskStats,
   PaginatedData,
   SvnEntriesData,
 } from '@/types';
@@ -28,7 +30,6 @@ export interface PackageImageListParams {
 export interface PackageConfigListParams {
   project?: string;
   repository?: string;
-  mode?: string;
   is_active?: boolean;
   auto_package_on_release?: boolean;
   page?: number;
@@ -51,7 +52,6 @@ export interface PackageTaskListParams {  project?: string;
   release?: string;
   config?: string;
   status?: string;
-  mode?: string;
   search?: string;
   triggered_by?: string;
   page?: number;
@@ -116,6 +116,13 @@ export const packageApi = {
   /** 按仓库某条分支最新代码直接触发打包（不经发布流程，任务标题与编码按分支名命名） */
   triggerConfigBranch: (id: string, branch: string) =>
     post<PackageTask>(`/packages/configs/${id}/trigger-branch/`, { branch }),
+  /** 切换打包配置收藏状态，返回最新收藏状态 */
+  toggleFavorite: (id: string) =>
+    post<{ is_favorite: boolean }>(`/packages/configs/${id}/favorite/`),
+  /** 我收藏的打包配置列表（不分页，含最近一次任务摘要） */
+  getFavorites: () => get<FavoritePackageConfig[]>('/packages/configs/favorites/'),
+  /** 打包任务统计（我发起的、近 N 天、仅终态任务） */
+  getTaskStats: (days = 30) => get<PackageTaskStats>('/packages/tasks/stats/', { params: { days } }),
  /** 实时浏览打包配置的 SVN 制品目录（path 为相对 svn_url 的子路径） */
  listSvnEntries: (id: string, path?: string) =>
    get<SvnEntriesData>(`/packages/configs/${id}/svn-entries/`, { params: { path: path || '' } }),

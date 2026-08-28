@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { App, Button, Form, Modal, Pagination, Select } from 'antd';
+import { App, Button, Pagination, Select } from 'antd';
 import {
   ChevronRight,
   Hammer,
@@ -14,8 +14,6 @@ import {
 } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
-import { releaseApi } from '@/api/release';
-import { repositoryApi } from '@/api/repository';
 import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfigList } from './components/ConfigList';
@@ -23,6 +21,7 @@ import { RunningTab } from './components/RunningTab';
 import { DetailView } from './components/DetailView';
 import { BuildView } from './components/BuildView';
 import { PackageConfigModal } from '@/components/PackageConfigModal';
+import { PackageTriggerModal, type PackageTriggerTarget } from '@/components/PackageTriggerModal';
 import { PermissionAlert } from '@/components/PermissionAlert';
 
 const pageSize = 100;
@@ -56,9 +55,7 @@ export default function PackageTaskPage() {
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<PackageConfig | null>(null);
   const [triggerOpen, setTriggerOpen] = useState(false);
-  const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
-  const [triggerForm] = Form.useForm<{ release_id?: string; branch?: string }>();
-  const [triggerMode, setTriggerMode] = useState<'release' | 'branch'>('release');
+  const [triggerConfig, setTriggerConfig] = useState<PackageTriggerTarget | null>(null);
 
   // 构建列表 / 打包配置列表：分页 / 搜索 / 项目过滤（项目选择写入本地缓存，下次复用）
   const [taskPage, setTaskPage] = useState(1);
@@ -157,41 +154,6 @@ export default function PackageTaskPage() {
     enabled: view === 'detail' && !!selectedConfig,
   });
 
-  const { data: releasedData, isLoading: releasesLoading } = useQuery({
-    queryKey: ['package-trigger-releases', triggerConfig?.project, triggerConfig?.repository],
-    queryFn: () =>
-      releaseApi.getReleases({
-        project: triggerConfig?.project,
-        repository: triggerConfig?.repository,
-        status: 'released',
-        page_size: 1000,
-      }),
-    enabled: triggerOpen && !!triggerConfig?.project && !!triggerConfig?.repository,
-  });
-
-  const releaseOptions = useMemo(
-    () => (releasedData?.results || []).map((release) => ({
-      label: `${release.version} / ${release.tag_name}`,
-      value: release.id,
-    })),
-    [releasedData]
-  );
-
-  // 分支直打包：按配置关联仓库加载分支列表（含最新提交哈希）
-  const { data: branchesData, isLoading: branchesLoading } = useQuery({
-    queryKey: ['package-trigger-branches', triggerConfig?.repository],
-    queryFn: () => repositoryApi.getBranches(triggerConfig!.repository),
-    enabled: triggerOpen && triggerMode === 'branch' && !!triggerConfig?.repository,
-  });
-
-  const branchOptions = useMemo(
-    () => (branchesData || []).map((branch) => ({
-      label: branch.name,
-      value: branch.name,
-    })),
-    [branchesData]
-  );
-
   const selectedTaskId = selectedTask?.id;
   const shouldPoll = !!selectedTask && isRunning(selectedTask.status);
 
@@ -287,42 +249,42 @@ export default function PackageTaskPage() {
     };
   }, [selectedTaskId, shouldPoll, loadTaskDetail]);
 
-  const triggerMutation = useMutation({
-    mutationFn: ({
-      configId,
-      mode,
-      releaseId,
-      branch,
-    }: {
-      configId: string;
-      mode: 'release' | 'branch';
-      releaseId?: string;
-      branch?: string;
-    }) => {
-      if (mode === 'branch') {
-        if (!branch) throw new Error('请选择要打包的分支');
-        return packageApi.triggerConfigBranch(configId, branch);
-      }
-      if (!releaseId) throw new Error('请选择已发布 Tag');
-      return packageApi.triggerConfig(configId, releaseId);
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: (configId: string) => packageApi.toggleFavorite(configId),
+    // 乐观更新配置列表中的星标状态；失败时按快照回滚并提示
+    onMutate: async (configId) => {
+      await queryClient.cancelQueries({ queryKey: ['package-configs'] });
+      const snapshots = queryClient.getQueriesData<{ results: PackageConfig[]; total: number }>({
+        queryKey: ['package-configs'],
+      });
+      queryClient.setQueriesData<{ results: PackageConfig[]; total: number }>(
+        { queryKey: ['package-configs'] },
+        (old) =>
+          old
+            ? {
+                ...old,
+                results: old.results.map((c) =>
+                  c.id === configId ? { ...c, is_favorite: !c.is_favorite } : c,
+                ),
+              }
+            : old,
+      );
+      return { snapshots };
     },
-    onSuccess: (task) => {
-      if (task.status === 'failure') {
-        message.warning(task.error_message || '打包任务创建成功，但任务投递失败');
-      } else {
-        message.success('已创建打包任务');
-        navigate(`/packages/${task.id}`);
-      }
-      setTriggerOpen(false);
-      setTriggerConfig(null);
-      setTriggerMode('release');
-      triggerForm.resetFields();
-      queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+    onError: (_err, _configId, context) => {
+      context?.snapshots?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      message.error('收藏操作失败，请重试');
     },
-    onError: (error) => {
-      message.error(error instanceof Error ? error.message : '创建打包任务失败');
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['package-configs'] });
+      queryClient.invalidateQueries({ queryKey: ['package-favorites'] });
     },
   });
+
+  const handleToggleFavorite = useCallback(
+    (config: PackageConfig) => toggleFavoriteMutation.mutate(config.id),
+    [toggleFavoriteMutation]
+  );
 
   const cancelMutation = useMutation({
     mutationFn: (taskId: string) => packageApi.cancelTask(taskId),
@@ -447,19 +409,18 @@ export default function PackageTaskPage() {
   );
 
   const openTriggerBuild = useCallback(
-    (config?: PackageConfig) => {
-      const target =
-        config ||
+    (target?: PackageTriggerTarget) => {
+      const resolved =
+        target ||
         (selectedTask?.config ? configs.find((c) => c.id === selectedTask.config) : undefined);
-      if (!target) {
+      if (!resolved) {
         message.warning('未找到打包配置');
         return;
       }
-      setTriggerConfig(target);
+      setTriggerConfig(resolved);
       setTriggerOpen(true);
-      triggerForm.resetFields();
     },
-    [configs, message, selectedTask, triggerForm]
+    [configs, message, selectedTask]
   );
 
   const openConfigHistory = useCallback(
@@ -518,37 +479,7 @@ export default function PackageTaskPage() {
   const closeTrigger = useCallback(() => {
     setTriggerOpen(false);
     setTriggerConfig(null);
-    setTriggerMode('release');
-    triggerForm.resetFields();
-  }, [triggerForm]);
-
-  const handleTriggerFinish = useCallback(
-    (values: { release_id?: string; branch?: string }) => {
-      if (!triggerConfig) return;
-      if (triggerMode === 'branch') {
-        if (!values.branch) {
-          message.warning('请选择要打包的分支');
-          return;
-        }
-        triggerMutation.mutate({
-          configId: triggerConfig.id,
-          mode: 'branch',
-          branch: values.branch,
-        });
-      } else {
-        if (!values.release_id) {
-          message.warning('请选择已发布 Tag');
-          return;
-        }
-        triggerMutation.mutate({
-          configId: triggerConfig.id,
-          mode: 'release',
-          releaseId: values.release_id,
-        });
-      }
-    },
-    [triggerConfig, triggerMutation, triggerMode, message]
-  );
+  }, []);
 
   return (
     <div className="space-y-5">
@@ -573,6 +504,8 @@ export default function PackageTaskPage() {
             </div>
           </div>
 
+          {/* 构建列表 / 打包配置（收藏的配置由后端默认排序优先展示） */}
+          <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-2">
             <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
               <button
@@ -618,6 +551,7 @@ export default function PackageTaskPage() {
               onDelete={handleDeleteConfig}
               onTrigger={openTriggerBuild}
               onOpenHistory={openConfigHistory}
+              onToggleFavorite={handleToggleFavorite}
             />
           )}
           {activeTab === 'running' && (
@@ -647,7 +581,7 @@ export default function PackageTaskPage() {
                     type="text"
                     value={taskKeyword}
                     onChange={(e) => setTaskKeyword(e.target.value)}
-                    placeholder="搜索任务 / 版本 / Tag / 仓库"
+                    placeholder="搜索任务名 / 版本 / 仓库 / 配置 / 触发人"
                     className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
@@ -673,6 +607,7 @@ export default function PackageTaskPage() {
               )}
             </div>
           )}
+          </div>
         </div>
       )}
 
@@ -747,75 +682,7 @@ export default function PackageTaskPage() {
         <BuildView task={selectedTask} logText={logText} logPartial={logPartial} onBack={backToList} onCancel={handleCancel} />
       )}
 
-      <Modal
-        title="新建打包"
-        open={triggerOpen}
-        onCancel={closeTrigger}
-        onOk={() => triggerForm.submit()}
-        confirmLoading={triggerMutation.isPending}
-        destroyOnHidden
-      >
-        <div className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 text-[12px] text-slate-600">
-          <div>打包配置：{triggerConfig?.name || '-'}</div>
-          <div>关联仓库：{triggerConfig?.repository_name || '-'}</div>
-        </div>
-        <Form form={triggerForm} layout="vertical" onFinish={handleTriggerFinish}>
-          <div className="mb-3">
-            <div className="mb-1.5 text-[13px] font-medium text-slate-700">打包方式</div>
-            <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
-              <button
-                type="button"
-                className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${triggerMode === 'release' ? 'on' : ''}`}
-                onClick={() => {
-                  setTriggerMode('release');
-                  triggerForm.setFieldsValue({ release_id: undefined, branch: undefined });
-                }}
-              >
-                按已发布 Tag
-              </button>
-              <button
-                type="button"
-                className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${triggerMode === 'branch' ? 'on' : ''}`}
-                onClick={() => {
-                  setTriggerMode('branch');
-                  triggerForm.setFieldsValue({ release_id: undefined, branch: undefined });
-                }}
-              >
-                按分支最新代码
-              </button>
-            </div>
-          </div>
-
-          {triggerMode === 'release' ? (
-            <Form.Item name="release_id" label="选择已发布 Tag" rules={[{ required: true, message: '请选择已发布 Tag' }]}>
-              <Select
-                showSearch
-                loading={releasesLoading}
-                options={releaseOptions}
-                placeholder="选择已发布版本 / Tag"
-                optionFilterProp="label"
-                notFoundContent={releasesLoading ? '加载中...' : '暂无可打包的已发布 Tag'}
-              />
-            </Form.Item>
-          ) : (
-            <>
-              <Form.Item name="branch" label="选择分支" rules={[{ required: true, message: '请选择分支' }]}>
-                <Select
-                  showSearch
-                  loading={branchesLoading}
-                  options={branchOptions}
-                  placeholder="选择要打包的分支（取该分支最新代码）"
-                  optionFilterProp="label"
-                  notFoundContent={branchesLoading ? '加载中...' : '暂无可选分支'}
-                />
-              </Form.Item>
-              <div className="-mt-1 mb-1 rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5 text-[12px] leading-relaxed text-emerald-700">
-                将对所选分支的最新代码直接打包（无需发布流程），打包任务标题与自动编码均按分支名命名。
-              </div>
-            </>
-          )}
-        </Form>
-      </Modal>
+      <PackageTriggerModal open={triggerOpen} config={triggerConfig} onClose={closeTrigger} />
 
       <PackageConfigModal
         open={configDrawerOpen}

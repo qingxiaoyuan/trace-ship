@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>打包体验优化 · 设计稿</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-50 font-sans text-slate-900 antialiased" style="font-family: Inter, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;">
+
+  <!-- 设计稿导航 -->
+  <nav class="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
+    <div class="mx-auto flex h-12 max-w-[1440px] items-center gap-1 px-6">
+      <span class="mr-3 text-[13px] font-semibold tracking-tight">设计稿预览</span>
+      <a href="#board" class="rounded-md px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600">① 打包看板 · 常用配置</a>
+      <a href="#dashboard" class="rounded-md px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600">② 工作台 · 打包速览</a>
+    </div>
+  </nav>
+
+  <!-- ============ ① 打包看板 ============ -->
+  <main id="board" class="mx-auto max-w-[1440px] space-y-5 px-6 py-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-[22px] font-semibold tracking-tight">打包看板</h1>
+        <p class="mt-1 text-[12px] text-slate-500">共 86 个打包配置 · 3 个任务进行中</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600">
+          <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>刷新
+        </button>
+        <button class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-[13px] font-medium text-white shadow-sm shadow-indigo-600/20 transition-colors hover:bg-indigo-500">
+          <i data-lucide="plus" class="h-3.5 w-3.5"></i>新建打包配置
+        </button>
+      </div>
+    </div>
+
+    <!-- 主体：单列布局，收藏的配置在「打包配置」列表中优先排前 -->
+    <section class="rounded-xl border border-slate-200/70 bg-white shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+        <div class="flex items-center gap-1 rounded-lg bg-slate-100/80 p-1">
+          <button class="rounded-md px-3 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:text-slate-700">构建列表</button>
+          <button class="rounded-md bg-white px-3 py-1.5 text-[13px] font-medium text-indigo-600 shadow-sm">打包配置</button>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600">
+            全部项目<i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400"></i>
+          </button>
+          <div class="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 transition-colors focus-within:border-indigo-300">
+            <i data-lucide="search" class="h-3.5 w-3.5 text-slate-400"></i>
+            <input class="w-44 bg-transparent text-[12px] outline-none placeholder:text-slate-400" placeholder="搜索任务名 / 版本 / 仓库 / 配置 / 触发人" />
+          </div>
+        </div>
+      </div>
+
+      <div class="border-b border-slate-100 px-5 py-2.5">
+        <p class="text-[11px] text-slate-400">星标收藏的配置默认排在列表最前，行尾星标即收藏开关</p>
+      </div>
+
+      <div class="divide-y divide-slate-100">
+        <!-- 收藏的配置排最前 -->
+        <div class="flex items-center gap-3 bg-amber-50/30 px-5 py-3 transition-colors hover:bg-amber-50/50">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-[13px] font-medium">Web 前端生产打包</p>
+            <p class="mt-0.5 text-[11px] text-slate-400">Trace Ship · web-frontend · 本地 Docker</p>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">最近成功</span>
+          <div class="flex items-center gap-1">
+            <button class="rounded-md p-1.5 text-amber-400 transition-colors hover:text-amber-500" title="取消收藏"><i data-lucide="star" class="h-4 w-4" style="fill: currentColor;"></i></button>
+            <button class="rounded-md border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600">触发</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 bg-amber-50/30 px-5 py-3 transition-colors hover:bg-amber-50/50">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-[13px] font-medium">Qt 客户端（Windows）</p>
+            <p class="mt-0.5 text-[11px] text-slate-400">桌面端 · qt-client · 远程节点 win-build-02</p>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">最近失败</span>
+          <div class="flex items-center gap-1">
+            <button class="rounded-md p-1.5 text-amber-400 transition-colors hover:text-amber-500" title="取消收藏"><i data-lucide="star" class="h-4 w-4" style="fill: currentColor;"></i></button>
+            <button class="rounded-md border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600">触发</button>
+          </div>
+        </div>
+        <!-- 未收藏 -->
+        <div class="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-[13px] font-medium">移动端 Android 打包</p>
+            <p class="mt-0.5 text-[11px] text-slate-400">移动平台 · app-android · 本地 Docker</p>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">3 天前成功</span>
+          <div class="flex items-center gap-1">
+            <button class="rounded-md p-1.5 text-slate-300 transition-colors hover:text-amber-400" title="收藏为常用配置"><i data-lucide="star" class="h-4 w-4"></i></button>
+            <button class="rounded-md border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600">触发</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-indigo-50/30">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-[13px] font-medium">数据中台 ETL 镜像</p>
+            <p class="mt-0.5 text-[11px] text-slate-400">数据平台 · etl · 本地 Docker</p>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">最近失败</span>
+          <div class="flex items-center gap-1">
+            <button class="rounded-md p-1.5 text-slate-300 transition-colors hover:text-amber-400" title="收藏为常用配置"><i data-lucide="star" class="h-4 w-4"></i></button>
+            <button class="rounded-md border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:text-indigo-600">触发</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ ② 工作台 ============ -->
+  <main id="dashboard" class="mx-auto max-w-[1440px] space-y-5 border-t border-slate-200 px-6 py-6">
+    <div>
+      <h1 class="text-[26px] font-semibold tracking-tight">工作台</h1>
+      <p class="mt-1.5 text-[13px] text-slate-500">下午好，张伟。今天有 <span class="font-semibold text-amber-600">2 个发布待审批</span>，<span class="font-semibold text-rose-500">1 个打包任务失败</span>。</p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <!-- 打包速览（新增面板，占主列） -->
+      <section class="rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm lg:col-span-2">
+        <div class="mb-4 flex items-start justify-between">
+          <div>
+            <h2 class="text-[15px] font-semibold tracking-tight">打包速览</h2>
+            <p class="mt-0.5 text-[12px] text-slate-500">我发起的任务 · 统计口径近 30 天</p>
+          </div>
+          <button class="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500">
+            打包看板<i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 gap-5 md:grid-cols-5">
+          <!-- 成功率环 -->
+          <div class="flex items-center gap-4 md:col-span-2">
+            <div class="relative h-[120px] w-[120px] shrink-0">
+              <canvas id="rateChart"></canvas>
+              <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-[22px] font-semibold tracking-tight">93%</span>
+                <span class="text-[10px] text-slate-400">成功率</span>
+              </div>
+            </div>
+            <div class="space-y-2 text-[12px]">
+              <p class="flex items-center gap-2 text-slate-600"><span class="h-2 w-2 rounded-full bg-emerald-400"></span>成功 <span class="font-mono font-semibold text-slate-800">56</span></p>
+              <p class="flex items-center gap-2 text-slate-600"><span class="h-2 w-2 rounded-full bg-rose-400"></span>失败 <span class="font-mono font-semibold text-slate-800">3</span></p>
+              <p class="flex items-center gap-2 text-slate-600"><span class="h-2 w-2 rounded-full bg-slate-300"></span>取消 <span class="font-mono font-semibold text-slate-800">1</span></p>
+              <p class="border-t border-slate-100 pt-2 text-[11px] text-slate-400">共 60 次 · 平均耗时 4'36"</p>
+            </div>
+          </div>
+
+          <!-- 最近任务 -->
+          <div class="md:col-span-3">
+            <p class="mb-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">最近任务</p>
+            <div class="divide-y divide-slate-100 rounded-lg border border-slate-100">
+              <button class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-indigo-50/40">
+                <span class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-cyan-500"></span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[13px] font-medium">后端服务镜像 / V2.4.1</span>
+                  <span class="block text-[11px] text-slate-400">打包中 62% · 已运行 1'40"</span>
+                </span>
+                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
+              </button>
+              <button class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-indigo-50/40">
+                <span class="h-2 w-2 shrink-0 rounded-full bg-rose-500"></span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[13px] font-medium">Qt 客户端（Windows）/ V1.8.0-rc.2</span>
+                  <span class="block text-[11px] text-slate-400">编译错误 · 1 小时前</span>
+                </span>
+                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
+              </button>
+              <button class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-indigo-50/40">
+                <span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500"></span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[13px] font-medium">Web 前端生产打包 / V2.4.1</span>
+                  <span class="block text-[11px] text-slate-400">产物 3 个 · 已推 SVN · 3 分钟前</span>
+                </span>
+                <i data-lucide="chevron-right" class="h-4 w-4 shrink-0 text-slate-300"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 常用配置快捷触发（二级卡片） -->
+        <div class="mt-4 border-t border-slate-100 pt-4">
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-[11px] font-medium uppercase tracking-wide text-slate-400">常用配置</p>
+            <button class="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 transition-colors hover:text-indigo-600">
+              <i data-lucide="settings-2" class="h-3 w-3"></i>管理常用
+            </button>
+          </div>
+          <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+            <!-- 二级卡片 1 -->
+            <div class="group rounded-lg border border-slate-200/80 bg-slate-50/50 p-3 transition-all hover:border-indigo-300 hover:bg-white hover:shadow-sm">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-1.5 truncate text-[13px] font-semibold tracking-tight">
+                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"></span>Web 前端生产打包
+                  </p>
+                  <p class="mt-1 truncate text-[11px] text-slate-400">Trace Ship · web-frontend</p>
+                </div>
+                <button class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 transition-all hover:border-indigo-300 hover:text-indigo-600 group-hover:shadow-sm" title="触发打包">
+                  <i data-lucide="play" class="h-3 w-3"></i>
+                </button>
+              </div>
+              <p class="mt-1.5 flex items-center justify-between text-[10px] text-slate-400">
+                <span>本地 Docker · web:latest</span>
+                <span class="font-medium text-emerald-600">V2.4.1 成功</span>
+              </p>
+            </div>
+
+            <!-- 二级卡片 2：进行中 -->
+            <div class="group rounded-lg border border-cyan-200/80 bg-cyan-50/30 p-3 transition-all hover:border-cyan-300 hover:bg-white hover:shadow-sm">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-1.5 truncate text-[13px] font-semibold tracking-tight">
+                    <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-cyan-500"></span>后端服务镜像
+                  </p>
+                  <p class="mt-1 truncate text-[11px] text-slate-400">Trace Ship · backend</p>
+                </div>
+                <button class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-cyan-200 bg-white text-cyan-500 transition-all hover:border-cyan-400 hover:text-cyan-600" title="查看进度">
+                  <i data-lucide="chevron-right" class="h-3.5 w-3.5"></i>
+                </button>
+              </div>
+              <p class="mt-1.5 flex items-center justify-between text-[10px] text-slate-400">
+                <span>远程节点 · kylin-01</span>
+                <span class="font-medium text-cyan-600">打包中 62%</span>
+              </p>
+            </div>
+
+            <!-- 二级卡片 3：最近失败 -->
+            <div class="group rounded-lg border border-rose-200/70 bg-rose-50/30 p-3 transition-all hover:border-rose-300 hover:bg-white hover:shadow-sm">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-1.5 truncate text-[13px] font-semibold tracking-tight">
+                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500"></span>Qt 客户端（Windows）
+                  </p>
+                  <p class="mt-1 truncate text-[11px] text-slate-400">桌面端 · qt-client</p>
+                </div>
+                <button class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-400 transition-all hover:border-rose-300 hover:text-rose-500" title="重新打包">
+                  <i data-lucide="rotate-cw" class="h-3 w-3"></i>
+                </button>
+              </div>
+              <p class="mt-1.5 flex items-center justify-between text-[10px] text-slate-400">
+                <span>远程节点 · win-build-02</span>
+                <span class="font-medium text-rose-500">V1.8.0-rc.2 失败</span>
+              </p>
+            </div>
+
+            <!-- 二级卡片 4：尚未运行 -->
+            <div class="group rounded-lg border border-slate-200/80 bg-slate-50/50 p-3 transition-all hover:border-indigo-300 hover:bg-white hover:shadow-sm">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-1.5 truncate text-[13px] font-semibold tracking-tight">
+                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400"></span>网关服务（ARM64）
+                  </p>
+                  <p class="mt-1 truncate text-[11px] text-slate-400">边缘计算 · gateway</p>
+                </div>
+                <button class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 transition-all hover:border-indigo-300 hover:text-indigo-600" title="触发打包">
+                  <i data-lucide="play" class="h-3 w-3"></i>
+                </button>
+              </div>
+              <p class="mt-1.5 flex items-center justify-between text-[10px] text-slate-400">
+                <span>远程节点 · kylin-arm-01</span>
+                <span>尚未打包</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列占位：原有图表卡 -->
+      <section class="space-y-5">
+        <div class="rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm">
+          <h2 class="text-[15px] font-semibold tracking-tight">发布趋势</h2>
+          <p class="mt-0.5 text-[12px] text-slate-500">最近 7 天 · 成功 / 失败（原有卡片，保持不变）</p>
+          <div class="mt-6 flex h-32 items-end justify-around gap-2 border-b border-slate-100 pb-0">
+            <div class="w-6 rounded-t bg-indigo-200" style="height: 40%;"></div>
+            <div class="w-6 rounded-t bg-indigo-300" style="height: 65%;"></div>
+            <div class="w-6 rounded-t bg-indigo-400" style="height: 52%;"></div>
+            <div class="w-6 rounded-t bg-indigo-500" style="height: 80%;"></div>
+            <div class="w-6 rounded-t bg-indigo-300" style="height: 60%;"></div>
+            <div class="w-6 rounded-t bg-indigo-400" style="height: 72%;"></div>
+            <div class="w-6 rounded-t bg-indigo-500" style="height: 88%;"></div>
+          </div>
+        </div>
+        <div class="rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm">
+          <h2 class="text-[15px] font-semibold tracking-tight">待办事项</h2>
+          <p class="mt-0.5 text-[12px] text-slate-500">审批 + 打包动态（原有卡片，保持不变）</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+    new Chart(document.getElementById('rateChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['成功', '失败', '取消'],
+        datasets: [{ data: [56, 3, 1], backgroundColor: ['#34d399', '#fb7185', '#cbd5e1'], borderWidth: 0 }]
+      },
+      options: { cutout: '72%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, responsive: true, maintainAspectRatio: false }
+    });
+  </script>
+</body>
+</html>

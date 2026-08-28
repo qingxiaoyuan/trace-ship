@@ -34,9 +34,11 @@ import {
 import { KpiCardView } from './components/KpiCardView';
 import { BuildSuccessChart } from './components/BuildSuccessChart';
 import { BuildTrendChart } from './components/BuildTrendChart';
+import { PackageGlancePanel } from './components/PackageGlancePanel';
 import { PipelinePanel } from './components/PipelinePanel';
 import { RecentReleasesPanel } from './components/RecentReleasesPanel';
 import { TodoPanel } from './components/TodoPanel';
+import { PackageTriggerModal, type PackageTriggerTarget } from '@/components/PackageTriggerModal';
 
 Chart.register(...registerables);
 
@@ -53,6 +55,8 @@ export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
   const [pipelineRange, setPipelineRange] = useState<PipelineRange>('week');
   const [todoFilter, setTodoFilter] = useState<TodoFilter>('all');
+  // 打包速览 / 常用配置卡片的触发打包目标（共享触发弹窗）
+  const [triggerTarget, setTriggerTarget] = useState<PackageTriggerTarget | null>(null);
   // 移动端（<lg）使用贴合设计稿的精简布局
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.lg;
@@ -78,10 +82,19 @@ export default function Dashboard() {
     gcTime: 300_000,
   });
 
-  // 工作台的打包数据只看「我发起的」任务（失败/打包中/成功率均为此口径）
+  // 工作台的打包数据只看「我发起的」任务（失败/打包中/最近任务均为此口径）
   const { data: packageTaskData } = useQuery({
     queryKey: ['dashboard-package-tasks', user?.id],
     queryFn: () => packageApi.getTasks({ page_size: 20, triggered_by: user!.id }),
+    enabled: !!user,
+    staleTime: 30_000,
+    gcTime: 300_000,
+  });
+
+  // 打包成功率统计：后端按「我发起的、近 30 天、仅终态」口径聚合，替代前端基于最近 20 条的估算
+  const { data: taskStats } = useQuery({
+    queryKey: ['package-task-stats', user?.id, 30],
+    queryFn: () => packageApi.getTaskStats(30),
     enabled: !!user,
     staleTime: 30_000,
     gcTime: 300_000,
@@ -129,10 +142,12 @@ export default function Dashboard() {
   // 「待我审批」以当前用户的真实待办任务数为准，接口不可用时回退到全站待审批数
   const myTodoCount = todoTaskData?.total ?? overview?.pending_audit_count ?? pendingReleases.length;
   const successRate = Math.round((overview?.success_rate || 0) * 1000) / 10;
-  const buildSuccess = packageTasks.filter((task) => task.status === 'success').length;
-  const buildFailed = packageTasks.filter((task) => task.status === 'failure' || task.status === 'canceled').length;
-  const buildTotal = buildSuccess + buildFailed;
-  const buildSuccessRate = buildTotal ? Math.round((buildSuccess / buildTotal) * 1000) / 10 : 0;
+  const buildSuccess = taskStats?.success || 0;
+  // 失败计数含已取消任务，与历史展示口径一致
+  const buildFailed = (taskStats?.failure || 0) + (taskStats?.canceled || 0);
+  const buildTotal = taskStats?.total || 0;
+  // 成功率直接消费后端聚合结果，避免与速览面板口径漂移
+  const buildSuccessRate = taskStats?.success_rate ?? 0;
   const displayName = user?.nickname || user?.username || '用户';
   const latestPendingRelease = pendingReleases[0];
   const latestFailedBuild = failedBuilds[0];
@@ -310,7 +325,7 @@ export default function Dashboard() {
         </span>
       ),
       unit: '打包成功率',
-      description: `本批 ${buildTotal} 个打包任务，${buildFailed} 个失败`,
+      description: `近 30 天共 ${buildTotal} 个打包任务，${buildFailed} 个失败（含取消）`,
       icon: Hammer,
       iconClass: 'icon-cyan',
       onClick: () => navigate('/packages'),
@@ -333,7 +348,7 @@ export default function Dashboard() {
       <div className="mb-2 flex items-start justify-between">
         <div>
           <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">打包成功率</h2>
-          <p className="mt-0.5 text-[12px] text-slate-500">最近打包任务统计</p>
+          <p className="mt-0.5 text-[12px] text-slate-500">我发起的任务 · 统计口径近 30 天</p>
         </div>
         <button
           type="button"
@@ -389,6 +404,20 @@ export default function Dashboard() {
         </span>
       </div>
     </div>
+  );
+
+  /** 打包速览面板：成功率环（近 30 天后端口径）+ 最近任务 + 常用配置快捷触发 */
+  const packageGlancePanel = (
+    <PackageGlancePanel stats={taskStats} tasks={packageTasks} onTrigger={setTriggerTarget} />
+  );
+
+  /** 常用配置卡片触发的共享「新建打包」弹窗 */
+  const packageTriggerModal = (
+    <PackageTriggerModal
+      open={!!triggerTarget}
+      config={triggerTarget}
+      onClose={() => setTriggerTarget(null)}
+    />
   );
 
   /** 导出周报：独立拉取近 7 天发布记录生成 CSV 下载（分页上限 100 条） */
@@ -503,6 +532,7 @@ export default function Dashboard() {
             <KpiCardView key={card.title} card={card} compact />
           ))}
         </div>
+        {packageGlancePanel}
         <TodoPanel items={todoItems} total={allTodoItems.length} filter={todoFilter} onFilterChange={setTodoFilter} />
         <RecentReleasesPanel
           releases={recentReleases}
@@ -511,6 +541,7 @@ export default function Dashboard() {
         />
         {trendChartCard}
         {successChartCard}
+        {packageTriggerModal}
       </div>
     );
   }
@@ -528,8 +559,9 @@ export default function Dashboard() {
       <PipelinePanel columns={pipelineColumns} range={pipelineRange} onRangeChange={setPipelineRange} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* 左列：待办 + 最近发布 */}
+        {/* 左列：打包速览 + 待办 + 最近发布 */}
         <div className="space-y-5 lg:col-span-2">
+          {packageGlancePanel}
           <TodoPanel items={todoItems} total={allTodoItems.length} filter={todoFilter} onFilterChange={setTodoFilter} />
           <RecentReleasesPanel
             releases={recentReleases}
@@ -543,6 +575,7 @@ export default function Dashboard() {
           {trendChartCard}
         </div>
       </div>
+      {packageTriggerModal}
     </div>
   );
 }

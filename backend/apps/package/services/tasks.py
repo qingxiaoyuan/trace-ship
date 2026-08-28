@@ -3,8 +3,10 @@
 """
 import logging
 import threading
+from datetime import timedelta
 
 from django.db import close_old_connections
+from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -291,3 +293,45 @@ class TaskLifecycleMixin:
             "status", "progress", "stage_info", "finished_at", "duration", "updated_at",
         ])
         return task
+
+    @staticmethod
+    def my_task_stats(user, days_raw=None) -> dict:
+        """当前用户发起的打包任务统计（工作台口径）。
+
+        只统计本人触发且已结束（success / failure / canceled）的任务，
+        时间窗口为最近 days 天（默认 30，合法范围 1-365，非法值回默认）。
+        avg_duration_seconds 取有耗时（duration > 0）任务的均值，单位秒。
+        """
+        try:
+            days = int(days_raw)
+        except (TypeError, ValueError):
+            days = 30
+        if not 1 <= days <= 365:
+            days = 30
+
+        since = timezone.now() - timedelta(days=days)
+        queryset = PackageTask.objects.filter(
+            triggered_by=user,
+            status__in=("success", "failure", "canceled"),
+            created_at__gte=since,
+        )
+        agg = queryset.aggregate(
+            total=Count("id"),
+            success=Count("id", filter=Q(status="success")),
+            failure=Count("id", filter=Q(status="failure")),
+            canceled=Count("id", filter=Q(status="canceled")),
+            avg_duration=Avg("duration", filter=Q(duration__gt=0)),
+        )
+        total = agg["total"]
+        success = agg["success"]
+        success_rate = round(success / total * 100, 1) if total else 0
+        avg_duration_seconds = int(round(agg["avg_duration"] / 1000)) if agg["avg_duration"] else 0
+        return {
+            "days": days,
+            "total": total,
+            "success": success,
+            "failure": agg["failure"],
+            "canceled": agg["canceled"],
+            "success_rate": success_rate,
+            "avg_duration_seconds": avg_duration_seconds,
+        }

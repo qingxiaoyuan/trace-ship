@@ -13,7 +13,7 @@ from queue import Queue
 
 import django_filters
 from django.core.cache import cache
-from django.db.models import Prefetch
+from django.db.models import Exists, OuterRef, Prefetch
 from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
@@ -24,7 +24,14 @@ from rest_framework.permissions import IsAuthenticated
 from apps.credential.models import Credential
 from apps.package.ai import PackageScriptAIError, PackageScriptAIService
 from apps.package.docker_local import LocalDockerError, LocalDockerService
-from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
+from apps.package.models import (
+    PackageConfig,
+    PackageConfigFavorite,
+    PackageImage,
+    PackageKnowledge,
+    PackageNode,
+    PackageTask,
+)
 from apps.package.nexus import NexusError, NexusService
 from apps.package.remote_base import RemoteNodeError, test_node_connection
 from apps.package.serializers import (
@@ -310,13 +317,20 @@ class PackageConfigViewSet(StandardModelViewSet):
     filterset_fields = ["project", "repository", "is_active", "auto_package_on_release"]
     search_fields = ["name", "repository__name"]
     ordering_fields = ["created_at", "updated_at"]
-    ordering = ["-created_at"]
+    # 默认收藏优先（注解字段，见 get_queryset），其次创建时间倒序；显式 ?ordering= 时覆盖
+    ordering = ["-annotated_is_favorite", "-created_at"]
 
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
             return PackageConfig.objects.none()
         queryset = PackageConfig.objects.select_related("project", "repository", "image", "node", "svn_credential")
+        # 注解当前用户收藏状态，序列化器 is_favorite 直接读注解值，避免列表场景 N+1
+        queryset = queryset.annotate(
+            annotated_is_favorite=Exists(
+                PackageConfigFavorite.objects.filter(config=OuterRef("pk"), user=user)
+            )
+        )
         if user.is_superuser:
             return queryset
         # 预取当前用户在每个项目中的成员记录，避免序列化器 get_my_role 在列表场景触发 N+1
@@ -341,6 +355,21 @@ class PackageConfigViewSet(StandardModelViewSet):
             # 手动触发打包（按已发布 Tag / 按分支最新代码）：管理员/开发/测试均可
             return [IsAuthenticated(), IsProjectPackager()]
         return [IsAuthenticated(), IsProjectMember()]
+
+    @action(detail=True, methods=["post"], url_path="favorite")
+    def favorite(self, request, pk=None):
+        """切换收藏该配置（已收藏则取消，未收藏则收藏）。"""
+        config = self.get_object()
+        is_favorite = PackageService.toggle_favorite(config, request.user)
+        return success_response(
+            {"is_favorite": is_favorite},
+            "已收藏" if is_favorite else "已取消收藏",
+        )
+
+    @action(detail=False, methods=["get"], url_path="favorites")
+    def favorites(self, request):
+        """当前用户收藏的打包配置列表（收藏即授权入口，不分页，按收藏时间倒序）。"""
+        return success_response(PackageService.list_favorite_configs(request.user))
 
     @action(detail=True, methods=["post"], url_path="trigger")
     def trigger(self, request, pk=None):
@@ -599,7 +628,11 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
     serializer_class = PackageTaskSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = PackageTaskFilter
-    search_fields = ["name", "version", "tag_name", "project__name", "repository__name"]
+    search_fields = [
+        "name", "version", "tag_name",
+        "project__name", "repository__name",
+        "config__name", "triggered_by__nickname",
+    ]
     ordering_fields = ["created_at", "started_at", "finished_at"]
     ordering = ["-created_at"]
 
@@ -639,6 +672,12 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
                 pass
         task.delete()
         return success_response(None, "删除成功")
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """当前用户发起的打包任务统计（?days=30，口径为本人已结束任务）。"""
+        data = PackageService.my_task_stats(request.user, request.query_params.get("days"))
+        return success_response(data)
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):

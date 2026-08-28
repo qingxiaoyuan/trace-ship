@@ -6,7 +6,14 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from rest_framework import serializers
 
-from apps.package.models import PackageConfig, PackageImage, PackageKnowledge, PackageNode, PackageTask
+from apps.package.models import (
+    PackageConfig,
+    PackageConfigFavorite,
+    PackageImage,
+    PackageKnowledge,
+    PackageNode,
+    PackageTask,
+)
 from apps.project.models import ProjectMember
 
 
@@ -156,6 +163,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     svn_credential_id = serializers.UUIDField(source="svn_credential.id", read_only=True)
     svn_credential_name = serializers.CharField(source="svn_credential.name", read_only=True, default="")
     my_role = serializers.SerializerMethodField()
+    is_favorite = serializers.SerializerMethodField()
 
     class Meta:
         model = PackageConfig
@@ -171,7 +179,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "svn_push_enabled", "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
             "svn_path_template", "svn_commit_mode", "svn_commit_mode_display",
             "clone_submodules", "inject_git_credential",
-            "my_role",
+            "my_role", "is_favorite",
             "created_at", "updated_at",
         ]
         read_only_fields = [
@@ -179,6 +187,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "image_id", "image_name", "image_ref", "image_source",
             "executor_type_display", "node_id", "node_name", "node_host",
             "svn_credential_id", "svn_credential_name", "svn_commit_mode_display", "my_role",
+            "is_favorite",
             "created_at", "updated_at",
         ]
 
@@ -239,6 +248,22 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         if str(obj.project.leader_id) == str(user.id):
             return "manager"
         return member.role if member else None
+
+    def get_is_favorite(self, obj: PackageConfig) -> bool:
+        """当前请求用户是否已收藏该配置。
+
+        列表场景下视图已通过 Exists 子查询注解 `annotated_is_favorite`，
+        直接读取注解值避免逐条查询；未注解时回退单条 exists 查询；
+        无 request 上下文时返回 False。
+        """
+        annotated = getattr(obj, "annotated_is_favorite", None)
+        if annotated is not None:
+            return bool(annotated)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        return PackageConfigFavorite.objects.filter(config=obj, user=user).exists()
 
     def validate_project(self, value):
         """校验打包配置维护权限（项目管理员 / 软件管理员）。"""
