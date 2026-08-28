@@ -67,12 +67,13 @@ export function TsModal({
       destroyOnHidden={destroyOnHidden}
       afterOpenChange={afterOpenChange}
       classNames={{
-        header: 'px-6 py-4 border-b border-indigo-50 mb-0',
-        body: `px-6 py-5 scrollbar-thin ${bodyClassName || ''}`,
-        footer: 'px-6 py-4 border-t border-indigo-50 mt-0',
+        body: `scrollbar-thin ${bodyClassName || ''}`,
       }}
       styles={{
         container: {
+          // antd v6 默认在 container 上有 contentPadding，会与本组件 header/body/footer
+          // 内边距叠加成双倍，这里清零，由内边距语义分区单独控制
+          padding: 0,
           background: '#ffffff',
           borderRadius: '16px',
           border: '1px solid rgba(99, 102, 241, 0.12)',
