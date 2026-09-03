@@ -12,7 +12,7 @@ import type {
 } from '@/types';
 
 export interface RepositoryListParams {
-  keyword?: string;
+  search?: string;
   project?: string;
   credential?: string;
   repo_type?: string;

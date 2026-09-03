@@ -19,12 +19,6 @@ import { projectApi } from '@/api/project';
 import { repoTypeBadge, healthDisplay } from './constants';
 import type { Repository } from '@/types';
 
-/** 仓库类型选项 */
-const repoTypeOptions = [
-  { label: 'Git', value: 'git' },
-  { label: 'SVN', value: 'svn' },
-];
-
 /** 统计卡配置 */
 const statCards = [
   { key: 'total', label: '仓库总数', icon: GitFork, iconClass: 'icon-indigo' },
@@ -57,21 +51,19 @@ export default function RepositoryList() {
   const { message } = App.useApp();
   const [keyword, setKeyword] = useState('');
   const [project, setProject] = useState<string | undefined>(undefined);
-  const [repoType, setRepoType] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRepo, setEditingRepo] = useState<Repository | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['repositories', keyword, project, repoType, page],
+    queryKey: ['repositories', keyword, project, page],
     queryFn: () =>
       repositoryApi.getRepositories({
         page,
         page_size: pageSize,
-        keyword: keyword || undefined,
+        search: keyword || undefined,
         project: project || undefined,
-        repo_type: repoType || undefined,
       }),
   });
   const { data: stats } = useQuery({
@@ -112,7 +104,7 @@ export default function RepositoryList() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">仓库</h1>
-          <p className="mt-1 text-[13px] text-slate-500">管理 Git / SVN 代码仓库，追踪提交与分支</p>
+          <p className="mt-1 text-[13px] text-slate-500">管理 GitLab 代码仓库，追踪提交与分支</p>
         </div>
         <button
           type="button"
@@ -159,14 +151,6 @@ export default function RepositoryList() {
               className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
-          <Select
-            allowClear
-            placeholder="类型"
-            style={{ width: 120 }}
-            value={repoType}
-            onChange={(v: string | undefined) => { setRepoType(v); setPage(1); }}
-            options={repoTypeOptions}
-          />
           <Select
             allowClear
             placeholder="项目"
