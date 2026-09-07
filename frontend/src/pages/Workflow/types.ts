@@ -20,6 +20,8 @@ export interface DetailSource {
   packageStatus?: string;
   applicant: string;
   projectName: string;
+  /** 软件名：录入的仓库名 */
+  softwareName: string;
   submitTime: string;
   currentNode: string;
   /** 审批模式：会签 all / 或签 any */
