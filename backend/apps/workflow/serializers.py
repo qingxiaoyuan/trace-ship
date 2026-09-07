@@ -19,7 +19,7 @@ def resolve_release(instance: WorkflowInstance):
 
     try:
         return (
-            ReleaseRecord.objects.select_related("project", "publisher")
+            ReleaseRecord.objects.select_related("project", "repository", "publisher")
             .filter(id=instance.biz_id)
             .first()
         )
@@ -148,6 +148,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
     title = serializers.SerializerMethodField()
     applicant = serializers.SerializerMethodField()
     project_name = serializers.SerializerMethodField()
+    repository_name = serializers.SerializerMethodField()
     current_node = serializers.CharField(source="node_name", read_only=True)
     submit_time = serializers.DateTimeField(source="created_at", read_only=True)
     version = serializers.SerializerMethodField()
@@ -164,7 +165,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
             "is_rollback", "rollback_target_node_id",
             "transferred_from", "transferred_from_name",
             "created_at", "updated_at",
-            "title", "applicant", "project_name", "current_node",
+            "title", "applicant", "project_name", "repository_name", "current_node",
             "submit_time", "version", "release_type",
             "branch", "package_status",
         ]
@@ -187,6 +188,13 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
         """返回项目名称。"""
         release = resolve_release(obj.instance)
         return release.project.name if release else obj.instance.definition.project.name
+
+    def get_repository_name(self, obj: WorkflowTask) -> str:
+        """返回仓库名（审批页「软件」）。"""
+        release = resolve_release(obj.instance)
+        if release and release.repository_id:
+            return release.repository.name
+        return ""
 
     def get_version(self, obj: WorkflowTask) -> str:
         """返回发布版本号。"""
@@ -220,6 +228,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     title = serializers.SerializerMethodField()
     applicant = serializers.SerializerMethodField()
     project_name = serializers.SerializerMethodField()
+    repository_name = serializers.SerializerMethodField()
     current_node = serializers.SerializerMethodField()
     submit_time = serializers.DateTimeField(source="created_at", read_only=True)
     version = serializers.SerializerMethodField()
@@ -237,7 +246,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "biz_type", "biz_id", "status",
             "current_node_id", "node_status", "graph_data",
             "created_by", "created_at", "updated_at", "completed_at", "tasks",
-            "title", "applicant", "project_name", "current_node", "submit_time",
+            "title", "applicant", "project_name", "repository_name", "current_node", "submit_time",
             "version", "release_type", "branch", "package_status",
             "git_hash", "tag_name", "release_doc",
         ]
@@ -245,7 +254,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "id", "definition_name", "biz_type", "biz_id", "status",
             "current_node_id", "node_status", "graph_data", "created_by",
             "created_at", "updated_at", "completed_at", "tasks",
-            "title", "applicant", "project_name", "current_node", "submit_time",
+            "title", "applicant", "project_name", "repository_name", "current_node", "submit_time",
             "version", "release_type", "branch", "package_status",
             "git_hash", "tag_name", "release_doc",
         ]
@@ -264,6 +273,13 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
         """返回项目名称。"""
         release = resolve_release(obj)
         return release.project.name if release else obj.definition.project.name
+
+    def get_repository_name(self, obj: WorkflowInstance) -> str:
+        """返回仓库名（审批页「软件」）。"""
+        release = resolve_release(obj)
+        if release and release.repository_id:
+            return release.repository.name
+        return ""
 
     def get_current_node(self, obj: WorkflowInstance) -> str:
         """返回当前节点名称。"""
@@ -315,6 +331,7 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
     title = serializers.SerializerMethodField()
     applicant = serializers.SerializerMethodField()
     project_name = serializers.SerializerMethodField()
+    repository_name = serializers.SerializerMethodField()
     current_node = serializers.SerializerMethodField()
     submit_time = serializers.DateTimeField(source="created_at", read_only=True)
     version = serializers.SerializerMethodField()
@@ -327,7 +344,7 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "definition", "biz_type", "biz_id", "status",
             "current_node_id", "created_by", "created_at", "completed_at",
-            "title", "applicant", "project_name", "current_node", "submit_time",
+            "title", "applicant", "project_name", "repository_name", "current_node", "submit_time",
             "version", "release_type",
             "branch", "package_status",
         ]
@@ -347,6 +364,13 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
         """返回项目名称。"""
         release = resolve_release(obj)
         return release.project.name if release else obj.definition.project.name
+
+    def get_repository_name(self, obj: WorkflowInstance) -> str:
+        """返回仓库名（审批页「软件」）。"""
+        release = resolve_release(obj)
+        if release and release.repository_id:
+            return release.repository.name
+        return ""
 
     def get_current_node(self, obj: WorkflowInstance) -> str:
         """返回当前节点名称：优先取进行中任务的节点名，回退到节点 ID。"""
