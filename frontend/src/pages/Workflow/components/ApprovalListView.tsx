@@ -34,6 +34,7 @@ function toDetail(
     packageStatus: (row as WorkflowTask).package_status,
     applicant: row.applicant,
     projectName: row.project_name,
+    softwareName: row.repository_name || '',
     submitTime: row.submit_time,
     currentNode: row.current_node,
     mode: (row as WorkflowTask).mode,
@@ -111,9 +112,10 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-3">标题</div>
           <div className="col-span-2">项目</div>
-          <div className="col-span-2">申请人</div>
+          <div className="col-span-2">软件</div>
+          <div className="col-span-1">申请人</div>
           <div className="col-span-2">当前节点</div>
-          <div className="col-span-2">提交时间</div>
+          <div className="col-span-1">提交时间</div>
           <div className="col-span-1 text-right">操作</div>
         </div>
 
@@ -151,7 +153,10 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                     <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
                       {row.project_name || '-'}
                     </div>
-                    <div className="col-span-6 flex items-center gap-1.5 md:col-span-2">
+                    <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2" title={row.repository_name || ''}>
+                      {row.repository_name || '-'}
+                    </div>
+                    <div className="col-span-6 flex items-center gap-1.5 md:col-span-1">
                       <span
                         className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
                         style={{ background: getAvatarColor(row.applicant) }}
@@ -172,7 +177,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                         {row.current_node || '-'}
                       </span>
                     </div>
-                    <div className="col-span-6 text-[12px] text-slate-500 md:col-span-2">
+                    <div className="col-span-6 text-[12px] text-slate-500 md:col-span-1">
                       {row.submit_time ? dayjs(row.submit_time).format('MM-DD HH:mm') : '-'}
                     </div>
                     <div className="col-span-6 flex items-center justify-end md:col-span-1">
@@ -203,7 +208,9 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                       <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">
                         {row.title}
                       </span>
-                      <span className="shrink-0 truncate text-[12px] text-slate-400">{row.project_name || '-'}</span>
+                      <span className="shrink-0 truncate text-[12px] text-slate-400">
+                        {[row.project_name, row.repository_name].filter(Boolean).join(' · ') || '-'}
+                      </span>
                     </div>
                     {row.branch ? (
                       <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">

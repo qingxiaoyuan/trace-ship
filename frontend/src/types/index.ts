@@ -836,6 +836,8 @@ export interface WorkflowTask {
   title: string;
   applicant: string;
   project_name: string;
+  /** 软件名：发布目标仓库名 */
+  repository_name?: string;
   current_node: string;
   submit_time: string;
   remaining_time?: string;
@@ -923,6 +925,8 @@ export interface WorkflowInstance {
   title?: string;
   applicant?: string;
   project_name?: string;
+  /** 软件名：发布目标仓库名 */
+  repository_name?: string;
   current_node?: string;
   submit_time?: string;
   version?: string;
@@ -952,6 +956,8 @@ export interface WorkflowInstanceListItem {
   title: string;
   applicant: string;
   project_name: string;
+  /** 软件名：发布目标仓库名 */
+  repository_name?: string;
   current_node: string;
   submit_time: string;
   version?: string;

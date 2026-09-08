@@ -34,6 +34,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
     packageStatus: instance?.package_status || source.packageStatus,
     applicant: instance?.applicant || source.applicant,
     projectName: instance?.project_name || source.projectName,
+    softwareName: instance?.repository_name || source.softwareName,
     submitTime: instance?.submit_time || source.submitTime,
     currentNode: instance?.current_node || source.currentNode,
   };
@@ -79,6 +80,8 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
                   <span className="font-medium text-slate-700">{detailSource.projectName || '-'}</span>
+                  <span className="h-1 w-1 rounded-full bg-slate-300" />
+                  <span className="font-medium text-slate-700">{detailSource.softwareName || '-'}</span>
                   <span className="h-1 w-1 rounded-full bg-slate-300" />
                   <span>
                     {detailSource.releaseType ? releaseTypeText[detailSource.releaseType as ReleaseType] + '发布' : '发布审批'}
