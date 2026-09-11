@@ -1,8 +1,8 @@
 """
 项目管理数据模型
 
-包含项目（Project）、项目成员（ProjectMember）。
-仓库与打包配置直接归属项目并绑定凭证，不再经过外站绑定层。
+包含项目（Project）、产品组件（ProductComponent）、项目成员（ProjectMember）。
+Project 在业务语义上表示产品；产品通过 ProductComponent 组合可复用的物理仓库。
 """
 import uuid
 
@@ -14,7 +14,7 @@ class Project(models.Model):
     """
     项目模型
 
-    表示一个软件项目，是 Git 仓库、发布流程、系统内置打包配置的合集。
+    表示一个可交付软件产品，是产品组件、发布流程和打包配置的聚合根。
 
     Attributes:
         id: UUID 主键
@@ -62,6 +62,71 @@ class Project(models.Model):
         return self.name
 
 
+class ProductComponent(models.Model):
+    """
+    产品组件模型
+
+    表示一个产品对物理仓库的引用与产品内配置。同一仓库可以被多个产品引用，
+    但组件编码、构建分支、源码子目录等配置互不影响。
+    """
+
+    VERSION_SCOPE_CHOICES = [
+        ("repository", "仓库统一版本"),
+        ("product_component", "产品组件独立版本"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="product_components",
+        verbose_name="所属产品",
+    )
+    repository = models.ForeignKey(
+        "repository.Repository",
+        on_delete=models.CASCADE,
+        related_name="product_components",
+        verbose_name="物理仓库",
+    )
+    component_code = models.CharField(max_length=100, verbose_name="组件编码")
+    display_name = models.CharField(max_length=200, verbose_name="组件名称")
+    default_branch = models.CharField(max_length=200, default="main", verbose_name="产品默认分支")
+    source_subdir = models.CharField(max_length=300, blank=True, default="", verbose_name="源码子目录")
+    required = models.BooleanField(default=True, verbose_name="是否必选组件")
+    version_scope = models.CharField(
+        max_length=30,
+        choices=VERSION_SCOPE_CHOICES,
+        default="repository",
+        verbose_name="版本作用域",
+    )
+    tag_namespace = models.CharField(max_length=200, blank=True, default="", verbose_name="Tag 命名空间")
+    product_config = models.JSONField(default=dict, blank=True, verbose_name="产品内配置")
+    sort_order = models.PositiveIntegerField(default=0, verbose_name="排序")
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "project_component"
+        verbose_name = "产品组件"
+        verbose_name_plural = "产品组件"
+        ordering = ["sort_order", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "component_code"],
+                name="uniq_product_component_code",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["project", "is_active"]),
+            models.Index(fields=["repository", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        """返回产品-组件描述"""
+        return f"{self.project.name} - {self.display_name}"
+
+
 class ProjectMember(models.Model):
     """
     项目成员模型
@@ -104,4 +169,3 @@ class ProjectMember(models.Model):
     def __str__(self) -> str:
         """返回项目-用户-角色描述"""
         return f"{self.project.name} - {self.user.username} ({self.role})"
-

@@ -26,6 +26,24 @@ class RepositoryService:
     """
 
     @staticmethod
+    def normalize_physical_identity(url: str, external_identity: str = "") -> tuple[str, str]:
+        """把克隆地址规范化为 (服务器根地址, 项目路径)。
+
+        支持 https://host/group/repo.git、https://host/group/repo、git@host:group/repo.git。
+        已是服务器根地址且带有 identity 时保持不变。
+        """
+        raw_url = (url or "").rstrip("/")
+        identity = (external_identity or "").strip()
+        if raw_url.startswith("git@") and ":" in raw_url:
+            host, path = raw_url.split("@", 1)[1].split(":", 1)
+            return f"https://{host}", identity or path.removesuffix(".git")
+        parsed = urlparse(raw_url)
+        path = parsed.path.strip("/").removesuffix(".git")
+        if parsed.scheme and parsed.netloc and path:
+            return f"{parsed.scheme}://{parsed.netloc}", identity or path
+        return raw_url, identity
+
+    @staticmethod
     def _resolve_server_url(repo: Repository) -> str:
         """
         解析仓库服务端地址
@@ -42,9 +60,8 @@ class RepositoryService:
         """
         url = repo.url.rstrip("/")
         parsed = urlparse(url)
-        # 如果路径看起来像仓库克隆地址（包含 /owner/repo.git），只取 scheme + netloc
-        path = parsed.path.strip("/")
-        if path and ".git" in path:
+        path = parsed.path.strip("/").removesuffix(".git")
+        if parsed.scheme and parsed.netloc and path:
             return f"{parsed.scheme}://{parsed.netloc}"
         return url
 

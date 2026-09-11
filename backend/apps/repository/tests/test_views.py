@@ -9,7 +9,8 @@ from unittest.mock import patch
 import pytest
 from rest_framework.test import APIClient
 
-from apps.repository.models import CommitRecord
+from apps.project.models import ProductComponent
+from apps.repository.models import CommitRecord, Repository, default_version_rule
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ def test_list_repositories(api_client, repository):
 
 
 @pytest.mark.django_db
-def test_create_repository(api_client, project, credential):
+def test_create_repository(api_client, user, project, credential):
     """测试创建仓库"""
     payload = {
         "project": str(project.id),
@@ -44,9 +45,66 @@ def test_create_repository(api_client, project, credential):
         "credential_mode": "project",
     }
     response = api_client.post("/api/repositories/", payload, format="json")
-    assert response.status_code == 201
+    assert response.status_code == 201, response.data
     assert response.data["code"] == 0
     assert response.data["data"]["name"] == "前端仓库"
+    assert response.data["data"]["version_rule"] == default_version_rule()
+    assert str(response.data["data"]["created_by"]) == str(user.id)
+    from apps.workflow.models import WorkflowDefinition
+
+    assert WorkflowDefinition.objects.filter(
+        repository_id=response.data["data"]["id"], biz_type="release"
+    ).count() == 3
+
+
+@pytest.mark.django_db
+def test_create_global_repository_without_project(user, credential):
+    """全局仓库管理员可独立登记物理仓库，不自动绑定产品。"""
+    user.is_superuser = True
+    user.save(update_fields=["is_superuser"])
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.post(
+        "/api/repositories/",
+        {
+            "repo_type": "git",
+            "vendor": "gitlab",
+            "name": "共享中台仓库",
+            "url": "https://gitlab.example.com/platform/core.git",
+            "default_branch": "main",
+            "credential": str(credential.id),
+            "credential_mode": "personal",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201, response.data
+    repository = Repository.objects.get(id=response.data["data"]["id"])
+    assert repository.project_id is None
+    assert repository.version_rule == default_version_rule()
+    assert not ProductComponent.objects.filter(repository=repository).exists()
+
+
+@pytest.mark.django_db
+def test_project_manager_cannot_create_unbound_global_repository(api_client, project, credential):
+    """只有项目内权限的管理员不能绕过产品上下文维护全局仓库目录。"""
+    response = api_client.post(
+        "/api/repositories/",
+        {
+            "repo_type": "git",
+            "vendor": "gitlab",
+            "name": "越权共享仓库",
+            "url": "https://gitlab.example.com/platform/forbidden.git",
+            "default_branch": "main",
+            "credential": str(credential.id),
+            "credential_mode": "personal",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert not Repository.objects.filter(name="越权共享仓库").exists()
 
 
 @pytest.mark.django_db

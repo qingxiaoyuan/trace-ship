@@ -238,8 +238,8 @@ def test_branches_action_svn_returns_empty_without_sync(api_client, project, cre
 @pytest.mark.django_db
 def test_sync_branches_also_scans_tags(api_client, repository):
     """测试同步分支时按版本规则扫描 tag，仅正则匹配的入库"""
-    repository.project.version_rule = {"prefix": "VB", "suffixes": {"rc": "rc", "beta": "beta"}}
-    repository.project.save(update_fields=["version_rule"])
+    repository.version_rule = {"prefix": "VB", "suffixes": {"rc": "rc", "beta": "beta"}}
+    repository.save(update_fields=["version_rule"])
     branches = [
         BranchInfo(name="main", is_default=True, last_commit_hash="h1", last_commit_author="张三",
                    last_commit_message="m1", last_commit_at=_dt(2026, 7, 10)),
@@ -273,8 +273,8 @@ def test_sync_branches_also_scans_tags(api_client, repository):
 @pytest.mark.django_db
 def test_sync_tags_removes_stale_local_tags(api_client, repository):
     """测试再次同步时清除远端已不存在或不再匹配规则的本地 tag"""
-    repository.project.version_rule = {"prefix": "VB", "suffixes": {"rc": "rc", "beta": "beta"}}
-    repository.project.save(update_fields=["version_rule"])
+    repository.version_rule = {"prefix": "VB", "suffixes": {"rc": "rc", "beta": "beta"}}
+    repository.save(update_fields=["version_rule"])
     RepositoryTag.objects.create(
         repository=repository, name="VB.9.9.9_20250101", commit_hash="old",
         major=9, minor=9, patch=9, tag_date="2025-01-01",

@@ -6,15 +6,16 @@
 import logging
 from typing import Any
 
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters
+from rest_framework import filters, permissions
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.project.services import visible_project_ids
+from apps.project.models import Project
+from apps.project.services import visible_project_ids, visible_repository_ids
 from apps.release.services import ReleaseService, VersionCalculator, list_tags_cached
 from apps.repository.models import CommitRecord, Repository
 from apps.repository.serializers import (
@@ -31,6 +32,45 @@ from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 logger = logging.getLogger(__name__)
 
 
+def _has_global_repository_manage(user) -> bool:
+    """判断用户是否具有全局仓库目录维护权限。"""
+    return bool(
+        user.is_superuser
+        or user.user_roles.filter(role__permissions__code="repository.manage").exists()
+    )
+
+
+class CanManageRepository(permissions.BasePermission):
+    """全局仓库管理员，或仓库所关联产品的管理员，可以维护仓库。"""
+
+    message = "没有维护该仓库的权限"
+
+    def has_permission(self, request, view) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if _has_global_repository_manage(request.user):
+            return True
+        if view.action != "create":
+            return True
+        project_id = request.data.get("project")
+        if not project_id:
+            self.message = "从仓库目录独立登记仓库需要“管理仓库”权限"
+            return False
+        project = Project.objects.filter(id=project_id).first()
+        return IsProjectManager()._check(project, request.user)
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        if _has_global_repository_manage(request.user):
+            return True
+        manager_permission = IsProjectManager()
+        if obj.project_id and manager_permission._check(obj.project, request.user):
+            return True
+        return any(
+            manager_permission._check(component.project, request.user)
+            for component in obj.product_components.select_related("project")
+        )
+
+
 class RepositoryViewSet(StandardModelViewSet):
     """
     仓库管理视图集
@@ -44,7 +84,7 @@ class RepositoryViewSet(StandardModelViewSet):
     serializer_class = RepositorySerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repo_type", "vendor", "health_status", "credential"]
+    filterset_fields = ["repo_type", "vendor", "health_status", "credential"]
     search_fields = ["name", "url", "external_identity"]
     ordering_fields = ["created_at", "last_sync_at"]
     ordering = ["-created_at"]
@@ -70,11 +110,31 @@ class RepositoryViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return Repository.objects.none()
         user = self.request.user
-        queryset = Repository.objects.select_related("project", "credential")
-        if user.is_superuser:
-            return queryset.all()
-        project_ids = visible_project_ids(user)
-        return queryset.filter(project_id__in=project_ids)
+        from apps.credential.models import RepositoryCredentialLoan
+
+        loans = RepositoryCredentialLoan.objects.select_related("credential", "lender")
+        if not _has_global_repository_manage(user):
+            loans = loans.filter(allowed_products__id__in=visible_project_ids(user)).distinct()
+        queryset = (
+            Repository.objects
+            .select_related("project", "credential", "created_by")
+            .prefetch_related(
+                "product_components__project",
+                Prefetch("credential_loans", queryset=loans, to_attr="_visible_credential_loans"),
+            )
+            .annotate(product_count=Count("product_components", distinct=True))
+        )
+        if not _has_global_repository_manage(user):
+            queryset = queryset.filter(id__in=visible_repository_ids(user))
+
+        # project 参数现在表示“被该产品引用”，同时兼容尚未迁移的旧归属字段。
+        project_id = self.request.query_params.get("project")
+        if project_id:
+            queryset = queryset.filter(
+                Q(project_id=project_id)
+                | Q(product_components__project_id=project_id, product_components__is_active=True)
+            ).distinct()
+        return queryset
 
     def get_permissions(self):
         """
@@ -84,7 +144,7 @@ class RepositoryViewSet(StandardModelViewSet):
             权限实例列表
         """
         if self.action in ["create", "update", "partial_update", "destroy", "delete_tag"]:
-            return [IsAuthenticated(), IsProjectManager()]
+            return [IsAuthenticated(), CanManageRepository()]
         if self.action in ["test", "sync_commits", "sync_branches"]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         return super().get_permissions()
@@ -274,7 +334,7 @@ class RepositoryViewSet(StandardModelViewSet):
         """
         获取下一个建议版本号与 Tag 名称
 
-        基于仓库现有 Tag 列表和仓库 version_rule（未配置时回退项目规则）自动计算，
+        基于仓库现有 Tag 列表和仓库独立 version_rule 自动计算，
         系统接入前仓库已存在的历史 tag 只要匹配规则同样参与计算，
         无匹配 Tag 时返回初始版本号。
 
@@ -475,7 +535,7 @@ class CommitRecordViewSet(StandardReadOnlyModelViewSet):
     serializer_class = CommitRecordSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repository", "branch", "review_status", "author"]
+    filterset_fields = ["repository", "branch", "review_status", "author"]
     search_fields = ["message", "commit_hash"]
     ordering_fields = ["committed_at", "created_at"]
     ordering = ["-committed_at"]
@@ -491,10 +551,22 @@ class CommitRecordViewSet(StandardReadOnlyModelViewSet):
             return CommitRecord.objects.none()
         user = self.request.user
         queryset = CommitRecord.objects.select_related("project", "repository")
-        if user.is_superuser:
-            return queryset.all()
-        project_ids = visible_project_ids(user)
-        return queryset.filter(project_id__in=project_ids)
+        if not user.is_superuser:
+            project_ids = visible_project_ids(user)
+            queryset = queryset.filter(
+                Q(project_id__in=project_ids)
+                | Q(repository__product_components__project_id__in=project_ids)
+            ).distinct()
+        project_id = self.request.query_params.get("project")
+        if project_id:
+            queryset = queryset.filter(
+                Q(project_id=project_id)
+                | Q(
+                    repository__product_components__project_id=project_id,
+                    repository__product_components__is_active=True,
+                )
+            ).distinct()
+        return queryset
 
     def get_permissions(self):
         """

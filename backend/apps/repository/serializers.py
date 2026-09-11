@@ -5,9 +5,12 @@
 """
 from urllib.parse import urlparse
 
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
-from apps.project.models import ProjectMember
+from apps.project.models import Project, ProjectMember
+from apps.project.services import ensure_repository_component
 from apps.repository.models import CommitRecord, Repository
 from utils.provider.credential_resolver import VENDOR_TO_CRED_TYPE
 
@@ -41,34 +44,98 @@ def _parse_owner_repo_from_url(url: str) -> str | None:
     return None
 
 
+def _credential_loan_summaries(obj: Repository) -> list[dict]:
+    """生成当前用户可见的借用元数据，不返回任何凭证明文。"""
+    now = timezone.now()
+    values = []
+    for loan in getattr(obj, "_visible_credential_loans", []):
+        effective_expiry = min(
+            [value for value in (loan.expires_at, loan.credential.expires_at) if value],
+            default=None,
+        )
+        if not loan.is_active or loan.revoked_at or not loan.credential.is_active:
+            state = "revoked"
+        elif effective_expiry and effective_expiry <= now:
+            state = "expired"
+        elif effective_expiry and (effective_expiry - now).days < 7:
+            state = "expiring"
+        else:
+            state = "valid"
+        values.append({
+            "id": str(loan.id),
+            "credential_name": loan.credential.name,
+            "lender_name": loan.lender.nickname or loan.lender.username,
+            "permission_scope": loan.permission_scope,
+            "expires_at": effective_expiry,
+            "state": state,
+        })
+    return values
+
+
 class RepositorySerializer(serializers.ModelSerializer):
     """
     仓库序列化器
 
-    读取时展开项目名称和凭证 ID，写入时校验项目归属、vendor 与凭证模式一致性。
+    读取时展开历史登记项目和凭证 ID。仓库目录可独立登记物理仓库；
+    从产品上下文传入 project 时，继续兼容自动创建默认产品组件。
     """
 
-    project_name = serializers.CharField(source="project.name", read_only=True)
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Project.objects.all(), required=False, allow_null=True
+    )
+    project_name = serializers.CharField(source="project.name", read_only=True, default="")
+    external_identity = serializers.CharField(required=False, allow_blank=True)
     credential_id = serializers.UUIDField(source="credential.id", read_only=True)
     credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
     credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
     credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
     clone_url = serializers.SerializerMethodField()
+    product_count = serializers.IntegerField(read_only=True, default=1)
+    used_by_products = serializers.SerializerMethodField()
+    credential_loans = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(source="created_by.nickname", read_only=True, default="")
 
     class Meta:
         model = Repository
+        # 物理仓库唯一性在 validate 中基于规范化后的地址检查；关闭 DRF 自动
+        # UniqueTogetherValidator，避免它在地址解析前把 external_identity 当作必填。
+        validators = []
         fields = [
             "id", "project", "project_name",
             "repo_type", "vendor", "name", "url", "clone_url", "external_identity",
             "default_branch", "version_rule", "credential", "credential_id", "credential_mode",
             "credential_mode_display", "credential_name", "credential_owner_name",
-            "health_status", "last_sync_at", "created_at", "updated_at",
+            "health_status", "last_sync_at", "created_by", "created_by_name",
+            "created_at", "updated_at",
+            "product_count",
+            "used_by_products",
+            "credential_loans",
         ]
         read_only_fields = [
-            "id", "health_status", "last_sync_at", "created_at", "updated_at",
+            "id", "health_status", "last_sync_at", "created_by", "created_by_name",
+            "created_at", "updated_at",
             "credential_name", "credential_owner_name", "credential_mode_display",
-            "clone_url",
+            "clone_url", "product_count",
         ]
+
+    def create(self, validated_data: dict) -> Repository:
+        """创建物理仓库并写入内置审批流程；产品上下文登记时补齐默认组件。"""
+        request = self.context.get("request")
+        if request and getattr(request, "user", None) and request.user.is_authenticated:
+            validated_data.setdefault("created_by", request.user)
+        with transaction.atomic():
+            repository = super().create(validated_data)
+            if repository.project_id:
+                ensure_repository_component(repository)
+            from apps.workflow.services import ensure_builtin_workflow_definitions
+
+            ensure_builtin_workflow_definitions(repository)
+        return repository
+
+    def update(self, instance: Repository, validated_data: dict) -> Repository:
+        """历史登记项目创建后保持不变，产品归属通过 ProductComponent 维护。"""
+        validated_data.pop("project", None)
+        return super().update(instance, validated_data)
 
     def get_clone_url(self, obj: Repository) -> str:
         """
@@ -84,6 +151,23 @@ class RepositorySerializer(serializers.ModelSerializer):
             return url
         base = url.rstrip("/")
         return f"{base}/{obj.external_identity}.git"
+
+    def get_used_by_products(self, obj: Repository) -> list[dict[str, str]]:
+        """列出当前物理仓库被哪些产品及组件角色引用。"""
+        return [
+            {
+                "product_id": str(component.project_id),
+                "product_name": component.project.name,
+                "component_id": str(component.id),
+                "component_code": component.component_code,
+                "component_name": component.display_name,
+            }
+            for component in obj.product_components.all()
+            if component.is_active
+        ]
+
+    def get_credential_loans(self, obj: Repository) -> list[dict]:
+        return _credential_loan_summaries(obj)
 
     def validate_project(self, value):
         """
@@ -136,6 +220,17 @@ class RepositorySerializer(serializers.ModelSerializer):
             request_user = self.context["request"].user
             if not credential.is_system_shared and credential.owner_id != request_user.id:
                 raise serializers.ValidationError({"credential": "只能绑定本人的凭证（SVN 系统共享凭证除外）"})
+            owner_id = (
+                getattr(self.instance, "created_by_id", None)
+                if self.instance is not None
+                else request_user.id
+            )
+            if (
+                not credential.is_system_shared
+                and owner_id
+                and str(credential.owner_id) != str(owner_id)
+            ):
+                raise serializers.ValidationError({"credential": "只能绑定仓库所有者本人的凭证"})
 
             # 校验凭证类型与仓库平台一致
             expected_cred_type = VENDOR_TO_CRED_TYPE.get(vendor)
@@ -146,16 +241,37 @@ class RepositorySerializer(serializers.ModelSerializer):
         url = attrs.get("url")
         external_identity = attrs.get("external_identity")
         if url and repo_type == "git" and vendor != "svn":
-            parsed = urlparse(url.rstrip("/"))
-            path = parsed.path.strip("/")
-            if path and ".git" in path:
-                # 用户填的是克隆地址，提取服务器根地址
-                attrs["url"] = f"{parsed.scheme}://{parsed.netloc}"
-            if not external_identity:
-                # 未填写外部标识时，从地址自动解析 owner/repo
-                parsed_identity = _parse_owner_repo_from_url(url)
-                if parsed_identity:
-                    attrs["external_identity"] = parsed_identity
+            from apps.repository.services import RepositoryService
+
+            server_url, identity = RepositoryService.normalize_physical_identity(
+                url, external_identity or getattr(self.instance, "external_identity", "") or "",
+            )
+            attrs["url"] = server_url
+            if identity:
+                attrs["external_identity"] = identity
+
+        if repo_type == "git" and not attrs.get(
+            "external_identity", getattr(self.instance, "external_identity", "")
+        ):
+            raise serializers.ValidationError(
+                {"external_identity": "Git 仓库必须提供可唯一识别的项目路径"}
+            )
+
+        identity_url = attrs.get("url", getattr(self.instance, "url", ""))
+        identity = attrs.get(
+            "external_identity", getattr(self.instance, "external_identity", "")
+        )
+        duplicate = Repository.objects.filter(
+            vendor=vendor,
+            url=identity_url,
+            external_identity=identity,
+        )
+        if self.instance:
+            duplicate = duplicate.exclude(id=self.instance.id)
+        if duplicate.exists():
+            raise serializers.ValidationError(
+                {"external_identity": "该物理仓库已登记，请从仓库目录关联到产品"}
+            )
 
         return attrs
 
@@ -167,12 +283,17 @@ class RepositoryListSerializer(serializers.ModelSerializer):
     字段精简，适合列表展示。
     """
 
-    project_name = serializers.CharField(source="project.name", read_only=True)
+    project_name = serializers.CharField(source="project.name", read_only=True, default="")
     clone_url = serializers.SerializerMethodField()
     credential_id = serializers.UUIDField(source="credential.id", read_only=True)
     credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
     credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
     credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
+    product_count = serializers.IntegerField(read_only=True, default=1)
+    used_by_products = serializers.SerializerMethodField()
+    credential_loans = serializers.SerializerMethodField()
+    owner_name = serializers.SerializerMethodField()
+    owner_in_product = serializers.SerializerMethodField()
 
     class Meta:
         model = Repository
@@ -182,6 +303,11 @@ class RepositoryListSerializer(serializers.ModelSerializer):
             "credential_mode", "credential_mode_display", "credential_id",
             "credential_name", "credential_owner_name",
             "health_status", "last_sync_at", "created_at",
+            "product_count",
+            "used_by_products",
+            "credential_loans",
+            "owner_name",
+            "owner_in_product",
         ]
 
     def get_clone_url(self, obj: Repository) -> str:
@@ -199,6 +325,28 @@ class RepositoryListSerializer(serializers.ModelSerializer):
             return url
         base = url.rstrip("/")
         return f"{base}/{obj.external_identity}.git"
+
+    def get_used_by_products(self, obj: Repository) -> list[dict[str, str]]:
+        return RepositorySerializer().get_used_by_products(obj)
+
+    def get_credential_loans(self, obj: Repository) -> list[dict]:
+        return _credential_loan_summaries(obj)
+
+    def get_owner_name(self, obj: Repository) -> str:
+        from apps.project.services import repository_owner
+
+        owner = repository_owner(obj)
+        if owner is None:
+            return ""
+        return owner.nickname or owner.username
+
+    def get_owner_in_product(self, obj: Repository) -> bool | None:
+        product = self.context.get("product")
+        if product is None:
+            return None
+        from apps.project.services import is_repository_owner_in_product
+
+        return is_repository_owner_in_product(obj, product)
 
 
 class CommitRecordSerializer(serializers.ModelSerializer):

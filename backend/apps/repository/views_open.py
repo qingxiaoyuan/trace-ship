@@ -45,11 +45,34 @@ class OpenTagCompareView(APIView):
             return error_response(40404, "仓库不存在", status_code=404)
         branch = params.get("branch", "").strip() or repo.default_branch
 
+        from apps.project.models import ProductComponent, Project
+        from apps.project.services import is_repository_owner_in_product
+
+        product = None
+        product_id = params.get("product_id", "").strip()
+        if product_id:
+            product = Project.objects.filter(id=product_id).first()
+            if product is None:
+                return error_response(40404, "产品不存在", status_code=404)
+        elif repo.project_id:
+            product = repo.project
+        else:
+            component = ProductComponent.objects.filter(
+                repository=repo, is_active=True,
+            ).select_related("project").first()
+            product = component.project if component else None
+        if product is None or not is_repository_owner_in_product(repo, product):
+            return error_response(
+                40301,
+                "仓库所有者不在关联产品成员中，无法使用该仓库凭证",
+                status_code=403,
+            )
+
         try:
             from apps.repository.services import RepositoryService
 
             server_url = RepositoryService._resolve_server_url(repo)
-            cred_data = resolve_credential(repo)
+            cred_data = resolve_credential(repo, product=product, operation="read")
             provider = get_provider(repo.vendor, server_url, cred_data)
 
             # 取两个 tag 的提交时间，用于 MR 区间过滤；tag 列表走短 TTL 缓存，
@@ -79,7 +102,7 @@ class OpenTagCompareView(APIView):
 
         return success_response({
             "repository_name": repo.name,
-            "project_name": repo.project.name,
+            "project_name": product.name if product else "",
             "from_tag": from_tag,
             "to_tag": to_tag,
             "branch": branch,
