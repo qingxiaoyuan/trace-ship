@@ -12,6 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.account.models import User
+from apps.project.models import Project
 from apps.project.services import visible_project_ids, visible_repository_ids
 from apps.release.services import ReleaseService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
@@ -26,6 +27,17 @@ from apps.workflow.services import WorkflowEngine
 from utils.permissions import IsProjectDeveloper, IsRepositoryWorkflowEditor
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+
+
+def visible_workflow_definitions(user):
+    """返回当前用户可见的工作流定义查询集。"""
+    queryset = WorkflowDefinition.objects.all()
+    if user.is_superuser:
+        return queryset
+    return queryset.filter(
+        Q(repository_id__in=visible_repository_ids(user))
+        | Q(project_id__in=visible_project_ids(user), repository__isnull=True)
+    )
 
 
 class WorkflowDefinitionViewSet(StandardModelViewSet):
@@ -58,12 +70,7 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
         queryset = WorkflowDefinition.objects.select_related(
             "project", "repository", "repository__created_by", "created_by"
         )
-        if user.is_superuser:
-            return queryset.all()
-        return queryset.filter(
-            Q(repository_id__in=visible_repository_ids(user))
-            | Q(project_id__in=visible_project_ids(user), repository__isnull=True)
-        )
+        return queryset.filter(id__in=visible_workflow_definitions(user).values("id"))
 
     def get_permissions(self):
         """写操作仅仓库创建者（超管放行）"""
@@ -150,9 +157,34 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             return error_response(40001, "definition_id 和 biz_id 不能为空")
 
         try:
-            definition = WorkflowDefinition.objects.get(id=definition_id, is_active=True)
+            definition = visible_workflow_definitions(request.user).select_related(
+                "project", "repository"
+            ).get(id=definition_id, is_active=True)
         except WorkflowDefinition.DoesNotExist:
-            return error_response(40401, "流程定义不存在或已停用")
+            return error_response(
+                40401,
+                "流程定义不存在或已停用",
+                status_code=404,
+            )
+
+        developer_permission = IsProjectDeveloper()
+        projects = Project.objects.none()
+        if definition.repository_id:
+            projects = Project.objects.filter(
+                Q(id=definition.project_id)
+                | Q(
+                    product_components__repository_id=definition.repository_id,
+                    product_components__is_active=True,
+                )
+            ).distinct()
+        elif definition.project_id:
+            projects = Project.objects.filter(id=definition.project_id)
+        if not any(developer_permission._check(project, request.user) for project in projects):
+            return error_response(
+                40301,
+                "只有产品开发人员或管理员可以发起流程",
+                status_code=403,
+            )
 
         instance = WorkflowEngine.create_instance(
             definition=definition,

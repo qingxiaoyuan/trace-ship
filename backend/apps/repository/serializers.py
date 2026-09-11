@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.project.models import Project, ProjectMember
-from apps.project.services import ensure_repository_component
+from apps.project.services import ensure_repository_component, visible_project_ids
 from apps.repository.models import CommitRecord, Repository
 from utils.provider.credential_resolver import VENDOR_TO_CRED_TYPE
 
@@ -72,7 +72,32 @@ def _credential_loan_summaries(obj: Repository) -> list[dict]:
     return values
 
 
-class RepositorySerializer(serializers.ModelSerializer):
+class RepositoryProductVisibilityMixin:
+    """隐藏当前用户无权查看的产品关联元数据。"""
+
+    def _visible_project_ids(self) -> set:
+        if "visible_project_ids" in self.context:
+            return self.context["visible_project_ids"]
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated or user.is_superuser:
+            return set()
+        values = set(visible_project_ids(user).values_list("id", flat=True))
+        self.context["visible_project_ids"] = values
+        return values
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user and user.is_authenticated and not user.is_superuser:
+            if instance.project_id not in self._visible_project_ids():
+                data["project"] = None
+                data["project_name"] = ""
+        return data
+
+
+class RepositorySerializer(RepositoryProductVisibilityMixin, serializers.ModelSerializer):
     """
     仓库序列化器
 
@@ -154,6 +179,13 @@ class RepositorySerializer(serializers.ModelSerializer):
 
     def get_used_by_products(self, obj: Repository) -> list[dict[str, str]]:
         """列出当前物理仓库被哪些产品及组件角色引用。"""
+        components = getattr(obj, "_visible_product_components", None)
+        if components is None:
+            components = obj.product_components.select_related("project").filter(is_active=True)
+            request = self.context.get("request")
+            user = getattr(request, "user", None)
+            if user and user.is_authenticated and not user.is_superuser:
+                components = components.filter(project_id__in=self._visible_project_ids())
         return [
             {
                 "product_id": str(component.project_id),
@@ -162,7 +194,7 @@ class RepositorySerializer(serializers.ModelSerializer):
                 "component_code": component.component_code,
                 "component_name": component.display_name,
             }
-            for component in obj.product_components.all()
+            for component in components
             if component.is_active
         ]
 
@@ -276,7 +308,7 @@ class RepositorySerializer(serializers.ModelSerializer):
         return attrs
 
 
-class RepositoryListSerializer(serializers.ModelSerializer):
+class RepositoryListSerializer(RepositoryProductVisibilityMixin, serializers.ModelSerializer):
     """
     仓库列表序列化器
 
@@ -327,7 +359,7 @@ class RepositoryListSerializer(serializers.ModelSerializer):
         return f"{base}/{obj.external_identity}.git"
 
     def get_used_by_products(self, obj: Repository) -> list[dict[str, str]]:
-        return RepositorySerializer().get_used_by_products(obj)
+        return RepositorySerializer(context=self.context).get_used_by_products(obj)
 
     def get_credential_loans(self, obj: Repository) -> list[dict]:
         return _credential_loan_summaries(obj)

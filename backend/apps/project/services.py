@@ -174,7 +174,8 @@ def visible_repository_ids(user):
     """
     返回用户可见的物理仓库 ID。
 
-    兼容旧的 Repository.project 归属，同时纳入通过 ProductComponent 关联的仓库。
+    非超管仅可查看本人创建的仓库，以及显式加入产品后该产品关联的仓库；
+    同时兼容旧的 Repository.project 归属和 ProductComponent 关联。
     """
     from apps.repository.models import Repository
 
@@ -182,7 +183,8 @@ def visible_repository_ids(user):
         return Repository.objects.values("id")
     project_ids = visible_project_ids(user)
     return Repository.objects.filter(
-        Q(project_id__in=project_ids)
+        Q(created_by=user)
+        | Q(project_id__in=project_ids)
         | Q(product_components__project_id__in=project_ids, product_components__is_active=True)
     ).values("id").distinct()
 
@@ -231,11 +233,9 @@ def visible_project_ids(user):
     """
     用户可见的项目 ID 查询集
 
-    项目成员或项目负责人（leader 视为隐含成员）均可见，
-    供各业务视图的 get_queryset 统一过滤使用。
-    拥有 release.audit 权限的审查员可查看全部项目（跨项目审查需要）。
-
-    审查员权限判断在单次请求内缓存到 user 对象上，避免多个接口重复查询。
+    超管可查看全部产品；其他用户仅可查看存在显式 ProjectMember 记录的产品，
+    供各业务视图的 get_queryset 统一过滤使用。产品负责人若需要看到产品，
+    同样需要加入产品成员。
 
     Args:
         user: 当前请求用户
@@ -243,12 +243,7 @@ def visible_project_ids(user):
     Returns:
         可见项目的 id 子查询集
     """
-    # 审查员（拥有 release.audit 权限）可查看全部项目（单次请求内缓存）
-    if not hasattr(user, "_is_auditor"):
-        user._is_auditor = user.user_roles.filter(
-            role__permissions__code="release.audit"
-        ).exists()
-    if user._is_auditor:
+    if user.is_superuser:
         return Project.objects.values("id")
     member_ids = ProjectMember.objects.filter(user=user).values("project_id")
-    return Project.objects.filter(Q(leader=user) | Q(id__in=member_ids)).values("id")
+    return Project.objects.filter(id__in=member_ids).values("id")

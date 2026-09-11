@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from apps.account.models import Permission, Role, RolePermission, UserRole
 from apps.notification.models import Notification
+from apps.project.models import ProjectMember
 from apps.release.models import ReleaseRecord, ReleaseReviewIssue
 from utils.provider.base import TagInfo
 
@@ -41,8 +42,13 @@ def publisher_client(user):
 
 
 @pytest.fixture
-def reviewer_client(reviewer):
-    """审查员测试客户端"""
+def reviewer_client(reviewer, project):
+    """审查员测试客户端；审查员需先加入产品才具备数据可见性。"""
+    ProjectMember.objects.get_or_create(
+        project=project,
+        user=reviewer,
+        defaults={"role": "auditor"},
+    )
     client = APIClient()
     client.force_authenticate(user=reviewer)
     return client

@@ -139,12 +139,8 @@ def test_manager_can_delete_others_rejected(project, repository, manager_user, d
 
 
 @pytest.mark.django_db
-def test_leader_without_membership_can_delete_rejected():
-    """
-    项目负责人（leader，无成员记录）视同 manager 可删除已驳回发布
-
-    覆盖 destroy 复用 IsProjectManager 后 leader 等价语义不被走样。
-    """
+def test_leader_without_membership_cannot_delete_rejected():
+    """产品负责人没有显式成员记录时，不能读取或删除发布数据。"""
     leader = User.objects.create_user(username="rel_leader_only", password="pass")
     project = Project.objects.create(
         code="RELLEAD", name="Leader 发布项目", leader=leader, status=1,
@@ -171,8 +167,37 @@ def test_leader_without_membership_can_delete_rejected():
 
     response = auth_client(leader).delete(f"/api/releases/{release.id}/")
 
-    assert response.status_code == 200
-    assert not ReleaseRecord.objects.filter(id=release.id).exists()
+    assert response.status_code == 404
+    assert ReleaseRecord.objects.filter(id=release.id).exists()
+
+
+@pytest.mark.django_db
+def test_leader_without_membership_cannot_create_release():
+    """仅为产品负责人但没有显式成员记录时，不能通过产品 ID 创建发布。"""
+    leader = User.objects.create_user(username="rel_hidden_leader", password="pass")
+    project = Project.objects.create(
+        code="RELHIDDEN", name="Leader 不可见产品", leader=leader, status=1,
+    )
+    repository = Repository.objects.create(
+        project=project,
+        repo_type="git",
+        vendor="gitlab",
+        name="Leader 不可见仓库",
+        url="https://gitlab.example.com",
+        external_identity="group/hidden-lead",
+        default_branch="main",
+        created_by=leader,
+    )
+
+    response = auth_client(leader).post("/api/releases/", {
+        "project": str(project.id),
+        "repository": str(repository.id),
+        "branch": "main",
+        "release_type": "formal",
+    }, format="json")
+
+    assert response.status_code == 403
+    assert not ReleaseRecord.objects.filter(project=project).exists()
 
 
 @pytest.mark.django_db

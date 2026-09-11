@@ -89,7 +89,18 @@ class ProjectRolePermission(permissions.BasePermission):
         return member.role if member else None
 
     def _check(self, project, user) -> bool:
-        """按有效角色校验"""
+        """在产品可见的前提下按有效角色校验。"""
+        if project is None:
+            return False
+        if user.is_superuser:
+            return True
+
+        # leader 的有效角色仍按 manager 计算，但产品数据与操作均要求存在显式成员记录。
+        # 将可见性前置放在统一角色入口，避免创建类接口绕过视图集 queryset。
+        from apps.project.models import ProjectMember
+
+        if not ProjectMember.objects.filter(project=project, user=user).exists():
+            return False
         role = self._effective_role(project, user)
         if role is None:
             return False
@@ -223,4 +234,3 @@ class HasAccessTokenScope(permissions.BasePermission):
         if not open_scope:
             return False
         return open_scope in (request.auth.scopes or [])
-

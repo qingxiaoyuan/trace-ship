@@ -230,13 +230,14 @@ class NestedProjectPermissionMixin:
 
     def get_parent_project(self) -> Project:
         """
-        获取当前路由对应的项目实例
+        获取当前路由对应、且当前用户可见的项目实例
 
         Returns:
             Project 实例
         """
         if not hasattr(self, "_parent_project"):
-            self._parent_project = get_object_or_404(Project, id=self.kwargs["project_pk"])
+            queryset = Project.objects.filter(id__in=visible_project_ids(self.request.user))
+            self._parent_project = get_object_or_404(queryset, id=self.kwargs["project_pk"])
         return self._parent_project
 
     def initial(self, request: Request, *args, **kwargs):

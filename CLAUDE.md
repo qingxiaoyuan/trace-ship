@@ -149,6 +149,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 - `apps.project.Project`：产品主体，包含 `version_rule` 和 `release_rule` JSON 规则。
 - `apps.project.ProductComponent`：产品对物理仓库的一次角色引用及产品内配置；同一仓库可被多个产品复用。关联前仓库所有者必须是该产品成员，凭证随所有者进入产品。版本属于仓库，多产品可发同一仓库。有发布或打包历史后只能停用。
 - `apps.project.ProjectMember`：用户与项目的关联，角色为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行）。成员添加对全体项目成员开放，可授予角色按操作者角色收缩（`apps.project.services.get_grantable_roles`）：manager 全部、software_admin 除 manager/software_admin、其他成员仅 developer/tester；修改角色与移除成员仍仅项目管理员。
+- 数据可见范围：超管可查看全部；其他用户只可查看具有显式 `ProjectMember` 记录的产品。仓库只对创建者本人或其所属产品成员可见（兼容 `Repository.project` 与 `ProductComponent` 关联）；`repository.manage` 只控制维护能力，不扩大仓库数据范围。
 - `apps.repository.Repository` 与 `CommitRecord`：按 `vendor + url + external_identity` 全局唯一的物理代码仓库（仅 Git/GitLab）与提交记录。`Repository.project` 仅作兼容期历史登记产品，新逻辑通过 `ProductComponent` 判断产品使用关系；仓库版本规则登记时从产品复制，此后独立维护。SVN 仅作为打包产物推送目标。
 - `apps.release.ReleaseRecord` 与 `ReleaseCommit`：仓库级发布记录与关联提交；发布始终针对一个产品上下文中的一个仓库。
 - `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：仓库级审批流程定义、实例与任务；仅仓库创建者可编辑节点。正式发布默认需审批，RC / Beta 默认无须审批。

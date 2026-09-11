@@ -80,7 +80,7 @@ def test_outsider_cannot_list_members(project, outsider):
     """
     response = auth_client(outsider).get(f"/api/projects/{project.id}/members/")
 
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db
@@ -199,48 +199,41 @@ def test_batch_add_members_rejects_invalid_role(project, manager, outsider):
 
 
 @pytest.mark.django_db
-def test_leader_without_membership_can_manage_members(manager):
-    """
-    项目负责人（leader）即使没有成员记录，也视同 manager 可管理成员
-    """
+def test_leader_without_membership_cannot_access_members(manager):
+    """产品负责人没有显式成员记录时，也不能读取或维护成员数据。"""
     project = Project.objects.create(code="LEAD", name="Leader 项目", leader=manager)
     new_user = User.objects.create_user(username="lead_new", password="pass")
 
     list_response = auth_client(manager).get(f"/api/projects/{project.id}/members/")
-    assert list_response.status_code == 200
+    assert list_response.status_code == 404
 
     add_response = auth_client(manager).post(f"/api/projects/{project.id}/members/", {
         "user_ids": [str(new_user.id)],
         "role": "developer",
     }, format="json")
-    assert add_response.status_code == 201
+    assert add_response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_leader_without_membership_sees_project_in_list(manager):
-    """
-    项目负责人（leader）即使没有成员记录，项目列表也可见
-    """
+def test_leader_without_membership_cannot_see_project_in_list(manager):
+    """产品负责人没有显式成员记录时，不进入产品可见范围。"""
     Project.objects.create(code="LEAD2", name="Leader 可见项目", leader=manager)
 
     response = auth_client(manager).get("/api/projects/")
 
     assert response.status_code == 200
     names = [p["name"] for p in response.data["data"]["results"]]
-    assert "Leader 可见项目" in names
+    assert "Leader 可见项目" not in names
 
 
 @pytest.mark.django_db
-def test_my_role_returns_manager_for_leader(manager):
-    """
-    项目详情 my_role 对 leader（无成员记录）返回 manager
-    """
+def test_leader_without_membership_cannot_view_project_detail(manager):
+    """产品负责人没有显式成员记录时，不能通过详情接口读取产品。"""
     project = Project.objects.create(code="LEAD3", name="Leader 角色项目", leader=manager)
 
     response = auth_client(manager).get(f"/api/projects/{project.id}/")
 
-    assert response.status_code == 200
-    assert response.data["data"]["my_role"] == "manager"
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db
@@ -248,13 +241,15 @@ def test_project_list_contains_my_role(manager, software_admin, developer):
     """
     项目列表接口返回 my_role（打包配置等前端按角色过滤项目下拉）
 
-    - leader（无成员记录）→ manager
+    - leader 同时有 manager 成员记录 → manager
     - software_admin 成员 → software_admin
     - 普通成员 → 其成员角色
     - 非成员项目不出现在列表中
     """
-    Project.objects.create(code="LST1", name="Leader 列表项目", leader=manager)
+    leader_project = Project.objects.create(code="LST1", name="Leader 列表项目", leader=manager)
     admin_project = Project.objects.create(code="LST2", name="管理员列表项目", leader=manager)
+    ProjectMember.objects.create(project=leader_project, user=manager, role="manager")
+    ProjectMember.objects.create(project=admin_project, user=manager, role="manager")
     ProjectMember.objects.create(project=admin_project, user=software_admin, role="software_admin")
     ProjectMember.objects.create(project=admin_project, user=developer, role="developer")
 
@@ -506,12 +501,8 @@ def _grant_permission(user, code):
 
 
 @pytest.mark.django_db
-def test_auditor_sees_all_projects(project, outsider):
-    """
-    审查员（拥有 release.audit 权限）可查看全部项目，包括非成员项目
-
-    期望：项目列表包含非自己成员的项目
-    """
+def test_auditor_only_sees_member_projects(project, outsider):
+    """拥有 release.audit 权限但不是产品成员时，不能看到该产品。"""
     # outsider 获得 release.audit 权限，但不是任何项目成员
     _grant_permission(outsider, "release.audit")
 
@@ -519,22 +510,17 @@ def test_auditor_sees_all_projects(project, outsider):
 
     assert response.status_code == 200
     names = [p["name"] for p in response.data["data"]["results"]]
-    assert "权限项目" in names
+    assert "权限项目" not in names
 
 
 @pytest.mark.django_db
-def test_auditor_can_view_non_member_project_detail(project, outsider):
-    """
-    审查员可查看非成员项目的详情
-
-    期望：HTTP 200，不是 404
-    """
+def test_auditor_cannot_view_non_member_project_detail(project, outsider):
+    """拥有 release.audit 权限但不是产品成员时，不能查看产品详情。"""
     _grant_permission(outsider, "release.audit")
 
     response = auth_client(outsider).get(f"/api/projects/{project.id}/")
 
-    assert response.status_code == 200
-    assert response.data["data"]["name"] == "权限项目"
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db

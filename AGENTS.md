@@ -179,6 +179,7 @@ npm run preview
 - `ProductComponent`：产品对物理仓库的一次角色引用及产品内配置；同一仓库可被多个产品复用。关联仓库前，仓库所有者必须已是该产品成员，凭证随所有者进入产品。版本和 Tag 属于仓库，多个产品发布的是同一套仓库版本。已有发布或打包历史时只能停用，不能物理删除。
 - `ProjectMember`：项目成员角色，角色值为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行，等同项目内全权限）。成员添加对全体项目成员开放，但可授予的角色按操作者角色收缩（`apps.project.services.get_grantable_roles`）：manager（含项目负责人、超管）可授全部角色，software_admin 可授除 manager / software_admin 外的角色，其他成员角色仅能授 developer / tester；修改角色与移除成员仍仅项目管理员（含软件管理员）。
 - `Repository`：可复用且按 `vendor + url + external_identity` 全局唯一的物理代码仓库，仅支持 Git（GitLab）；`Repository.project` 在兼容期内保留为历史登记产品，新逻辑不得将它作为产品归属的唯一依据。仓库版本规则在登记时从产品规则复制，此后独立维护。SVN 仅作为打包产物推送目标。
+- 数据可见范围：超管可查看全部；其他用户只可查看具有显式 `ProjectMember` 记录的产品。仓库只对创建者本人或其所属产品成员可见（兼容 `Repository.project` 与 `ProductComponent` 关联）；`repository.manage` 只控制维护能力，不扩大仓库数据范围。
 - `CommitRecord`：提交记录与提交规范审查结果。
 - `ReleaseRecord`：仓库级发布申请；一次发布只针对一个产品上下文中的一个仓库，状态为 `draft` / `pending` / `released` / `rejected`。
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
