@@ -3,6 +3,8 @@
 
 提供凭证的增删改查、有效性测试、使用记录查询以及凭证类型枚举接口。
 """
+from django.db.models import Q
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
@@ -10,11 +12,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.credential.models import Credential
-from apps.credential.serializers import CredentialListSerializer, CredentialSerializer
+from apps.credential.models import Credential, CredentialUsageLog, RepositoryCredentialLoan
+from apps.credential.serializers import (
+    CredentialListSerializer,
+    CredentialSerializer,
+    CredentialUsageLogSerializer,
+    RepositoryCredentialLoanSerializer,
+)
 from apps.credential.services import CredentialService
-from apps.system.models import OperationLog
-from apps.system.serializers import OperationLogSerializer
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet
 
@@ -110,23 +115,19 @@ class CredentialViewSet(StandardModelViewSet):
     @action(detail=True, methods=["get"])
     def usage(self, request: Request, pk=None) -> Response:
         """
-        凭证使用记录
-
-        从操作日志中查询 module='凭证管理' 且 action='使用凭证'、resource_id 为当前凭证 ID 的记录。
+        查询显式借用流程产生的专用凭证使用审计。
         """
         credential = self.get_object()
-        queryset = OperationLog.objects.filter(
-            module="凭证管理",
-            action="使用凭证",
-            resource_id=str(credential.id),
-        ).select_related("user").order_by("-created_at")
+        queryset = CredentialUsageLog.objects.filter(credential=credential).select_related(
+            "actor", "lender", "product", "repository", "product_component"
+        ).order_by("-created_at")
 
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = OperationLogSerializer(page, many=True)
+            serializer = CredentialUsageLogSerializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
-        serializer = OperationLogSerializer(queryset, many=True)
+        serializer = CredentialUsageLogSerializer(queryset, many=True)
         return success_response({
             "total": queryset.count(),
             "results": serializer.data,
@@ -134,17 +135,7 @@ class CredentialViewSet(StandardModelViewSet):
 
     @action(detail=False, methods=["get"])
     def types(self, request: Request) -> Response:
-        """
-        支持的凭证类型与认证模式枚举
-
-        系统共享类型（svn_password / windows_password / ssh_password）全员可见可用，其余类型均为个人凭证。
-
-        Args:
-            request: DRF Request
-
-        Returns:
-            枚举值列表
-        """
+        """返回凭证类型、认证模式及系统共享类型。"""
         return success_response({
             "cred_types": [
                 {"value": "gitlab_token", "label": "GitLab Token"},
@@ -160,3 +151,76 @@ class CredentialViewSet(StandardModelViewSet):
             ],
             "system_shared_cred_types": sorted(Credential.SYSTEM_SHARED_CRED_TYPES),
         })
+
+
+class RepositoryCredentialLoanViewSet(StandardModelViewSet):
+    """凭证借用授权管理；只有凭证所有人可创建、修改和撤销。"""
+
+    serializer_class = RepositoryCredentialLoanSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["repository", "credential", "is_active"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return RepositoryCredentialLoan.objects.none()
+        user = self.request.user
+        queryset = RepositoryCredentialLoan.objects.select_related(
+            "repository", "credential", "lender"
+        ).prefetch_related("allowed_products")
+        if user.is_superuser:
+            return queryset
+        from apps.project.services import visible_project_ids
+
+        return queryset.filter(
+            Q(lender=user) | Q(allowed_products__in=visible_project_ids(user))
+        ).distinct()
+
+    def perform_create(self, serializer):
+        serializer.save(lender=self.request.user, is_active=True, revoked_at=None)
+
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return success_response(serializer.data, "创建成功", status=status.HTTP_201_CREATED)
+
+    def _ensure_lender(self, loan):
+        if loan.lender_id != self.request.user.id:
+            raise serializers.ValidationError("只有凭证所有人可以维护或撤销借用")
+
+    def perform_update(self, serializer):
+        self._ensure_lender(serializer.instance)
+        serializer.save()
+
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        return error_response(40500, "借用记录不可删除，请使用撤销操作", status_code=405)
+
+    @action(detail=True, methods=["post"])
+    def revoke(self, request: Request, pk=None) -> Response:
+        loan = self.get_object()
+        self._ensure_lender(loan)
+        if not loan.revoked_at:
+            loan.is_active = False
+            loan.revoked_at = timezone.now()
+            loan.save(update_fields=["is_active", "revoked_at", "updated_at"])
+        return success_response(self.get_serializer(loan).data, "借用已撤销")
+
+    @action(detail=False, methods=["get"], url_path="available")
+    def available(self, request: Request) -> Response:
+        """按仓库、产品与操作返回当前有效借用，供组件发布显式选择。"""
+        repository_id = request.query_params.get("repository")
+        product_id = request.query_params.get("product")
+        operation = request.query_params.get("operation", "read")
+        if not repository_id or not product_id:
+            return error_response(40001, "repository 与 product 不能为空")
+        queryset = self.get_queryset().filter(
+            repository_id=repository_id,
+            allowed_products__id=product_id,
+            is_active=True,
+            revoked_at__isnull=True,
+            credential__is_active=True,
+        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+        loans = [loan for loan in queryset.distinct() if operation in (loan.permission_scope or [])]
+        return success_response(self.get_serializer(loans, many=True).data)

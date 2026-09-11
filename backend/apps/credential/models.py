@@ -7,6 +7,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Credential(models.Model):
@@ -129,3 +130,122 @@ class Credential(models.Model):
                 return mask_credential(pwd)
         except Exception:
             return "****"
+
+
+class RepositoryCredentialLoan(models.Model):
+    """仓库凭证借用授权。
+
+    凭证仍归个人所有；借用记录只声明哪些产品可以在指定仓库上执行哪些
+    操作，不复制、不转移、更不暴露凭证明文。
+    """
+
+    SCOPE_CHOICES = [
+        ("read", "读取仓库"),
+        ("create_tag", "创建 Tag"),
+        ("delete_tag", "删除 Tag"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        "repository.Repository", on_delete=models.CASCADE,
+        related_name="credential_loans", verbose_name="仓库",
+    )
+    credential = models.ForeignKey(
+        Credential, on_delete=models.PROTECT,
+        related_name="repository_loans", verbose_name="凭证",
+    )
+    lender = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="credential_loans", verbose_name="出借人",
+    )
+    allowed_products = models.ManyToManyField(
+        "project.Project", related_name="credential_loans",
+        verbose_name="允许使用的产品",
+    )
+    permission_scope = models.JSONField(
+        default=list, verbose_name="授权操作",
+        help_text="可选值：read、create_tag、delete_tag",
+    )
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name="授权过期时间")
+    is_active = models.BooleanField(default=True, verbose_name="是否有效")
+    revoked_at = models.DateTimeField(null=True, blank=True, verbose_name="撤销时间")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "repository_credential_loan"
+        verbose_name = "仓库凭证借用"
+        verbose_name_plural = "仓库凭证借用"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["repository", "is_active"]),
+            models.Index(fields=["lender", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.repository.name} - {self.credential.name}"
+
+    def is_valid_for(self, project, operation: str = "read") -> bool:
+        """判断借用记录在指定产品与操作下是否仍有效。"""
+        if not self.is_active or self.revoked_at:
+            return False
+        if self.expires_at and self.expires_at <= timezone.now():
+            return False
+        if not self.credential.is_active:
+            return False
+        if self.credential.expires_at and self.credential.expires_at <= timezone.now():
+            return False
+        if operation not in (self.permission_scope or []):
+            return False
+        return self.allowed_products.filter(id=project.id).exists()
+
+
+class CredentialUsageLog(models.Model):
+    """凭证借用审计记录，只记录上下文和结果，绝不记录敏感内容。"""
+
+    RESULT_CHOICES = [("success", "成功"), ("failure", "失败")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="credential_usage_logs", verbose_name="操作人",
+    )
+    lender = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="lent_credential_usage_logs", verbose_name="出借人",
+    )
+    credential = models.ForeignKey(
+        Credential, on_delete=models.PROTECT,
+        related_name="usage_logs", verbose_name="凭证",
+    )
+    loan = models.ForeignKey(
+        RepositoryCredentialLoan, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="usage_logs", verbose_name="借用记录",
+    )
+    product = models.ForeignKey(
+        "project.Project", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="credential_usage_logs", verbose_name="产品",
+    )
+    repository = models.ForeignKey(
+        "repository.Repository", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="credential_usage_logs", verbose_name="仓库",
+    )
+    product_component = models.ForeignKey(
+        "project.ProductComponent", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="credential_usage_logs", verbose_name="产品组件",
+    )
+    operation = models.CharField(max_length=50, verbose_name="操作")
+    result = models.CharField(max_length=20, choices=RESULT_CHOICES, verbose_name="结果")
+    failure_reason = models.TextField(blank=True, verbose_name="失败原因")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="使用时间")
+
+    class Meta:
+        db_table = "credential_usage_log"
+        verbose_name = "凭证使用审计"
+        verbose_name_plural = "凭证使用审计"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["credential", "created_at"]),
+            models.Index(fields=["product", "created_at"]),
+            models.Index(fields=["repository", "created_at"]),
+        ]

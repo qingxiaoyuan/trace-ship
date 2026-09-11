@@ -6,9 +6,10 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from apps.credential.views import CredentialViewSet
+from apps.credential.views import CredentialViewSet, RepositoryCredentialLoanViewSet
 
 router = DefaultRouter()
+router.register(r"loans", RepositoryCredentialLoanViewSet, basename="credential-loan")
 router.register(r"", CredentialViewSet, basename="credential")
 
 urlpatterns = [
