@@ -14,12 +14,13 @@ class WorkflowDefinition(models.Model):
     """
     工作流定义模型
 
-    每个项目可配置一个或多个业务流程定义，当前仅支持 release 业务类型。
+    每个仓库可配置一个或多个业务流程定义，当前仅支持 release 业务类型。
     node_config 存储审批链配置，graph_data 由 node_config 自动生成并用于只读流程图渲染。
 
     Attributes:
         id: UUID 主键
-        project: 所属项目
+        repository: 所属物理仓库（审批流程随仓库维护）
+        project: 历史所属产品（兼容字段，不再作为归属依据）
         name: 流程名称
         biz_type: 业务类型
         node_config: 审批链配置
@@ -41,11 +42,21 @@ class WorkflowDefinition(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        "repository.Repository",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="workflow_definitions",
+        verbose_name="所属仓库",
+    )
     project = models.ForeignKey(
         "project.Project",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="workflow_definitions",
-        verbose_name="所属项目",
+        verbose_name="历史所属产品",
     )
     name = models.CharField(max_length=200, verbose_name="流程名称")
     biz_type = models.CharField(
@@ -80,12 +91,14 @@ class WorkflowDefinition(models.Model):
         verbose_name_plural = "工作流定义"
         ordering = ["release_type", "-created_at"]
         indexes = [
-            models.Index(fields=["project", "biz_type", "is_active"]),
+            models.Index(fields=["repository", "biz_type", "is_active"], name="workflow_de_repo_biz_act_idx"),
+            models.Index(fields=["project", "biz_type", "is_active"], name="workflow_de_project_424371_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["project", "biz_type", "release_type"],
-                name="uniq_project_biz_release_type",
+                fields=["repository", "biz_type", "release_type"],
+                name="uniq_repository_biz_release_type",
+                condition=models.Q(repository__isnull=False),
             ),
         ]
 

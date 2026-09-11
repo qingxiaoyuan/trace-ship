@@ -55,14 +55,14 @@ class PackageBaseMixin:
         return RepositorySerializer().get_clone_url(repo)
 
     @staticmethod
-    def _build_auth_env(repo, request_user=None) -> dict[str, str]:
+    def _build_auth_env(repo, request_user=None, product=None) -> dict[str, str]:
         """解析仓库凭证为 Git 可用的环境变量。
 
         GitLab Token 通过 HTTP(S) 克隆时，git 需要用户名+密码做 Basic 认证。
         GitLab 个人访问令牌的默认用户名为 ``oauth2``；部署令牌/项目访问令牌
         可在凭证 username 字段填写对应用户名覆盖默认值。
         """
-        data = resolve_credential(repo, request_user)
+        data = resolve_credential(repo, request_user, product=product)
         env: dict[str, str] = {}
         username = data.get("username") or ""
         token = data.get("token") or data.get("password") or ""

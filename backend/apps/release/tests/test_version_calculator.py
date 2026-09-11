@@ -345,3 +345,18 @@ class TestWithDateOption:
         assert calculator.with_date is True
         _, tag_name = calculator.calculate([], release_type="formal")
         assert tag_name.endswith(f"_{TODAY}")
+
+    def test_system_default_rule_omits_date_and_uses_rc_beta_suffixes(self):
+        """新建仓库的系统默认规则：前缀 V，RC/Beta 后缀，不带时间戳。"""
+        from apps.repository.models import default_version_rule
+
+        calculator = VersionCalculator(default_version_rule())
+        version, formal_tag = calculator.calculate([], release_type="formal")
+        _, rc_tag = calculator.calculate([], release_type="rc")
+        _, beta_tag = calculator.calculate([], release_type="beta")
+
+        assert version == "V.1.0.0"
+        assert formal_tag == "V.1.0.0"
+        assert rc_tag == "V.1.0.0-rc"
+        assert beta_tag == "V.1.0.0-beta"
+        assert calculator.with_date is False

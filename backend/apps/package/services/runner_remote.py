@@ -47,7 +47,7 @@ class RemoteRunnerMixin:
         remote_workspace = cls._remote_workspace(task)
         source_dir = remote_workspace / "source"
         clone_url = cls._clone_url(task.repository)
-        auth_args = cls._auth_clone_args(task.repository, task.triggered_by)
+        auth_args = cls._auth_clone_args(task.repository, task.triggered_by, product=task.project)
 
         node_label = snapshot.get("node_name") or snapshot.get("node_host") or "远程节点"
         cls._append_log(task, f"[{node_label}] 远程工作目录: {remote_workspace}")

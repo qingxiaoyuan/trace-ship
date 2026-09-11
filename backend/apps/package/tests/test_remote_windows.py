@@ -57,7 +57,9 @@ def repository(project, user):
     )
     git_cred.set_data({"token": "git-token"})
     git_cred.save()
-    return Repository.objects.create(
+    from apps.project.services import ensure_repository_component
+
+    repo = Repository.objects.create(
         project=project,
         repo_type="git",
         vendor="gitlab",
@@ -66,7 +68,10 @@ def repository(project, user):
         external_identity="group/win-app",
         default_branch="main",
         credential=git_cred,
+        created_by=user,
     )
+    ensure_repository_component(repo, project)
+    return repo
 
 
 @pytest.fixture

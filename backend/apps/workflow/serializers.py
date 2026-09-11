@@ -18,11 +18,9 @@ def resolve_release(instance: WorkflowInstance):
     from apps.release.models import ReleaseRecord
 
     try:
-        return (
-            ReleaseRecord.objects.select_related("project", "repository", "publisher")
-            .filter(id=instance.biz_id)
-            .first()
-        )
+        return ReleaseRecord.objects.select_related(
+            "project", "repository", "publisher"
+        ).filter(id=instance.biz_id).first()
     except (ValueError, ValidationError):
         return None
 
@@ -63,12 +61,12 @@ class WorkflowDefinitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkflowDefinition
         fields = [
-            "id", "project", "name", "biz_type", "release_type",
+            "id", "repository", "project", "name", "biz_type", "release_type",
             "node_config", "graph_data",
             "is_active", "created_by", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "project", "name", "biz_type", "release_type",
+            "id", "repository", "project", "name", "biz_type", "release_type",
             "graph_data", "is_active", "created_by", "created_at", "updated_at",
         ]
 
@@ -120,7 +118,7 @@ class WorkflowDefinitionListSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkflowDefinition
         fields = [
-            "id", "project", "name", "biz_type", "release_type",
+            "id", "repository", "project", "name", "biz_type", "release_type",
             "node_config", "graph_data", "is_active", "created_at",
         ]
         read_only_fields = ["graph_data"]

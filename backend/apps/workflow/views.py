@@ -3,6 +3,7 @@
 
 提供流程定义、流程实例、审批任务的 RESTful API。
 """
+from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers
 from rest_framework.decorators import action
@@ -11,7 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.account.models import User
-from apps.project.services import visible_project_ids
+from apps.project.services import visible_project_ids, visible_repository_ids
 from apps.release.services import ReleaseService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 from apps.workflow.serializers import (
@@ -22,7 +23,7 @@ from apps.workflow.serializers import (
     WorkflowTaskSerializer,
 )
 from apps.workflow.services import WorkflowEngine
-from utils.permissions import IsProjectDeveloper, IsProjectManager
+from utils.permissions import IsProjectDeveloper, IsRepositoryWorkflowEditor
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
@@ -31,14 +32,14 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
     """
     工作流定义视图集
 
-    项目管理员可创建/修改/删除，项目成员可查看。
+    仓库创建者可修改审批节点；仓库可见成员可查看。
     """
 
     queryset = WorkflowDefinition.objects.all()
     serializer_class = WorkflowDefinitionSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "biz_type", "is_active"]
+    filterset_fields = ["project", "repository", "biz_type", "is_active"]
     search_fields = ["name"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
@@ -54,16 +55,20 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return WorkflowDefinition.objects.none()
         user = self.request.user
-        queryset = WorkflowDefinition.objects.select_related("project", "created_by")
+        queryset = WorkflowDefinition.objects.select_related(
+            "project", "repository", "repository__created_by", "created_by"
+        )
         if user.is_superuser:
             return queryset.all()
-        project_ids = visible_project_ids(user)
-        return queryset.filter(project_id__in=project_ids)
+        return queryset.filter(
+            Q(repository_id__in=visible_repository_ids(user))
+            | Q(project_id__in=visible_project_ids(user), repository__isnull=True)
+        )
 
     def get_permissions(self):
-        """写操作需项目管理员（manager 成员角色）"""
+        """写操作仅仓库创建者（超管放行）"""
         if self.action in ["update", "partial_update"]:
-            return [IsAuthenticated(), IsProjectManager()]
+            return [IsAuthenticated(), IsRepositoryWorkflowEditor()]
         return super().get_permissions()
 
     def perform_create(self, serializer):
@@ -72,7 +77,7 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
 
     def create(self, request: Request, *args, **kwargs) -> Response:
         """内置流程随项目自动创建，不支持手动新增"""
-        return error_response(40003, "流程为项目内置，不支持手动新增")
+        return error_response(40003, "流程为仓库内置，不支持手动新增")
 
     def update(self, request: Request, *args, **kwargs) -> Response:
         """更新流程定义（仅允许修改审批节点配置）"""
@@ -89,7 +94,7 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
 
     def destroy(self, request: Request, *args, **kwargs) -> Response:
         """内置流程不可删除"""
-        return error_response(40003, "流程为项目内置，不可删除")
+        return error_response(40003, "流程为仓库内置，不可删除")
 
 
 class WorkflowInstanceViewSet(StandardModelViewSet):
@@ -119,11 +124,15 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         if getattr(self, "swagger_fake_view", False):
             return WorkflowInstance.objects.none()
         user = self.request.user
-        queryset = WorkflowInstance.objects.select_related("definition", "created_by").prefetch_related("tasks")
+        queryset = WorkflowInstance.objects.select_related(
+            "definition", "definition__repository", "created_by"
+        ).prefetch_related("tasks")
         if user.is_superuser:
             return queryset.all()
-        project_ids = visible_project_ids(user)
-        return queryset.filter(definition__project_id__in=project_ids)
+        return queryset.filter(
+            Q(definition__repository_id__in=visible_repository_ids(user))
+            | Q(definition__project_id__in=visible_project_ids(user))
+        )
 
     def get_permissions(self):
         """创建实例需项目开发者"""

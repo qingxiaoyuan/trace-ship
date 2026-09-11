@@ -19,8 +19,8 @@ TODAY = timezone.now().strftime("%Y%m%d")
 def test_create_release_rejects_existing_tag(repository, project, user, mock_git_provider, monkeypatch):
     """创建发布草稿前校验远端同名 tag（含日期段）。"""
     mock_git_provider.tags = [TagInfo(name=f"VA.1.0.0_{TODAY}", commit_hash="old")]
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
-    monkeypatch.setattr(ReleaseService, "_resolve_branch_head_hash", lambda repo, branch, request_user=None: "head")
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_resolve_branch_head_hash", lambda repo, branch, request_user=None, **_kwargs: "head")
 
     with pytest.raises(serializers.ValidationError, match="Tag 已存在"):
         ReleaseService.create_release(
@@ -42,8 +42,8 @@ def test_create_release_rejects_existing_tag_after_suffix_normalized(
 ):
     """rc/beta 自动补齐后缀与日期段后按最终 tag 查重。"""
     mock_git_provider.tags = [TagInfo(name=f"VA.1.0.0-alpha_{TODAY}", commit_hash="old")]
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
-    monkeypatch.setattr(ReleaseService, "_resolve_branch_head_hash", lambda repo, branch, request_user=None: "head")
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_resolve_branch_head_hash", lambda repo, branch, request_user=None, **_kwargs: "head")
 
     with pytest.raises(serializers.ValidationError, match="Tag 已存在"):
         ReleaseService.create_release(
@@ -77,7 +77,7 @@ def test_push_tag_rejects_release_when_tag_already_exists(
         publisher=user,
     )
     mock_git_provider.tags = [TagInfo(name="VA.1.0.0", commit_hash="old")]
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     with pytest.raises(serializers.ValidationError, match="Tag 已存在"):
         ReleaseService.push_tag(release, request_user=user)
@@ -112,7 +112,7 @@ def test_push_tag_keeps_pending_when_tag_check_failed(
         raise ProviderError("远端临时不可用")
 
     mock_git_provider.list_tags = raise_provider_error
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     with pytest.raises(serializers.ValidationError, match="校验 tag 是否存在失败"):
         ReleaseService.push_tag(release, request_user=user)
@@ -164,7 +164,7 @@ def test_preview_changes_truncates_at_tag_commit(repository, monkeypatch):
         def list_merge_requests(self, repo_identity, target_branch, since=None):
             return []
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
     result = ReleaseService.preview_changes(repository, "main")
 
     # 只应包含 tag 之后的 2 条提交（new1, new2），不含 taghash
@@ -194,7 +194,7 @@ def test_preview_changes_keeps_unparsed_commits_and_parses_fix_feat(repository, 
         def list_merge_requests(self, repo_identity, target_branch, since=None):
             return []
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
     result = ReleaseService.preview_changes(repository, "main")
 
     assert [commit["hash"] for commit in result["commits"]] == ["feat1", "manual1", "manual2"]
@@ -230,7 +230,7 @@ def test_preview_changes_falls_back_to_compare_when_tag_not_in_list(repository, 
         def list_merge_requests(self, repo_identity, target_branch, since=None):
             return []
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
     result = ReleaseService.preview_changes(repository, "main")
 
     assert len(compare_called) == 1
@@ -266,7 +266,7 @@ def test_preview_changes_rejects_cross_branch_tag_baseline(repository, monkeypat
         def list_merge_requests(self, repo_identity, target_branch, since=None):
             return []
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
 
     # 场景一：merge_base 不是 tag commit（跨分支 tag），不调用 compare_commits，直接使用本分支最新提交
     FakeProvider.merge_base_result = "someotherbase"
@@ -303,7 +303,7 @@ def test_preview_changes_no_tag_uses_all_commits(repository, monkeypatch):
         def list_merge_requests(self, repo_identity, target_branch, since=None):
             return []
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
     result = ReleaseService.preview_changes(repository, "main")
 
     assert result["last_tag"] is None
@@ -343,7 +343,7 @@ def test_preview_changes_uses_latest_tag_of_given_release_type(repository, monke
         def list_merge_requests(self, repo_identity, target_branch, since=None):
             return []
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
 
     # rc 发布：以最新 -rc tag 为基线，只取 rchash 之后的提交
     result_rc = ReleaseService.preview_changes(repository, "main", release_type="rc")
@@ -381,7 +381,7 @@ def test_preview_changes_provider_failure_returns_empty(repository, monkeypatch)
         def list_merge_requests(self, repo_identity, target_branch, since=None):
             raise ProviderError("远端不可用")
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: BrokenProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: BrokenProvider())
 
     result = ReleaseService.preview_changes(repository, "main")
 
@@ -458,7 +458,7 @@ def test_delete_released_tag_success(repository, project, user, mock_git_provide
 
     release = _make_released(repository, project, user)
     mock_git_provider.tags = [TagInfo(name=release.tag_name, commit_hash="head")]
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     result = ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
 
@@ -482,7 +482,7 @@ def test_delete_released_tag_requires_released_status(repository, project, user,
         status="draft",
         publisher=user,
     )
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     with pytest.raises(serializers.ValidationError, match="仅已发布状态可删除版本"):
         ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
@@ -494,7 +494,7 @@ def test_delete_released_tag_requires_matching_tag_name(repository, project, use
     from apps.release.models import ReleaseRecord
 
     release = _make_released(repository, project, user)
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     with pytest.raises(serializers.ValidationError, match="输入的 Tag 名称与发布版本不一致"):
         ReleaseService.delete_released_tag(release, "VA.9.9.9_99999999", request_user=user)
@@ -511,7 +511,7 @@ def test_delete_released_tag_tolerates_missing_remote_tag(repository, project, u
         raise NotFoundError(f"tag 不存在: {tag_name}")
 
     mock_git_provider.delete_tag = raise_not_found
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     result = ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
 
@@ -529,7 +529,7 @@ def test_delete_released_tag_provider_error_keeps_record(repository, project, us
         raise ProviderError("远端不可用")
 
     mock_git_provider.delete_tag = raise_provider_error
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     with pytest.raises(ProviderError):
         ReleaseService.delete_released_tag(release, release.tag_name, request_user=user)
@@ -581,7 +581,7 @@ def _make_workflow_instance(project, user, release, status):
 def test_retry_push_tag_success_without_workflow(repository, project, user, mock_git_provider, monkeypatch):
     """直连发布（无审批流程实例）推 tag 失败后可重试，成功后转为已发布。"""
     release = _make_rejected_release(repository, project, user)
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     tag_info = ReleaseService.retry_push_tag(release, request_user=user)
 
@@ -600,7 +600,7 @@ def test_retry_push_tag_success_with_completed_workflow(repository, project, use
     instance = _make_workflow_instance(project, user, release, "completed")
     release.workflow_instance = instance
     release.save(update_fields=["workflow_instance", "updated_at"])
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     ReleaseService.retry_push_tag(release, request_user=user)
 
@@ -650,7 +650,7 @@ def test_retry_push_tag_failure_returns_to_rejected(repository, project, user, m
         raise ProviderError("远端仍然不可用")
 
     mock_git_provider.create_tag = raise_provider_error
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: mock_git_provider)
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
     with pytest.raises(serializers.ValidationError, match="推 tag 失败"):
         ReleaseService.retry_push_tag(release, request_user=user)

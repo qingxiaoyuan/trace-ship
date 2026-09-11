@@ -6,7 +6,7 @@
 from django.db.models import Count, Q
 from rest_framework import serializers
 
-from apps.project.models import Project
+from apps.project.models import ProductComponent, Project
 from apps.release.models import (
     ReleaseCommit,
     ReleaseRecord,
@@ -46,7 +46,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         model = ReleaseRecord
         fields = [
             "id", "project", "project_name", "repository", "repository_name",
-            "version", "tag_name", "base_tag", "branch", "git_hash",
+            "version", "tag_name", "redmine_url", "base_tag", "branch", "git_hash",
             "release_type", "release_type_display", "status", "status_display",
             "release_doc", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
@@ -156,8 +156,12 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             serializers.ValidationError: 项目不一致时抛出
         """
         project = self.initial_data.get("project") or getattr(self.instance, "project_id", None)
-        if project and str(value.project_id) != str(project):
-            raise serializers.ValidationError("仓库不属于所选项目")
+        if project and not ProductComponent.objects.filter(
+            project_id=project,
+            repository=value,
+            is_active=True,
+        ).exists():
+            raise serializers.ValidationError("该仓库未在当前产品中启用，请先关联仓库")
         return value
 
     def validate(self, attrs: dict) -> dict:
@@ -203,7 +207,7 @@ class ReleaseListSerializer(serializers.ModelSerializer):
         model = ReleaseRecord
         fields = [
             "id", "project", "project_name", "repository", "repository_name",
-            "version", "tag_name", "release_type", "release_type_display",
+            "version", "tag_name", "redmine_url", "release_type", "release_type_display",
             "status", "status_display", "branch", "publisher_name", "released_at", "created_at",
             "commit_total", "pass_count", "warning_count", "illegal_count", "has_doc",
             "open_review_count", "replied_review_count",

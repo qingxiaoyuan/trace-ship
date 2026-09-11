@@ -25,7 +25,7 @@ class SourceCheckoutMixin:
             source_dir.mkdir(parents=True, exist_ok=True)
         snapshot = task.config_snapshot or {}
         clone_url = cls._clone_url(task.repository)
-        env = cls._build_auth_env(task.repository, task.triggered_by)
+        env = cls._build_auth_env(task.repository, task.triggered_by, product=task.project)
         clone_cmd = ["git", "clone", "--depth", "1", "--branch", task.tag_name]
         if snapshot.get("clone_submodules"):
             clone_cmd.append("--recurse-submodules")
@@ -40,14 +40,14 @@ class SourceCheckoutMixin:
             cls._append_log(task, "分支直打包：无发布说明，跳过写入")
 
     @staticmethod
-    def _auth_clone_args(repo, request_user=None) -> list[str]:
+    def _auth_clone_args(repo, request_user=None, product=None) -> list[str]:
         """生成 git 认证参数（http.extraHeader Basic 头）。
 
         不把凭证编进克隆 URL：URL 编码产生的 %XX 会被 cmd 的 %var% 展开破坏，
         且会触发 wincredman 持久化报错。base64 字符集（A-Za-z0-9+/=）对 cmd 安全，
         也不会出现在报错回显中。
         """
-        data = resolve_credential(repo, request_user)
+        data = resolve_credential(repo, request_user, product=product)
         username = data.get("username") or ""
         token = data.get("token") or data.get("password") or ""
         if not token:

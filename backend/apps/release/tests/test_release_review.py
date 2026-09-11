@@ -54,13 +54,14 @@ def patched_provider(monkeypatch, mock_git_provider):
     from apps.release import services
     from utils.provider import credential_resolver
 
-    def fake_resolve_credential(source, request_user=None):
+    def fake_resolve_credential(source, request_user=None, **_kwargs):
         return {"token": "test"}
 
     def fake_get_provider(vendor, server_url, credential_data):
         return mock_git_provider
 
     monkeypatch.setattr(credential_resolver, "resolve_credential", fake_resolve_credential)
+    monkeypatch.setattr(services, "resolve_credential", fake_resolve_credential)
     monkeypatch.setattr(services, "get_provider", fake_get_provider)
     return mock_git_provider
 

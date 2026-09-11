@@ -216,7 +216,7 @@ def test_manager_can_delete_released(project, repository, manager_user, monkeypa
         def delete_tag(self, repo_identity, tag_name):
             deleted.append(tag_name)
 
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
 
     response = auth_client(manager_user).post(
         f"/api/releases/{release.id}/delete-released/",

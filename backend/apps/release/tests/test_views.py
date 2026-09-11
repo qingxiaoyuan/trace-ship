@@ -6,6 +6,7 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.project.models import ProductComponent, Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.workflow.models import WorkflowDefinition
 from utils.provider.base import TagInfo
@@ -30,13 +31,14 @@ def patched_provider(monkeypatch, mock_git_provider):
     from apps.release import services
     from utils.provider import credential_resolver
 
-    def fake_resolve_credential(source, request_user=None):
+    def fake_resolve_credential(source, request_user=None, **_kwargs):
         return {"token": "test"}
 
     def fake_get_provider(vendor, server_url, credential_data):
         return mock_git_provider
 
     monkeypatch.setattr(credential_resolver, "resolve_credential", fake_resolve_credential)
+    monkeypatch.setattr(services, "resolve_credential", fake_resolve_credential)
     monkeypatch.setattr(services, "get_provider", fake_get_provider)
     return mock_git_provider
 
@@ -111,6 +113,7 @@ class TestReleaseViews:
                 "repository": str(repository.id),
                 "release_type": "formal",
                 "branch": "main",
+                "redmine_url": "https://redmine.example.com/issues/12345",
             },
             format="json",
         )
@@ -120,6 +123,62 @@ class TestReleaseViews:
         assert data["version"] == "VA.1.0.0"
         assert data["tag_name"] == f"VA.1.0.0_{TODAY}"
         assert data["status"] == "draft"
+        assert data["redmine_url"] == "https://redmine.example.com/issues/12345"
+        assert ReleaseRecord.objects.get(id=data["id"]).redmine_url == data["redmine_url"]
+
+    def test_create_release_rejects_invalid_redmine_url(
+        self, api_client, project, repository, patched_provider
+    ):
+        """Redmine 任务地址填写后必须是完整 URL。"""
+        response = api_client.post(
+            "/api/releases/",
+            {
+                "project": str(project.id),
+                "repository": str(repository.id),
+                "release_type": "formal",
+                "branch": "main",
+                "redmine_url": "redmine/issues/12345",
+            },
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert ReleaseRecord.objects.count() == 0
+
+    def test_create_release_accepts_reused_product_component(
+        self, api_client, user, repository, patched_provider
+    ):
+        """仓库通过产品组件复用后，可继续使用兼容的单仓库发布入口。"""
+        target = Project.objects.create(
+            code="SDK",
+            name="SDK 产品",
+            leader=user,
+            status=1,
+            version_rule={"prefix": "VA", "major": 1, "minor": 0, "patch": 0},
+        )
+        ProjectMember.objects.create(project=target, user=user, role="manager")
+        ProductComponent.objects.create(
+            project=target,
+            repository=repository,
+            component_code="middleware",
+            display_name="中台组件",
+            default_branch="main",
+        )
+
+        response = api_client.post(
+            "/api/releases/",
+            {
+                "project": str(target.id),
+                "repository": str(repository.id),
+                "release_type": "formal",
+                "branch": "main",
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201
+        assert str(response.data["data"]["project"]) == str(target.id)
+        assert str(response.data["data"]["repository"]) == str(repository.id)
 
     def test_create_formal_release_allows_non_main_branch(self, api_client, project, repository, patched_provider):
         """正式版本不限制发布分支"""

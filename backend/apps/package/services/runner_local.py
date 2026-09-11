@@ -40,7 +40,7 @@ class LocalRunnerMixin:
         snapshot = task.config_snapshot or {}
         if not snapshot.get("inject_git_credential"):
             return []
-        auth_env = cls._build_auth_env(task.repository, task.triggered_by)
+        auth_env = cls._build_auth_env(task.repository, task.triggered_by, product=task.project)
         if not auth_env.get("TRACE_SHIP_GIT_PASSWORD"):
             # 开关开启但仓库无可用凭证：显式记日志，避免脚本内 push 失败时无从排查
             cls._append_log(task, "已开启注入 Git 凭证，但仓库未配置可用凭证，跳过注入（脚本内 git push 将不可用）")

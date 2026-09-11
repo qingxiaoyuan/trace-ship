@@ -65,7 +65,6 @@ class TestOpenReleaseDoc:
         client = _auth_client(["release.doc"])
         response = client.get(URL, {"tag": "VA.1.0.1", "repository_id": str(repository.id)})
         assert response.status_code == 404
-
     def test_missing_params_bad_request(self, repository):
         """缺少必填参数返回 400"""
         client = _auth_client(["release.doc"])

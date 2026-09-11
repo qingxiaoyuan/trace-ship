@@ -14,7 +14,7 @@ from apps.package.models import (
     PackageNode,
     PackageTask,
 )
-from apps.project.models import ProjectMember
+from apps.project.models import ProductComponent, ProjectMember
 
 
 def validate_safe_rel_path(value: str, field: str = "path") -> str:
@@ -144,12 +144,18 @@ class PackageNodeSerializer(serializers.ModelSerializer):
 
 
 class PackageConfigSerializer(serializers.ModelSerializer):
-    """项目级打包配置序列化器。"""
+    """产品组件级打包配置序列化器。"""
 
+    product_component = serializers.PrimaryKeyRelatedField(
+        queryset=ProductComponent.objects.all(), required=False
+    )
     project_id = serializers.UUIDField(source="project.id", read_only=True)
     project_name = serializers.CharField(source="project.name", read_only=True)
     repository_id = serializers.UUIDField(source="repository.id", read_only=True)
     repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
+    product_component_name = serializers.CharField(
+        source="product_component.display_name", read_only=True, default=""
+    )
     image_id = serializers.UUIDField(source="image.id", read_only=True)
     image_name = serializers.CharField(source="image.name", read_only=True, default="")
     image_ref = serializers.CharField(source="image.image", read_only=True, default="")
@@ -173,6 +179,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         fields = [
             "id", "project", "project_id", "project_name",
             "repository", "repository_id", "repository_name",
+            "product_component", "product_component_name",
             "name",
             "executor_type", "executor_type_display", "node", "node_id", "node_name", "node_host",
             "node_os_type",
@@ -299,14 +306,49 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         """校验仓库、镜像和脚本约束。"""
         project = attrs.get("project", getattr(self.instance, "project", None))
         repository = attrs.get("repository", getattr(self.instance, "repository", None))
+        product_component = attrs.get(
+            "product_component", getattr(self.instance, "product_component", None)
+        )
         image_info = attrs.pop("image_info", None)
         if image_info:
             attrs["image"] = self._resolve_image_info(image_info)
         image = attrs.get("image", getattr(self.instance, "image", None))
         env_vars = attrs.get("env_vars", getattr(self.instance, "env_vars", {}))
 
-        if repository and project and repository.project_id != project.id:
-            raise serializers.ValidationError({"repository": "关联仓库必须属于当前项目"})
+        if product_component:
+            if project and product_component.project_id != project.id:
+                raise serializers.ValidationError({"product_component": "所选软件仓库不属于当前产品"})
+            if repository and product_component.repository_id != repository.id:
+                raise serializers.ValidationError({"product_component": "所选软件仓库与仓库信息不一致"})
+            attrs["project"] = product_component.project
+            attrs["repository"] = product_component.repository
+            project = product_component.project
+            repository = product_component.repository
+            if not self.initial_data.get("project"):
+                self.validate_project(project)
+        elif repository and project:
+            matches = ProductComponent.objects.filter(
+                project=project, repository=repository, is_active=True
+            )
+            if matches.count() == 1:
+                attrs["product_component"] = matches.first()
+            elif matches.count() > 1:
+                raise serializers.ValidationError({
+                    "product_component": "该仓库在当前产品中存在多条关联记录，请联系管理员处理"
+                })
+            else:
+                raise serializers.ValidationError({
+                    "product_component": "请先将该仓库关联到当前产品"
+                })
+
+        if product_component and repository and project and repository.project_id != project.id:
+            linked = ProductComponent.objects.filter(
+                project=project,
+                repository=repository,
+                is_active=True,
+            ).exists()
+            if not linked:
+                raise serializers.ValidationError({"repository": "关联仓库必须已在当前产品中启用"})
         if repository and repository.repo_type != "git":
             raise serializers.ValidationError({"repository": "打包配置第一阶段仅支持 Git 仓库"})
         if not isinstance(env_vars, dict):

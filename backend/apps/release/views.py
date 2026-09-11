@@ -223,6 +223,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 publisher=request.user,
                 version=data.get("version"),
                 tag_name=data.get("tag_name"),
+                redmine_url=data.get("redmine_url", ""),
                 related_changes=data.get("related_changes"),
                 updates=data.get("updates"),
                 has_config_changes=data.get("has_config_changes", False),
@@ -256,6 +257,7 @@ class ReleaseViewSet(StandardModelViewSet):
 
         # 更新允许修改的字段
         instance.branch = data.get("branch", instance.branch)
+        instance.redmine_url = data.get("redmine_url", instance.redmine_url)
 
         # 若分支变化则重新获取 git_hash
         if "branch" in data:
@@ -301,7 +303,11 @@ class ReleaseViewSet(StandardModelViewSet):
         except serializers.ValidationError as exc:
             return error_response(40002, _extract_validation_message(exc))
 
-        instance.save(update_fields=["branch", "version", "tag_name", "git_hash", "updated_at"])
+        instance.save(
+            update_fields=[
+                "branch", "version", "tag_name", "redmine_url", "git_hash", "updated_at",
+            ]
+        )
         return success_response(self._serialize_release(instance), message="更新成功")
 
     def destroy(self, request: Request, *args, **kwargs) -> Response:

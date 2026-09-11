@@ -254,6 +254,7 @@ class TaskLifecycleMixin:
         触发该仓库全部启用的自动打包配置。
         """
         configs = PackageConfig.objects.filter(
+            project=release.project,
             repository=release.repository,
             auto_package_on_release=True,
             is_active=True,
