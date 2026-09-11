@@ -1,7 +1,21 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Boxes, FolderOpen, GitBranch, Package as PackageIcon, Play, Search, Settings2, Star, Trash2 } from 'lucide-react';
+import {
+  Boxes,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  GitBranch,
+  Package as PackageIcon,
+  Play,
+  Plus,
+  Search,
+  Settings2,
+  Star,
+  Trash2,
+} from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { SvnBrowserDrawer } from '@/components/SvnBrowserDrawer';
+import { groupConfigsByRepository } from './boardData';
 import { useLatestTaskByConfig } from './useLatestTaskByConfig';
 import { formatRelativeTime, iconColors } from './utils';
 import { StatusBadge } from './Shared';
@@ -14,10 +28,12 @@ interface ConfigListProps {
   onDelete: (config: PackageConfig) => void;
   onTrigger: (config: PackageConfig) => void;
   onOpenHistory: (config: PackageConfig) => void;
+  onNew: () => void;
   /** 切换收藏（星标），由父组件负责乐观更新与缓存失效 */
   onToggleFavorite: (config: PackageConfig) => void;
 }
 
+/** 打包配置：按仓库分组展示，同仓库的配置收敛在同一个分组下 */
 export const ConfigList = memo(function ConfigList({
   configs,
   tasks,
@@ -26,10 +42,12 @@ export const ConfigList = memo(function ConfigList({
   onDelete,
   onTrigger,
   onOpenHistory,
+  onNew,
   onToggleFavorite,
 }: ConfigListProps) {
   const [keyword, setKeyword] = useState('');
   const [browsing, setBrowsing] = useState<PackageConfig | null>(null);
+  const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set());
 
   const latestTaskByConfig = useLatestTaskByConfig(tasks);
 
@@ -44,52 +62,100 @@ export const ConfigList = memo(function ConfigList({
     });
   }, [configs, keyword]);
 
+  const groups = useMemo(() => groupConfigsByRepository(filtered), [filtered]);
+
+  const toggleRepo = useCallback((repo: string) => {
+    setCollapsedRepos((prev) => {
+      const next = new Set(prev);
+      if (next.has(repo)) next.delete(repo);
+      else next.add(repo);
+      return next;
+    });
+  }, []);
+
   return (
-    <div className="tech-card rounded-xl overflow-hidden">
-      <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
           <input
             type="text"
-            placeholder="搜索配置名称 / 产品 / 仓库"
+            placeholder="搜索配置名称 / 仓库"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            className="w-[240px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
         </div>
-        <div className="ml-auto text-[12px] text-slate-400">共 {filtered.length} 条</div>
+        <button
+          type="button"
+          className="btn-glow ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-white"
+          onClick={onNew}
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+          新建配置
+        </button>
       </div>
-      <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
-        <div className="col-span-4">配置名称</div>
-        <div className="col-span-2">关联仓库</div>
-        <div className="col-span-2">脚本</div>
-        <div className="col-span-2">最近打包</div>
-        <div className="col-span-2 text-right">操作</div>
-      </div>
+
       {loading ? (
-        <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
-      ) : filtered.length === 0 ? (
-        <div className="px-5 py-12 text-center">
+        <div className="rounded-xl border border-indigo-100 bg-white p-12 text-center text-[13px] text-slate-400">加载中…</div>
+      ) : groups.length === 0 ? (
+        <div className="rounded-xl border border-indigo-100 bg-white p-12 text-center">
           <Boxes className="mx-auto h-10 w-10 text-slate-300" strokeWidth={1.5} />
-          <p className="mt-3 text-[13px] text-slate-400">暂无打包配置</p>
+          <p className="mt-3 text-[13px] text-slate-400">{keyword ? '没有匹配的打包配置' : '暂无打包配置'}</p>
         </div>
       ) : (
-        <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
-          {filtered.map((config, idx) => {
-            const latest = config.id ? latestTaskByConfig.get(config.id) : undefined;
+        <div className="space-y-4">
+          {groups.map((group) => {
+            const collapsed = collapsedRepos.has(group.repositoryId);
             return (
-              <ConfigRow
-                key={config.id}
-                config={config}
-                index={idx}
-                latest={latest}
-                onEdit={onEdit}
-                onDelete={onDelete}
-                onTrigger={onTrigger}
-                onOpenHistory={onOpenHistory}
-                onToggleFavorite={onToggleFavorite}
-                onBrowseSvn={setBrowsing}
-              />
+              <section key={group.repositoryId} className="overflow-hidden rounded-xl border border-[#E0E7FF] bg-white shadow-[0_10px_28px_-18px_rgba(15,23,42,0.25)]">
+                <header
+                  className="flex cursor-pointer flex-wrap items-center gap-3 border-b border-indigo-50 bg-[#FAFBFE] px-5 py-3"
+                  onClick={() => toggleRepo(group.repositoryId)}
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
+                    <GitBranch className="h-4 w-4" strokeWidth={1.5} />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="truncate font-mono text-[13px] font-semibold text-slate-800">{group.repositoryName}</h2>
+                    <div className="mt-0.5 text-[11px] text-slate-400">{group.configs.length} 个打包配置 · 仓库集合</div>
+                  </div>
+                  <div className="ml-auto">
+                    {collapsed ? (
+                      <ChevronRight className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
+                    )}
+                  </div>
+                </header>
+                {!collapsed && (
+                  <>
+                    <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
+                      <div className="col-span-4">配置名称</div>
+                      <div className="col-span-2">脚本</div>
+                      <div className="col-span-2">最近打包</div>
+                      <div className="col-span-3">配置状态</div>
+                      <div className="col-span-1 text-right">操作</div>
+                    </div>
+                    <div className="divide-y divide-indigo-50/50 max-md:divide-y-0 max-md:space-y-3 max-md:p-3">
+                      {group.configs.map((config, idx) => (
+                        <ConfigRow
+                          key={config.id}
+                          config={config}
+                          index={idx}
+                          latest={config.id ? latestTaskByConfig.get(config.id) : undefined}
+                          onEdit={onEdit}
+                          onDelete={onDelete}
+                          onTrigger={onTrigger}
+                          onOpenHistory={onOpenHistory}
+                          onToggleFavorite={onToggleFavorite}
+                          onBrowseSvn={setBrowsing}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </section>
             );
           })}
         </div>
@@ -101,8 +167,9 @@ export const ConfigList = memo(function ConfigList({
 
 interface ConfigRowProps {
   config: PackageConfig;
-  index: number;
   latest?: PackageTask;
+  /** 分组内序号，用于循环取图标配色 */
+  index: number;
   onEdit: (config: PackageConfig) => void;
   onDelete: (config: PackageConfig) => void;
   onTrigger: (config: PackageConfig) => void;
@@ -111,10 +178,19 @@ interface ConfigRowProps {
   onBrowseSvn: (config: PackageConfig) => void;
 }
 
+/** 执行环境展示：远程节点展示节点名，本地 Docker 展示镜像名 */
+function executorSummary(config: PackageConfig): string {
+  if (config.executor_type === 'remote_node') {
+    return config.node_name ? `远程节点 · ${config.node_name}` : '远程节点';
+  }
+  if (config.image_name) return `Docker · ${config.image_name}`;
+  return config.executor_type_display || 'Docker';
+}
+
 const ConfigRow = memo(function ConfigRow({
   config,
-  index,
   latest,
+  index,
   onEdit,
   onDelete,
   onTrigger,
@@ -131,7 +207,7 @@ const ConfigRow = memo(function ConfigRow({
       e.stopPropagation();
       onTrigger(config);
     },
-    [config, onTrigger]
+    [config, onTrigger],
   );
 
   const handleEdit = useCallback(
@@ -139,7 +215,7 @@ const ConfigRow = memo(function ConfigRow({
       e.stopPropagation();
       onEdit(config);
     },
-    [config, onEdit]
+    [config, onEdit],
   );
 
   const handleDelete = useCallback(
@@ -147,7 +223,7 @@ const ConfigRow = memo(function ConfigRow({
       e.stopPropagation();
       onDelete(config);
     },
-    [config, onDelete]
+    [config, onDelete],
   );
 
   const handleBrowseSvn = useCallback(
@@ -155,7 +231,7 @@ const ConfigRow = memo(function ConfigRow({
       e.stopPropagation();
       onBrowseSvn(config);
     },
-    [config, onBrowseSvn]
+    [config, onBrowseSvn],
   );
 
   const handleToggleFavorite = useCallback(
@@ -163,7 +239,7 @@ const ConfigRow = memo(function ConfigRow({
       e.stopPropagation();
       onToggleFavorite(config);
     },
-    [config, onToggleFavorite]
+    [config, onToggleFavorite],
   );
 
   // 星标收藏按钮：收藏时实心 amber，未收藏 slate 描边，hover 高亮
@@ -196,34 +272,48 @@ const ConfigRow = memo(function ConfigRow({
     >
       {/* 桌面端网格行 */}
       <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
-        <div className="col-span-12 md:col-span-4 flex items-center gap-2.5">
-          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${iconColors[index % iconColors.length]}`}>
-            <PackageIcon className="h-4 w-4" strokeWidth={1.5} />
+        <div className="col-span-4 flex min-w-0 items-center gap-2.5">
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${iconColors[index % iconColors.length]}`}>
+            <PackageIcon className="h-3.5 w-3.5" strokeWidth={1.5} />
           </div>
           <div className="min-w-0">
-            <div className="text-[13px] font-medium text-slate-900 truncate">{config.name}</div>
-            <div className="text-[10px] text-slate-400">
-              {config.is_active ? '已启用' : '已停用'}
-              {config.auto_package_on_release && <span className="ml-2 text-indigo-500">发布自动打包</span>}
-              {svnEnabled && <span className="ml-2 text-amber-500">SVN 推送</span>}
-            </div>
+            <div className="truncate text-[13px] font-medium text-slate-900">{config.name}</div>
+            <div className="truncate font-mono text-[10px] text-slate-400">{executorSummary(config)}</div>
           </div>
         </div>
-        <div className="col-span-6 font-mono text-[11px] text-slate-500 truncate md:col-span-2">{config.repository_name || '-'}</div>
-        <div className="col-span-6 text-[12px] text-slate-600 md:col-span-2">
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px]">{config.custom_script ? "自定义脚本" : "内置脚本"}</span>
+        <div className="col-span-2">
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+            {config.custom_script ? '自定义脚本' : '内置脚本'}
+          </span>
         </div>
-        <div className="col-span-6 md:col-span-2">
+        <div className="col-span-2">
           {latest ? (
-            <div className="flex items-center gap-1.5 text-left pointer-events-none">
+            <div className="flex items-center gap-1.5">
               <StatusBadge status={latest.status} />
               <span className="text-[11px] text-slate-400">{formatRelativeTime(latest.created_at)}</span>
             </div>
           ) : (
-            <span className="text-[12px] text-slate-400">-</span>
+            <span className="text-[11px] text-slate-400">-</span>
           )}
         </div>
-        <div className="col-span-12 md:col-span-2 flex items-center justify-end gap-1">
+        <div className="col-span-3 flex flex-wrap items-center gap-1.5">
+          <span
+            className={`rounded-md border px-1.5 py-0.5 text-[11px] ${
+              config.auto_package_on_release
+                ? 'border-indigo-100 bg-indigo-50 text-indigo-600'
+                : 'border-slate-200 bg-slate-50 text-slate-500'
+            }`}
+          >
+            {config.auto_package_on_release ? '发布自动打包' : '手动触发'}
+          </span>
+          {!config.is_active && (
+            <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-500">已停用</span>
+          )}
+          {svnEnabled && (
+            <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-600">SVN 推送</span>
+          )}
+        </div>
+        <div className="col-span-1 flex items-center justify-end gap-1">
           {favoriteButton('rounded-md p-1.5', 'h-3.5 w-3.5')}
           {svnEnabled && (
             <button
@@ -264,14 +354,14 @@ const ConfigRow = memo(function ConfigRow({
       {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
       <div className="md:hidden">
         <div className="flex items-center justify-between">
-          <span
-            className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
-              config.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
-            }`}
-          >
-            {config.is_active ? '已启用' : '已停用'}
-          </span>
           <div className="flex items-center gap-1.5">
+            <span
+              className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
+                config.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {config.is_active ? '已启用' : '已停用'}
+            </span>
             {config.auto_package_on_release && (
               <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600">发布自动打包</span>
             )}

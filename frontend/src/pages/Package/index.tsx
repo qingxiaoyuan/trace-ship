@@ -1,39 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { App, Button, Pagination, Select } from 'antd';
-import {
-  ChevronRight,
-  Hammer,
-  History,
-  Package as PackageIcon,
-  Plus,
-  RefreshCw,
-  Search,
-  Settings2,
-} from 'lucide-react';
+import { App, Button } from 'antd';
+import { ChevronRight, History, List, Package as PackageIcon, Plus, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfigList } from './components/ConfigList';
-import { RunningTab } from './components/RunningTab';
+import { BoardSidebar } from './components/BoardSidebar';
+import { BuildBoard } from './components/BuildBoard';
+import { fetchAllPages, mergePackageTasks } from './components/boardData';
 import { DetailView } from './components/DetailView';
 import { BuildView } from './components/BuildView';
 import { PackageConfigModal } from '@/components/PackageConfigModal';
 import { PackageTriggerModal, type PackageTriggerTarget } from '@/components/PackageTriggerModal';
 import { PermissionAlert } from '@/components/PermissionAlert';
 
-const pageSize = 100;
-const page = 1;
-/** 构建列表每页条数 */
-const TASK_PAGE_SIZE = 15;
+/** 看板任务单页大小；历史任务可继续加载后续页 */
+const BOARD_TASK_PAGE_SIZE = 50;
+/** 侧栏「正在打包」跨产品实时任务条数 */
+const SIDEBAR_TASK_PAGE_SIZE = 20;
+/** 后端统一分页器允许的最大单页条数 */
+const API_PAGE_SIZE = 100;
 /** 大日志首屏只加载末尾字节数 */
 const LOG_TAIL_BYTES = 256 * 1024;
 /** 打包看板「产品过滤」本地缓存 key（选择过产品后下次进入自动复用） */
 const PACKAGE_BOARD_PROJECT_KEY = 'trace-ship.package-board.project';
 
-type TabKey = 'running' | 'configs';
+type TabKey = 'builds' | 'configs';
 type TaskLogState = { offset: number; text: string; partial: boolean };
 type TaskDetailLoadResult = { task: PackageTask; logText: string; logPartial: boolean };
 
@@ -46,9 +41,7 @@ export default function PackageTaskPage() {
 
   const [userView, setUserView] = useState<'list' | 'detail' | 'build'>('list');
   const view: 'list' | 'detail' | 'build' = routeTaskId ? 'build' : userView;
-  const [activeTab, setActiveTab] = useState<TabKey>('running');
-  // 构建列表子 Tab：默认只显示进行中任务，历史任务切 Tab 才加载
-  const [taskTab, setTaskTab] = useState<'active' | 'history'>('active');
+  const [activeTab, setActiveTab] = useState<TabKey>('builds');
   const [selectedTask, setSelectedTask] = useState<PackageTask | null>(null);
   const [selectedConfig, setSelectedConfig] = useState<PackageConfig | null>(null);
   const [logText, setLogText] = useState('');
@@ -57,8 +50,7 @@ export default function PackageTaskPage() {
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [triggerConfig, setTriggerConfig] = useState<PackageTriggerTarget | null>(null);
 
-  // 构建列表 / 打包配置列表：分页 / 搜索 / 产品过滤（产品选择写入本地缓存，下次复用）
-  const [taskPage, setTaskPage] = useState(1);
+  // 构建列表搜索 / 产品过滤（产品选择写入本地缓存，下次复用）
   const [taskKeyword, setTaskKeyword] = useState('');
   const [taskSearch, setTaskSearch] = useState('');
   const [filterProject, setFilterProject] = useState<string>(() => {
@@ -73,53 +65,75 @@ export default function PackageTaskPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setTaskSearch(taskKeyword.trim());
-      setTaskPage(1);
     }, 300);
     return () => window.clearTimeout(timer);
   }, [taskKeyword]);
 
   const { data: projectsData } = useQuery({
     queryKey: ['package-board-projects'],
-    queryFn: () => projectApi.getProjects({ page: 1, page_size: 1000 }),
+    queryFn: () => fetchAllPages((page, pageSize) => projectApi.getProjects({ page, page_size: pageSize }), API_PAGE_SIZE),
   });
 
+  // 打包配置全量加载：同时服务侧栏产品统计与配置面板（按产品在客户端过滤）
   const { data: configsData, isLoading: configsLoading, error: configsError } = useQuery({
-    queryKey: ['package-configs', page, filterProject],
-    queryFn: () =>
-      packageApi.getConfigs({
-        page,
-        page_size: pageSize,
-        project: filterProject || undefined,
-      }),
+    queryKey: ['package-configs', 'board', 'all'],
+    queryFn: () => fetchAllPages((page, pageSize) => packageApi.getConfigs({ page, page_size: pageSize }), API_PAGE_SIZE),
   });
 
-  // 进行中任务：默认进入即加载，5 秒轮询自动刷新
-  const { data: activeTasksData, error: activeTasksError } = useQuery({
-    queryKey: ['package-tasks', 'active', taskPage, taskSearch, filterProject],
+  // 侧栏「正在打包」：跨产品实时任务，5 秒轮询
+  const { data: sidebarTasksData } = useQuery({
+    queryKey: ['package-tasks', 'sidebar-running'],
     queryFn: () =>
       packageApi.getTasks({
-        page: taskPage,
-        page_size: TASK_PAGE_SIZE,
-        search: taskSearch || undefined,
-        project: filterProject || undefined,
+        page: 1,
+        page_size: SIDEBAR_TASK_PAGE_SIZE,
         status: 'queued,running',
       }),
-    enabled: view === 'list' && activeTab === 'running' && taskTab === 'active',
+    enabled: view === 'list',
     refetchInterval: 5000,
   });
 
-  // 打包历史：切换到「打包历史」Tab 才加载
-  const { data: historyTasksData, error: historyTasksError } = useQuery({
-    queryKey: ['package-tasks', 'history', taskPage, taskSearch, filterProject],
+  // 构建列表 · 进行中任务：5 秒轮询自动刷新
+  const { data: activeTasksData, error: activeTasksError, isPending: activeTasksPending } = useQuery({
+    queryKey: ['package-tasks', 'board-active', taskSearch, filterProject],
     queryFn: () =>
+      fetchAllPages(
+        (page, pageSize) =>
+          packageApi.getTasks({
+            page,
+            page_size: pageSize,
+            search: taskSearch || undefined,
+            project: filterProject || undefined,
+            status: 'queued,running',
+          }),
+        API_PAGE_SIZE,
+      ),
+    enabled: view === 'list' && activeTab === 'builds',
+    refetchInterval: 5000,
+  });
+
+  // 构建列表 · 已完成任务：与进行中任务合并后按仓库分组统一收纳
+  const {
+    data: historyTasksData,
+    error: historyTasksError,
+    isPending: historyTasksPending,
+    hasNextPage: hasMoreHistory,
+    isFetchingNextPage: loadingMoreHistory,
+    fetchNextPage: fetchNextHistoryPage,
+  } = useInfiniteQuery({
+    queryKey: ['package-tasks', 'board-history', taskSearch, filterProject],
+    queryFn: ({ pageParam }) =>
       packageApi.getTasks({
-        page: taskPage,
-        page_size: TASK_PAGE_SIZE,
+        page: pageParam,
+        page_size: BOARD_TASK_PAGE_SIZE,
         search: taskSearch || undefined,
         project: filterProject || undefined,
         status: 'success,failure,canceled',
       }),
-    enabled: view === 'list' && activeTab === 'running' && taskTab === 'history',
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.page * lastPage.page_size < lastPage.total ? lastPage.page + 1 : undefined,
+    enabled: view === 'list' && activeTab === 'builds',
   });
 
   // 打包配置卡片需要各配置的最新任务（不分状态），仅配置 Tab 下加载
@@ -128,26 +142,38 @@ export default function PackageTaskPage() {
     queryFn: () =>
       packageApi.getTasks({
         page: 1,
-        page_size: TASK_PAGE_SIZE,
+        page_size: BOARD_TASK_PAGE_SIZE,
         project: filterProject || undefined,
       }),
     enabled: view === 'list' && activeTab === 'configs',
   });
 
+  const projects = useMemo(() => projectsData?.results || [], [projectsData]);
   const configs = useMemo(() => configsData?.results || [], [configsData]);
-  const tasksData = taskTab === 'active' ? activeTasksData : historyTasksData;
-  const tasksError = taskTab === 'active' ? activeTasksError : historyTasksError;
-  const tasks = useMemo(() => tasksData?.results || [], [tasksData]);
-  const tasksTotal = tasksData?.total || 0;
-  const activeTasksTotal = activeTasksData?.total || 0;
-  const configLatestTasks = useMemo(() => configLatestTasksData?.results || [], [configLatestTasksData]);
+  const sidebarTasks = useMemo(() => sidebarTasksData?.results || [], [sidebarTasksData]);
 
-  const projectOptions = useMemo(
-    () => (projectsData?.results || []).map((p) => ({ label: p.name, value: p.id })),
-    [projectsData],
+  // 看板当前产品范围下的配置（侧栏选择产品后客户端过滤）
+  const boardConfigs = useMemo(() => {
+    if (!filterProject) return configs;
+    return configs.filter((c) => (c.project_id || c.project) === filterProject);
+  }, [configs, filterProject]);
+
+  const historyTasks = useMemo(
+    () => historyTasksData?.pages.flatMap((page) => page.results) || [],
+    [historyTasksData],
   );
 
-  // 配置历史视图：按配置单独拉取完整任务列表（构建列表分页后不能复用当前页数据）
+  // 运行中 + 已完成合并，按任务 ID 去重并按创建时间倒序
+  const boardTasks = useMemo(() => {
+    return mergePackageTasks(activeTasksData?.results || [], historyTasks);
+  }, [activeTasksData, historyTasks]);
+
+  const tasksError = activeTasksError || historyTasksError;
+  const historyTotal = historyTasksData?.pages[0]?.total || 0;
+  const historyLoaded = historyTasks.length;
+  const configLatestTasks = useMemo(() => configLatestTasksData?.results || [], [configLatestTasksData]);
+
+  // 配置历史视图：按配置单独拉取完整任务列表（看板分页窗口不能复用当前页数据）
   const { data: configTasksData } = useQuery({
     queryKey: ['package-tasks-by-config', selectedConfig?.id],
     queryFn: () => packageApi.getTasks({ config: selectedConfig!.id, page_size: 50 }),
@@ -317,13 +343,11 @@ export default function PackageTaskPage() {
   }, [queryClient]);
 
   // 产品过滤：同时作用于构建列表与打包配置列表，选择结果写入本地缓存下次复用
-  const handleProjectChange = useCallback((value?: string) => {
-    const projectId = value || '';
-    setFilterProject(projectId);
-    setTaskPage(1);
+  const handleProjectChange = useCallback((value: string) => {
+    setFilterProject(value);
     try {
-      if (projectId) {
-        localStorage.setItem(PACKAGE_BOARD_PROJECT_KEY, projectId);
+      if (value) {
+        localStorage.setItem(PACKAGE_BOARD_PROJECT_KEY, value);
       } else {
         localStorage.removeItem(PACKAGE_BOARD_PROJECT_KEY);
       }
@@ -427,7 +451,7 @@ export default function PackageTaskPage() {
     (config: PackageConfig) => {
       setSelectedConfig(config);
       setUserView('detail');
-      const latest = tasks
+      const latest = boardTasks
         .filter((t) => t.config === config.id)
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
       if (latest) {
@@ -438,7 +462,7 @@ export default function PackageTaskPage() {
         setLogText('');
       }
     },
-    [tasks, loadTaskDetail]
+    [boardTasks, loadTaskDetail]
   );
 
   const builds = useMemo(() => {
@@ -451,12 +475,12 @@ export default function PackageTaskPage() {
     const configId = selectedTask?.config;
     const name = selectedTask?.name;
     if (!configId && !name) return [];
-    return tasks
+    return boardTasks
       .filter((t) => (configId && t.config === configId) || (!configId && t.name === name))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [tasks, configTasksData, selectedConfig, selectedTask]);
+  }, [boardTasks, configTasksData, selectedConfig, selectedTask]);
 
-  // 配置历史视图：构建列表当前页可能不含该配置的任务（尤其已结束的），
+  // 配置历史视图：看板当前窗口可能不含该配置的任务（尤其已结束的），
   // 等按配置拉取的完整列表返回后自动选中最新一条，避免误显示「暂无打包记录」。
   // setTimeout 回调内更新状态，与 routeTaskId 加载保持一致（避免 effect 内同步 setState）
   useEffect(() => {
@@ -484,7 +508,7 @@ export default function PackageTaskPage() {
   return (
     <div className="space-y-5">
       {view === 'list' && (
-        <div className="space-y-5 page-fade-in">
+        <div className="page-fade-in space-y-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">打包看板</h1>
@@ -504,109 +528,72 @@ export default function PackageTaskPage() {
             </div>
           </div>
 
-          {/* 构建列表 / 打包配置（收藏的配置由后端默认排序优先展示） */}
-          <div className="space-y-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
-              <button
-                className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${activeTab === 'running' ? 'on' : ''}`}
-                onClick={() => setActiveTab('running')}
-              >
-                <Hammer className="h-3.5 w-3.5" strokeWidth={1.5} />
-                构建列表
-                {activeTasksTotal > 0 && (
-                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{activeTasksTotal}</span>
-                )}
-              </button>
-              <button
-                className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${activeTab === 'configs' ? 'on' : ''}`}
-                onClick={() => setActiveTab('configs')}
-              >
-                <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                打包配置
-              </button>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                placeholder="全部产品"
-                options={projectOptions}
-                value={filterProject || undefined}
-                onChange={handleProjectChange}
-                className="w-[200px]"
-              />
-            </div>
-          </div>
-
-          <PermissionAlert error={configsError || tasksError} className="rounded-xl" />
-
-          {activeTab === 'configs' && (
-            <ConfigList
+          {/* 左侧产品栏 + 右侧看板 */}
+          <div className="grid min-h-0 gap-5 lg:grid-cols-[288px_minmax(0,1fr)]">
+            <BoardSidebar
+              projects={projects}
               configs={configs}
-              tasks={configLatestTasks}
-              loading={configsLoading}
-              onEdit={openEditConfig}
-              onDelete={handleDeleteConfig}
-              onTrigger={openTriggerBuild}
-              onOpenHistory={openConfigHistory}
-              onToggleFavorite={handleToggleFavorite}
+              runningTasks={sidebarTasks}
+              selectedProject={filterProject}
+              onSelectProject={handleProjectChange}
+              onOpenTask={openBuild}
             />
-          )}
-          {activeTab === 'running' && (
-            <div className="space-y-3">
-              {/* 构建列表工具栏：进行中/历史切换 + 搜索 */}
-              <div className="tech-card flex flex-wrap items-center gap-2 rounded-xl px-4 py-2.5">
+
+            <section className="flex min-w-0 flex-col">
+              <div className="flex shrink-0 items-center border-b border-indigo-100 pb-3">
                 <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
                   <button
-                    className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${taskTab === 'active' ? 'on' : ''}`}
-                    onClick={() => { setTaskTab('active'); setTaskPage(1); }}
+                    className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${activeTab === 'builds' ? 'on' : ''}`}
+                    onClick={() => setActiveTab('builds')}
                   >
-                    进行中
-                    {activeTasksTotal > 0 && (
-                      <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">{activeTasksTotal}</span>
-                    )}
+                    <List className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    构建列表
                   </button>
                   <button
-                    className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${taskTab === 'history' ? 'on' : ''}`}
-                    onClick={() => { setTaskTab('history'); setTaskPage(1); }}
+                    className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${activeTab === 'configs' ? 'on' : ''}`}
+                    onClick={() => setActiveTab('configs')}
                   >
-                    打包历史
+                    <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    打包配置
                   </button>
                 </div>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
-                  <input
-                    type="text"
-                    value={taskKeyword}
-                    onChange={(e) => setTaskKeyword(e.target.value)}
-                    placeholder="搜索任务名 / 版本 / 仓库 / 配置 / 触发人"
-                    className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-                <div className="ml-auto text-[12px] text-slate-400">共 {tasksTotal} 条</div>
               </div>
-              <RunningTab
-                tasks={tasks}
-                onOpen={openBuild}
-                canDelete={!!user?.is_superuser || user?.permissions.includes('package.task.delete')}
-                onDelete={handleDeleteTask}
-              />
-              {tasksTotal > TASK_PAGE_SIZE && (
-                <div className="flex justify-end">
-                  <Pagination
-                    current={taskPage}
-                    pageSize={TASK_PAGE_SIZE}
-                    total={tasksTotal}
-                    onChange={setTaskPage}
-                    showSizeChanger={false}
-                    size="small"
+
+              <div className="min-h-0 flex-1 py-4">
+                <PermissionAlert error={configsError || tasksError} className="rounded-xl" />
+
+                {activeTab === 'builds' && (
+                  <BuildBoard
+                    tasks={boardTasks}
+                    configs={boardConfigs}
+                    loading={activeTasksPending || historyTasksPending}
+                    keyword={taskKeyword}
+                    onKeywordChange={setTaskKeyword}
+                    historyTotal={historyTotal}
+                    loadedHistoryCount={historyLoaded}
+                    hasMoreHistory={Boolean(hasMoreHistory)}
+                    loadingMoreHistory={loadingMoreHistory}
+                    onLoadMoreHistory={() => void fetchNextHistoryPage()}
+                    onOpen={openBuild}
+                    canDelete={!!user?.is_superuser || user?.permissions.includes('package.task.delete')}
+                    onDelete={handleDeleteTask}
                   />
-                </div>
-              )}
-            </div>
-          )}
+                )}
+                {activeTab === 'configs' && (
+                  <ConfigList
+                    configs={boardConfigs}
+                    tasks={configLatestTasks}
+                    loading={configsLoading}
+                    onEdit={openEditConfig}
+                    onDelete={handleDeleteConfig}
+                    onTrigger={openTriggerBuild}
+                    onOpenHistory={openConfigHistory}
+                    onNew={openNewConfig}
+                    onToggleFavorite={handleToggleFavorite}
+                  />
+                )}
+              </div>
+            </section>
           </div>
         </div>
       )}
