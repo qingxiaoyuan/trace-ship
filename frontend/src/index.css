@@ -656,10 +656,9 @@ a[href],
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
-  color: #475569;
-  margin-bottom: 6px;
+  color: #334155;
 }
 
 .credential-form-label .req {
@@ -711,6 +710,54 @@ a[href],
 /* AI 脚本预览：点击解释条目时高亮对应行 */
 .ai-script-highlight-line {
   background: rgba(99, 102, 241, 0.16);
+}
+
+/* ============================================================
+   弹窗统一规范（与设计稿 docs/ui/modal-redesign.html 对齐）
+   ============================================================ */
+/* 遮罩：统一深色，覆盖 TsModal 之外的弹窗（modal.confirm、展示型 Modal 等） */
+.ant-modal-mask {
+  background: rgba(11, 16, 32, 0.45) !important;
+}
+
+/* 桌面端容器统一描边与阴影；圆角由 theme token（12px）控制，移动端贴底样式见下方媒体查询 */
+@media (min-width: 768px) {
+  .ant-modal-container {
+    border: 1px solid #E0E7FF;
+    box-shadow: 0 24px 64px -16px rgba(15, 23, 42, 0.35);
+  }
+}
+
+/* 弹窗内表单纵向节奏对齐设计稿：
+   标签 13px / 字重 500 / 距控件 6px；字段间距 20px（末项归零）；控件高 34px */
+.ant-modal-container {
+  --ant-control-height: 34px;
+}
+
+.ant-modal .ant-form-vertical .ant-form-item .ant-form-item-label {
+  padding-bottom: 6px;
+}
+
+.ant-modal .ant-form-vertical .ant-form-item .ant-form-item-label > label {
+  height: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.ant-modal .ant-form-vertical .ant-form-item {
+  margin-bottom: 20px;
+}
+
+.ant-modal .ant-form-vertical .ant-form-item:last-child,
+.ant-modal .ant-form-vertical .ant-form-item.mb-0 {
+  margin-bottom: 0;
+}
+
+/* 校验错误提示与下一个字段保持紧凑 */
+.ant-modal .ant-form-item .ant-form-item-explain {
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 /* ============================================================

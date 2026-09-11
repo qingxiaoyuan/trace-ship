@@ -2,7 +2,7 @@ import { Modal } from 'antd';
 import type { ReactNode, CSSProperties } from 'react';
 
 interface TsModalProps {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   titleIcon?: ReactNode;
   open: boolean;
@@ -10,6 +10,10 @@ interface TsModalProps {
   onOk?: () => void;
   children: ReactNode;
   confirmLoading?: boolean;
+  okText?: string;
+  cancelText?: string;
+  okButtonProps?: { loading?: boolean; disabled?: boolean; danger?: boolean };
+  cancelButtonProps?: { disabled?: boolean };
   width?: number;
   footer?: ReactNode | null;
   bodyStyle?: CSSProperties;
@@ -28,6 +32,10 @@ export function TsModal({
   onOk,
   children,
   confirmLoading,
+  okText,
+  cancelText,
+  okButtonProps,
+  cancelButtonProps,
   width = 560,
   footer,
   bodyStyle,
@@ -37,18 +45,18 @@ export function TsModal({
   afterOpenChange,
 }: TsModalProps) {
   const titleNode = (
-    <div className="flex items-center gap-3">
+    <div className="flex items-start gap-3">
       {titleIcon && (
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg icon-indigo">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F46E5] ring-1 ring-[#E0E7FF]">
           {titleIcon}
         </div>
       )}
-      <div>
-        <h2 className="text-[16px] font-semibold tracking-tight text-slate-900 leading-tight">
+      <div className="min-w-0">
+        <h2 className="text-[17px] font-semibold tracking-tight text-[#0F172A] leading-tight">
           {title}
         </h2>
         {subtitle && (
-          <p className="text-[11px] text-slate-400 leading-tight mt-0.5">{subtitle}</p>
+          <p className="text-[13px] text-[#64748B] leading-snug mt-0.5">{subtitle}</p>
         )}
       </div>
     </div>
@@ -61,6 +69,10 @@ export function TsModal({
       onCancel={onCancel}
       onOk={onOk}
       confirmLoading={confirmLoading}
+      okText={okText}
+      cancelText={cancelText}
+      okButtonProps={okButtonProps}
+      cancelButtonProps={cancelButtonProps}
       width={width}
       centered
       footer={footer}
@@ -75,14 +87,14 @@ export function TsModal({
           // 内边距叠加成双倍，这里清零，由内边距语义分区单独控制
           padding: 0,
           background: '#ffffff',
-          borderRadius: '16px',
-          border: '1px solid rgba(99, 102, 241, 0.12)',
-          boxShadow: '0 24px 70px -12px rgba(30, 27, 75, 0.55)',
+          borderRadius: '12px',
+          border: '1px solid #E0E7FF',
+          boxShadow: '0 24px 64px -16px rgba(15, 23, 42, 0.35)',
           overflow: 'hidden',
         },
         header: {
-          padding: '16px 24px',
-          borderBottom: '1px solid #EEF2FF',
+          padding: '20px 24px 16px',
+          borderBottom: '1px solid #EDEFF7',
           marginBottom: 0,
         },
         body: {
@@ -92,14 +104,14 @@ export function TsModal({
           ...bodyStyle,
         },
         footer: {
-          padding: '16px 24px',
-          borderTop: '1px solid #EEF2FF',
+          padding: '14px 24px',
+          borderTop: '1px solid #EDEFF7',
           marginTop: 0,
-          background: 'rgba(255, 255, 255, 0.5)',
+          background: '#F9FAFD',
           ...footerStyle,
         },
         mask: {
-          backgroundColor: 'rgba(15, 23, 42, 0.45)',
+          backgroundColor: 'rgba(11, 16, 32, 0.45)',
         },
       }}
     >

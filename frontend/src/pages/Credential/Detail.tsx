@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Button, message, Modal, Popconfirm } from "antd";
+import { message, Popconfirm } from "antd";
 import {
   ChevronRight,
   Pencil,

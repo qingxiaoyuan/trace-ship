@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trace Ship · 录入弹窗设计</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body class="bg-[#F6F7FB] text-[#0F172A] antialiased" style="font-family: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;">
+
+  <!-- 背景：模糊的应用界面 -->
+  <div class="fixed inset-0 overflow-hidden" aria-hidden="true">
+    <div class="flex h-full">
+      <div class="hidden md:flex w-60 flex-col gap-1 border-r border-[#E0E7FF] bg-white/70 p-4">
+        <div class="mb-4 flex items-center gap-2 px-2">
+          <div class="h-7 w-7 rounded-lg bg-[#4F46E5]"></div>
+          <span class="text-sm font-semibold tracking-tight">Trace Ship</span>
+        </div>
+        <div class="h-8 rounded-lg bg-[#4F46E5]/10"></div>
+        <div class="h-8 rounded-lg bg-slate-100/70"></div>
+        <div class="h-8 rounded-lg bg-slate-100/70"></div>
+        <div class="h-8 rounded-lg bg-slate-100/70"></div>
+        <div class="h-8 rounded-lg bg-slate-100/70"></div>
+      </div>
+      <div class="flex-1 p-6">
+        <div class="mb-6 h-12 rounded-xl bg-white/80 ring-1 ring-[#E0E7FF]"></div>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="h-28 rounded-xl bg-white/80 ring-1 ring-[#E0E7FF]"></div>
+          <div class="h-28 rounded-xl bg-white/80 ring-1 ring-[#E0E7FF]"></div>
+          <div class="h-28 rounded-xl bg-white/80 ring-1 ring-[#E0E7FF]"></div>
+          <div class="h-28 rounded-xl bg-white/80 ring-1 ring-[#E0E7FF]"></div>
+        </div>
+        <div class="mt-4 h-64 rounded-xl bg-white/80 ring-1 ring-[#E0E7FF]"></div>
+      </div>
+    </div>
+    <div class="absolute inset-0 bg-[#0B1020]/45"></div>
+  </div>
+
+  <!-- 设计展板 -->
+  <main class="relative z-10 mx-auto max-w-6xl px-4 py-10 sm:py-14">
+
+    <div class="mb-10 text-center">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-indigo-200">Trace Ship · Modal System</p>
+      <h1 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight text-white">录入弹窗设计规范</h1>
+      <p class="mt-2 text-sm text-slate-300">分组录入 · 分步引导 · 自定义控件 · 统一的底部操作栏</p>
+    </div>
+
+    <div class="flex flex-col items-center gap-12">
+
+      <!-- ============ 弹窗一：新建发布（复杂分步表单） ============ -->
+      <div class="w-full max-w-[680px] overflow-hidden rounded-xl bg-white shadow-[0_24px_64px_-16px_rgba(15,23,42,0.35)] ring-1 ring-[#E0E7FF]">
+
+        <!-- 头部 -->
+        <div class="flex items-start gap-3 px-6 pt-5 pb-4">
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F46E5] ring-1 ring-[#E0E7FF]">
+            <i data-lucide="rocket" class="h-[18px] w-[18px]"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <h2 class="text-[17px] font-semibold tracking-tight">新建发布</h2>
+            <p class="mt-0.5 text-[13px] text-[#64748B]">选择一个软件仓库发起发布申请，审批通过后自动推送 Tag</p>
+          </div>
+          <button class="rounded-lg p-1.5 text-[#94A3B8] transition hover:bg-slate-100 hover:text-[#334155]">
+            <i data-lucide="x" class="h-4 w-4"></i>
+          </button>
+        </div>
+
+        <!-- 步骤条 -->
+        <div class="border-y border-[#EDEFF7] bg-[#FAFBFE] px-6 py-3.5">
+          <div class="flex items-center">
+            <div class="flex items-center gap-2">
+              <span class="flex h-5 w-5 items-center justify-center rounded-full bg-[#4F46E5] text-white">
+                <i data-lucide="check" class="h-3 w-3"></i>
+              </span>
+              <span class="text-[13px] font-medium text-[#334155]">选择仓库</span>
+            </div>
+            <div class="mx-3 h-px flex-1 bg-[#4F46E5]/30"></div>
+            <div class="flex items-center gap-2">
+              <span class="flex h-5 w-5 items-center justify-center rounded-full bg-white text-[11px] font-semibold text-[#4F46E5] ring-2 ring-[#4F46E5]">2</span>
+              <span class="text-[13px] font-medium text-[#4F46E5]">版本信息</span>
+            </div>
+            <div class="mx-3 h-px flex-1 bg-[#E0E7FF]"></div>
+            <div class="flex items-center gap-2">
+              <span class="flex h-5 w-5 items-center justify-center rounded-full bg-white text-[11px] font-semibold text-[#94A3B8] ring-1 ring-[#E0E7FF]">3</span>
+              <span class="text-[13px] font-medium text-[#94A3B8]">确认提交</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 表单主体 -->
+        <div class="space-y-6 px-6 py-6">
+
+          <!-- 分组：基本信息 -->
+          <section>
+            <p class="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#94A3B8]">基本信息</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">所属产品 <span class="text-[#F43F5E]">*</span></label>
+                <button class="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-left text-sm ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]">
+                  <span class="flex items-center gap-2 text-[#0F172A]">
+                    <i data-lucide="package" class="h-3.5 w-3.5 text-[#94A3B8]"></i>
+                    VDB 数据备份平台
+                  </span>
+                  <i data-lucide="chevrons-up-down" class="h-3.5 w-3.5 text-[#94A3B8]"></i>
+                </button>
+              </div>
+
+              <!-- 下拉展开态示例 -->
+              <div class="relative">
+                <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">软件仓库 <span class="text-[#F43F5E]">*</span></label>
+                <button class="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-left text-sm ring-2 ring-[#4F46E5]">
+                  <span class="flex items-center gap-2 text-[#0F172A]">
+                    <i data-lucide="git-branch" class="h-3.5 w-3.5 text-[#94A3B8]"></i>
+                    vdb-core-server
+                  </span>
+                  <i data-lucide="chevrons-up-down" class="h-3.5 w-3.5 text-[#94A3B8]"></i>
+                </button>
+                <div class="absolute left-0 right-0 top-full z-20 mt-1.5 overflow-hidden rounded-lg bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] ring-1 ring-[#E0E7FF]">
+                  <div class="flex items-center gap-2 border-b border-[#EDEFF7] px-3 py-2">
+                    <i data-lucide="search" class="h-3.5 w-3.5 text-[#94A3B8]"></i>
+                    <span class="text-[13px] text-[#94A3B8]">搜索仓库…</span>
+                  </div>
+                  <div class="py-1">
+                    <div class="flex cursor-pointer items-center justify-between bg-[#EEF2FF] px-3 py-2">
+                      <span class="flex items-center gap-2 text-[13px] font-medium text-[#4F46E5]">
+                        <i data-lucide="git-branch" class="h-3.5 w-3.5"></i> vdb-core-server
+                      </span>
+                      <i data-lucide="check" class="h-3.5 w-3.5 text-[#4F46E5]"></i>
+                    </div>
+                    <div class="flex cursor-pointer items-center justify-between px-3 py-2 transition hover:bg-slate-50">
+                      <span class="flex items-center gap-2 text-[13px] text-[#334155]">
+                        <i data-lucide="git-branch" class="h-3.5 w-3.5 text-[#94A3B8]"></i> vdb-web-console
+                      </span>
+                      <span class="text-[11px] text-[#94A3B8]">v1.8.3</span>
+                    </div>
+                    <div class="flex cursor-pointer items-center justify-between px-3 py-2 transition hover:bg-slate-50">
+                      <span class="flex items-center gap-2 text-[13px] text-[#334155]">
+                        <i data-lucide="git-branch" class="h-3.5 w-3.5 text-[#94A3B8]"></i> vdb-agent-linux
+                      </span>
+                      <span class="text-[11px] text-[#94A3B8]">v3.1.0</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 发布类型：分段卡片 -->
+            <div class="mt-4">
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">发布类型 <span class="text-[#F43F5E]">*</span></label>
+              <div class="grid grid-cols-3 gap-2.5">
+                <button class="group rounded-lg bg-[#EEF2FF] px-3 py-2.5 text-left ring-2 ring-[#4F46E5] transition">
+                  <span class="flex items-center justify-between">
+                    <span class="text-[13px] font-medium text-[#4F46E5]">正式版</span>
+                    <span class="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#4F46E5]">
+                      <span class="h-1.5 w-1.5 rounded-full bg-white"></span>
+                    </span>
+                  </span>
+                  <span class="mt-0.5 block text-[11px] text-[#64748B]">需仓库拥有者审批</span>
+                </button>
+                <button class="group rounded-lg bg-white px-3 py-2.5 text-left ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]">
+                  <span class="flex items-center justify-between">
+                    <span class="text-[13px] font-medium text-[#334155]">候选版 RC</span>
+                    <span class="h-3.5 w-3.5 rounded-full ring-1 ring-[#CBD5E1] transition group-hover:ring-[#6366F1]"></span>
+                  </span>
+                  <span class="mt-0.5 block text-[11px] text-[#94A3B8]">后缀 -rc.N</span>
+                </button>
+                <button class="group rounded-lg bg-white px-3 py-2.5 text-left ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]">
+                  <span class="flex items-center justify-between">
+                    <span class="text-[13px] font-medium text-[#334155]">测试版 Beta</span>
+                    <span class="h-3.5 w-3.5 rounded-full ring-1 ring-[#CBD5E1] transition group-hover:ring-[#6366F1]"></span>
+                  </span>
+                  <span class="mt-0.5 block text-[11px] text-[#94A3B8]">后缀 -beta.N</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <div class="h-px bg-[#EDEFF7]"></div>
+
+          <!-- 分组：版本信息 -->
+          <section>
+            <p class="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#94A3B8]">版本信息</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">版本号 <span class="text-[#F43F5E]">*</span></label>
+                <div class="flex items-center rounded-lg bg-white ring-1 ring-[#E0E7FF] transition focus-within:ring-2 focus-within:ring-[#4F46E5]">
+                  <span class="px-3 py-2 font-mono text-sm text-[#0F172A]">v2.4.0</span>
+                  <span class="ml-auto mr-2 flex items-center gap-1 rounded-full bg-[#EEF2FF] px-2 py-0.5 text-[11px] font-medium text-[#4F46E5]">
+                    <i data-lucide="sparkles" class="h-3 w-3"></i> 自动计算
+                  </span>
+                </div>
+                <p class="mt-1.5 text-[11px] leading-relaxed text-[#94A3B8]">基于最新 Tag <span class="font-mono">v2.3.2</span> 与版本规则生成，可手动调整</p>
+              </div>
+              <div>
+                <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">目标分支 <span class="text-[#F43F5E]">*</span></label>
+                <div class="flex items-center gap-2 rounded-lg bg-white px-3 ring-1 ring-[#E0E7FF] transition focus-within:ring-2 focus-within:ring-[#4F46E5]">
+                  <i data-lucide="git-branch" class="h-3.5 w-3.5 shrink-0 text-[#94A3B8]"></i>
+                  <span class="py-2 font-mono text-sm text-[#0F172A]">release/2.4</span>
+                </div>
+                <p class="mt-1.5 text-[11px] text-[#94A3B8]">需匹配分支规则 <span class="font-mono">release/*</span></p>
+              </div>
+            </div>
+
+            <!-- 发布说明 -->
+            <div class="mt-4">
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">发布说明 <span class="text-[#F43F5E]">*</span></label>
+              <div class="overflow-hidden rounded-lg ring-1 ring-[#E0E7FF] transition focus-within:ring-2 focus-within:ring-[#4F46E5]">
+                <div class="min-h-[88px] bg-white px-3 py-2 text-sm leading-relaxed text-[#334155]">
+                  <p>## 新特性</p>
+                  <p class="text-[#94A3B8]">- 支持麒麟节点远程打包…</p>
+                </div>
+                <div class="flex items-center justify-between border-t border-[#EDEFF7] bg-[#FAFBFE] px-3 py-1.5">
+                  <span class="flex items-center gap-1.5 text-[11px] text-[#94A3B8]">
+                    <i data-lucide="pen-line" class="h-3 w-3"></i> 支持 Markdown，可从变更预览自动生成
+                  </span>
+                  <span class="text-[11px] tabular-nums text-[#94A3B8]">128 / 2000</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 开关 -->
+            <div class="mt-4 flex items-center justify-between rounded-lg bg-[#FAFBFE] px-3.5 py-3 ring-1 ring-[#EDEFF7]">
+              <div class="flex items-center gap-2.5">
+                <i data-lucide="box" class="h-4 w-4 text-[#64748B]"></i>
+                <div>
+                  <p class="text-[13px] font-medium text-[#334155]">发布后自动打包</p>
+                  <p class="text-[11px] text-[#94A3B8]">推 Tag 成功后将触发 2 个已开启自动打包的配置</p>
+                </div>
+              </div>
+              <button class="flex h-5.5 w-10 h-[22px] items-center rounded-full bg-[#4F46E5] px-0.5 transition">
+                <span class="ml-auto h-[18px] w-[18px] rounded-full bg-white shadow-sm"></span>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <!-- 底部操作栏 -->
+        <div class="flex items-center justify-between border-t border-[#EDEFF7] bg-[#F9FAFD] px-6 py-3.5">
+          <span class="hidden sm:flex items-center gap-1.5 text-[11px] text-[#94A3B8]">
+            <kbd class="rounded border border-[#E0E7FF] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[#64748B]">⌘</kbd>
+            <kbd class="rounded border border-[#E0E7FF] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[#64748B]">Enter</kbd>
+            提交审批
+          </span>
+          <div class="flex items-center gap-2.5">
+            <button class="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#64748B] transition hover:bg-slate-100 hover:text-[#334155]">取消</button>
+            <button class="rounded-lg bg-white px-3.5 py-2 text-[13px] font-medium text-[#334155] ring-1 ring-[#E0E7FF] transition hover:bg-slate-50 hover:ring-[#CBD5E1]">保存草稿</button>
+            <button class="flex items-center gap-1.5 rounded-lg bg-[#4F46E5] px-4 py-2 text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(79,70,229,0.3),0_6px_18px_-6px_rgba(99,102,241,0.55)] transition hover:bg-[#6366F1]">
+              提交审批
+              <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ 两个中等弹窗并排 ============ -->
+      <div class="grid w-full max-w-[1080px] grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+
+        <!-- 弹窗二：新增凭证 -->
+        <div class="w-full overflow-hidden rounded-xl bg-white shadow-[0_24px_64px_-16px_rgba(15,23,42,0.35)] ring-1 ring-[#E0E7FF]">
+          <div class="flex items-start gap-3 px-6 pt-5 pb-4">
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F46E5] ring-1 ring-[#E0E7FF]">
+              <i data-lucide="key-round" class="h-[18px] w-[18px]"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <h2 class="text-[17px] font-semibold tracking-tight">新增凭证</h2>
+              <p class="mt-0.5 text-[13px] text-[#64748B]">凭证将加密存储，仅本人可见明文</p>
+            </div>
+            <button class="rounded-lg p-1.5 text-[#94A3B8] transition hover:bg-slate-100 hover:text-[#334155]">
+              <i data-lucide="x" class="h-4 w-4"></i>
+            </button>
+          </div>
+
+          <div class="space-y-5 border-t border-[#EDEFF7] px-6 py-5">
+            <!-- 凭证类型卡片 -->
+            <div>
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">凭证类型</label>
+              <div class="grid grid-cols-3 gap-2.5">
+                <button class="flex flex-col items-center gap-1.5 rounded-lg bg-[#EEF2FF] px-2 py-3 ring-2 ring-[#4F46E5] transition">
+                  <i data-lucide="gitlab" class="h-4.5 w-4.5 h-[18px] w-[18px] text-[#4F46E5]"></i>
+                  <span class="text-[12px] font-medium text-[#4F46E5]">GitLab Token</span>
+                </button>
+                <button class="flex flex-col items-center gap-1.5 rounded-lg bg-white px-2 py-3 ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]">
+                  <i data-lucide="database" class="h-[18px] w-[18px] text-[#64748B]"></i>
+                  <span class="text-[12px] font-medium text-[#334155]">SVN 账号</span>
+                </button>
+                <button class="flex flex-col items-center gap-1.5 rounded-lg bg-white px-2 py-3 ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]">
+                  <i data-lucide="terminal" class="h-[18px] w-[18px] text-[#64748B]"></i>
+                  <span class="text-[12px] font-medium text-[#334155]">SSH 密钥</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">凭证名称 <span class="text-[#F43F5E]">*</span></label>
+              <div class="rounded-lg bg-white px-3 py-2 text-sm text-[#0F172A] ring-1 ring-[#E0E7FF] transition focus-within:ring-2 focus-within:ring-[#4F46E5]">GitLab 主账号</div>
+            </div>
+
+            <div>
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">服务器地址 <span class="text-[#F43F5E]">*</span></label>
+              <div class="flex items-center gap-2 rounded-lg bg-white px-3 ring-1 ring-[#E0E7FF] transition focus-within:ring-2 focus-within:ring-[#4F46E5]">
+                <i data-lucide="link" class="h-3.5 w-3.5 shrink-0 text-[#94A3B8]"></i>
+                <span class="py-2 font-mono text-[13px] text-[#0F172A]">https://gitlab.example.com</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">Access Token <span class="text-[#F43F5E]">*</span></label>
+              <div class="flex items-center gap-2 rounded-lg bg-white px-3 ring-1 ring-[#E0E7FF] transition focus-within:ring-2 focus-within:ring-[#4F46E5]">
+                <span class="flex-1 py-2 font-mono text-[13px] tracking-wider text-[#334155]">glpat-••••••••••••</span>
+                <button class="text-[#94A3B8] transition hover:text-[#334155]">
+                  <i data-lucide="eye" class="h-3.5 w-3.5"></i>
+                </button>
+              </div>
+              <p class="mt-1.5 flex items-center gap-1 text-[11px] text-[#94A3B8]">
+                <i data-lucide="shield-check" class="h-3 w-3 text-[#10B981]"></i>
+                使用 AES 加密存储，接口返回时自动脱敏
+              </p>
+            </div>
+
+            <div class="flex items-center justify-between rounded-lg bg-[#FAFBFE] px-3.5 py-3 ring-1 ring-[#EDEFF7]">
+              <p class="text-[13px] font-medium text-[#334155]">设为该服务器默认凭证</p>
+              <button class="flex h-[22px] w-10 items-center rounded-full bg-[#CBD5E1] px-0.5 transition">
+                <span class="h-[18px] w-[18px] rounded-full bg-white shadow-sm"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2.5 border-t border-[#EDEFF7] bg-[#F9FAFD] px-6 py-3.5">
+            <button class="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#64748B] transition hover:bg-slate-100 hover:text-[#334155]">取消</button>
+            <button class="flex items-center gap-1.5 rounded-lg bg-[#4F46E5] px-4 py-2 text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(79,70,229,0.3),0_6px_18px_-6px_rgba(99,102,241,0.55)] transition hover:bg-[#6366F1]">
+              <i data-lucide="shield-check" class="h-3.5 w-3.5"></i>
+              验证并保存
+            </button>
+          </div>
+        </div>
+
+        <!-- 弹窗三：添加成员 -->
+        <div class="w-full overflow-hidden rounded-xl bg-white shadow-[0_24px_64px_-16px_rgba(15,23,42,0.35)] ring-1 ring-[#E0E7FF]">
+          <div class="flex items-start gap-3 px-6 pt-5 pb-4">
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F46E5] ring-1 ring-[#E0E7FF]">
+              <i data-lucide="user-plus" class="h-[18px] w-[18px]"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <h2 class="text-[17px] font-semibold tracking-tight">添加成员</h2>
+              <p class="mt-0.5 text-[13px] text-[#64748B]">将成员加入「VDB 数据备份平台」并授予角色</p>
+            </div>
+            <button class="rounded-lg p-1.5 text-[#94A3B8] transition hover:bg-slate-100 hover:text-[#334155]">
+              <i data-lucide="x" class="h-4 w-4"></i>
+            </button>
+          </div>
+
+          <div class="space-y-5 border-t border-[#EDEFF7] px-6 py-5">
+            <!-- 搜索选择 -->
+            <div>
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">选择用户 <span class="text-[#F43F5E]">*</span></label>
+              <div class="flex items-center gap-2 rounded-lg bg-white px-3 ring-1 ring-[#E0E7FF] transition focus-within:ring-2 focus-within:ring-[#4F46E5]">
+                <i data-lucide="search" class="h-3.5 w-3.5 shrink-0 text-[#94A3B8]"></i>
+                <span class="flex-1 py-2 text-sm text-[#94A3B8]">搜索姓名或域账号…</span>
+                <kbd class="rounded border border-[#E0E7FF] bg-[#FAFBFE] px-1.5 py-0.5 font-mono text-[10px] text-[#94A3B8]">⌘K</kbd>
+              </div>
+              <!-- 已选成员 -->
+              <div class="mt-2 flex flex-wrap gap-2">
+                <span class="flex items-center gap-1.5 rounded-full bg-[#EEF2FF] py-1 pl-1 pr-2 ring-1 ring-[#4F46E5]/20">
+                  <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=48&h=48&fit=crop&crop=face" alt="" class="h-5 w-5 rounded-full object-cover" />
+                  <span class="text-[12px] font-medium text-[#3730A3]">林晓雨</span>
+                  <button class="text-[#6366F1] transition hover:text-[#3730A3]">
+                    <i data-lucide="x" class="h-3 w-3"></i>
+                  </button>
+                </span>
+                <span class="flex items-center gap-1.5 rounded-full bg-[#EEF2FF] py-1 pl-1 pr-2 ring-1 ring-[#4F46E5]/20">
+                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=48&h=48&fit=crop&crop=face" alt="" class="h-5 w-5 rounded-full object-cover" />
+                  <span class="text-[12px] font-medium text-[#3730A3]">陈远航</span>
+                  <button class="text-[#6366F1] transition hover:text-[#3730A3]">
+                    <i data-lucide="x" class="h-3 w-3"></i>
+                  </button>
+                </span>
+              </div>
+            </div>
+
+            <!-- 角色单选列表 -->
+            <div>
+              <label class="mb-1.5 block text-[13px] font-medium text-[#334155]">授予角色 <span class="text-[#F43F5E]">*</span></label>
+              <div class="space-y-2">
+                <button class="flex w-full items-start gap-3 rounded-lg bg-[#EEF2FF] px-3.5 py-3 text-left ring-2 ring-[#4F46E5] transition">
+                  <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#4F46E5]">
+                    <span class="h-1.5 w-1.5 rounded-full bg-white"></span>
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <span class="flex items-center gap-2">
+                      <span class="text-[13px] font-medium text-[#0F172A]">开发人员</span>
+                      <span class="rounded-full bg-[#4F46E5]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#4F46E5]">常用</span>
+                    </span>
+                    <span class="mt-0.5 block text-[11px] leading-relaxed text-[#64748B]">可同步提交、发起发布申请与打包任务</span>
+                  </span>
+                </button>
+                <button class="group flex w-full items-start gap-3 rounded-lg bg-white px-3.5 py-3 text-left ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]">
+                  <span class="mt-0.5 h-4 w-4 shrink-0 rounded-full ring-1 ring-[#CBD5E1] transition group-hover:ring-[#6366F1]"></span>
+                  <span class="min-w-0 flex-1">
+                    <span class="text-[13px] font-medium text-[#334155]">测试人员</span>
+                    <span class="mt-0.5 block text-[11px] leading-relaxed text-[#94A3B8]">可查看发布与打包记录，参与测试验证</span>
+                  </span>
+                </button>
+                <button class="group flex w-full items-start gap-3 rounded-lg bg-white px-3.5 py-3 text-left ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]">
+                  <span class="mt-0.5 h-4 w-4 shrink-0 rounded-full ring-1 ring-[#CBD5E1] transition group-hover:ring-[#6366F1]"></span>
+                  <span class="min-w-0 flex-1">
+                    <span class="text-[13px] font-medium text-[#334155]">审核人员</span>
+                    <span class="mt-0.5 block text-[11px] leading-relaxed text-[#94A3B8]">可处理审批任务，不可发起发布</span>
+                  </span>
+                </button>
+              </div>
+              <p class="mt-2 flex items-center gap-1 text-[11px] text-[#94A3B8]">
+                <i data-lucide="info" class="h-3 w-3"></i>
+                当前角色仅可授予开发人员 / 测试人员
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between border-t border-[#EDEFF7] bg-[#F9FAFD] px-6 py-3.5">
+            <span class="text-[11px] text-[#94A3B8]">已选择 <span class="font-semibold text-[#4F46E5]">2</span> 名成员</span>
+            <div class="flex items-center gap-2.5">
+              <button class="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#64748B] transition hover:bg-slate-100 hover:text-[#334155]">取消</button>
+              <button class="flex items-center gap-1.5 rounded-lg bg-[#4F46E5] px-4 py-2 text-[13px] font-medium text-white shadow-[0_1px_2px_rgba(79,70,229,0.3),0_6px_18px_-6px_rgba(99,102,241,0.55)] transition hover:bg-[#6366F1]">
+                <i data-lucide="user-plus" class="h-3.5 w-3.5"></i>
+                添加成员
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 规范摘要 -->
+      <div class="w-full max-w-[1080px] rounded-xl bg-white/95 px-6 py-5 ring-1 ring-[#E0E7FF] backdrop-blur">
+        <p class="mb-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#94A3B8]">弹窗设计令牌</p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 text-[12px]">
+          <div>
+            <p class="mb-1.5 text-[#64748B]">圆角</p>
+            <p class="font-mono text-[#0F172A]">容器 12px · 控件 8px</p>
+          </div>
+          <div>
+            <p class="mb-1.5 text-[#64748B]">描边</p>
+            <div class="flex items-center gap-2">
+              <span class="h-4 w-4 rounded ring-1 ring-[#E0E7FF] bg-white"></span>
+              <p class="font-mono text-[#0F172A]">#E0E7FF</p>
+            </div>
+          </div>
+          <div>
+            <p class="mb-1.5 text-[#64748B]">主按钮 / 聚焦态</p>
+            <div class="flex items-center gap-2">
+              <span class="h-4 w-4 rounded bg-[#4F46E5]"></span>
+              <p class="font-mono text-[#0F172A]">#4F46E5</p>
+            </div>
+          </div>
+          <div>
+            <p class="mb-1.5 text-[#64748B]">底部操作栏</p>
+            <p class="font-mono text-[#0F172A]">#F9FAFD · 主右次左</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    lucide.createIcons({ attrs: { 'stroke-width': 1.5 } });
+  </script>
+</body>
+</html>
