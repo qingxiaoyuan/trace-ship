@@ -107,6 +107,33 @@ def test_user_list_open_to_all_users():
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("keyword", "matched_username"),
+    [
+        ("target_account", "target_account"),
+        ("张三", "zhangsan"),
+    ],
+)
+def test_user_list_keyword_matches_username_and_nickname(keyword, matched_username):
+    """
+    测试用户列表关键字同时匹配用户名与姓名
+
+    期望：传入 keyword 后仅返回用户名或姓名包含关键字的用户。
+    """
+    _make_user("target_account", nickname="目标账号")
+    _make_user("zhangsan", nickname="研发张三")
+    viewer = _make_user("keyword_viewer", nickname="查询人员")
+    client = APIClient()
+    client.force_authenticate(user=viewer)
+
+    response = client.get("/api/account/users/", {"keyword": keyword})
+
+    assert response.status_code == 200
+    assert response.data["data"]["total"] == 1
+    assert response.data["data"]["results"][0]["username"] == matched_username
+
+
+@pytest.mark.django_db
 def test_user_retrieve_self_returns_full_fields():
     """
     测试普通用户查看自己详情仍返回完整字段
