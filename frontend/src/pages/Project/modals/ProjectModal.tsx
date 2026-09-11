@@ -38,7 +38,7 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
 
   return (
     <TsModal
-      title={project ? '编辑项目' : '新增项目'}
+      title={project ? '编辑产品' : '新增产品'}
       open={open}
       onCancel={handleCancel}
       footerStyle={{ background: 'transparent' }}
@@ -65,33 +65,31 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
         form={form}
         layout="vertical"
         initialValues={
-          project || {
-            status: 'active',
-          }
+          project || { status: 'active' }
         }
       >
         <FormSection title="基本信息">
           <Form.Item
             name="name"
-            label="项目名称"
-            rules={[{ required: true, message: '请输入项目名称' }]}
+            label="产品名称"
+            rules={[{ required: true, message: '请输入产品名称' }]}
           >
-            <Input placeholder="请输入项目名称" />
+            <Input placeholder="请输入产品名称" />
           </Form.Item>
 
           <Form.Item
             name="leader_id"
-            label="项目负责人"
-            rules={[{ required: true, message: '请选择项目负责人' }]}
+            label="产品负责人"
+            rules={[{ required: true, message: '请选择产品负责人' }]}
           >
             <Select
-              placeholder="请选择项目负责人"
+              placeholder="请选择产品负责人"
               options={users.map((u) => ({ label: u.nickname || u.username, value: u.id }))}
             />
           </Form.Item>
 
-          <Form.Item name="description" label="项目描述">
-            <Input.TextArea rows={3} placeholder="请输入项目描述" />
+          <Form.Item name="description" label="产品描述">
+            <Input.TextArea rows={3} placeholder="请输入产品描述" />
           </Form.Item>
 
           <Form.Item name="status" label="状态">

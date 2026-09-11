@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { message, Popconfirm } from "antd";
+import { Button, message, Modal, Popconfirm } from "antd";
 import {
   ChevronRight,
   Pencil,
@@ -18,14 +18,14 @@ import {
 } from "lucide-react";
 import { credentialApi } from "@/api/credential";
 import { repositoryApi } from "@/api/repository";
-import type { Credential, Repository } from "@/types";
+import type { Credential, CredentialUsageLog, Repository } from "@/types";
 import { CredentialIcon } from "./components/CredentialIcon";
 import { StatusBadge } from "./components/StatusBadge";
 import { CredentialModal } from "./components/CredentialModal";
 import { credentialTypeMap, credentialShareMap, getCredentialShare } from "./constants";
 import { formatDate, fromNow, getCredentialStatus } from "./utils";
 
-type TabKey = "info" | "usage" | "resources";
+type TabKey = "info" | "loans" | "usage" | "resources";
 
 const usageIconMap: Record<
   string,
@@ -79,7 +79,7 @@ export default function CredentialDetail() {
     queryKey: ["credential-repositories", id],
     queryFn: () =>
       repositoryApi.getRepositories({ credential: id || "", page_size: 1000 }),
-    enabled: !!id && activeTab === "resources",
+    enabled: !!id && (activeTab === "resources" || activeTab === "loans"),
   });
 
   const handleSave = async (values: Partial<Credential>) => {
@@ -135,21 +135,12 @@ export default function CredentialDetail() {
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "info", label: "凭证信息" },
+    { key: "loans", label: "产品授权" },
     { key: "usage", label: "使用记录" },
     { key: "resources", label: "关联资源" },
   ];
 
-  const usageRecords = (usageData?.results || []) as {
-    id: string;
-    module: string;
-    action: string;
-    description?: string;
-    detail?: { module?: string; source_id?: string };
-    used_at?: string;
-    result?: string;
-    created_at?: string;
-  }[];
-
+  const usageRecords = (usageData?.results || []) as CredentialUsageLog[];
   const relatedRepos = (repoData?.results || []) as Repository[];
   const relatedCount = relatedRepos.length;
 
@@ -386,8 +377,7 @@ export default function CredentialDetail() {
                 </div>
               ) : (
                 usageRecords.map((record) => {
-                  const Icon =
-                    usageIconMap[record.module] || usageIconMap.default;
+                  const Icon = usageIconMap.repository;
                   const resultCfg =
                     usageResultConfig[record.result || "success"];
                   return (
@@ -400,14 +390,14 @@ export default function CredentialDetail() {
                       </div>
                       <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium text-slate-900 truncate">
-                    {record.detail?.module || record.module} · {record.action}
+                    {record.product_name || "兼容流程"} · {record.operation}
                   </div>
                   <div className="text-[11px] text-slate-400 truncate">
-                    {record.description || `${credential.name}`}
+                    {record.repository_name || credential.name}
                   </div>
                       </div>
                       <span className="text-[11px] text-slate-400 whitespace-nowrap">
-                        {fromNow(record.created_at || record.used_at)}
+                        {fromNow(record.created_at)}
                       </span>
                       <span
                         className={[
@@ -422,6 +412,32 @@ export default function CredentialDetail() {
                     </div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {activeTab === "loans" && (
+            <div className="space-y-3">
+              <p className="text-[12px] leading-5 text-slate-500">
+                产品使用本凭证的方式是：仓库所有者加入该产品成员，再把绑定了本凭证的仓库关联进产品。多个产品都可以对同一仓库发版本。
+              </p>
+              {relatedRepos.length === 0 ? (
+                <div className="rounded-lg bg-slate-50 p-4 text-center text-[13px] text-slate-400">
+                  该凭证尚未绑定仓库
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {relatedRepos.map((repo) => (
+                    <div key={repo.id} className="rounded-lg border border-indigo-100 p-3 text-[12px]">
+                      <div className="font-medium text-slate-800">{repo.name}</div>
+                      <div className="mt-1 text-slate-500">
+                        {(repo.used_by_products || []).length
+                          ? `已授权产品：${(repo.used_by_products || []).map((item) => item.product_name).join("、")}`
+                          : "尚未被任何产品关联"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

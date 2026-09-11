@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Search } from 'lucide-react';
 
 export interface DropdownOption {
   value: string;
@@ -16,6 +16,9 @@ interface DropdownProps {
   className?: string;
   popClassName?: string;
   width?: number;
+  /** 打开后显示搜索框，按 label 过滤选项 */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }
 
 /** 轻量自定义下拉，浮层通过 Portal 渲染到 body，避免被父容器 overflow 裁切 */
@@ -27,11 +30,15 @@ export function Dropdown({
   className = '',
   popClassName = '',
   width,
+  searchable = false,
+  searchPlaceholder = '搜索',
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // 计算浮层位置：贴合触发器底部
@@ -74,7 +81,23 @@ export function Dropdown({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) {
+      setKeyword('');
+      return;
+    }
+    if (searchable) {
+      const timer = window.setTimeout(() => searchRef.current?.focus(), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [open, searchable]);
+
   const selected = options.find((o) => o.value === value);
+  const visibleOptions = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    if (!searchable || !q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [keyword, options, searchable]);
 
   return (
     <div ref={wrapRef} className={`relative ${className}`} style={width ? { width } : undefined}>
@@ -96,17 +119,30 @@ export function Dropdown({
       {open && coords && createPortal(
         <div
           ref={popRef}
-          className={`fixed z-[9999] max-h-[240px] overflow-y-auto rounded-[10px] border border-indigo-100 bg-white p-1.5 shadow-[0_12px_32px_-8px_rgba(79,70,229,.22)] scrollbar-thin ${popClassName}`}
+          className={`fixed z-[9999] overflow-hidden rounded-[10px] border border-indigo-100 bg-white p-1.5 shadow-[0_12px_32px_-8px_rgba(79,70,229,.22)] ${popClassName}`}
           style={{
             top: coords.top - window.scrollY,
             left: coords.left - window.scrollX,
             width: coords.width,
           }}
         >
-          {options.length === 0 ? (
-            <div className="px-2.5 py-2 text-center text-[12px] text-slate-400">无选项</div>
+          {searchable && (
+            <div className="mb-1 flex items-center gap-1.5 rounded-md border border-indigo-100 bg-slate-50 px-2 py-1.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" style={{ strokeWidth: 1.5 }} />
+              <input
+                ref={searchRef}
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-slate-700 outline-none placeholder:text-slate-400"
+              />
+            </div>
+          )}
+          <div className="max-h-[200px] overflow-y-auto scrollbar-thin">
+          {visibleOptions.length === 0 ? (
+            <div className="px-2.5 py-2 text-center text-[12px] text-slate-400">{options.length === 0 ? '无选项' : '无匹配结果'}</div>
           ) : (
-            options.map((o) => {
+            visibleOptions.map((o) => {
               const active = o.value === value;
               return (
                 <button
@@ -124,6 +160,7 @@ export function Dropdown({
               );
             })
           )}
+          </div>
         </div>,
         document.body
       )}

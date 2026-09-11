@@ -393,7 +393,7 @@ export default function Dashboard() {
       const prefixed = /^[=+\-@]/.test(text) ? `'${text}` : text;
       return `"${prefixed.replace(/"/g, '""')}"`;
     };
-    const header = ['版本', '项目', '仓库', '类型', '状态', '发布人', '创建时间'];
+    const header = ['版本', '产品', '仓库', '类型', '状态', '发布人', '创建时间'];
     const csv = [
       header,
       ...rows.map((r) => [

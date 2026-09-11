@@ -43,7 +43,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
     enabled: !!projectId,
   });
 
-  // 项目内操作权限：配置增删改需 manager，触发打包需 tester/developer/manager
+  // 产品内操作权限：配置增删改需 manager，触发打包需 tester/developer/manager
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),

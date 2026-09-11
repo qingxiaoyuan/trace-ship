@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, ChevronRight, GitBranch, Loader, Plus, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, ExternalLink, GitBranch, Loader, Plus, XCircle } from 'lucide-react';
 import dayjs from 'dayjs';
 import { releaseApi } from '@/api/release';
 import { getAvatarColor } from '@/utils/avatar';
@@ -36,6 +36,19 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
         <span className="shrink-0 text-slate-300">/</span>
         <span className="truncate font-mono text-[10px] text-slate-400 max-md:text-xs">{release.repository_name || '-'}</span>
       </div>
+      {release.redmine_url ? (
+        <a
+          href={release.redmine_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={release.redmine_url}
+          onClick={(event) => event.stopPropagation()}
+          className="mt-2 flex min-h-7 items-center gap-1.5 rounded-md bg-indigo-50/70 px-2 text-[10px] text-indigo-600 transition-colors hover:bg-indigo-100"
+        >
+          <ExternalLink className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+          <span className="truncate font-mono">{release.redmine_url}</span>
+        </a>
+      ) : null}
       <div className="mt-2 flex items-center gap-1.5">
         <span
           className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-semibold text-white"
@@ -124,7 +137,7 @@ export function ReleaseList() {
     <div className="tech-card overflow-hidden rounded-xl">
       <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
         <div className="col-span-2">版本</div>
-        <div className="col-span-3">项目 / 仓库</div>
+        <div className="col-span-3">产品 / 仓库</div>
         <div className="col-span-2">类型</div>
         <div className="col-span-2">发布人</div>
         <div className="col-span-2">状态</div>
@@ -155,8 +168,23 @@ export function ReleaseList() {
               >
                 {/* 桌面端网格行 */}
                 <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
-                  <div className="col-span-2 font-mono text-[13px] font-medium text-slate-900">
-                    {release.version}
+                  <div className="col-span-2 min-w-0">
+                    <div className="truncate font-mono text-[13px] font-medium text-slate-900">
+                      {release.version}
+                    </div>
+                    {release.redmine_url ? (
+                      <a
+                        href={release.redmine_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={release.redmine_url}
+                        onClick={(event) => event.stopPropagation()}
+                        className="mt-1 inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800"
+                      >
+                        <ExternalLink className="h-3 w-3" strokeWidth={1.5} />
+                        Redmine
+                      </a>
+                    ) : null}
                   </div>
                   <div className="col-span-3 flex items-center gap-1 text-[12px] text-slate-600">
                     <span className="truncate">{release.project_name || '-'}</span>
@@ -216,6 +244,19 @@ export function ReleaseList() {
                     <span className="shrink-0 text-slate-200">|</span>
                     <span className="truncate font-mono">{release.repository_name || '-'}</span>
                   </div>
+                  {release.redmine_url ? (
+                    <a
+                      href={release.redmine_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={release.redmine_url}
+                      onClick={(event) => event.stopPropagation()}
+                      className="mt-2 flex min-h-9 items-center gap-1.5 rounded-lg bg-indigo-50/70 px-2.5 text-[11px] text-indigo-600"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="truncate font-mono">{release.redmine_url}</span>
+                    </a>
+                  ) : null}
                   <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
                     <div className="flex items-center gap-2">
                       <span

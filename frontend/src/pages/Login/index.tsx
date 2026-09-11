@@ -145,7 +145,7 @@ export default function Login() {
                 <span className="text-gradient">发布可追溯</span>
               </h1>
               <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
-                集成 Git / SVN 与内置打包，统一管理项目发布全流程。
+                集成 Git / SVN 与内置打包，统一管理产品关联仓库的发布全流程。
                 提交规范审查、自动化打包、多级审批、一键推 Tag，让版本交付安全高效。
               </p>
 

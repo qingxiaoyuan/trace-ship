@@ -30,7 +30,7 @@ const page = 1;
 const TASK_PAGE_SIZE = 15;
 /** 大日志首屏只加载末尾字节数 */
 const LOG_TAIL_BYTES = 256 * 1024;
-/** 打包看板「项目过滤」本地缓存 key（选择过项目后下次进入自动复用） */
+/** 打包看板「产品过滤」本地缓存 key（选择过产品后下次进入自动复用） */
 const PACKAGE_BOARD_PROJECT_KEY = 'trace-ship.package-board.project';
 
 type TabKey = 'running' | 'configs';
@@ -57,7 +57,7 @@ export default function PackageTaskPage() {
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [triggerConfig, setTriggerConfig] = useState<PackageTriggerTarget | null>(null);
 
-  // 构建列表 / 打包配置列表：分页 / 搜索 / 项目过滤（项目选择写入本地缓存，下次复用）
+  // 构建列表 / 打包配置列表：分页 / 搜索 / 产品过滤（产品选择写入本地缓存，下次复用）
   const [taskPage, setTaskPage] = useState(1);
   const [taskKeyword, setTaskKeyword] = useState('');
   const [taskSearch, setTaskSearch] = useState('');
@@ -316,7 +316,7 @@ export default function PackageTaskPage() {
     queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
   }, [queryClient]);
 
-  // 项目过滤：同时作用于构建列表与打包配置列表，选择结果写入本地缓存下次复用
+  // 产品过滤：同时作用于构建列表与打包配置列表，选择结果写入本地缓存下次复用
   const handleProjectChange = useCallback((value?: string) => {
     const projectId = value || '';
     setFilterProject(projectId);
@@ -531,7 +531,7 @@ export default function PackageTaskPage() {
                 allowClear
                 showSearch
                 optionFilterProp="label"
-                placeholder="全部项目"
+                placeholder="全部产品"
                 options={projectOptions}
                 value={filterProject || undefined}
                 onChange={handleProjectChange}

@@ -21,7 +21,7 @@ export interface Option {
   value: string;
 }
 
-/** 步骤 1：选择项目与分支 */
+/** 步骤 1：选择产品与分支 */
 export interface Step1BranchProps {
   form: FormInstance;
   projectOptions: Option[];

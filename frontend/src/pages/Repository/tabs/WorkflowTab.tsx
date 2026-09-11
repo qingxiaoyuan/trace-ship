@@ -17,6 +17,7 @@ import {
   GitPullRequest,
   FlaskConical,
   Crown,
+  FolderGit2,
   ShieldCheck,
   User,
   UserCog,
@@ -30,16 +31,16 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { workflowApi } from '@/api/workflow';
 import { accountApi } from '@/api/account';
 import { useAppMessage } from '@/hooks/useAppMessage';
-import { useProjectRole } from '@/hooks/useProjectRole';
+import { useAuthStore } from '@/stores/authStore';
 import type {
-  Project,
+  Repository,
   WorkflowDefinition,
   WorkflowNodeConfig,
   WorkflowApproverConfig,
 } from '@/types';
 
 interface WorkflowTabProps {
-  project: Project;
+  repository: Repository;
 }
 
 type FlowType = 'formal' | 'rc' | 'beta';
@@ -52,18 +53,19 @@ const FLOW_META: Record<FlowType, {
   desc: string;
   title: string;
 }> = {
-  formal: { name: '正式发布审批', icon: Rocket, iconCls: 'icon-emerald', desc: '无前缀 Tag', title: '审批链 · 正式发布' },
-  rc: { name: 'RC 发布审批', icon: GitPullRequest, iconCls: 'icon-cyan', desc: 'Tag 自动加 rc- 前缀', title: '审批链 · RC 发布' },
-  beta: { name: 'Beta 发布审批', icon: FlaskConical, iconCls: 'icon-amber', desc: 'Tag 自动加 beta- 前缀', title: '审批链 · Beta 发布' },
+  formal: { name: '正式发布审批', icon: Rocket, iconCls: 'icon-emerald', desc: '默认需审批', title: '审批链 · 正式发布' },
+  rc: { name: 'RC 发布审批', icon: GitPullRequest, iconCls: 'icon-cyan', desc: '默认无须审批', title: '审批链 · RC 发布' },
+  beta: { name: 'Beta 发布审批', icon: FlaskConical, iconCls: 'icon-amber', desc: '默认无须审批', title: '审批链 · Beta 发布' },
 };
 
 const FLOW_ORDER: FlowType[] = ['formal', 'rc', 'beta'];
 
-/** 审批人类型元信息 */
+/** 审批人类型元信息（新增仅仓库拥有者 / 指定人员；其余仅用于展示存量配置） */
 const APPROVER_META: Record<string, { label: string; icon: typeof Crown; cls: string }> = {
-  leader: { label: '项目负责人', icon: Crown, cls: 'icon-violet' },
+  repo_owner: { label: '仓库拥有者', icon: FolderGit2, cls: 'icon-indigo' },
+  user: { label: '指定人员', icon: User, cls: 'icon-cyan' },
+  leader: { label: '产品负责人', icon: Crown, cls: 'icon-violet' },
   role: { label: '指定角色', icon: ShieldCheck, cls: 'icon-indigo' },
-  user: { label: '指定用户', icon: User, cls: 'icon-cyan' },
   self: { label: '发起人自己', icon: UserCog, cls: 'icon-emerald' },
 };
 
@@ -74,24 +76,14 @@ const MODE_META: Record<'any' | 'all', { label: string; icon: typeof UserCheck; 
 };
 
 const APPROVER_TYPE_OPTIONS = [
-  { label: '项目负责人 (leader)', value: 'leader' },
-  { label: '指定角色', value: 'role' },
-  { label: '指定用户', value: 'user' },
-  { label: '发起人自己 (self)', value: 'self' },
-];
-
-const ROLE_OPTIONS = [
-  { label: '开发人员', value: 'developer' },
-  { label: '测试人员', value: 'tester' },
-  { label: '项目管理员', value: 'manager' },
-  { label: '审核人', value: 'auditor' },
-  { label: '只读人员', value: 'viewer' },
+  { label: '仓库拥有者', value: 'repo_owner' },
+  { label: '指定人员', value: 'user' },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
   developer: '开发人员',
   tester: '测试人员',
-  manager: '项目管理员',
+  manager: '产品管理员',
   auditor: '审核人',
   viewer: '只读人员',
 };
@@ -103,16 +95,18 @@ function genNodeId() {
 
 /** 默认节点 */
 function defaultNode(): WorkflowNodeConfig {
-  return { node_id: genNodeId(), node_name: '新建审批节点', mode: 'any', approvers: [{ type: 'leader' }] };
+  return { node_id: genNodeId(), node_name: '新建审批节点', mode: 'any', approvers: [{ type: 'repo_owner' }] };
 }
 
 /** 审批人展示文案 */
 function approverDisplay(apr: WorkflowApproverConfig, usersData?: { results: { id: string; nickname?: string; username: string }[] }) {
-  const meta = APPROVER_META[apr.type] || APPROVER_META.leader;
+  const meta = APPROVER_META[apr.type] || APPROVER_META.user;
   let label = meta.label;
   let sub = '';
-  if (apr.type === 'leader') {
-    sub = '系统自动解析为项目 leader';
+  if (apr.type === 'repo_owner') {
+    sub = '系统自动解析为仓库创建者';
+  } else if (apr.type === 'leader') {
+    sub = '系统自动解析为产品负责人';
   } else if (apr.type === 'self') {
     sub = '发起人自己 · self';
   } else if (apr.type === 'role') {
@@ -120,25 +114,25 @@ function approverDisplay(apr: WorkflowApproverConfig, usersData?: { results: { i
     sub = `指定角色 · ${apr.role || ''}`;
   } else if (apr.type === 'user') {
     const u = usersData?.results.find((x) => x.id === apr.user_id);
-    label = u ? (u.nickname || u.username) : '未选择用户';
-    sub = `指定用户 · ${u?.username || apr.user_id || ''}`;
+    label = u ? (u.nickname || u.username) : '未选择人员';
+    sub = `指定人员 · ${u?.username || apr.user_id || ''}`;
   }
   return { label, sub, icon: meta.icon, cls: meta.cls };
 }
 
-export function WorkflowTab({ project }: WorkflowTabProps) {
+export function WorkflowTab({ repository }: WorkflowTabProps) {
   const queryClient = useQueryClient();
   const { message } = useAppMessage();
+  const user = useAuthStore((state) => state.user);
 
-  // 审批节点编辑：manager 成员角色（与后端 IsProjectManager 对齐）
-  const { canManage } = useProjectRole(project);
+  // 仅仓库创建者（及超管）可编辑审批节点
+  const canManage = !!user && (user.is_superuser || user.id === repository.created_by);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingDef, setEditingDef] = useState<WorkflowDefinition | null>(null);
   const [preview, setPreview] = useState<WorkflowDefinition | null>(null);
   const [selIdx, setSelIdx] = useState(0);
-  const [pendingAprType, setPendingAprType] = useState<string>('leader');
-  const [pendingAprRole, setPendingAprRole] = useState<string>('');
+  const [pendingAprType, setPendingAprType] = useState<string>('repo_owner');
   const [pendingAprUserId, setPendingAprUserId] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
@@ -148,9 +142,9 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
   const [origNodes, setOrigNodes] = useState<WorkflowNodeConfig[]>([]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['workflow-definitions-tab', project.id],
-    queryFn: () => workflowApi.getDefinitions({ project: project.id, page_size: 1000 }),
-    enabled: !!project.id,
+    queryKey: ['workflow-definitions-tab', repository.id],
+    queryFn: () => workflowApi.getDefinitions({ repository: repository.id, page_size: 1000 }),
+    enabled: !!repository.id,
   });
 
   const { data: usersData } = useQuery({
@@ -162,9 +156,8 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
  /** 切换节点时清空待添加审批人状态，避免右侧表单项停留在上一节点 */
   const selectNode = (idx: number) => {
     setSelIdx(idx);
-    setPendingAprRole('');
     setPendingAprUserId('');
-    setPendingAprType('leader');
+    setPendingAprType('repo_owner');
   };
 
   const sortedData = useMemo(
@@ -231,17 +224,13 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
   /** 添加审批人 */
   const addApprover = () => {
     const apr: WorkflowApproverConfig = { type: pendingAprType as WorkflowApproverConfig['type'] };
-    if (pendingAprType === 'role') {
-      if (!pendingAprRole) { message.error('请选择角色'); return; }
-      apr.role = pendingAprRole;
-    } else if (pendingAprType === 'user') {
-      if (!pendingAprUserId) { message.error('请选择用户'); return; }
+    if (pendingAprType === 'user') {
+      if (!pendingAprUserId) { message.error('请搜索并选择指定人员'); return; }
       apr.user_id = pendingAprUserId;
     }
     const node = nodes[selIdx];
     const approvers = [...(node.approvers || []), apr];
     updateNode({ approvers });
-    setPendingAprRole('');
     setPendingAprUserId('');
   };
 
@@ -302,7 +291,9 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-semibold text-slate-900">{def.name}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-400">{meta.desc} · {nodeCount} 个审批节点</div>
+                  <div className="mt-0.5 text-[11px] text-slate-400">
+                    {meta.desc} · {nodeCount > 0 ? `${nodeCount} 个审批节点` : '提交后直接推 Tag'}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -329,7 +320,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
       {/* 大号编辑弹窗 */}
       <TsModal
         title={`编辑审批节点 · ${editingDef?.name || ''}`}
-        subtitle="流程为项目内置，仅可调整审批节点与审批人"
+        subtitle="流程为仓库内置，仅仓库创建者可调整审批节点与审批人"
         titleIcon={<Workflow className="h-[18px] w-[18px]" style={{ strokeWidth: 1.5 }} />}
         open={editOpen}
         onCancel={closeEdit}
@@ -395,6 +386,15 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                   </div>
                 </div>
                 <div className="ml-4 h-6 w-px bg-slate-200" />
+
+                {nodes.length === 0 && (
+                  <>
+                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-3 py-2.5 text-[12px] text-slate-500">
+                      当前无须审批，提交后直接推送 Tag。需要时点右上角「添加节点」。
+                    </div>
+                    <div className="ml-4 h-6 w-px bg-slate-200" />
+                  </>
+                )}
 
                 {/* 节点列表 */}
                 {nodes.map((node, idx) => {
@@ -485,7 +485,9 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                   <Settings2 className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />
                   <h2 className="text-[14px] font-semibold text-slate-900">节点配置</h2>
                 </div>
-                <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-600">节点 {selIdx + 1}</span>
+                <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-600">
+                  {nodes.length ? `节点 ${selIdx + 1}` : '无须审批'}
+                </span>
               </div>
               <div className="px-5 py-5">
                 {curNode ? (
@@ -586,25 +588,20 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                                 };
                               })}
                             />
-                            {pendingAprType === 'role' && (
-                              <Dropdown
-                                value={pendingAprRole}
-                                onChange={setPendingAprRole}
-                                placeholder="选择角色"
-                                width={180}
-                                options={ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                              />
-                            )}
                             {pendingAprType === 'user' && (
                               <Dropdown
                                 value={pendingAprUserId}
                                 onChange={setPendingAprUserId}
-                                placeholder="选择用户"
-                                width={220}
-                                options={(usersData?.results || []).map((u) => ({
-                                  value: u.id,
-                                  label: `${u.nickname || u.username} (${u.username})`,
-                                }))}
+                                placeholder="搜索选择人员"
+                                searchPlaceholder="姓名 / 账号"
+                                searchable
+                                width={240}
+                                options={(usersData?.results || [])
+                                  .filter((u) => u.is_active !== false)
+                                  .map((u) => ({
+                                    value: u.id,
+                                    label: `${u.nickname || u.username} (${u.username})`,
+                                  }))}
                               />
                             )}
                             <button
@@ -632,7 +629,9 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
                     )}
                   </>
                 ) : (
-                  <div className="py-8 text-center text-[13px] text-slate-400">请选择左侧节点</div>
+                  <div className="py-8 text-center text-[13px] text-slate-400">
+                    当前无须审批。需要时在左侧添加节点。
+                  </div>
                 )}
               </div>
             </div>
@@ -653,7 +652,7 @@ export function WorkflowTab({ project }: WorkflowTabProps) {
             <ApprovalFlowPreview nodeConfig={preview.node_config} />
           </div>
         ) : (
-          <div className="h-40 flex items-center justify-center text-slate-400">暂无审批链，请先配置节点</div>
+          <div className="h-40 flex items-center justify-center text-slate-400">无须审批，提交后直接推 Tag</div>
         )}
       </TsModal>
     </div>

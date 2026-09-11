@@ -20,7 +20,7 @@ import { projectApi } from '@/api/project';
 import { getAvatarColor } from '@/utils/avatar';
 import type { Project, ProjectStatus } from '@/types';
 
-/** 项目状态选项 */
+/** 产品状态选项 */
 const projectStatusOptions = [
   { label: '启用', value: 'active' },
   { label: '停用', value: 'inactive' },
@@ -28,13 +28,13 @@ const projectStatusOptions = [
 
 /** 统计卡配置 */
 const statCards = [
-  { key: 'total', label: '项目总数', icon: FolderKanban, iconClass: 'icon-indigo' },
+  { key: 'total', label: '产品总数', icon: FolderKanban, iconClass: 'icon-indigo' },
   { key: 'active_count', label: '启用中', icon: CircleDot, iconClass: 'icon-emerald' },
   { key: 'repo_total', label: '关联仓库', icon: GitFork, iconClass: 'icon-cyan' },
-  { key: 'member_total', label: '项目成员', icon: Users, iconClass: 'icon-violet' },
+  { key: 'member_total', label: '产品成员', icon: Users, iconClass: 'icon-violet' },
 ] as const;
 
-/** 项目状态徽标 */
+/** 产品状态徽标 */
 function StatusBadge({ status }: { status: ProjectStatus }) {
   const active = status === 1 || status === 'active';
   return (
@@ -93,7 +93,7 @@ export default function ProjectList() {
 
   const handleDelete = (record: Project) => {
     modal.confirm({
-      title: '确认删除项目',
+      title: '确认删除产品',
       content: `确定要删除「${record.name}」吗？删除后不可恢复。`,
       okText: '删除',
       okType: 'danger',
@@ -115,8 +115,8 @@ export default function ProjectList() {
       {/* 标题区 */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">项目</h1>
-          <p className="mt-1 text-[13px] text-slate-500">管理所有发布项目及其仓库、成员与规则配置</p>
+          <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">产品</h1>
+          <p className="mt-1 text-[13px] text-slate-500">管理产品关联的仓库、成员、审批与打包配置</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -132,7 +132,7 @@ export default function ProjectList() {
             className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span>新增项目</span>
+            <span>新增产品</span>
           </button>
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function ProjectList() {
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
-              placeholder="搜索项目编码/名称"
+              placeholder="搜索产品编码/名称"
               className="w-full sm:w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
@@ -189,7 +189,7 @@ export default function ProjectList() {
         {/* 表头 */}
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-2">编码</div>
-          <div className="col-span-3">项目名称</div>
+          <div className="col-span-3">产品名称</div>
           <div className="col-span-2">负责人</div>
           <div className="col-span-1 text-center">仓库</div>
           <div className="col-span-2">状态</div>
@@ -201,7 +201,7 @@ export default function ProjectList() {
           {isLoading ? (
             <div className="px-5 py-10 text-center text-[13px] text-slate-400">加载中…</div>
           ) : results.length === 0 ? (
-            <div className="px-5 py-10 text-center text-[13px] text-slate-400">暂无项目</div>
+            <div className="px-5 py-10 text-center text-[13px] text-slate-400">暂无产品</div>
           ) : (
             results.map((record) => (
               <div

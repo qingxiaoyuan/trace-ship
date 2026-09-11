@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Empty, Button, Input, Modal, Typography } from 'antd';
-import { AlertTriangle, ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronRight, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
@@ -227,6 +227,21 @@ export default function ReleaseDetail() {
             </span>
           </div>
         </div>
+        {release.redmine_url ? (
+          <a
+            href={release.redmine_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 flex min-h-10 items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/35 px-3 py-2 text-[12px] text-indigo-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50"
+          >
+            <ExternalLink className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={1.5} />
+            <span className="shrink-0 font-medium">Redmine 任务</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-indigo-600">
+              {release.redmine_url}
+            </span>
+            <span className="shrink-0 text-slate-400 max-md:hidden">新窗口打开</span>
+          </a>
+        ) : null}
         {release.rejected_reason ? (
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50/50 p-3 text-[12px] text-rose-600">
             驳回原因：{release.rejected_reason}

@@ -30,9 +30,9 @@ export function RepositoryModal({
   const [form] = Form.useForm();
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
-    queryKey: ["projects-all"],
+    queryKey: ["repository-modal-project", projectId],
     queryFn: () => projectApi.getProjects({ page_size: 1000 }),
-    enabled: open,
+    enabled: open && !!projectId,
   });
 
   const vendor = Form.useWatch("vendor", form) as string;
@@ -61,7 +61,7 @@ export function RepositoryModal({
     [credentialData],
   );
 
-  // 可选凭证变化后，若已选凭证不在新列表中则清空（切换来源/平台/项目或编辑回填不匹配时）
+  // 可选凭证变化后，若已选凭证不在新列表中则清空（切换来源/平台/产品或编辑回填不匹配时）
   useEffect(() => {
     const currentId = form.getFieldValue("credential_id");
     if (currentId && !credentialOptions.some((c) => c.value === currentId)) {
@@ -73,7 +73,6 @@ export function RepositoryModal({
     if (open) {
       if (repo) {
         form.setFieldsValue({
-          project_id: repo.project || repo.project_id,
           repo_type: repo.repo_type,
           vendor: repo.vendor,
           name: repo.name,
@@ -85,7 +84,6 @@ export function RepositoryModal({
       } else {
         form.resetFields();
         form.setFieldsValue({
-          project_id: projectId,
           repo_type: "git",
           vendor: "gitlab",
           default_branch: "main",
@@ -101,20 +99,19 @@ export function RepositoryModal({
         credential?: string;
       } = {
         ...values,
-        project: projectId || values.project_id,
+        ...(projectId ? { project: projectId } : {}),
         credential: values.credential_id,
         // 凭证统一为个人凭证（SVN 凭证全系统共享），credential_mode 固定为 personal
         credential_mode: "personal",
       };
       // 删除前端字段，避免污染后端
-      delete (payload as Record<string, unknown>).project_id;
       delete (payload as Record<string, unknown>).credential_id;
       onOk(payload);
       form.resetFields();
     });
   };
 
-  const confirmLoading = projectsLoading || credentialsLoading;
+  const confirmLoading = (projectId ? projectsLoading : false) || credentialsLoading;
 
   return (
     <TsModal
@@ -157,23 +154,9 @@ export function RepositoryModal({
         <Form form={form} layout="vertical">
           <FormSection title="基本信息">
             <Row gutter={[24, 16]}>
-              <Col span={12}>
-                {!projectId ? (
-                  <Form.Item
-                    name="project_id"
-                    label="关联项目"
-                    rules={[{ required: true, message: "请选择项目" }]}
-                  >
-                    <Select
-                      showSearch
-                      placeholder="选择项目"
-                      loading={projectsLoading}
-                      options={projectOptions}
-                      optionFilterProp="label"
-                    />
-                  </Form.Item>
-                ) : (
-                  <Form.Item label="关联项目">
+              {projectId ? (
+                <Col span={12}>
+                  <Form.Item label="创建后关联产品">
                     <Input
                       value={
                         projectOptions.find((p) => p.value === projectId)
@@ -182,9 +165,9 @@ export function RepositoryModal({
                       disabled
                     />
                   </Form.Item>
-                )}
-              </Col>
-              <Col span={12}>
+                </Col>
+              ) : null}
+              <Col span={projectId ? 12 : 24}>
                 <Form.Item
                   name="name"
                   label="仓库名称"

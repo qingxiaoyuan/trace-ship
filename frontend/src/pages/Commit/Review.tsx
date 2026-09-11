@@ -168,13 +168,13 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   const [selected, setSelected] = useState<Release | null>(null);
 
-  // 项目列表
+  // 产品列表
   const projectsQ = useQuery({
     queryKey: ['projects', 'all'],
     queryFn: () => projectApi.getProjects({ page: 1, page_size: 200 }),
   });
 
-  // 仓库列表（按项目筛选）
+  // 仓库列表（按产品筛选）
   const reposQ = useQuery({
     queryKey: ['repositories', 'filter', projectId],
     queryFn: () =>
@@ -229,11 +229,11 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
             <input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索项目 / 版本号"
+              placeholder="搜索产品 / 版本号"
               className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 outline-none placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
-          {/* 项目下拉 */}
+          {/* 产品下拉 */}
           <div className="w-full sm:w-[180px]">
             <Select
               value={projectId}
@@ -241,7 +241,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
                 setProjectId(v);
                 setRepoId('');
               }}
-              placeholder="全部项目"
+              placeholder="全部产品"
               options={(projectsQ.data?.results ?? []).map((p: Project) => ({
                 value: p.id,
                 label: p.name,
@@ -253,7 +253,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
             <Select
               value={repoId}
               onChange={(v) => setRepoId(v)}
-              placeholder={projectId ? '全部仓库' : '先选项目'}
+              placeholder={projectId ? '全部仓库' : '先选产品'}
               disabled={!projectId}
               options={(reposQ.data?.results ?? []).map((r: Repository) => ({
                 value: r.id,
@@ -305,7 +305,7 @@ function ReleaseReviewSection({ status }: { status: 'pending' | 'released' }) {
         {/* 表头 */}
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-3">发布单</div>
-          <div className="col-span-2">项目</div>
+          <div className="col-span-2">产品</div>
           <div className="col-span-1">类型</div>
           <div className="col-span-1 text-center">提交</div>
           <div className="col-span-1 text-center">审查</div>
@@ -493,11 +493,11 @@ function ReleaseReviewDetail({
   const [docSaved, setDocSaved] = useState(true);
   const [tableEditMode, setTableEditMode] = useState(true);
 
-  // 修改发布说明需 developer 及以上项目角色
+  // 修改发布说明需 developer 及以上产品角色
   const { data: project } = useQuery({
-    queryKey: ['project', release.project_id],
-    queryFn: () => projectApi.getProject(release.project_id),
-    enabled: !!release.project_id,
+    queryKey: ['project', release.project || release.project_id],
+    queryFn: () => projectApi.getProject(release.project || release.project_id || ''),
+    enabled: !!(release.project || release.project_id),
   });
   const { canDevelop } = useProjectRole(project);
 
@@ -634,7 +634,7 @@ function ReleaseReviewDetail({
                 </div>
                 <p className="mt-4 text-[14px] font-medium text-slate-700">该发布单尚未生成发布说明文档</p>
                 <p className="mt-1 text-[12px] text-slate-400">
-                  {canDevelop ? '可点击下方「修改文档」手动填写发布说明' : '仅项目开发或管理员可修改'}
+                  {canDevelop ? '可点击下方「修改文档」手动填写发布说明' : '仅产品开发或管理员可修改'}
                 </p>
                 {canDevelop && (
                   <button
@@ -860,13 +860,13 @@ function FetchReviewSection() {
   const [fetching, setFetching] = useState(false);
   const [result, setResult] = useState<ReviewRangeResult | null>(null);
 
-  // 项目列表
+  // 产品列表
   const projectsQ = useQuery({
     queryKey: ['projects', 'all'],
     queryFn: () => projectApi.getProjects({ page: 1, page_size: 200 }),
   });
 
-  // 仓库列表（按项目筛选）
+  // 仓库列表（按产品筛选）
   const reposQ = useQuery({
     queryKey: ['repositories', 'filter', projectId],
     queryFn: () =>
@@ -926,10 +926,10 @@ function FetchReviewSection() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* 项目 */}
+          {/* 产品 */}
           <div>
             <label className="mb-1.5 block text-[11px] font-medium text-slate-500">
-              项目
+              产品
             </label>
             <Select
               value={projectId}
@@ -940,7 +940,7 @@ function FetchReviewSection() {
                 setHeadTag('');
                 setResult(null);
               }}
-              placeholder="请选择项目"
+              placeholder="请选择产品"
               options={(projectsQ.data?.results ?? []).map((p: Project) => ({
                 value: p.id,
                 label: p.name,
@@ -960,7 +960,7 @@ function FetchReviewSection() {
                 setHeadTag('');
                 setResult(null);
               }}
-              placeholder={projectId ? '请选择仓库' : '先选项目'}
+              placeholder={projectId ? '请选择仓库' : '先选产品'}
               disabled={!projectId}
               options={(reposQ.data?.results ?? []).map((r: Repository) => ({
                 value: r.id,
@@ -1052,7 +1052,7 @@ function FetchReviewSection() {
           </div>
           <h3 className="mt-4 text-[15px] font-semibold text-slate-800">选择审查范围后拉取</h3>
           <p className="mt-1 text-[13px] text-slate-500">
-            依次选择 项目 -&gt; 仓库 -&gt; 起始/结束 Tag，系统将拉取该区间内的所有提交与合并请求进行合规审查
+            依次选择 产品 -&gt; 仓库 -&gt; 起始/结束 Tag，系统将拉取该区间内的所有提交与合并请求进行合规审查
           </p>
         </div>
       )}

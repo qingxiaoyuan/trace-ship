@@ -21,11 +21,11 @@ interface ApproverConfig {
 /** 节点展示状态 */
 type NodeState = 'done' | 'running' | 'pending';
 
-/** 项目成员角色文案（与 WorkflowTab 的 ROLE_LABELS 对齐） */
+/** 产品成员角色文案（与仓库审批流 Tab 的 ROLE_LABELS 对齐） */
 const ROLE_LABELS: Record<string, string> = {
   developer: '开发人员',
   tester: '测试人员',
-  manager: '项目管理员',
+  manager: '产品管理员',
   auditor: '审核人',
   viewer: '只读人员',
 };
@@ -47,10 +47,11 @@ function nodeMode(node: GraphNode): 'any' | 'all' | undefined {
 function configuredApproverText(node: GraphNode): string {
   const configs = (node.properties?._approvers || []) as ApproverConfig[];
   const labels = configs.map((config) => {
-    if (config.type === 'leader') return '项目负责人';
+    if (config.type === 'repo_owner') return '仓库拥有者';
+    if (config.type === 'leader') return '产品负责人';
     if (config.type === 'self') return '发起人';
     if (config.type === 'role') return ROLE_LABELS[config.role || ''] || config.role || '指定角色';
-    return '指定用户';
+    return '指定人员';
   });
   return [...new Set(labels)].join('、');
 }

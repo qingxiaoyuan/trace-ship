@@ -20,13 +20,14 @@ const MODE_META: Record<'any' | 'all', { label: string; icon: typeof UserCheck; 
 /** 审批人展示文案 */
 function approverLabel(apr: WorkflowApproverConfig): string {
   const ROLE_LABELS: Record<string, string> = {
-    developer: '开发人员', tester: '测试人员', manager: '项目管理员', auditor: '审核人', viewer: '只读人员',
+    developer: '开发人员', tester: '测试人员', manager: '产品管理员', auditor: '审核人', viewer: '只读人员',
   };
   switch (apr.type) {
-    case 'leader': return '项目负责人';
+    case 'repo_owner': return '仓库拥有者';
+    case 'leader': return '产品负责人';
     case 'self': return '发起人自己';
     case 'role': return ROLE_LABELS[apr.role || ''] || apr.role || '角色';
-    default: return '指定用户';
+    default: return '指定人员';
   }
 }
 

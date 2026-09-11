@@ -222,7 +222,7 @@ export function AIScriptModal({
             <div>
               <div className="text-[12px] font-medium text-slate-700">参考历史成功脚本</div>
               <div className="text-[10px] text-slate-400">
-                仅引用平台内真实打包成功的脚本，同项目优先、跨项目兜底
+                仅引用平台内真实打包成功的脚本，同产品优先、跨产品兜底
               </div>
             </div>
             <Switch

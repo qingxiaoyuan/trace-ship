@@ -57,7 +57,7 @@ export interface VersionRule {
     rc?: string;
     beta?: string;
   };
-  /** 生成的 tag 是否携带 _YYYYMMDD 日期段，默认 true */
+  /** 生成的 tag 是否携带 _YYYYMMDD 日期段；新建仓库默认 false */
   with_date?: boolean;
 }
 
@@ -76,11 +76,11 @@ export interface Project {
   created_at: string;
   version_rule?: unknown;
   release_rule?: unknown;
-  /** 当前用户在该项目的成员角色（详情接口返回，超管为 manager，非成员为 null） */
+  /** 当前用户在该产品的成员角色（详情接口返回，超管为 manager，非成员为 null） */
   my_role?: 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin' | null;
 }
 
-/** 项目统计聚合数据（/projects/stats/） */
+/** 产品统计聚合数据（/projects/stats/） */
 export interface ProjectStats {
   total: number;
   active_count: number;
@@ -98,7 +98,8 @@ export type ReleaseType = 'formal' | 'rc' | 'beta';
 
 export interface Release {
   id: string;
-  project_id: string;
+  project: string;
+  project_id?: string;
   project_name?: string;
   /** 仓库 ID（列表/详情返回） */
   repository?: string;
@@ -106,6 +107,8 @@ export interface Release {
   repository_name?: string;
   version: string;
   tag_name: string;
+  /** 关联的 Redmine 任务地址 */
+  redmine_url?: string;
   release_type: ReleaseType;
   /** 发布类型中文展示（列表接口返回） */
   release_type_display?: string;
@@ -554,6 +557,8 @@ export interface PackageConfig {
   repository: string;
   repository_id?: string;
   repository_name?: string;
+  product_component?: string | null;
+  product_component_name?: string;
   name: string;
   executor_type?: 'local_docker' | 'remote_node';
   executor_type_display?: string;
@@ -599,7 +604,7 @@ export interface PackageConfig {
   clone_submodules?: boolean;
   /** 注入 Git 凭证到构建环境，打包脚本可自行 git push（凭证对脚本可见） */
   inject_git_credential?: boolean;
-  /** 当前用户在配置所属项目中的角色（超管返回 software_admin），用于控制配置编辑入口 */
+  /** 当前用户在配置所属产品中的角色（超管返回 software_admin），用于控制配置编辑入口 */
   my_role?: string | null;
   /** 当前用户是否已收藏该配置 */
   is_favorite?: boolean;
@@ -746,6 +751,38 @@ export interface Credential {
   created_at: string;
 }
 
+export interface RepositoryCredentialLoan {
+  id: string;
+  repository: string;
+  repository_name?: string;
+  credential: string;
+  credential_name?: string;
+  lender: string;
+  lender_name?: string;
+  allowed_products: string[];
+  allowed_product_names?: string[];
+  permission_scope: Array<'read' | 'create_tag' | 'delete_tag'>;
+  expires_at?: string | null;
+  is_active: boolean;
+  valid_now?: boolean;
+  revoked_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CredentialUsageLog {
+  id: string;
+  actor_name?: string;
+  lender_name?: string;
+  product_name?: string;
+  repository_name?: string;
+  component_name?: string;
+  operation: string;
+  result: 'success' | 'failure';
+  failure_reason?: string;
+  created_at: string;
+}
+
 export interface Repository {
   id: string;
   project?: string;
@@ -767,6 +804,56 @@ export interface Repository {
   health_status: 'healthy' | 'unhealthy' | 'unknown';
   last_sync_at?: string;
   created_at: string;
+  /** 被多少个产品引用 */
+  product_count?: number;
+  used_by_products?: Array<{
+    product_id: string;
+    product_name: string;
+    component_id: string;
+    component_code: string;
+    component_name: string;
+  }>;
+  credential_loans?: ProductComponent['credential_loans'];
+  created_by?: string | null;
+  created_by_name?: string;
+  owner_name?: string;
+  owner_in_product?: boolean | null;
+}
+
+/** 产品与软件仓库的关联，以及该仓库在当前产品下的设置 */
+export interface ProductComponent {
+  id: string;
+  project: string;
+  repository: string;
+  repository_detail: Repository;
+  component_code: string;
+  display_name: string;
+  default_branch: string;
+  source_subdir: string;
+  required: boolean;
+  version_scope: 'repository' | 'product_component';
+  version_scope_display?: string;
+  tag_namespace: string;
+  product_config: Record<string, unknown>;
+  sort_order: number;
+  is_active: boolean;
+  product_count: number;
+  current_version?: string;
+  current_tag?: string;
+  package_configs?: Array<{ id: string; name: string; is_active: boolean }>;
+  credential_status?: 'available' | 'expiring' | 'unavailable';
+  owner_name?: string;
+  owner_in_product?: boolean;
+  credential_loans?: Array<{
+    id: string;
+    credential_name: string;
+    lender_name: string;
+    permission_scope: Array<'read' | 'create_tag' | 'delete_tag'>;
+    expires_at?: string | null;
+    state: 'valid' | 'expiring' | 'expired' | 'revoked';
+  }>;
+  created_at: string;
+  updated_at: string;
 }
 
 /** 仓库统计聚合数据（/repositories/stats/） */
@@ -816,7 +903,7 @@ export interface RepositoryTag {
 export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked';
 
 export interface WorkflowApproverConfig {
-  type: 'leader' | 'role' | 'user' | 'self';
+  type: 'leader' | 'role' | 'user' | 'self' | 'repo_owner';
   user_id?: string;
   role?: string;
 }
@@ -870,7 +957,7 @@ export interface DashboardOverview {
 }
 
 export interface WorkflowNodeProperties {
-  approver_type?: 'leader' | 'role' | 'user' | 'self';
+  approver_type?: 'leader' | 'role' | 'user' | 'self' | 'repo_owner';
   role?: string;
   user_id?: string;
 }
@@ -894,7 +981,8 @@ export interface WorkflowEdge {
 
 export interface WorkflowDefinition {
   id: string;
-  project: string;
+  repository?: string;
+  project?: string;
   name: string;
   biz_type: string;
   release_type: 'formal' | 'rc' | 'beta';

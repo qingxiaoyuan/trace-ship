@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Form, Select, Checkbox } from 'antd';
+import { Form, Select, Checkbox, Input } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -37,7 +37,7 @@ import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField';
 import { CommitCheckModal } from './components/CommitCheckModal';
-import type { Release, ReleaseType, Repository, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
+import type { Release, ReleaseType, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
 
 /** 关联变更清单条目 */
 interface RelatedChange {
@@ -97,9 +97,9 @@ export default function ReleaseCreate() {
     enabled: !projectIdFromQuery,
   });
 
-  const { data: repoData, isLoading: reposLoading } = useQuery({
-    queryKey: ['repositories', watchProject],
-    queryFn: () => repositoryApi.getRepositories({ project: watchProject, page_size: 1000 }),
+  const { data: productComponents = [], isLoading: reposLoading } = useQuery({
+    queryKey: ['product-components', watchProject],
+    queryFn: () => projectApi.getComponents(watchProject || ''),
     enabled: !!watchProject,
   });
 
@@ -120,9 +120,10 @@ export default function ReleaseCreate() {
 
   // 发布后自动打包配置：该仓库启用了「发布后自动打包」的打包配置，可勾选（默认全选）
   const { data: autoPackageData, isLoading: autoPackageLoading } = useQuery({
-    queryKey: ['package-configs-auto', watchRepository],
+    queryKey: ['package-configs-auto', watchProject, watchRepository],
     queryFn: () =>
       packageApi.getConfigs({
+        project: watchProject,
         repository: watchRepository || '',
         auto_package_on_release: true,
         is_active: true,
@@ -204,8 +205,13 @@ export default function ReleaseCreate() {
     [projectData]
   );
   const repoOptions = useMemo(
-    () => (repoData?.results || []).map((r: Repository) => ({ label: r.name, value: r.id })),
-    [repoData]
+    () => (productComponents || [])
+      .filter((item) => item.is_active)
+      .map((item) => ({
+        label: item.repository_detail?.name || item.display_name,
+        value: item.repository,
+      })),
+    [productComponents],
   );
   const branchOptions = useMemo(
     () => (branches || []).map((b) => ({ label: b.name, value: b.name })),
@@ -239,6 +245,7 @@ export default function ReleaseCreate() {
         release_type: values.release_type as ReleaseType,
         branch: values.branch as string,
         tag_name: (values.tag_name as string)?.trim() || undefined,
+        redmine_url: (values.redmine_url as string)?.trim() || undefined,
         related_changes: relatedChanges.filter((r) => r.key.trim()),
         updates: updates.filter((u) => u.content.trim()),
         has_config_changes: hasConfigChanges,
@@ -286,8 +293,9 @@ export default function ReleaseCreate() {
   const handleProjectChange = () => {
     form.setFieldsValue({ repository: undefined, branch: undefined });
   };
-  const handleRepoChange = () => {
-    form.setFieldsValue({ branch: undefined });
+  const handleRepoChange = (repositoryId?: unknown) => {
+    const component = productComponents.find((item) => item.repository === repositoryId);
+    form.setFieldsValue({ branch: component?.default_branch || undefined });
     // 切换仓库后重置发布后自动打包勾选（null 表示默认全选）
     setAutoPackageConfigIds(null);
   };
@@ -326,7 +334,7 @@ export default function ReleaseCreate() {
         </button>
         <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">创建发布</h1>
         <p className="mt-1 text-[13px] text-slate-500">
-          选择项目与仓库，配置发布类型与分支，系统将自动拉取提交与 MR 记录并解析更新内容
+          选择产品与一个已关联仓库。版本和 Tag 属于仓库本身，多个产品发布的是同一套仓库版本。
         </p>
       </div>
 
@@ -382,15 +390,15 @@ export default function ReleaseCreate() {
               <h3 className="text-[14px] font-semibold text-slate-900">基础配置</h3>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Form.Item name="project" label="项目" rules={[{ required: true, message: '请选择项目' }]}>
+              <Form.Item name="project" label="产品" rules={[{ required: true, message: '请选择产品' }]}>
                 <SelectField
                   icon={<FolderKanban className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
-                  placeholder="选择项目"
+                  placeholder="选择产品"
                   loading={projectsLoading}
                   options={projectOptions}
                   onChange={handleProjectChange}
                   disabled={!!projectIdFromQuery}
-                  hint="只有你参与的项目才会显示"
+                  hint="只有你参与的产品才会显示"
                 />
               </Form.Item>
               <Form.Item name="repository" label="目标仓库" rules={[{ required: true, message: '请选择仓库' }]}>
@@ -400,7 +408,7 @@ export default function ReleaseCreate() {
                   loading={reposLoading}
                   options={repoOptions}
                   onChange={handleRepoChange}
-                  hint="Tag 将推送至此仓库"
+                  hint="仅列出当前产品已关联且启用的仓库；Tag 推送到该仓库"
                 />
               </Form.Item>
             </div>
@@ -478,6 +486,28 @@ export default function ReleaseCreate() {
               />
             </Form.Item>
             <p className="mt-1 text-[11px] text-slate-400">正式无后缀 / RC 加 -rc / Beta 加 -beta</p>
+
+            <Form.Item
+              name="redmine_url"
+              label="Redmine 任务地址（可选）"
+              className="mb-0 mt-4"
+              rules={[
+                {
+                  type: 'url',
+                  message: '请输入完整 URL，例如 https://redmine.example.com/issues/12345',
+                },
+              ]}
+            >
+              <Input
+                type="url"
+                prefix={<LinkIcon className="h-4 w-4 text-slate-400" strokeWidth={1.5} />}
+                placeholder="https://redmine.example.com/issues/12345"
+                className="font-mono"
+              />
+            </Form.Item>
+            <p className="mt-1 text-[11px] text-slate-400">
+              发布后可在版本详情中直接打开关联任务
+            </p>
 
             {/* 自动计算预览 */}
             {nextVersionData?.all_types && (

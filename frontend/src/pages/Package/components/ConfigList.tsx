@@ -51,7 +51,7 @@ export const ConfigList = memo(function ConfigList({
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />
           <input
             type="text"
-            placeholder="搜索配置名称 / 项目 / 仓库"
+            placeholder="搜索配置名称 / 产品 / 仓库"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             className="w-[240px] rounded-lg border border-indigo-100 bg-white pl-8 pr-3 py-1.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
@@ -182,7 +182,7 @@ const ConfigRow = memo(function ConfigRow({
 
   // 是否启用了 SVN 产物推送（展示「浏览 SVN」入口）
   const svnEnabled = Boolean(config.svn_push_enabled && config.svn_url);
-  // 打包配置参数仅项目管理员 / 软件管理员可维护（后端 my_role：超管返回 software_admin）
+  // 打包配置参数仅产品管理员 / 软件管理员可维护（后端 my_role：超管返回 software_admin）
   const canManage = config.my_role === 'software_admin' || config.my_role === 'manager';
 
   return (

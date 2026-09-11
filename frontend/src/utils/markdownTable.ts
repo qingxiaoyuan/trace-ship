@@ -38,7 +38,7 @@ export function parseMdTable(md: string): MdTableRow[] {
       const inner = cells.slice(1, -1);
       if (inner.length < 2) { i++; continue; }
       if (/^[-:\s]+$/.test(inner[0])) { i++; continue; }
-      if (inner[0] === '项目' && inner[1] === '内容') { i++; continue; }
+      if ((inner[0] === '项目' || inner[0] === '字段') && inner[1] === '内容') { i++; continue; }
       rows.push({ key: inner[0], value: inner[1] });
       i++;
     } else {
@@ -54,7 +54,7 @@ export function parseMdTable(md: string): MdTableRow[] {
         i++;
       }
       if (/^[-:\s]+$/.test(key)) continue;
-      if (key === '项目' && valueParts === '内容') continue;
+      if ((key === '项目' || key === '字段') && valueParts === '内容') continue;
       rows.push({ key, value: valueParts });
     }
   }
@@ -74,7 +74,7 @@ export function parseMdTable(md: string): MdTableRow[] {
  * @returns Markdown 表格字符串（含最小表头以兼容 MD 语法）
  */
 export function buildMdTable(rows: MdTableRow[]): string {
-  const lines = ['| 项目 | 内容 |', '|------|------|'];
+  const lines = ['| 字段 | 内容 |', '|------|------|'];
   for (const row of rows) {
     const safeKey = row.key.replace(/\|/g, '\\|');
     const safeValue = row.value.replace(/\|/g, '\\|');

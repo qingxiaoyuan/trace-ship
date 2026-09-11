@@ -70,6 +70,30 @@ export function CredentialTab({ repo }: CredentialTabProps) {
           </Row>
         </div>
       </div>
+
+      <div className="rounded-lg border border-indigo-100 bg-white p-4 md:col-span-2">
+        <div className="mb-3 flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg icon-violet">
+            <ShieldCheck className="h-4 w-4" strokeWidth={1.5} />
+          </div>
+          <div>
+            <h4 className="text-[14px] font-semibold text-slate-900">授权给哪些产品</h4>
+            <p className="text-[11px] text-slate-400">仓库所有者加入产品成员后，该产品即可使用本仓库凭证发版本。不展示凭证明文。</p>
+          </div>
+        </div>
+        {!repo.used_by_products?.length ? (
+          <div className="rounded-lg bg-amber-50 p-3 text-[12px] text-amber-700">尚未被任何产品关联</div>
+        ) : (
+          <div className="space-y-2">
+            {repo.used_by_products.map((item) => (
+              <div key={item.component_id} className="flex items-center justify-between rounded-lg border border-slate-100 p-3 text-[12px]">
+                <span className="font-medium text-slate-800">{item.product_name}</span>
+                <span className="text-slate-400">{item.component_name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

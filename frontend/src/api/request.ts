@@ -109,7 +109,7 @@ function extractFriendlyMessage(status: number | undefined, data: unknown): stri
     case 401:
       return '登录状态已失效，请重新登录';
     case 403:
-      return '没有执行该操作的权限，请联系项目管理员或系统管理员';
+      return '没有执行该操作的权限，请联系产品管理员或系统管理员';
     case 404:
       return '请求的资源不存在或已被删除';
     case 409:

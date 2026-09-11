@@ -80,9 +80,9 @@ const routes: AppRouteObject[] = [
         children: [
           { index: true, element: <PageLoader><Dashboard /></PageLoader>, handle: { title: '工作台' } },
           { path: 'dashboard', element: <PageLoader><Dashboard /></PageLoader>, handle: { title: '工作台' } },
-          { path: 'projects', element: <PageLoader><ProjectList /></PageLoader>, handle: { title: '项目管理' } },
-          { path: 'projects/:id', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '项目详情' } },
-          { path: 'projects/:id/:tab', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '项目详情' } },
+          { path: 'projects', element: <PageLoader><ProjectList /></PageLoader>, handle: { title: '产品管理' } },
+          { path: 'projects/:id', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '产品详情' } },
+          { path: 'projects/:id/:tab', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '产品详情' } },
           { path: 'repositories', element: <PageLoader><RepositoryList /></PageLoader>, handle: { title: '仓库管理' } },
           { path: 'repositories/:id', element: <PageLoader><RepositoryDetail /></PageLoader>, handle: { title: '仓库详情' } },
           { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader>, handle: { title: '凭证管理' } },

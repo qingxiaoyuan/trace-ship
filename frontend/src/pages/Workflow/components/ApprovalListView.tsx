@@ -111,7 +111,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
         {/* 表头 */}
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-3">标题</div>
-          <div className="col-span-2">项目</div>
+          <div className="col-span-2">产品</div>
           <div className="col-span-2">软件</div>
           <div className="col-span-1">申请人</div>
           <div className="col-span-2">当前节点</div>
