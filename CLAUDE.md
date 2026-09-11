@@ -142,19 +142,21 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 
 ## Architecture
 
-### 项目为中心的资源模型
+### 产品（Project）为中心的资源模型
 
-所有业务资源都围绕 `Project` 组织：
+所有业务资源都围绕 `Project` 组织，`Project` 在业务语义上即产品，兼容期内保留现有类名、表名和 API：
 
-- `apps.project.Project`：项目主体，包含 `version_rule` 和 `release_rule` JSON 规则。
+- `apps.project.Project`：产品主体，包含 `version_rule` 和 `release_rule` JSON 规则。
+- `apps.project.ProductComponent`：产品对物理仓库的一次角色引用及产品内配置；同一仓库可被多个产品复用。关联前仓库所有者必须是该产品成员，凭证随所有者进入产品。版本属于仓库，多产品可发同一仓库。有发布或打包历史后只能停用。
 - `apps.project.ProjectMember`：用户与项目的关联，角色为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行）。成员添加对全体项目成员开放，可授予角色按操作者角色收缩（`apps.project.services.get_grantable_roles`）：manager 全部、software_admin 除 manager/software_admin、其他成员仅 developer/tester；修改角色与移除成员仍仅项目管理员。
-- `apps.repository.Repository` 与 `CommitRecord`：代码仓库（仅 Git/GitLab，直接归属项目并各自绑定凭证；SVN 仅作为打包产物推送目标）与提交记录。
-- `apps.release.ReleaseRecord` 与 `ReleaseCommit`：发布记录与关联提交。
-- `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：审批工作流定义、实例与任务。
-- `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：打包镜像记录（来源为本地 Docker 或 Nexus）、项目级打包配置、打包任务记录。
+- `apps.repository.Repository` 与 `CommitRecord`：按 `vendor + url + external_identity` 全局唯一的物理代码仓库（仅 Git/GitLab）与提交记录。`Repository.project` 仅作兼容期历史登记产品，新逻辑通过 `ProductComponent` 判断产品使用关系；仓库版本规则登记时从产品复制，此后独立维护。SVN 仅作为打包产物推送目标。
+- `apps.release.ReleaseRecord` 与 `ReleaseCommit`：仓库级发布记录与关联提交；发布始终针对一个产品上下文中的一个仓库。
+- `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：仓库级审批流程定义、实例与任务；仅仓库创建者可编辑节点。正式发布默认需审批，RC / Beta 默认无须审批。
+- `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：打包镜像记录（来源为本地 Docker 或 Nexus）、产品组件级打包配置和仓库级发布打包任务记录。
+- `apps.credential.RepositoryCredentialLoan` / `CredentialUsageLog`：仓库凭证仍归个人所有。产品要使用某仓库，必须先把仓库所有者加入该产品成员再关联仓库；凭证随所有者进入产品。借用记录仅作补充授权与审计。
 - `apps.feedback.Feedback`：使用反馈，全员可提交/点赞/查看，删除仅限本人或超管；超管可将反馈标记为已处理（`open` / `processed` 状态流转，记录处理人与处理时间）。
 
-注意：旧的 `ProjectIntegration` 模型已废弃，不要在新代码中恢复；`apps.jenkins` 模块已整体下线（Jenkins 能力移除），仅保留迁移 tombstone（空 models + 历史迁移），仓库直接归属项目并绑定凭证。
+注意：旧的 `ProjectIntegration` 模型已废弃，不要在新代码中恢复；产品与仓库使用 `ProductComponent` 组合。`apps.jenkins` 模块已整体下线（Jenkins 能力移除），仅保留迁移 tombstone（空 models + 历史迁移）。
 
 ### 认证与权限
 
@@ -176,15 +178,17 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 ### 凭证与 Provider 抽象
 
 - 凭证存储在 `apps.credential`，AES 加密；接口返回脱敏数据。
-- `utils.provider.credential_resolver.resolve_credential(source, request_user)` 根据 `credential_mode`（`fixed` / `global` / `current_user` / `specified_user`）解析出解密后的凭证 dict。
+- 产品上下文通过 `resolve_credential(..., product=..., operation=...)` 校验「仓库所有者仍是该产品成员」后使用仓库绑定的个人凭证，并写使用审计。不把个人凭证改成共享服务账号。
 - `utils.provider.factory.get_provider(vendor, server_url, credential_data)` 创建 GitLab / SVN 适配器。
 - Git 类 Provider 统一继承 `utils.provider.base.GitProvider`，实现 `list_branches`、`list_commits`、`list_tags`、`create_tag`、`compare_commits`。
 
 ### 发布主流程
 
-当前发布流程以“审批通过后推 tag”为主，`ReleaseRecord.status` 仅有 `draft` / `pending` / `released` / `rejected` 四个状态，不包含旧文档中的 `building` / `auditing`。
+存量切换前后运行 `python manage.py check_product_repository_consistency --json --strict`。重复仓库归并与历史发布回填均必须先执行默认 dry-run、人工确认报告后再追加 `--apply`；普通迁移不得静默覆盖或删除历史关联。
 
-1. 创建发布（`ReleaseService.create_release`）：校验项目状态、分支规则与 tag 后缀；未传版本号时基于仓库 tag 和 `Project.version_rule` 自动计算。
+发布保持仓库级流程，`ReleaseRecord` 状态仅有 `draft` / `pending` / `released` / `rejected` 四种，不包含旧文档中的 `building` / `auditing`：
+
+1. 创建发布（`ReleaseService.create_release`）：校验产品已关联该仓库、仓库所有者仍是产品成员、分支规则与 tag 后缀；未传版本号时基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个产品发布时共享同一套 Tag。
 2. 预览变更（`ReleaseService.preview_changes`）：拉取上个 tag 到目标分支之间的 commits / MRs，解析 A/F 类更新内容。
 3. 生成发布说明（`ReleaseService.generate_doc`）：保存 Markdown 发布说明。
 4. 提交审批（`ReleaseService.submit_audit`）：要求 `draft` 状态且发布说明非空；按发布类型查找启用的 `WorkflowDefinition` 创建 `WorkflowInstance`，状态改为 `pending`。
@@ -196,7 +200,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 ### 打包能力（apps.package）
 
 - `PackageImage`：打包镜像记录，来源为本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键），按镜像坐标唯一，由选择时自动创建，定义镜像、`script_entry` 入口、默认构建/产物目录。
-- `PackageConfig`：项目级打包配置，包含镜像引用、可选 `custom_script` 自定义脚本、环境变量、构建/产物目录、发布后自动打包开关、SVN 推送配置（svn_url / svn_credential / svn_path_template）。
+- `PackageConfig`：产品组件级打包配置，`project` / `repository` 为兼容冗余字段；包含镜像引用、可选 `custom_script` 自定义脚本、环境变量、构建/产物目录、发布后自动打包开关、SVN 推送配置（svn_url / svn_credential / svn_path_template）。
 - `PackageNode`：远程打包节点（`os_type` 支持 `windows` / `kylin` 麒麟 Linux，`arch` 记录芯片架构 `x86_64` / `x86_32` / `arm64` / `arm32` 默认 `x86_64`，SSH/SFTP 接入；`PackageConfig.executor_type=remote_node` 时按节点 OS 语义下发 bat/sh 脚本执行，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；登录凭证 Windows 用 `windows_password`、麒麟用 `ssh_password`）。
 - `PackageTask`：打包任务记录，状态 `queued` / `running` / `success` / `failure` / `canceled`，保存配置快照、工作区路径、日志路径、产物信息、SVN 推送结果。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一）；`POST /api/packages/configs/{id}/favorite/` 切换收藏、`GET /api/packages/configs/favorites/` 返回收藏配置及最近任务摘要；任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（我发起的、近 N 天、仅终态）供工作台「打包速览」与成功率 KPI 使用。

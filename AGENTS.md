@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-Trace Ship 是一个软件版本发布管理系统，围绕“项目”组织仓库、提交审查、发布申请、审批工作流、打包推送（Docker 镜像 / 本地脚本 / SVN）、凭证与通知等能力。
+Trace Ship 是一个软件版本发布管理系统。现有 `Project` 在业务语义上即产品；产品通过 `ProductComponent` 组合可复用的物理仓库，并组织提交审查、发布申请、审批工作流、打包推送（Docker 镜像 / 本地脚本 / SVN）、凭证与通知等能力。
 
 仓库主要目录：
 
@@ -132,11 +132,11 @@ npm run preview
 ### 应用模块
 
 - `apps.account`：用户、角色、权限、登录认证、菜单。
-- `apps.project`：项目、项目成员；项目创建时会补齐内置发布审批流程。
+- `apps.project`：项目、项目成员。发布审批流程挂在物理仓库上，仓库创建时补齐内置流程。
 - `apps.repository`：代码仓库、提交记录、提交同步与提交规范审查。
 - `apps.release`：发布申请、版本号计算、发布说明、发布关联提交 / MR、推 tag。
 - `apps.workflow`：审批流程定义、流程实例、审批任务，支持串行审批、或签、会签、转交、回退、撤销。
-- `apps.package`：打包镜像、项目级打包配置、打包任务；支持 Docker 镜像打包、本地脚本打包、产物 SVN 推送、发布后自动触发。
+- `apps.package`：打包镜像、产品组件级打包配置、打包任务；支持 Docker 镜像打包、本地脚本打包、产物 SVN 推送、发布后自动触发。
 - `apps.jenkins`：已下线，仅保留迁移 tombstone（空 models + 历史迁移），无 API 与业务逻辑。
 - `apps.credential`：凭证加密存储、脱敏展示、凭证解析。
 - `apps.notification`：站内通知，覆盖审批、构建、发布和系统消息；管理员可在「系统 · 通知发送」页面向全员或指定用户发送系统通知（`POST /api/notifications/broadcast/`，需 `system.notification` 权限，超管放行）。
@@ -173,29 +173,35 @@ npm run preview
 
 ### 核心数据模型
 
-项目是主要聚合根：
+`Project` 在业务语义上即产品，是主要聚合根；类名、表名和 API 前缀在兼容期内保持不变：
 
-- `Project`：项目主体，包含 `version_rule`、`release_rule`、负责人和启停状态。
+- `Project`：产品主体，包含 `version_rule`、`release_rule`、负责人和启停状态。
+- `ProductComponent`：产品对物理仓库的一次角色引用及产品内配置；同一仓库可被多个产品复用。关联仓库前，仓库所有者必须已是该产品成员，凭证随所有者进入产品。版本和 Tag 属于仓库，多个产品发布的是同一套仓库版本。已有发布或打包历史时只能停用，不能物理删除。
 - `ProjectMember`：项目成员角色，角色值为 `developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin`（软件管理员，在 `utils.permissions.ProjectRolePermission._check` 中统一放行，等同项目内全权限）。成员添加对全体项目成员开放，但可授予的角色按操作者角色收缩（`apps.project.services.get_grantable_roles`）：manager（含项目负责人、超管）可授全部角色，software_admin 可授除 manager / software_admin 外的角色，其他成员角色仅能授 developer / tester；修改角色与移除成员仍仅项目管理员（含软件管理员）。
-- `Repository`：项目下代码仓库，仅支持 Git（GitLab）；SVN 仅作为打包产物推送目标（见 `PackageConfig` 的 SVN 推送配置）。
+- `Repository`：可复用且按 `vendor + url + external_identity` 全局唯一的物理代码仓库，仅支持 Git（GitLab）；`Repository.project` 在兼容期内保留为历史登记产品，新逻辑不得将它作为产品归属的唯一依据。仓库版本规则在登记时从产品规则复制，此后独立维护。SVN 仅作为打包产物推送目标。
 - `CommitRecord`：提交记录与提交规范审查结果。
-- `ReleaseRecord`：发布申请，当前状态为 `draft` / `pending` / `released` / `rejected`。
+- `ReleaseRecord`：仓库级发布申请；一次发布只针对一个产品上下文中的一个仓库，状态为 `draft` / `pending` / `released` / `rejected`。
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
-- `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：工作流定义、实例和审批任务。
+- `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：仓库级审批流程定义、实例和审批任务；仓库创建时补齐 formal/rc/beta 内置流程，仅仓库创建者可编辑节点。正式发布默认仓库拥有者审批，RC / Beta 默认空审批链（提交后直接推 Tag）。审批人类型为仓库拥有者与指定人员（可搜索选择）；存量配置中的产品负责人/角色/发起人仍可解析展示。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
-- `PackageConfig`：项目级打包配置，包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（含提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
+- `PackageConfig`：产品组件级打包配置，`project` / `repository` 作为兼容和查询冗余字段；包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（含提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
 - `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），`arch` 记录芯片架构（`x86_64` / `x86_32` / `arm64` / `arm32`，默认 `x86_64`，选择节点时随节点名展示），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
-- `PackageTask`：打包任务记录，状态为 `queued` / `running` / `success` / `failure` / `canceled`，记录工作区、日志、产物与 SVN 推送结果。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
+- `PackageTask`：打包任务记录，可关联仓库级 `ReleaseRecord`；状态为 `queued` / `running` / `success` / `failure` / `canceled`。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一），「打包配置」列表默认收藏优先排序，并驱动工作台「打包速览」面板的常用配置区；接口为 `POST /api/packages/configs/{id}/favorite/`（toggle）、`GET /api/packages/configs/favorites/`（附最近任务摘要）。任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（口径：我发起的、近 N 天、仅终态），工作台打包成功率 KPI 与速览面板统一使用。
-- `Credential`：凭证密文与凭证元数据。
+- `Credential`：个人凭证密文与凭证元数据；仓库访问不改用共享服务凭证。
+- `RepositoryCredentialLoan`、`CredentialUsageLog`：仓库凭证仍归个人所有。产品使用仓库的前提是仓库所有者在该产品成员中；借用记录仅作补充授权与审计，其他用户始终不能查看明文。
 - `Notification`：站内通知。
 - `Feedback`：使用反馈，包含分类、点赞用户集合、处理状态（`open` / `processed`）、处理人与处理时间。
 
 ### 发布主流程
 
-当前代码中的发布流程以“审批通过后推 tag”为主，打包统一由 `apps.package` 承担。
+发布保持仓库级语义：先选择产品，再从该产品关联的仓库中选择一个软件仓库发起发布；打包统一由 `apps.package` 承担。
 
-1. 创建发布：`ReleaseService.create_release` 校验项目状态、分支规则与 tag 后缀；如未传版本号，会基于仓库 tag 和 `Project.version_rule` 自动计算。
+存量数据上线前后使用 `python manage.py check_product_repository_consistency --json --strict` 做只读核对；历史发布回填与重复仓库归并命令均默认 dry-run，只有人工确认报告后才可追加 `--apply`。禁止在数据迁移中静默合并重复仓库。
+
+仓库级发布流程：
+
+1. 创建发布：`ReleaseService.create_release` 校验产品已启用关联该仓库、仓库所有者仍是产品成员、分支规则与 tag 后缀；如未传版本号，基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个产品发布时共享同一套 Tag。
 2. 预览变更：`ReleaseService.preview_changes` 拉取上个 tag 到目标分支之间的 commits / MRs，并解析 A/F 类更新内容。
 3. 生成发布说明：`ReleaseService.generate_doc` 保存 Markdown 发布说明。
 4. 提交审批：`ReleaseService.submit_audit` 要求发布处于 `draft` 且发布说明非空；按发布类型查找启用的 `WorkflowDefinition`，创建 `WorkflowInstance`，状态改为 `pending`。
@@ -239,7 +245,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 ### Provider 与凭证
 
 - 凭证通过 `apps.credential` 加密存储，接口返回时应脱敏。
-- 使用 `utils.provider.credential_resolver.resolve_credential(source, request_user)` 解析凭证。
+- 产品上下文使用 `utils.provider.credential_resolver.resolve_credential(source, request_user, product=..., operation=...)`：校验仓库所有者仍是该产品成员后，使用仓库绑定的个人凭证并写审计。
 - 使用 `utils.provider.factory.get_provider(vendor, server_url, credential_data)` 创建 GitLab / SVN provider。
 - Git 类 provider 统一提供分支、提交、tag、MR、compare、create tag 等能力；SVN provider 用于打包产物推送。
 
@@ -308,7 +314,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 - 修改业务流程（状态机、主流程步骤、模块上下线）时，须同步更新 `CLAUDE.md` 对应章节与本文件，保持两文件一致。
 - 修改模型后必须考虑迁移文件、测试数据和序列化器。
 - 涉及发布、工作流、凭证、权限的改动要补充或更新测试。
-- 不要恢复旧的 `ProjectIntegration` 设计；当前仓库直接归属项目并各自绑定凭证。
+- 不要恢复旧的 `ProjectIntegration` 设计；产品与仓库通过 `ProductComponent` 组合。兼容期保留 `Repository.project`，新查询同时兼容旧字段和组件关系；仓库各自绑定个人凭证并采用借用模式。
 
 ### 前端
 
