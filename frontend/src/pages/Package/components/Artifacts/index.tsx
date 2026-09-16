@@ -3,6 +3,7 @@ import { App, Button, Dropdown } from 'antd';
 import { ChevronDown, Download, FileArchive, Upload } from 'lucide-react';
 import type { PackageArtifact, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
+import { useHideFileDownload } from '@/hooks/useHideFileDownload';
 import { canPushSvn, formatSize, saveBlob } from '../utils';
 
 
@@ -16,9 +17,11 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
   onPushSvn?: () => void;
 }) {
   const { message } = App.useApp();
+  const hideDownload = useHideFileDownload();
   const [downloading, setDownloading] = useState(false);
 
   const hasArtifacts = (task.artifact_info || []).length > 0;
+  const svnOnly = hideDownload && canPushSvn(task);
 
   const items = useMemo(() => {
     if (!canPushSvn(task)) return [];
@@ -58,7 +61,22 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
     [onPushSvn]
   );
 
+  if (hideDownload && !svnOnly) return null;
   if (!hasArtifacts && items.length === 0) return null;
+
+  if (svnOnly) {
+    return (
+      <Button
+        size="small"
+        type="default"
+        loading={pushing}
+        icon={<Upload className="h-3 w-3" strokeWidth={1.5} />}
+        onClick={() => onPushSvn?.()}
+      >
+        推送 SVN
+      </Button>
+    );
+  }
 
   return (
     <Dropdown.Button
@@ -79,6 +97,7 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
 });
 
 export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { artifact: PackageArtifact; taskId: string }) {
+  const hideDownload = useHideFileDownload();
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -106,9 +125,11 @@ export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { art
           <span className="font-mono truncate">{artifact.path}</span>
         </div>
       </div>
-      <Button size="small" loading={downloading} icon={<Download className="h-3 w-3" strokeWidth={1.5} />} onClick={handleDownload} className="shrink-0">
-        下载
-      </Button>
+      {hideDownload ? null : (
+        <Button size="small" loading={downloading} icon={<Download className="h-3 w-3" strokeWidth={1.5} />} onClick={handleDownload} className="shrink-0">
+          下载
+        </Button>
+      )}
     </div>
   );
 });
@@ -120,6 +141,7 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
   artifact: PackageArtifact;
   taskId: string;
 }) {
+  const hideDownload = useHideFileDownload();
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -133,6 +155,8 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
       setDownloading(false);
     }
   }, [artifact, taskId]);
+
+  if (hideDownload) return null;
 
   return (
     <button

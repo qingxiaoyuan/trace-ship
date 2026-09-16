@@ -6,6 +6,8 @@ import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
 import { useAppMessage } from '@/hooks/useAppMessage';
 import { useProjectRole } from '@/hooks/useProjectRole';
+import { useHideFileDownload } from '@/hooks/useHideFileDownload';
+import { isOaMobileClient } from '@/utils/oaClient';
 import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './ReleaseDocField';
@@ -17,6 +19,7 @@ interface ReleaseNotesProps {
 
 /** 下载 Blob */
 function downloadBlob(blob: Blob, filename: string) {
+  if (isOaMobileClient()) return;
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -48,6 +51,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
     enabled: !!(release.project || release.project_id),
   });
   const { canDevelop } = useProjectRole(project);
+  const hideDownload = useHideFileDownload();
 
   const generateMutation = useMutation({
     mutationFn: () => releaseApi.generateDoc(release.id),
@@ -249,30 +253,34 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
             修改文档
           </button>
         )}
-        <button
-          type="button"
-          onClick={handleExportPdf}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-        >
-          <FileDown className="h-3.5 w-3.5" strokeWidth={1.5} />
-          导出 PDF
-        </button>
-        <button
-          type="button"
-          onClick={handleExportWord}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-        >
-          <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
-          导出 Word
-        </button>
-        <button
-          type="button"
-          onClick={handleExportMd}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-        >
-          <FileCode className="h-3.5 w-3.5" strokeWidth={1.5} />
-          导出 MD
-        </button>
+        {hideDownload ? null : (
+          <>
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              <FileDown className="h-3.5 w-3.5" strokeWidth={1.5} />
+              导出 PDF
+            </button>
+            <button
+              type="button"
+              onClick={handleExportWord}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
+              导出 Word
+            </button>
+            <button
+              type="button"
+              onClick={handleExportMd}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              <FileCode className="h-3.5 w-3.5" strokeWidth={1.5} />
+              导出 MD
+            </button>
+          </>
+        )}
       </div>
 
       <Modal

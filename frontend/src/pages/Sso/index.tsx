@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Result, Spin } from 'antd';
 import { useAuthStore } from '@/stores/authStore';
+import { markOaPortalEntry } from '@/utils/oaClient';
 
 /** 从 SSO 登录接口错误中提取面向用户的提示（认证接口返回原始 {code, message} 响应体） */
 function extractErrorMessage(error: unknown): string {
@@ -37,6 +38,8 @@ export default function SsoEntry() {
       return;
     }
     startedRef.current = true;
+    // OA 门户跳转进入：手机端据此隐藏文件下载，避免产物落到外网终端
+    markOaPortalEntry();
 
     ssoLogin(token)
       .then(() => navigate('/dashboard', { replace: true }))

@@ -20,6 +20,7 @@ import { packageApi } from '@/api/package';
 import { workflowApi } from '@/api/workflow';
 import { useAuthStore } from '@/stores/authStore';
 import { useAppMessage } from '@/hooks/useAppMessage';
+import { isOaMobileClient } from '@/utils/oaClient';
 import type { KpiCard, PipelineColumn, PipelineRange, TodoFilter, TodoItem } from './types';
 import { releaseStatusText, releaseTypeText } from './constants';
 import {
@@ -378,6 +379,7 @@ export default function Dashboard() {
 
   /** 导出周报：独立拉取近 7 天发布记录生成 CSV 下载（分页上限 100 条） */
   const handleExportWeekly = async () => {
+    if (isOaMobileClient()) return;
     const since = Date.now() - 7 * 86400000;
     const data = await releaseApi.getReleases({ page_size: 100 });
     const rows = (data?.results || []).filter(
