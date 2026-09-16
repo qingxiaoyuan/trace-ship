@@ -12,14 +12,27 @@ import type {
 
 export interface ProjectListParams {
   keyword?: string;
+  search?: string;
   status?: ProjectStatus;
   page?: number;
   page_size?: number;
 }
 
+function toProjectListQuery(params?: ProjectListParams) {
+  if (!params) return undefined;
+  const { keyword, search, status, ...rest } = params;
+  const mappedStatus =
+    status === 'active' ? 1 : status === 'inactive' ? 0 : status;
+  return {
+    ...rest,
+    search: (search ?? keyword)?.trim() || undefined,
+    status: mappedStatus,
+  };
+}
+
 export const projectApi = {
   getProjects: (params?: ProjectListParams) =>
-    get<PaginatedData<Project>>('/projects/', { params }),
+    get<PaginatedData<Project>>('/projects/', { params: toProjectListQuery(params) }),
   getProject: (id: string) => get<Project>(`/projects/${id}/`),
   getProjectStats: () => get<ProjectStats>('/projects/stats/'),
   createProject: (data: Partial<Project>) => post<Project>('/projects/', data),

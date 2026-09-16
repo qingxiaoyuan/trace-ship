@@ -6,7 +6,8 @@
 import re
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce, Greatest
 from django.utils import timezone
 
 from apps.project.models import ProductComponent, Project, ProjectMember
@@ -98,12 +99,50 @@ def repository_owner(repository):
     return None
 
 
+def _related_count_subquery(model, project_field: str = "project_id"):
+    """独立子查询计数，避免多个 Count(distinct) 在主查询里交叉 JOIN。"""
+    inner = (
+        model.objects.filter(**{project_field: OuterRef("pk")})
+        .order_by()
+        .values(project_field)
+        .annotate(_c=Count("*"))
+        .values("_c")
+    )
+    return Coalesce(Subquery(inner[:1], output_field=IntegerField()), 0)
+
+
+def annotate_project_list_counts(queryset):
+    """列表只需仓库数与成员数，用子查询注入，不扫发布/打包表。"""
+    from apps.repository.models import Repository
+
+    legacy_repos = _related_count_subquery(Repository)
+    components = _related_count_subquery(ProductComponent)
+    return queryset.annotate(
+        repo_count=Greatest(legacy_repos, components),
+        member_count=_related_count_subquery(ProjectMember),
+    )
+
+
+def annotate_project_detail_counts(queryset):
+    """详情额外统计打包配置与发布单，同样各自子查询，互不 JOIN。"""
+    from apps.package.models import PackageConfig
+    from apps.release.models import ReleaseRecord
+
+    return annotate_project_list_counts(queryset).annotate(
+        package_count=_related_count_subquery(PackageConfig),
+        release_count=_related_count_subquery(ReleaseRecord),
+    )
+
+
 def is_product_member(project, user) -> bool:
     """判断用户是否为产品成员（含负责人，不含仅凭超管身份）。"""
     if project is None or user is None:
         return False
     if str(getattr(project, "leader_id", "") or "") == str(user.id):
         return True
+    cached = getattr(project, "_prefetched_objects_cache", None) or {}
+    if "members" in cached:
+        return any(str(member.user_id) == str(user.id) for member in cached["members"])
     return ProjectMember.objects.filter(project=project, user=user).exists()
 
 

@@ -4,9 +4,8 @@
 提供项目 CRUD、项目成员管理接口。
 """
 from django.core.exceptions import ValidationError
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.deletion import ProtectedError
-from django.db.models.functions import Greatest
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status
@@ -24,6 +23,8 @@ from apps.project.serializers import (
 )
 from apps.project.services import (
     ProjectService,
+    annotate_project_detail_counts,
+    annotate_project_list_counts,
     next_component_code,
     visible_project_ids,
     visible_repository_ids,
@@ -67,58 +68,57 @@ class ProjectViewSet(StandardModelViewSet):
             return ProjectListSerializer
         return ProjectSerializer
 
-    def get_queryset(self):
-        """
-        根据用户身份返回可见项目，并 annotate 仓库 / 打包配置 / 成员 / 发布数量，
-        供列表与详情序列化器直接读取，避免 N+1 查询。
-        """
+    def _visible_queryset(self):
+        """仅按可见范围取产品，不附带 count 注解，供统计等轻量接口使用。"""
         if getattr(self, "swagger_fake_view", False):
             return Project.objects.none()
         user = self.request.user
         if not user or not user.is_authenticated:
             return Project.objects.none()
-        queryset = (
-            Project.objects.select_related("leader")
-            .prefetch_related(
-                # 预取当前用户在每个项目中的成员记录（to_attr="_my_member"），
-                # 供列表序列化器 get_my_role 读取，避免逐项目查询成员表
-                Prefetch(
-                    "members",
-                    queryset=ProjectMember.objects.filter(user=user).only("role", "project_id"),
-                    to_attr="_my_member",
-                )
-            )
-            .annotate(
-                # 迁移后组件关系覆盖全部旧仓库；Greatest 仍兼容测试夹具、脚本等
-                # 直接创建 Repository 而尚未补 ProductComponent 的短暂状态。
-                repo_count=Greatest(
-                    Count("repositories", distinct=True),
-                    Count("product_components", distinct=True),
-                ),
-                member_count=Count("members", distinct=True),
-                package_count=Count("package_configs", distinct=True),
-                release_count=Count("releases", distinct=True),
+        queryset = Project.objects.select_related("leader").prefetch_related(
+            # 预取当前用户在每个项目中的成员记录（to_attr="_my_member"），
+            # 供列表序列化器 get_my_role 读取，避免逐项目查询成员表
+            Prefetch(
+                "members",
+                queryset=ProjectMember.objects.filter(user=user).only("role", "project_id"),
+                to_attr="_my_member",
             )
         )
         if user.is_superuser:
-            return queryset.all()
-        project_ids = visible_project_ids(user)
-        return queryset.filter(id__in=project_ids)
+            return queryset
+        return queryset.filter(id__in=visible_project_ids(user))
+
+    def get_queryset(self):
+        """
+        根据用户身份返回可见项目。
+
+        列表只注入仓库数/成员数；详情再注入打包与发布数。计数一律走
+        相关表子查询，避免多个 Count(distinct) 交叉 JOIN 把发布单打成笛卡尔积。
+        """
+        queryset = self._visible_queryset()
+        action = getattr(self, "action", None)
+        if action == "list":
+            return annotate_project_list_counts(queryset)
+        if action in {"retrieve", "update", "partial_update"}:
+            return annotate_project_detail_counts(queryset)
+        return queryset
 
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request: Request) -> Response:
         """项目统计：项目总数、启用中、关联仓库总数、项目成员总数。"""
-        queryset = self.get_queryset()
+        queryset = self._visible_queryset()
         aggregate = queryset.aggregate(
             total=Count("id", distinct=True),
             active_count=Count("id", distinct=True, filter=Q(status=1)),
             member_total=Count("members", distinct=True),
         )
-        repo_total = sum(project.repo_count for project in queryset)
+        repo_total = (
+            annotate_project_list_counts(queryset).aggregate(repo_total=Sum("repo_count"))["repo_total"]
+        )
         return success_response({
             "total": aggregate["total"] or 0,
             "active_count": aggregate["active_count"] or 0,
-            "repo_total": repo_total,
+            "repo_total": repo_total or 0,
             "member_total": aggregate["member_total"] or 0,
         })
 
@@ -279,19 +279,33 @@ class ProductComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
         return (
             ProductComponent.objects
             .filter(project_id=project_id)
-            .select_related("project", "repository", "repository__project", "repository__credential")
+            .select_related(
+                "project",
+                "repository",
+                "repository__project",
+                "repository__created_by",
+                "repository__credential",
+                "repository__credential__owner",
+            )
             .prefetch_related(
+                Prefetch(
+                    "project__members",
+                    queryset=ProjectMember.objects.only("user_id", "project_id", "role"),
+                ),
                 Prefetch(
                     "repository__releases",
                     queryset=ReleaseRecord.objects.filter(
                         project_id=project_id,
                         status="released",
+                    ).only(
+                        "id", "version", "tag_name", "repository_id",
+                        "released_at", "created_at",
                     ).order_by("-released_at", "-created_at"),
                     to_attr="_latest_project_releases",
                 ),
                 Prefetch(
                     "package_configs",
-                    queryset=PackageConfig.objects.order_by("name"),
+                    queryset=PackageConfig.objects.only("id", "name", "is_active", "product_component_id").order_by("name"),
                     to_attr="_component_package_configs",
                 ),
                 Prefetch(
