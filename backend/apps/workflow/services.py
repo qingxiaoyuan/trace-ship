@@ -14,6 +14,7 @@ from rest_framework import serializers
 from apps.account.models import User
 from apps.notification.services import NotificationService
 from apps.project.models import Project, ProjectMember
+from apps.repository.models import Repository
 from apps.system.services import OperationLogService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 
@@ -26,44 +27,47 @@ BUILTIN_RELEASE_FLOW_NAMES: dict[str, str] = {
 
 
 def get_default_node_config() -> list:
-    """返回默认审批链配置（项目负责人或签审批）。"""
+    """返回默认审批链配置（仓库拥有者或签审批）。"""
     return [
         {
             "node_id": "approval_1",
-            "node_name": "项目负责人审批",
-            "approvers": [{"type": "leader"}],
+            "node_name": "仓库拥有者审批",
+            "approvers": [{"type": "repo_owner"}],
             "mode": "any",
         }
     ]
 
 
-def ensure_builtin_workflow_definitions(project: Project) -> None:
+def ensure_builtin_workflow_definitions(repository: Repository) -> None:
     """
-    为项目补齐三种发布类型（formal/rc/beta）的内置审批流程定义。
+    为仓库补齐三种发布类型（formal/rc/beta）的内置审批流程定义。
 
-    已存在的对应类型不重复创建；用于项目创建时与存量数据迁移。
+    已存在的对应类型不重复创建；用于仓库创建时与存量数据迁移。
 
     Args:
-        project: 项目实例
+        repository: 物理仓库实例
     """
 
     existing_types = set(
         WorkflowDefinition.objects.filter(
-            project=project, biz_type="release"
+            repository=repository, biz_type="release"
         ).values_list("release_type", flat=True)
     )
-    node_config = get_default_node_config()
-    graph_data = WorkflowEngine._build_graph_data(node_config)
+    approval_nodes = get_default_node_config()
+    approval_graph = WorkflowEngine._build_graph_data(approval_nodes)
+    empty_graph = WorkflowEngine._build_graph_data([])
     for release_type, name in BUILTIN_RELEASE_FLOW_NAMES.items():
         if release_type in existing_types:
             continue
+        skip_approval = release_type in ("rc", "beta")
         WorkflowDefinition.objects.create(
-            project=project,
+            repository=repository,
+            project=repository.project,
             name=name,
             biz_type="release",
             release_type=release_type,
-            node_config=node_config,
-            graph_data=graph_data,
+            node_config=[] if skip_approval else approval_nodes,
+            graph_data=empty_graph if skip_approval else approval_graph,
             is_active=True,
         )
 
@@ -507,11 +511,11 @@ class WorkflowEngine:
         Returns:
             去重后的 User 列表
         """
-        project = instance.definition.project
+        project, repository = cls._resolve_release_context(instance)
         all_approvers: list[User] = []
 
         for config in approvers_config:
-            users = cls._resolve_approvers_from_config(config, project, instance)
+            users = cls._resolve_approvers_from_config(config, project, instance, repository)
             all_approvers.extend(users)
 
         seen = set()
@@ -524,31 +528,58 @@ class WorkflowEngine:
         return unique_approvers
 
     @classmethod
+    @staticmethod
+    def _resolve_release_context(instance: WorkflowInstance) -> tuple[Project | None, Repository | None]:
+        """从流程实例解析产品与仓库上下文，优先使用本次发布单。"""
+        repository = getattr(instance.definition, "repository", None)
+        project = instance.definition.project
+        if instance.biz_type == "release" and instance.biz_id:
+            from apps.release.models import ReleaseRecord
+
+            release = (
+                ReleaseRecord.objects.filter(id=instance.biz_id)
+                .select_related("project", "repository", "repository__created_by")
+                .first()
+            )
+            if release:
+                project = release.project
+                repository = release.repository
+        return project, repository
+
+    @classmethod
     def _resolve_approvers_from_config(
         cls,
         config: dict[str, Any],
-        project: Project,
+        project: Project | None,
         instance: WorkflowInstance,
+        repository: Repository | None = None,
     ) -> list[User]:
         """
         从审批链配置解析审批人
 
         Args:
-            config: {"type": "leader"|"role"|"user"|"self", "user_id": ..., "role": ...}
-            project: 所属项目
+            config: {"type": "leader"|"role"|"user"|"self"|"repo_owner", ...}
+            project: 所属产品（解析产品负责人 / 指定角色）
             instance: 流程实例
+            repository: 所属仓库（解析仓库拥有者）
 
         Returns:
             User 列表
         """
         approver_type = config.get("type", "leader")
 
+        if approver_type == "repo_owner":
+            owner = getattr(repository, "created_by", None) if repository else None
+            return [owner] if owner else []
+
         if approver_type == "leader":
-            if project.leader:
+            if project and project.leader:
                 return [project.leader]
             return []
 
         if approver_type == "role":
+            if not project:
+                return []
             role = config.get("role", "")
             members = ProjectMember.objects.filter(
                 project=project,
@@ -751,6 +782,11 @@ class WorkflowEngine:
             if instance.created_by:
                 return [instance.created_by]
             return []
+
+        if approver_type == "repo_owner":
+            repository = getattr(instance.definition, "repository", None)
+            owner = getattr(repository, "created_by", None) if repository else None
+            return [owner] if owner else []
 
         return []
 

@@ -309,12 +309,14 @@ class PackageKnowledgeViewSet(StandardModelViewSet):
 
 
 class PackageConfigViewSet(StandardModelViewSet):
-    """项目级打包配置视图集。"""
+    """产品组件级打包配置视图集。"""
 
     queryset = PackageConfig.objects.all()
     serializer_class = PackageConfigSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["project", "repository", "is_active", "auto_package_on_release"]
+    filterset_fields = [
+        "project", "repository", "product_component", "is_active", "auto_package_on_release"
+    ]
     search_fields = ["name", "repository__name"]
     ordering_fields = ["created_at", "updated_at"]
     # 默认收藏优先（注解字段，见 get_queryset），其次创建时间倒序；显式 ?ordering= 时覆盖
@@ -324,7 +326,9 @@ class PackageConfigViewSet(StandardModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return PackageConfig.objects.none()
-        queryset = PackageConfig.objects.select_related("project", "repository", "image", "node", "svn_credential")
+        queryset = PackageConfig.objects.select_related(
+            "project", "repository", "product_component", "image", "node", "svn_credential"
+        )
         # 注解当前用户收藏状态，序列化器 is_favorite 直接读注解值，避免列表场景 N+1
         queryset = queryset.annotate(
             annotated_is_favorite=Exists(
@@ -640,7 +644,9 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         user = self.request.user
         if not user.is_authenticated:
             return PackageTask.objects.none()
-        queryset = PackageTask.objects.select_related("config", "release", "project", "repository", "triggered_by")
+        queryset = PackageTask.objects.select_related(
+            "config", "release", "project", "repository", "triggered_by"
+        )
         if user.is_superuser:
             return queryset
         project_ids = visible_project_ids(user)

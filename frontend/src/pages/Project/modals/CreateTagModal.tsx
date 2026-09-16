@@ -93,6 +93,7 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
         branch: values.branch as string,
         version: values.version as string,
         tag_name: values.tag_name as string,
+        redmine_url: (values.redmine_url as string)?.trim() || undefined,
       }),
     onSuccess: (release) => {
       setCreatedRelease(release);
@@ -163,14 +164,14 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           {nextVersion && !nextVersion.has_existing_tags && (
             <Alert
-              message="当前仓库暂无匹配 Tag，将使用项目初始版本号"
+              message="当前仓库暂无匹配 Tag，将使用仓库初始版本号"
               type="info"
               showIcon
               className="mb-4"
             />
           )}
 
-          <Form.Item label="项目">
+          <Form.Item label="产品">
             <Input value={repository.project_name || repository.project_id} disabled />
           </Form.Item>
 
@@ -226,6 +227,23 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
             />
           </Form.Item>
 
+          <Form.Item
+            name="redmine_url"
+            label="Redmine 任务地址（可选）"
+            rules={[
+              {
+                type: 'url',
+                message: '请输入完整 URL，例如 https://redmine.example.com/issues/12345',
+              },
+            ]}
+            extra="发布后可在版本详情中直接打开关联任务"
+          >
+            <Input
+              type="url"
+              placeholder="https://redmine.example.com/issues/12345"
+            />
+          </Form.Item>
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={createMutation.isPending || nextVersionLoading}>
@@ -246,6 +264,18 @@ export function CreateTagModal({ open, projectId, repository, onCancel, onSucces
               <p>发布类型：{releaseTypeOptions.find((o) => o.value === createdRelease.release_type)?.label || createdRelease.release_type}</p>
               <p>分支：{createdRelease.branch}</p>
               <p>Git Hash：{createdRelease.git_hash}</p>
+              {createdRelease.redmine_url ? (
+                <p>
+                  Redmine：{' '}
+                  <a
+                    href={createdRelease.redmine_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    打开关联任务
+                  </a>
+                </p>
+              ) : null}
             </Card>
             <Card size="small" title="发布说明">
               {generateDocMutation.isPending && <p>生成中...</p>}

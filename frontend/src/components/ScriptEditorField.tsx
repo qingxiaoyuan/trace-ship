@@ -13,7 +13,7 @@ export type ScriptLang = 'sh' | 'bat';
 const SCRIPT_VARIABLES: { name: string; desc: string }[] = [
   { name: 'VERSION', desc: '版本号' },
   { name: 'TAG_NAME', desc: 'Tag 名称' },
-  { name: 'PROJECT_CODE', desc: '项目编码' },
+  { name: 'PROJECT_CODE', desc: '产品编码' },
   { name: 'BUILD_PATH', desc: '构建目录（相对源码根）' },
   { name: 'OUTPUT_PATH', desc: '产物目录名' },
   { name: 'WORKSPACE', desc: '任务工作区根目录' },

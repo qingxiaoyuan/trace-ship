@@ -149,7 +149,7 @@ export function TopHeader() {
           className="group flex w-[280px] items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 transition-colors hover:border-indigo-200 hover:bg-white hover:text-indigo-600"
         >
           <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
-          <span>搜索项目、发布、提交…</span>
+          <span>搜索产品、仓库、发布、提交…</span>
           <span className="ml-auto flex items-center gap-0.5">
             <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
               ⌘

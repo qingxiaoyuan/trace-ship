@@ -86,7 +86,8 @@ class VersionCalculator:
     基于结构化 version_rule（prefix / major / minor / patch / suffixes）解析最新 tag 并递增修订号。
     tag 格式：{prefix}.{major}.{minor}.{patch}(-{suffix})?(_{YYYYMMDD})?，
     前缀仅在配置时出现，rc/beta 在修订号后追加 -{suffix}；
-    日期段在匹配时可选（兼容系统接入前的无日期历史 tag），新生成的 tag 仍强制拼接日期段。
+    日期段在匹配时可选（兼容系统接入前的无日期历史 tag），
+    是否拼接日期由 version_rule.with_date 控制（未配置时为兼容历史数据仍拼接）。
     """
 
     # 默认后缀映射：beta → beta，rc → rc
@@ -106,7 +107,8 @@ class VersionCalculator:
         self.minor: int = int(rule.get("minor", 0))
         self.patch: int = int(rule.get("patch", 0))
         self.suffixes: dict[str, str] = rule.get("suffixes") or dict(self.DEFAULT_SUFFIXES)
-        # 是否在生成的 tag 末尾拼接 _YYYYMMDD 日期段，默认开启（兼容历史数据）
+        # 是否在生成的 tag 末尾拼接 _YYYYMMDD 日期段。
+        # 未配置时默认开启以兼容历史数据；新建仓库的系统默认规则显式为 False。
         self.with_date: bool = bool(rule.get("with_date", True))
 
     @staticmethod
@@ -294,7 +296,7 @@ class VersionCalculator:
         按发布类型独立过滤 tag：匹配该类型的 tag
         （formal 无后缀 / rc 带 -rc / beta 带 -beta，日期段可选），
         找到最大版本号后修订号 +1，无匹配时使用初始版本。
-        生成的 tag 名称自动拼接当天日期段 _YYYYMMDD。
+        按 with_date 决定是否拼接当天日期段 _YYYYMMDD。
 
         Args:
             tags: 当前仓库的 tag 列表
@@ -743,6 +745,7 @@ class ReleaseService:
         """返回可安全清理的空草稿条件。"""
         return (
             Q(release_doc="")
+            & Q(redmine_url="")
             & Q(related_changes=[])
             & Q(updates=[])
             & Q(has_config_changes=False)
@@ -754,25 +757,29 @@ class ReleaseService:
         )
 
     @staticmethod
-    def _get_provider(repo: Repository, request_user=None) -> GitProvider:
+    def _get_provider(
+        repo: Repository,
+        request_user=None,
+        product: Project | None = None,
+        operation: str = "read",
+    ) -> GitProvider:
         """
         根据仓库获取 GitProvider
 
-        Args:
-            repo: Repository 实例
-            request_user: 当前请求用户
-
-        Returns:
-            GitProvider 实例
+        产品上下文会校验仓库所有者仍在该产品成员中，再使用仓库绑定凭证。
         """
         from apps.repository.services import RepositoryService
 
         server_url = RepositoryService._resolve_server_url(repo)
-        cred_data = resolve_credential(repo, request_user)
+        cred_data = resolve_credential(
+            repo, request_user, product=product, operation=operation,
+        )
         return get_provider(repo.vendor, server_url, cred_data)
 
     @staticmethod
-    def _resolve_branch_head_hash(repo: Repository, branch: str, request_user=None) -> str:
+    def _resolve_branch_head_hash(
+        repo: Repository, branch: str, request_user=None, product: Project | None = None,
+    ) -> str:
         """
         获取指定分支当前最新 commit hash
 
@@ -787,7 +794,7 @@ class ReleaseService:
         Raises:
             serializers.ValidationError: 获取失败
         """
-        provider = ReleaseService._get_provider(repo, request_user)
+        provider = ReleaseService._get_provider(repo, request_user, product=product)
         try:
             commits = provider.list_commits(repo.external_identity, branch, per_page=1)
         except ProviderError as exc:
@@ -849,6 +856,7 @@ class ReleaseService:
         publisher,
         version: str | None = None,
         tag_name: str | None = None,
+        redmine_url: str = "",
         related_changes: list | None = None,
         updates: list | None = None,
         has_config_changes: bool = False,
@@ -870,6 +878,7 @@ class ReleaseService:
             publisher: 发布人
             version: 可选的版本号，为空时自动计算
             tag_name: 可选的 tag 名称，为空时根据版本号与发布类型自动计算
+            redmine_url: 可选的 Redmine 任务地址
             related_changes: 关联变更清单（硬件/软件版本条目列表）
             updates: 变更条目（A/F 类变更内容）
             has_config_changes: 是否有配置项改动
@@ -884,11 +893,24 @@ class ReleaseService:
         Returns:
             新创建的 ReleaseRecord
         """
+        from apps.project.models import ProductComponent
+        from apps.project.services import repository_owner_association_error
+
         ReleaseValidator.validate_project_status(project)
         release_rule = ReleaseValidator.get_release_rule(project)
         version_rule = repository.get_version_rule()
 
-        provider = cls._get_provider(repository, publisher)
+        if not ProductComponent.objects.filter(
+            project=project, repository=repository, is_active=True,
+        ).exists():
+            raise serializers.ValidationError(
+                {"repository": "该仓库未在当前产品中启用，请先关联仓库"}
+            )
+        owner_error = repository_owner_association_error(repository, project)
+        if owner_error:
+            raise serializers.ValidationError({"repository": owner_error})
+
+        provider = cls._get_provider(repository, publisher, product=project)
         tags: list[TagInfo] | None = None
 
         # 若未传 version 但传了 tag_name，从 tag_name 去后缀反推 version
@@ -939,7 +961,7 @@ class ReleaseService:
         elif any(tag.name == tag_name for tag in tags):
             raise serializers.ValidationError({"tag_name": "Tag 已存在，不能创建发布草稿"})
 
-        git_hash = cls._resolve_branch_head_hash(repository, branch, publisher)
+        git_hash = cls._resolve_branch_head_hash(repository, branch, publisher, product=project)
 
         # 同一发布人反复创建同版本空草稿时清理旧草稿，避免临时草稿堆积。
         ReleaseRecord.objects.filter(
@@ -957,6 +979,7 @@ class ReleaseService:
             valid_package_config_ids = [
                 str(config_id)
                 for config_id in PackageConfig.objects.filter(
+                    project=project,
                     repository=repository,
                     auto_package_on_release=True,
                     id__in=[str(x) for x in package_config_ids],
@@ -970,6 +993,7 @@ class ReleaseService:
             repository=repository,
             version=version,
             tag_name=tag_name,
+            redmine_url=redmine_url or "",
             branch=branch,
             git_hash=git_hash,
             release_type=release_type,
@@ -1012,7 +1036,9 @@ class ReleaseService:
         Returns:
             Markdown 字符串
         """
-        provider = cls._get_provider(release.repository, request_user)
+        provider = cls._get_provider(
+            release.repository, request_user, product=release.project,
+        )
         generator = ReleaseDocGenerator(release, provider)
         md_doc = generator.generate(commit_ids=commit_ids, merge_similar=merge_similar)
         release.release_doc = md_doc
@@ -1228,16 +1254,24 @@ class ReleaseService:
         if illegal_exists:
             raise serializers.ValidationError({"commits": "包含非法提交，无法提交审批"})
 
-        # 按发布类型查找项目生效的发布审批流程定义
+        # 按发布类型查找仓库生效的审批流程；未迁移存量回退到产品级定义
         definition = WorkflowDefinition.objects.filter(
-            project=release.project,
+            repository=release.repository,
             biz_type="release",
             release_type=release.release_type,
             is_active=True,
         ).first()
         if not definition:
+            definition = WorkflowDefinition.objects.filter(
+                project=release.project,
+                repository__isnull=True,
+                biz_type="release",
+                release_type=release.release_type,
+                is_active=True,
+            ).first()
+        if not definition:
             raise serializers.ValidationError(
-                {"workflow": f"项目未配置 {release.release_type} 发布审批流程"}
+                {"workflow": f"仓库未配置 {release.release_type} 发布审批流程"}
             )
 
         # 若流程定义没有中间审批节点，直接推 tag 发布
@@ -1365,7 +1399,9 @@ class ReleaseService:
             release.id, release.version, release.tag_name,
             release.repository.external_identity, release.git_hash,
         )
-        provider = cls._get_provider(release.repository, request_user)
+        provider = cls._get_provider(
+            release.repository, request_user, product=release.project, operation="create_tag",
+        )
         user = request_user or release.publisher
         try:
             cls._validate_tag_not_exists(
@@ -1533,7 +1569,9 @@ class ReleaseService:
             raise serializers.ValidationError({"tag_name": "输入的 Tag 名称与发布版本不一致"})
 
         user = request_user or release.publisher
-        provider = cls._get_provider(release.repository, request_user)
+        provider = cls._get_provider(
+            release.repository, request_user, product=release.project, operation="delete_tag",
+        )
         remote_deleted = True
         try:
             provider.delete_tag(

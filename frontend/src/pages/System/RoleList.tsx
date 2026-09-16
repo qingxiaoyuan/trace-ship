@@ -179,7 +179,7 @@ export default function SystemRoleList() {
     const selectedPerms = permissions.filter((p) => form.permission_ids.includes(p.id));
 
     const moduleLabelMap: Record<string, string> = {
-      project: '项目管理',
+      project: '产品管理',
       release: '发布管理',
       repository: '仓库管理',
       credential: '凭证管理',
@@ -222,7 +222,7 @@ export default function SystemRoleList() {
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="如：项目经理"
+                    placeholder="如：产品管理员"
                     className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-700 placeholder-slate-400 outline-none"
                   />
                 </div>

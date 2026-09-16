@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trace Ship · 产品版本二级树 · 方向B</title>
+</head>
+<body style="margin:0;min-height:100vh;background:#F6F7FB;color:#334155;font-family:'Inter','Noto Sans SC','PingFang SC','Microsoft YaHei',Arial,sans-serif;font-synthesis:none;line-break:strict;">
+  <!--
+    ASSUMPTIONS / 设计假设
+    1. 本方案仍严格使用「软件仓库 → 发布版本」两级关系，只是把一级仓库做成更清晰的摘要卡。
+    2. 使用场景偏向产品负责人：先看每个仓库当前版本、发布数量与最近发布时间，再按需展开版本明细。
+    3. 卡片不是新的业务实体，仅是分组容器；数据来源和跳转目标与现有发布版本表一致。
+    4. 仓库数量较少时这种结构更容易建立空间记忆；数量很多时会比树表占用更多垂直空间。
+    5. 搜索命中仓库、版本或 Tag 时自动展开命中的仓库；仓库头部整行可点击，触控区域大于 36px。
+    6. 所有视觉令牌继承 Trace Ship：#4F46E5 主色、#E0E7FF 边框、白色表面、低饱和状态色，无装饰性插画。
+  -->
+  <div style="min-height:100vh;background-image:linear-gradient(rgba(99,102,241,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.045) 1px,transparent 1px);background-size:48px 48px;">
+    <main style="max-width:1320px;margin:0 auto;padding:24px 30px 50px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;font-size:13px;color:#94A3B8;"><span>产品</span><span>›</span><span style="color:#334155;">ces</span><span style="margin-left:auto;color:#6366F1;font-size:12px;">方向 B · 仓库摘要卡</span></div>
+
+      <section style="background:#FFFFFF;border:1px solid #E0E7FF;border-radius:12px;padding:20px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div style="width:44px;height:44px;border-radius:11px;background:#EEF2FF;border:1px solid #C7D2FE;display:flex;align-items:center;justify-content:center;color:#4F46E5;" data-icon="folder" data-size="21"></div>
+          <div style="flex:1;min-width:220px;"><div style="display:flex;align-items:center;gap:9px;"><h1 style="margin:0;font-size:21px;line-height:1.3;color:#0F172A;">ces</h1><span style="font-size:12px;color:#059669;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:6px;padding:2px 7px;">● 启用</span></div><div style="font-size:12px;color:#64748B;margin-top:6px;">3 个软件仓库 · 9 个已发布版本 · 最近发布于 2026-08-27</div></div>
+          <button type="button" style="height:38px;padding:0 14px;border:1px solid #C7D2FE;border-radius:8px;background:#FFFFFF;color:#475569;display:flex;align-items:center;gap:7px;cursor:pointer;"><span data-icon="rocket" data-size="16"></span>新建发布</button>
+        </div>
+      </section>
+
+      <section style="background:#FFFFFF;border:1px solid #E0E7FF;border-radius:12px;overflow:hidden;">
+        <div style="display:flex;gap:28px;align-items:center;overflow-x:auto;padding:0 26px;border-bottom:1px solid #E0E7FF;white-space:nowrap;font-size:13px;color:#64748B;"><span style="padding:14px 0;">基本信息</span><span>软件仓库</span><span>成员</span><span>打包配置</span><span>SVN 制品</span><span style="padding:14px 0 12px;color:#4F46E5;border-bottom:2px solid #4F46E5;">发布版本</span></div>
+        <div style="padding:20px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+            <label style="height:36px;width:min(280px,100%);border:1px solid #C7D2FE;border-radius:8px;background:#FFFFFF;display:flex;align-items:center;gap:8px;padding:0 11px;color:#94A3B8;"><span data-icon="search" data-size="15"></span><input id="searchB" placeholder="搜索仓库、版本号或 Tag" style="border:0;outline:0;width:100%;background:transparent;font:inherit;font-size:13px;color:#334155;" /></label>
+            <div style="margin-left:auto;font-size:12px;color:#94A3B8;">按仓库归纳版本信息</div>
+          </div>
+          <div id="cardsB" style="display:flex;flex-direction:column;gap:12px;"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const pathsB={folder:'<path d="M3 6.5h6l2 2h10v10.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 12v5M12 10v7M16 13v4"/>',rocket:'<path d="M4.5 16.5c-1.5 1.2-2 3.8-2 3.8s2.6-.5 3.8-2"/><path d="M9 15l-3-3c2.5-5.5 7.4-8.8 14-8-.8 6.6-4.1 11.5-9.6 14z"/><circle cx="15" cy="9" r="2"/>',search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',repo:'<circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v7a5 5 0 0 0 5 5h5M18 17V8M15 11l3-3 3 3"/>',down:'<path d="m8 10 4 4 4-4"/>',right:'<path d="m10 7 5 5-5 5"/>',tag:'<path d="M20 12 12 20l-8-8V4h8z"/><circle cx="9" cy="9" r="1"/>'};
+    const svgB=(n,s=16,c='currentColor')=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${pathsB[n]||''}</svg>`;
+    document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=svgB(el.dataset.icon,el.dataset.size||16));
+    const dataB=[
+      {id:'b',name:'E2E Backend Service',path:'e2e/backend-service',current:'VA.1.0.2',open:true,time:'08-27 16:06',versions:[['VA.1.0.0','VA.1.0.0-rc_20260827','RC','系统管理员','08-27 16:06'],['VA.1.0.2','VA.1.0.2_20260818','正式','系统管理员','08-18 19:08'],['VA.1.0.1','VA.1.0.1_20260811','正式','系统管理员','08-11 10:32'],['VA.1.0.0','VA.1.0.0','正式','系统管理员','07-28 16:07']]},
+      {id:'m',name:'E2E Middleware Core',path:'e2e/middleware-core',current:'VM.2.3.0',open:true,time:'08-25 11:18',versions:[['VM.2.3.0','VM.2.3.0_20260825','正式','测试管理员','08-25 11:18'],['VM.2.3.0-beta','VM.2.3.0-beta_20260822','Beta','测试管理员','08-22 09:41'],['VM.2.2.5','VM.2.2.5_20260803','正式','系统管理员','08-03 14:26']]},
+      {id:'w',name:'E2E Web Console',path:'e2e/web-console',current:'VW.1.8.4',open:false,time:'08-24 17:42',versions:[['VW.1.8.4','VW.1.8.4_20260824','正式','测试软件管理员','08-24 17:42'],['VW.1.8.3','VW.1.8.3-rc_20260820','RC','测试软件管理员','08-20 15:03']]}
+    ];
+    const badgeB={正式:['#EEF2FF','#4F46E5'],RC:['#E0F2FE','#0369A1'],Beta:['#FFFBEB','#B45309']};
+    function renderB(q=''){
+      const kw=q.trim().toLowerCase(),host=document.getElementById('cardsB');host.innerHTML='';
+      dataB.forEach(repo=>{const self=`${repo.name} ${repo.path}`.toLowerCase().includes(kw),hits=repo.versions.filter(v=>v.join(' ').toLowerCase().includes(kw));if(kw&&!self&&!hits.length)return;const versions=kw?(self?repo.versions:hits):repo.versions,open=kw||repo.open,card=document.createElement('article');
+        card.style.cssText='border:1px solid #E0E7FF;border-radius:11px;overflow:hidden;background:#FFFFFF;';
+        card.innerHTML=`<button data-repo="${repo.id}" type="button" style="width:100%;min-height:68px;border:0;background:${open?'#FAFBFF':'#FFFFFF'};display:grid;grid-template-columns:minmax(280px,2fr) repeat(3,minmax(120px,.75fr)) 28px;gap:16px;align-items:center;padding:12px 16px;text-align:left;cursor:pointer;">
+          <span style="display:flex;align-items:center;gap:11px;min-width:0;"><span style="width:34px;height:34px;border-radius:9px;background:#EEF2FF;border:1px solid #C7D2FE;color:#4F46E5;display:flex;align-items:center;justify-content:center;flex:none;">${svgB('repo',16)}</span><span style="min-width:0;"><b style="display:block;color:#0F172A;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${repo.name}</b><small style="display:block;margin-top:4px;color:#94A3B8;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;">${repo.path}</small></span></span>
+          <span data-summary-b style="font-size:11px;color:#94A3B8;">当前版本<b style="display:block;margin-top:4px;color:#4F46E5;font-size:12px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;">${repo.current}</b></span>
+          <span data-summary-b style="font-size:11px;color:#94A3B8;">发布数量<b style="display:block;margin-top:4px;color:#334155;font-size:12px;">${repo.versions.length} 个版本</b></span>
+          <span data-summary-b style="font-size:11px;color:#94A3B8;">最近发布<b style="display:block;margin-top:4px;color:#334155;font-size:12px;font-variant-numeric:tabular-nums;">2026-${repo.time}</b></span>
+          <span style="color:#94A3B8;">${svgB(open?'down':'right',16)}</span></button>
+          <div data-children-b style="display:${open?'block':'none'};padding:2px 16px 8px 66px;background:#FFFFFF;">${versions.map((v,i)=>{const c=badgeB[v[2]];return `<div data-version-row-b style="position:relative;display:grid;grid-template-columns:1.1fr 1.65fr .7fr .9fr 1fr 20px;gap:14px;align-items:center;min-height:42px;border-bottom:${i===versions.length-1?'0':'1px solid #F1F5F9'};font-size:12px;"><span style="position:absolute;left:-32px;top:0;bottom:0;border-left:1px solid #C7D2FE;"></span><span style="position:absolute;left:-32px;top:20px;width:22px;border-top:1px solid #C7D2FE;"></span><b style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#0F172A;font-weight:600;">${v[0]}</b><span data-tag-b title="${v[1]}" style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#64748B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v[1]}</span><span><em style="font-style:normal;border-radius:6px;padding:3px 7px;background:${c[0]};color:${c[1]};font-weight:600;">● ${v[2]}</em></span><span data-hide-mobile-b>${v[3]}</span><span data-hide-mobile-b style="color:#64748B;font-variant-numeric:tabular-nums;">2026-${v[4]}</span><span data-hide-mobile-b style="color:#CBD5E1;">${svgB('right',14)}</span></div>`}).join('')}</div>`;
+        host.appendChild(card);
+      });
+      host.querySelectorAll('[data-repo]').forEach(btn=>btn.onclick=()=>{const r=dataB.find(x=>x.id===btn.dataset.repo);r.open=!r.open;renderB(document.getElementById('searchB').value)});
+      applyResponsiveB();
+    }
+    function applyResponsiveB(){const mobile=window.innerWidth<=720;document.querySelectorAll('[data-repo]').forEach(el=>el.style.gridTemplateColumns=mobile?'1fr 24px':'minmax(280px,2fr) repeat(3,minmax(120px,.75fr)) 28px');document.querySelectorAll('[data-summary-b],[data-hide-mobile-b]').forEach(el=>el.style.display=mobile?'none':'');document.querySelectorAll('[data-children-b]').forEach(el=>el.style.padding=mobile?'2px 12px 8px 46px':'2px 16px 8px 66px');document.querySelectorAll('[data-version-row-b]').forEach(el=>{el.style.gridTemplateColumns=mobile?'1fr auto':'1.1fr 1.65fr .7fr .9fr 1fr 20px';el.style.gap=mobile?'6px':'14px';el.style.minHeight=mobile?'66px':'42px'});document.querySelectorAll('[data-tag-b]').forEach(el=>{el.style.gridColumn=mobile?'1 / -1':'';el.style.fontSize=mobile?'10px':''})}
+    renderB();document.getElementById('searchB').addEventListener('input',e=>renderB(e.target.value));window.addEventListener('resize',applyResponsiveB);
+  </script>
+</body>
+</html>

@@ -34,7 +34,7 @@ else:
         "django.contrib.auth.backends.ModelBackend",
     ]
 
-# 开发环境日志：同时输出 INFO 级别日志和 SQL 调试日志
+# 开发环境日志：不输出 SQL 参数，避免登录令牌、凭证明文等敏感值落入日志。
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -50,7 +50,7 @@ LOGGING = {
     "loggers": {
         "django.db.backends": {
             "handlers": ["console"],
-            "level": "DEBUG",
+            "level": "INFO",
             "propagate": False,
         },
     },

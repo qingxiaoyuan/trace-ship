@@ -47,7 +47,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
     enabled: !!projectId,
   });
 
-  // 项目内操作权限：按当前用户的项目成员角色控制按钮可见性
+  // 产品内操作权限：按当前用户的产品成员角色控制按钮可见性
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
@@ -148,7 +148,7 @@ export function RepoTab({ projectId }: RepoTabProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">仓库管理</h1>
-          <p className="mt-1 text-[13px] text-slate-500">管理项目下的代码仓库、同步状态与访问凭证</p>
+          <p className="mt-1 text-[13px] text-slate-500">管理产品关联的代码仓库、同步状态与访问凭证</p>
         </div>
         {canManage && (
           <button

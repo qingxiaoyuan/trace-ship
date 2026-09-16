@@ -1,8 +1,10 @@
 import type { PackageTask, PackageTaskStatus } from '@/types';
 import { packageApi } from '@/api/package';
+import { isOaMobileClient } from '@/utils/oaClient';
 
 /** 下载任务完整日志文件 */
 export async function downloadTaskLog(taskId: string) {
+  if (isOaMobileClient()) return;
   const blob = await packageApi.getTaskLog(taskId);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -72,6 +74,7 @@ export function formatSize(bytes: number): string {
 }
 
 export function saveBlob(blob: Blob, filename: string) {
+  if (isOaMobileClient()) return;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -87,6 +90,9 @@ export function isRunning(status: PackageTaskStatus): boolean {
 export function canPushSvn(task: PackageTask): boolean {
   if (typeof task.can_push_svn === 'boolean') return task.can_push_svn;
   const snapshot = task.config_snapshot || {};
+  const source = snapshot.trigger_source as string | undefined;
+  if (source !== 'auto_release') return false;
+  if (task.release_type && task.release_type !== 'formal') return false;
   return Boolean(
     task.status === 'success' &&
     (task.artifact_info || []).length > 0 &&

@@ -21,6 +21,7 @@ class ReleaseRecord(models.Model):
         repository: 目标仓库（第三阶段新增，明确推 tag 的对象）
         version: 版本号
         tag_name: 要推送的 tag 名称
+        redmine_url: 关联的 Redmine 任务地址
         branch: 发布分支（main / test-xxx）
         git_hash: 分支当前 commit hash
         release_type: 发布类型（formal 正式 / rc 候选 / beta 测试）
@@ -68,6 +69,11 @@ class ReleaseRecord(models.Model):
     )
     version = models.CharField(max_length=100, verbose_name="版本号")
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
+    redmine_url = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name="Redmine 任务地址",
+    )
     # 发布时的基线 tag：生成发布说明时持久化的上一个 tag 快照，
     # 供详情页展示「上一 tag -> 本次 tag」提交区间，历史数据为空。
     base_tag = models.CharField(max_length=100, blank=True, verbose_name="基线 Tag")

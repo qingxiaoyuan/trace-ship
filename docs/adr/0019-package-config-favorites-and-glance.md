@@ -23,7 +23,7 @@
    - `GET /api/packages/configs/favorites/` 返回当前用户收藏配置（收藏时间倒序、不分页），每条附 `last_task` 最近任务摘要（Subquery 取最近一次任务，无 N+1）；`PackageConfigSerializer` 输出 `is_favorite`（列表经 `Exists` 注解）。
    - `GET /api/packages/tasks/stats/?days=30`：打包统计聚合，口径固定为「我发起的（triggered_by=本人）、近 N 天（默认 30，1-365）、仅终态（success/failure/canceled）」，超管也不放开；返回 total/各状态计数/success_rate/avg_duration_seconds。
    - `PackageTaskViewSet.search_fields` 追加 `config__name`、`triggered_by__nickname`。
-3. **看板呈现**：不新增独立区块；「打包配置」列表默认按收藏优先排序（`ordering = ["-annotated_is_favorite", "-created_at"]`，显式 `?ordering=` 时用户排序优先），收藏开关为行尾操作区星标（乐观更新）。曾实现过右侧「常用配置」侧栏，经用户试用评审后放弃（占位且割裂），改为列表内排序。
+3. **看板呈现**：不新增独立区块；接口默认按收藏优先排序（`ordering = ["-annotated_is_favorite", "-created_at"]`，显式 `?ordering=` 时用户排序优先），收藏开关为行尾操作区星标（乐观更新）。看板按物理仓库 ID 分组，避免同名仓库合并；分组后含收藏配置的仓库优先，组内收藏配置优先，其余顺序沿用接口返回顺序。曾实现过右侧「常用配置」侧栏，经用户试用评审后放弃（占位且割裂），改为列表内排序。
 4. **工作台**：新增「打包速览」面板（命名规避「我的打包」）：chart.js doughnut 成功率环 + 状态计数（数据来自 stats 聚合，近 30 天口径）、我发起的最近 3 条任务、常用配置二级卡片（含项目/软件信息，按最近任务状态分派触发/重新打包/查看进度）。KPI「打包成功率」与原成功率图表同步切换到 stats 口径。
 5. **触发交互复用**：看板内的触发打包逻辑（选发布/分支 + 弹窗）提升为共享组件 `PackageTriggerModal`，看板列表、常用侧栏、工作台速览三处共用。
 

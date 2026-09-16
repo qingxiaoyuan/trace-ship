@@ -16,6 +16,7 @@ import {
 import { RepositoryModal } from './modals/RepositoryModal';
 import { repositoryApi } from '@/api/repository';
 import { projectApi } from '@/api/project';
+import { useAuthStore } from '@/stores/authStore';
 import { repoTypeBadge, healthDisplay } from './constants';
 import type { Repository } from '@/types';
 
@@ -49,6 +50,10 @@ function relativeTime(value?: string): string {
 export default function RepositoryList() {
   const navigate = useNavigate();
   const { message } = App.useApp();
+  const user = useAuthStore((state) => state.user);
+  const canRegisterGlobal = !!(
+    user?.is_superuser || user?.permissions?.includes('repository.manage')
+  );
   const [keyword, setKeyword] = useState('');
   const [project, setProject] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
@@ -106,14 +111,16 @@ export default function RepositoryList() {
           <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">仓库</h1>
           <p className="mt-1 text-[13px] text-slate-500">管理 GitLab 代码仓库，追踪提交与分支</p>
         </div>
-        <button
-          type="button"
-          onClick={() => { setEditingRepo(null); setModalOpen(true); }}
-          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          关联仓库
-        </button>
+        {canRegisterGlobal ? (
+          <button
+            type="button"
+            onClick={() => { setEditingRepo(null); setModalOpen(true); }}
+            className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            登记仓库
+          </button>
+        ) : null}
       </div>
 
       {/* 统计卡 */}
@@ -153,7 +160,7 @@ export default function RepositoryList() {
           </div>
           <Select
             allowClear
-            placeholder="项目"
+            placeholder="使用产品"
             style={{ width: 176 }}
             value={project}
             onChange={(v: string | undefined) => { setProject(v); setPage(1); }}
@@ -165,7 +172,7 @@ export default function RepositoryList() {
         {/* 表头 */}
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-3">仓库名称</div>
-          <div className="col-span-2">所属项目</div>
+          <div className="col-span-2">使用产品</div>
           <div className="col-span-2">类型</div>
           <div className="col-span-2">默认分支</div>
           <div className="col-span-2">健康</div>
@@ -182,6 +189,8 @@ export default function RepositoryList() {
             results.map((record) => {
               const badge = repoTypeBadge(record);
               const health = healthDisplay(record.health_status);
+              const productNames = (record.used_by_products || []).map((item) => item.product_name);
+              const productText = productNames.length ? productNames.join('、') : '未关联产品';
               return (
                 <div
                   key={record.id}
@@ -202,7 +211,7 @@ export default function RepositoryList() {
                       </div>
                     </div>
                     <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
-                      {record.project_name || '-'}
+                      {productText}
                     </div>
                     <div className="col-span-6 md:col-span-2">
                       <span className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium ${badge.cls}`}>
@@ -239,7 +248,7 @@ export default function RepositoryList() {
                       <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-slate-900">
                         {record.name}
                       </span>
-                      <span className="min-w-0 truncate text-[12px] text-slate-400">{record.project_name || '-'}</span>
+                      <span className="min-w-0 truncate text-[12px] text-slate-400">{productText}</span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                       <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />

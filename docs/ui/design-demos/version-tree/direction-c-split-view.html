@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trace Ship · 产品版本二级树 · 方向C</title>
+</head>
+<body style="margin:0;min-height:100vh;background:#F6F7FB;color:#334155;font-family:'Inter','Noto Sans SC','PingFang SC','Microsoft YaHei',Arial,sans-serif;font-synthesis:none;line-break:strict;">
+  <!--
+    ASSUMPTIONS / 设计假设
+    1. 方向 C 面向未来跨场景复用：左侧始终负责「软件仓库 → 版本」导航，右侧可以承载发布详情、打包任务或配置内容。
+    2. 它不把仓库或版本改造成新概念；树节点仍直接使用仓库登记名称和真实版本号。
+    3. 默认选中最近发布版本。点击仓库时右侧展示仓库版本概览，点击具体版本时展示版本摘要和关联状态。
+    4. 左栏宽度固定在 330px 左右，适合桌面看板；窄屏时两个区域允许自然换行，树在上、明细在下。
+    5. 这种焦点式结构减少一次显示的列数，但不适合需要同时比较多个仓库全部版本的用户，因此作为复用型备选而非首选。
+    6. 结构借鉴工程工作台的侧栏导航语法，颜色、字号、间距、圆角与 Trace Ship 当前项目保持一致。
+  -->
+  <div style="min-height:100vh;background-image:linear-gradient(rgba(99,102,241,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.045) 1px,transparent 1px);background-size:48px 48px;">
+    <main style="max-width:1320px;margin:0 auto;padding:24px 30px 50px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;font-size:13px;color:#94A3B8;"><span>产品</span><span>›</span><span style="color:#334155;">ces</span><span style="margin-left:auto;color:#6366F1;font-size:12px;">方向 C · 双栏树与明细</span></div>
+      <section style="background:#FFFFFF;border:1px solid #E0E7FF;border-radius:12px;padding:20px;margin-bottom:20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div style="width:44px;height:44px;border-radius:11px;background:#EEF2FF;border:1px solid #C7D2FE;display:flex;align-items:center;justify-content:center;color:#4F46E5;" data-icon="folder" data-size="21"></div>
+        <div style="flex:1;min-width:220px;"><div style="display:flex;align-items:center;gap:9px;"><h1 style="margin:0;font-size:21px;color:#0F172A;">ces</h1><span style="font-size:12px;color:#059669;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:6px;padding:2px 7px;">● 启用</span></div><div style="font-size:12px;color:#64748B;margin-top:6px;">3 个软件仓库 · 9 个已发布版本</div></div>
+        <button type="button" style="height:38px;padding:0 14px;border:1px solid #C7D2FE;border-radius:8px;background:#FFFFFF;color:#475569;display:flex;align-items:center;gap:7px;cursor:pointer;"><span data-icon="rocket" data-size="16"></span>新建发布</button>
+      </section>
+
+      <section style="background:#FFFFFF;border:1px solid #E0E7FF;border-radius:12px;overflow:hidden;">
+        <div style="display:flex;gap:28px;align-items:center;overflow-x:auto;padding:0 26px;border-bottom:1px solid #E0E7FF;white-space:nowrap;font-size:13px;color:#64748B;"><span style="padding:14px 0;">基本信息</span><span>软件仓库</span><span>成员</span><span>打包配置</span><span>SVN 制品</span><span style="padding:14px 0 12px;color:#4F46E5;border-bottom:2px solid #4F46E5;">发布版本</span></div>
+        <div style="padding:20px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;"><div><strong style="font-size:14px;color:#0F172A;">版本浏览器</strong><span style="font-size:12px;color:#94A3B8;margin-left:9px;">从仓库定位版本，也可复用于打包看板</span></div><span style="margin-left:auto;font-size:12px;color:#94A3B8;">最近同步 10:32</span></div>
+          <div id="splitC" style="display:grid;grid-template-columns:minmax(285px,330px) minmax(560px,1fr);border:1px solid #E0E7FF;border-radius:11px;overflow:auto;min-height:500px;">
+            <aside id="asideC" style="border-right:1px solid #E0E7FF;background:#FAFBFF;min-width:285px;">
+              <div style="padding:14px;border-bottom:1px solid #E0E7FF;"><label style="height:34px;border:1px solid #C7D2FE;border-radius:8px;background:#FFFFFF;display:flex;align-items:center;gap:8px;padding:0 10px;color:#94A3B8;"><span data-icon="search" data-size="14"></span><input id="searchC" placeholder="搜索仓库或版本" style="border:0;outline:0;background:transparent;width:100%;font:inherit;font-size:12px;color:#334155;" /></label></div>
+              <div id="treeC" style="padding:8px;"></div>
+            </aside>
+            <article id="detailC" style="background:#FFFFFF;min-width:560px;"></article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const pathsC={folder:'<path d="M3 6.5h6l2 2h10v10.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 12v5M12 10v7M16 13v4"/>',rocket:'<path d="M4.5 16.5c-1.5 1.2-2 3.8-2 3.8s2.6-.5 3.8-2"/><path d="M9 15l-3-3c2.5-5.5 7.4-8.8 14-8-.8 6.6-4.1 11.5-9.6 14z"/><circle cx="15" cy="9" r="2"/>',search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',repo:'<circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v7a5 5 0 0 0 5 5h5M18 17V8M15 11l3-3 3 3"/>',down:'<path d="m8 10 4 4 4-4"/>',right:'<path d="m10 7 5 5-5 5"/>',tag:'<path d="M20 12 12 20l-8-8V4h8z"/><circle cx="9" cy="9" r="1"/>',user:'<path d="M19 21a7 7 0 0 0-14 0"/><circle cx="12" cy="7" r="4"/>',calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>'};
+    const svgC=(n,s=16,c='currentColor')=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${pathsC[n]||''}</svg>`;
+    document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=svgC(el.dataset.icon,el.dataset.size||16));
+    const reposC=[
+      {id:'backend',name:'E2E Backend Service',path:'e2e/backend-service',open:true,versions:[{id:'a0',version:'VA.1.0.0',tag:'VA.1.0.0-rc_20260827',type:'RC',who:'系统管理员',time:'2026-08-27 16:06',status:'已发布'},{id:'a2',version:'VA.1.0.2',tag:'VA.1.0.2_20260818',type:'正式',who:'系统管理员',time:'2026-08-18 19:08',status:'已发布'},{id:'a1',version:'VA.1.0.1',tag:'VA.1.0.1_20260811',type:'正式',who:'系统管理员',time:'2026-08-11 10:32',status:'已发布'},{id:'a00',version:'VA.1.0.0',tag:'VA.1.0.0',type:'正式',who:'系统管理员',time:'2026-07-28 16:07',status:'已发布'}]},
+      {id:'middle',name:'E2E Middleware Core',path:'e2e/middleware-core',open:false,versions:[{id:'m23',version:'VM.2.3.0',tag:'VM.2.3.0_20260825',type:'正式',who:'测试管理员',time:'2026-08-25 11:18',status:'已发布'},{id:'m22',version:'VM.2.2.5',tag:'VM.2.2.5_20260803',type:'正式',who:'系统管理员',time:'2026-08-03 14:26',status:'已发布'}]},
+      {id:'web',name:'E2E Web Console',path:'e2e/web-console',open:false,versions:[{id:'w18',version:'VW.1.8.4',tag:'VW.1.8.4_20260824',type:'正式',who:'测试软件管理员',time:'2026-08-24 17:42',status:'已发布'},{id:'w17',version:'VW.1.8.3',tag:'VW.1.8.3-rc_20260820',type:'RC',who:'测试软件管理员',time:'2026-08-20 15:03',status:'已发布'}]}
+    ];
+    let selectedC={repo:'backend',version:'a0'};
+    function getSelectedC(){const repo=reposC.find(r=>r.id===selectedC.repo)||reposC[0];return {repo,version:repo.versions.find(v=>v.id===selectedC.version)||repo.versions[0]}}
+    function renderTreeC(q=''){
+      const kw=q.trim().toLowerCase(),host=document.getElementById('treeC');host.innerHTML='';
+      reposC.forEach(repo=>{const repoHit=`${repo.name} ${repo.path}`.toLowerCase().includes(kw),hits=repo.versions.filter(v=>`${v.version} ${v.tag}`.toLowerCase().includes(kw));if(kw&&!repoHit&&!hits.length)return;const open=kw||repo.open,versions=kw?(repoHit?repo.versions:hits):repo.versions,block=document.createElement('div');block.style.marginBottom='4px';
+        block.innerHTML=`<button type="button" data-repo="${repo.id}" style="width:100%;min-height:48px;border:0;border-radius:8px;background:${selectedC.repo===repo.id?'#EEF2FF':'transparent'};display:flex;align-items:center;gap:8px;padding:7px 9px;text-align:left;cursor:pointer;color:#334155;"><span style="color:#64748B;">${svgC(open?'down':'right',14)}</span><span style="width:28px;height:28px;border-radius:7px;background:#FFFFFF;border:1px solid #C7D2FE;color:#4F46E5;display:flex;align-items:center;justify-content:center;flex:none;">${svgC('repo',14)}</span><span style="min-width:0;flex:1;"><b style="display:block;font-size:12px;color:#0F172A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${repo.name}</b><small style="font-size:10px;color:#94A3B8;">${repo.versions.length} 个版本</small></span></button>
+          <div style="display:${open?'block':'none'};margin-left:30px;border-left:1px solid #C7D2FE;padding:3px 0 4px 12px;">${versions.map(v=>`<button type="button" data-version="${repo.id}:${v.id}" style="width:100%;height:34px;border:0;border-radius:7px;background:${selectedC.version===v.id?'#FFFFFF':'transparent'};box-shadow:${selectedC.version===v.id?'0 0 0 1px #C7D2FE':'none'};display:flex;align-items:center;gap:8px;padding:0 9px;color:${selectedC.version===v.id?'#4F46E5':'#64748B'};font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;cursor:pointer;"><span style="width:5px;height:5px;border-radius:50%;background:${selectedC.version===v.id?'#4F46E5':'#CBD5E1'};"></span>${v.version}<span style="margin-left:auto;font-family:'Inter','Noto Sans SC',sans-serif;font-size:10px;color:#94A3B8;">${v.type}</span></button>`).join('')}</div>`;
+        host.appendChild(block);
+      });
+      host.querySelectorAll('[data-repo]').forEach(btn=>btn.onclick=()=>{const r=reposC.find(x=>x.id===btn.dataset.repo);r.open=!r.open;selectedC={repo:r.id,version:r.versions[0].id};renderTreeC(document.getElementById('searchC').value);renderDetailC()});
+      host.querySelectorAll('[data-version]').forEach(btn=>btn.onclick=()=>{const [r,v]=btn.dataset.version.split(':');selectedC={repo:r,version:v};renderTreeC(document.getElementById('searchC').value);renderDetailC()});
+    }
+    function renderDetailC(){const {repo,version:v}=getSelectedC(),type=v.type==='正式'?['#EEF2FF','#4F46E5']:['#E0F2FE','#0369A1'];document.getElementById('detailC').innerHTML=`
+      <div style="padding:24px 26px 18px;border-bottom:1px solid #E0E7FF;background:#FAFBFF;"><div style="display:flex;align-items:flex-start;gap:13px;"><span style="width:40px;height:40px;border-radius:10px;background:#EEF2FF;border:1px solid #C7D2FE;color:#4F46E5;display:flex;align-items:center;justify-content:center;">${svgC('rocket',18)}</span><div style="flex:1;"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;"><h2 style="margin:0;color:#0F172A;font-size:18px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;">${v.version}</h2><span style="font-size:11px;padding:3px 7px;border-radius:6px;background:${type[0]};color:${type[1]};font-weight:600;">● ${v.type}</span><span style="font-size:11px;padding:3px 7px;border-radius:6px;background:#ECFDF5;color:#059669;font-weight:600;">● ${v.status}</span></div><div style="margin-top:7px;font-size:12px;color:#64748B;">${repo.name} <span style="color:#CBD5E1;margin:0 6px;">/</span> ${repo.path}</div></div><span style="color:#CBD5E1;">${svgC('right',18)}</span></div></div>
+      <div style="padding:22px 26px;"><div style="font-size:11px;color:#94A3B8;font-weight:650;letter-spacing:.05em;margin-bottom:12px;">版本信息</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+        <div style="border:1px solid #E0E7FF;border-radius:9px;padding:13px;"><span style="display:flex;align-items:center;gap:6px;color:#94A3B8;font-size:11px;">${svgC('tag',13)} TAG</span><b style="display:block;margin-top:8px;font-size:12px;color:#334155;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v.tag}</b></div>
+        <div style="border:1px solid #E0E7FF;border-radius:9px;padding:13px;"><span style="display:flex;align-items:center;gap:6px;color:#94A3B8;font-size:11px;">${svgC('user',13)} 发布人</span><b style="display:block;margin-top:8px;font-size:12px;color:#334155;">${v.who}</b></div>
+        <div style="border:1px solid #E0E7FF;border-radius:9px;padding:13px;"><span style="display:flex;align-items:center;gap:6px;color:#94A3B8;font-size:11px;">${svgC('calendar',13)} 发布时间</span><b style="display:block;margin-top:8px;font-size:12px;color:#334155;font-variant-numeric:tabular-nums;">${v.time}</b></div>
+      </div>
+      <div style="display:flex;align-items:center;margin:24px 0 10px;"><strong style="font-size:13px;color:#0F172A;">该仓库的其他版本</strong><span style="margin-left:auto;font-size:11px;color:#94A3B8;">共 ${repo.versions.length} 个</span></div>
+      <div style="border:1px solid #E0E7FF;border-radius:9px;overflow:hidden;">${repo.versions.filter(x=>x.id!==v.id).slice(0,3).map(x=>`<button data-switch="${repo.id}:${x.id}" style="width:100%;height:45px;border:0;border-bottom:1px solid #F1F5F9;background:#FFFFFF;display:grid;grid-template-columns:1fr 1.5fr .7fr 20px;gap:12px;align-items:center;padding:0 13px;text-align:left;color:#475569;cursor:pointer;"><b style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;color:#0F172A;">${x.version}</b><span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${x.tag}</span><span style="font-size:11px;">${x.type}</span><span style="color:#CBD5E1;">${svgC('right',13)}</span></button>`).join('')||'<div style="padding:20px;text-align:center;color:#94A3B8;font-size:12px;">暂无其他版本</div>'}</div>
+      <div style="margin-top:18px;padding:12px 14px;border-left:3px solid #06B6D4;background:#ECFEFF;color:#0E7490;font-size:12px;line-height:1.6;">在打包看板中，右侧区域可替换为该仓库版本对应的打包任务、制品和执行状态，左侧树保持不变。</div></div>`;
+      document.querySelectorAll('[data-switch]').forEach(btn=>btn.onclick=()=>{const [r,v]=btn.dataset.switch.split(':');selectedC={repo:r,version:v};renderTreeC(document.getElementById('searchC').value);renderDetailC()});
+    }
+    function applyResponsiveC(){const mobile=window.innerWidth<=720;document.getElementById('splitC').style.gridTemplateColumns=mobile?'1fr':'minmax(285px,330px) minmax(560px,1fr)';document.getElementById('asideC').style.borderRight=mobile?'0':'1px solid #E0E7FF';document.getElementById('asideC').style.borderBottom=mobile?'1px solid #E0E7FF':'0';document.getElementById('asideC').style.minWidth=mobile?'0':'285px';document.getElementById('detailC').style.minWidth=mobile?'0':'560px'}
+    renderTreeC();renderDetailC();applyResponsiveC();document.getElementById('searchC').addEventListener('input',e=>renderTreeC(e.target.value));window.addEventListener('resize',applyResponsiveC);
+  </script>
+</body>
+</html>

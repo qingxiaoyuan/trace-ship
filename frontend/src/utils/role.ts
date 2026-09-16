@@ -5,7 +5,7 @@ const roleMap: Record<string, string> = {
   tester: '测试人员',
   auditor: '审核人',
   viewer: '只读人员',
-  manager: '项目负责人',
+  manager: '产品负责人',
   software_admin: '软件管理员',
 };
 

@@ -3,15 +3,15 @@ import { useAuthStore } from '@/stores/authStore';
 export type ProjectRole = 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin';
 
 export interface ProjectPermissions {
-  /** 当前用户在项目中的角色（超管视为 manager，非成员为 null） */
+  /** 当前用户在产品中的角色（超管视为 manager，非成员为 null） */
   role: ProjectRole | null;
-  /** manager / software_admin：项目设置 / 成员管理 / 仓库管理 / 打包配置 / 流程节点编辑 */
+  /** manager / software_admin：产品设置 / 成员管理 / 仓库管理 / 打包配置 / 流程节点编辑 */
   canManage: boolean;
   /** developer 及以上（含 software_admin）：发布写操作 / 仓库同步测试 / 打包取消与推 SVN */
   canDevelop: boolean;
   /** tester/developer/manager（含 software_admin）：手动触发打包 */
   canTriggerPackage: boolean;
-  /** 任意项目成员均可拉人进项目（可授予角色见 grantableRoles） */
+  /** 任意产品成员均可拉人进产品（可授予角色见 grantableRoles） */
   canAddMember: boolean;
   /**
    * 当前用户可授予的成员角色：
@@ -21,10 +21,10 @@ export interface ProjectPermissions {
 }
 
 /**
- * 项目内操作权限 hook
+ * 产品内操作权限 hook
  *
- * 项目内操作只看项目成员角色（my_role，由项目详情接口返回），
- * 与系统角色解耦；超管拥有全部权限。软件管理员拥有项目内全部操作权限。
+ * 产品内操作只看产品成员角色（my_role，由产品详情接口返回），
+ * 与系统角色解耦；超管拥有全部权限。软件管理员拥有产品内全部操作权限。
  */
 export function useProjectRole(project?: { my_role?: string | null } | null): ProjectPermissions {
   const user = useAuthStore((state) => state.user);

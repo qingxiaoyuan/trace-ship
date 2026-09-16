@@ -57,3 +57,5 @@ class CredentialService:
         """
         if credential.repositories.exists():
             raise serializers.ValidationError("凭证已被仓库引用，无法删除")
+        if credential.repository_loans.exists():
+            raise serializers.ValidationError("凭证已有借用记录，无法删除；请停用凭证或撤销借用")

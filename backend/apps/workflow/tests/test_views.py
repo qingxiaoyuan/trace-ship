@@ -23,6 +23,53 @@ def api_client(user):
 class TestWorkflowInstanceViews:
     """工作流实例接口测试"""
 
+    def test_manager_can_create_instance_from_visible_definition(
+        self, api_client, definition,
+    ):
+        """产品管理员可基于可见流程定义发起实例。"""
+        response = api_client.post("/api/workflow/instances/", {
+            "definition_id": str(definition.id),
+            "biz_type": "release",
+            "biz_id": "00000000-0000-0000-0000-000000000010",
+        }, format="json")
+
+        assert response.status_code == 201, response.data
+
+    def test_outsider_cannot_create_instance_from_hidden_definition(
+        self, definition, other_user,
+    ):
+        """非产品成员即使知道流程定义 ID，也不能发起流程。"""
+        client = APIClient()
+        client.force_authenticate(user=other_user)
+
+        response = client.post("/api/workflow/instances/", {
+            "definition_id": str(definition.id),
+            "biz_type": "release",
+            "biz_id": "00000000-0000-0000-0000-000000000011",
+        }, format="json")
+
+        assert response.status_code == 404
+        assert not WorkflowInstance.objects.filter(created_by=other_user).exists()
+
+    def test_viewer_cannot_create_instance_from_visible_definition(
+        self, definition, project, other_user,
+    ):
+        """只读成员可以看到流程定义，但不能发起流程实例。"""
+        from apps.project.models import ProjectMember
+
+        ProjectMember.objects.create(project=project, user=other_user, role="viewer")
+        client = APIClient()
+        client.force_authenticate(user=other_user)
+
+        response = client.post("/api/workflow/instances/", {
+            "definition_id": str(definition.id),
+            "biz_type": "release",
+            "biz_id": "00000000-0000-0000-0000-000000000012",
+        }, format="json")
+
+        assert response.status_code == 403
+        assert not WorkflowInstance.objects.filter(created_by=other_user).exists()
+
     def test_initiated_returns_only_my_instances(self, api_client, user, definition, other_user):
         """「我发起的」只返回当前用户创建的实例"""
         WorkflowInstance.objects.create(

@@ -15,6 +15,7 @@ import { TagsTab } from './tabs/TagsTab';
 import { CredentialTab } from './tabs/CredentialTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { VersionRuleTab } from './tabs/VersionRuleTab';
+import { WorkflowTab } from './tabs/WorkflowTab';
 import { ReleaseTab } from '@/pages/Project/tabs/ReleaseTab';
 import type { Repository } from '@/types';
 
@@ -27,6 +28,7 @@ const tabs = [
   { key: 'svn', label: 'SVN 制品' },
   { key: 'credential', label: '凭证配置' },
   { key: 'versionRule', label: '版本规则' },
+  { key: 'workflows', label: '审批流' },
 ] as const;
 
 export default function RepositoryDetail() {
@@ -142,7 +144,9 @@ export default function RepositoryDetail() {
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
                 <span className={`rounded border px-1 py-0.5 font-mono ${badge.cls}`}>{badge.text}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
-                <span>{repo.project_name || '-'}</span>
+                <span>
+                  {(repo.used_by_products || []).map((item) => item.product_name).join('、') || '未关联产品'}
+                </span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <a
                   href={repo.clone_url || repo.url}
@@ -214,6 +218,7 @@ export default function RepositoryDetail() {
           {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}
           {activeTab === 'versionRule' && <VersionRuleTab repo={repo} />}
+          {activeTab === 'workflows' && <WorkflowTab repository={repo} />}
         </div>
       </TsCard>
 

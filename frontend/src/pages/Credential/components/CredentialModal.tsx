@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useCallback } from 'react';
-import { ConfigProvider, Form, Input, Select, DatePicker, Button } from 'antd';
+import { useEffect, useMemo } from 'react';
+import { Form, Input, Select, DatePicker, Button } from 'antd';
 import dayjs from 'dayjs';
 import {
   KeyRound,
@@ -11,11 +11,9 @@ import {
   Users,
 } from 'lucide-react';
 import { TsModal } from '@/components/TsModal';
-import { FormSection } from '@/components/FormSection';
 import {
   credentialTypeOptions,
   credentialTypeIconMap,
-  credentialTypeColorMap,
 } from '../constants';
 import type { Credential, CredentialType } from '@/types';
 
@@ -58,6 +56,46 @@ function FieldLabel({ text, required }: FieldLabelProps) {
   );
 }
 
+/** 凭证类型卡片选择器：写入 cred_type 表单字段，与原下拉行为一致 */
+function TypeCardSelect({
+  value,
+  onChange,
+}: {
+  value?: CredentialType;
+  onChange?: (value: CredentialType) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2.5">
+      {credentialTypeOptions.map(([type, label]) => {
+        const Icon = credentialTypeIconMap[type];
+        const selected = value === type;
+        return (
+          <button
+            key={type}
+            type="button"
+            onClick={() => onChange?.(type)}
+            className={
+              selected
+                ? 'flex flex-col items-center gap-1.5 rounded-lg bg-[#EEF2FF] px-2 py-3 ring-2 ring-[#4F46E5] transition'
+                : 'flex flex-col items-center gap-1.5 rounded-lg bg-white px-2 py-3 ring-1 ring-[#E0E7FF] transition hover:ring-[#6366F1]'
+            }
+          >
+            <Icon
+              className={`h-[18px] w-[18px] ${selected ? 'text-[#4F46E5]' : 'text-slate-500'}`}
+              strokeWidth={1.5}
+            />
+            <span
+              className={`text-[12px] font-medium ${selected ? 'text-[#4F46E5]' : 'text-slate-700'}`}
+            >
+              {label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CredentialModal({ open, credential, onCancel, onOk }: CredentialModalProps) {
   const [form] = Form.useForm();
 
@@ -70,11 +108,6 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
   const isSystemShared = credType === 'svn_password' || credType === 'windows_password' || credType === 'ssh_password';
   // 有效认证模式：token/密码类凭证由类型直接锁定，不依赖表单里的 auth_mode 字段
   const effectiveAuthMode = isTokenOnly ? 'token' : isPasswordOnly ? 'password' : authMode;
-
-  const typeLabelMap = useMemo(
-    () => Object.fromEntries(credentialTypeOptions) as Record<CredentialType, string>,
-    [],
-  );
 
   const initialValues = useMemo(() => {
     if (credential) {
@@ -137,39 +170,18 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
     });
   };
 
-  /** 凭证类型选项 / 触发标签 */
-  const renderTypeLabel = useCallback(
-    (value: CredentialType) => {
-      const Icon = credentialTypeIconMap[value];
-      const color = credentialTypeColorMap[value];
-      const label = typeLabelMap[value] || value;
-      return (
-        <div className="flex items-center gap-2">
-          <div
-            className={`flex h-6 w-6 items-center justify-center rounded-md border ${color.bg} ${color.border}`}
-          >
-            <Icon className={`h-3.5 w-3.5 ${color.text}`} strokeWidth={1.5} />
-          </div>
-          <span className="text-[13px] text-slate-700">{label}</span>
-        </div>
-      );
-    },
-    [typeLabelMap],
-  );
-
   const tokenLabel = effectiveAuthMode === 'password' ? '密码' : 'Token';
 
   return (
     <TsModal
       title={credential ? '编辑凭证' : '新增凭证'}
-      subtitle="凭证使用 AES-256 加密存储"
+      subtitle="凭证将加密存储，仅本人可见明文"
       titleIcon={<KeyRound className="h-[18px] w-[18px]" strokeWidth={1.5} />}
       open={open}
       onCancel={handleCancel}
-      width={760}
+      width={640}
       destroyOnHidden
       bodyStyle={{ maxHeight: 'none' }}
-      footerStyle={{ background: 'transparent' }}
       footer={
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -179,14 +191,14 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
           <div className="flex items-center gap-3">
             <Button
               type="text"
-              className="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-700 hover:text-indigo-600 transition h-auto"
+              className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"
               onClick={handleCancel}
             >
               取消
             </Button>
             <Button
               type="primary"
-              className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium text-white h-auto border-0"
+              className="inline-flex h-auto items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-medium"
               onClick={handleOk}
             >
               <Check className="h-3.5 w-3.5" strokeWidth={2} />
@@ -196,181 +208,153 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
         </div>
       }
     >
-      <ConfigProvider
-        theme={{
-          components: {
-            Form: {
-              itemMarginBottom: 0,
-              verticalLabelPadding: 0,
-            },
-          },
-        }}
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={initialValues}
+        requiredMark={false}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={initialValues}
-          requiredMark={false}
-        >
-          <FormSection title="基本信息" compact>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-              <Form.Item
-                name="name"
-                label={<FieldLabel text="凭证名称" required />}
-                rules={[{ required: true, message: '请输入凭证名称' }]}
-              >
-                <Input
-                  placeholder="请输入凭证名称"
-                  className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
-                />
-              </Form.Item>
-              <Form.Item
-                name="cred_type"
-                label={<FieldLabel text="凭证类型" required />}
-                rules={[{ required: true, message: '请选择凭证类型' }]}
-              >
-                <Select
-                  placeholder="请选择凭证类型"
-                  options={credentialTypeOptions.map(([value, label]) => ({ value, label }))}
-                  optionRender={(opt) => renderTypeLabel(opt.value as CredentialType)}
-                  labelRender={(opt) => renderTypeLabel(opt.value as CredentialType)}
-                  {...selectCommonProps}
-                />
-              </Form.Item>
-            </div>
-            {/* 共享范围说明：默认个人凭证，SVN / Windows 凭证全系统共享 */}
-            {isSystemShared && (
-              <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-[12px] text-indigo-600">
-                <Users className="h-3.5 w-3.5" strokeWidth={1.5} />
-                SVN / Windows 凭证全系统共享，所有用户可见可用；其余类型均为个人凭证
-              </div>
-            )}
-          </FormSection>
-
-          <FormSection
-            title="认证信息"
-            compact
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+          <Form.Item
+            name="cred_type"
+            className="mb-0 sm:col-span-2"
+            label={<FieldLabel text="凭证类型" required />}
+            rules={[{ required: true, message: '请选择凭证类型' }]}
             extra={
-              isTokenOnly ? (
-                <span className="text-[11px] text-indigo-500 font-medium inline-flex items-center gap-1">
+              (isTokenOnly || isPasswordOnly) && (
+                <p className="mb-0 mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-500">
                   <Lock className="h-3 w-3" strokeWidth={1.5} />
-                  Token 类凭证固定使用 Token 认证
-                </span>
-              ) : isPasswordOnly ? (
-                <span className="text-[11px] text-indigo-500 font-medium inline-flex items-center gap-1">
-                  <Lock className="h-3 w-3" strokeWidth={1.5} />
-                  密码类凭证固定使用用户名密码认证
-                </span>
+                  {isTokenOnly
+                    ? 'Token 类凭证固定使用 Token 认证'
+                    : '密码类凭证固定使用用户名密码认证'}
+                </p>
+              )
+            }
+          >
+            <TypeCardSelect />
+          </Form.Item>
+
+          {/* 共享范围说明：默认个人凭证，SVN / Windows 凭证全系统共享 */}
+          {isSystemShared && (
+            <div className="-mt-2 flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-[12px] text-indigo-600 sm:col-span-2">
+              <Users className="h-3.5 w-3.5" strokeWidth={1.5} />
+              SVN / Windows 凭证全系统共享，所有用户可见可用；其余类型均为个人凭证
+            </div>
+          )}
+
+          <Form.Item
+            name="name"
+            className="mb-0"
+            label={<FieldLabel text="凭证名称" required />}
+            rules={[{ required: true, message: '请输入凭证名称' }]}
+          >
+            <Input placeholder="请输入凭证名称" />
+          </Form.Item>
+
+          <Form.Item name="expires_at" className="mb-0" label={<FieldLabel text="过期时间" />}>
+            <DatePicker
+              showTime
+              className="w-full"
+              placeholder="请选择过期时间"
+              suffixIcon={
+                <Calendar className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
+              }
+            />
+          </Form.Item>
+
+          {/* GitLab Token 需要额外填写用户名，与 Token 并排展示。
+              注意：本字段与下方「密码模式用户名」共用 name="username"，二者按凭证类型互斥渲染
+              （GitLab Token 必为 token 模式），不会同时挂载 */}
+          {isGitlabToken && (
+            <Form.Item
+              name="username"
+              className="mb-0"
+              label={<FieldLabel text="用户名" />}
+              extra={
+                <p className="mb-0 mt-1 text-[11px] text-slate-400">默认 oauth2</p>
+              }
+            >
+              <Input placeholder="默认 oauth2" />
+            </Form.Item>
+          )}
+
+          {!isTokenOnly && !isPasswordOnly && (
+            <Form.Item
+              name="auth_mode"
+              className="mb-0"
+              label={<FieldLabel text="认证模式" required />}
+              rules={[{ required: true, message: '请选择认证模式' }]}
+            >
+              <Select
+                placeholder="请选择认证模式"
+                options={[
+                  { label: 'Token', value: 'token' },
+                  { label: '用户名密码', value: 'password' },
+                ]}
+                {...selectCommonProps}
+              />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            name="token"
+            className="mb-0"
+            label={<FieldLabel text={tokenLabel} required={!credential} />}
+            rules={[
+              {
+                required: !credential,
+                message: effectiveAuthMode === 'password' ? '请输入密码' : '请输入 Token',
+              },
+            ]}
+            extra={
+              credential ? (
+                <p className="mb-0 mt-1 text-[11px] text-slate-400">留空表示不修改</p>
               ) : undefined
             }
           >
-            <div
-              className="grid gap-x-4 gap-y-3"
-              style={{ gridTemplateColumns: ((isTokenOnly && !isGitlabToken) || isPasswordOnly) ? '1fr' : 'repeat(2, 1fr)' }}
-            >
-              {/* GitLab Token 用户名与 Token 放在同一行，用户名在前 */}
-              {isGitlabToken && (
-                <Form.Item
-                  name="username"
-                  label={<FieldLabel text="用户名" />}
-                  extra={
-                    <p className="mt-1 mb-0 text-[11px] text-slate-400">默认 oauth2</p>
-                  }
-                >
-                  <Input
-                    placeholder="默认 oauth2"
-                    className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
-                  />
-                </Form.Item>
-              )}
-              {!isTokenOnly && !isPasswordOnly && (
-                <Form.Item
-                  name="auth_mode"
-                  label={<FieldLabel text="认证模式" required />}
-                  rules={[{ required: true, message: '请选择认证模式' }]}
-                >
-                  <Select
-                    placeholder="请选择认证模式"
-                    options={[
-                      { label: 'Token', value: 'token' },
-                      { label: '用户名密码', value: 'password' },
-                    ]}
-                    {...selectCommonProps}
-                  />
-                </Form.Item>
-              )}
-              <Form.Item
-                name="token"
-                label={<FieldLabel text={tokenLabel} required={!credential} />}
-                rules={[
-                  {
-                    required: !credential,
-                    message: effectiveAuthMode === 'password' ? '请输入密码' : '请输入 Token',
-                  },
-                ]}
-                extra={
-                  credential && (
-                    <p className="mt-1 mb-0 text-[11px] text-slate-400">留空表示不修改</p>
-                  )
-                }
-              >
-                <Input.Password
-                  placeholder={
-                    credential
-                      ? '留空表示不修改'
-                      : effectiveAuthMode === 'password'
-                        ? '请输入密码'
-                        : '请输入 Token'
-                  }
-                  className="h-9 rounded-lg border-slate-200 font-mono-ui hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
-                />
-              </Form.Item>
-            </div>
+            <Input.Password
+              placeholder={
+                credential
+                  ? '留空表示不修改'
+                  : effectiveAuthMode === 'password'
+                    ? '请输入密码'
+                    : '请输入 Token'
+              }
+              className="font-mono-ui"
+            />
+          </Form.Item>
 
-            {/* 用户名（密码模式） */}
-            <div
-              className={[
-                'overflow-hidden transition-all duration-300',
-                effectiveAuthMode === 'password' ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
-              ].join(' ')}
+          {/* 用户名（密码模式），与密码字段并排 */}
+          {effectiveAuthMode === 'password' && (
+            <Form.Item
+              name="username"
+              className="mb-0"
+              label={<FieldLabel text="用户名" required />}
+              rules={[{ required: true, message: '密码模式必须填写用户名' }]}
             >
-              <div className="w-1/2 pr-2.5">
-                <Form.Item
-                  name="username"
-                  label={<FieldLabel text="用户名" required />}
-                  rules={[{ required: effectiveAuthMode === 'password', message: '密码模式必须填写用户名' }]}
-                >
-                  <Input
-                    placeholder="请输入用户名"
-                    className="h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)]"
-                  />
-                </Form.Item>
-              </div>
-            </div>
+              <Input placeholder="请输入用户名" />
+            </Form.Item>
+          )}
 
-            {/* 过期时间 / 备注 */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3">
-              <Form.Item name="expires_at" label={<FieldLabel text="过期时间" />}>
-                <DatePicker
-                  showTime
-                  className="w-full h-9 rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500"
-                  placeholder="请选择过期时间"
-                  suffixIcon={
-                    <Calendar className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
-                  }
-                />
-              </Form.Item>
-              <Form.Item name="remark" label={<FieldLabel text="备注" />}>
-                <Input.TextArea
-                  rows={1}
-                  placeholder="可选"
-                  className="min-h-[36px] rounded-lg border-slate-200 hover:border-indigo-200 focus:border-indigo-500"
-                />
-              </Form.Item>
-            </div>
-          </FormSection>
-        </Form>
-      </ConfigProvider>
+          <Form.Item
+            name="remark"
+            className="mb-0 sm:col-span-2"
+            label={<FieldLabel text="备注" />}
+            extra={
+              <p className="mb-0 mt-1 flex items-center gap-1 text-[11px] text-slate-400">
+                <ShieldCheck className="h-3 w-3 text-emerald-500" strokeWidth={1.5} />
+                使用 AES 加密存储，接口返回时自动脱敏
+              </p>
+            }
+          >
+            <Input.TextArea
+              rows={1}
+              placeholder="可选"
+              className="min-h-[34px]"
+            />
+          </Form.Item>
+        </div>
+      </Form>
     </TsModal>
   );
 }

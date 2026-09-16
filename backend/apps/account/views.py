@@ -6,6 +6,7 @@
 """
 
 from django.contrib.auth import authenticate
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -564,11 +565,25 @@ class UserViewSet(StandardModelViewSet):
             return User.objects.none()
         user = self.request.user
         if user.is_superuser or self.action in ["list", "retrieve"]:
-            return User.objects.all().prefetch_related("user_roles__role")
+            queryset = User.objects.all()
         # 拥有 system.user 权限可管理全部用户，否则仅可操作自己
-        if self._has_system_user_perm:
-            return User.objects.all().prefetch_related("user_roles__role")
-        return User.objects.filter(id=user.id).prefetch_related("user_roles__role")
+        elif self._has_system_user_perm:
+            queryset = User.objects.all()
+        else:
+            queryset = User.objects.filter(id=user.id)
+
+        if self.action == "list":
+            keyword = (self.request.query_params.get("keyword") or "").strip()
+            if keyword:
+                queryset = queryset.filter(
+                    Q(username__icontains=keyword) | Q(nickname__icontains=keyword)
+                )
+
+            source = (self.request.query_params.get("source") or "").strip()
+            if source:
+                queryset = queryset.filter(source=source)
+
+        return queryset.prefetch_related("user_roles__role").distinct().order_by("username")
 
     def get_serializer_class(self):
         """

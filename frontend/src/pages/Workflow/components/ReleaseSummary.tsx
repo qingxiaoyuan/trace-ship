@@ -33,7 +33,7 @@ export function ReleaseSummary({ source, instance }: ReleaseSummaryProps) {
         <h3 className="mb-3 text-[14px] font-semibold tracking-tight text-slate-900">发布摘要</h3>
         <div className="space-y-0">
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">项目</span>
+            <span className="text-[12px] text-slate-500">产品</span>
             <span className="text-[13px] font-medium text-slate-800">
               {source.projectName || '-'}
             </span>

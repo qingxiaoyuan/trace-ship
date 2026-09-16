@@ -1,7 +1,7 @@
 """
 系统内置打包数据模型
 
-包含系统级打包镜像、项目级打包配置和打包任务记录。
+包含系统级打包镜像、产品组件级打包配置和打包任务记录。
 """
 import uuid
 
@@ -153,7 +153,7 @@ class PackageNode(models.Model):
 
 
 class PackageConfig(models.Model):
-    """项目级打包配置。"""
+    """产品组件级打包配置，project/repository 为兼容与查询冗余字段。"""
 
     EXECUTOR_CHOICES = [
         ("local_docker", "本地 Docker"),
@@ -172,6 +172,12 @@ class PackageConfig(models.Model):
         on_delete=models.CASCADE,
         related_name="package_configs",
         verbose_name="关联仓库",
+    )
+    product_component = models.ForeignKey(
+        "project.ProductComponent",
+        on_delete=models.PROTECT,
+        related_name="package_configs",
+        verbose_name="产品组件",
     )
     name = models.CharField(max_length=200, verbose_name="配置名称")
     executor_type = models.CharField(
@@ -276,6 +282,24 @@ class PackageConfig(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        """兼容旧调用：唯一可判定时自动补齐产品组件。"""
+        if not self.product_component_id and self.project_id and self.repository_id:
+            from apps.project.models import ProductComponent
+
+            matches = ProductComponent.objects.filter(
+                project_id=self.project_id,
+                repository_id=self.repository_id,
+                is_active=True,
+            )
+            if matches.count() == 1:
+                self.product_component = matches.first()
+            elif not matches.exists():
+                raise ValueError("请先将该仓库关联到当前产品后再保存打包配置")
+            else:
+                raise ValueError("该仓库在当前产品中存在多条关联记录，必须明确指定关联记录")
+        return super().save(*args, **kwargs)
 
 
 class PackageConfigFavorite(models.Model):

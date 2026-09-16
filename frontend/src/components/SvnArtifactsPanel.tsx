@@ -7,7 +7,7 @@ interface SvnArtifactsPanelProps {
   /** 已过滤出启用 SVN 推送的打包配置 */
   configs: PackageConfig[];
   isLoading: boolean;
-  /** 是否按仓库分组展示（项目详情页使用） */
+  /** 是否按仓库分组展示（产品详情页使用） */
   groupByRepo?: boolean;
 }
 

@@ -42,7 +42,9 @@ def project(user):
 
 @pytest.fixture
 def repository(project):
-    return Repository.objects.create(
+    from apps.project.services import ensure_repository_component
+
+    repo = Repository.objects.create(
         project=project,
         repo_type="git",
         vendor="gitlab",
@@ -50,7 +52,10 @@ def repository(project):
         url="https://gitlab.example.com",
         external_identity="group/web",
         default_branch="main",
+        created_by=project.leader,
     )
+    ensure_repository_component(repo, project)
+    return repo
 
 
 @pytest.fixture

@@ -14,6 +14,15 @@ from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
 from utils.provider.svn import SVNProvider
 
+
+def _auto_formal_svn_snapshot(config) -> dict:
+    """正式发布自动打包快照：允许补推 SVN。"""
+    snapshot = PackageService._snapshot(config)
+    snapshot["trigger_source"] = "auto_release"
+    snapshot["svn_push_enabled"] = True
+    return snapshot
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -48,7 +57,9 @@ def project(user):
 
 @pytest.fixture
 def repository(project):
-    return Repository.objects.create(
+    from apps.project.services import ensure_repository_component
+
+    repo = Repository.objects.create(
         project=project,
         repo_type="git",
         vendor="gitlab",
@@ -56,7 +67,10 @@ def repository(project):
         url="https://gitlab.example.com",
         external_identity="group/web",
         default_branch="main",
+        created_by=project.leader,
     )
+    ensure_repository_component(repo, project)
+    return repo
 
 
 @pytest.fixture
@@ -601,7 +615,7 @@ def test_run_task_with_svn_push_failure_keeps_task_success(project, repository, 
         build_type="web",
         tag_name=release.tag_name,
         version=release.version,
-        config_snapshot=PackageService._snapshot(config),
+        config_snapshot=_auto_formal_svn_snapshot(config),
     )
 
     monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
@@ -707,7 +721,7 @@ class TestManualPushSvn:
             status="success",
             workspace_path=str(workspace),
             artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
-            config_snapshot=PackageService._snapshot(config),
+            config_snapshot=_auto_formal_svn_snapshot(config),
         )
 
         mock_provider = MagicMock()
@@ -773,7 +787,7 @@ class TestManualPushSvn:
             PackageService.manual_push_svn(task)
 
     def test_manual_push_fallback_to_config(self, project, repository, release, svn_credential, tmp_path):
-        """快照缺少 SVN 配置时回退到 config 当前配置。"""
+        """快照已允许推送但缺 URL 时，只回填地址，不改开关。"""
         config = PackageConfig.objects.create(
             project=project, repository=repository, name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
@@ -781,12 +795,12 @@ class TestManualPushSvn:
         workspace = tmp_path / "workspace"
         (workspace / "artifacts").mkdir(parents=True)
         (workspace / "artifacts" / "app.tar.gz").write_bytes(b"fake")
-        # 快照中不含 SVN 配置（模拟旧任务）
         task = PackageTask.objects.create(
             config=config, release=release, project=project, repository=repository,
             name="任务", build_type="web", tag_name=release.tag_name, version=release.version,
             status="success", workspace_path=str(workspace),
             artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
+            config_snapshot={"trigger_source": "auto_release", "svn_push_enabled": True},
         )
 
         mock_provider = MagicMock()
@@ -797,6 +811,29 @@ class TestManualPushSvn:
 
         assert result["remote_url"] == "svn://host/releases/V1.0.0"
         mock_provider.import_path.assert_called_once()
+        task.refresh_from_db()
+        assert task.config_snapshot.get("svn_push_enabled") is True
+        assert task.config_snapshot.get("trigger_source") == "auto_release"
+
+    def test_manual_push_rejects_legacy_snapshot_without_trigger_source(
+        self, project, repository, release, svn_credential, tmp_path
+    ):
+        """历史快照无 trigger_source 时不允许补推，即使配置已启用 SVN。"""
+        config = PackageConfig.objects.create(
+            project=project, repository=repository, name="配置",
+            svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
+        )
+        workspace = tmp_path / "workspace"
+        (workspace / "artifacts").mkdir(parents=True)
+        task = PackageTask.objects.create(
+            config=config, release=release, project=project, repository=repository,
+            name="任务", build_type="web", tag_name=release.tag_name, version=release.version,
+            status="success", workspace_path=str(workspace),
+            artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100}],
+            config_snapshot=PackageService._snapshot(config),
+        )
+        with pytest.raises(RuntimeError, match="仅正式发布自动打包"):
+            PackageService.manual_push_svn(task)
 
 
 @pytest.mark.django_db
@@ -822,7 +859,7 @@ def test_package_task_serializer_can_push_svn(project, repository, release, svn_
         version=release.version,
         status="success",
         artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz"}],
-        config_snapshot=PackageService._snapshot(config),
+        config_snapshot=_auto_formal_svn_snapshot(config),
     )
     data = PackageTaskSerializer(task).data
     assert data["can_push_svn"] is True
@@ -908,7 +945,7 @@ class TestReleaseTypeDistinction:
 def test_run_task_with_svn_push_for_branch_task(
     project, repository, svn_credential, user, settings, tmp_path, monkeypatch
 ):
-    """分支直打包任务（无发布）启用 SVN 推送时，打包成功后同样推送产物到 SVN。"""
+    """分支直打包属于手动触发，即使配置启用 SVN 也不自动推送。"""
     settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
     config = PackageConfig.objects.create(
         project=project,
@@ -920,9 +957,10 @@ def test_run_task_with_svn_push_for_branch_task(
         svn_credential=svn_credential,
         svn_path_template="{version}",
     )
-    # 屏蔽任务投递，避免测试环境实际执行打包
     monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
     task = PackageService.create_task_for_branch(config, "feature/demo", request_user=user)
+    assert task.config_snapshot.get("svn_push_enabled") is False
+    assert task.config_snapshot.get("trigger_source") == "manual_branch"
 
     monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
     monkeypatch.setattr(PackageService, "_run_container", lambda task, workspace: None)
@@ -931,23 +969,73 @@ def test_run_task_with_svn_push_for_branch_task(
         "_scan_artifacts",
         lambda workspace: [{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
     )
-
     mock_provider = MagicMock()
-    # remote_exists：对最末目录返回 False（不存在可推送），对父目录 releases/feature 也返回 False（需创建）
-    mock_provider.remote_exists.side_effect = lambda url: False
     monkeypatch.setattr("apps.package.services.svn.get_provider", lambda vendor, url, cred: mock_provider)
 
     PackageService.run_task(task)
     task.refresh_from_db()
 
     assert task.status == "success"
-    assert task.stage_info["svn_push"]["status"] == "success"
-    # 默认模板 {version} 即分支名，SVN 目录保留分支层级
-    assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/feature/demo"
-    mock_provider.import_path.assert_called_once()
-    # svn import 不会创建父目录：应先用 mkdir 创建 releases/feature
-    mock_provider.mkdir.assert_called_once()
-    assert mock_provider.mkdir.call_args.args[0] == "svn://host/releases/feature"
+    assert "svn_push" not in (task.stage_info or {})
+    mock_provider.import_path.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_create_task_svn_policy_only_auto_formal(project, repository, release, svn_credential, user, monkeypatch):
+    """仅正式发布自动打包打开 SVN 推送；手动触发与 RC 自动打包均关闭。"""
+    monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
+    config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="SVN 配置",
+        svn_push_enabled=True,
+        svn_url="svn://host/releases",
+        svn_credential=svn_credential,
+    )
+
+    auto_formal = PackageService.create_task_for_release(
+        config, release, request_user=user, auto_triggered=True
+    )
+    assert auto_formal.config_snapshot["svn_push_enabled"] is True
+    assert auto_formal.config_snapshot["trigger_source"] == "auto_release"
+
+    manual_formal = PackageService.create_task_for_release(config, release, request_user=user)
+    assert manual_formal.config_snapshot["svn_push_enabled"] is False
+    assert manual_formal.config_snapshot["trigger_source"] == "manual_release"
+
+    release.release_type = "rc"
+    release.save(update_fields=["release_type"])
+    auto_rc = PackageService.create_task_for_release(
+        config, release, request_user=user, auto_triggered=True
+    )
+    assert auto_rc.config_snapshot["svn_push_enabled"] is False
+    assert auto_rc.config_snapshot["trigger_source"] == "auto_release"
+
+
+@pytest.mark.django_db
+def test_manual_push_svn_rejects_manual_trigger_task(
+    project, repository, release, svn_credential, user, tmp_path, monkeypatch
+):
+    """手动触发的正式版打包不允许事后补推 SVN。"""
+    monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
+    config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="SVN 配置",
+        svn_push_enabled=True,
+        svn_url="svn://host/releases",
+        svn_credential=svn_credential,
+    )
+    workspace = tmp_path / "workspace"
+    (workspace / "artifacts").mkdir(parents=True)
+    task = PackageService.create_task_for_release(config, release, request_user=user)
+    task.status = "success"
+    task.workspace_path = str(workspace)
+    task.artifact_info = [{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100}]
+    task.save(update_fields=["status", "workspace_path", "artifact_info"])
+
+    with pytest.raises(RuntimeError, match="仅正式发布自动打包"):
+        PackageService.manual_push_svn(task)
 
 
 @pytest.mark.django_db

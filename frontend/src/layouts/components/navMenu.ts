@@ -46,7 +46,7 @@ const fallbackMenus: MenuItem[] = [
   { id: 'guide', name: '使用说明', path: '/guide', icon: 'ReadOutlined' },
   { id: 'feedback', name: '使用反馈', path: '/feedback', icon: 'MessageOutlined' },
   { id: 'changelog', name: '更新日志', path: '/changelog', icon: 'FileTextOutlined' },
-  { id: 'projects', name: '项目管理', path: '/projects', icon: 'FolderOutlined' },
+  { id: 'projects', name: '产品管理', path: '/projects', icon: 'FolderOutlined' },
   { id: 'repositories', name: '仓库管理', path: '/repositories', icon: 'DatabaseOutlined' },
   { id: 'credentials', name: '凭证管理', path: '/credentials', icon: 'KeyOutlined' },
   { id: 'packages', name: '打包看板', path: '/packages', icon: 'PlayCircleOutlined' },
@@ -100,7 +100,7 @@ const groupRules = [
 ];
 
 const labelMap: Record<string, string> = {
-  '/projects': '项目',
+  '/projects': '产品',
   '/repositories': '仓库',
   '/credentials': '凭证',
   '/packages': '打包看板',

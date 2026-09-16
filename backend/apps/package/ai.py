@@ -15,7 +15,7 @@ from apps.package.docker_local import LocalDockerService
 from apps.package.models import PackageImage, PackageKnowledge, PackageNode, PackageTask
 from apps.package.remote_windows import probe_node_tools
 from apps.package.serializers import validate_safe_rel_path
-from apps.project.models import Project
+from apps.project.models import ProductComponent, Project
 from apps.repository.models import Repository
 from apps.repository.services import RepositoryService
 from apps.system.services import OperationLogService, SystemConfigService
@@ -219,6 +219,7 @@ class PackageScriptAIService:
         request_user=None,
         tree_chars: int = 15000,
         manifest_chars: int = 32 * 1024,
+        product=None,
     ) -> tuple[dict, str | None]:
         """
         通过 GitLab API 读取仓库文件树与关键清单文件。
@@ -227,7 +228,7 @@ class PackageScriptAIService:
         """
         try:
             server_url = RepositoryService._resolve_server_url(repository)
-            cred_data = resolve_credential(repository, request_user)
+            cred_data = resolve_credential(repository, request_user, product=product)
             provider = get_provider(repository.vendor, server_url, cred_data)
             ref = repository.default_branch or ""
             tree = provider.list_tree(repository.external_identity, ref=ref, recursive=True)
@@ -689,11 +690,15 @@ class PackageScriptAIService:
         except Project.DoesNotExist:
             raise PackageScriptAIError("项目不存在", 40400) from None
         try:
-            repository = Repository.objects.get(
-                id=normalized["repository_id"], project_id=project.id
-            )
+            repository = Repository.objects.get(id=normalized["repository_id"])
         except Repository.DoesNotExist:
-            raise PackageScriptAIError("关联仓库不属于该项目") from None
+            raise PackageScriptAIError("关联仓库不存在") from None
+        if repository.project_id != project.id and not ProductComponent.objects.filter(
+            project=project,
+            repository=repository,
+            is_active=True,
+        ).exists():
+            raise PackageScriptAIError("关联仓库不属于当前产品，或关联未启用")
 
         limits = cls._prompt_limits()
         image_ctx = cls._resolve_image_context(normalized)
@@ -702,6 +707,7 @@ class PackageScriptAIService:
             request_user,
             tree_chars=limits["tree_chars"],
             manifest_chars=limits["manifest_chars"],
+            product=project,
         )
         probe = None
         probe_warning = None

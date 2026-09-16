@@ -6,7 +6,7 @@ interface SvnArtifactsTabProps {
   projectId: string;
 }
 
-/** SVN 制品 Tab：按仓库分组列出项目下启用 SVN 推送的打包配置，支持实时浏览制品目录 */
+/** SVN 制品 Tab：按仓库分组列出产品下启用 SVN 推送的打包配置，支持实时浏览制品目录 */
 export function SvnArtifactsTab({ projectId }: SvnArtifactsTabProps) {
   const { data, isLoading } = useQuery({
     queryKey: ['package-configs', 'project-svn', projectId],

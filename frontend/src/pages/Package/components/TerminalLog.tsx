@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, Info } from 'lucide-react';
+import { useHideFileDownload } from '@/hooks/useHideFileDownload';
 
 /** 单行高度（11.5px 字号 × 行高 ≈ 18px），虚拟滚动需要固定行高 */
 const LINE_HEIGHT = 18;
@@ -24,6 +25,8 @@ interface TerminalLogProps {
 
 /** 终端日志：虚拟滚动渲染，仅挂载可视区行，超大日志不卡顿 */
 export const TerminalLog = memo(function TerminalLog({ text, partial, onDownloadFull }: TerminalLogProps) {
+  const hideDownload = useHideFileDownload();
+  const canDownload = Boolean(onDownloadFull) && !hideDownload;
   const parentRef = useRef<HTMLDivElement>(null);
   const lines = useMemo(() => (text ? text.split('\n') : []), [text]);
   // 用户停留在底部附近时，新日志追加后自动跟随到底部
@@ -51,7 +54,7 @@ export const TerminalLog = memo(function TerminalLog({ text, partial, onDownload
 
   return (
     <div className="terminal overflow-hidden">
-      {(partial || onDownloadFull) && (
+      {(partial || canDownload) && (
         <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5 text-[10px] text-slate-500 max-md:text-xs">
           {partial && (
             <span className="inline-flex items-center gap-1">
@@ -59,7 +62,7 @@ export const TerminalLog = memo(function TerminalLog({ text, partial, onDownload
               日志较大，仅显示末尾部分
             </span>
           )}
-          {onDownloadFull && (
+          {canDownload && (
             <button
               type="button"
               onClick={onDownloadFull}

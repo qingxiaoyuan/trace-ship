@@ -50,8 +50,10 @@ def credential(user, project):
 
 @pytest.fixture
 def repository(project, credential):
-    """测试仓库"""
-    return Repository.objects.create(
+    """测试仓库，并补齐原产品下的启用关联。"""
+    from apps.project.services import ensure_repository_component
+
+    repo = Repository.objects.create(
         project=project,
         repo_type="git",
         vendor="gitlab",
@@ -62,7 +64,10 @@ def repository(project, credential):
         credential=credential,
         credential_mode="project",
         health_status="unknown",
+        created_by=project.leader,
     )
+    ensure_repository_component(repo, project)
+    return repo
 
 
 @pytest.fixture

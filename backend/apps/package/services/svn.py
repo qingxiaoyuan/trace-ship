@@ -18,6 +18,44 @@ from utils.provider.factory import get_provider
 
 logger = logging.getLogger(__name__)
 
+# 任务快照 trigger_source：决定本次打包是否允许推 SVN
+TRIGGER_SOURCE_AUTO_RELEASE = "auto_release"
+TRIGGER_SOURCE_MANUAL_RELEASE = "manual_release"
+TRIGGER_SOURCE_MANUAL_BRANCH = "manual_branch"
+
+
+def apply_svn_push_policy(
+    snapshot: dict[str, Any],
+    *,
+    trigger_source: str,
+    release_type: str,
+) -> dict[str, Any]:
+    """按触发来源与发布类型写入快照：仅自动触发的正式版才启用 SVN 推送。"""
+    snapshot = dict(snapshot)
+    snapshot["trigger_source"] = trigger_source
+    allow = (
+        bool(snapshot.get("svn_push_enabled"))
+        and trigger_source == TRIGGER_SOURCE_AUTO_RELEASE
+        and release_type == "formal"
+    )
+    snapshot["svn_push_enabled"] = allow
+    return snapshot
+
+
+def task_allows_svn_push(task: PackageTask) -> bool:
+    """任务是否允许自动/手动推送 SVN。
+
+    仅快照标明 trigger_source=auto_release 且发布类型为正式版时允许。
+    历史任务无 trigger_source 的不允许补推，避免旧手动正式包再推上 SVN。
+    """
+    snapshot = task.config_snapshot or {}
+    if not snapshot.get("svn_push_enabled"):
+        return False
+    source = snapshot.get("trigger_source")
+    if source != TRIGGER_SOURCE_AUTO_RELEASE:
+        return False
+    return (task.release_type or "formal") == "formal"
+
 
 class SvnPushMixin:
     """产物推送 SVN 与发布文档同步相关方法。"""
@@ -263,22 +301,21 @@ class SvnPushMixin:
         if not artifacts_dir.exists():
             raise RuntimeError("产物目录不存在，无法推送")
 
-        # 从快照解析 SVN 配置，快照缺失时回退到配置
-        snapshot = task.config_snapshot or {}
+        # 从快照解析 SVN 配置，快照缺失 URL 时回退到配置（不把手动任务重新打开推送开关）
+        snapshot = dict(task.config_snapshot or {})
         if not snapshot.get("svn_url") or not snapshot.get("svn_credential_id"):
             config = task.config
             if not config or not config.svn_push_enabled:
                 raise RuntimeError("打包配置未启用 SVN 推送，无法手动推送")
-            snapshot = {
-                **snapshot,
-                "svn_push_enabled": True,
+            snapshot.update({
                 "svn_url": config.svn_url,
                 "svn_credential_id": str(config.svn_credential_id) if config.svn_credential_id else None,
                 "svn_path_template": config.svn_path_template or "{version}",
-            }
-            task.config_snapshot = snapshot
-        if not snapshot.get("svn_push_enabled"):
-            raise RuntimeError("打包配置未启用 SVN 推送，无法手动推送")
+            })
+            # 只补 URL/凭证，不把 svn_push_enabled 默认打开
+        task.config_snapshot = snapshot
+        if not task_allows_svn_push(task):
+            raise RuntimeError("仅正式发布自动打包允许推送 SVN")
 
         cls._append_log(task, "开始手动推送产物到 SVN…")
         result = cls._push_artifacts_to_svn(task, workspace)

@@ -47,8 +47,10 @@ def project(user):
 
 @pytest.fixture
 def repository(project):
-    """测试仓库。"""
-    return Repository.objects.create(
+    """测试仓库，并补齐原产品下的启用关联。"""
+    from apps.project.services import ensure_repository_component
+
+    repo = Repository.objects.create(
         project=project,
         repo_type="git",
         vendor="gitlab",
@@ -56,7 +58,10 @@ def repository(project):
         url="https://gitlab.example.com",
         external_identity="group/web",
         default_branch="main",
+        created_by=project.leader,
     )
+    ensure_repository_component(repo, project)
+    return repo
 
 
 @pytest.mark.django_db
@@ -90,6 +95,45 @@ def test_trigger_auto_packages_creates_task(project, repository, user, monkeypat
     assert len(tasks) == 1
     assert tasks[0].config_id == config.id
     assert tasks[0].status == "queued"
+
+
+@pytest.mark.django_db
+def test_trigger_auto_packages_does_not_cross_products(project, repository, user, monkeypatch):
+    """共享仓库发布时只触发当前产品的打包配置。"""
+    image = PackageImage.objects.create(name="共享镜像", image="trace-ship/shared:latest")
+    current_config = PackageConfig.objects.create(
+        project=project,
+        repository=repository,
+        name="当前产品打包",
+        image=image,
+        auto_package_on_release=True,
+    )
+    other_project = Project.objects.create(name="另一个产品", code="OTHER", leader=user)
+    ProjectMember.objects.create(project=other_project, user=user, role="manager")
+    from apps.project.services import ensure_repository_component
+    ensure_repository_component(repository, other_project)
+    PackageConfig.objects.create(
+        project=other_project,
+        repository=repository,
+        name="其他产品打包",
+        image=image,
+        auto_package_on_release=True,
+    )
+    release = ReleaseRecord.objects.create(
+        project=project,
+        repository=repository,
+        version="VA.1.0.0",
+        tag_name="VA.1.0.0",
+        branch="main",
+        release_type="formal",
+        status="released",
+        publisher=user,
+    )
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
+
+    tasks = PackageService.trigger_auto_packages_for_release(release, request_user=user)
+
+    assert [task.config_id for task in tasks] == [current_config.id]
 
 
 @pytest.mark.django_db
@@ -238,7 +282,7 @@ def test_checkout_source_writes_release_doc(project, repository, user, tmp_path,
     workspace = tmp_path / "workspace"
     (workspace / "source").mkdir(parents=True)
     monkeypatch.setattr(PackageService, "_run_command", lambda *args, **kwargs: None)
-    monkeypatch.setattr(PackageService, "_build_auth_env", lambda repo, request_user=None: {})
+    monkeypatch.setattr(PackageService, "_build_auth_env", lambda repo, request_user=None, **_kwargs: {})
 
     PackageService._checkout_source(task, workspace)
 
@@ -881,7 +925,10 @@ def test_trigger_auto_packages_partial_selection_filters(project, repository, us
         url="https://gitlab.example.com",
         external_identity="group/other",
         default_branch="main",
+        created_by=project.leader,
     )
+    from apps.project.services import ensure_repository_component
+    ensure_repository_component(other_repo, project)
     config_other = PackageConfig.objects.create(
         project=project,
         repository=other_repo,
@@ -937,11 +984,11 @@ def test_create_release_saves_selected_package_config_ids(project, repository, u
         image=image,
         auto_package_on_release=False,
     )
-    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None: FakeProvider())
+    monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
     monkeypatch.setattr(
         ReleaseService,
         "_resolve_branch_head_hash",
-        lambda repo, branch, request_user=None: "head",
+        lambda repo, branch, request_user=None, **_kwargs: "head",
     )
 
     release = ReleaseService.create_release(

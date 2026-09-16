@@ -1,35 +1,51 @@
 """
 仓库管理数据模型
 
-包含代码仓库（Repository）和提交记录（CommitRecord）。
+包含可复用的物理代码仓库（Repository）和提交记录（CommitRecord）。
 """
 import uuid
+from copy import deepcopy
 
+from django.conf import settings
 from django.db import models
 
 from apps.repository.managers import CommitRecordManager
+
+
+def default_version_rule() -> dict:
+    """系统默认版本规则：前缀 V，RC/Beta 分别拼 -rc/-beta，默认不带日期段。"""
+    return {
+        "prefix": "V",
+        "major": 1,
+        "minor": 0,
+        "patch": 0,
+        "suffixes": {"rc": "rc", "beta": "beta"},
+        "with_date": False,
+    }
 
 
 class Repository(models.Model):
     """
     代码仓库模型
 
-    表示项目下的一个代码仓库或外部仓库绑定，支持 Git/SVN 以及多种平台。
+    表示一个物理代码仓库。产品通过 ProductComponent 引用仓库；project 字段在
+    兼容期内保留为历史登记项目。代码仓库当前仅支持 GitLab。
 
     Attributes:
         id: UUID 主键
-        project: 所属项目
+        project: 历史登记项目（兼容字段）
         repo_type: 仓库类型（git/svn）
         vendor: 平台厂商
         name: 仓库名称
         url: 仓库地址
         external_identity: 外部唯一标识
         default_branch: 默认分支
-        version_rule: 版本号规则（JSON），未配置时回退到项目的 version_rule
+        version_rule: 仓库组件版本号规则（JSON），登记时从产品复制一次；产品未配置则写入系统默认规则
         credential: 关联凭证
         credential_mode: 凭证来源（个人 / 项目）
         health_status: 健康状态
         last_sync_at: 最后同步时间
+        created_by: 仓库创建者（拥有者），可编辑该仓库审批流程
         created_at: 创建时间
         updated_at: 更新时间
     """
@@ -54,9 +70,11 @@ class Repository(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(
         "project.Project",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="repositories",
-        verbose_name="项目",
+        verbose_name="历史登记项目",
     )
     repo_type = models.CharField(max_length=10, choices=REPO_TYPE_CHOICES, verbose_name="仓库类型")
     vendor = models.CharField(max_length=20, choices=VENDOR_CHOICES, verbose_name="平台")
@@ -86,6 +104,14 @@ class Repository(models.Model):
         verbose_name="健康状态",
     )
     last_sync_at = models.DateTimeField(null=True, blank=True, verbose_name="最后同步时间")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_repositories",
+        verbose_name="仓库创建者",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -99,19 +125,34 @@ class Repository(models.Model):
             models.Index(fields=["project", "vendor"]),
             models.Index(fields=["health_status"]),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["vendor", "url", "external_identity"],
+                name="uniq_physical_repository_identity",
+            ),
+        ]
 
     def __str__(self) -> str:
         """返回项目-仓库名称描述"""
-        return f"{self.project.name} - {self.name}"
+        project_name = self.project.name if self.project else "未登记产品"
+        return f"{project_name} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        """新登记仓库写入版本规则：优先复制登记产品规则，否则使用系统默认。"""
+        if self._state.adding and not self.version_rule:
+            project_rule = self.project.version_rule if self.project_id else None
+            self.version_rule = deepcopy(project_rule) if project_rule else default_version_rule()
+        return super().save(*args, **kwargs)
 
     def get_version_rule(self) -> dict:
         """
         获取生效的版本号规则
 
-        版本号规则跟着仓库走：优先使用仓库自身配置，
-        未配置时回退到所属项目的 version_rule（兼容历史数据）。
+        版本号规则跟着物理仓库走。历史项目规则由数据迁移一次性复制，
+        运行时不再回退到某个产品，避免共享仓库因登记产品不同而产生歧义。
+        仓库未配置时返回系统默认规则（前缀 V，RC/Beta 后缀，不带时间戳）。
         """
-        return self.version_rule or getattr(self.project, "version_rule", None) or {}
+        return self.version_rule or default_version_rule()
 
 
 class RepositoryBranch(models.Model):

@@ -44,7 +44,7 @@ export default function TagGenerator() {
     queryFn: () => projectApi.getProjects({ page_size: 1000 }),
   });
 
-  // 仓库列表（按所选项目过滤）
+  // 仓库列表（按所选产品过滤）
   const projectId = Form.useWatch('project', form);
   const { data: repoData } = useQuery({
     queryKey: ['tagger-repositories', projectId],
@@ -87,7 +87,7 @@ export default function TagGenerator() {
     return items;
   }, [nextVersionData]);
 
-  // 初次加载：填充项目、发布人、变更类型等与仓库无关的默认字段
+  // 初次加载：填充产品、发布人、变更类型等与仓库无关的默认字段
   useEffect(() => {
     form.setFieldsValue({
       project: projectData?.results?.[0]?.id,
@@ -234,7 +234,7 @@ export default function TagGenerator() {
           current={currentStep}
           labelPlacement="vertical"
           items={[
-            { title: '选择项目与分支', description: '确认发布来源' },
+            { title: '选择产品与分支', description: '确认发布来源' },
             { title: '提取并编辑差异', description: '筛选并合并 commit' },
             { title: '生成发布说明', description: '编辑发布文档' },
           ]}

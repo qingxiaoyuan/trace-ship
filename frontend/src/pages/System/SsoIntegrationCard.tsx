@@ -156,6 +156,9 @@ export function SsoIntegrationCard() {
           <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 font-mono text-[12px] break-all text-slate-600">
             {entryUrl}
           </div>
+          <div className="mt-1 text-[11px] text-slate-400">
+            从 OA 手机端进入时会隐藏产物/日志/发布单等下载入口，避免文件落到外网终端；电脑浏览器不受影响
+          </div>
         </div>
       </div>
     </div>

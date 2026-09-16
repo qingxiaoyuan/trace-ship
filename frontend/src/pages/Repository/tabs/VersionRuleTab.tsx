@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Form, Input, InputNumber, Button, Switch, App } from 'antd';
 import { repositoryApi } from '@/api/repository';
 import type { Repository, VersionRule } from '@/types';
+import { resolveVersionRule } from '@/utils/versionRule';
 
 interface VersionRuleTabProps {
   repo: Repository;
@@ -22,17 +23,16 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
 
-  const versionRule = (repo.version_rule as VersionRule) || {};
-  const suffixes = versionRule.suffixes || {};
+  const versionRule = resolveVersionRule(repo.version_rule as VersionRule | undefined);
 
   const initialValues: VersionRuleFormValues = {
-    prefix: versionRule.prefix || 'VA',
-    major: versionRule.major ?? 1,
-    minor: versionRule.minor ?? 0,
-    patch: versionRule.patch ?? 0,
-    rcSuffix: suffixes.rc || 'rc',
-    betaSuffix: suffixes.beta || 'beta',
-    withDate: versionRule.with_date ?? true,
+    prefix: versionRule.prefix,
+    major: versionRule.major,
+    minor: versionRule.minor,
+    patch: versionRule.patch,
+    rcSuffix: versionRule.suffixes.rc,
+    betaSuffix: versionRule.suffixes.beta,
+    withDate: versionRule.with_date,
   };
 
   // 实时预览用
@@ -79,7 +79,7 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
     >
       <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
         <Form.Item name="prefix" label="版本前缀">
-          <Input placeholder="VA" />
+          <Input placeholder="V" />
         </Form.Item>
         <div className="hidden" />
 
@@ -110,17 +110,17 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
       </div>
 
       <div className="mt-2 rounded-lg border border-indigo-50 bg-indigo-50/30 px-4 py-2.5 text-[12px] text-slate-500">
-        格式预览：<span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}{dateSuffix}</span>
+        格式预览：<span className="font-mono text-indigo-600">{prefix || 'V'}.{major}.{minor}.{patch}{dateSuffix}</span>
         <span className="mx-1 text-slate-300">|</span>
-        RC: <span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}-{rcSuffix || 'rc'}{dateSuffix}</span>
+        RC: <span className="font-mono text-indigo-600">{prefix || 'V'}.{major}.{minor}.{patch}-{rcSuffix || 'rc'}{dateSuffix}</span>
         <span className="mx-1 text-slate-300">|</span>
-        Beta: <span className="font-mono text-indigo-600">{prefix || 'VA'}.{major}.{minor}.{patch}-{betaSuffix || 'beta'}{dateSuffix}</span>
+        Beta: <span className="font-mono text-indigo-600">{prefix || 'V'}.{major}.{minor}.{patch}-{betaSuffix || 'beta'}{dateSuffix}</span>
       </div>
 
       <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/50 px-4 py-2.5 text-[12px] text-slate-500">
         推荐版本号时会扫描仓库远端全部 tag（包括系统接入前已存在的历史 tag，如
         <span className="mx-1 font-mono text-slate-600">VB.4.1.5_20250715</span>），
-        只要符合上述规则即参与版本递增；未配置时沿用项目级版本规则。
+        只要符合上述规则即参与版本递增；仓库未配置时使用系统默认版本规则，不依赖任何产品。
       </div>
 
       <div className="mt-6 flex justify-end">

@@ -150,3 +150,13 @@ def test_delete_repository_bound_credential_is_rejected(api_client, credential, 
 
     assert response.status_code == 409
     assert response.data["code"] == 40900
+
+
+@pytest.mark.django_db
+def test_credential_types_route_remains_on_credential_viewset(api_client):
+    """新增借用路由后，原凭证类型枚举入口仍保持兼容。"""
+    response = api_client.get("/api/credentials/types/")
+
+    assert response.status_code == 200
+    values = {item["value"] for item in response.data["data"]["cred_types"]}
+    assert "gitlab_token" in values

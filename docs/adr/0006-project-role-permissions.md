@@ -101,3 +101,16 @@ leader）对项目资源不可见、不可写；流程节点编辑等高权限�
 - 校验落在 `ProjectMemberViewSet`（单个/批量添加、更新均走
   `_check_grantable_role`，越权返回 40301）；前端 `useProjectRole` 暴露
   `canAddMember` / `grantableRoles`，角色下拉按同一规则过滤，前后端规则同源。
+
+## Update (2026-09-11)
+
+数据可见范围与操作角色解耦。本更新取代原 Decision 2 与 Consequences 中
+“leader 无需成员记录即可见产品资源”的可见性结论，但保留 leader 的有效角色计算语义：
+
+- 超管仍可查看全部产品与仓库；
+- 其他用户只可查看具有显式 `ProjectMember` 记录的产品，`leader` 与
+  `release.audit` 不再自动扩大产品可见范围；
+- 仓库可见范围为“本人创建的仓库”或“已关联到本人所属产品的仓库”；
+- `repository.manage` 仅授予仓库维护能力，不绕过上述仓库数据范围；
+- `leader` 视同 `manager` 的角色计算语义保持不变，但数据可见性是操作授权的前置条件；
+  若需查看或维护产品及其嵌套资源，仍须加入产品成员。

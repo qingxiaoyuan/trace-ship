@@ -13,7 +13,7 @@ const isRunningStatus = (status?: PackageTaskStatus) => status === 'queued' || s
 
 /**
  * 常用配置卡片（设计稿 package-favorites-design.html 的侧栏 / 二级卡片样式）：
- * 状态点 + 配置名 + 项目·仓库 + 执行方式·节点/镜像 + 最近一次结果 + 按状态分派的操作按钮。
+ * 状态点 + 配置名 + 产品·仓库 + 执行方式·节点/镜像 + 最近一次结果 + 按状态分派的操作按钮。
  */
 export const FavoriteConfigCard = memo(function FavoriteConfigCard({
   config,

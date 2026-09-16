@@ -241,7 +241,9 @@ cd trace-ship-release
 ./deploy.sh --full     # 自动加载镜像、生成随机密钥的 .env.prod、先起依赖组再起应用并健康检查
 ```
 
-增量更新（复用已有 `.env.prod`）：外网侧 `scripts/build.sh --backend` / `--frontend` / `--app`，内网侧解压后 `./deploy.sh` 选对应模式（`--backend` / `--frontend` / `--app`）。
+增量更新（复用已有 `.env.prod`）：外网侧 `scripts/build.sh --backend` / `--frontend` / `--app`，内网侧解压后 `./deploy.sh` 选对应模式。菜单 1/2/3 与原来相同；**第 4 项**会先备份业务库并做一致性检查，通过后再更新前后端（等价 `./deploy.sh --upgrade`）。
+
+也可单独用 `./db.sh`（与 `deploy.sh` 同级）只做备份 / 恢复 / 检查，不动应用容器。`db.sh` 只动 Trace Ship 业务库，不含 GitLab / Redis / 打包工作区。
 
 ## 常见问题
 

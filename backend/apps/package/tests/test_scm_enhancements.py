@@ -41,7 +41,9 @@ def project(user):
 
 @pytest.fixture
 def repository(project):
-    return Repository.objects.create(
+    from apps.project.services import ensure_repository_component
+
+    repo = Repository.objects.create(
         project=project,
         repo_type="git",
         vendor="gitlab",
@@ -49,7 +51,10 @@ def repository(project):
         url="https://gitlab.example.com",
         external_identity="group/web",
         default_branch="main",
+        created_by=project.leader,
     )
+    ensure_repository_component(repo, project)
+    return repo
 
 
 @pytest.fixture
@@ -318,7 +323,7 @@ class TestCheckoutSourceSubmodules:
             captured["command"] = command
 
         monkeypatch.setattr(PackageService, "_run_command", capture_command)
-        monkeypatch.setattr(PackageService, "_build_auth_env", lambda repo, request_user=None: {})
+        monkeypatch.setattr(PackageService, "_build_auth_env", lambda repo, request_user=None, **_kwargs: {})
 
         PackageService._checkout_source(task, workspace)
         return captured["command"]
@@ -350,7 +355,7 @@ class TestCheckoutSourceSubmodules:
 class TestGitCredentialInjection:
     """inject_git_credential 凭证注入测试。"""
 
-    def _auth_env(self, repo, request_user=None):
+    def _auth_env(self, repo, request_user=None, **_kwargs):
         return {
             "TRACE_SHIP_GIT_USERNAME": "oauth2",
             "TRACE_SHIP_GIT_PASSWORD": "token-123",

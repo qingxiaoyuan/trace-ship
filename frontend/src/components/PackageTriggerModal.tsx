@@ -16,6 +16,7 @@ export interface PackageTriggerTarget {
   repository_name?: string;
   project?: string;
   repository?: string;
+  svn_push_enabled?: boolean;
 }
 
 interface PackageTriggerModalProps {
@@ -190,6 +191,11 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
             </div>
           </>
         )}
+        {config?.svn_push_enabled ? (
+          <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-2.5 text-[12px] leading-relaxed text-amber-800">
+            手动触发的打包不会推送 SVN。仅正式发布且开启「发布后自动打包」的任务才会自动推送 SVN。
+          </div>
+        ) : null}
       </Form>
     </Modal>
   );

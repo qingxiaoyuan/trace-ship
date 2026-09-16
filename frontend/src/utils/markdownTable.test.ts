@@ -29,7 +29,7 @@ describe('parseMdTable', () => {
 describe('buildMdTable', () => {
   it('生成含表头的 Markdown 表格', () => {
     const md = buildMdTable([{ key: '版本号', value: 'V1.0.0' }]);
-    expect(md).toBe('| 项目 | 内容 |\n|------|------|\n| 版本号 | V1.0.0 |');
+    expect(md).toBe('| 字段 | 内容 |\n|------|------|\n| 版本号 | V1.0.0 |');
   });
 
   it('转义键与值中的竖线', () => {

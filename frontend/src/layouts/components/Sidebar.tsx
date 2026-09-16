@@ -54,7 +54,7 @@ export function Sidebar() {
               {user?.department || userName}
             </div>
             <div className="truncate text-[10px] text-slate-400">
-              {projectData ? `${projectData.total} 个项目` : '项目加载中'}
+              {projectData ? `${projectData.total} 个产品` : '产品加载中'}
             </div>
           </div>
           <ChevronsUpDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />

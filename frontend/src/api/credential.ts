@@ -1,5 +1,10 @@
 import { get, post, put, del } from './request';
-import type { PaginatedData, Credential, CredentialType } from '@/types';
+import type {
+  PaginatedData,
+  Credential,
+  CredentialType,
+  RepositoryCredentialLoan,
+} from '@/types';
 
 export interface CredentialListParams {
   keyword?: string;
@@ -24,4 +29,16 @@ export const credentialApi = {
   getUsage: (id: string, params?: { page?: number; page_size?: number }) =>
     get<PaginatedData<unknown>>(`/credentials/${id}/usage/`, { params }),
   getTypes: () => get<{ value: CredentialType; label: string }[]>('/credentials/types/'),
+  getLoans: (params?: Record<string, unknown>) =>
+    get<PaginatedData<RepositoryCredentialLoan>>('/credentials/loans/', { params }),
+  getAvailableLoans: (repository: string, product: string, operation = 'read') =>
+    get<RepositoryCredentialLoan[]>('/credentials/loans/available/', {
+      params: { repository, product, operation },
+    }),
+  createLoan: (data: Partial<RepositoryCredentialLoan>) =>
+    post<RepositoryCredentialLoan>('/credentials/loans/', data),
+  updateLoan: (id: string, data: Partial<RepositoryCredentialLoan>) =>
+    put<RepositoryCredentialLoan>(`/credentials/loans/${id}/`, data),
+  revokeLoan: (id: string) =>
+    post<RepositoryCredentialLoan>(`/credentials/loans/${id}/revoke/`, {}),
 };

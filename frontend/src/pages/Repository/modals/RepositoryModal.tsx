@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from "react";
-import { ConfigProvider, Form, Input, Select, Row, Col, Button } from "antd";
+import { Form, Input, Select, Button } from "antd";
+import { GitBranch, Link } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { TsModal } from "@/components/TsModal";
-import { FormSection } from "@/components/FormSection";
 import { projectApi } from "@/api/project";
 import { credentialApi } from "@/api/credential";
 import type { Repository, CredentialType } from "@/types";
@@ -30,9 +30,9 @@ export function RepositoryModal({
   const [form] = Form.useForm();
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
-    queryKey: ["projects-all"],
+    queryKey: ["repository-modal-project", projectId],
     queryFn: () => projectApi.getProjects({ page_size: 1000 }),
-    enabled: open,
+    enabled: open && !!projectId,
   });
 
   const vendor = Form.useWatch("vendor", form) as string;
@@ -61,7 +61,7 @@ export function RepositoryModal({
     [credentialData],
   );
 
-  // 可选凭证变化后，若已选凭证不在新列表中则清空（切换来源/平台/项目或编辑回填不匹配时）
+  // 可选凭证变化后，若已选凭证不在新列表中则清空（切换来源/平台/产品或编辑回填不匹配时）
   useEffect(() => {
     const currentId = form.getFieldValue("credential_id");
     if (currentId && !credentialOptions.some((c) => c.value === currentId)) {
@@ -73,7 +73,6 @@ export function RepositoryModal({
     if (open) {
       if (repo) {
         form.setFieldsValue({
-          project_id: repo.project || repo.project_id,
           repo_type: repo.repo_type,
           vendor: repo.vendor,
           name: repo.name,
@@ -85,7 +84,6 @@ export function RepositoryModal({
       } else {
         form.resetFields();
         form.setFieldsValue({
-          project_id: projectId,
           repo_type: "git",
           vendor: "gitlab",
           default_branch: "main",
@@ -101,36 +99,36 @@ export function RepositoryModal({
         credential?: string;
       } = {
         ...values,
-        project: projectId || values.project_id,
+        ...(projectId ? { project: projectId } : {}),
         credential: values.credential_id,
         // 凭证统一为个人凭证（SVN 凭证全系统共享），credential_mode 固定为 personal
         credential_mode: "personal",
       };
       // 删除前端字段，避免污染后端
-      delete (payload as Record<string, unknown>).project_id;
       delete (payload as Record<string, unknown>).credential_id;
       onOk(payload);
       form.resetFields();
     });
   };
 
-  const confirmLoading = projectsLoading || credentialsLoading;
+  const confirmLoading = (projectId ? projectsLoading : false) || credentialsLoading;
 
   return (
     <TsModal
       title={repo ? "编辑仓库" : "新增仓库"}
+      subtitle="登记可复用的物理代码仓库，版本与 Tag 归属仓库"
+      titleIcon={<GitBranch className="h-[18px] w-[18px]" strokeWidth={1.5} />}
       open={open}
       onCancel={() => {
         form.resetFields();
         onCancel();
       }}
-      width={720}
-      footerStyle={{ background: 'transparent' }}
+      width={640}
       footer={
-        <div className="flex justify-end gap-3">
+        <div className="flex items-center justify-end gap-3">
           <Button
             type="text"
-            className="text-slate-500"
+            className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"
             onClick={() => {
               form.resetFields();
               onCancel();
@@ -138,130 +136,109 @@ export function RepositoryModal({
           >
             取消
           </Button>
-          <Button type="primary" onClick={handleOk} loading={confirmLoading}>
+          <Button
+            type="primary"
+            className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium"
+            onClick={handleOk}
+            loading={confirmLoading}
+          >
             确认
           </Button>
         </div>
       }
     >
-      <ConfigProvider
-        theme={{
-          components: {
-            Form: {
-              itemMarginBottom: 0,
-              verticalLabelPadding: 0,
-            },
-          },
-        }}
-      >
-        <Form form={form} layout="vertical">
-          <FormSection title="基本信息">
-            <Row gutter={[24, 16]}>
-              <Col span={12}>
-                {!projectId ? (
-                  <Form.Item
-                    name="project_id"
-                    label="关联项目"
-                    rules={[{ required: true, message: "请选择项目" }]}
-                  >
-                    <Select
-                      showSearch
-                      placeholder="选择项目"
-                      loading={projectsLoading}
-                      options={projectOptions}
-                      optionFilterProp="label"
-                    />
-                  </Form.Item>
-                ) : (
-                  <Form.Item label="关联项目">
-                    <Input
-                      value={
-                        projectOptions.find((p) => p.value === projectId)
-                          ?.label || projectId
-                      }
-                      disabled
-                    />
-                  </Form.Item>
-                )}
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  name="name"
-                  label="仓库名称"
-                  rules={[{ required: true, message: "请输入仓库名称" }]}
-                >
-                  <Input placeholder="请输入仓库名称" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  name="repo_type"
-                  label="仓库类型"
-                  rules={[{ required: true, message: "请选择仓库类型" }]}
-                >
-                  <Select
-                    options={[
-                      { label: "Git", value: "git" },
-                    ]}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  name="vendor"
-                  label="仓库平台"
-                  rules={[{ required: true, message: "请选择仓库平台" }]}
-                >
-                  <Select
-                    options={[
-                      { label: "GitLab", value: "gitlab" },
-                    ]}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={24}>
-                <Form.Item
-                  name="url"
-                  label="仓库地址"
-                  rules={[{ required: true, message: "请输入仓库地址" }]}
-                >
-                  <Input placeholder="https://gitlab.example.com/owner/repo.git" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  name="default_branch"
-                  label="默认分支"
-                  rules={[{ required: true, message: "请输入默认分支" }]}
-                >
-                  <Input placeholder="main" />
-                </Form.Item>
-              </Col>
-            </Row>
-          </FormSection>
+      <Form form={form} layout="vertical">
+        {/* 仓库类型 / 平台目前仅有 Git / GitLab 一个选项，隐藏字段仅保留表单值 */}
+        <Form.Item name="repo_type" hidden>
+          <Input />
+        </Form.Item>
+        <Form.Item name="vendor" hidden>
+          <Input />
+        </Form.Item>
 
-          <FormSection title="凭证配置">
-            <Row gutter={[24, 16]}>
-              <Col span={12}>
-                <Form.Item
-                  name="credential_id"
-                  label="凭证"
-                  rules={[{ required: true, message: "请选择凭证" }]}
-                >
-                  <Select
-                    showSearch
-                    placeholder="选择凭证"
-                    loading={credentialsLoading}
-                    options={credentialOptions}
-                    optionFilterProp="label"
-                    notFoundContent="暂无可用的凭证"
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-          </FormSection>
-        </Form>
-      </ConfigProvider>
+        {/* 基本信息 */}
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+          基本信息
+        </p>
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+          {projectId ? (
+            <Form.Item label="创建后关联产品" className="mb-0">
+              <Input
+                value={
+                  projectOptions.find((p) => p.value === projectId)?.label ||
+                  projectId
+                }
+                disabled
+              />
+            </Form.Item>
+          ) : null}
+          <Form.Item
+            name="name"
+            label="仓库名称"
+            className="mb-0"
+            rules={[{ required: true, message: "请输入仓库名称" }]}
+          >
+            <Input placeholder="请输入仓库名称" />
+          </Form.Item>
+          <Form.Item
+            name="default_branch"
+            label="默认分支"
+            className="mb-0"
+            rules={[{ required: true, message: "请输入默认分支" }]}
+          >
+            <Input
+              prefix={<GitBranch className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
+              placeholder="main"
+            />
+          </Form.Item>
+          <Form.Item
+            name="url"
+            label="仓库地址"
+            className="mb-0 sm:col-span-2"
+            rules={[{ required: true, message: "请输入仓库地址" }]}
+            extra={
+              <p className="mb-0 mt-1 text-[11px] text-slate-400">
+                支持填写完整克隆地址，保存后按平台自动解析
+              </p>
+            }
+          >
+            <Input
+              prefix={<Link className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
+              placeholder="https://gitlab.example.com/owner/repo.git"
+              className="font-mono-ui"
+            />
+          </Form.Item>
+        </div>
+
+        <div className="my-5 h-px bg-[#EDEFF7]" />
+
+        {/* 凭证配置 */}
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+          凭证配置
+        </p>
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+          <Form.Item
+            name="credential_id"
+            label="凭证"
+            className="mb-0"
+            rules={[{ required: true, message: "请选择凭证" }]}
+            extra={
+              <p className="mb-0 mt-1 text-[11px] text-slate-400">
+                按仓库平台过滤可用凭证，凭证归个人所有
+              </p>
+            }
+          >
+            <Select
+              showSearch
+              placeholder="选择凭证"
+              loading={credentialsLoading}
+              options={credentialOptions}
+              optionFilterProp="label"
+              notFoundContent="暂无可用的凭证"
+            />
+          </Form.Item>
+        </div>
+      </Form>
     </TsModal>
   );
 }

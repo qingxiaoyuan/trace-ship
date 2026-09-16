@@ -14,21 +14,19 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { OverviewTab } from './tabs/OverviewTab';
-import { RepoTab } from './tabs/RepoTab';
+import { ProductComponentTab } from './tabs/ProductComponentTab';
 import { MemberTab } from './tabs/MemberTab';
-import { WorkflowTab } from './tabs/WorkflowTab';
 import { ReleaseTab } from './tabs/ReleaseTab';
 import { PackageTab } from './tabs/PackageTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { projectApi } from '@/api/project';
 import type { ProjectStatus } from '@/types';
 
-/** Tab 配置：基本信息 / 仓库 / 成员 / 审批流 / 打包配置 / SVN 制品 / 发布版本 */
+/** Tab 配置：基本信息 / 软件仓库 / 成员 / 打包配置 / SVN 制品 / 发布版本 */
 const tabItems = [
   { key: 'overview', label: '基本信息' },
-  { key: 'repos', label: '仓库' },
+  { key: 'repos', label: '软件仓库' },
   { key: 'members', label: '成员' },
-  { key: 'workflows', label: '审批流' },
   { key: 'packages', label: '打包配置' },
   { key: 'svn', label: 'SVN 制品' },
   { key: 'releases', label: '发布版本' },
@@ -36,13 +34,13 @@ const tabItems = [
 
 /** 详情头统计项 */
 const headerStats = [
-  { key: 'repo_count', label: '仓库', icon: GitFork, color: 'text-indigo-400' },
+  { key: 'repo_count', label: '软件仓库', icon: GitFork, color: 'text-indigo-400' },
   { key: 'package_count', label: '打包配置', icon: Hammer, color: 'text-cyan-500' },
   { key: 'member_count', label: '成员', icon: Users, color: 'text-violet-500' },
   { key: 'release_count', label: '累计发布', icon: Rocket, color: 'text-emerald-500' },
 ] as const;
 
-/** 项目状态徽标 */
+/** 产品状态徽标 */
 function StatusBadge({ status }: { status: ProjectStatus }) {
   const active = status === 1 || status === 'active';
   return (
@@ -59,10 +57,12 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
   );
 }
 
+const validTabKeys = new Set(tabItems.map((item) => item.key));
+
 export default function ProjectDetail() {
   const { id, tab = 'overview' } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState(tab);
+  const [activeTab, setActiveTab] = useState(validTabKeys.has(tab as typeof tabItems[number]['key']) ? tab : 'overview');
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ['project', id],
@@ -90,9 +90,9 @@ export default function ProjectDetail() {
   if (!project) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <Empty description="项目不存在" />
+        <Empty description="产品不存在" />
         <Button type="primary" className="mt-4" onClick={() => navigate('/projects')}>
-          返回项目列表
+          返回产品列表
         </Button>
       </div>
     );
@@ -107,7 +107,7 @@ export default function ProjectDetail() {
           onClick={() => navigate('/projects')}
           className="text-slate-400 transition-colors hover:text-indigo-600"
         >
-          项目
+          产品
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
         <span className="font-medium text-slate-800">{project.name}</span>
@@ -137,7 +137,7 @@ export default function ProjectDetail() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate('/releases/create')}
+              onClick={() => navigate(`/releases/create?project_id=${project.id}`)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
             >
               <Rocket className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -185,9 +185,8 @@ export default function ProjectDetail() {
         </div>
         <div className="p-5">
           {activeTab === 'overview' && <OverviewTab project={project} />}
-          {activeTab === 'repos' && <RepoTab projectId={id || ''} />}
+          {activeTab === 'repos' && <ProductComponentTab projectId={id || ''} />}
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
-          {activeTab === 'workflows' && <WorkflowTab project={project} />}
           {activeTab === 'packages' && <PackageTab projectId={id || ''} />}
           {activeTab === 'svn' && <SvnArtifactsTab projectId={id || ''} />}
           {activeTab === 'releases' && <ReleaseTab projectId={id || ''} />}

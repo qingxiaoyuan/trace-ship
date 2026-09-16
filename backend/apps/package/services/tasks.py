@@ -11,6 +11,12 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.package.models import PackageConfig, PackageNode, PackageTask
+from apps.package.services.svn import (
+    TRIGGER_SOURCE_AUTO_RELEASE,
+    TRIGGER_SOURCE_MANUAL_BRANCH,
+    TRIGGER_SOURCE_MANUAL_RELEASE,
+    apply_svn_push_policy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +73,19 @@ class TaskLifecycleMixin:
         }
 
     @classmethod
-    def create_task_for_release(cls, config: PackageConfig, release, request_user=None) -> PackageTask:
-        """为已发布版本创建打包任务。"""
+    def create_task_for_release(
+        cls,
+        config: PackageConfig,
+        release,
+        request_user=None,
+        *,
+        auto_triggered: bool = False,
+    ) -> PackageTask:
+        """为已发布版本创建打包任务。
+
+        auto_triggered=True 表示发布推 tag 后的自动打包；仅此时且发布类型为
+        正式版时，快照才会打开 SVN 推送。手动触发即使选正式版也不推 SVN。
+        """
         if release.status != "released":
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})
         if not config.is_active:
@@ -76,7 +93,13 @@ class TaskLifecycleMixin:
         if config.repository_id != release.repository_id:
             raise serializers.ValidationError({"repository": "打包配置与发布仓库不一致"})
 
-        snapshot = cls._snapshot(config)
+        snapshot = apply_svn_push_policy(
+            cls._snapshot(config),
+            trigger_source=(
+                TRIGGER_SOURCE_AUTO_RELEASE if auto_triggered else TRIGGER_SOURCE_MANUAL_RELEASE
+            ),
+            release_type=release.release_type or "formal",
+        )
         task = PackageTask.objects.create(
             config=config,
             release=release,
@@ -116,7 +139,11 @@ class TaskLifecycleMixin:
         if len(branch_name) > 100:
             raise serializers.ValidationError({"branch": "分支名过长（不能超过 100 字符）"})
 
-        snapshot = cls._snapshot(config)
+        snapshot = apply_svn_push_policy(
+            cls._snapshot(config),
+            trigger_source=TRIGGER_SOURCE_MANUAL_BRANCH,
+            release_type="formal",
+        )
         # 分支最新提交哈希仅用于可追溯展示；拉取失败降级为空串，不阻断打包
         commit_hash = ""
         try:
@@ -254,6 +281,7 @@ class TaskLifecycleMixin:
         触发该仓库全部启用的自动打包配置。
         """
         configs = PackageConfig.objects.filter(
+            project=release.project,
             repository=release.repository,
             auto_package_on_release=True,
             is_active=True,
@@ -274,7 +302,11 @@ class TaskLifecycleMixin:
             configs = configs.filter(id__in=valid_ids)
         tasks = []
         for config in configs:
-            tasks.append(cls.create_task_for_release(config, release, request_user=request_user))
+            tasks.append(
+                cls.create_task_for_release(
+                    config, release, request_user=request_user, auto_triggered=True
+                )
+            )
         return tasks
 
     @classmethod

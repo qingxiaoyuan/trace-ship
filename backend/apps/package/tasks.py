@@ -36,4 +36,3 @@ def cleanup_remote_node_workspaces() -> dict:
     from apps.package.services.cleanup import cleanup_remote_node_workspaces
 
     return cleanup_remote_node_workspaces()
-

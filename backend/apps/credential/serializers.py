@@ -8,7 +8,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.credential.models import Credential
+from apps.credential.models import Credential, CredentialUsageLog, RepositoryCredentialLoan
 
 
 class CredentialSerializer(serializers.ModelSerializer):
@@ -135,4 +135,91 @@ class CredentialListSerializer(serializers.ModelSerializer):
             "id", "name", "cred_type", "auth_mode", "username", "masked_data",
             "expires_at", "owner", "owner_name",
             "is_system_shared", "is_active", "last_used_at", "created_at",
+        ]
+
+
+class RepositoryCredentialLoanSerializer(serializers.ModelSerializer):
+    """凭证借用记录序列化器。"""
+
+    repository_name = serializers.CharField(source="repository.name", read_only=True)
+    credential_name = serializers.CharField(source="credential.name", read_only=True)
+    lender_name = serializers.CharField(source="lender.nickname", read_only=True, default="")
+    allowed_product_names = serializers.SerializerMethodField()
+    valid_now = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RepositoryCredentialLoan
+        fields = [
+            "id", "repository", "repository_name", "credential", "credential_name",
+            "lender", "lender_name", "allowed_products", "allowed_product_names",
+            "permission_scope", "expires_at", "is_active", "valid_now",
+            "revoked_at", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "lender", "lender_name", "is_active", "revoked_at",
+            "created_at", "updated_at",
+        ]
+
+    def get_allowed_product_names(self, obj) -> list[str]:
+        return [product.name for product in obj.allowed_products.all()]
+
+    def get_valid_now(self, obj) -> bool:
+        from django.utils import timezone
+
+        return bool(
+            obj.is_active
+            and not obj.revoked_at
+            and obj.credential.is_active
+            and (not obj.credential.expires_at or obj.credential.expires_at > timezone.now())
+            and (not obj.expires_at or obj.expires_at > timezone.now())
+        )
+
+    def validate_permission_scope(self, value: list[str]) -> list[str]:
+        valid = {choice[0] for choice in RepositoryCredentialLoan.SCOPE_CHOICES}
+        scope = list(dict.fromkeys(value or []))
+        if not scope or set(scope) - valid:
+            raise serializers.ValidationError("授权操作必须从 read/create_tag/delete_tag 中选择")
+        return scope
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        request_user = self.context["request"].user
+        credential = attrs.get("credential", getattr(self.instance, "credential", None))
+        repository = attrs.get("repository", getattr(self.instance, "repository", None))
+        products = attrs.get("allowed_products")
+        if credential and credential.owner_id != request_user.id:
+            raise serializers.ValidationError({"credential": "只能出借本人拥有的凭证"})
+        if repository and credential:
+            expected = {"gitlab": "gitlab_token"}.get(repository.vendor)
+            if expected and credential.cred_type != expected:
+                raise serializers.ValidationError({"credential": "凭证类型与仓库平台不匹配"})
+        if repository and products is not None:
+            invalid = [
+                product.name for product in products
+                if not product.product_components.filter(repository=repository).exists()
+            ]
+            if invalid:
+                raise serializers.ValidationError(
+                    {"allowed_products": f"以下产品未引用该仓库：{'、'.join(invalid)}"}
+                )
+        return attrs
+
+
+class CredentialUsageLogSerializer(serializers.ModelSerializer):
+    """凭证审计记录只读序列化器。"""
+
+    actor_name = serializers.CharField(source="actor.nickname", read_only=True, default="")
+    lender_name = serializers.CharField(source="lender.nickname", read_only=True, default="")
+    product_name = serializers.CharField(source="product.name", read_only=True, default="")
+    repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
+    component_name = serializers.CharField(
+        source="product_component.display_name", read_only=True, default=""
+    )
+
+    class Meta:
+        model = CredentialUsageLog
+        fields = [
+            "id", "actor", "actor_name", "lender", "lender_name", "credential",
+            "loan", "product", "product_name", "repository", "repository_name",
+            "product_component", "component_name", "operation",
+            "result", "failure_reason", "created_at",
         ]
