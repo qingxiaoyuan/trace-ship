@@ -14,6 +14,7 @@
 #   --backend    部署后端 —— 加载 backend.tar，重建 backend / celery 容器
 #   --frontend   部署前端 —— 加载 frontend.tar，重建 frontend 容器
 #   --app        部署前后端 —— 同时更新 backend + frontend
+#   --upgrade    先备份业务库并做一致性检查，通过后再按 --app 更新前后端
 #
 # 用法：
 #   ./deploy.sh              引导式菜单（推荐）
@@ -21,6 +22,7 @@
 #   ./deploy.sh --backend    部署后端
 #   ./deploy.sh --frontend   部署前端
 #   ./deploy.sh --app        部署前后端
+#   ./deploy.sh --upgrade    备份 + 检查通过后再更新前后端（大版本升级用）
 #
 # 首次部署（依赖包 + 应用包分开构建时）：
 #   tar -xzf trace-ship-release-deps-*.tar.gz
@@ -82,13 +84,15 @@ if [ -z "${MODE}" ]; then
         echo "  1) 部署后端（复用已有环境变量）"
         echo "  2) 部署前端（复用已有环境变量）"
         echo "  3) 部署前后端（复用已有环境变量）"
+        echo "  4) 备份业务库并检查后，再更新前后端（推荐大版本升级）"
         echo "  0) 退出"
         echo ""
-        read -rp "请输入编号 [0-3]: " choice
+        read -rp "请输入编号 [0-4]: " choice
         case "${choice}" in
             1) MODE="--backend" ;;
             2) MODE="--frontend" ;;
             3) MODE="--app" ;;
+            4) MODE="--upgrade" ;;
             0) echo "👋 已取消"; exit 0 ;;
             *) echo "❌ 无效选择"; exit 1 ;;
         esac
@@ -107,8 +111,8 @@ if [ -z "${MODE}" ]; then
 fi
 
 case "${MODE}" in
-    --full|--backend|--frontend|--app) ;;
-    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app）"; exit 1 ;;
+    --full|--backend|--frontend|--app|--upgrade) ;;
+    *) echo "❌ 未知参数: ${MODE}（支持 --full/--backend/--frontend/--app/--upgrade）"; exit 1 ;;
 esac
 
 # 已部署过时执行 --full 仅提示：.env.prod 复用逻辑本身幂等，允许用于分包追加应用镜像的场景
@@ -125,7 +129,10 @@ load_tar() {
     fi
 }
 
-echo "📦 [1/4] 加载离线镜像..."
+STEP_TOTAL=4
+[ "${MODE}" = "--upgrade" ] && STEP_TOTAL=5
+
+echo "📦 [1/${STEP_TOTAL}] 加载离线镜像..."
 case "${MODE}" in
     --full)
         for tar in images/*.tar; do
@@ -138,7 +145,7 @@ case "${MODE}" in
     --frontend)
         load_tar "frontend.tar"
         ;;
-    --app)
+    --app|--upgrade)
         load_tar "backend.tar"
         load_tar "frontend.tar"
         ;;
@@ -159,9 +166,9 @@ detect_ip() {
 
 if [ -f "${ENV_FILE}" ]; then
     # 已有配置：直接复用（保证分包首次部署、重复执行 --full 时幂等，不会重置数据库密码）
-    echo "🔧 [2/4] 复用已有 .env.prod"
+    echo "🔧 [2/${STEP_TOTAL}] 复用已有 .env.prod"
 elif [ "${MODE}" = "--full" ]; then
-    echo "🔧 [2/4] 第一次部署：自动生成全新 .env.prod ..."
+    echo "🔧 [2/${STEP_TOTAL}] 第一次部署：自动生成全新 .env.prod ..."
     echo ""
 
     # 交互终端下引导确认关键参数（环境变量已指定时跳过，回车即取默认值）
@@ -264,9 +271,41 @@ source "${ENV_FILE}"
 set +a
 mkdir -p "${PACKAGE_WORKSPACE_ROOT:-/data/trace-ship/package_workspaces}"
 
+# ---------- 3.5 仅 --upgrade（菜单第 4 项）：备份 + 检查，通过后再更新 ----------
+pre_update_guard() {
+    local db_sh="${SCRIPT_DIR}/db.sh"
+    if [ ! -f "${db_sh}" ]; then
+        echo "❌ 未找到 db.sh，无法在更新前备份/检查"
+        echo "   请把仓库中的 scripts/db.sh 拷到本目录，或重新用 build.sh 打包后再部署"
+        exit 1
+    fi
+    chmod +x "${db_sh}" 2>/dev/null || true
+    echo ""
+    echo "🛡️  [3/${STEP_TOTAL}] 更新前：备份业务库并做一致性检查（通过后才重建容器）"
+    echo ""
+    "${db_sh}" --backup
+    echo ""
+    if ! "${db_sh}" --check; then
+        echo ""
+        echo "❌ 一致性检查未通过，已中止更新。当前运行中的容器未被替换。"
+        echo "   备份在 ./backups/ 。处理完重复仓库后可再次选择 4，或直接 ./deploy.sh --app"
+        exit 1
+    fi
+    echo ""
+    echo "✅ 备份与检查通过，继续更新前后端"
+}
+
+if [ "${MODE}" = "--upgrade" ]; then
+    pre_update_guard
+fi
+
 # ---------- 4. 启动/更新服务 ----------
 echo ""
-echo "🚀 [3/4] 启动服务..."
+if [ "${MODE}" = "--upgrade" ]; then
+    echo "🚀 [4/${STEP_TOTAL}] 启动服务..."
+else
+    echo "🚀 [3/${STEP_TOTAL}] 启动服务..."
+fi
 
 # 启动第三方依赖组（PostgreSQL / Redis / GitLab）并等待数据库健康
 start_deps() {
@@ -296,7 +335,7 @@ case "${MODE}" in
             echo "  ℹ️  包内无应用镜像，跳过应用启动（应用包请另行部署）"
         fi
         ;;
-    --backend|--frontend|--app)
+    --backend|--frontend|--app|--upgrade)
         # 更新部署：依赖组应已在运行，确保其处于启动状态（已运行则为 no-op）
         compose_deps up -d
         case "${MODE}" in
@@ -306,7 +345,7 @@ case "${MODE}" in
             --frontend)
                 compose up -d --no-deps --force-recreate frontend
                 ;;
-            --app)
+            --app|--upgrade)
                 compose up -d --no-deps --force-recreate backend celery-worker celery-beat frontend
                 ;;
         esac
@@ -315,7 +354,7 @@ esac
 
 # ---------- 5. 健康检查（仅在本次启动了后端时执行） ----------
 BACKEND_OK=0
-if [ "${MODE}" = "--backend" ] || [ "${MODE}" = "--app" ] || [ -f images/backend.tar -a "${MODE}" = "--full" ]; then
+if [ "${MODE}" = "--backend" ] || [ "${MODE}" = "--app" ] || [ "${MODE}" = "--upgrade" ] || [ -f images/backend.tar -a "${MODE}" = "--full" ]; then
     echo ""
     echo "⏳ 等待后端就绪（最多 90 秒，后端启动会自动执行数据库迁移）..."
     sleep 5
@@ -355,6 +394,7 @@ echo "📋 数据层服务状态:"
 compose_deps ps
 echo ""
 echo "常用命令："
+echo "  备份/恢复/检查: ./db.sh"
 echo "  查看日志:     docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend"
 echo "  重启应用:     docker compose --env-file .env.prod -f docker-compose.prod.yml restart"
 echo "  停止应用:     docker compose --env-file .env.prod -f docker-compose.prod.yml down"

@@ -14,8 +14,8 @@
 #   scripts/build.sh --backend | --frontend | --app
 #
 # 产出：dist/trace-ship-release-<模式>-<时间戳>.tar.gz
-#       每个包都自带 deploy.sh、compose 编排与 .env.prod.example，
-#       拷贝到内网服务器解压后用包内 deploy.sh 一键部署。
+#       每个包都自带 deploy.sh、db.sh、compose 编排与 .env.prod.example，
+#       拷贝到内网服务器解压后用包内 deploy.sh 一键部署、db.sh 做备份/恢复/检查。
 #
 # 首次部署流程：分别构建 --deps 与 --app 两个包，在内网服务器解压到
 # 同一目录后执行 ./deploy.sh --full（详见 deploy.sh 头部说明）。
@@ -185,7 +185,8 @@ cp "${COMPOSE_FILE}" "${PKG_DIR}/docker-compose.prod.yml"
 cp "${DOCKER_DIR}/docker-compose.deps.yml" "${PKG_DIR}/docker-compose.deps.yml"
 cp "${DOCKER_DIR}/.env.prod.example" "${PKG_DIR}/.env.prod.example"
 cp "${SCRIPT_DIR}/deploy.sh" "${PKG_DIR}/deploy.sh"
-chmod +x "${PKG_DIR}/deploy.sh"
+cp "${SCRIPT_DIR}/db.sh" "${PKG_DIR}/db.sh"
+chmod +x "${PKG_DIR}/deploy.sh" "${PKG_DIR}/db.sh"
 
 GIT_COMMIT="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 cat > "${PKG_DIR}/VERSION" <<EOF
@@ -224,7 +225,8 @@ case "${MODE}" in
         echo "内网更新部署步骤："
         echo "  1. 拷贝 ${PKG_NAME} 到内网服务器"
         echo "  2. tar -xzf ${PKG_NAME} && cd trace-ship-release"
-        echo "  3. ./deploy.sh ${MODE}   # 复用已有 .env.prod，滚动更新对应服务"
+        echo "  3. ./deploy.sh ${MODE}        # 直接滚动更新（原流程）"
+        echo "     或 ./deploy.sh --upgrade   # 先备份并检查，通过后再更新前后端"
         echo "     （需先完成过一次全量部署）"
         ;;
 esac
