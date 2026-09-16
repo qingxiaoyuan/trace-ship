@@ -8,6 +8,7 @@ from django.db import connection, transaction
 from apps.package.models import PackageConfig, PackageTask
 from apps.release.models import ReleaseCommit, ReleaseRecord
 from apps.repository.models import CommitRecord, Repository, RepositoryBranch, RepositoryTag
+from apps.repository.schema_compat import has_column, repositories
 
 
 def _normalized_identity(repository) -> tuple[str, str, str]:
@@ -54,10 +55,10 @@ class Command(BaseCommand):
             return
         if not options.get("primary") or not options.get("duplicate"):
             raise CommandError("请提供 --primary 与 --duplicate，或使用 --list 查看重复组")
-        primary = Repository.objects.filter(id=options["primary"]).first()
+        primary = repositories().filter(id=options["primary"]).first()
         if primary is None:
             raise CommandError("主仓库不存在")
-        duplicates = list(Repository.objects.filter(id__in=options["duplicate"]).order_by("created_at"))
+        duplicates = list(repositories().filter(id__in=options["duplicate"]).order_by("created_at"))
         if len(duplicates) != len(set(options["duplicate"])):
             raise CommandError("部分待归并仓库不存在或参数重复")
         if any(item.id == primary.id for item in duplicates):
@@ -78,8 +79,8 @@ class Command(BaseCommand):
     def _list_groups(cls) -> dict:
         """列出规范化后身份重复的仓库组，供选择主仓库。"""
         groups = defaultdict(list)
-        repositories = Repository.objects.select_related("project").all()
-        for repository in repositories:
+        all_repos = repositories().select_related("project")
+        for repository in all_repos:
             vendor, url, identity = _normalized_identity(repository)
             if identity:
                 groups[(vendor, url, identity)].append(repository)
@@ -106,7 +107,11 @@ class Command(BaseCommand):
             "project_id": str(repository.project_id) if repository.project_id else None,
             "project_name": repository.project.name if repository.project_id else None,
             "created_at": repository.created_at,
-            "created_by_id": str(repository.created_by_id) if repository.created_by_id else None,
+            "created_by_id": (
+                str(repository.created_by_id)
+                if has_column(Repository, "created_by_id") and repository.created_by_id
+                else None
+            ),
             "credential_id": str(repository.credential_id) if repository.credential_id else None,
             "releases": repository.releases.count(),
             "package_configs": repository.package_configs.count(),

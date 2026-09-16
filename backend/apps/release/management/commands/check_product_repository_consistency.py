@@ -10,6 +10,7 @@ from apps.package.models import PackageConfig
 from apps.project.models import ProductComponent, Project
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
+from apps.repository.schema_compat import repositories
 
 
 def _normalized_identity(repository) -> tuple[str, str, str]:
@@ -37,11 +38,11 @@ class Command(BaseCommand):
     @staticmethod
     def _duplicate_identities() -> list[dict]:
         groups = defaultdict(list)
-        repositories = {
+        repo_map = {
             item.id: item
-            for item in Repository.objects.select_related("project").all()
+            for item in repositories().select_related("project")
         }
-        for repository in repositories.values():
+        for repository in repo_map.values():
             key = _normalized_identity(repository)
             if key[2]:
                 groups[key].append(repository.id)
@@ -51,7 +52,7 @@ class Command(BaseCommand):
                 continue
             candidates = []
             for repo_id in ids:
-                repository = repositories[repo_id]
+                repository = repo_map[repo_id]
                 candidates.append({
                     "id": str(repository.id),
                     "name": repository.name,
@@ -85,7 +86,7 @@ class Command(BaseCommand):
             "issues": {
                 "duplicate_repository_identities": self._duplicate_identities(),
                 "git_repositories_without_external_identity": [
-                    str(value) for value in Repository.objects.filter(
+                    str(value) for value in repositories().filter(
                         repo_type="git", external_identity=""
                     ).values_list("id", flat=True)
                 ],
