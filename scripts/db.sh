@@ -347,11 +347,18 @@ do_restore() {
 
 # ---------- 一致性检查 ----------
 count_duplicate_repo_urls() {
+    # 物理仓库身份 = vendor + url + external_identity。
+    # 旧数据里 GitLab url 常只存主机（如 http://10.129.1.100），不能按 url 单独判重。
     compose_deps exec -T \
         -e PGPASSWORD="${POSTGRES_PASSWORD}" \
         postgres \
         psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc \
-        "SELECT COUNT(*) FROM (SELECT 1 FROM sys_repo GROUP BY vendor, url HAVING COUNT(*) > 1) dup;"
+        "SELECT COUNT(*) FROM (
+           SELECT 1 FROM sys_repo
+           WHERE COALESCE(external_identity, '') <> ''
+           GROUP BY vendor, url, external_identity
+           HAVING COUNT(*) > 1
+         ) dup;"
 }
 
 sql_inventory() {
@@ -362,7 +369,37 @@ sql_inventory() {
 SELECT COUNT(*) AS repositories FROM sys_repo;
 
 \echo ''
-\echo '按原始 URL 完全相同的重复登记:'
+\echo '按物理身份重复的仓库（vendor + url + external_identity）:'
+SELECT vendor, url, COALESCE(external_identity, '') AS identity, COUNT(*) AS n
+FROM sys_repo
+WHERE COALESCE(external_identity, '') <> ''
+GROUP BY vendor, url, COALESCE(external_identity, '')
+HAVING COUNT(*) > 1
+ORDER BY n DESC, vendor, url, identity;
+
+\echo ''
+\echo '重复组成员明细（选发布多、创建早的作为 --primary）:'
+SELECT r.external_identity,
+       r.id::text AS repository_id,
+       r.name,
+       p.name AS product,
+       r.created_at,
+       (SELECT COUNT(*) FROM release_record x WHERE x.repository_id = r.id) AS releases,
+       (SELECT COUNT(*) FROM package_config x WHERE x.repository_id = r.id) AS package_configs
+FROM sys_repo r
+LEFT JOIN sys_project p ON p.id = r.project_id
+WHERE COALESCE(r.external_identity, '') <> ''
+  AND (r.vendor, r.url, r.external_identity) IN (
+    SELECT vendor, url, external_identity
+    FROM sys_repo
+    WHERE COALESCE(external_identity, '') <> ''
+    GROUP BY vendor, url, external_identity
+    HAVING COUNT(*) > 1
+  )
+ORDER BY r.external_identity, r.created_at, r.id;
+
+\echo ''
+\echo '仅主机 URL 相同、身份不同（通常不是重复，无需归并）:'
 SELECT vendor, url, COUNT(*) AS n
 FROM sys_repo
 GROUP BY vendor, url
@@ -418,19 +455,7 @@ maybe_load_backend_image() {
     esac
 }
 
-run_django_check() {
-    if ! has_backend_image; then
-        echo "⚠️  本地没有 ${BACKEND_IMAGE}，跳过 Django 一致性命令。"
-        echo "   可先加载包内 images/backend.tar，或完成 ./deploy.sh --app 后再查。"
-        return 2
-    fi
-    if ! docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
-        echo "⚠️  网络 ${NETWORK_NAME} 不存在，跳过 Django 一致性命令。"
-        return 2
-    fi
-
-    echo "---- Django 一致性检查（check_product_repository_consistency）----"
-    set +e
+run_backend_manage() {
     docker run --rm \
         --network "${NETWORK_NAME}" \
         --env-file "${ENV_FILE}" \
@@ -451,7 +476,23 @@ run_django_check() {
         -e PACKAGE_WORKSPACE_ROOT="${PACKAGE_WORKSPACE_ROOT:-/data/trace-ship/package_workspaces}" \
         --entrypoint python \
         "${BACKEND_IMAGE}" \
-        manage.py check_product_repository_consistency --json --strict
+        manage.py "$@"
+}
+
+run_django_check() {
+    if ! has_backend_image; then
+        echo "⚠️  本地没有 ${BACKEND_IMAGE}，跳过 Django 一致性命令。"
+        echo "   可先加载包内 images/backend.tar，或完成 ./deploy.sh --app 后再查。"
+        return 2
+    fi
+    if ! docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
+        echo "⚠️  网络 ${NETWORK_NAME} 不存在，跳过 Django 一致性命令。"
+        return 2
+    fi
+
+    echo "---- Django 一致性检查（check_product_repository_consistency）----"
+    set +e
+    run_backend_manage check_product_repository_consistency --json --strict
     local status=$?
     set -e
     if [ "${status}" -eq 0 ]; then
@@ -482,7 +523,13 @@ do_check() {
     echo "====================================="
     if [ "${dup_count}" != "0" ]; then
         echo "❌ 检查结束：发现 ${dup_count} 组重复物理仓库，必须先处理后才能升级"
-        echo "   python manage.py merge_duplicate_repositories --primary <UUID> --duplicate <UUID>"
+        echo "   1) 先备份：./db.sh --backup"
+        echo "   2) 查看候选：用上面的「重复组成员明细」选发布多、创建早的作为主仓库"
+        echo "   3) 预览归并（不改数据）："
+        echo "      在发布包目录用已加载的 backend 镜像执行："
+        echo "      python manage.py merge_duplicate_repositories --primary <主UUID> --duplicate <从UUID>"
+        echo "   4) 确认报告无 conflicts 后追加 --apply"
+        echo "   5) 再执行本检查，通过后再 ./deploy.sh --upgrade"
         echo "====================================="
         return 1
     fi

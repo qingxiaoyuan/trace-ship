@@ -37,23 +37,40 @@ class Command(BaseCommand):
     @staticmethod
     def _duplicate_identities() -> list[dict]:
         groups = defaultdict(list)
-        for repository in Repository.objects.all().only(
-            "id", "vendor", "url", "external_identity"
-        ).iterator():
+        repositories = {
+            item.id: item
+            for item in Repository.objects.select_related("project").all()
+        }
+        for repository in repositories.values():
             key = _normalized_identity(repository)
             if key[2]:
-                groups[key].append(str(repository.id))
-        return [
-            {
+                groups[key].append(repository.id)
+        result = []
+        for key, ids in sorted(groups.items()):
+            if len(ids) < 2:
+                continue
+            candidates = []
+            for repo_id in ids:
+                repository = repositories[repo_id]
+                candidates.append({
+                    "id": str(repository.id),
+                    "name": repository.name,
+                    "stored_url": repository.url,
+                    "project_id": str(repository.project_id) if repository.project_id else None,
+                    "project_name": repository.project.name if repository.project_id else None,
+                    "created_at": repository.created_at,
+                    "releases": repository.releases.count(),
+                    "package_configs": repository.package_configs.count(),
+                })
+            result.append({
                 "vendor": key[0],
                 "url": key[1],
                 "external_identity": key[2],
-                "repository_ids": ids,
+                "repository_ids": [str(value) for value in ids],
                 "total": len(ids),
-            }
-            for key, ids in sorted(groups.items())
-            if len(ids) > 1
-        ]
+                "candidates": candidates,
+            })
+        return result
 
     def _pre_migration_report(self) -> dict:
         """只使用旧表生成检查结果，可在任何新迁移执行前安全运行。"""

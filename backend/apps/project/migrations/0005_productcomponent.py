@@ -7,14 +7,63 @@ import django.db.models.deletion
 from django.db import migrations, models
 
 
+def _as_uuid(value):
+    """cursor 在 SQLite 上可能返回 str，统一成 UUID 再与 ORM 主键比对。"""
+    if value is None:
+        return None
+    if isinstance(value, uuid.UUID):
+        return value
+    return uuid.UUID(str(value))
+
+
+def _collect_legacy_pairs(apps, schema_editor):
+    """收集应回填的产品-仓库对。
+
+    除仓库历史 project 字段外，还读取发布单和打包配置：迁移前若已把重复
+    仓库归并到主仓库，另一产品的关联只能从这些单据恢复。
+    """
+    Repository = apps.get_model("repository", "Repository")
+    connection = schema_editor.connection
+    tables = set(connection.introspection.table_names())
+    repo_map = {item.id: item for item in Repository.objects.all()}
+    pairs: list[tuple] = []
+    seen: set[tuple] = set()
+
+    def add_pair(project_id, repository_id):
+        project_id = _as_uuid(project_id)
+        repository_id = _as_uuid(repository_id)
+        if not project_id or not repository_id or repository_id not in repo_map:
+            return
+        key = (project_id, repository_id)
+        if key in seen:
+            return
+        seen.add(key)
+        pairs.append(key)
+
+    for repository in Repository.objects.order_by("created_at", "id"):
+        add_pair(repository.project_id, repository.id)
+    for table in ("release_record", "package_config"):
+        if table not in tables:
+            continue
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT DISTINCT project_id, repository_id FROM {table} "
+                "WHERE project_id IS NOT NULL AND repository_id IS NOT NULL"
+            )
+            for project_id, repository_id in cursor.fetchall():
+                add_pair(project_id, repository_id)
+    return pairs, repo_map
+
+
 def backfill_product_components(apps, schema_editor):
     """将历史“仓库直接归属项目”数据回填为产品组件关系。"""
-    Repository = apps.get_model("repository", "Repository")
     ProductComponent = apps.get_model("project", "ProductComponent")
+    pairs, repo_map = _collect_legacy_pairs(apps, schema_editor)
 
     used_codes: dict[uuid.UUID, set[str]] = {}
-    for repository in Repository.objects.order_by("created_at", "id").iterator():
-        project_codes = used_codes.setdefault(repository.project_id, set())
+    for project_id, repository_id in pairs:
+        repository = repo_map[repository_id]
+        project_codes = used_codes.setdefault(project_id, set())
         base_code = re.sub(r"[^a-z0-9._-]+", "-", (repository.name or "").lower()).strip("-._")
         base_code = (base_code or f"repo-{str(repository.id)[:8]}")[:100]
         component_code = base_code
@@ -25,7 +74,7 @@ def backfill_product_components(apps, schema_editor):
             suffix += 1
         project_codes.add(component_code)
         ProductComponent.objects.create(
-            project_id=repository.project_id,
+            project_id=project_id,
             repository_id=repository.id,
             component_code=component_code,
             display_name=repository.name,
