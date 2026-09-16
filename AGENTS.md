@@ -52,7 +52,7 @@ docker compose -f docker/docker-compose.yml logs gitlab -f
 
 ### 打包与部署（scripts/build.sh + scripts/deploy.sh）
 
-`scripts/deploy.sh` 是部署脚本源文件，`build.sh` 打包时会将其拷入发布包，内网侧解压后直接执行。
+`scripts/deploy.sh` / `scripts/db.sh` 是部署与业务库运维脚本源文件，`build.sh` 打包时会将其拷入发布包，内网侧解压后直接执行。
 
 ```bash
 scripts/build.sh --deps       # 第三方依赖包（postgres + redis + gitlab，首次部署用）
@@ -60,9 +60,11 @@ scripts/build.sh --backend    # 后端更新包
 scripts/build.sh --frontend   # 前端更新包
 scripts/build.sh --app        # 前后端更新包
 
-# 内网侧解压后使用包内 deploy.sh
+# 内网侧解压后使用包内 deploy.sh / db.sh
 ./deploy.sh --full            # 第一次部署（生成 .env.prod，先起依赖组再起应用）
-./deploy.sh --backend | --frontend | --app   # 增量部署
+./deploy.sh --backend | --frontend | --app   # 增量部署（原流程不变）
+./deploy.sh --upgrade         # 菜单第 4 项：先备份业务库并检查，通过后再更新前后端
+./db.sh                       # 引导式：单独做备份 / 恢复 / 一致性检查
 ```
 
 首次部署需将 `--deps` 与 `--app` 两个包解压到同一目录后执行 `./deploy.sh --full`。
@@ -208,7 +210,7 @@ npm run preview
 4. 提交审批：`ReleaseService.submit_audit` 要求发布处于 `draft` 且发布说明非空；按发布类型查找启用的 `WorkflowDefinition`，创建 `WorkflowInstance`，状态改为 `pending`。
 5. 审批流转：`WorkflowEngine` 根据 `node_config` 生成任务，支持通过、驳回、转交、回退、撤销。
 6. 审批完成：`ReleaseService.handle_workflow_completed` 调用 `push_tag`；推 tag 成功后发布状态变为 `released`，失败则变为 `rejected` 并写入 `rejected_reason`。
-7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。
+7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送仅在「正式发布 + 自动触发」时启用；看板手动触发（已发布 Tag / 分支直打）以及 RC / Beta 自动打包均不推 SVN。
 8. 审批驳回：`ReleaseService.handle_workflow_rejected` 将发布状态改为 `rejected`；回退到初始节点时可恢复为 `draft` 并解除流程实例关联。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
@@ -228,7 +230,7 @@ npm run preview
    - 若配置 `custom_script`，则以 `sh -ec`（遇错即停）执行该脚本；
    - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）；
    - 打包产物写入 `/workspace/artifacts`；
-   - 扫描 `workspace/artifacts`，可选推 SVN（`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步）。
+   - 扫描 `workspace/artifacts`，符合条件时推 SVN（仅正式发布自动打包；`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步）。
 4. 镜像必须满足目录、环境变量、入口脚本约定（详见「镜像接入规范」或 `docker/package/web/README.md`）。
 
 ### 镜像接入规范

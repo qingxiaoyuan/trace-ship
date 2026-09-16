@@ -57,11 +57,13 @@ scripts/build.sh --backend    # 后端更新包
 scripts/build.sh --frontend   # 前端更新包
 scripts/build.sh --app        # 前后端更新包
 
-# 内网侧解压后使用包内 deploy.sh 一键部署
+# 内网侧解压后使用包内 deploy.sh 一键部署；db.sh 做业务库备份/恢复/一致性检查
 ./deploy.sh --full            # 第一次部署：自动生成 .env.prod，先起依赖组再起应用
 ./deploy.sh --backend         # 部署后端
 ./deploy.sh --frontend        # 部署前端
-./deploy.sh --app             # 部署前后端
+./deploy.sh --app             # 部署前后端（原流程不变）
+./deploy.sh --upgrade         # 菜单第 4 项：先备份并检查，通过后再更新前后端
+./db.sh                       # 单独做备份 / 恢复 / 一致性检查
 ```
 
 首次部署需将 `--deps` 与 `--app` 两个包解压到同一目录后执行 `./deploy.sh --full`。
@@ -195,7 +197,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 4. 提交审批（`ReleaseService.submit_audit`）：要求 `draft` 状态且发布说明非空；按发布类型查找启用的 `WorkflowDefinition` 创建 `WorkflowInstance`，状态改为 `pending`。
 5. 审批流转（`WorkflowEngine`）：支持通过、驳回、转交、回退、撤销。
 6. 审批完成（`ReleaseService.handle_workflow_completed`）：调用 `push_tag`，成功后状态为 `released`；推 tag 失败则状态为 `rejected` 并写入 `rejected_reason`。审批已通过、仅推 tag 失败的发布单可通过 `ReleaseService.retry_push_tag`（`POST /api/releases/{id}/retry-push-tag/`）重试，无需重新走审批。
-7. 自动打包：推 tag 成功后调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。
+7. 自动打包：推 tag 成功后调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送仅在「正式发布 + 自动触发」时启用；看板手动触发（已发布 Tag / 分支直打）以及 RC / Beta 自动打包均不推 SVN。
 8. 审批驳回（`ReleaseService.handle_workflow_rejected`）：状态改为 `rejected`；回退到初始节点时可恢复为 `draft`。
 
 ### 打包能力（apps.package）
@@ -205,7 +207,7 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 - `PackageNode`：远程打包节点（`os_type` 支持 `windows` / `kylin` 麒麟 Linux，`arch` 记录芯片架构 `x86_64` / `x86_32` / `arm64` / `arm32` 默认 `x86_64`，SSH/SFTP 接入；`PackageConfig.executor_type=remote_node` 时按节点 OS 语义下发 bat/sh 脚本执行，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；登录凭证 Windows 用 `windows_password`、麒麟用 `ssh_password`）。
 - `PackageTask`：打包任务记录，状态 `queued` / `running` / `success` / `failure` / `canceled`，保存配置快照、工作区路径、日志路径、产物信息、SVN 推送结果。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一）；`POST /api/packages/configs/{id}/favorite/` 切换收藏、`GET /api/packages/configs/favorites/` 返回收藏配置及最近任务摘要；任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（我发起的、近 N 天、仅终态）供工作台「打包速览」与成功率 KPI 使用。
-- 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 准备 `workspace/{source,artifacts,tmp}` → `git clone` 源码 → 以 `--entrypoint /bin/sh` 启动容器（只挂载 source / artifacts / tmp，容器内工作目录 `/workspace/source`）→ 有 `custom_script` 则以 `sh -ec`（遇错即停）执行，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）→ 扫描 `workspace/artifacts` 产物 → 可选推送 SVN → 更新状态与耗时。
+- 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 准备 `workspace/{source,artifacts,tmp}` → `git clone` 源码 → 以 `--entrypoint /bin/sh` 启动容器（只挂载 source / artifacts / tmp，容器内工作目录 `/workspace/source`）→ 有 `custom_script` 则以 `sh -ec`（遇错即停）执行，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）→ 扫描 `workspace/artifacts` 产物 → 仅正式发布自动打包时推送 SVN → 更新状态与耗时。
 - 手动能力：`PackageConfigViewSet.trigger` 手动触发某个已发布版本的打包；`PackageTaskViewSet.cancel` 取消任务、`push_svn` 手动推送产物、`logs` 读取日志、`download_artifact` 下载产物；任务列表 `status` 过滤支持逗号分隔多值（如 `?status=queued,running`）。
 - 工作区清理（`apps/package/services/cleanup.py`）：任务结束（成功/失败/取消）即删本地工作区 `source` 与 `tmp`（产物、日志保留）；远程任务失败/取消时按 `cleanup_workspace` 快照兜底回收节点目录；每天 0:00 清理各节点 `work_root` 下残留任务目录（跳过运行中任务）；每天 8:00 删除超期产物（仅 artifacts，`artifact_info` 同步清空），保留天数由「系统配置」`package_artifact_retention_days` 维护（默认 30，环境变量 `PACKAGE_ARTIFACT_RETENTION_DAYS` 兜底）。
 - Jenkins 模块已整体下线（模型、服务、API、`python-jenkins` 依赖均已移除），打包统一走 `apps.package`；不要在新代码中恢复 Jenkins 相关逻辑。

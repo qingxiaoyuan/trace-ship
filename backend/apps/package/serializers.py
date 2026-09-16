@@ -457,12 +457,14 @@ class PackageTaskSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_can_push_svn(self, obj: PackageTask) -> bool:
-        """任务是否具备手动推送 SVN 的条件。"""
+        """任务是否具备手动推送 SVN 的条件（仅正式发布自动打包）。"""
+        from apps.package.services.svn import task_allows_svn_push
+
         snapshot = obj.config_snapshot or {}
         return bool(
             obj.status == "success"
             and obj.artifact_info
-            and snapshot.get("svn_push_enabled")
+            and task_allows_svn_push(obj)
             and snapshot.get("svn_url")
             and snapshot.get("svn_credential_id")
         )
