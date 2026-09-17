@@ -687,7 +687,7 @@ class TestScanRepo:
                 return '{"name": "web"}' if file_path == "package.json" else "# readme"
 
         monkeypatch.setattr(
-            "apps.package.ai.resolve_credential", lambda repo, user=None: {"token": "t"}
+            "apps.package.ai.resolve_credential", lambda repo, user=None, **kwargs: {"token": "t"}
         )
         monkeypatch.setattr("apps.package.ai.get_provider", lambda *a, **k: FakeProvider())
         context, warning = PackageScriptAIService._scan_repo(repository, admin_user)
@@ -832,7 +832,7 @@ class TestGenerateService:
             data["repository"] = str(other_repo.id)
             PackageScriptAIService.generate(data, admin_user)
         assert exc.value.code == 40000
-        assert "不属于该项目" in str(exc.value)
+        assert "不属于当前产品" in str(exc.value)
 
     def test_generate_retries_then_fails_on_bad_json(self, admin_user, repository, ai_config, monkeypatch):
         calls = {"n": 0}

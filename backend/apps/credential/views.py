@@ -95,22 +95,25 @@ class CredentialViewSet(StandardModelViewSet):
     @action(detail=True, methods=["post"])
     def test(self, request: Request, pk=None) -> Response:
         """
-        测试凭证有效性（Milestone 1 中简化实现）
+        测试凭证有效性
+
+        按凭证类型执行真实的外部连接测试：
+        gitlab/svn 调用对应 Provider，ldap 用系统 LDAP 配置做绑定验证，
+        ai_api_key 用系统 AI 配置发起一次最小调用；
+        windows/ssh 密码依附于具体节点，引导到「打包节点」页面测试。
 
         Args:
-            request: DRF Request
+            request: DRF Request（可携带可选的 server_url）
             pk: 凭证主键
 
         Returns:
-            当前仅返回格式有效提示，后续应调用实际外部接口测试
+            {"valid": bool, "detail": str, "cred_type": str}
         """
         credential = self.get_object()
-        # TODO: 根据 cred_type 调用实际外部接口测试
-        return success_response({
-            "valid": True,
-            "detail": "凭证格式有效（当前为简化实现）",
-            "cred_type": credential.cred_type,
-        })
+        result = CredentialService.test_credential(
+            credential, server_url=str(request.data.get("server_url") or "")
+        )
+        return success_response(result)
 
     @action(detail=True, methods=["get"])
     def usage(self, request: Request, pk=None) -> Response:

@@ -1,7 +1,6 @@
 """将存量产品级流程挂到仓库；必须与加字段、加索引分事务执行。"""
 from django.db import migrations
 
-
 DEFAULT_NODE_CONFIG = [
     {
         "node_id": "approval_1",

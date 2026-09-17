@@ -325,3 +325,57 @@ def test_ldap_connection() -> str:
 
 # 避免被 pytest 当作测试用例收集（函数名以 test_ 开头）
 test_ldap_connection.__test__ = False
+
+
+def verify_ldap_credential(username: str, password: str) -> str:
+    """
+    使用当前生效的 LDAP 配置校验指定用户名密码
+
+    仅做目录搜索与绑定验证，不创建或更新本地用户（区别于登录认证）。
+
+    Returns:
+        成功提示信息
+
+    Raises:
+        LdapConfigError: 配置缺失、用户不存在或绑定失败
+    """
+    cfg = resolve_ldap_config()
+    if not cfg["server_uri"] or not cfg["user_search_base"]:
+        raise LdapConfigError("未配置 LDAP 服务，无法校验 LDAP 凭证")
+
+    ldap = _load_ldap_module()
+    _apply_tls_options(ldap, cfg)
+
+    try:
+        conn = ldap.initialize(cfg["server_uri"])
+        conn.set_option(ldap.OPT_NETWORK_TIMEOUT, 5)
+        conn.set_option(ldap.OPT_TIMEOUT, 5)
+        conn.protocol_version = 3
+        # 先用服务账号（或匿名）绑定以搜索用户 DN
+        conn.simple_bind_s(cfg["bind_dn"], cfg["bind_password"])
+        user_filter = cfg["user_filter"].replace(
+            "%(user)s", ldap.filter.escape_filter_chars(username)
+        )
+        results = conn.search_s(
+            cfg["user_search_base"],
+            ldap.SCOPE_SUBTREE,
+            user_filter,
+            ["dn"],
+        )
+        entries = [entry for entry in results if entry and entry[0]]
+        if not entries:
+            conn.unbind_s()
+            raise LdapConfigError("LDAP 目录中未找到该用户")
+        # 用用户 DN + 凭证密码二次绑定，验证密码正确性
+        conn.simple_bind_s(entries[0][0], password)
+        conn.unbind_s()
+    except ldap.INVALID_CREDENTIALS as exc:
+        raise LdapConfigError("用户名或密码错误，LDAP 绑定失败") from exc
+    except LdapConfigError:
+        raise
+    except ldap.LDAPError as exc:
+        raise LdapConfigError(f"连接 LDAP 失败：{exc}") from exc
+    except Exception as exc:
+        raise LdapConfigError(f"LDAP 凭证校验异常：{exc}") from exc
+
+    return "LDAP 绑定验证通过"

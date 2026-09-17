@@ -654,7 +654,7 @@ class TestAuthCloneArgs:
     def test_builds_basic_auth_header(self, repository, user, monkeypatch):
         monkeypatch.setattr(
             "apps.package.services.source.resolve_credential",
-            lambda repo, user=None: {"token": "tok@en/1"},
+            lambda repo, user=None, **kwargs: {"token": "tok@en/1"},
         )
         args = PackageService._auth_clone_args(repository, user)
         assert args[0] == "-c"
@@ -664,7 +664,7 @@ class TestAuthCloneArgs:
     def test_custom_username(self, repository, user, monkeypatch):
         monkeypatch.setattr(
             "apps.package.services.source.resolve_credential",
-            lambda repo, user=None: {"username": "deploy", "token": "t"},
+            lambda repo, user=None, **kwargs: {"username": "deploy", "token": "t"},
         )
         args = PackageService._auth_clone_args(repository, user)
         expected = base64.b64encode(b"deploy:t").decode("ascii")
@@ -673,7 +673,7 @@ class TestAuthCloneArgs:
     def test_no_token_returns_empty(self, repository, user, monkeypatch):
         monkeypatch.setattr(
             "apps.package.services.source.resolve_credential",
-            lambda repo, user=None: {},
+            lambda repo, user=None, **kwargs: {},
         )
         assert PackageService._auth_clone_args(repository, user) == []
 
@@ -790,7 +790,7 @@ class TestRemoteRunTask:
         monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
         monkeypatch.setattr(
             "apps.package.services.source.resolve_credential",
-            lambda repo, user=None: {"token": "abc123"},
+            lambda repo, user=None, **kwargs: {"token": "abc123"},
         )
         client = self._mock_client(monkeypatch)
         task = self._make_task(project, repository, node, release, user)
@@ -841,7 +841,7 @@ class TestRemoteRunTask:
         """
         monkeypatch.setattr(
             "apps.package.services.source.resolve_credential",
-            lambda repo, user=None: {"token": "abc123"},
+            lambda repo, user=None, **kwargs: {"token": "abc123"},
         )
         task = self._make_task(project, repository, node, release, user)
         snapshot = task.config_snapshot

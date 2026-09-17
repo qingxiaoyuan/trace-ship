@@ -41,6 +41,12 @@ export function Dropdown({
   const searchRef = useRef<HTMLInputElement>(null);
   const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
 
+  // 关闭时同时清空搜索关键字，避免下次打开残留上次输入
+  const closeDropdown = () => {
+    setOpen(false);
+    setKeyword('');
+  };
+
   // 计算浮层位置：贴合触发器底部
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
@@ -69,7 +75,7 @@ export function Dropdown({
         wrapRef.current && wrapRef.current.contains(e.target as Node)
       ) return;
       if (popRef.current && popRef.current.contains(e.target as Node)) return;
-      setOpen(false);
+      closeDropdown();
     };
     document.addEventListener('mousedown', handler);
     window.addEventListener('scroll', reposition, true);
@@ -82,14 +88,9 @@ export function Dropdown({
   }, [open]);
 
   useEffect(() => {
-    if (!open) {
-      setKeyword('');
-      return;
-    }
-    if (searchable) {
-      const timer = window.setTimeout(() => searchRef.current?.focus(), 0);
-      return () => window.clearTimeout(timer);
-    }
+    if (!open || !searchable) return;
+    const timer = window.setTimeout(() => searchRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
   }, [open, searchable]);
 
   const selected = options.find((o) => o.value === value);
@@ -104,7 +105,7 @@ export function Dropdown({
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? closeDropdown() : setOpen(true))}
         className="flex w-full items-center justify-between rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] text-slate-700 outline-none transition-colors hover:border-indigo-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
       >
         <span className={`flex items-center gap-2 truncate ${selected ? 'text-slate-700' : 'text-slate-400'}`}>
@@ -148,7 +149,7 @@ export function Dropdown({
                 <button
                   key={o.value}
                   type="button"
-                  onClick={() => { onChange(o.value); setOpen(false); }}
+                  onClick={() => { onChange(o.value); closeDropdown(); }}
                   className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
                     active ? 'bg-indigo-50 font-medium text-indigo-600' : 'text-slate-600 hover:bg-indigo-50/60'
                   }`}

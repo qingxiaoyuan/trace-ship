@@ -160,3 +160,124 @@ def test_credential_types_route_remains_on_credential_viewset(api_client):
     assert response.status_code == 200
     values = {item["value"] for item in response.data["data"]["cred_types"]}
     assert "gitlab_token" in values
+
+
+@pytest.mark.django_db
+def test_gitlab_credential_test_without_server_url_returns_guidance(api_client, credential):
+    """GitLab 凭证未指定地址且无引用仓库时，返回引导提示而非假装成功。"""
+    response = api_client.post(f"/api/credentials/{credential.id}/test/", {}, format="json")
+
+    assert response.status_code == 200
+    assert response.data["data"]["valid"] is False
+    assert "server_url" in response.data["data"]["detail"]
+
+
+@pytest.mark.django_db
+def test_gitlab_credential_test_calls_provider(api_client, credential, monkeypatch):
+    """GitLab 凭证指定 server_url 时调用 Provider 做真实连接测试。"""
+    called = {}
+
+    class FakeProvider:
+        def __init__(self, server_url, credential_data):
+            called["server_url"] = server_url
+            called["credential_data"] = credential_data
+
+        def test_connection(self):
+            return True
+
+    # services 内部为函数内局部导入，直接 patch 工厂即可生效
+    monkeypatch.setattr(
+        "utils.provider.factory.get_provider",
+        lambda vendor, url, data: FakeProvider(url, data),
+    )
+    response = api_client.post(
+        f"/api/credentials/{credential.id}/test/",
+        {"server_url": "https://gitlab.example.com"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.data["data"]["valid"] is True
+    assert called["server_url"] == "https://gitlab.example.com"
+    assert called["credential_data"] == {"token": "glpat-test"}
+
+
+@pytest.mark.django_db
+def test_gitlab_credential_test_falls_back_to_repository_url(api_client, credential, project, monkeypatch):
+    """GitLab 凭证未指定地址时，回退使用引用仓库的服务器地址。"""
+    Repository.objects.create(
+        project=project,
+        repo_type="git",
+        vendor="gitlab",
+        name="Bound Repo",
+        url="https://gitlab.example.com/test/bound.git",
+        external_identity="test/bound",
+        credential=credential,
+        credential_mode="project",
+    )
+    called = {}
+
+    class FakeProvider:
+        def __init__(self, server_url, credential_data):
+            called["server_url"] = server_url
+
+        def test_connection(self):
+            return True
+
+    monkeypatch.setattr(
+        "utils.provider.factory.get_provider",
+        lambda vendor, url, data: FakeProvider(url, data),
+    )
+
+    response = api_client.post(f"/api/credentials/{credential.id}/test/", {}, format="json")
+
+    assert response.status_code == 200
+    assert response.data["data"]["valid"] is True
+    assert called["server_url"] == "https://gitlab.example.com"
+
+
+@pytest.mark.django_db
+def test_ldap_credential_test_uses_bind_verify(api_client, user, monkeypatch):
+    """LDAP 凭证走系统 LDAP 配置做绑定验证。"""
+    cred = Credential.objects.create(
+        name="LDAP",
+        cred_type="ldap_password",
+        auth_mode="password",
+        owner=user,
+        username="ldap-user",
+    )
+    cred.set_data({"username": "ldap-user", "password": "secret"})
+    cred.save()
+    called = {}
+
+    def fake_verify(username, password):
+        called["username"] = username
+        called["password"] = password
+        return "LDAP 绑定验证通过"
+
+    monkeypatch.setattr("apps.account.ldap_config.verify_ldap_credential", fake_verify)
+
+    response = api_client.post(f"/api/credentials/{cred.id}/test/", {}, format="json")
+
+    assert response.status_code == 200
+    assert response.data["data"]["valid"] is True
+    assert called == {"username": "ldap-user", "password": "secret"}
+
+
+@pytest.mark.django_db
+def test_node_password_credential_test_returns_guidance(api_client, user):
+    """Windows/SSH 密码依附于具体节点，返回引导提示。"""
+    cred = Credential.objects.create(
+        name="SSH",
+        cred_type="ssh_password",
+        auth_mode="password",
+        owner=user,
+    )
+    cred.set_data({"username": "root", "password": "secret"})
+    cred.save()
+
+    response = api_client.post(f"/api/credentials/{cred.id}/test/", {}, format="json")
+
+    assert response.status_code == 200
+    assert response.data["data"]["valid"] is False
+    assert "打包节点" in response.data["data"]["detail"]
