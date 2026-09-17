@@ -72,8 +72,50 @@ def _credential_loan_summaries(obj: Repository) -> list[dict]:
     return values
 
 
-class RepositoryProductVisibilityMixin:
-    """隐藏当前用户无权查看的产品关联元数据。"""
+class RepositorySerializer(serializers.ModelSerializer):
+    """
+    仓库序列化器
+
+    读取时展开凭证 ID。仓库目录可独立登记物理仓库；
+    从项目上下文传入 project（仅写入）时，自动创建默认项目组件。
+    """
+
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Project.objects.all(), required=False, allow_null=True, write_only=True
+    )
+    external_identity = serializers.CharField(required=False, allow_blank=True)
+    credential_id = serializers.UUIDField(source="credential.id", read_only=True)
+    credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
+    credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
+    credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
+    clone_url = serializers.SerializerMethodField()
+    project_count = serializers.IntegerField(read_only=True, default=1)
+    used_by_projects = serializers.SerializerMethodField()
+    credential_loans = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(source="created_by.nickname", read_only=True, default="")
+
+    class Meta:
+        model = Repository
+        # 物理仓库唯一性在 validate 中基于规范化后的地址检查；关闭 DRF 自动
+        # UniqueTogetherValidator，避免它在地址解析前把 external_identity 当作必填。
+        validators = []
+        fields = [
+            "id", "project",
+            "repo_type", "vendor", "name", "url", "clone_url", "external_identity",
+            "default_branch", "version_rule", "credential", "credential_id", "credential_mode",
+            "credential_mode_display", "credential_name", "credential_owner_name",
+            "health_status", "last_sync_at", "created_by", "created_by_name",
+            "created_at", "updated_at",
+            "project_count",
+            "used_by_projects",
+            "credential_loans",
+        ]
+        read_only_fields = [
+            "id", "health_status", "last_sync_at", "created_by", "created_by_name",
+            "created_at", "updated_at",
+            "credential_name", "credential_owner_name", "credential_mode_display",
+            "clone_url", "project_count",
+        ]
 
     def _visible_project_ids(self) -> set:
         if "visible_project_ids" in self.context:
@@ -86,79 +128,28 @@ class RepositoryProductVisibilityMixin:
         self.context["visible_project_ids"] = values
         return values
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if user and user.is_authenticated and not user.is_superuser:
-            if instance.project_id not in self._visible_project_ids():
-                data["project"] = None
-                data["project_name"] = ""
-        return data
-
-
-class RepositorySerializer(RepositoryProductVisibilityMixin, serializers.ModelSerializer):
-    """
-    仓库序列化器
-
-    读取时展开历史登记项目和凭证 ID。仓库目录可独立登记物理仓库；
-    从产品上下文传入 project 时，继续兼容自动创建默认产品组件。
-    """
-
-    project = serializers.PrimaryKeyRelatedField(
-        queryset=Project.objects.all(), required=False, allow_null=True
-    )
-    project_name = serializers.CharField(source="project.name", read_only=True, default="")
-    external_identity = serializers.CharField(required=False, allow_blank=True)
-    credential_id = serializers.UUIDField(source="credential.id", read_only=True)
-    credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
-    credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
-    credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
-    clone_url = serializers.SerializerMethodField()
-    product_count = serializers.IntegerField(read_only=True, default=1)
-    used_by_products = serializers.SerializerMethodField()
-    credential_loans = serializers.SerializerMethodField()
-    created_by_name = serializers.CharField(source="created_by.nickname", read_only=True, default="")
-
-    class Meta:
-        model = Repository
-        # 物理仓库唯一性在 validate 中基于规范化后的地址检查；关闭 DRF 自动
-        # UniqueTogetherValidator，避免它在地址解析前把 external_identity 当作必填。
-        validators = []
-        fields = [
-            "id", "project", "project_name",
-            "repo_type", "vendor", "name", "url", "clone_url", "external_identity",
-            "default_branch", "version_rule", "credential", "credential_id", "credential_mode",
-            "credential_mode_display", "credential_name", "credential_owner_name",
-            "health_status", "last_sync_at", "created_by", "created_by_name",
-            "created_at", "updated_at",
-            "product_count",
-            "used_by_products",
-            "credential_loans",
-        ]
-        read_only_fields = [
-            "id", "health_status", "last_sync_at", "created_by", "created_by_name",
-            "created_at", "updated_at",
-            "credential_name", "credential_owner_name", "credential_mode_display",
-            "clone_url", "product_count",
-        ]
-
     def create(self, validated_data: dict) -> Repository:
-        """创建物理仓库并写入内置审批流程；产品上下文登记时补齐默认组件。"""
+        """创建物理仓库并写入内置审批流程；项目上下文登记时补齐默认组件。"""
+        from copy import deepcopy
+
         request = self.context.get("request")
         if request and getattr(request, "user", None) and request.user.is_authenticated:
             validated_data.setdefault("created_by", request.user)
+        project = validated_data.pop("project", None)
+        if project is not None and not validated_data.get("version_rule"):
+            # 项目上下文登记时从项目复制一次版本规则，此后仓库独立维护
+            validated_data["version_rule"] = deepcopy(project.version_rule)
         with transaction.atomic():
             repository = super().create(validated_data)
-            if repository.project_id:
-                ensure_repository_component(repository)
+            if project is not None:
+                ensure_repository_component(repository, project)
             from apps.workflow.services import ensure_builtin_workflow_definitions
 
             ensure_builtin_workflow_definitions(repository)
         return repository
 
     def update(self, instance: Repository, validated_data: dict) -> Repository:
-        """历史登记项目创建后保持不变，产品归属通过 ProductComponent 维护。"""
+        """仓库不再保留登记项目字段，项目归属通过 ProjectComponent 维护。"""
         validated_data.pop("project", None)
         return super().update(instance, validated_data)
 
@@ -177,19 +168,19 @@ class RepositorySerializer(RepositoryProductVisibilityMixin, serializers.ModelSe
         base = url.rstrip("/")
         return f"{base}/{obj.external_identity}.git"
 
-    def get_used_by_products(self, obj: Repository) -> list[dict[str, str]]:
-        """列出当前物理仓库被哪些产品及组件角色引用。"""
-        components = getattr(obj, "_visible_product_components", None)
+    def get_used_by_projects(self, obj: Repository) -> list[dict[str, str]]:
+        """列出当前物理仓库被哪些项目及组件角色引用。"""
+        components = getattr(obj, "_visible_project_components", None)
         if components is None:
-            components = obj.product_components.select_related("project").filter(is_active=True)
+            components = obj.project_components.select_related("project").filter(is_active=True)
             request = self.context.get("request")
             user = getattr(request, "user", None)
             if user and user.is_authenticated and not user.is_superuser:
                 components = components.filter(project_id__in=self._visible_project_ids())
         return [
             {
-                "product_id": str(component.project_id),
-                "product_name": component.project.name,
+                "project_id": str(component.project_id),
+                "project_name": component.project.name,
                 "component_id": str(component.id),
                 "component_code": component.component_code,
                 "component_name": component.display_name,
@@ -302,44 +293,43 @@ class RepositorySerializer(RepositoryProductVisibilityMixin, serializers.ModelSe
             duplicate = duplicate.exclude(id=self.instance.id)
         if duplicate.exists():
             raise serializers.ValidationError(
-                {"external_identity": "该物理仓库已登记，请从仓库目录关联到产品"}
+                {"external_identity": "该物理仓库已登记，请从仓库目录关联到项目"}
             )
 
         return attrs
 
 
-class RepositoryListSerializer(RepositoryProductVisibilityMixin, serializers.ModelSerializer):
+class RepositoryListSerializer(serializers.ModelSerializer):
     """
     仓库列表序列化器
 
     字段精简，适合列表展示。
     """
 
-    project_name = serializers.CharField(source="project.name", read_only=True, default="")
     clone_url = serializers.SerializerMethodField()
     credential_id = serializers.UUIDField(source="credential.id", read_only=True)
     credential_name = serializers.CharField(source="credential.name", read_only=True, default="")
     credential_owner_name = serializers.CharField(source="credential.owner.nickname", read_only=True, default="")
     credential_mode_display = serializers.CharField(source="get_credential_mode_display", read_only=True)
-    product_count = serializers.IntegerField(read_only=True, default=1)
-    used_by_products = serializers.SerializerMethodField()
+    project_count = serializers.IntegerField(read_only=True, default=1)
+    used_by_projects = serializers.SerializerMethodField()
     credential_loans = serializers.SerializerMethodField()
     owner_name = serializers.SerializerMethodField()
-    owner_in_product = serializers.SerializerMethodField()
+    owner_in_project = serializers.SerializerMethodField()
 
     class Meta:
         model = Repository
         fields = [
-            "id", "project", "project_name", "repo_type", "vendor",
+            "id", "repo_type", "vendor",
             "name", "url", "clone_url", "external_identity", "default_branch",
             "credential_mode", "credential_mode_display", "credential_id",
             "credential_name", "credential_owner_name",
             "health_status", "last_sync_at", "created_at",
-            "product_count",
-            "used_by_products",
+            "project_count",
+            "used_by_projects",
             "credential_loans",
             "owner_name",
-            "owner_in_product",
+            "owner_in_project",
         ]
 
     def get_clone_url(self, obj: Repository) -> str:
@@ -358,8 +348,8 @@ class RepositoryListSerializer(RepositoryProductVisibilityMixin, serializers.Mod
         base = url.rstrip("/")
         return f"{base}/{obj.external_identity}.git"
 
-    def get_used_by_products(self, obj: Repository) -> list[dict[str, str]]:
-        return RepositorySerializer(context=self.context).get_used_by_products(obj)
+    def get_used_by_projects(self, obj: Repository) -> list[dict[str, str]]:
+        return RepositorySerializer(context=self.context).get_used_by_projects(obj)
 
     def get_credential_loans(self, obj: Repository) -> list[dict]:
         return _credential_loan_summaries(obj)
@@ -372,13 +362,13 @@ class RepositoryListSerializer(RepositoryProductVisibilityMixin, serializers.Mod
             return ""
         return owner.nickname or owner.username
 
-    def get_owner_in_product(self, obj: Repository) -> bool | None:
-        product = self.context.get("product")
-        if product is None:
+    def get_owner_in_project(self, obj: Repository) -> bool | None:
+        project = self.context.get("project")
+        if project is None:
             return None
-        from apps.project.services import is_repository_owner_in_product
+        from apps.project.services import is_repository_owner_in_project
 
-        return is_repository_owner_in_product(obj, product)
+        return is_repository_owner_in_project(obj, project)
 
 
 class CommitRecordSerializer(serializers.ModelSerializer):

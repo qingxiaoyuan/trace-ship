@@ -57,7 +57,6 @@ def repository(project):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -710,7 +709,7 @@ class TestGenerateService:
 
     def _payload(self, repository, executor_type="local_docker", image_ref="web:latest", **extra):
         data = {
-            "project": str(repository.project_id),
+            "project": str(repository.project_components.get().project_id),
             "repository": str(repository.id),
             "executor_type": executor_type,
             "image_ref": image_ref,
@@ -813,9 +812,7 @@ class TestGenerateService:
         assert "AI 服务未配置" in str(exc.value)
 
     def test_generate_repository_not_in_project(self, admin_user, repository):
-        other = Project.objects.create(name="其他项目", code="OTH", leader=admin_user, status=1)
         other_repo = Repository.objects.create(
-            project=other,
             repo_type="git",
             vendor="gitlab",
             name="other",
@@ -832,7 +829,7 @@ class TestGenerateService:
             data["repository"] = str(other_repo.id)
             PackageScriptAIService.generate(data, admin_user)
         assert exc.value.code == 40000
-        assert "不属于当前产品" in str(exc.value)
+        assert "不属于当前项目" in str(exc.value)
 
     def test_generate_retries_then_fails_on_bad_json(self, admin_user, repository, ai_config, monkeypatch):
         calls = {"n": 0}
@@ -1090,7 +1087,7 @@ class TestKnowledge:
         )
         result = PackageScriptAIService.generate(
             {
-                "project": str(repository.project_id),
+                "project": str(repository.project_components.get().project_id),
                 "repository": str(repository.id),
                 "executor_type": "local_docker",
             },
@@ -1141,7 +1138,6 @@ class TestExemplars:
             name="其他项目", code="OTHX", leader=admin_user, status=1
         )
         other_repo = Repository.objects.create(
-            project=other_project,
             repo_type="git",
             vendor="gitlab",
             name="other-web",

@@ -34,6 +34,34 @@ class HasPermission(permissions.BasePermission):
         ).exists()
 
 
+def _resolve_project(obj):
+    """
+    从业务对象解析所属项目：项目本身 / obj.project / obj.project_component.project /
+    obj.repository 的启用组件。
+
+    CommitRecord.project 可空（仓库同步时无启用组件），此时回退到仓库当前的
+    启用组件解析项目，与同步时的归属口径一致（取首个启用组件）。
+    """
+    if hasattr(obj, "members"):
+        return obj
+    project = getattr(obj, "project", None)
+    if project is not None:
+        return project
+    component = getattr(obj, "project_component", None)
+    if component is not None:
+        return component.project
+    repository = getattr(obj, "repository", None)
+    if repository is not None and hasattr(repository, "project_components"):
+        component = (
+            repository.project_components.filter(is_active=True)
+            .select_related("project")
+            .first()
+        )
+        if component is not None:
+            return component.project
+    return None
+
+
 class IsProjectMember(permissions.BasePermission):
     """检查用户是否为项目成员（项目负责人视为隐含成员）"""
 
@@ -41,9 +69,9 @@ class IsProjectMember(permissions.BasePermission):
         """对象级权限检查"""
         if request.user.is_superuser:
             return True
-        from apps.project.models import ProductComponent, Project, ProjectMember
+        from apps.project.models import Project, ProjectComponent, ProjectMember
 
-        project = obj if hasattr(obj, "members") else getattr(obj, "project", None)
+        project = _resolve_project(obj)
         if project:
             if str(getattr(project, "leader_id", "")) == str(request.user.id):
                 return True
@@ -53,13 +81,13 @@ class IsProjectMember(permissions.BasePermission):
 
         if not isinstance(obj, Repository):
             return False
-        product_ids = ProductComponent.objects.filter(
+        project_ids = ProjectComponent.objects.filter(
             repository=obj, is_active=True,
         ).values_list("project_id", flat=True)
-        if Project.objects.filter(id__in=product_ids, leader=request.user).exists():
+        if Project.objects.filter(id__in=project_ids, leader=request.user).exists():
             return True
         return ProjectMember.objects.filter(
-            project_id__in=product_ids, user=request.user,
+            project_id__in=project_ids, user=request.user,
         ).exists()
 
 
@@ -89,13 +117,13 @@ class ProjectRolePermission(permissions.BasePermission):
         return member.role if member else None
 
     def _check(self, project, user) -> bool:
-        """在产品可见的前提下按有效角色校验。"""
+        """在项目可见的前提下按有效角色校验。"""
         if project is None:
             return False
         if user.is_superuser:
             return True
 
-        # leader 的有效角色仍按 manager 计算，但产品数据与操作均要求存在显式成员记录。
+        # leader 的有效角色仍按 manager 计算，但项目数据与操作均要求存在显式成员记录。
         # 将可见性前置放在统一角色入口，避免创建类接口绕过视图集 queryset。
         from apps.project.models import ProjectMember
 
@@ -116,16 +144,16 @@ class ProjectRolePermission(permissions.BasePermission):
             return False
         if request.user.is_superuser:
             return True
-        # create 等无对象阶段，从请求体 project 或 product_component 做角色预检；
+        # create 等无对象阶段，从请求体 project 或 project_component 做角色预检；
         # 两者都不在请求体时（如 project 由 URL/服务端推断的嵌套资源）
         # 此处放行，须由对象级检查（如 NestedProjectPermissionMixin）兜底
         project_id = request.data.get("project") if hasattr(request, "data") else None
         if not project_id and hasattr(request, "data"):
-            component_id = request.data.get("product_component")
+            component_id = request.data.get("project_component")
             if component_id:
-                from apps.project.models import ProductComponent
+                from apps.project.models import ProjectComponent
 
-                component = ProductComponent.objects.filter(id=component_id).only("project_id").first()
+                component = ProjectComponent.objects.filter(id=component_id).only("project_id").first()
                 project_id = component.project_id if component else None
         if not project_id:
             return True
@@ -137,21 +165,20 @@ class ProjectRolePermission(permissions.BasePermission):
     def has_object_permission(self, request, view, obj) -> bool:
         """对象级权限检查。
 
-        仓库对象按任一已关联产品上的角色判断，兼容共享仓库与
-        ``Repository.project`` 为空的全局登记仓库。
+        仓库对象按任一已关联项目上的角色判断，兼容共享仓库与全局登记仓库。
         """
         if request.user.is_superuser:
             return True
-        project = obj if hasattr(obj, "members") else getattr(obj, "project", None)
+        project = _resolve_project(obj)
         if project and self._check(project, request.user):
             return True
-        from apps.project.models import ProductComponent, Project
+        from apps.project.models import Project, ProjectComponent
         from apps.repository.models import Repository
 
         if not isinstance(obj, Repository):
             return False
         for linked in Project.objects.filter(
-            id__in=ProductComponent.objects.filter(
+            id__in=ProjectComponent.objects.filter(
                 repository=obj, is_active=True,
             ).values("project_id")
         ):
@@ -179,7 +206,7 @@ class IsRepositoryWorkflowEditor(permissions.BasePermission):
         repository = getattr(obj, "repository", None)
         if repository and repository.created_by_id:
             return str(repository.created_by_id) == str(request.user.id)
-        # 未绑定仓库的存量流程仍按产品管理员处理
+        # 未绑定仓库的存量流程仍按项目管理员处理
         project = getattr(obj, "project", None)
         if project:
             return IsProjectManager()._check(project, request.user)

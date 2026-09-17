@@ -1,7 +1,7 @@
 """
 项目管理序列化器
 
-包含项目、产品组件、项目成员的序列化器，以及支持字符串/数字双格式的状态字段。
+包含项目、项目组件、项目成员的序列化器，以及支持字符串/数字双格式的状态字段。
 """
 import re
 from typing import Any
@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.account.serializers import UserSerializer
-from apps.project.models import ProductComponent, Project, ProjectMember
+from apps.project.models import Project, ProjectComponent, ProjectMember
 from apps.project.services import ProjectService, visible_repository_ids
 from apps.repository.models import Repository
 from apps.repository.serializers import RepositoryListSerializer
@@ -143,7 +143,7 @@ class ProjectSerializer(serializers.ModelSerializer):
         创建项目时自动生成编码
 
         若调用方未提供 code，则按 PROJ + 年月日 + 4位自增序号规则生成。
-        发布审批流程随仓库创建时写入，不再挂在产品上。
+        发布审批流程随仓库创建时写入，不再挂在项目上。
 
         Args:
             validated_data: 已校验的数据
@@ -208,62 +208,62 @@ class ProjectListSerializer(serializers.ModelSerializer):
         return resolve_my_role(obj, getattr(request, "user", None))
 
 
-class ProductComponentSerializer(serializers.ModelSerializer):
-    """产品组件序列化器：维护产品内配置，不修改物理仓库本身。"""
+class ProjectComponentSerializer(serializers.ModelSerializer):
+    """项目组件序列化器：维护项目内配置，不修改物理仓库本身。"""
 
     repository = serializers.PrimaryKeyRelatedField(queryset=Repository.objects.all())
     component_code = serializers.CharField(required=False, allow_blank=True, max_length=100)
     display_name = serializers.CharField(required=False, allow_blank=True, max_length=200)
     repository_detail = RepositoryListSerializer(source="repository", read_only=True)
     version_scope_display = serializers.CharField(source="get_version_scope_display", read_only=True)
-    product_count = serializers.IntegerField(read_only=True, default=1)
+    project_count = serializers.IntegerField(read_only=True, default=1)
     current_version = serializers.SerializerMethodField()
     current_tag = serializers.SerializerMethodField()
     package_configs = serializers.SerializerMethodField()
     credential_loans = serializers.SerializerMethodField()
     credential_status = serializers.SerializerMethodField()
     owner_name = serializers.SerializerMethodField()
-    owner_in_product = serializers.SerializerMethodField()
+    owner_in_project = serializers.SerializerMethodField()
 
     class Meta:
-        model = ProductComponent
+        model = ProjectComponent
         fields = [
             "id", "project", "repository", "repository_detail", "component_code",
             "display_name", "default_branch", "source_subdir", "required",
             "version_scope", "version_scope_display", "tag_namespace",
-            "product_config", "sort_order", "is_active", "product_count",
+            "project_config", "sort_order", "is_active", "project_count",
             "current_version", "current_tag", "package_configs",
             "credential_loans", "credential_status",
-            "owner_name", "owner_in_product",
+            "owner_name", "owner_in_project",
             "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "project", "product_count",
+            "id", "project", "project_count",
             "version_scope", "version_scope_display", "tag_namespace",
             "created_at", "updated_at",
         ]
 
     @staticmethod
-    def _latest_release(obj: ProductComponent):
+    def _latest_release(obj: ProjectComponent):
         releases = getattr(obj.repository, "_latest_project_releases", [])
         return releases[0] if releases else None
 
-    def get_current_version(self, obj: ProductComponent) -> str:
+    def get_current_version(self, obj: ProjectComponent) -> str:
         release = self._latest_release(obj)
         return release.version if release else ""
 
-    def get_current_tag(self, obj: ProductComponent) -> str:
+    def get_current_tag(self, obj: ProjectComponent) -> str:
         release = self._latest_release(obj)
         return release.tag_name if release else ""
 
-    def get_package_configs(self, obj: ProductComponent) -> list[dict]:
+    def get_package_configs(self, obj: ProjectComponent) -> list[dict]:
         configs = getattr(obj, "_component_package_configs", [])
         return [
             {"id": str(config.id), "name": config.name, "is_active": config.is_active}
             for config in configs
         ]
 
-    def get_owner_name(self, obj: ProductComponent) -> str:
+    def get_owner_name(self, obj: ProjectComponent) -> str:
         from apps.project.services import repository_owner
 
         owner = repository_owner(obj.repository)
@@ -271,12 +271,12 @@ class ProductComponentSerializer(serializers.ModelSerializer):
             return ""
         return owner.nickname or owner.username
 
-    def get_owner_in_product(self, obj: ProductComponent) -> bool:
-        from apps.project.services import is_repository_owner_in_product
+    def get_owner_in_project(self, obj: ProjectComponent) -> bool:
+        from apps.project.services import is_repository_owner_in_project
 
-        return is_repository_owner_in_product(obj.repository, obj.project)
+        return is_repository_owner_in_project(obj.repository, obj.project)
 
-    def get_credential_loans(self, obj: ProductComponent) -> list[dict]:
+    def get_credential_loans(self, obj: ProjectComponent) -> list[dict]:
         """仅展示借用元数据，不返回用户名、Token 等敏感字段。"""
         now = timezone.now()
         values = []
@@ -303,14 +303,14 @@ class ProductComponentSerializer(serializers.ModelSerializer):
             })
         return values
 
-    def get_credential_status(self, obj: ProductComponent) -> str:
-        """凭证随仓库所有者进入产品：所有者在成员中且绑定凭证有效即为可用。"""
-        from apps.project.services import is_repository_owner_in_product
+    def get_credential_status(self, obj: ProjectComponent) -> str:
+        """凭证随仓库所有者进入项目：所有者在成员中且绑定凭证有效即为可用。"""
+        from apps.project.services import is_repository_owner_in_project
 
         credential = obj.repository.credential
         if not credential or not credential.is_active:
             return "unavailable"
-        if not is_repository_owner_in_product(obj.repository, obj.project):
+        if not is_repository_owner_in_project(obj.repository, obj.project):
             return "unavailable"
         now = timezone.now()
         if credential.expires_at and credential.expires_at <= now:
@@ -345,17 +345,17 @@ class ProductComponentSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs: dict) -> dict:
-        """校验产品内唯一性，以及仓库所有者必须已在产品成员中。"""
+        """校验项目内唯一性，以及仓库所有者必须已在项目成员中。"""
         project = self.context.get("project") or getattr(self.instance, "project", None)
         component_code = attrs.get("component_code", getattr(self.instance, "component_code", ""))
         if self.instance and "component_code" in attrs and not component_code:
             raise serializers.ValidationError({"component_code": "组件编码不能为空"})
         if project and component_code:
-            duplicates = ProductComponent.objects.filter(project=project, component_code=component_code)
+            duplicates = ProjectComponent.objects.filter(project=project, component_code=component_code)
             if self.instance:
                 duplicates = duplicates.exclude(id=self.instance.id)
             if duplicates.exists():
-                raise serializers.ValidationError({"component_code": "当前产品内组件编码已存在"})
+                raise serializers.ValidationError({"component_code": "当前项目内组件编码已存在"})
         repository = attrs.get("repository", getattr(self.instance, "repository", None))
         if project and repository and self.instance is None:
             from apps.project.services import repository_owner_association_error

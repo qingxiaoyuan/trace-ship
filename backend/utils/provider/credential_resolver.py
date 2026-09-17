@@ -1,7 +1,7 @@
 """
 凭证解析器
 
-产品通过「仓库所有者必须是产品成员」获得该仓库绑定凭证的使用权。
+项目通过「仓库所有者必须是项目成员」获得该仓库绑定凭证的使用权。
 不把个人凭证改成共享服务账号；使用者始终看不到明文。
 
 每次成功解析后更新凭证的 last_used_at 并写入使用记录。
@@ -36,7 +36,9 @@ def _resource_display(source) -> str:
     from apps.repository.models import Repository
 
     if isinstance(source, Repository):
-        return f"{source.project.name if source.project else '-'} / {source.name}"
+        component = source.project_components.select_related("project").filter(is_active=True).first()
+        project_name = component.project.name if component else "-"
+        return f"{project_name} / {source.name}"
     return str(source)
 
 
@@ -44,9 +46,9 @@ def _log_usage(
     *,
     request_user,
     credential,
-    product,
+    project,
     repository,
-    product_component,
+    project_component,
     operation: str,
     result: str,
     failure_reason: str = "",
@@ -61,9 +63,9 @@ def _log_usage(
             lender=getattr(loan, "lender", None) or getattr(credential, "owner", None),
             credential=credential,
             loan=loan,
-            product=product,
+            project=project,
             repository=repository,
-            product_component=product_component,
+            project_component=project_component,
             operation=operation,
             result=result,
             failure_reason=failure_reason,
@@ -76,34 +78,34 @@ def resolve_credential(
     source,
     request_user=None,
     *,
-    product=None,
+    project=None,
     loan=None,
     operation: str = "read",
-    product_component=None,
+    project_component=None,
 ) -> dict:
     """
     读取 source 绑定的凭证并返回解密后的数据。
 
-    产品上下文：仓库所有者必须仍是该产品成员，才能使用仓库绑定的个人凭证。
-    无产品时：操作者须为仓库所有者，或属于任一已关联且所有者仍在成员中的产品。
+    项目上下文：仓库所有者必须仍是该项目成员，才能使用仓库绑定的个人凭证。
+    无项目时：操作者须为仓库所有者，或属于任一已关联且所有者仍在成员中的项目。
     开放接口 / 系统任务（无 request_user）继续使用绑定凭证。
 
     Args:
         source: Repository 实例
         request_user: 当前请求用户
-        product: 产品上下文；发布、打包、产品内仓库操作应传入
+        project: 项目上下文；发布、打包、项目内仓库操作应传入
         loan: 可选的显式借用记录，仅作附加约束，不再作为主授权方式
         operation: 操作类型，写入审计
-        product_component: 产品组件，写入审计
+        project_component: 项目组件，写入审计
 
     Returns:
         解密后的凭证字典
 
     Raises:
-        ProviderError: 未绑定凭证、停用或当前产品无权使用时抛出
+        ProviderError: 未绑定凭证、停用或当前项目无权使用时抛出
     """
     from apps.project.services import (
-        is_repository_owner_in_product,
+        is_repository_owner_in_project,
         repository_owner,
         repository_owner_association_error,
         user_can_use_repository_credential,
@@ -114,31 +116,31 @@ def resolve_credential(
     credential = getattr(source, "credential", None)
     selected_loan = loan
 
-    if product is not None:
-        reason = repository_owner_association_error(source, product)
+    if project is not None:
+        reason = repository_owner_association_error(source, project)
         if reason:
             if credential is not None:
                 _log_usage(
                     request_user=request_user,
                     credential=credential,
-                    product=product,
+                    project=project,
                     repository=repository,
-                    product_component=product_component,
+                    project_component=project_component,
                     operation=operation,
                     result="failure",
                     failure_reason=reason,
                     loan=selected_loan,
                 )
             raise ProviderError(reason)
-        if not is_repository_owner_in_product(source, product):
-            reason = "仓库所有者不在当前产品成员中，无法使用该仓库凭证"
+        if not is_repository_owner_in_project(source, project):
+            reason = "仓库所有者不在当前项目成员中，无法使用该仓库凭证"
             if credential is not None:
                 _log_usage(
                     request_user=request_user,
                     credential=credential,
-                    product=product,
+                    project=project,
                     repository=repository,
-                    product_component=product_component,
+                    project_component=project_component,
                     operation=operation,
                     result="failure",
                     failure_reason=reason,
@@ -153,15 +155,15 @@ def resolve_credential(
                 raw_loan = RepositoryCredentialLoan.objects.filter(
                     id=getattr(selected_loan, "id", selected_loan)
                 ).select_related("credential", "lender").first()
-            if raw_loan is None or not raw_loan.is_valid_for(product, operation):
+            if raw_loan is None or not raw_loan.is_valid_for(project, operation):
                 reason = f"指定的凭证借用不能执行 {operation}"
                 if raw_loan is not None:
                     _log_usage(
                         request_user=request_user,
                         credential=raw_loan.credential,
-                        product=product,
+                        project=project,
                         repository=repository,
-                        product_component=product_component,
+                        project_component=project_component,
                         operation=operation,
                         result="failure",
                         failure_reason=reason,
@@ -172,14 +174,14 @@ def resolve_credential(
             credential = raw_loan.credential
     elif request_user is not None and not getattr(request_user, "is_superuser", False):
         if not user_can_use_repository_credential(source, request_user):
-            reason = "当前用户无权使用该仓库凭证。请先将仓库所有者加入产品成员，再从产品关联该仓库"
+            reason = "当前用户无权使用该仓库凭证。请先将仓库所有者加入项目成员，再从项目关联该仓库"
             if credential is not None:
                 _log_usage(
                     request_user=request_user,
                     credential=credential,
-                    product=None,
+                    project=None,
                     repository=repository,
-                    product_component=product_component,
+                    project_component=project_component,
                     operation=operation,
                     result="failure",
                     failure_reason=reason,
@@ -203,14 +205,14 @@ def resolve_credential(
     _log_usage(
         request_user=request_user,
         credential=credential,
-        product=product,
+        project=project,
         repository=repository,
-        product_component=product_component,
+        project_component=project_component,
         operation=operation,
         result="success",
         loan=selected_loan,
     )
-    if selected_loan is None and product is None:
+    if selected_loan is None and project is None:
         try:
             from apps.system.services import OperationLogService
 

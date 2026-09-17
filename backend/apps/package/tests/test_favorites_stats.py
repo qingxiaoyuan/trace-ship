@@ -53,7 +53,6 @@ def repository(project):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -73,8 +72,7 @@ def package_config(project, repository):
         image="trace-ship/web:latest",
     )
     return PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="Web 打包",
         image=image,
     )
@@ -194,7 +192,7 @@ class TestFavoriteList:
             name="Qt 镜像", image_name="trace-ship/qt", image_tag="latest",
         )
         other_config = PackageConfig.objects.create(
-            project=project, repository=repository, name="Qt 打包", image=image,
+            project_component=project.project_components.get(repository=repository), name="Qt 打包", image=image,
         )
         PackageConfigFavorite.objects.create(user=user, config=package_config)
 
@@ -220,7 +218,7 @@ class TestFavoriteList:
             name="Qt 镜像", image_name="trace-ship/qt", image_tag="latest",
         )
         other_config = PackageConfig.objects.create(
-            project=project, repository=repository, name="Qt 打包", image=image,
+            project_component=project.project_components.get(repository=repository), name="Qt 打包", image=image,
         )
         PackageConfigFavorite.objects.create(user=user, config=other_config)
 
@@ -339,7 +337,7 @@ class TestTaskSearch:
             name="Qt 镜像", image_name="trace-ship/qt", image_tag="latest",
         )
         qt_config = PackageConfig.objects.create(
-            project=project, repository=repository, name="Qt 打包", image=image,
+            project_component=project.project_components.get(repository=repository), name="Qt 打包", image=image,
         )
         _make_task(qt_config, project, repository, user, name="任务丙", version="V3.0.0", tag_name="V3.0.0")
         resp = api_client.get("/api/packages/tasks/", {"search": "Qt 打包"})

@@ -41,11 +41,21 @@ def _collect_legacy_pairs(apps, schema_editor):
         pairs.append(key)
 
     for repository in Repository.objects.order_by("created_at", "id"):
-        add_pair(repository.project_id, repository.id)
+        # 历史迁移状态下 Repository 仍有 project 字段；getattr 兜底便于
+        # 测试用当前模型直接调用本函数（Repository.project 已在后续迁移删除）。
+        add_pair(getattr(repository, "project_id", None), repository.id)
     for table in ("release_record", "package_config"):
         if table not in tables:
             continue
         with connection.cursor() as cursor:
+            # 当前库的 package_config 已删除旧 project/repository 冗余列（后续迁移），
+            # 扫描前确认列存在；历史迁移运行时两列仍在，行为不变。
+            column_names = {
+                column.name
+                for column in connection.introspection.get_table_description(cursor, table)
+            }
+            if not {"project_id", "repository_id"}.issubset(column_names):
+                continue
             cursor.execute(
                 f"SELECT DISTINCT project_id, repository_id FROM {table} "
                 "WHERE project_id IS NOT NULL AND repository_id IS NOT NULL"

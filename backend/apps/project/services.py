@@ -1,16 +1,16 @@
 """
 项目业务服务
 
-封装项目创建者自动加入项目、产品组件初始化与可见范围等逻辑。
+封装项目创建者自动加入项目、项目组件初始化与可见范围等逻辑。
 """
 import re
 
 from django.db import transaction
 from django.db.models import Count, IntegerField, OuterRef, Q, Subquery
-from django.db.models.functions import Coalesce, Greatest
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from apps.project.models import ProductComponent, Project, ProjectMember
+from apps.project.models import Project, ProjectComponent, ProjectMember
 
 
 class ProjectService:
@@ -74,9 +74,9 @@ def normalize_component_code(name: str, fallback: str = "component") -> str:
 
 
 def next_component_code(project: Project, preferred: str, exclude_id=None) -> str:
-    """在产品内生成不重复的组件编码。"""
+    """在项目内生成不重复的组件编码。"""
     base_code = normalize_component_code(preferred)
-    existing = ProductComponent.objects.filter(project=project)
+    existing = ProjectComponent.objects.filter(project=project)
     if exclude_id:
         existing = existing.exclude(id=exclude_id)
     codes = set(existing.values_list("component_code", flat=True))
@@ -113,12 +113,8 @@ def _related_count_subquery(model, project_field: str = "project_id"):
 
 def annotate_project_list_counts(queryset):
     """列表只需仓库数与成员数，用子查询注入，不扫发布/打包表。"""
-    from apps.repository.models import Repository
-
-    legacy_repos = _related_count_subquery(Repository)
-    components = _related_count_subquery(ProductComponent)
     return queryset.annotate(
-        repo_count=Greatest(legacy_repos, components),
+        repo_count=_related_count_subquery(ProjectComponent),
         member_count=_related_count_subquery(ProjectMember),
     )
 
@@ -129,13 +125,13 @@ def annotate_project_detail_counts(queryset):
     from apps.release.models import ReleaseRecord
 
     return annotate_project_list_counts(queryset).annotate(
-        package_count=_related_count_subquery(PackageConfig),
+        package_count=_related_count_subquery(PackageConfig, "project_component__project_id"),
         release_count=_related_count_subquery(ReleaseRecord),
     )
 
 
-def is_product_member(project, user) -> bool:
-    """判断用户是否为产品成员（含负责人，不含仅凭超管身份）。"""
+def is_project_member(project, user) -> bool:
+    """判断用户是否为项目成员（含负责人，不含仅凭超管身份）。"""
     if project is None or user is None:
         return False
     if str(getattr(project, "leader_id", "") or "") == str(user.id):
@@ -146,29 +142,29 @@ def is_product_member(project, user) -> bool:
     return ProjectMember.objects.filter(project=project, user=user).exists()
 
 
-def is_repository_owner_in_product(repository, product) -> bool:
-    """仓库所有者是否已在该产品成员中。"""
+def is_repository_owner_in_project(repository, project) -> bool:
+    """仓库所有者是否已在该项目成员中。"""
     owner = repository_owner(repository)
     if owner is None:
         return False
-    return is_product_member(product, owner)
+    return is_project_member(project, owner)
 
 
-def repository_owner_association_error(repository, product) -> str | None:
-    """关联仓库到产品的前置条件；通过返回 None。"""
+def repository_owner_association_error(repository, project) -> str | None:
+    """关联仓库到项目的前置条件；通过返回 None。"""
     owner = repository_owner(repository)
     if owner is None:
         return "仓库尚未指定所有者。请先由所有者登记仓库或绑定个人凭证。"
-    if not is_product_member(product, owner):
+    if not is_project_member(project, owner):
         name = owner.nickname or owner.username
-        return f"请先将仓库所有者「{name}」加入当前产品成员，才能关联该仓库并使用其凭证"
+        return f"请先将仓库所有者「{name}」加入当前项目成员，才能关联该仓库并使用其凭证"
     return None
 
 
 def user_can_use_repository_credential(repository, user) -> bool:
     """当前用户是否可使用该仓库绑定凭证。
 
-    仓库所有者本人可用；否则必须属于某个已关联产品，且仓库所有者仍是该产品成员。
+    仓库所有者本人可用；否则必须属于某个已关联项目，且仓库所有者仍是该项目成员。
     """
     if user is None:
         return False
@@ -177,30 +173,26 @@ def user_can_use_repository_credential(repository, user) -> bool:
     owner = repository_owner(repository)
     if owner is not None and str(owner.id) == str(user.id):
         return True
-    components = ProductComponent.objects.filter(
+    components = ProjectComponent.objects.filter(
         repository=repository, is_active=True,
     ).select_related("project")
     for component in components:
-        if not is_product_member(component.project, user):
+        if not is_project_member(component.project, user):
             continue
-        if owner is None or is_product_member(component.project, owner):
-            return True
-    if repository.project_id and is_product_member(repository.project, user):
-        if owner is None or is_product_member(repository.project, owner):
+        if owner is None or is_project_member(component.project, owner):
             return True
     return False
 
 
-def ensure_repository_component(repository, project=None) -> ProductComponent:
-    """为旧项目 + 仓库调用补齐默认产品组件，供兼容接口平滑迁移。"""
-    project = project or repository.project
-    existing = ProductComponent.objects.filter(
+def ensure_repository_component(repository, project) -> ProjectComponent:
+    """为项目 + 仓库调用补齐默认项目组件（项目上下文登记仓库时使用）。"""
+    existing = ProjectComponent.objects.filter(
         project=project,
         repository=repository,
     ).first()
     if existing:
         return existing
-    return ProductComponent.objects.create(
+    return ProjectComponent.objects.create(
         project=project,
         repository=repository,
         component_code=next_component_code(project, repository.name),
@@ -213,8 +205,8 @@ def visible_repository_ids(user):
     """
     返回用户可见的物理仓库 ID。
 
-    非超管仅可查看本人创建的仓库，以及显式加入产品后该产品关联的仓库；
-    同时兼容旧的 Repository.project 归属和 ProductComponent 关联。
+    非超管仅可查看本人创建的仓库，以及显式加入项目后该项目关联的仓库；
+    项目归属一律以 ProjectComponent 关联为准。
     """
     from apps.repository.models import Repository
 
@@ -223,8 +215,7 @@ def visible_repository_ids(user):
     project_ids = visible_project_ids(user)
     return Repository.objects.filter(
         Q(created_by=user)
-        | Q(project_id__in=project_ids)
-        | Q(product_components__project_id__in=project_ids, product_components__is_active=True)
+        | Q(project_components__project_id__in=project_ids, project_components__is_active=True)
     ).values("id").distinct()
 
 
@@ -272,9 +263,9 @@ def visible_project_ids(user):
     """
     用户可见的项目 ID 查询集
 
-    超管可查看全部产品；其他用户仅可查看存在显式 ProjectMember 记录的产品，
-    供各业务视图的 get_queryset 统一过滤使用。产品负责人若需要看到产品，
-    同样需要加入产品成员。
+    超管可查看全部项目；其他用户仅可查看存在显式 ProjectMember 记录的项目，
+    供各业务视图的 get_queryset 统一过滤使用。项目负责人若需要看到项目，
+    同样需要加入项目成员。
 
     Args:
         user: 当前请求用户

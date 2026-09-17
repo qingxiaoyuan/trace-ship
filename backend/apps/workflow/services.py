@@ -62,7 +62,6 @@ def ensure_builtin_workflow_definitions(repository: Repository) -> None:
         skip_approval = release_type in ("rc", "beta")
         WorkflowDefinition.objects.create(
             repository=repository,
-            project=repository.project,
             name=name,
             biz_type="release",
             release_type=release_type,
@@ -530,7 +529,7 @@ class WorkflowEngine:
     @classmethod
     @staticmethod
     def _resolve_release_context(instance: WorkflowInstance) -> tuple[Project | None, Repository | None]:
-        """从流程实例解析产品与仓库上下文，优先使用本次发布单。"""
+        """从流程实例解析项目与仓库上下文，优先使用本次发布单。"""
         repository = getattr(instance.definition, "repository", None)
         project = instance.definition.project
         if instance.biz_type == "release" and instance.biz_id:
@@ -559,7 +558,7 @@ class WorkflowEngine:
 
         Args:
             config: {"type": "leader"|"role"|"user"|"self"|"repo_owner", ...}
-            project: 所属产品（解析产品负责人 / 指定角色）
+            project: 所属项目（解析项目负责人 / 指定角色）
             instance: 流程实例
             repository: 所属仓库（解析仓库拥有者）
 

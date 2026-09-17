@@ -3,7 +3,6 @@
 """
 import pytest
 
-from apps.project.models import Project
 from apps.repository.models import Repository
 from apps.workflow.models import WorkflowDefinition
 from apps.workflow.services import (
@@ -15,10 +14,8 @@ pytestmark = pytest.mark.django_db
 
 
 def _repository(user, code: str, name: str) -> Repository:
-    """创建带登记产品的测试仓库。"""
-    project = Project.objects.create(code=code, name=f"{name}产品", leader=user, status=1)
+    """创建测试仓库。"""
     return Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name=name,

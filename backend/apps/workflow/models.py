@@ -20,7 +20,7 @@ class WorkflowDefinition(models.Model):
     Attributes:
         id: UUID 主键
         repository: 所属物理仓库（审批流程随仓库维护）
-        project: 历史所属产品（兼容字段，不再作为归属依据）
+        project: 历史所属项目（兼容字段，不再作为归属依据）
         name: 流程名称
         biz_type: 业务类型
         node_config: 审批链配置
@@ -56,7 +56,7 @@ class WorkflowDefinition(models.Model):
         null=True,
         blank=True,
         related_name="workflow_definitions",
-        verbose_name="历史所属产品",
+        verbose_name="历史所属项目",
     )
     name = models.CharField(max_length=200, verbose_name="流程名称")
     biz_type = models.CharField(

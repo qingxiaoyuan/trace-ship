@@ -122,7 +122,7 @@ class CredentialViewSet(StandardModelViewSet):
         """
         credential = self.get_object()
         queryset = CredentialUsageLog.objects.filter(credential=credential).select_related(
-            "actor", "lender", "product", "repository", "product_component"
+            "actor", "lender", "project", "repository", "project_component"
         ).order_by("-created_at")
 
         page = self.paginate_queryset(queryset)
@@ -171,13 +171,13 @@ class RepositoryCredentialLoanViewSet(StandardModelViewSet):
         user = self.request.user
         queryset = RepositoryCredentialLoan.objects.select_related(
             "repository", "credential", "lender"
-        ).prefetch_related("allowed_products")
+        ).prefetch_related("allowed_projects")
         if user.is_superuser:
             return queryset
         from apps.project.services import visible_project_ids
 
         return queryset.filter(
-            Q(lender=user) | Q(allowed_products__in=visible_project_ids(user))
+            Q(lender=user) | Q(allowed_projects__in=visible_project_ids(user))
         ).distinct()
 
     def perform_create(self, serializer):
@@ -212,15 +212,15 @@ class RepositoryCredentialLoanViewSet(StandardModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="available")
     def available(self, request: Request) -> Response:
-        """按仓库、产品与操作返回当前有效借用，供组件发布显式选择。"""
+        """按仓库、项目与操作返回当前有效借用，供组件发布显式选择。"""
         repository_id = request.query_params.get("repository")
-        product_id = request.query_params.get("product")
+        project_id = request.query_params.get("project")
         operation = request.query_params.get("operation", "read")
-        if not repository_id or not product_id:
-            return error_response(40001, "repository 与 product 不能为空")
+        if not repository_id or not project_id:
+            return error_response(40001, "repository 与 project 不能为空")
         queryset = self.get_queryset().filter(
             repository_id=repository_id,
-            allowed_products__id=product_id,
+            allowed_projects__id=project_id,
             is_active=True,
             revoked_at__isnull=True,
             credential__is_active=True,

@@ -406,6 +406,10 @@ class RepositoryService:
         branch = branch or repo.default_branch
         commits = RepositoryService.list_commits(repo, branch, request_user)
 
+        # 提交归属项目：取仓库首个启用组件所在项目，未关联项目时为空
+        component = repo.project_components.filter(is_active=True).select_related("project").first()
+        project = component.project if component else None
+
         synced_count = 0
         illegal_count = 0
 
@@ -418,7 +422,7 @@ class RepositoryService:
                 repository=repo,
                 commit_hash=commit.hash,
                 defaults={
-                    "project": repo.project,
+                    "project": project,
                     "author": commit.author,
                     "author_email": commit.author_email or "",
                     "message": commit.message,

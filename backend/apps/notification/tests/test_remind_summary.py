@@ -51,7 +51,6 @@ def project(user):
 def repository(project):
     """测试仓库"""
     return Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="后端仓库",

@@ -6,7 +6,7 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.project.models import ProductComponent, Project, ProjectMember
+from apps.project.models import Project, ProjectComponent, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.workflow.models import WorkflowDefinition
 from utils.provider.base import TagInfo
@@ -145,19 +145,19 @@ class TestReleaseViews:
         assert response.status_code == 400
         assert ReleaseRecord.objects.count() == 0
 
-    def test_create_release_accepts_reused_product_component(
+    def test_create_release_accepts_reused_project_component(
         self, api_client, user, repository, patched_provider
     ):
-        """仓库通过产品组件复用后，可继续使用兼容的单仓库发布入口。"""
+        """仓库通过项目组件复用后，可继续使用兼容的单仓库发布入口。"""
         target = Project.objects.create(
             code="SDK",
-            name="SDK 产品",
+            name="SDK 项目",
             leader=user,
             status=1,
             version_rule={"prefix": "VA", "major": 1, "minor": 0, "patch": 0},
         )
         ProjectMember.objects.create(project=target, user=user, role="manager")
-        ProductComponent.objects.create(
+        ProjectComponent.objects.create(
             project=target,
             repository=repository,
             component_code="middleware",
@@ -518,15 +518,13 @@ class TestReleasePackageConfigSelection:
 
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="Web 打包",
             image=image,
             auto_package_on_release=True,
         )
         other_config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="普通打包",
             image=image,
             auto_package_on_release=False,

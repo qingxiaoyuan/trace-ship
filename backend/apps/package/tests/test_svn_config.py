@@ -45,7 +45,6 @@ def repository(project):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -75,8 +74,7 @@ def svn_credential(user):
 @pytest.fixture
 def svn_config(project, repository, svn_credential):
     return PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 推送配置",
         svn_push_enabled=True,
         svn_url="svn://svn.example.com/releases",
@@ -266,8 +264,7 @@ class TestSVNConfigSerializerValidation:
             image="trace-ship/web-builder:node22",
         )
         data = {
-            "project": project.id,
-            "repository": repository.id,
+            "project_component": project.project_components.get(repository=repository).id,
             "name": "测试配置",
             "image": image.id,
             "auto_collect_output": False,
@@ -291,8 +288,7 @@ class TestSVNConfigSerializerValidation:
             image="trace-ship/web-builder:node22",
         )
         data = {
-            "project": project.id,
-            "repository": repository.id,
+            "project_component": project.project_components.get(repository=repository).id,
             "name": "测试配置",
             "image": image.id,
             "auto_collect_output": True,
@@ -314,8 +310,7 @@ class TestSVNConfigSerializerValidation:
             image="trace-ship/web-builder:node22",
         )
         data = {
-            "project": project.id,
-            "repository": repository.id,
+            "project_component": project.project_components.get(repository=repository).id,
             "name": "测试配置",
             "image": image.id,
             "svn_push_enabled": True,

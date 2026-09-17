@@ -48,7 +48,6 @@ def repository(project):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -78,8 +77,7 @@ def svn_credential(user):
 @pytest.fixture
 def svn_config(project, repository, svn_credential):
     return PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 浏览配置",
         custom_script="echo build",
         svn_push_enabled=True,
@@ -210,7 +208,7 @@ class TestSvnEntriesView:
     def test_reject_when_svn_not_enabled(self, api_client, project, repository):
         """未启用 SVN 推送的配置返回 400。"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="普通配置",
+            project_component=project.project_components.get(repository=repository), name="普通配置",
         )
         response = api_client.get(self._url(config.id))
         assert response.status_code == 400

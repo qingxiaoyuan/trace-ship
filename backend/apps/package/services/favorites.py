@@ -39,7 +39,12 @@ class FavoriteMixin:
         )
         favorites = (
             PackageConfigFavorite.objects.filter(user=user)
-            .select_related("config__project", "config__repository", "config__image", "config__node")
+            .select_related(
+                "config__project_component__project",
+                "config__project_component__repository",
+                "config__image",
+                "config__node",
+            )
             .annotate(_last_task_id=last_task_id_sq)
             .order_by("-created_at")
         )
@@ -50,13 +55,14 @@ class FavoriteMixin:
         for fav in favorites:
             config = fav.config
             task = task_map.get(fav._last_task_id)
+            component = config.project_component
             items.append({
                 "id": str(config.id),
                 "name": config.name,
-                "project_id": str(config.project_id),
-                "project_name": config.project.name if config.project else "",
-                "repository_id": str(config.repository_id),
-                "repository_name": config.repository.name if config.repository else "",
+                "project_id": str(component.project_id),
+                "project_name": component.project.name if component.project else "",
+                "repository_id": str(component.repository_id),
+                "repository_name": component.repository.name if component.repository else "",
                 "executor_type": config.executor_type,
                 "executor_type_display": config.get_executor_type_display(),
                 "image_name": config.image.name if config.image else "",

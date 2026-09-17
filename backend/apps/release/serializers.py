@@ -6,7 +6,7 @@
 from django.db.models import Count, Q
 from rest_framework import serializers
 
-from apps.project.models import ProductComponent, Project
+from apps.project.models import Project, ProjectComponent
 from apps.release.models import (
     ReleaseCommit,
     ReleaseRecord,
@@ -139,10 +139,10 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         from utils.permissions import ProjectRolePermission
 
         if not visible_project_ids(user).filter(id=value.id).exists():
-            raise serializers.ValidationError("只有产品成员才能创建/修改发布")
+            raise serializers.ValidationError("只有项目成员才能创建/修改发布")
         role = ProjectRolePermission._effective_role(value, user)
         if role not in ("developer", "tester", "manager", "auditor", "software_admin"):
-            raise serializers.ValidationError("只有产品成员才能创建/修改发布")
+            raise serializers.ValidationError("只有项目成员才能创建/修改发布")
         return value
 
     def validate_repository(self, value: Repository) -> Repository:
@@ -159,12 +159,12 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             serializers.ValidationError: 项目不一致时抛出
         """
         project = self.initial_data.get("project") or getattr(self.instance, "project_id", None)
-        if project and not ProductComponent.objects.filter(
+        if project and not ProjectComponent.objects.filter(
             project_id=project,
             repository=value,
             is_active=True,
         ).exists():
-            raise serializers.ValidationError("该仓库未在当前产品中启用，请先关联仓库")
+            raise serializers.ValidationError("该仓库未在当前项目中启用，请先关联仓库")
         return value
 
     def validate(self, attrs: dict) -> dict:

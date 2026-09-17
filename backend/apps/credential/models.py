@@ -135,10 +135,9 @@ class Credential(models.Model):
 class RepositoryCredentialLoan(models.Model):
     """仓库凭证借用授权。
 
-    凭证仍归个人所有；借用记录只声明哪些产品可以在指定仓库上执行哪些
+    凭证仍归个人所有；借用记录只声明哪些项目可以在指定仓库上执行哪些
     操作，不复制、不转移、更不暴露凭证明文。
     """
-
     SCOPE_CHOICES = [
         ("read", "读取仓库"),
         ("create_tag", "创建 Tag"),
@@ -158,9 +157,9 @@ class RepositoryCredentialLoan(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
         related_name="credential_loans", verbose_name="出借人",
     )
-    allowed_products = models.ManyToManyField(
+    allowed_projects = models.ManyToManyField(
         "project.Project", related_name="credential_loans",
-        verbose_name="允许使用的产品",
+        verbose_name="允许使用的项目",
     )
     permission_scope = models.JSONField(
         default=list, verbose_name="授权操作",
@@ -186,7 +185,7 @@ class RepositoryCredentialLoan(models.Model):
         return f"{self.repository.name} - {self.credential.name}"
 
     def is_valid_for(self, project, operation: str = "read") -> bool:
-        """判断借用记录在指定产品与操作下是否仍有效。"""
+        """判断借用记录在指定项目与操作下是否仍有效。"""
         if not self.is_active or self.revoked_at:
             return False
         if self.expires_at and self.expires_at <= timezone.now():
@@ -197,7 +196,7 @@ class RepositoryCredentialLoan(models.Model):
             return False
         if operation not in (self.permission_scope or []):
             return False
-        return self.allowed_products.filter(id=project.id).exists()
+        return self.allowed_projects.filter(id=project.id).exists()
 
 
 class CredentialUsageLog(models.Model):
@@ -222,17 +221,17 @@ class CredentialUsageLog(models.Model):
         RepositoryCredentialLoan, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="usage_logs", verbose_name="借用记录",
     )
-    product = models.ForeignKey(
+    project = models.ForeignKey(
         "project.Project", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="credential_usage_logs", verbose_name="产品",
+        related_name="credential_usage_logs", verbose_name="项目",
     )
     repository = models.ForeignKey(
         "repository.Repository", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="credential_usage_logs", verbose_name="仓库",
     )
-    product_component = models.ForeignKey(
-        "project.ProductComponent", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="credential_usage_logs", verbose_name="产品组件",
+    project_component = models.ForeignKey(
+        "project.ProjectComponent", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="credential_usage_logs", verbose_name="项目组件",
     )
     operation = models.CharField(max_length=50, verbose_name="操作")
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, verbose_name="结果")
@@ -246,6 +245,6 @@ class CredentialUsageLog(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["credential", "created_at"]),
-            models.Index(fields=["product", "created_at"]),
+            models.Index(fields=["project", "created_at"]),
             models.Index(fields=["repository", "created_at"]),
         ]

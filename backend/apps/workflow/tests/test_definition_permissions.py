@@ -27,19 +27,25 @@ def owner():
 
 @pytest.fixture
 def manager_user():
-    """产品管理员（非仓库创建者）"""
+    """项目管理员（非仓库创建者）"""
     return User.objects.create_user(username="wf_manager", password="pass")
 
 
 @pytest.fixture
-def repository(owner, manager_user):
+def project(owner, manager_user):
     project = Project.objects.create(
-        code="WFPERM", name="流程权限产品", leader=owner, status=1,
+        code="WFPERM", name="流程权限项目", leader=owner, status=1,
     )
     ProjectMember.objects.create(project=project, user=owner, role="developer")
     ProjectMember.objects.create(project=project, user=manager_user, role="manager")
-    return Repository.objects.create(
-        project=project,
+    return project
+
+
+@pytest.fixture
+def repository(owner, project):
+    from apps.project.services import ensure_repository_component
+
+    repo = Repository.objects.create(
         repo_type="git",
         vendor="gitlab",
         name="流程权限仓库",
@@ -47,13 +53,15 @@ def repository(owner, manager_user):
         external_identity="test/wfperm",
         created_by=owner,
     )
+    ensure_repository_component(repo, project)
+    return repo
 
 
 @pytest.fixture
-def definition(repository, owner):
+def definition(repository, owner, project):
     return WorkflowDefinition.objects.create(
         repository=repository,
-        project=repository.project,
+        project=project,
         name="发布审批流程",
         biz_type="release",
         node_config=[
@@ -86,8 +94,8 @@ def test_repository_owner_can_update_node_config(definition, owner):
 
 
 @pytest.mark.django_db
-def test_product_manager_cannot_update_node_config(definition, manager_user):
-    """产品管理员若不是仓库创建者，不能编辑审批节点"""
+def test_project_manager_cannot_update_node_config(definition, manager_user):
+    """项目管理员若不是仓库创建者，不能编辑审批节点"""
     response = auth_client(manager_user).patch(
         f"/api/workflow/definitions/{definition.id}/",
         {"node_config": _new_node_config()},

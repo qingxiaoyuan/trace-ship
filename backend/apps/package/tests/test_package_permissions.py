@@ -50,7 +50,6 @@ def repository(project):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -86,7 +85,7 @@ def image():
 @pytest.fixture
 def package_config(project, repository, image):
     return PackageConfig.objects.create(
-        project=project, repository=repository, name="Web 打包", image=image,
+        project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
     )
 
 
@@ -260,8 +259,7 @@ def test_user_with_dedicated_permission_can_delete_visible_finished_task(project
 
 def _config_payload(project, repository, image, name="权限测试配置"):
     return {
-        "project": str(project.id),
-        "repository": str(repository.id),
+        "project_component": str(project.project_components.get(repository=repository).id),
         "name": name,
         "executor_type": "local_docker",
         "image": str(image.id),

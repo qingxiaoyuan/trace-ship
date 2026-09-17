@@ -47,11 +47,10 @@ def project(user):
 
 @pytest.fixture
 def repository(project):
-    """测试仓库，并补齐原产品下的启用关联。"""
+    """测试仓库，并补齐原项目下的启用关联。"""
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -72,8 +71,7 @@ def test_trigger_auto_packages_creates_task(project, repository, user, monkeypat
         image="trace-ship/web:latest",
     )
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="Web 打包",
         image=image,
         auto_package_on_release=True,
@@ -98,24 +96,22 @@ def test_trigger_auto_packages_creates_task(project, repository, user, monkeypat
 
 
 @pytest.mark.django_db
-def test_trigger_auto_packages_does_not_cross_products(project, repository, user, monkeypatch):
-    """共享仓库发布时只触发当前产品的打包配置。"""
+def test_trigger_auto_packages_does_not_cross_projects(project, repository, user, monkeypatch):
+    """共享仓库发布时只触发当前项目的打包配置。"""
     image = PackageImage.objects.create(name="共享镜像", image="trace-ship/shared:latest")
     current_config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
-        name="当前产品打包",
+        project_component=project.project_components.get(repository=repository),
+        name="当前项目打包",
         image=image,
         auto_package_on_release=True,
     )
-    other_project = Project.objects.create(name="另一个产品", code="OTHER", leader=user)
+    other_project = Project.objects.create(name="另一个项目", code="OTHER", leader=user)
     ProjectMember.objects.create(project=other_project, user=user, role="manager")
     from apps.project.services import ensure_repository_component
     ensure_repository_component(repository, other_project)
     PackageConfig.objects.create(
-        project=other_project,
-        repository=repository,
-        name="其他产品打包",
+        project_component=other_project.project_components.get(repository=repository),
+        name="其他项目打包",
         image=image,
         auto_package_on_release=True,
     )
@@ -173,8 +169,7 @@ def test_create_task_falls_back_to_local_worker_when_celery_broker_unavailable(p
         image="trace-ship/web:latest",
     )
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="Web 打包",
         image=image,
     )
@@ -734,7 +729,7 @@ def test_create_task_for_branch_creates_task(project, repository, user, monkeypa
     """分支直打包：任务标题与自动编码按分支名命名，无关联发布。"""
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project, repository=repository, name="Web 打包", image=image,
+        project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
     )
     monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
     # 模拟分支列表（含最新提交哈希），验证 commit_hash 落库
@@ -764,7 +759,7 @@ def test_create_task_for_branch_commit_hash_fallback(project, repository, user, 
     """分支最新提交信息拉取失败时降级为空串，不阻断打包。"""
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project, repository=repository, name="Web 打包", image=image,
+        project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
     )
     monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: None)
     monkeypatch.setattr(
@@ -783,7 +778,7 @@ def test_create_task_for_branch_rejects_empty_branch(project, repository, user):
     """分支名为空时抛校验错误。"""
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project, repository=repository, name="Web 打包", image=image,
+        project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
     )
     with pytest.raises(serializers.ValidationError):
         PackageService.create_task_for_branch(config, "  ", request_user=user)
@@ -794,7 +789,7 @@ def test_create_task_for_branch_rejects_inactive_config(project, repository, use
     """停用的打包配置不能触发分支打包。"""
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project, repository=repository, name="Web 打包", image=image, is_active=False,
+        project_component=project.project_components.get(repository=repository), name="Web 打包", image=image, is_active=False,
     )
     with pytest.raises(serializers.ValidationError):
         PackageService.create_task_for_branch(config, "main", request_user=user)
@@ -816,7 +811,7 @@ def test_notify_package_result_falls_back_to_triggered_by(project, repository, u
 
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project, repository=repository, name="Web 打包", image=image,
+        project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
     )
     task = PackageTask.objects.create(
         config=config,
@@ -866,8 +861,7 @@ def test_trigger_auto_packages_empty_selection_skips_all(project, repository, us
     """用户勾选为空（[]）时发布通过不触发任何打包任务。"""
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="Web 打包",
         image=image,
         auto_package_on_release=True,
@@ -896,29 +890,25 @@ def test_trigger_auto_packages_partial_selection_filters(project, repository, us
     """按勾选快照触发：只触发选中且仍启用/同仓库的配置，跳过停用与异仓库配置。"""
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config_a = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="A 打包",
         image=image,
         auto_package_on_release=True,
     )
     config_b = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="B 打包",
         image=image,
         auto_package_on_release=True,
     )
     config_disabled = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="停用打包",
         image=image,
         auto_package_on_release=True,
         is_active=False,
     )
     other_repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="other",
@@ -930,8 +920,7 @@ def test_trigger_auto_packages_partial_selection_filters(project, repository, us
     from apps.project.services import ensure_repository_component
     ensure_repository_component(other_repo, project)
     config_other = PackageConfig.objects.create(
-        project=project,
-        repository=other_repo,
+        project_component=project.project_components.get(repository=other_repo),
         name="异仓库打包",
         image=image,
         auto_package_on_release=True,
@@ -971,15 +960,13 @@ def test_create_release_saves_selected_package_config_ids(project, repository, u
 
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="Web 打包",
         image=image,
         auto_package_on_release=True,
     )
     other_config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="普通打包",
         image=image,
         auto_package_on_release=False,

@@ -554,7 +554,6 @@ class ReleaseDocGenerator:
         hashes = [c.hash for c in commits]
         illegal_hashes = set(
             CommitRecord.objects.filter(
-                repository__project__isnull=False,
                 commit_hash__in=hashes,
                 review_status="illegal",
             ).values_list("commit_hash", flat=True)
@@ -760,25 +759,25 @@ class ReleaseService:
     def _get_provider(
         repo: Repository,
         request_user=None,
-        product: Project | None = None,
+        project: Project | None = None,
         operation: str = "read",
     ) -> GitProvider:
         """
         根据仓库获取 GitProvider
 
-        产品上下文会校验仓库所有者仍在该产品成员中，再使用仓库绑定凭证。
+        项目上下文会校验仓库所有者仍在该项目成员中，再使用仓库绑定凭证。
         """
         from apps.repository.services import RepositoryService
 
         server_url = RepositoryService._resolve_server_url(repo)
         cred_data = resolve_credential(
-            repo, request_user, product=product, operation=operation,
+            repo, request_user, project=project, operation=operation,
         )
         return get_provider(repo.vendor, server_url, cred_data)
 
     @staticmethod
     def _resolve_branch_head_hash(
-        repo: Repository, branch: str, request_user=None, product: Project | None = None,
+        repo: Repository, branch: str, request_user=None, project: Project | None = None,
     ) -> str:
         """
         获取指定分支当前最新 commit hash
@@ -794,7 +793,7 @@ class ReleaseService:
         Raises:
             serializers.ValidationError: 获取失败
         """
-        provider = ReleaseService._get_provider(repo, request_user, product=product)
+        provider = ReleaseService._get_provider(repo, request_user, project=project)
         try:
             commits = provider.list_commits(repo.external_identity, branch, per_page=1)
         except ProviderError as exc:
@@ -893,24 +892,24 @@ class ReleaseService:
         Returns:
             新创建的 ReleaseRecord
         """
-        from apps.project.models import ProductComponent
+        from apps.project.models import ProjectComponent
         from apps.project.services import repository_owner_association_error
 
         ReleaseValidator.validate_project_status(project)
         release_rule = ReleaseValidator.get_release_rule(project)
         version_rule = repository.get_version_rule()
 
-        if not ProductComponent.objects.filter(
+        if not ProjectComponent.objects.filter(
             project=project, repository=repository, is_active=True,
         ).exists():
             raise serializers.ValidationError(
-                {"repository": "该仓库未在当前产品中启用，请先关联仓库"}
+                {"repository": "该仓库未在当前项目中启用，请先关联仓库"}
             )
         owner_error = repository_owner_association_error(repository, project)
         if owner_error:
             raise serializers.ValidationError({"repository": owner_error})
 
-        provider = cls._get_provider(repository, publisher, product=project)
+        provider = cls._get_provider(repository, publisher, project=project)
         tags: list[TagInfo] | None = None
 
         # 若未传 version 但传了 tag_name，从 tag_name 去后缀反推 version
@@ -961,7 +960,7 @@ class ReleaseService:
         elif any(tag.name == tag_name for tag in tags):
             raise serializers.ValidationError({"tag_name": "Tag 已存在，不能创建发布草稿"})
 
-        git_hash = cls._resolve_branch_head_hash(repository, branch, publisher, product=project)
+        git_hash = cls._resolve_branch_head_hash(repository, branch, publisher, project=project)
 
         # 同一发布人反复创建同版本空草稿时清理旧草稿，避免临时草稿堆积。
         ReleaseRecord.objects.filter(
@@ -979,8 +978,8 @@ class ReleaseService:
             valid_package_config_ids = [
                 str(config_id)
                 for config_id in PackageConfig.objects.filter(
-                    project=project,
-                    repository=repository,
+                    project_component__project=project,
+                    project_component__repository=repository,
                     auto_package_on_release=True,
                     id__in=[str(x) for x in package_config_ids],
                 ).values_list("id", flat=True)
@@ -1037,7 +1036,7 @@ class ReleaseService:
             Markdown 字符串
         """
         provider = cls._get_provider(
-            release.repository, request_user, product=release.project,
+            release.repository, request_user, project=release.project,
         )
         generator = ReleaseDocGenerator(release, provider)
         md_doc = generator.generate(commit_ids=commit_ids, merge_similar=merge_similar)
@@ -1254,7 +1253,7 @@ class ReleaseService:
         if illegal_exists:
             raise serializers.ValidationError({"commits": "包含非法提交，无法提交审批"})
 
-        # 按发布类型查找仓库生效的审批流程；未迁移存量回退到产品级定义
+        # 按发布类型查找仓库生效的审批流程；未迁移存量回退到项目级定义
         definition = WorkflowDefinition.objects.filter(
             repository=release.repository,
             biz_type="release",
@@ -1400,7 +1399,7 @@ class ReleaseService:
             release.repository.external_identity, release.git_hash,
         )
         provider = cls._get_provider(
-            release.repository, request_user, product=release.project, operation="create_tag",
+            release.repository, request_user, project=release.project, operation="create_tag",
         )
         user = request_user or release.publisher
         try:
@@ -1570,7 +1569,7 @@ class ReleaseService:
 
         user = request_user or release.publisher
         provider = cls._get_provider(
-            release.repository, request_user, product=release.project, operation="delete_tag",
+            release.repository, request_user, project=release.project, operation="delete_tag",
         )
         remote_deleted = True
         try:

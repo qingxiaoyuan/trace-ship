@@ -14,7 +14,7 @@ from apps.package.models import (
     PackageNode,
     PackageTask,
 )
-from apps.project.models import ProductComponent, ProjectMember
+from apps.project.models import ProjectComponent, ProjectMember
 
 
 def validate_safe_rel_path(value: str, field: str = "path") -> str:
@@ -144,17 +144,19 @@ class PackageNodeSerializer(serializers.ModelSerializer):
 
 
 class PackageConfigSerializer(serializers.ModelSerializer):
-    """产品组件级打包配置序列化器。"""
+    """项目组件级打包配置序列化器（项目与仓库归属以 project_component 为唯一事实源）。"""
 
-    product_component = serializers.PrimaryKeyRelatedField(
-        queryset=ProductComponent.objects.all(), required=False
+    project_component = serializers.PrimaryKeyRelatedField(
+        queryset=ProjectComponent.objects.all(), required=False
     )
-    project_id = serializers.UUIDField(source="project.id", read_only=True)
-    project_name = serializers.CharField(source="project.name", read_only=True)
-    repository_id = serializers.UUIDField(source="repository.id", read_only=True)
-    repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
-    product_component_name = serializers.CharField(
-        source="product_component.display_name", read_only=True, default=""
+    project_id = serializers.UUIDField(source="project_component.project.id", read_only=True)
+    project_name = serializers.CharField(source="project_component.project.name", read_only=True)
+    repository_id = serializers.UUIDField(source="project_component.repository.id", read_only=True)
+    repository_name = serializers.CharField(
+        source="project_component.repository.name", read_only=True, default=""
+    )
+    project_component_name = serializers.CharField(
+        source="project_component.display_name", read_only=True, default=""
     )
     image_id = serializers.UUIDField(source="image.id", read_only=True)
     image_name = serializers.CharField(source="image.name", read_only=True, default="")
@@ -177,9 +179,9 @@ class PackageConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = PackageConfig
         fields = [
-            "id", "project", "project_id", "project_name",
-            "repository", "repository_id", "repository_name",
-            "product_component", "product_component_name",
+            "id", "project_id", "project_name",
+            "repository_id", "repository_name",
+            "project_component", "project_component_name",
             "name",
             "executor_type", "executor_type_display", "node", "node_id", "node_name", "node_host",
             "node_os_type",
@@ -249,14 +251,15 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             return "manager"
         # 视图通过 Prefetch(to_attr="_my_member") 预取当前用户成员记录；
         # 嵌套调用或未 prefetch 时回退到直接查询（仅单条，无 N+1 风险）
-        members = getattr(obj.project, "_my_member", None)
+        project = obj.project_component.project
+        members = getattr(project, "_my_member", None)
         if members is None:
-            member = obj.project.members.filter(user=user).only("role").first()
+            member = project.members.filter(user=user).only("role").first()
         else:
             member = members[0] if members else None
         if member and member.role == "software_admin":
             return "software_admin"
-        if str(obj.project.leader_id) == str(user.id):
+        if str(project.leader_id) == str(user.id):
             return "manager"
         return member.role if member else None
 
@@ -276,12 +279,12 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             return False
         return PackageConfigFavorite.objects.filter(config=obj, user=user).exists()
 
-    def validate_project(self, value):
-        """校验打包配置维护权限（项目管理员 / 软件管理员）。"""
+    def validate_project_component(self, value):
+        """校验打包配置维护权限（组件所属项目的管理员 / 软件管理员）。"""
         user = self.context["request"].user
         if user.is_superuser:
             return value
-        member = ProjectMember.objects.filter(project=value, user=user).first()
+        member = ProjectMember.objects.filter(project=value.project, user=user).first()
         if not member or member.role not in ("manager", "software_admin"):
             raise serializers.ValidationError("只有项目管理员或软件管理员才能维护打包配置")
         return value
@@ -303,53 +306,20 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs: dict) -> dict:
-        """校验仓库、镜像和脚本约束。"""
-        project = attrs.get("project", getattr(self.instance, "project", None))
-        repository = attrs.get("repository", getattr(self.instance, "repository", None))
-        product_component = attrs.get(
-            "product_component", getattr(self.instance, "product_component", None)
+        """校验组件、镜像和脚本约束。"""
+        project_component = attrs.get(
+            "project_component", getattr(self.instance, "project_component", None)
         )
+        if project_component is None:
+            raise serializers.ValidationError({"project_component": "必须选择项目组件（软件仓库）"})
         image_info = attrs.pop("image_info", None)
         if image_info:
             attrs["image"] = self._resolve_image_info(image_info)
         image = attrs.get("image", getattr(self.instance, "image", None))
         env_vars = attrs.get("env_vars", getattr(self.instance, "env_vars", {}))
 
-        if product_component:
-            if project and product_component.project_id != project.id:
-                raise serializers.ValidationError({"product_component": "所选软件仓库不属于当前产品"})
-            if repository and product_component.repository_id != repository.id:
-                raise serializers.ValidationError({"product_component": "所选软件仓库与仓库信息不一致"})
-            attrs["project"] = product_component.project
-            attrs["repository"] = product_component.repository
-            project = product_component.project
-            repository = product_component.repository
-            if not self.initial_data.get("project"):
-                self.validate_project(project)
-        elif repository and project:
-            matches = ProductComponent.objects.filter(
-                project=project, repository=repository, is_active=True
-            )
-            if matches.count() == 1:
-                attrs["product_component"] = matches.first()
-            elif matches.count() > 1:
-                raise serializers.ValidationError({
-                    "product_component": "该仓库在当前产品中存在多条关联记录，请联系管理员处理"
-                })
-            else:
-                raise serializers.ValidationError({
-                    "product_component": "请先将该仓库关联到当前产品"
-                })
-
-        if product_component and repository and project and repository.project_id != project.id:
-            linked = ProductComponent.objects.filter(
-                project=project,
-                repository=repository,
-                is_active=True,
-            ).exists()
-            if not linked:
-                raise serializers.ValidationError({"repository": "关联仓库必须已在当前产品中启用"})
-        if repository and repository.repo_type != "git":
+        repository = project_component.repository
+        if repository.repo_type != "git":
             raise serializers.ValidationError({"repository": "打包配置第一阶段仅支持 Git 仓库"})
         if not isinstance(env_vars, dict):
             raise serializers.ValidationError({"env_vars": "环境变量必须为 JSON 对象"})

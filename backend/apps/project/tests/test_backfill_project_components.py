@@ -1,4 +1,10 @@
-"""产品组件回填需覆盖迁移前已归并的跨产品仓库。"""
+"""项目组件回填需覆盖迁移前已归并的跨项目仓库。
+
+覆盖缺口说明：迁移 0005 中「Repository.project → 组件对」的回填主路径
+依赖当前模型已删除的 Repository.project 字段（repository/0013），无法在用
+当前模型直调历史函数的本测试形态下覆盖；此处仅验证发布单旁路。该迁移已在
+生产执行完毕，如需真实覆盖应使用迁移态测试（如 django-test-migrations）。
+"""
 import importlib.util
 from pathlib import Path
 
@@ -26,11 +32,11 @@ class _Schema:
 
 
 @pytest.mark.django_db
-def test_collect_legacy_pairs_includes_other_product_releases():
-    """主仓库挂在产品 A 时，产品 B 的发布单仍应生成 B-主仓库 组件对。"""
+def test_collect_legacy_pairs_includes_other_project_releases():
+    """项目 A/B 的发布单引用同一仓库时，两个项目都应生成与主仓库的组件对。"""
     user = User.objects.create_user(username="backfill-user", password="pass")
-    project = Project.objects.create(code="MAIN", name="主产品", leader=user, status=1)
-    other = Project.objects.create(code="OTHER", name="另一产品", leader=user, status=1)
+    project = Project.objects.create(code="MAIN", name="主项目", leader=user, status=1)
+    other = Project.objects.create(code="OTHER", name="另一项目", leader=user, status=1)
     ProjectMember.objects.create(project=project, user=user, role="manager")
     ProjectMember.objects.create(project=other, user=user, role="manager")
     credential = Credential.objects.create(
@@ -40,7 +46,6 @@ def test_collect_legacy_pairs_includes_other_product_releases():
         owner=user,
     )
     repository = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="RP",
@@ -50,16 +55,17 @@ def test_collect_legacy_pairs_includes_other_product_releases():
         credential=credential,
         created_by=user,
     )
-    ReleaseRecord.objects.create(
-        project=other,
-        repository=repository,
-        version="V1.0.0",
-        tag_name="V1.0.0",
-        branch="develop",
-        release_type="formal",
-        status="released",
-        publisher=user,
-    )
+    for release_project in (project, other):
+        ReleaseRecord.objects.create(
+            project=release_project,
+            repository=repository,
+            version="V1.0.0",
+            tag_name="V1.0.0",
+            branch="develop",
+            release_type="formal",
+            status="released",
+            publisher=user,
+        )
     pairs, repo_map = _load_migration()._collect_legacy_pairs(apps, _Schema())
     assert repository.id in repo_map
     assert (project.id, repository.id) in pairs

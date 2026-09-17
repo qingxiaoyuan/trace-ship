@@ -173,8 +173,8 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             projects = Project.objects.filter(
                 Q(id=definition.project_id)
                 | Q(
-                    product_components__repository_id=definition.repository_id,
-                    product_components__is_active=True,
+                    project_components__repository_id=definition.repository_id,
+                    project_components__is_active=True,
                 )
             ).distinct()
         elif definition.project_id:
@@ -182,7 +182,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         if not any(developer_permission._check(project, request.user) for project in projects):
             return error_response(
                 40301,
-                "只有产品开发人员或管理员可以发起流程",
+                "只有项目开发人员或管理员可以发起流程",
                 status_code=403,
             )
 

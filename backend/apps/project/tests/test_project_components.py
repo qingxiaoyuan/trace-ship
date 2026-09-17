@@ -1,10 +1,10 @@
-"""产品组件关系接口测试。"""
+"""项目组件关系接口测试。"""
 
 import pytest
 from rest_framework.test import APIClient
 
 from apps.account.models import User
-from apps.project.models import ProductComponent, Project, ProjectMember
+from apps.project.models import Project, ProjectComponent, ProjectMember
 from apps.repository.models import Repository
 
 pytestmark = pytest.mark.django_db
@@ -12,21 +12,21 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def manager():
-    """同时管理两个产品的用户。"""
+    """同时管理两个项目的用户。"""
     return User.objects.create_user(username="component-manager", password="pass")
 
 
 @pytest.fixture
 def developer():
-    """只有查看权限的产品开发人员。"""
+    """只有查看权限的项目开发人员。"""
     return User.objects.create_user(username="component-developer", password="pass")
 
 
 @pytest.fixture
-def products(manager, developer):
-    """创建仓库登记产品与复用产品。"""
+def projects(manager, developer):
+    """创建仓库登记项目与复用项目。"""
     source = Project.objects.create(code="SOURCE", name="基础能力", leader=manager)
-    target = Project.objects.create(code="TARGET", name="SDK 产品", leader=manager)
+    target = Project.objects.create(code="TARGET", name="SDK 项目", leader=manager)
     for project in (source, target):
         ProjectMember.objects.create(project=project, user=manager, role="manager")
     ProjectMember.objects.create(project=target, user=developer, role="developer")
@@ -34,11 +34,10 @@ def products(manager, developer):
 
 
 @pytest.fixture
-def repository(products, manager):
-    """创建可被多个产品复用的物理仓库。"""
-    source, _target = products
+def repository(projects, manager):
+    """创建可被多个项目复用的物理仓库。"""
+    source, _target = projects
     return Repository.objects.create(
-        project=source,
         repo_type="git",
         vendor="gitlab",
         name="中台仓库",
@@ -56,9 +55,9 @@ def auth_client(user):
     return client
 
 
-def test_repository_create_api_creates_default_component(manager, products):
-    """沿用旧仓库创建接口时，自动补齐所属产品的默认组件。"""
-    source, _target = products
+def test_repository_create_api_creates_default_component(manager, projects):
+    """沿用旧仓库创建接口时，自动补齐所属项目的默认组件。"""
+    source, _target = projects
     response = auth_client(manager).post(
         "/api/repositories/",
         {
@@ -75,15 +74,15 @@ def test_repository_create_api_creates_default_component(manager, products):
     )
 
     assert response.status_code == 201
-    component = ProductComponent.objects.get(repository_id=response.data["data"]["id"])
+    component = ProjectComponent.objects.get(repository_id=response.data["data"]["id"])
     assert component.project == source
     assert component.component_code == "web"
     assert component.default_branch == "main"
 
 
-def test_same_repository_can_be_attached_to_another_product(manager, products, repository):
-    """同一物理仓库可以被第二个产品配置为组件。"""
-    _source, target = products
+def test_same_repository_can_be_attached_to_another_project(manager, projects, repository):
+    """同一物理仓库可以被第二个项目配置为组件。"""
+    _source, target = projects
     response = auth_client(manager).post(
         f"/api/projects/{target.id}/components/",
         {
@@ -96,7 +95,7 @@ def test_same_repository_can_be_attached_to_another_product(manager, products, r
     )
 
     assert response.status_code == 201
-    component = ProductComponent.objects.get(project=target, repository=repository)
+    component = ProjectComponent.objects.get(project=target, repository=repository)
     assert component.component_code == "middleware"
     assert component.default_branch == "sdk-release"
 
@@ -105,10 +104,10 @@ def test_same_repository_can_be_attached_to_another_product(manager, products, r
     assert list_response.data["data"][0]["repository_detail"]["name"] == "中台仓库"
 
 
-def test_remove_component_does_not_delete_repository(manager, products, repository):
-    """解除产品组件关系时保留物理仓库。"""
-    _source, target = products
-    component = ProductComponent.objects.create(
+def test_remove_component_does_not_delete_repository(manager, projects, repository):
+    """解除项目组件关系时保留物理仓库。"""
+    _source, target = projects
+    component = ProjectComponent.objects.create(
         project=target,
         repository=repository,
         component_code="core",
@@ -121,13 +120,13 @@ def test_remove_component_does_not_delete_repository(manager, products, reposito
     )
 
     assert response.status_code == 200
-    assert not ProductComponent.objects.filter(id=component.id).exists()
+    assert not ProjectComponent.objects.filter(id=component.id).exists()
     assert Repository.objects.filter(id=repository.id).exists()
 
 
-def test_developer_cannot_attach_repository(developer, products, repository):
-    """普通开发人员可查看组件，但不能维护产品组合。"""
-    _source, target = products
+def test_developer_cannot_attach_repository(developer, projects, repository):
+    """普通开发人员可查看组件，但不能维护项目组合。"""
+    _source, target = projects
     response = auth_client(developer).post(
         f"/api/projects/{target.id}/components/",
         {"repository": str(repository.id)},
@@ -137,10 +136,10 @@ def test_developer_cannot_attach_repository(developer, products, repository):
     assert response.status_code == 403
 
 
-def test_repository_project_filter_includes_reused_component(manager, products, repository):
-    """旧仓库列表的 project 参数兼容新的产品组件关系。"""
-    _source, target = products
-    ProductComponent.objects.create(
+def test_repository_project_filter_includes_reused_component(manager, projects, repository):
+    """旧仓库列表的 project 参数兼容新的项目组件关系。"""
+    _source, target = projects
+    ProjectComponent.objects.create(
         project=target,
         repository=repository,
         component_code="core",
@@ -155,14 +154,14 @@ def test_repository_project_filter_includes_reused_component(manager, products, 
     assert str(repository.id) in ids
 
 
-def test_catalog_keeps_already_linked_repository_for_multiple_roles(manager, products, repository):
-    """同一物理仓库已关联后仍可被选为产品内另一个组件角色。"""
-    _source, target = products
+def test_catalog_keeps_already_linked_repository_for_multiple_roles(manager, projects, repository):
+    """同一物理仓库已关联后仍可被选为项目内另一个组件角色。"""
+    _source, target = projects
     client = auth_client(manager)
     before = client.get(f"/api/projects/{target.id}/components/available/")
     assert str(repository.id) in {item["id"] for item in before.data["data"]}
 
-    ProductComponent.objects.create(
+    ProjectComponent.objects.create(
         project=target,
         repository=repository,
         component_code="core",
@@ -172,16 +171,16 @@ def test_catalog_keeps_already_linked_repository_for_multiple_roles(manager, pro
     assert str(repository.id) in {item["id"] for item in after.data["data"]}
 
 
-def test_delete_registration_project_preserves_shared_repository(products, repository):
-    """删除最初登记仓库的产品，不得破坏其他产品正在使用的物理仓库。"""
-    source, target = products
-    ProductComponent.objects.create(
+def test_delete_registration_project_preserves_shared_repository(projects, repository):
+    """删除最初登记仓库的项目，不得破坏其他项目正在使用的物理仓库。"""
+    source, target = projects
+    ProjectComponent.objects.create(
         project=source,
         repository=repository,
         component_code="source-core",
-        display_name="源产品中台",
+        display_name="源项目中台",
     )
-    target_component = ProductComponent.objects.create(
+    target_component = ProjectComponent.objects.create(
         project=target,
         repository=repository,
         component_code="sdk-core",
@@ -191,24 +190,30 @@ def test_delete_registration_project_preserves_shared_repository(products, repos
     source.delete()
 
     repository.refresh_from_db()
-    assert repository.project_id is None
-    assert ProductComponent.objects.filter(id=target_component.id).exists()
+    assert Repository.objects.filter(id=repository.id).exists()
+    assert not ProjectComponent.objects.filter(project_id=source.id, repository=repository).exists()
+    assert ProjectComponent.objects.filter(id=target_component.id).exists()
 
 
-def test_cannot_attach_repository_when_owner_not_in_product(manager, products):
-    """仓库所有者不在目标产品成员中时，不能关联该仓库。"""
-    source, target = products
+def test_cannot_attach_repository_when_owner_not_in_project(manager, projects):
+    """仓库所有者不在目标项目成员中时，不能关联该仓库。"""
+    source, target = projects
     owner = User.objects.create_user(username="repo-owner", password="pass", nickname="仓库所有者")
     ProjectMember.objects.create(project=source, user=owner, role="developer")
     repository = Repository.objects.create(
-        project=source,
         repo_type="git",
         vendor="gitlab",
-        name="仅源产品仓库",
+        name="仅源项目仓库",
         url="https://gitlab.example.com",
         external_identity="platform/owned",
         default_branch="main",
         created_by=owner,
+    )
+    ProjectComponent.objects.create(
+        project=source,
+        repository=repository,
+        component_code="owned",
+        display_name="仅源项目仓库",
     )
 
     response = auth_client(manager).post(
@@ -219,16 +224,15 @@ def test_cannot_attach_repository_when_owner_not_in_product(manager, products):
 
     assert response.status_code == 400
     assert "仓库所有者" in str(response.data)
-    assert not ProductComponent.objects.filter(project=target, repository=repository).exists()
+    assert not ProjectComponent.objects.filter(project=target, repository=repository).exists()
 
 
-def test_can_attach_after_owner_joins_product(manager, products):
-    """仓库所有者加入目标产品后即可关联，从而把凭证授权给该产品。"""
-    source, target = products
+def test_can_attach_after_owner_joins_project(manager, projects):
+    """仓库所有者加入目标项目后即可关联，从而把凭证授权给该项目。"""
+    source, target = projects
     owner = User.objects.create_user(username="join-owner", password="pass", nickname="待加入所有者")
     ProjectMember.objects.create(project=source, user=owner, role="developer")
     repository = Repository.objects.create(
-        project=source,
         repo_type="git",
         vendor="gitlab",
         name="待共享仓库",
@@ -236,6 +240,12 @@ def test_can_attach_after_owner_joins_product(manager, products):
         external_identity="platform/shared",
         default_branch="main",
         created_by=owner,
+    )
+    ProjectComponent.objects.create(
+        project=source,
+        repository=repository,
+        component_code="shared",
+        display_name="待共享仓库",
     )
     ProjectMember.objects.create(project=target, user=owner, role="developer")
 
@@ -246,13 +256,13 @@ def test_can_attach_after_owner_joins_product(manager, products):
     )
 
     assert response.status_code == 201
-    assert ProductComponent.objects.filter(project=target, repository=repository).exists()
+    assert ProjectComponent.objects.filter(project=target, repository=repository).exists()
 
 
-def test_cannot_remove_owner_while_repository_is_linked(manager, products, repository):
-    """仓库所有者仍被当前产品关联时，不能从成员中移除。"""
-    _source, target = products
-    ProductComponent.objects.create(
+def test_cannot_remove_owner_while_repository_is_linked(manager, projects, repository):
+    """仓库所有者仍被当前项目关联时，不能从成员中移除。"""
+    _source, target = projects
+    ProjectComponent.objects.create(
         project=target,
         repository=repository,
         component_code="core",
@@ -266,15 +276,15 @@ def test_cannot_remove_owner_while_repository_is_linked(manager, products, repos
     assert ProjectMember.objects.filter(id=member.id).exists()
 
 
-def test_inactive_component_cannot_create_release(manager, products, repository):
-    """停用产品关联后，不能再从该产品对仓库发版本。"""
+def test_inactive_component_cannot_create_release(manager, projects, repository):
+    """停用项目关联后，不能再从该项目对仓库发版本。"""
     from rest_framework import serializers as drf_serializers
 
     from apps.release.models import ReleaseRecord
     from apps.release.services import ReleaseService
 
-    source, _target = products
-    ProductComponent.objects.create(
+    source, _target = projects
+    ProjectComponent.objects.create(
         project=source,
         repository=repository,
         component_code="core",
@@ -291,5 +301,5 @@ def test_inactive_component_cannot_create_release(manager, products, repository)
             publisher=manager,
             version="VA.1.0.0",
         )
-    assert "未在当前产品中启用" in str(exc.value)
+    assert "未在当前项目中启用" in str(exc.value)
     assert not ReleaseRecord.objects.filter(project=source, repository=repository).exists()

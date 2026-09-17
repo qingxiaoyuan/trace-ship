@@ -50,11 +50,10 @@ def credential(user, project):
 
 @pytest.fixture
 def repository(project, credential):
-    """测试仓库，并补齐原产品下的启用关联。"""
+    """测试仓库，并补齐原项目下的启用关联。"""
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="后端仓库",

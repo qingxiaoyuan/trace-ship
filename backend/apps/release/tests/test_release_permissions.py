@@ -51,7 +51,6 @@ def project(manager_user, developer_user, viewer_user):
 @pytest.fixture
 def repository(project):
     return Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="后端仓库",
@@ -140,13 +139,12 @@ def test_manager_can_delete_others_rejected(project, repository, manager_user, d
 
 @pytest.mark.django_db
 def test_leader_without_membership_cannot_delete_rejected():
-    """产品负责人没有显式成员记录时，不能读取或删除发布数据。"""
+    """项目负责人没有显式成员记录时，不能读取或删除发布数据。"""
     leader = User.objects.create_user(username="rel_leader_only", password="pass")
     project = Project.objects.create(
         code="RELLEAD", name="Leader 发布项目", leader=leader, status=1,
     )
     repository = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="Leader 仓库",
@@ -173,13 +171,12 @@ def test_leader_without_membership_cannot_delete_rejected():
 
 @pytest.mark.django_db
 def test_leader_without_membership_cannot_create_release():
-    """仅为产品负责人但没有显式成员记录时，不能通过产品 ID 创建发布。"""
+    """仅为项目负责人但没有显式成员记录时，不能通过项目 ID 创建发布。"""
     leader = User.objects.create_user(username="rel_hidden_leader", password="pass")
     project = Project.objects.create(
-        code="RELHIDDEN", name="Leader 不可见产品", leader=leader, status=1,
+        code="RELHIDDEN", name="Leader 不可见项目", leader=leader, status=1,
     )
     repository = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="Leader 不可见仓库",

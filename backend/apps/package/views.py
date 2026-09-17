@@ -308,16 +308,25 @@ class PackageKnowledgeViewSet(StandardModelViewSet):
         serializer.save(created_by=self.request.user)
 
 
+class PackageConfigFilter(django_filters.FilterSet):
+    """打包配置过滤器；project/repository 过滤统一走 project_component 关联。"""
+
+    project = django_filters.UUIDFilter(field_name="project_component__project_id")
+    repository = django_filters.UUIDFilter(field_name="project_component__repository_id")
+
+    class Meta:
+        model = PackageConfig
+        fields = ["project", "repository", "project_component", "is_active", "auto_package_on_release"]
+
+
 class PackageConfigViewSet(StandardModelViewSet):
-    """产品组件级打包配置视图集。"""
+    """项目组件级打包配置视图集。"""
 
     queryset = PackageConfig.objects.all()
     serializer_class = PackageConfigSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = [
-        "project", "repository", "product_component", "is_active", "auto_package_on_release"
-    ]
-    search_fields = ["name", "repository__name"]
+    filterset_class = PackageConfigFilter
+    search_fields = ["name", "project_component__repository__name"]
     ordering_fields = ["created_at", "updated_at"]
     # 默认收藏优先（注解字段，见 get_queryset），其次创建时间倒序；显式 ?ordering= 时覆盖
     ordering = ["-annotated_is_favorite", "-created_at"]
@@ -327,7 +336,9 @@ class PackageConfigViewSet(StandardModelViewSet):
         if not user.is_authenticated:
             return PackageConfig.objects.none()
         queryset = PackageConfig.objects.select_related(
-            "project", "repository", "product_component", "image", "node", "svn_credential"
+            "project_component__project",
+            "project_component__repository",
+            "image", "node", "svn_credential",
         )
         # 注解当前用户收藏状态，序列化器 is_favorite 直接读注解值，避免列表场景 N+1
         queryset = queryset.annotate(
@@ -340,13 +351,13 @@ class PackageConfigViewSet(StandardModelViewSet):
         # 预取当前用户在每个项目中的成员记录，避免序列化器 get_my_role 在列表场景触发 N+1
         queryset = queryset.prefetch_related(
             Prefetch(
-                "project__members",
+                "project_component__project__members",
                 queryset=ProjectMember.objects.filter(user=user),
                 to_attr="_my_member",
             )
         )
         project_ids = visible_project_ids(user)
-        return queryset.filter(project_id__in=project_ids)
+        return queryset.filter(project_component__project_id__in=project_ids)
 
     def get_permissions(self):
         if self.action in (

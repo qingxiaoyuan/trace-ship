@@ -214,10 +214,10 @@ def test_branches_action_auto_sync_failure_returns_error(api_client, repository)
 @pytest.mark.django_db
 def test_branches_action_svn_returns_empty_without_sync(api_client, project, credential):
     """测试 SVN 仓库分支列表为空且不触发远端同步"""
+    from apps.project.services import ensure_repository_component
     from apps.repository.models import Repository
 
     svn_repo = Repository.objects.create(
-        project=project,
         repo_type="svn",
         vendor="svn",
         name="SVN 仓库",
@@ -227,6 +227,7 @@ def test_branches_action_svn_returns_empty_without_sync(api_client, project, cre
         credential=credential,
         credential_mode="project",
     )
+    ensure_repository_component(svn_repo, project)
     with patch("apps.repository.services.get_provider") as mock_factory:
         response = api_client.get(f"/api/repositories/{svn_repo.id}/branches/")
 
@@ -297,10 +298,10 @@ def test_sync_tags_removes_stale_local_tags(api_client, repository):
 @pytest.mark.django_db
 def test_sync_branches_rejects_svn(api_client, project, credential, user):
     """测试 SVN 仓库拒绝分支同步"""
+    from apps.project.services import ensure_repository_component
     from apps.repository.models import Repository
 
     svn_repo = Repository.objects.create(
-        project=project,
         repo_type="svn",
         vendor="svn",
         name="SVN 仓库",
@@ -310,6 +311,7 @@ def test_sync_branches_rejects_svn(api_client, project, credential, user):
         credential=credential,
         credential_mode="project",
     )
+    ensure_repository_component(svn_repo, project)
     response = api_client.post(f"/api/repositories/{svn_repo.id}/sync-branches/")
     assert response.status_code == 400
     assert response.data["code"] == 40001

@@ -21,9 +21,10 @@ def api_client(user):
 
 def test_stats_returns_aggregate_counts(api_client, project, repository):
     """stats 接口返回仓库总数 / 健康 / Git / SVN 聚合数"""
+    from apps.project.services import ensure_repository_component
+
     # 再加一个 SVN 仓库与一个健康 Git 仓库
-    Repository.objects.create(
-        project=project,
+    svn_repo = Repository.objects.create(
         repo_type="svn",
         vendor="svn",
         name="配置仓库",
@@ -33,8 +34,8 @@ def test_stats_returns_aggregate_counts(api_client, project, repository):
         credential_mode="project",
         health_status="healthy",
     )
-    Repository.objects.create(
-        project=project,
+    ensure_repository_component(svn_repo, project)
+    healthy_repo = Repository.objects.create(
         repo_type="git",
         vendor="gitlab",
         name="健康仓库",
@@ -44,6 +45,7 @@ def test_stats_returns_aggregate_counts(api_client, project, repository):
         credential_mode="project",
         health_status="healthy",
     )
+    ensure_repository_component(healthy_repo, project)
 
     response = api_client.get("/api/repositories/stats/")
     assert response.status_code == 200
@@ -76,8 +78,9 @@ def test_tags_returns_git_tags(api_client, repository):
 
 def test_tags_returns_empty_for_svn(api_client, project):
     """SVN 仓库标签列表为空"""
+    from apps.project.services import ensure_repository_component
+
     repo = Repository.objects.create(
-        project=project,
         repo_type="svn",
         vendor="svn",
         name="SVN 仓库",
@@ -86,6 +89,7 @@ def test_tags_returns_empty_for_svn(api_client, project):
         default_branch="trunk",
         credential_mode="project",
     )
+    ensure_repository_component(repo, project)
     response = api_client.get(f"/api/repositories/{repo.id}/tags/")
     assert response.status_code == 200
     assert response.data["data"] == []

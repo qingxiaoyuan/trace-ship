@@ -4,7 +4,6 @@
 包含可复用的物理代码仓库（Repository）和提交记录（CommitRecord）。
 """
 import uuid
-from copy import deepcopy
 
 from django.conf import settings
 from django.db import models
@@ -28,19 +27,18 @@ class Repository(models.Model):
     """
     代码仓库模型
 
-    表示一个物理代码仓库。产品通过 ProductComponent 引用仓库；project 字段在
-    兼容期内保留为历史登记项目。代码仓库当前仅支持 GitLab。
+    表示一个物理代码仓库。项目通过 ProjectComponent 引用仓库，项目归属
+    一律以 ProjectComponent 关联为准。代码仓库当前仅支持 GitLab。
 
     Attributes:
         id: UUID 主键
-        project: 历史登记项目（兼容字段）
         repo_type: 仓库类型（git/svn）
         vendor: 平台厂商
         name: 仓库名称
         url: 仓库地址
         external_identity: 外部唯一标识
         default_branch: 默认分支
-        version_rule: 仓库组件版本号规则（JSON），登记时从产品复制一次；产品未配置则写入系统默认规则
+        version_rule: 仓库组件版本号规则（JSON），登记时从项目复制一次；项目未配置则写入系统默认规则
         credential: 关联凭证
         credential_mode: 凭证来源（个人 / 项目）
         health_status: 健康状态
@@ -68,14 +66,6 @@ class Repository(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    project = models.ForeignKey(
-        "project.Project",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="repositories",
-        verbose_name="历史登记项目",
-    )
     repo_type = models.CharField(max_length=10, choices=REPO_TYPE_CHOICES, verbose_name="仓库类型")
     vendor = models.CharField(max_length=20, choices=VENDOR_CHOICES, verbose_name="平台")
     name = models.CharField(max_length=200, verbose_name="仓库名称")
@@ -121,8 +111,6 @@ class Repository(models.Model):
         verbose_name_plural = "代码仓库"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["project", "repo_type"]),
-            models.Index(fields=["project", "vendor"]),
             models.Index(fields=["health_status"]),
         ]
         constraints = [
@@ -133,15 +121,13 @@ class Repository(models.Model):
         ]
 
     def __str__(self) -> str:
-        """返回项目-仓库名称描述"""
-        project_name = self.project.name if self.project else "未登记产品"
-        return f"{project_name} - {self.name}"
+        """返回仓库名称"""
+        return self.name
 
     def save(self, *args, **kwargs):
-        """新登记仓库写入版本规则：优先复制登记产品规则，否则使用系统默认。"""
+        """新登记仓库未显式指定版本规则时写入系统默认规则。"""
         if self._state.adding and not self.version_rule:
-            project_rule = self.project.version_rule if self.project_id else None
-            self.version_rule = deepcopy(project_rule) if project_rule else default_version_rule()
+            self.version_rule = default_version_rule()
         return super().save(*args, **kwargs)
 
     def get_version_rule(self) -> dict:
@@ -149,7 +135,7 @@ class Repository(models.Model):
         获取生效的版本号规则
 
         版本号规则跟着物理仓库走。历史项目规则由数据迁移一次性复制，
-        运行时不再回退到某个产品，避免共享仓库因登记产品不同而产生歧义。
+        运行时不再回退到某个项目，避免共享仓库因登记项目不同而产生歧义。
         仓库未配置时返回系统默认规则（前缀 V，RC/Beta 后缀，不带时间戳）。
         """
         return self.version_rule or default_version_rule()
@@ -272,7 +258,7 @@ class CommitRecord(models.Model):
 
     Attributes:
         id: UUID 主键
-        project: 所属项目
+        project: 所属项目（同步时取仓库已关联组件所在项目，未关联可为空）
         repository: 所属仓库
         commit_hash: 提交哈希
         author: 提交人
@@ -298,6 +284,8 @@ class CommitRecord(models.Model):
         "project.Project",
         on_delete=models.CASCADE,
         related_name="commits",
+        null=True,
+        blank=True,
         verbose_name="项目",
     )
     repository = models.ForeignKey(

@@ -26,7 +26,7 @@ class TestWorkflowInstanceViews:
     def test_manager_can_create_instance_from_visible_definition(
         self, api_client, definition,
     ):
-        """产品管理员可基于可见流程定义发起实例。"""
+        """项目管理员可基于可见流程定义发起实例。"""
         response = api_client.post("/api/workflow/instances/", {
             "definition_id": str(definition.id),
             "biz_type": "release",
@@ -38,7 +38,7 @@ class TestWorkflowInstanceViews:
     def test_outsider_cannot_create_instance_from_hidden_definition(
         self, definition, other_user,
     ):
-        """非产品成员即使知道流程定义 ID，也不能发起流程。"""
+        """非项目成员即使知道流程定义 ID，也不能发起流程。"""
         client = APIClient()
         client.force_authenticate(user=other_user)
 
@@ -139,7 +139,6 @@ class TestWorkflowInstanceViews:
             owner=user,
         )
         repository = Repository.objects.create(
-            project=project,
             repo_type="git",
             vendor="gitlab",
             name="后端仓库",
@@ -285,7 +284,6 @@ class TestRollbackToStart:
         definition, instance = self._make_two_node_instance(project, user)
         # 关联一条 pending 状态的发布单
         repository = Repository.objects.create(
-            project=project,
             repo_type="git",
             vendor="gitlab",
             name="测试仓库",

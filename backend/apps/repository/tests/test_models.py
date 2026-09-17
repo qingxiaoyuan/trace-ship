@@ -13,23 +13,32 @@ def test_repository_create(repository):
     """测试仓库创建及字符串表示"""
     assert repository.name == "后端仓库"
     assert repository.vendor == "gitlab"
-    assert str(repository) == "测试项目 - 后端仓库"
+    assert str(repository) == "后端仓库"
 
 
 @pytest.mark.django_db
 def test_version_rule_copied_once_when_repository_created(project, credential):
-    """登记仓库时复制产品版本规则，此后不再动态依赖产品。"""
+    """项目上下文登记仓库时复制项目版本规则，此后不再动态依赖项目。"""
+    from types import SimpleNamespace
+
+    from apps.repository.serializers import RepositorySerializer
+
     project.version_rule = {"prefix": "VA", "major": 1, "minor": 0, "patch": 0}
     project.save(update_fields=["version_rule"])
-    repository = Repository.objects.create(
-        project=project,
-        repo_type="git",
-        vendor="gitlab",
-        name="新仓库",
-        url="https://gitlab.example.com",
-        external_identity="test/copied-version-rule",
-        credential=credential,
+    serializer = RepositorySerializer(
+        data={
+            "project": str(project.id),
+            "repo_type": "git",
+            "vendor": "gitlab",
+            "name": "新仓库",
+            "url": "https://gitlab.example.com",
+            "external_identity": "test/copied-version-rule",
+            "credential": str(credential.id),
+        },
+        context={"request": SimpleNamespace(user=project.leader)},
     )
+    serializer.is_valid(raise_exception=True)
+    repository = serializer.save()
 
     assert repository.get_version_rule() == project.version_rule
 
@@ -52,9 +61,8 @@ def test_get_version_rule_prefers_repository(repository, project):
 
 @pytest.mark.django_db
 def test_create_repository_applies_default_version_rule(project, credential):
-    """产品未配置版本规则时，新建仓库写入系统默认规则并立即生效。"""
+    """项目未配置版本规则时，新建仓库写入系统默认规则并立即生效。"""
     repository = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="默认规则仓库",
@@ -71,7 +79,7 @@ def test_create_repository_applies_default_version_rule(project, credential):
 
 @pytest.mark.django_db
 def test_create_unbound_repository_applies_default_version_rule(credential):
-    """不绑定产品时，新建仓库同样写入系统默认版本规则。"""
+    """不绑定项目时，新建仓库同样写入系统默认版本规则。"""
     repository = Repository.objects.create(
         repo_type="git",
         vendor="gitlab",
@@ -81,7 +89,6 @@ def test_create_unbound_repository_applies_default_version_rule(credential):
         credential=credential,
     )
 
-    assert repository.project_id is None
     assert repository.version_rule == default_version_rule()
 
 
@@ -99,7 +106,6 @@ def test_physical_identity_is_unique_without_git_suffix(project, credential):
     from django.db import IntegrityError
 
     Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="a",
@@ -109,7 +115,6 @@ def test_physical_identity_is_unique_without_git_suffix(project, credential):
     )
     with pytest.raises(IntegrityError):
         Repository.objects.create(
-            project=project,
             repo_type="git",
             vendor="gitlab",
             name="b",

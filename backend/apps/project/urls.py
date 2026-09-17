@@ -6,19 +6,19 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from apps.project.views import ProductComponentViewSet, ProjectMemberViewSet, ProjectViewSet
+from apps.project.views import ProjectComponentViewSet, ProjectMemberViewSet, ProjectViewSet
 
 router = DefaultRouter()
 router.register(r"", ProjectViewSet, basename="project")
 
 urlpatterns = [
     path("", include(router.urls)),
-    # 产品组件嵌套路由：Project 在业务语义上即产品
-    path("<uuid:project_pk>/components/", ProductComponentViewSet.as_view({"get": "list", "post": "create"}), name="product-component-list"),
-    path("<uuid:project_pk>/components/available/", ProductComponentViewSet.as_view({"get": "available"}), name="product-component-available"),
-    path("<uuid:project_pk>/components/<uuid:pk>/", ProductComponentViewSet.as_view({
+    # 项目组件嵌套路由：Project 在业务语义上即项目
+    path("<uuid:project_pk>/components/", ProjectComponentViewSet.as_view({"get": "list", "post": "create"}), name="project-component-list"),
+    path("<uuid:project_pk>/components/available/", ProjectComponentViewSet.as_view({"get": "available"}), name="project-component-available"),
+    path("<uuid:project_pk>/components/<uuid:pk>/", ProjectComponentViewSet.as_view({
         "get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"
-    }), name="product-component-detail"),
+    }), name="project-component-detail"),
     # 项目成员嵌套路由
     path("<uuid:project_pk>/members/", ProjectMemberViewSet.as_view({"get": "list", "post": "create"}), name="project-member-list"),
     path("<uuid:project_pk>/members/<uuid:pk>/", ProjectMemberViewSet.as_view({

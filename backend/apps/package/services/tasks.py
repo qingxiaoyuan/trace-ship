@@ -90,7 +90,7 @@ class TaskLifecycleMixin:
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})
         if not config.is_active:
             raise serializers.ValidationError({"config": "打包配置已停用"})
-        if config.repository_id != release.repository_id:
+        if config.project_component.repository_id != release.repository_id:
             raise serializers.ValidationError({"repository": "打包配置与发布仓库不一致"})
 
         snapshot = apply_svn_push_policy(
@@ -149,7 +149,7 @@ class TaskLifecycleMixin:
         try:
             from apps.repository.services import RepositoryService
 
-            for branch in RepositoryService.list_branches(config.repository, request_user):
+            for branch in RepositoryService.list_branches(config.project_component.repository, request_user):
                 if branch.get("name") == branch_name:
                     commit_hash = branch.get("last_commit_hash") or ""
                     break
@@ -159,8 +159,8 @@ class TaskLifecycleMixin:
         task = PackageTask.objects.create(
             config=config,
             release=None,
-            project=config.project,
-            repository=config.repository,
+            project=config.project_component.project,
+            repository=config.project_component.repository,
             triggered_by=request_user,
             name=f"{config.name} / {branch_name}",
             tag_name=branch_name,
@@ -281,11 +281,13 @@ class TaskLifecycleMixin:
         触发该仓库全部启用的自动打包配置。
         """
         configs = PackageConfig.objects.filter(
-            project=release.project,
-            repository=release.repository,
+            project_component__project=release.project,
+            project_component__repository=release.repository,
             auto_package_on_release=True,
             is_active=True,
-        ).select_related("project", "repository", "image", "node")
+        ).select_related(
+            "project_component__project", "project_component__repository", "image", "node"
+        )
         selected = release.package_config_ids
         if selected is not None:
             from uuid import UUID

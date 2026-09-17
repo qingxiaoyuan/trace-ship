@@ -9,7 +9,8 @@ from unittest.mock import patch
 import pytest
 from rest_framework.test import APIClient
 
-from apps.project.models import ProductComponent, ProjectMember
+from apps.account.models import User
+from apps.project.models import ProjectComponent, ProjectMember
 from apps.repository.models import CommitRecord, Repository, default_version_rule
 
 
@@ -32,7 +33,7 @@ def test_list_repositories(api_client, repository):
 
 @pytest.mark.django_db
 def test_repository_creator_can_see_unbound_repository(user, credential):
-    """用户可以看到自己创建、但尚未关联产品的仓库。"""
+    """用户可以看到自己创建、但尚未关联项目的仓库。"""
     repository = Repository.objects.create(
         repo_type="git",
         vendor="gitlab",
@@ -53,31 +54,29 @@ def test_repository_creator_can_see_unbound_repository(user, credential):
 
 
 @pytest.mark.django_db
-def test_repository_creator_cannot_see_hidden_product_metadata(api_client, user, repository):
-    """仓库创建者退出产品后仍可见仓库，但不可看到该产品的任何关联元数据。"""
-    ProjectMember.objects.filter(project=repository.project, user=user).delete()
+def test_repository_creator_cannot_see_hidden_project_metadata(api_client, user, project, repository):
+    """仓库创建者退出项目后仍可见仓库，但不可看到该项目的任何关联元数据。"""
+    ProjectMember.objects.filter(project=project, user=user).delete()
 
     response = api_client.get(f"/api/repositories/{repository.id}/")
 
     assert response.status_code == 200
     data = response.data["data"]
-    assert data["project"] is None
-    assert data["project_name"] == ""
-    assert data["product_count"] == 0
-    assert data["used_by_products"] == []
+    assert data["project_count"] == 0
+    assert data["used_by_projects"] == []
 
 
 @pytest.mark.django_db
-def test_repository_only_exposes_visible_product_associations(
-    api_client, repository,
+def test_repository_only_exposes_visible_project_associations(
+    api_client, project, repository,
 ):
-    """共享仓库只返回当前用户所属产品的关联信息。"""
+    """共享仓库只返回当前用户所属项目的关联信息。"""
     from apps.project.models import Project
 
     hidden_project = Project.objects.create(
-        code="HIDDEN", name="隐藏产品", leader=None, status=1,
+        code="HIDDEN", name="隐藏项目", leader=None, status=1,
     )
-    ProductComponent.objects.create(
+    ProjectComponent.objects.create(
         project=hidden_project,
         repository=repository,
         component_code="hidden-component",
@@ -89,20 +88,20 @@ def test_repository_only_exposes_visible_product_associations(
 
     assert response.status_code == 200
     data = response.data["data"]
-    assert data["product_count"] == 1
-    assert {item["product_id"] for item in data["used_by_products"]} == {
-        str(repository.project_id)
+    assert data["project_count"] == 1
+    assert {item["project_id"] for item in data["used_by_projects"]} == {
+        str(project.id)
     }
-    assert all(item["product_name"] != "隐藏产品" for item in data["used_by_products"])
+    assert all(item["project_name"] != "隐藏项目" for item in data["used_by_projects"])
 
 
 @pytest.mark.django_db
-def test_project_member_can_see_linked_repository(repository):
-    """产品成员可以看到该产品已关联的仓库。"""
+def test_project_member_can_see_linked_repository(project, repository):
+    """项目成员可以看到该项目已关联的仓库。"""
     from apps.account.models import User
 
     member = User.objects.create_user(username="repo_member", password="pass")
-    ProjectMember.objects.create(project=repository.project, user=member, role="viewer")
+    ProjectMember.objects.create(project=project, user=member, role="viewer")
     client = APIClient()
     client.force_authenticate(user=member)
 
@@ -115,7 +114,7 @@ def test_project_member_can_see_linked_repository(repository):
 
 @pytest.mark.django_db
 def test_non_member_cannot_see_repository_created_by_other_user(repository):
-    """非创建者且不属于关联产品的用户看不到仓库。"""
+    """非创建者且不属于关联项目的用户看不到仓库。"""
     from apps.account.models import User
 
     outsider = User.objects.create_user(username="repo_outsider", password="pass")
@@ -180,7 +179,7 @@ def test_create_repository(api_client, user, project, credential):
 
 @pytest.mark.django_db
 def test_create_global_repository_without_project(user, credential):
-    """全局仓库管理员可独立登记物理仓库，不自动绑定产品。"""
+    """全局仓库管理员可独立登记物理仓库，不自动绑定项目。"""
     user.is_superuser = True
     user.save(update_fields=["is_superuser"])
     client = APIClient()
@@ -202,14 +201,13 @@ def test_create_global_repository_without_project(user, credential):
 
     assert response.status_code == 201, response.data
     repository = Repository.objects.get(id=response.data["data"]["id"])
-    assert repository.project_id is None
     assert repository.version_rule == default_version_rule()
-    assert not ProductComponent.objects.filter(repository=repository).exists()
+    assert not ProjectComponent.objects.filter(repository=repository).exists()
 
 
 @pytest.mark.django_db
 def test_project_manager_cannot_create_unbound_global_repository(api_client, project, credential):
-    """只有项目内权限的管理员不能绕过产品上下文维护全局仓库目录。"""
+    """只有项目内权限的管理员不能绕过项目上下文维护全局仓库目录。"""
     response = api_client.post(
         "/api/repositories/",
         {
@@ -240,7 +238,8 @@ def test_update_version_rule_by_non_credential_owner(repository):
 
     # 另一个用户作为项目负责人，但不持有仓库绑定的凭证
     manager = User.objects.create_user(username="repo_mgr", password="pass", nickname="项目管理员")
-    ProjectMember.objects.create(project=repository.project, user=manager, role="manager")
+    project = repository.project_components.get().project
+    ProjectMember.objects.create(project=project, user=manager, role="manager")
 
     client = APIClient()
     client.force_authenticate(user=manager)
@@ -309,6 +308,65 @@ def test_commit_review(api_client, commit):
     assert response.status_code == 200
     assert response.data["code"] == 0
     assert response.data["data"]["review_status"] == "illegal"
+
+
+@pytest.mark.django_db
+def test_commit_review_falls_back_to_repository_component(repository):
+    """
+    提交归属项目为空时，复核权限回退到仓库启用组件解析项目
+
+    仓库先登记后关联项目的窗口期内同步的提交 project 为 NULL，
+    此时项目测试人员应可正常复核（语义与仓库可见性一致）。
+    """
+    tester = User.objects.create_user(username="review-tester", password="pass")
+    component = repository.project_components.get()
+    ProjectMember.objects.create(project=component.project, user=tester, role="tester")
+    null_commit = CommitRecord.objects.create(
+        project=None,
+        repository=repository,
+        commit_hash="null-proj-001",
+        author="张三",
+        message="fix: 无归属提交",
+        committed_at="2026-06-21T10:00:00+08:00",
+        branch="develop",
+    )
+    client = APIClient()
+    client.force_authenticate(user=tester)
+
+    response = client.post(
+        f"/api/commits/{null_commit.id}/review/",
+        {"review_status": "warning", "reason": "回退解析"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.data["data"]["review_status"] == "warning"
+
+
+@pytest.mark.django_db
+def test_commit_review_fallback_still_denies_outsider(repository):
+    """回退解析不扩大权限：非项目成员仍不可复核无归属提交"""
+    outsider = User.objects.create_user(username="review-outsider", password="pass")
+    null_commit = CommitRecord.objects.create(
+        project=None,
+        repository=repository,
+        commit_hash="null-proj-002",
+        author="李四",
+        message="fix: 无归属提交",
+        committed_at="2026-06-21T11:00:00+08:00",
+        branch="develop",
+    )
+    client = APIClient()
+    client.force_authenticate(user=outsider)
+
+    response = client.post(
+        f"/api/commits/{null_commit.id}/review/",
+        {"review_status": "pass"},
+        format="json",
+    )
+
+    # 列表查询集按仓库可见性过滤，外部人员拿不到对象（404）或被权限拦截（403）
+    assert response.status_code in (403, 404)
 
 
 @pytest.mark.django_db
@@ -609,7 +667,7 @@ def test_test_connection_failure_logs_operation_log(api_client, repository):
 
 @pytest.mark.django_db
 def test_auditor_cannot_see_non_member_project_commits(repository, commit):
-    """审查员不是产品成员时，不能看到该产品仓库的提交记录。"""
+    """审查员不是项目成员时，不能看到该项目仓库的提交记录。"""
     from apps.account.models import Permission, Role, User, UserRole
 
     auditor = User.objects.create_user(username="auditor", password="pass", nickname="审查员")
@@ -688,10 +746,10 @@ def test_delete_tag_requires_tag_name(api_client, repository):
 @pytest.mark.django_db
 def test_delete_tag_rejects_svn_repository(api_client, project, credential):
     """SVN 仓库不支持标签删除"""
+    from apps.project.services import ensure_repository_component
     from apps.repository.models import Repository
 
     svn_repo = Repository.objects.create(
-        project=project,
         repo_type="svn",
         vendor="svn",
         name="SVN 仓库",
@@ -700,6 +758,7 @@ def test_delete_tag_rejects_svn_repository(api_client, project, credential):
         credential=credential,
         credential_mode="project",
     )
+    ensure_repository_component(svn_repo, project)
     response = api_client.post(
         f"/api/repositories/{svn_repo.id}/delete-tag/",
         {"tag_name": "v1.0.0"},
@@ -716,7 +775,8 @@ def test_delete_tag_forbidden_for_non_manager(repository):
     from apps.project.models import ProjectMember
 
     developer = User.objects.create_user(username="dev", password="pass", nickname="开发")
-    ProjectMember.objects.create(project=repository.project, user=developer, role="developer")
+    project = repository.project_components.get().project
+    ProjectMember.objects.create(project=project, user=developer, role="developer")
     client = APIClient()
     client.force_authenticate(user=developer)
 

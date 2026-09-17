@@ -24,10 +24,9 @@ def test_repositories_defers_missing_created_by(monkeypatch):
 @pytest.mark.django_db
 def test_check_command_lists_duplicate_candidates(project, credential, user):
     """一致性检查在存在重复身份时输出候选，且不因新字段崩掉。"""
-    other = Project.objects.create(code="OTHER", name="另一产品", leader=user, status=1)
+    other = Project.objects.create(code="OTHER", name="另一项目", leader=user, status=1)
     ProjectMember.objects.create(project=other, user=user, role="manager")
     Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="海域",
@@ -37,7 +36,6 @@ def test_check_command_lists_duplicate_candidates(project, credential, user):
         created_by=user,
     )
     Repository.objects.create(
-        project=other,
         repo_type="git",
         vendor="gitlab",
         name="BDSimPro",

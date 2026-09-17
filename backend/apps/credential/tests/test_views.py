@@ -136,7 +136,6 @@ def test_delete_repository_bound_credential_is_rejected(api_client, credential, 
     期望：删除时返回 409，响应 code 为 40900
     """
     Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="Bound Repo",
@@ -206,7 +205,6 @@ def test_gitlab_credential_test_calls_provider(api_client, credential, monkeypat
 def test_gitlab_credential_test_falls_back_to_repository_url(api_client, credential, project, monkeypatch):
     """GitLab 凭证未指定地址时，回退使用引用仓库的服务器地址。"""
     Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="Bound Repo",

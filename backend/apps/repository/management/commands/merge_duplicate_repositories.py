@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
-from apps.package.models import PackageConfig, PackageTask
+from apps.package.models import PackageTask
 from apps.release.models import ReleaseCommit, ReleaseRecord
 from apps.repository.models import CommitRecord, Repository, RepositoryBranch, RepositoryTag
 from apps.repository.schema_compat import has_column, repositories
@@ -79,7 +79,7 @@ class Command(BaseCommand):
     def _list_groups(cls) -> dict:
         """列出规范化后身份重复的仓库组，供选择主仓库。"""
         groups = defaultdict(list)
-        all_repos = repositories().select_related("project")
+        all_repos = repositories()
         for repository in all_repos:
             vendor, url, identity = _normalized_identity(repository)
             if identity:
@@ -100,12 +100,10 @@ class Command(BaseCommand):
     @classmethod
     def _candidate(cls, repository) -> dict:
         """输出选择主仓库所需的计数与归属信息。"""
-        info = {
+        return {
             "id": str(repository.id),
             "name": repository.name,
             "stored_url": repository.url,
-            "project_id": str(repository.project_id) if repository.project_id else None,
-            "project_name": repository.project.name if repository.project_id else None,
             "created_at": repository.created_at,
             "created_by_id": (
                 str(repository.created_by_id)
@@ -114,15 +112,12 @@ class Command(BaseCommand):
             ),
             "credential_id": str(repository.credential_id) if repository.credential_id else None,
             "releases": repository.releases.count(),
-            "package_configs": repository.package_configs.count(),
             "package_tasks": repository.package_tasks.count(),
             "commits": repository.commits.count(),
             "branches": repository.branches.count(),
             "tags": repository.tags.count(),
+            "components": repository.project_components.count(),
         }
-        if _table_exists("project_component"):
-            info["components"] = repository.product_components.count()
-        return info
 
     @classmethod
     def _report(cls, primary, duplicates) -> dict:
@@ -136,27 +131,19 @@ class Command(BaseCommand):
             identity = _normalized_identity(duplicate)
             if identity != primary_identity:
                 conflicts.append({"repository": str(duplicate.id), "type": "identity_mismatch"})
-            if _table_exists("project_component"):
-                from apps.project.models import ProductComponent
+            from apps.project.models import ProjectComponent
 
-                for component in ProductComponent.objects.filter(repository=duplicate):
-                    if ProductComponent.objects.filter(
-                        project=component.project,
-                        component_code=component.component_code,
-                        repository=primary,
-                    ).exclude(id=component.id).exists():
-                        conflicts.append({
-                            "repository": str(duplicate.id),
-                            "type": "component_code",
-                            "value": component.component_code,
-                        })
-            elif duplicate.project_id and duplicate.project_id != primary.project_id:
-                notes.append({
-                    "repository": str(duplicate.id),
-                    "type": "legacy_product_reattach",
-                    "project_id": str(duplicate.project_id),
-                    "detail": "产品组件表尚未创建；归并后该产品的发布/打包仍指向主仓库，迁移回填会补建组件",
-                })
+            for component in ProjectComponent.objects.filter(repository=duplicate):
+                if ProjectComponent.objects.filter(
+                    project=component.project,
+                    component_code=component.component_code,
+                    repository=primary,
+                ).exclude(id=component.id).exists():
+                    conflicts.append({
+                        "repository": str(duplicate.id),
+                        "type": "component_code",
+                        "value": component.component_code,
+                    })
             for branch in duplicate.branches.all():
                 existing = primary_branches.get(branch.name)
                 if existing and existing.last_commit_hash != branch.last_commit_hash:
@@ -178,26 +165,15 @@ class Command(BaseCommand):
         if _table_exists("repository_credential_loan"):
             from apps.credential.models import RepositoryCredentialLoan
 
-            if duplicate.credential_id and duplicate.project_id:
-                loan, _created = RepositoryCredentialLoan.objects.get_or_create(
-                    repository=primary,
-                    credential=duplicate.credential,
-                    lender=duplicate.credential.owner,
-                    is_active=True,
-                    defaults={"permission_scope": ["read", "create_tag", "delete_tag"]},
-                )
-                loan.allowed_products.add(duplicate.project_id)
             RepositoryCredentialLoan.objects.filter(repository=duplicate).update(repository=primary)
-        if _table_exists("project_component"):
-            from apps.project.models import ProductComponent
+        from apps.project.models import ProjectComponent
 
-            ProductComponent.objects.filter(repository=duplicate).update(repository=primary)
+        ProjectComponent.objects.filter(repository=duplicate).update(repository=primary)
         if _table_exists("credential_usage_log"):
             from apps.credential.models import CredentialUsageLog
 
             CredentialUsageLog.objects.filter(repository=duplicate).update(repository=primary)
         ReleaseRecord.objects.filter(repository=duplicate).update(repository=primary)
-        PackageConfig.objects.filter(repository=duplicate).update(repository=primary)
         PackageTask.objects.filter(repository=duplicate).update(repository=primary)
         if _column_exists("workflow_definition", "repository_id"):
             from apps.workflow.models import WorkflowDefinition, WorkflowInstance

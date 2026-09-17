@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.project.models import ProductComponent, Project
+from apps.project.models import Project, ProjectComponent
 from apps.project.services import visible_project_ids, visible_repository_ids
 from apps.release.services import ReleaseService, VersionCalculator, list_tags_cached
 from apps.repository.models import CommitRecord, Repository
@@ -41,7 +41,7 @@ def _has_global_repository_manage(user) -> bool:
 
 
 class CanManageRepository(permissions.BasePermission):
-    """仓库管理员，或仓库所关联产品的管理员，可以维护可见仓库。"""
+    """仓库管理员，或仓库所关联项目的管理员，可以维护可见仓库。"""
 
     message = "没有维护该仓库的权限"
 
@@ -63,11 +63,9 @@ class CanManageRepository(permissions.BasePermission):
         if _has_global_repository_manage(request.user):
             return True
         manager_permission = IsProjectManager()
-        if obj.project_id and manager_permission._check(obj.project, request.user):
-            return True
         return any(
             manager_permission._check(component.project, request.user)
-            for component in obj.product_components.select_related("project")
+            for component in obj.project_components.select_related("project")
         )
 
 
@@ -113,52 +111,51 @@ class RepositoryViewSet(StandardModelViewSet):
         from apps.credential.models import RepositoryCredentialLoan
 
         loans = RepositoryCredentialLoan.objects.select_related("credential", "lender")
-        component_queryset = ProductComponent.objects.select_related("project")
-        product_count = Count("product_components", distinct=True)
+        component_queryset = ProjectComponent.objects.select_related("project")
+        project_count = Count("project_components", distinct=True)
         if not user.is_superuser:
             project_ids = visible_project_ids(user)
             loans = loans.filter(
-                Q(lender=user) | Q(allowed_products__id__in=project_ids)
+                Q(lender=user) | Q(allowed_projects__id__in=project_ids)
             ).distinct()
             component_queryset = component_queryset.filter(
                 project_id__in=project_ids,
                 is_active=True,
             )
-            product_count = Count(
-                "product_components",
+            project_count = Count(
+                "project_components",
                 filter=Q(
-                    product_components__project_id__in=project_ids,
-                    product_components__is_active=True,
+                    project_components__project_id__in=project_ids,
+                    project_components__is_active=True,
                 ),
                 distinct=True,
             )
         queryset = (
             Repository.objects
-            .select_related("project", "credential", "created_by")
+            .select_related("credential", "created_by")
             .prefetch_related(
                 Prefetch(
-                    "product_components",
+                    "project_components",
                     queryset=component_queryset,
-                    to_attr="_visible_product_components",
+                    to_attr="_visible_project_components",
                 ),
                 Prefetch("credential_loans", queryset=loans, to_attr="_visible_credential_loans"),
             )
-            .annotate(product_count=product_count)
+            .annotate(project_count=project_count)
         )
         if not user.is_superuser:
             queryset = queryset.filter(id__in=visible_repository_ids(user))
 
-        # project 参数现在表示“被该产品引用”，同时兼容尚未迁移的旧归属字段。
+        # project 参数表示“被该项目引用”（ProjectComponent 关联）
         project_id = self.request.query_params.get("project")
         if project_id:
             queryset = queryset.filter(
-                Q(project_id=project_id)
-                | Q(product_components__project_id=project_id, product_components__is_active=True)
+                project_components__project_id=project_id, project_components__is_active=True
             ).distinct()
         return queryset
 
     def get_serializer_context(self) -> dict:
-        """向序列化器传入产品可见集合，用于隐藏仓库上的历史产品字段。"""
+        """向序列化器传入项目可见集合，用于过滤仓库上的项目关联元数据。"""
         context = super().get_serializer_context()
         user = self.request.user
         if user.is_authenticated and not user.is_superuser:
@@ -522,11 +519,13 @@ class RepositoryViewSet(StandardModelViewSet):
         result = []
         for repo in queryset:
             stat = stat_map.get(repo.id, {})
+            # 历史登记项目字段已下线：取首个可见组件所在项目作为展示口径
+            component = next(iter(getattr(repo, "_visible_project_components", [])), None)
             result.append({
                 "id": str(repo.id),
                 "name": repo.name,
-                "project_id": str(repo.project_id) if repo.project_id else "",
-                "project_name": repo.project.name if repo.project else "",
+                "project_id": str(component.project_id) if component else "",
+                "project_name": component.project.name if component else "",
                 "repo_type": repo.repo_type,
                 "vendor": repo.vendor,
                 "default_branch": repo.default_branch,
@@ -591,8 +590,8 @@ class CommitRecordViewSet(StandardReadOnlyModelViewSet):
             queryset = queryset.filter(
                 Q(project_id=project_id)
                 | Q(
-                    repository__product_components__project_id=project_id,
-                    repository__product_components__is_active=True,
+                    repository__project_components__project_id=project_id,
+                    repository__project_components__is_active=True,
                 )
             ).distinct()
         return queryset

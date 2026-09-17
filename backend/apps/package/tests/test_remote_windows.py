@@ -60,7 +60,6 @@ def repository(project, user):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="win-app",
@@ -152,8 +151,7 @@ class TestPackageConfigRemoteValidation:
     def test_remote_windows_requires_node(self, project, repository, user):
         serializer = PackageConfigSerializer(
             data={
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "远程打包",
                 "executor_type": "remote_node",
             },
@@ -165,8 +163,7 @@ class TestPackageConfigRemoteValidation:
     def test_remote_windows_allows_empty_image(self, project, repository, node, user):
         serializer = PackageConfigSerializer(
             data={
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "远程打包",
                 "executor_type": "remote_node",
                 "node": str(node.id),
@@ -179,8 +176,7 @@ class TestPackageConfigRemoteValidation:
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
         serializer = PackageConfigSerializer(
             data={
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "本地打包",
                 "executor_type": "local_docker",
                 "node": str(node.id),
@@ -194,8 +190,7 @@ class TestPackageConfigRemoteValidation:
     def test_local_docker_requires_image(self, project, repository, user):
         serializer = PackageConfigSerializer(
             data={
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "本地打包",
                 "executor_type": "local_docker",
             },
@@ -209,8 +204,7 @@ class TestPackageConfigRemoteValidation:
 class TestSnapshot:
     def test_snapshot_contains_executor_and_node(self, project, repository, node):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="远程打包",
             executor_type="remote_node",
             node=node,
@@ -227,7 +221,7 @@ class TestSnapshot:
     def test_snapshot_default_executor(self, project, repository):
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="本地打包", image=image,
+            project_component=project.project_components.get(repository=repository), name="本地打包", image=image,
         )
         snapshot = PackageService._snapshot(config)
         assert snapshot["executor_type"] == "local_docker"
@@ -239,8 +233,7 @@ class TestSnapshot:
         """开启自动压缩后进入任务快照"""
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="本地打包",
             image=image,
             auto_collect_output=True,
@@ -260,8 +253,7 @@ class TestCpuLimitBuild:
         node.cpu_priority = priority
         node.save(update_fields=["cpu_cores", "cpu_priority"])
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="远程打包",
             executor_type="remote_node",
             node=node,
@@ -350,8 +342,7 @@ class TestConfigLevelResourceLimits:
 
     def _make_task(self, project, repository, node, release, user, **cfg):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="远程打包",
             executor_type="remote_node",
             node=node,
@@ -422,8 +413,7 @@ class TestConfigLevelResourceLimits:
         request = MagicMock()
         request.user = user
         base = {
-            "project": str(project.id),
-            "repository": str(repository.id),
+            "project_component": str(project.project_components.get(repository=repository).id),
             "name": "限制校验",
             "executor_type": "remote_node",
             "node": str(node.id),
@@ -510,7 +500,7 @@ class TestAutoCollectOutput:
         from django.utils import timezone
 
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="Web前端打包",
+            project_component=project.project_components.get(repository=repository), name="Web前端打包",
         )
         task = self._make_task(
             project, repository, release, user, self._snapshot(auto_compress=True)
@@ -542,7 +532,7 @@ class TestAutoCollectOutput:
     def test_remote_auto_compress_command(self, project, repository, release, user):
         """自动压缩：远程用 tar 把产物目录压缩为单个 zip，不使用 robocopy"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="Web前端打包",
+            project_component=project.project_components.get(repository=repository), name="Web前端打包",
         )
         task = self._make_task(
             project,
@@ -682,8 +672,7 @@ class TestAuthCloneArgs:
 class TestRemoteRunTask:
     def _make_task(self, project, repository, node, release, user, cleanup_workspace=True):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="远程打包",
             executor_type="remote_node",
             node=node,
@@ -868,8 +857,7 @@ class TestNodeConcurrencyGate:
 
     def _make_task(self, project, repository, node, release, user, status="queued"):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="远程打包",
             executor_type="remote_node",
             node=node,
@@ -914,7 +902,7 @@ class TestNodeConcurrencyGate:
     def test_local_docker_task_bypasses_gate(self, project, repository, release, user):
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="本地打包", image=image,
+            project_component=project.project_components.get(repository=repository), name="本地打包", image=image,
         )
         task = PackageTask.objects.create(
             config=config, release=release, project=project, repository=repository,
@@ -1015,8 +1003,7 @@ class TestPackageNodeViews:
 
     def test_delete_blocked_when_referenced(self, project, repository, node):
         PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="远程打包",
             executor_type="remote_node",
             node=node,

@@ -144,14 +144,14 @@ class RepositoryCredentialLoanSerializer(serializers.ModelSerializer):
     repository_name = serializers.CharField(source="repository.name", read_only=True)
     credential_name = serializers.CharField(source="credential.name", read_only=True)
     lender_name = serializers.CharField(source="lender.nickname", read_only=True, default="")
-    allowed_product_names = serializers.SerializerMethodField()
+    allowed_project_names = serializers.SerializerMethodField()
     valid_now = serializers.SerializerMethodField()
 
     class Meta:
         model = RepositoryCredentialLoan
         fields = [
             "id", "repository", "repository_name", "credential", "credential_name",
-            "lender", "lender_name", "allowed_products", "allowed_product_names",
+            "lender", "lender_name", "allowed_projects", "allowed_project_names",
             "permission_scope", "expires_at", "is_active", "valid_now",
             "revoked_at", "created_at", "updated_at",
         ]
@@ -160,8 +160,8 @@ class RepositoryCredentialLoanSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
 
-    def get_allowed_product_names(self, obj) -> list[str]:
-        return [product.name for product in obj.allowed_products.all()]
+    def get_allowed_project_names(self, obj) -> list[str]:
+        return [project.name for project in obj.allowed_projects.all()]
 
     def get_valid_now(self, obj) -> bool:
         from django.utils import timezone
@@ -185,21 +185,21 @@ class RepositoryCredentialLoanSerializer(serializers.ModelSerializer):
         request_user = self.context["request"].user
         credential = attrs.get("credential", getattr(self.instance, "credential", None))
         repository = attrs.get("repository", getattr(self.instance, "repository", None))
-        products = attrs.get("allowed_products")
+        projects = attrs.get("allowed_projects")
         if credential and credential.owner_id != request_user.id:
             raise serializers.ValidationError({"credential": "只能出借本人拥有的凭证"})
         if repository and credential:
             expected = {"gitlab": "gitlab_token"}.get(repository.vendor)
             if expected and credential.cred_type != expected:
                 raise serializers.ValidationError({"credential": "凭证类型与仓库平台不匹配"})
-        if repository and products is not None:
+        if repository and projects is not None:
             invalid = [
-                product.name for product in products
-                if not product.product_components.filter(repository=repository).exists()
+                project.name for project in projects
+                if not project.project_components.filter(repository=repository).exists()
             ]
             if invalid:
                 raise serializers.ValidationError(
-                    {"allowed_products": f"以下产品未引用该仓库：{'、'.join(invalid)}"}
+                    {"allowed_projects": f"以下项目未引用该仓库：{'、'.join(invalid)}"}
                 )
         return attrs
 
@@ -209,17 +209,17 @@ class CredentialUsageLogSerializer(serializers.ModelSerializer):
 
     actor_name = serializers.CharField(source="actor.nickname", read_only=True, default="")
     lender_name = serializers.CharField(source="lender.nickname", read_only=True, default="")
-    product_name = serializers.CharField(source="product.name", read_only=True, default="")
+    project_name = serializers.CharField(source="project.name", read_only=True, default="")
     repository_name = serializers.CharField(source="repository.name", read_only=True, default="")
     component_name = serializers.CharField(
-        source="product_component.display_name", read_only=True, default=""
+        source="project_component.display_name", read_only=True, default=""
     )
 
     class Meta:
         model = CredentialUsageLog
         fields = [
             "id", "actor", "actor_name", "lender", "lender_name", "credential",
-            "loan", "product", "product_name", "repository", "repository_name",
-            "product_component", "component_name", "operation",
+            "loan", "project", "project_name", "repository", "repository_name",
+            "project_component", "component_name", "operation",
             "result", "failure_reason", "created_at",
         ]

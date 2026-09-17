@@ -3,11 +3,9 @@ from collections import defaultdict
 from urllib.parse import urlparse
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection
-from django.db.models import F
 
 from apps.package.models import PackageConfig
-from apps.project.models import ProductComponent, Project
+from apps.project.models import Project, ProjectComponent
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
 from apps.repository.schema_compat import repositories
@@ -29,7 +27,7 @@ def _normalized_identity(repository) -> tuple[str, str, str]:
 
 
 class Command(BaseCommand):
-    help = "只读检查产品、共享仓库、凭证借用、发布与打包数据的一致性"
+    help = "只读检查项目、共享仓库、发布与打包数据的一致性"
 
     def add_arguments(self, parser):
         parser.add_argument("--json", action="store_true", help="输出 JSON")
@@ -38,10 +36,7 @@ class Command(BaseCommand):
     @staticmethod
     def _duplicate_identities() -> list[dict]:
         groups = defaultdict(list)
-        repo_map = {
-            item.id: item
-            for item in repositories().select_related("project")
-        }
+        repo_map = {item.id: item for item in repositories()}
         for repository in repo_map.values():
             key = _normalized_identity(repository)
             if key[2]:
@@ -57,11 +52,9 @@ class Command(BaseCommand):
                     "id": str(repository.id),
                     "name": repository.name,
                     "stored_url": repository.url,
-                    "project_id": str(repository.project_id) if repository.project_id else None,
-                    "project_name": repository.project.name if repository.project_id else None,
                     "created_at": repository.created_at,
                     "releases": repository.releases.count(),
-                    "package_configs": repository.package_configs.count(),
+                    "components": repository.project_components.count(),
                 })
             result.append({
                 "vendor": key[0],
@@ -73,14 +66,31 @@ class Command(BaseCommand):
             })
         return result
 
-    def _pre_migration_report(self) -> dict:
-        """只使用旧表生成检查结果，可在任何新迁移执行前安全运行。"""
+    @staticmethod
+    def _releases_without_active_component() -> list[str]:
+        """发布单的项目 + 仓库缺少启用组件关联时视为异常。"""
+        values = []
+        for release in ReleaseRecord.objects.only("id", "project_id", "repository_id"):
+            linked = ProjectComponent.objects.filter(
+                project_id=release.project_id,
+                repository_id=release.repository_id,
+                is_active=True,
+            ).exists()
+            if not linked:
+                values.append(str(release.id))
+        return values
+
+    def _report(self) -> dict:
+        repositories_without_component = list(
+            Repository.objects.exclude(project_components__is_active=True)
+            .values_list("id", flat=True)
+        )
         return {
-            "migration_state": "pre_migration",
             "summary": {
-                "products": Project.objects.count(),
+                "projects": Project.objects.count(),
                 "repositories": Repository.objects.count(),
-                "legacy_releases": ReleaseRecord.objects.count(),
+                "components": ProjectComponent.objects.count(),
+                "releases": ReleaseRecord.objects.count(),
                 "package_configs": PackageConfig.objects.count(),
             },
             "issues": {
@@ -90,64 +100,21 @@ class Command(BaseCommand):
                         repo_type="git", external_identity=""
                     ).values_list("id", flat=True)
                 ],
-            },
-            "notes": [
-                "当前数据库尚未创建产品组件等新表，本报告未执行迁移后关系检查。",
-                "只有本报告无阻断项后才应备份数据库并执行 migrate。",
-            ],
-        }
-
-    def _post_migration_report(self) -> dict:
-        missing_components = list(
-            Repository.objects.filter(project_id__isnull=False)
-            .exclude(product_components__project_id=F("project_id"))
-            .values_list("id", flat=True)
-        )
-        package_without_component = list(
-            PackageConfig.objects.filter(product_component_id__isnull=True)
-            .values_list("id", flat=True)
-        )
-        package_mismatch = list(
-            PackageConfig.objects.filter(product_component_id__isnull=False)
-            .exclude(
-                project_id=F("product_component__project_id"),
-                repository_id=F("product_component__repository_id"),
-            )
-            .values_list("id", flat=True)
-        )
-        return {
-            "migration_state": "post_migration",
-            "summary": {
-                "products": Project.objects.count(),
-                "repositories": Repository.objects.count(),
-                "components": ProductComponent.objects.count(),
-                "releases": ReleaseRecord.objects.count(),
-            },
-            "issues": {
-                "duplicate_repository_identities": self._duplicate_identities(),
-                "legacy_repositories_without_component": [str(value) for value in missing_components],
-                "package_configs_without_component": [str(value) for value in package_without_component],
-                "package_config_relation_mismatch": [str(value) for value in package_mismatch],
+                "repositories_without_active_component": [
+                    str(value) for value in repositories_without_component
+                ],
+                "releases_without_active_component": self._releases_without_active_component(),
             },
         }
 
     def handle(self, *args, **options):
-        tables = set(connection.introspection.table_names())
-        required_new_tables = {
-            "project_component",
-            "repository_credential_loan",
-        }
-        if required_new_tables.issubset(tables):
-            report = self._post_migration_report()
-        else:
-            report = self._pre_migration_report()
+        report = self._report()
         issue_count = sum(len(values) for values in report["issues"].values())
         report["issue_count"] = issue_count
         if options["json"]:
             self.stdout.write(json.dumps(report, ensure_ascii=False, indent=2, default=str))
         else:
-            self.stdout.write(self.style.SUCCESS("产品仓库一致性检查完成"))
-            self.stdout.write(f"数据库阶段: {report['migration_state']}")
+            self.stdout.write(self.style.SUCCESS("项目仓库一致性检查完成"))
             for name, values in report["issues"].items():
                 self.stdout.write(f"- {name}: {len(values)}")
             self.stdout.write(f"异常合计: {issue_count}")

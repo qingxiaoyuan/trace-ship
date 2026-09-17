@@ -43,7 +43,7 @@ def publisher_client(user):
 
 @pytest.fixture
 def reviewer_client(reviewer, project):
-    """审查员测试客户端；审查员需先加入产品才具备数据可见性。"""
+    """审查员测试客户端；审查员需先加入项目才具备数据可见性。"""
     ProjectMember.objects.get_or_create(
         project=project,
         user=reviewer,

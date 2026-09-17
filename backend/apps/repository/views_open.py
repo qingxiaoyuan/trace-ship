@@ -40,31 +40,30 @@ class OpenTagCompareView(APIView):
         if not repository_id or not from_tag or not to_tag:
             return error_response(40001, "缺少必填参数 repository_id、from_tag 或 to_tag")
 
-        repo = Repository.objects.filter(id=repository_id).select_related("project").first()
+        repo = Repository.objects.filter(id=repository_id).first()
         if repo is None:
             return error_response(40404, "仓库不存在", status_code=404)
         branch = params.get("branch", "").strip() or repo.default_branch
 
-        from apps.project.models import ProductComponent, Project
-        from apps.project.services import is_repository_owner_in_product
+        from apps.project.models import Project, ProjectComponent
+        from apps.project.services import is_repository_owner_in_project
 
-        product = None
-        product_id = params.get("product_id", "").strip()
-        if product_id:
-            product = Project.objects.filter(id=product_id).first()
-            if product is None:
-                return error_response(40404, "产品不存在", status_code=404)
-        elif repo.project_id:
-            product = repo.project
+        project = None
+        # project_id 为准；product_id 为旧参数名，保留兼容
+        project_id = (params.get("project_id", "") or params.get("product_id", "")).strip()
+        if project_id:
+            project = Project.objects.filter(id=project_id).first()
+            if project is None:
+                return error_response(40404, "项目不存在", status_code=404)
         else:
-            component = ProductComponent.objects.filter(
+            component = ProjectComponent.objects.filter(
                 repository=repo, is_active=True,
             ).select_related("project").first()
-            product = component.project if component else None
-        if product is None or not is_repository_owner_in_product(repo, product):
+            project = component.project if component else None
+        if project is None or not is_repository_owner_in_project(repo, project):
             return error_response(
                 40301,
-                "仓库所有者不在关联产品成员中，无法使用该仓库凭证",
+                "仓库所有者不在关联项目成员中，无法使用该仓库凭证",
                 status_code=403,
             )
 
@@ -72,7 +71,7 @@ class OpenTagCompareView(APIView):
             from apps.repository.services import RepositoryService
 
             server_url = RepositoryService._resolve_server_url(repo)
-            cred_data = resolve_credential(repo, product=product, operation="read")
+            cred_data = resolve_credential(repo, project=project, operation="read")
             provider = get_provider(repo.vendor, server_url, cred_data)
 
             # 取两个 tag 的提交时间，用于 MR 区间过滤；tag 列表走短 TTL 缓存，
@@ -102,7 +101,7 @@ class OpenTagCompareView(APIView):
 
         return success_response({
             "repository_name": repo.name,
-            "project_name": product.name if product else "",
+            "project_name": project.name if project else "",
             "from_tag": from_tag,
             "to_tag": to_tag,
             "branch": branch,

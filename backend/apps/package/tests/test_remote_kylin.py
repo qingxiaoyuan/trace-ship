@@ -59,7 +59,6 @@ def repository(project, user):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="kylin-app",
@@ -236,8 +235,7 @@ class TestKylinShHelpers:
 class TestKylinSnapshot:
     def test_snapshot_contains_node_os_type(self, project, repository, kylin_node):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="麒麟远程打包",
             executor_type="remote_node",
             node=kylin_node,
@@ -261,8 +259,7 @@ class TestKylinConcurrencyGate:
 
     def _make_task(self, project, repository, kylin_node, release, user, status="queued"):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="麒麟远程打包",
             executor_type="remote_node",
             node=kylin_node,
@@ -289,8 +286,7 @@ class TestKylinRemoteBuild:
 
     def _make_task(self, project, repository, kylin_node, release, user, custom="echo hi", **cfg):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="麒麟远程打包",
             executor_type="remote_node",
             node=kylin_node,
@@ -349,8 +345,7 @@ class TestKylinRemotePipeline:
 
     def _make_task(self, project, repository, kylin_node, release, user):
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="麒麟远程打包",
             executor_type="remote_node",
             node=kylin_node,
@@ -453,7 +448,7 @@ class TestKylinCollectOutput:
 
     def test_kylin_auto_compress_uses_tar_gz(self, project, repository, release, user):
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="麒麟打包",
+            project_component=project.project_components.get(repository=repository), name="麒麟打包",
         )
         task = self._make_task(
             project, repository, release, user, self._snapshot(auto_compress=True),

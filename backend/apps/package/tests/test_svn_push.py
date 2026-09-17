@@ -60,7 +60,6 @@ def repository(project):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -172,8 +171,7 @@ class TestPackageConfigSVNValidation:
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "测试配置",
                 "mode": "simple",
                 "image": str(image.id),
@@ -192,8 +190,7 @@ class TestPackageConfigSVNValidation:
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "测试配置",
                 "mode": "simple",
                 "image": str(image.id),
@@ -221,8 +218,7 @@ class TestPackageConfigSVNValidation:
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "测试配置",
                 "mode": "simple",
                 "image": str(image.id),
@@ -242,8 +238,7 @@ class TestPackageConfigSVNValidation:
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "测试配置",
                 "mode": "simple",
                 "image": str(image.id),
@@ -261,8 +256,7 @@ class TestPackageConfigSVNValidation:
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project": str(project.id),
-                "repository": str(repository.id),
+                "project_component": str(project.project_components.get(repository=repository).id),
                 "name": "SVN 推送配置",
                 "mode": "simple",
                 "image": str(image.id),
@@ -548,8 +542,7 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
     """启用 SVN 推送时，打包成功后产物推送到 SVN，任务状态为 success。"""
     settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 打包配置",
         custom_script="echo build",
         svn_push_enabled=True,
@@ -597,8 +590,7 @@ def test_run_task_with_svn_push_failure_keeps_task_success(project, repository, 
     """SVN 推送失败仅作为警告，打包任务与产物仍保持成功。"""
     settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 打包配置",
         custom_script="echo build",
         svn_push_enabled=True,
@@ -653,8 +645,7 @@ def test_run_task_without_svn_push_has_no_svn_stage(project, repository, release
     """未启用 SVN 推送时，流程不包含 svn_push 阶段。"""
     settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="普通打包配置",
         custom_script="echo build",
         svn_push_enabled=False,
@@ -698,8 +689,7 @@ class TestManualPushSvn:
     def test_manual_push_success(self, project, repository, release, svn_credential, tmp_path):
         """手动推送成功时返回结果并更新 stage_info。"""
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="SVN 配置",
             custom_script="echo build",
             svn_push_enabled=True,
@@ -741,7 +731,7 @@ class TestManualPushSvn:
         from rest_framework import serializers as drf_serializers
 
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置",
+            project_component=project.project_components.get(repository=repository), name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
         )
         task = PackageTask.objects.create(
@@ -757,7 +747,7 @@ class TestManualPushSvn:
         from rest_framework import serializers as drf_serializers
 
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置",
+            project_component=project.project_components.get(repository=repository), name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
         )
         task = PackageTask.objects.create(
@@ -771,7 +761,7 @@ class TestManualPushSvn:
     def test_manual_push_fails_when_svn_not_configured(self, project, repository, release, tmp_path):
         """配置未启用 SVN 推送时手动推送失败。"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置",
+            project_component=project.project_components.get(repository=repository), name="配置",
             svn_push_enabled=False,
         )
         workspace = tmp_path / "workspace"
@@ -789,7 +779,7 @@ class TestManualPushSvn:
     def test_manual_push_fallback_to_config(self, project, repository, release, svn_credential, tmp_path):
         """快照已允许推送但缺 URL 时，只回填地址，不改开关。"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置",
+            project_component=project.project_components.get(repository=repository), name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
         )
         workspace = tmp_path / "workspace"
@@ -820,7 +810,7 @@ class TestManualPushSvn:
     ):
         """历史快照无 trigger_source 时不允许补推，即使配置已启用 SVN。"""
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="配置",
+            project_component=project.project_components.get(repository=repository), name="配置",
             svn_push_enabled=True, svn_url="svn://host/releases", svn_credential=svn_credential,
         )
         workspace = tmp_path / "workspace"
@@ -840,8 +830,7 @@ class TestManualPushSvn:
 def test_package_task_serializer_can_push_svn(project, repository, release, svn_credential, tmp_path):
     """任务序列化时返回 can_push_svn，供前端控制手动推送按钮。"""
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 配置",
         custom_script="echo build",
         svn_push_enabled=True,
@@ -931,7 +920,7 @@ class TestReleaseTypeDistinction:
         """创建打包任务时从发布记录带出发布类型。"""
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="Web 打包", image=image,
+            project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
         )
         release.release_type = "rc"
         release.save(update_fields=["release_type"])
@@ -948,8 +937,7 @@ def test_run_task_with_svn_push_for_branch_task(
     """分支直打包属于手动触发，即使配置启用 SVN 也不自动推送。"""
     settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 打包配置",
         custom_script="echo build",
         svn_push_enabled=True,
@@ -985,8 +973,7 @@ def test_create_task_svn_policy_only_auto_formal(project, repository, release, s
     """仅正式发布自动打包打开 SVN 推送；手动触发与 RC 自动打包均关闭。"""
     monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 配置",
         svn_push_enabled=True,
         svn_url="svn://host/releases",
@@ -1019,8 +1006,7 @@ def test_manual_push_svn_rejects_manual_trigger_task(
     """手动触发的正式版打包不允许事后补推 SVN。"""
     monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="SVN 配置",
         svn_push_enabled=True,
         svn_url="svn://host/releases",
@@ -1067,8 +1053,7 @@ class TestSyncReleaseDocToSvn:
             name="Web 镜像", image="trace-ship/web:latest"
         )
         config = PackageConfig.objects.create(
-            project=project,
-            repository=repository,
+            project_component=project.project_components.get(repository=repository),
             name="Web 打包",
             image=image,
             svn_push_enabled=True,
@@ -1128,7 +1113,7 @@ class TestSyncReleaseDocToSvn:
         """未成功推送 SVN 的任务跳过。"""
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
         config = PackageConfig.objects.create(
-            project=project, repository=repository, name="Web 打包", image=image,
+            project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
         )
         PackageTask.objects.create(
             config=config,
@@ -1209,8 +1194,7 @@ def test_update_doc_logs_svn_sync_failure(
 
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project=project,
-        repository=repository,
+        project_component=project.project_components.get(repository=repository),
         name="Web 打包",
         image=image,
         svn_push_enabled=True,

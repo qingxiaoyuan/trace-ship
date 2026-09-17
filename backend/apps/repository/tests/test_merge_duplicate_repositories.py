@@ -6,14 +6,13 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.project.models import ProductComponent, Project, ProjectMember
+from apps.project.models import Project, ProjectComponent, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import CommitRecord, Repository, RepositoryBranch
 
 
 def _repo(project, credential, *, name, url, identity):
     return Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name=name,
@@ -41,7 +40,7 @@ def _release(project, repository, version):
 @pytest.mark.django_db
 def test_list_duplicate_groups(project, credential, user):
     """规范化后身份相同的仓库会出现在 --list 结果中。"""
-    other = Project.objects.create(code="OTHER", name="另一产品", leader=user, status=1)
+    other = Project.objects.create(code="OTHER", name="另一项目", leader=user, status=1)
     ProjectMember.objects.create(project=other, user=user, role="manager")
     primary = _repo(
         project, credential,
@@ -69,7 +68,7 @@ def test_list_duplicate_groups(project, credential, user):
 @pytest.mark.django_db
 def test_dry_run_does_not_delete(project, credential, user):
     """默认 dry-run 只输出报告，不删仓库。"""
-    other = Project.objects.create(code="OTHER", name="另一产品", leader=user, status=1)
+    other = Project.objects.create(code="OTHER", name="另一项目", leader=user, status=1)
     primary = _repo(
         project, credential,
         name="RP",
@@ -94,9 +93,9 @@ def test_dry_run_does_not_delete(project, credential, user):
 
 
 @pytest.mark.django_db
-def test_apply_moves_releases_and_keeps_other_product(project, credential, user):
-    """归并后重复仓删除，另一产品的发布仍指向主仓库。"""
-    other = Project.objects.create(code="OTHER", name="另一产品", leader=user, status=1)
+def test_apply_moves_releases_and_keeps_other_project(project, credential, user):
+    """归并后重复仓删除，另一项目的发布仍指向主仓库。"""
+    other = Project.objects.create(code="OTHER", name="另一项目", leader=user, status=1)
     ProjectMember.objects.create(project=other, user=user, role="manager")
     from apps.project.services import ensure_repository_component
 
@@ -141,14 +140,14 @@ def test_apply_moves_releases_and_keeps_other_product(project, credential, user)
     assert moved.repository_id == primary.id
     assert moved.project_id == other.id
     assert CommitRecord.objects.filter(repository=primary, commit_hash="abc123").exists()
-    assert ProductComponent.objects.filter(project=project, repository=primary).exists()
-    assert ProductComponent.objects.filter(project=other, repository=primary).exists()
+    assert ProjectComponent.objects.filter(project=project, repository=primary).exists()
+    assert ProjectComponent.objects.filter(project=other, repository=primary).exists()
 
 
 @pytest.mark.django_db
 def test_identity_mismatch_is_conflict(project, credential, user):
     """身份不同的仓库拒绝归并。"""
-    other = Project.objects.create(code="OTHER", name="另一产品", leader=user, status=1)
+    other = Project.objects.create(code="OTHER", name="另一项目", leader=user, status=1)
     primary = _repo(
         project, credential,
         name="A",

@@ -200,7 +200,7 @@ def test_batch_add_members_rejects_invalid_role(project, manager, outsider):
 
 @pytest.mark.django_db
 def test_leader_without_membership_cannot_access_members(manager):
-    """产品负责人没有显式成员记录时，也不能读取或维护成员数据。"""
+    """项目负责人没有显式成员记录时，也不能读取或维护成员数据。"""
     project = Project.objects.create(code="LEAD", name="Leader 项目", leader=manager)
     new_user = User.objects.create_user(username="lead_new", password="pass")
 
@@ -216,7 +216,7 @@ def test_leader_without_membership_cannot_access_members(manager):
 
 @pytest.mark.django_db
 def test_leader_without_membership_cannot_see_project_in_list(manager):
-    """产品负责人没有显式成员记录时，不进入产品可见范围。"""
+    """项目负责人没有显式成员记录时，不进入项目可见范围。"""
     Project.objects.create(code="LEAD2", name="Leader 可见项目", leader=manager)
 
     response = auth_client(manager).get("/api/projects/")
@@ -228,7 +228,7 @@ def test_leader_without_membership_cannot_see_project_in_list(manager):
 
 @pytest.mark.django_db
 def test_leader_without_membership_cannot_view_project_detail(manager):
-    """产品负责人没有显式成员记录时，不能通过详情接口读取产品。"""
+    """项目负责人没有显式成员记录时，不能通过详情接口读取项目。"""
     project = Project.objects.create(code="LEAD3", name="Leader 角色项目", leader=manager)
 
     response = auth_client(manager).get(f"/api/projects/{project.id}/")
@@ -502,7 +502,7 @@ def _grant_permission(user, code):
 
 @pytest.mark.django_db
 def test_auditor_only_sees_member_projects(project, outsider):
-    """拥有 release.audit 权限但不是产品成员时，不能看到该产品。"""
+    """拥有 release.audit 权限但不是项目成员时，不能看到该项目。"""
     # outsider 获得 release.audit 权限，但不是任何项目成员
     _grant_permission(outsider, "release.audit")
 
@@ -515,7 +515,7 @@ def test_auditor_only_sees_member_projects(project, outsider):
 
 @pytest.mark.django_db
 def test_auditor_cannot_view_non_member_project_detail(project, outsider):
-    """拥有 release.audit 权限但不是产品成员时，不能查看产品详情。"""
+    """拥有 release.audit 权限但不是项目成员时，不能查看项目详情。"""
     _grant_permission(outsider, "release.audit")
 
     response = auth_client(outsider).get(f"/api/projects/{project.id}/")

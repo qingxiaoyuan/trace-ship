@@ -42,7 +42,6 @@ def repository(project):
     from apps.project.services import ensure_repository_component
 
     repo = Repository.objects.create(
-        project=project,
         repo_type="git",
         vendor="gitlab",
         name="web",
@@ -59,7 +58,7 @@ def repository(project):
 def package_config(project, repository):
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     return PackageConfig.objects.create(
-        project=project, repository=repository, name="Web 打包", image=image,
+        project_component=project.project_components.get(repository=repository), name="Web 打包", image=image,
     )
 
 
