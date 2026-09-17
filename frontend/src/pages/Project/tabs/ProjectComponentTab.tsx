@@ -8,23 +8,23 @@ import { repositoryApi } from '@/api/repository';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { StatusTag } from '@/components/StatusTag';
 import { useProjectRole } from '@/hooks/useProjectRole';
-import { ProductComponentModal } from '@/pages/Project/modals/ProductComponentModal';
+import { ProjectComponentModal } from '@/pages/Project/modals/ProjectComponentModal';
 import { RepositoryModal } from '@/pages/Repository/modals/RepositoryModal';
-import type { ProductComponent, Repository } from '@/types';
+import type { ProjectComponent, Repository } from '@/types';
 
-interface ProductComponentTabProps {
+interface ProjectComponentTabProps {
   projectId: string;
 }
 
-/** 产品仓库页：维护产品与软件仓库的关联及当前产品下的发布设置。 */
-export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
+/** 项目仓库页：维护项目与软件仓库的关联及当前项目下的发布设置。 */
+export function ProjectComponentTab({ projectId }: ProjectComponentTabProps) {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [keyword, setKeyword] = useState('');
   const [componentModalOpen, setComponentModalOpen] = useState(false);
   const [repositoryModalOpen, setRepositoryModalOpen] = useState(false);
-  const [editingComponent, setEditingComponent] = useState<ProductComponent | null>(null);
+  const [editingComponent, setEditingComponent] = useState<ProjectComponent | null>(null);
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -34,24 +34,24 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
   const { canManage } = useProjectRole(project);
 
   const { data: components = [], isLoading, error } = useQuery({
-    queryKey: ['product-components', projectId],
+    queryKey: ['project-components', projectId],
     queryFn: () => projectApi.getComponents(projectId),
     enabled: !!projectId,
   });
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['product-components', projectId] });
-    queryClient.invalidateQueries({ queryKey: ['available-product-repositories', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['project-components', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['available-project-repositories', projectId] });
     queryClient.invalidateQueries({ queryKey: ['repositories'] });
     queryClient.invalidateQueries({ queryKey: ['project', projectId] });
   };
 
   const componentMutation = useMutation({
-    mutationFn: (values: Partial<ProductComponent>) => editingComponent
+    mutationFn: (values: Partial<ProjectComponent>) => editingComponent
       ? projectApi.updateComponent(projectId, editingComponent.id, values)
       : projectApi.createComponent(projectId, values),
     onSuccess: () => {
-      message.success(editingComponent ? '仓库设置已更新' : '仓库已关联到产品');
+      message.success(editingComponent ? '仓库设置已更新' : '仓库已关联到项目');
       setComponentModalOpen(false);
       setEditingComponent(null);
       refresh();
@@ -61,7 +61,7 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
   const removeMutation = useMutation({
     mutationFn: (id: string) => projectApi.deleteComponent(projectId, id),
     onSuccess: () => {
-      message.success('已从产品移除，仓库本身仍保留');
+      message.success('已从项目移除，仓库本身仍保留');
       refresh();
     },
   });
@@ -69,7 +69,7 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
   const createRepositoryMutation = useMutation({
     mutationFn: (values: Partial<Repository>) => repositoryApi.createRepository(values),
     onSuccess: () => {
-      message.success('仓库已登记，并自动加入当前产品');
+      message.success('仓库已登记，并自动加入当前项目');
       setRepositoryModalOpen(false);
       refresh();
     },
@@ -85,11 +85,11 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
     ));
   }, [components, keyword]);
 
-  const handleRemove = (component: ProductComponent) => {
+  const handleRemove = (component: ProjectComponent) => {
     const repositoryName = component.repository_detail.name;
     modal.confirm({
-      title: '从产品移除仓库',
-      content: `将解除「${repositoryName}」与当前产品的关联。仓库本身及其他产品中的设置不会被删除。`,
+      title: '从项目移除仓库',
+      content: `将解除「${repositoryName}」与当前项目的关联。仓库本身及其他项目中的设置不会被删除。`,
       okText: '确认移除',
       okType: 'danger',
       cancelText: '取消',
@@ -103,7 +103,7 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">软件仓库</h1>
           <p className="mt-1 text-[13px] text-slate-500">
-            维护当前产品使用的代码仓库。版本属于仓库，多个产品可以发布同一仓库；关联仓库前请先把仓库所有者加入产品成员。
+            维护当前项目使用的代码仓库。版本属于仓库，多个项目可以发布同一仓库；关联仓库前请先把仓库所有者加入项目成员。
           </p>
         </div>
         {canManage && (
@@ -188,11 +188,11 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
                     </StatusTag>
                     {component.owner_name && (
                       <div className="mt-1 truncate text-[10px] text-slate-400">
-                        所有者 {component.owner_name}{component.owner_in_product === false ? ' · 不在成员中' : ''}
+                        所有者 {component.owner_name}{component.owner_in_project === false ? ' · 不在成员中' : ''}
                       </div>
                     )}
                   </div>
-                  <div className="text-[12px] text-slate-500">{component.product_count} 个产品</div>
+                  <div className="text-[12px] text-slate-500">{component.project_count} 个项目</div>
                   <div className="flex justify-end gap-1">
                     <button type="button" title="查看仓库" onClick={() => navigate(`/repositories/${repository.id}`)} className="rounded-md p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">
                       <ExternalLink className="h-3.5 w-3.5" />
@@ -202,7 +202,7 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
                         <button type="button" title="编辑仓库设置" onClick={() => { setEditingComponent(component); setComponentModalOpen(true); }} className="rounded-md p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600">
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button type="button" title="从产品移除" onClick={() => handleRemove(component)} className="rounded-md p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                        <button type="button" title="从项目移除" onClick={() => handleRemove(component)} className="rounded-md p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </>
@@ -222,7 +222,7 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
                   </div>
                   <div className="mt-1 flex items-center gap-3 text-[11px] text-slate-400">
                     <span className="font-mono">{component.default_branch}</span>
-                    <span>{component.product_count} 个产品使用</span>
+                    <span>{component.project_count} 个项目使用</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                     <span>版本 {component.current_version || '尚未发布'}</span>
@@ -247,7 +247,7 @@ export function ProductComponentTab({ projectId }: ProductComponentTabProps) {
         </div>
       </div>
 
-      <ProductComponentModal
+      <ProjectComponentModal
         open={componentModalOpen}
         projectId={projectId}
         component={editingComponent}

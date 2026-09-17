@@ -160,7 +160,7 @@ export default function RepositoryList() {
           </div>
           <Select
             allowClear
-            placeholder="使用产品"
+            placeholder="使用项目"
             style={{ width: 176 }}
             value={project}
             onChange={(v: string | undefined) => { setProject(v); setPage(1); }}
@@ -172,7 +172,7 @@ export default function RepositoryList() {
         {/* 表头 */}
         <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div className="col-span-3">仓库名称</div>
-          <div className="col-span-2">使用产品</div>
+          <div className="col-span-2">使用项目</div>
           <div className="col-span-2">类型</div>
           <div className="col-span-2">默认分支</div>
           <div className="col-span-2">健康</div>
@@ -189,8 +189,8 @@ export default function RepositoryList() {
             results.map((record) => {
               const badge = repoTypeBadge(record);
               const health = healthDisplay(record.health_status);
-              const productNames = (record.used_by_products || []).map((item) => item.product_name);
-              const productText = productNames.length ? productNames.join('、') : '未关联产品';
+              const projectNames = (record.used_by_projects || []).map((item) => item.project_name);
+              const projectText = projectNames.length ? projectNames.join('、') : '未关联项目';
               return (
                 <div
                   key={record.id}
@@ -211,7 +211,7 @@ export default function RepositoryList() {
                       </div>
                     </div>
                     <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2">
-                      {productText}
+                      {projectText}
                     </div>
                     <div className="col-span-6 md:col-span-2">
                       <span className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium ${badge.cls}`}>
@@ -248,7 +248,7 @@ export default function RepositoryList() {
                       <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-slate-900">
                         {record.name}
                       </span>
-                      <span className="min-w-0 truncate text-[12px] text-slate-400">{productText}</span>
+                      <span className="min-w-0 truncate text-[12px] text-slate-400">{projectText}</span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                       <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />

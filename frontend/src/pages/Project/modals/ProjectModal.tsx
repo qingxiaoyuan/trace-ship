@@ -23,7 +23,7 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
       accountApi.getUsers({ page_size: 1000 }).then((res) => {
         setUsers(res.results || []);
       });
-      // 新增时产品负责人默认选中当前登录用户，可手动改选
+      // 新增时项目负责人默认选中当前登录用户，可手动改选
       if (!project && currentUser) {
         form.setFieldsValue({ leader_id: currentUser.id });
       }
@@ -44,8 +44,8 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
 
   return (
     <TsModal
-      title={project ? '编辑产品' : '新增产品'}
-      subtitle={project ? '修改产品的基本信息' : '创建产品以组合仓库、组织发布与打包'}
+      title={project ? '编辑项目' : '新增项目'}
+      subtitle={project ? '修改项目的基本信息' : '创建项目以组合仓库、组织发布与打包'}
       titleIcon={<Package className="h-[18px] w-[18px]" strokeWidth={1.5} />}
       open={open}
       onCancel={handleCancel}
@@ -65,20 +65,20 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
 
         <Form.Item
           name="name"
-          label="产品名称"
-          rules={[{ required: true, message: '请输入产品名称' }]}
+          label="项目名称"
+          rules={[{ required: true, message: '请输入项目名称' }]}
         >
-          <Input placeholder="请输入产品名称" />
+          <Input placeholder="请输入项目名称" />
         </Form.Item>
 
         <Form.Item
           name="leader_id"
-          label="产品负责人"
-          rules={[{ required: true, message: '请选择产品负责人' }]}
+          label="项目负责人"
+          rules={[{ required: true, message: '请选择项目负责人' }]}
         >
           <Select
             showSearch
-            placeholder="请选择产品负责人"
+            placeholder="请选择项目负责人"
             options={users.map((u) => ({ label: u.nickname || u.username, value: u.id }))}
             filterOption={(input, option) =>
               String(option?.label ?? '')
@@ -88,8 +88,8 @@ export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProp
           />
         </Form.Item>
 
-        <Form.Item name="description" label="产品描述">
-          <Input.TextArea rows={3} placeholder="请输入产品描述" />
+        <Form.Item name="description" label="项目描述">
+          <Input.TextArea rows={3} placeholder="请输入项目描述" />
         </Form.Item>
 
         <Form.Item name="status" label="状态" className="mb-0">

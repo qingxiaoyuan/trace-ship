@@ -137,7 +137,7 @@ export function ReleaseList() {
     <div className="tech-card overflow-hidden rounded-xl">
       <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
         <div className="col-span-2">版本</div>
-        <div className="col-span-3">产品 / 仓库</div>
+        <div className="col-span-3">项目 / 仓库</div>
         <div className="col-span-2">类型</div>
         <div className="col-span-2">发布人</div>
         <div className="col-span-2">状态</div>

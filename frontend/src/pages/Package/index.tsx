@@ -19,13 +19,13 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 
 /** 看板任务单页大小；历史任务可继续加载后续页 */
 const BOARD_TASK_PAGE_SIZE = 50;
-/** 侧栏「正在打包」跨产品实时任务条数 */
+/** 侧栏「正在打包」跨项目实时任务条数 */
 const SIDEBAR_TASK_PAGE_SIZE = 20;
 /** 后端统一分页器允许的最大单页条数 */
 const API_PAGE_SIZE = 100;
 /** 大日志首屏只加载末尾字节数 */
 const LOG_TAIL_BYTES = 256 * 1024;
-/** 打包看板「产品过滤」本地缓存 key（选择过产品后下次进入自动复用） */
+/** 打包看板「项目过滤」本地缓存 key（选择过项目后下次进入自动复用） */
 const PACKAGE_BOARD_PROJECT_KEY = 'trace-ship.package-board.project';
 
 type TabKey = 'builds' | 'configs';
@@ -50,7 +50,7 @@ export default function PackageTaskPage() {
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [triggerConfig, setTriggerConfig] = useState<PackageTriggerTarget | null>(null);
 
-  // 构建列表搜索 / 产品过滤（产品选择写入本地缓存，下次复用）
+  // 构建列表搜索 / 项目过滤（项目选择写入本地缓存，下次复用）
   const [taskKeyword, setTaskKeyword] = useState('');
   const [taskSearch, setTaskSearch] = useState('');
   const [filterProject, setFilterProject] = useState<string>(() => {
@@ -74,13 +74,13 @@ export default function PackageTaskPage() {
     queryFn: () => fetchAllPages((page, pageSize) => projectApi.getProjects({ page, page_size: pageSize }), API_PAGE_SIZE),
   });
 
-  // 打包配置全量加载：同时服务侧栏产品统计与配置面板（按产品在客户端过滤）
+  // 打包配置全量加载：同时服务侧栏项目统计与配置面板（按项目在客户端过滤）
   const { data: configsData, isLoading: configsLoading, error: configsError } = useQuery({
     queryKey: ['package-configs', 'board', 'all'],
     queryFn: () => fetchAllPages((page, pageSize) => packageApi.getConfigs({ page, page_size: pageSize }), API_PAGE_SIZE),
   });
 
-  // 侧栏「正在打包」：跨产品实时任务，5 秒轮询
+  // 侧栏「正在打包」：跨项目实时任务，5 秒轮询
   const { data: sidebarTasksData } = useQuery({
     queryKey: ['package-tasks', 'sidebar-running'],
     queryFn: () =>
@@ -152,7 +152,7 @@ export default function PackageTaskPage() {
   const configs = useMemo(() => configsData?.results || [], [configsData]);
   const sidebarTasks = useMemo(() => sidebarTasksData?.results || [], [sidebarTasksData]);
 
-  // 看板当前产品范围下的配置（侧栏选择产品后客户端过滤）
+  // 看板当前项目范围下的配置（侧栏选择项目后客户端过滤）
   const boardConfigs = useMemo(() => {
     if (!filterProject) return configs;
     return configs.filter((c) => (c.project_id || c.project) === filterProject);
@@ -342,7 +342,7 @@ export default function PackageTaskPage() {
     queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
   }, [queryClient]);
 
-  // 产品过滤：同时作用于构建列表与打包配置列表，选择结果写入本地缓存下次复用
+  // 项目过滤：同时作用于构建列表与打包配置列表，选择结果写入本地缓存下次复用
   const handleProjectChange = useCallback((value: string) => {
     setFilterProject(value);
     try {
@@ -528,7 +528,7 @@ export default function PackageTaskPage() {
             </div>
           </div>
 
-          {/* 左侧产品栏 + 右侧看板 */}
+          {/* 左侧项目栏 + 右侧看板 */}
           <div className="grid min-h-0 gap-5 lg:grid-cols-[288px_minmax(0,1fr)]">
             <BoardSidebar
               projects={projects}

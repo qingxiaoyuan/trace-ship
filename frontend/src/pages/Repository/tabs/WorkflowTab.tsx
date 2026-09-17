@@ -64,7 +64,7 @@ const FLOW_ORDER: FlowType[] = ['formal', 'rc', 'beta'];
 const APPROVER_META: Record<string, { label: string; icon: typeof Crown; cls: string }> = {
   repo_owner: { label: '仓库拥有者', icon: FolderGit2, cls: 'icon-indigo' },
   user: { label: '指定人员', icon: User, cls: 'icon-cyan' },
-  leader: { label: '产品负责人', icon: Crown, cls: 'icon-violet' },
+  leader: { label: '项目负责人', icon: Crown, cls: 'icon-violet' },
   role: { label: '指定角色', icon: ShieldCheck, cls: 'icon-indigo' },
   self: { label: '发起人自己', icon: UserCog, cls: 'icon-emerald' },
 };
@@ -83,7 +83,7 @@ const APPROVER_TYPE_OPTIONS = [
 const ROLE_LABELS: Record<string, string> = {
   developer: '开发人员',
   tester: '测试人员',
-  manager: '产品管理员',
+  manager: '项目管理员',
   auditor: '审核人',
   viewer: '只读人员',
 };
@@ -106,7 +106,7 @@ function approverDisplay(apr: WorkflowApproverConfig, usersData?: { results: { i
   if (apr.type === 'repo_owner') {
     sub = '系统自动解析为仓库创建者';
   } else if (apr.type === 'leader') {
-    sub = '系统自动解析为产品负责人';
+    sub = '系统自动解析为项目负责人';
   } else if (apr.type === 'self') {
     sub = '发起人自己 · self';
   } else if (apr.type === 'role') {

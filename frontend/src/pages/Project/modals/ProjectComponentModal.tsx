@@ -4,35 +4,35 @@ import { Button, Form, Input, Select, Switch } from 'antd';
 import { Boxes, GitBranch, Folder } from 'lucide-react';
 import { projectApi } from '@/api/project';
 import { TsModal } from '@/components/TsModal';
-import type { ProductComponent, Repository } from '@/types';
+import type { ProjectComponent, Repository } from '@/types';
 
-interface ProductComponentModalProps {
+interface ProjectComponentModalProps {
   open: boolean;
   projectId: string;
-  component: ProductComponent | null;
+  component: ProjectComponent | null;
   submitting?: boolean;
   onCancel: () => void;
-  onOk: (values: Partial<ProductComponent>) => void;
+  onOk: (values: Partial<ProjectComponent>) => void;
 }
 
-/** 维护“产品如何使用仓库”的配置，不编辑仓库地址或凭证。 */
-export function ProductComponentModal({
+/** 维护“项目如何使用仓库”的配置，不编辑仓库地址或凭证。 */
+export function ProjectComponentModal({
   open,
   projectId,
   component,
   submitting,
   onCancel,
   onOk,
-}: ProductComponentModalProps) {
+}: ProjectComponentModalProps) {
   const [form] = Form.useForm();
 
   const { data: availableRepositories, isLoading } = useQuery({
-    queryKey: ['available-product-repositories', projectId],
+    queryKey: ['available-project-repositories', projectId],
     queryFn: () => projectApi.getAvailableRepositories(projectId),
     enabled: open && !component,
   });
   const { data: linkedRepositories, isLoading: linkedRepositoriesLoading } = useQuery({
-    queryKey: ['product-components', projectId],
+    queryKey: ['project-components', projectId],
     queryFn: () => projectApi.getComponents(projectId),
     enabled: open && !component,
   });
@@ -76,10 +76,10 @@ export function ProductComponentModal({
       ?.filter((repository) => !linkedRepositoryIds.has(repository.id))
       .map((repository: Repository) => ({
         value: repository.id,
-        label: repository.owner_in_product === false
-          ? `${repository.name}（请先将所有者${repository.owner_name ? `「${repository.owner_name}」` : ''}加入产品成员）`
+        label: repository.owner_in_project === false
+          ? `${repository.name}（请先将所有者${repository.owner_name ? `「${repository.owner_name}」` : ''}加入项目成员）`
           : repository.name,
-        disabled: repository.owner_in_product === false,
+        disabled: repository.owner_in_project === false,
       }))
     ) || [];
 
@@ -90,7 +90,7 @@ export function ProductComponentModal({
   return (
     <TsModal
       title={component ? '编辑仓库设置' : '关联已有仓库'}
-      subtitle={component ? '调整该仓库在当前产品内的使用配置' : '将可复用的物理仓库组合进当前产品'}
+      subtitle={component ? '调整该仓库在当前项目内的使用配置' : '将可复用的物理仓库组合进当前项目'}
       titleIcon={<Boxes className="h-[18px] w-[18px]" strokeWidth={1.5} />}
       open={open}
       onCancel={onCancel}
@@ -121,7 +121,7 @@ export function ProductComponentModal({
           仓库信息
         </p>
         <p className="mb-3 text-[12px] leading-5 text-slate-400">
-          版本属于仓库本身，多个产品可以发布同一个仓库的版本；关联前必须先把仓库所有者加入当前产品成员，该仓库的个人凭证才会授权给本产品使用。
+          版本属于仓库本身，多个项目可以发布同一个仓库的版本；关联前必须先把仓库所有者加入当前项目成员，该仓库的个人凭证才会授权给本项目使用。
         </p>
         <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
           <Form.Item
@@ -151,9 +151,9 @@ export function ProductComponentModal({
 
         <div className="my-5 h-px bg-[#EDEFF7]" />
 
-        {/* 当前产品设置 */}
+        {/* 当前项目设置 */}
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-          当前产品设置
+          当前项目设置
         </p>
         <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
           <Form.Item name="source_subdir" label="源码子目录" className="mb-0">
@@ -166,7 +166,7 @@ export function ProductComponentModal({
           <div className="flex items-center justify-between rounded-lg bg-[#FAFBFE] px-3.5 py-2 ring-1 ring-[#EDEFF7]">
             <div>
               <p className="text-[13px] font-medium text-slate-700">启用关联</p>
-              <p className="text-[11px] text-slate-400">停用后当前产品不可再用该仓库发布与打包</p>
+              <p className="text-[11px] text-slate-400">停用后当前项目不可再用该仓库发布与打包</p>
             </div>
             <Form.Item name="is_active" valuePropName="checked" className="mb-0" noStyle>
               <Switch />

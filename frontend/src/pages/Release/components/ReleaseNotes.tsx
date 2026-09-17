@@ -44,7 +44,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
   const hasDoc = !!mdContent.trim();
   const rows = parseMdTable(mdContent);
 
-  // 生成/修改发布说明需 developer 及以上产品角色
+  // 生成/修改发布说明需 developer 及以上项目角色
   const { data: project } = useQuery({
     queryKey: ['project', release.project || release.project_id],
     queryFn: () => projectApi.getProject(release.project || release.project_id || ''),
@@ -150,7 +150,7 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
             </Button>
           </div>
         ) : (
-          <p className="mt-3 text-[12px] text-slate-400">仅产品开发或管理员可生成发布说明</p>
+          <p className="mt-3 text-[12px] text-slate-400">仅项目开发或管理员可生成发布说明</p>
         )}
         <Modal
           title="修改发布说明"

@@ -16,7 +16,7 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { TsModal } from '@/components/TsModal';
 
 const roleMap: Record<ProjectMemberRole, string> = {
-  manager: '产品负责人',
+  manager: '项目负责人',
   tester: '测试人员',
   developer: '开发工程师',
   auditor: '审核人',
@@ -40,11 +40,11 @@ function parseUserLabel(label: unknown) {
 
 /** 角色卡片上的权限说明 */
 const roleDescMap: Record<ProjectMemberRole, string> = {
-  manager: '管理产品成员、仓库与全部设置',
+  manager: '管理项目成员、仓库与全部设置',
   developer: '可同步提交、发起发布申请与打包任务',
   tester: '可查看发布与打包记录，参与测试验证',
   auditor: '可处理审批任务，不可发起发布',
-  viewer: '仅可查看产品与发布信息',
+  viewer: '仅可查看项目与发布信息',
   software_admin: '等同项目内全部权限',
 };
 
@@ -122,7 +122,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
     enabled: !!projectId,
   });
 
-  // 任意产品成员均可拉人（可授予角色按当前用户角色收缩）；改角色/移除仅产品管理员
+  // 任意项目成员均可拉人（可授予角色按当前用户角色收缩）；改角色/移除仅项目管理员
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
@@ -143,7 +143,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
     onSuccess: (result) => {
       message.success(
         result.skipped > 0
-          ? `已添加 ${result.created.length} 位成员，${result.skipped} 位已在产品中自动跳过`
+          ? `已添加 ${result.created.length} 位成员，${result.skipped} 位已在项目中自动跳过`
           : '添加成功'
       );
       setIsModalOpen(false);
@@ -189,7 +189,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
   );
 
   const userOptions = useMemo(() => {
-    // 过滤掉已在产品中的用户与已停用用户，避免重复添加、避免拉入停用账号
+    // 过滤掉已在项目中的用户与已停用用户，避免重复添加、避免拉入停用账号
     const existingIds = new Set((data?.results || []).map((m) => String(m.user_id)));
     return (usersData?.results || [])
       .filter((u: AccountUser) => u.is_active !== false && !existingIds.has(String(u.id)))
@@ -215,11 +215,11 @@ export function MemberTab({ projectId }: MemberTabProps) {
     <div className="space-y-5 page-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">产品成员</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">项目成员</h1>
           <p className="mt-1 text-[13px] text-slate-500">
             {canManage
-              ? '管理产品成员、角色与权限'
-              : '产品成员与角色（可添加成员，角色调整仅产品管理员）'}
+              ? '管理项目成员、角色与权限'
+              : '项目成员与角色（可添加成员，角色调整仅项目管理员）'}
           </p>
         </div>
         {canAddMember && (
@@ -381,7 +381,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
 
       <TsModal
         title="添加成员"
-        subtitle="将成员加入产品并授予角色"
+        subtitle="将成员加入项目并授予角色"
         titleIcon={<UserPlus className="h-[18px] w-[18px]" strokeWidth={1.5} />}
         open={isModalOpen}
         onCancel={() => {

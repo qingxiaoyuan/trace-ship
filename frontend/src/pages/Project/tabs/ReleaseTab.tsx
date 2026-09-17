@@ -12,7 +12,7 @@ import {
 } from '@/components/RepositoryTreeTable';
 import { StatusTag, type StatusType } from '@/components/StatusTag';
 import { getAvatarColor } from '@/utils/avatar';
-import type { ProductComponent, Release } from '@/types';
+import type { ProjectComponent, Release } from '@/types';
 
 const typeDisplay: Record<string, { status: StatusType; text: string }> = {
   formal: { status: 'indigo', text: '正式' },
@@ -28,7 +28,7 @@ const mobileTypeBadge: Record<string, string> = {
 };
 
 const emptyReleases: Release[] = [];
-const emptyProductComponents: ProductComponent[] = [];
+const emptyProjectComponents: ProjectComponent[] = [];
 
 interface ReleaseGroupMeta {
   currentVersion: string;
@@ -36,7 +36,7 @@ interface ReleaseGroupMeta {
 }
 
 interface ReleaseTabProps {
-  /** 产品维度过滤（产品详情页使用） */
+  /** 项目维度过滤（项目详情页使用） */
   projectId?: string;
   /** 仓库维度过滤（仓库详情页「发布版本」Tab 使用） */
   repositoryId?: string;
@@ -176,7 +176,7 @@ function renderMobileRelease(item: Release) {
 
 function buildReleaseGroups(
   releases: Release[],
-  components: ProductComponent[],
+  components: ProjectComponent[],
 ): RepositoryTreeGroup<Release, ReleaseGroupMeta>[] {
   const releasesByRepository = new Map<string, Release[]>();
   releases.forEach((release) => {
@@ -296,13 +296,13 @@ export function ReleaseTab({ projectId, repositoryId }: ReleaseTabProps) {
     enabled: !!(projectId || repositoryId),
   });
   const { data: componentData, isLoading: componentsLoading } = useQuery({
-    queryKey: ['product-components', projectId],
+    queryKey: ['project-components', projectId],
     queryFn: () => projectApi.getComponents(projectId || ''),
     enabled: !!projectId,
   });
 
   const releases = data?.results || emptyReleases;
-  const components = componentData || emptyProductComponents;
+  const components = componentData || emptyProjectComponents;
   const groups = useMemo(
     () => buildReleaseGroups(releases, components),
     [components, releases],

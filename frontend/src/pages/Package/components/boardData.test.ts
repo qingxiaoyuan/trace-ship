@@ -22,8 +22,8 @@ const task = (overrides: Partial<PackageTask>): PackageTask => ({
 
 const config = (overrides: Partial<PackageConfig>): PackageConfig => ({
   id: 'config-1',
-  project: 'project-1',
-  repository: 'repo-1',
+  project_id: 'project-1',
+  repository_id: 'repo-1',
   name: '配置',
   is_active: true,
   created_at: '2026-09-11T10:00:00Z',
@@ -72,12 +72,22 @@ describe('仓库分组', () => {
 
   it('含收藏的仓库优先，且收藏配置在组内优先', () => {
     const groups = groupConfigsByRepository([
-      config({ id: 'plain-a', repository: 'repo-a', repository_name: 'A' }),
-      config({ id: 'plain-b', repository: 'repo-b', repository_name: 'B' }),
-      config({ id: 'favorite-b', repository: 'repo-b', repository_name: 'B', is_favorite: true }),
+      config({ id: 'plain-a', repository_id: 'repo-a', repository_name: 'A' }),
+      config({ id: 'plain-b', repository_id: 'repo-b', repository_name: 'B' }),
+      config({ id: 'favorite-b', repository_id: 'repo-b', repository_name: 'B', is_favorite: true }),
     ]);
 
     expect(groups.map((group) => group.repositoryId)).toEqual(['repo-b', 'repo-a']);
     expect(groups[0].configs.map((item) => item.id)).toEqual(['favorite-b', 'plain-b']);
+  });
+
+  it('缺少 repository_id 的配置被静默丢弃，不参与分组', () => {
+    const groups = groupConfigsByRepository([
+      config({ id: 'normal', repository_id: 'repo-a', repository_name: 'A' }),
+      config({ id: 'orphan', repository_id: undefined }),
+    ]);
+
+    expect(groups.map((group) => group.repositoryId)).toEqual(['repo-a']);
+    expect(groups[0].configs.map((item) => item.id)).toEqual(['normal']);
   });
 });

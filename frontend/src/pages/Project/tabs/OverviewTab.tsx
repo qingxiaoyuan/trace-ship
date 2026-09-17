@@ -5,11 +5,11 @@ interface OverviewTabProps {
   project: Project;
 }
 
-/** 产品基本信息 Tab：左侧字段 + 右侧描述卡 */
+/** 项目基本信息 Tab：左侧字段 + 右侧描述卡 */
 export function OverviewTab({ project }: OverviewTabProps) {
   const rows = [
-    { label: '产品编码', value: project.code || '-', mono: true },
-    { label: '产品负责人', value: project.leader_name || '-' },
+    { label: '项目编码', value: project.code || '-', mono: true },
+    { label: '项目负责人', value: project.leader_name || '-' },
     { label: '创建时间', value: project.created_at?.split('T')[0] || '-' },
   ];
 
@@ -34,7 +34,7 @@ export function OverviewTab({ project }: OverviewTabProps) {
       <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
         <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-indigo-700">
           <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
-          产品描述
+          项目描述
         </div>
         <p className="text-[13px] leading-relaxed text-slate-600">
           {project.description || '暂无描述'}

@@ -14,7 +14,7 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { OverviewTab } from './tabs/OverviewTab';
-import { ProductComponentTab } from './tabs/ProductComponentTab';
+import { ProjectComponentTab } from './tabs/ProjectComponentTab';
 import { MemberTab } from './tabs/MemberTab';
 import { ReleaseTab } from './tabs/ReleaseTab';
 import { PackageTab } from './tabs/PackageTab';
@@ -40,7 +40,7 @@ const headerStats = [
   { key: 'release_count', label: '累计发布', icon: Rocket, color: 'text-emerald-500' },
 ] as const;
 
-/** 产品状态徽标 */
+/** 项目状态徽标 */
 function StatusBadge({ status }: { status: ProjectStatus }) {
   const active = status === 1 || status === 'active';
   return (
@@ -90,9 +90,9 @@ export default function ProjectDetail() {
   if (!project) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <Empty description="产品不存在" />
+        <Empty description="项目不存在" />
         <Button type="primary" className="mt-4" onClick={() => navigate('/projects')}>
-          返回产品列表
+          返回项目列表
         </Button>
       </div>
     );
@@ -107,7 +107,7 @@ export default function ProjectDetail() {
           onClick={() => navigate('/projects')}
           className="text-slate-400 transition-colors hover:text-indigo-600"
         >
-          产品
+          项目
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
         <span className="font-medium text-slate-800">{project.name}</span>
@@ -185,7 +185,7 @@ export default function ProjectDetail() {
         </div>
         <div className="p-5">
           {activeTab === 'overview' && <OverviewTab project={project} />}
-          {activeTab === 'repos' && <ProductComponentTab projectId={id || ''} />}
+          {activeTab === 'repos' && <ProjectComponentTab projectId={id || ''} />}
           {activeTab === 'members' && <MemberTab projectId={id || ''} />}
           {activeTab === 'packages' && <PackageTab projectId={id || ''} />}
           {activeTab === 'svn' && <SvnArtifactsTab projectId={id || ''} />}

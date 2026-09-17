@@ -76,11 +76,11 @@ export interface Project {
   created_at: string;
   version_rule?: unknown;
   release_rule?: unknown;
-  /** 当前用户在该产品的成员角色（详情接口返回，超管为 manager，非成员为 null） */
+  /** 当前用户在该项目的成员角色（详情接口返回，超管为 manager，非成员为 null） */
   my_role?: 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin' | null;
 }
 
-/** 产品统计聚合数据（/projects/stats/） */
+/** 项目统计聚合数据（/projects/stats/） */
 export interface ProjectStats {
   total: number;
   active_count: number;
@@ -551,14 +551,16 @@ export interface PackageNodeTestResult {
 
 export interface PackageConfig {
   id: string;
-  project: string;
+  /** 仅表单写入用（项目下拉联动），响应不返回；读取归属用 project_id */
+  project?: string;
   project_id?: string;
   project_name?: string;
-  repository: string;
+  /** 仅表单写入用（组件联动），响应不返回；读取归属用 repository_id */
+  repository?: string;
   repository_id?: string;
   repository_name?: string;
-  product_component?: string | null;
-  product_component_name?: string;
+  project_component?: string | null;
+  project_component_name?: string;
   name: string;
   executor_type?: 'local_docker' | 'remote_node';
   executor_type_display?: string;
@@ -604,7 +606,7 @@ export interface PackageConfig {
   clone_submodules?: boolean;
   /** 注入 Git 凭证到构建环境，打包脚本可自行 git push（凭证对脚本可见） */
   inject_git_credential?: boolean;
-  /** 当前用户在配置所属产品中的角色（超管返回 software_admin），用于控制配置编辑入口 */
+  /** 当前用户在配置所属项目中的角色（超管返回 software_admin），用于控制配置编辑入口 */
   my_role?: string | null;
   /** 当前用户是否已收藏该配置 */
   is_favorite?: boolean;
@@ -759,8 +761,8 @@ export interface RepositoryCredentialLoan {
   credential_name?: string;
   lender: string;
   lender_name?: string;
-  allowed_products: string[];
-  allowed_product_names?: string[];
+  allowed_projects: string[];
+  allowed_project_names?: string[];
   permission_scope: Array<'read' | 'create_tag' | 'delete_tag'>;
   expires_at?: string | null;
   is_active: boolean;
@@ -774,7 +776,7 @@ export interface CredentialUsageLog {
   id: string;
   actor_name?: string;
   lender_name?: string;
-  product_name?: string;
+  project_name?: string;
   repository_name?: string;
   component_name?: string;
   operation: string;
@@ -785,9 +787,9 @@ export interface CredentialUsageLog {
 
 export interface Repository {
   id: string;
+  /** 仅创建时 write-only 传入；响应不再返回 project / project_name */
   project?: string;
   project_id?: string;
-  project_name?: string;
   repo_type: 'git' | 'svn';
   vendor: string;
   name: string;
@@ -804,24 +806,24 @@ export interface Repository {
   health_status: 'healthy' | 'unhealthy' | 'unknown';
   last_sync_at?: string;
   created_at: string;
-  /** 被多少个产品引用 */
-  product_count?: number;
-  used_by_products?: Array<{
-    product_id: string;
-    product_name: string;
+  /** 被多少个项目引用 */
+  project_count?: number;
+  used_by_projects?: Array<{
+    project_id: string;
+    project_name: string;
     component_id: string;
     component_code: string;
     component_name: string;
   }>;
-  credential_loans?: ProductComponent['credential_loans'];
+  credential_loans?: ProjectComponent['credential_loans'];
   created_by?: string | null;
   created_by_name?: string;
   owner_name?: string;
-  owner_in_product?: boolean | null;
+  owner_in_project?: boolean | null;
 }
 
-/** 产品与软件仓库的关联，以及该仓库在当前产品下的设置 */
-export interface ProductComponent {
+/** 项目与软件仓库的关联，以及该仓库在当前项目下的设置 */
+export interface ProjectComponent {
   id: string;
   project: string;
   repository: string;
@@ -834,16 +836,16 @@ export interface ProductComponent {
   version_scope: 'repository' | 'product_component';
   version_scope_display?: string;
   tag_namespace: string;
-  product_config: Record<string, unknown>;
+  project_config: Record<string, unknown>;
   sort_order: number;
   is_active: boolean;
-  product_count: number;
+  project_count: number;
   current_version?: string;
   current_tag?: string;
   package_configs?: Array<{ id: string; name: string; is_active: boolean }>;
   credential_status?: 'available' | 'expiring' | 'unavailable';
   owner_name?: string;
-  owner_in_product?: boolean;
+  owner_in_project?: boolean;
   credential_loans?: Array<{
     id: string;
     credential_name: string;

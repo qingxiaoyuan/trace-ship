@@ -1,7 +1,7 @@
 import { get, post, put, patch, del } from './request';
 import type {
   PaginatedData,
-  ProductComponent,
+  ProjectComponent,
   Project,
   ProjectStats,
   ProjectStatus,
@@ -42,15 +42,15 @@ export const projectApi = {
     patch<Project>(`/projects/${id}/`, data),
   deleteProject: (id: string) => del<null>(`/projects/${id}/`),
   getComponents: (projectId: string) =>
-    get<ProductComponent[]>(`/projects/${projectId}/components/`),
+    get<ProjectComponent[]>(`/projects/${projectId}/components/`),
   getAvailableRepositories: (projectId: string, search?: string) =>
     get<Repository[]>(`/projects/${projectId}/components/available/`, {
       params: search ? { search } : undefined,
     }),
-  createComponent: (projectId: string, data: Partial<ProductComponent>) =>
-    post<ProductComponent>(`/projects/${projectId}/components/`, data),
-  updateComponent: (projectId: string, id: string, data: Partial<ProductComponent>) =>
-    patch<ProductComponent>(`/projects/${projectId}/components/${id}/`, data),
+  createComponent: (projectId: string, data: Partial<ProjectComponent>) =>
+    post<ProjectComponent>(`/projects/${projectId}/components/`, data),
+  updateComponent: (projectId: string, id: string, data: Partial<ProjectComponent>) =>
+    patch<ProjectComponent>(`/projects/${projectId}/components/${id}/`, data),
   deleteComponent: (projectId: string, id: string) =>
     del<null>(`/projects/${projectId}/components/${id}/`),
   getComponentBranches: (projectId: string, id: string, credentialLoan?: string) =>

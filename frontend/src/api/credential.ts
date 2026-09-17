@@ -31,9 +31,9 @@ export const credentialApi = {
   getTypes: () => get<{ value: CredentialType; label: string }[]>('/credentials/types/'),
   getLoans: (params?: Record<string, unknown>) =>
     get<PaginatedData<RepositoryCredentialLoan>>('/credentials/loans/', { params }),
-  getAvailableLoans: (repository: string, product: string, operation = 'read') =>
+  getAvailableLoans: (repository: string, project: string, operation = 'read') =>
     get<RepositoryCredentialLoan[]>('/credentials/loans/available/', {
-      params: { repository, product, operation },
+      params: { repository, project, operation },
     }),
   createLoan: (data: Partial<RepositoryCredentialLoan>) =>
     post<RepositoryCredentialLoan>('/credentials/loans/', data),

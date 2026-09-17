@@ -61,7 +61,7 @@ export function RepositoryModal({
     [credentialData],
   );
 
-  // 可选凭证变化后，若已选凭证不在新列表中则清空（切换来源/平台/产品或编辑回填不匹配时）
+  // 可选凭证变化后，若已选凭证不在新列表中则清空（切换来源/平台/项目或编辑回填不匹配时）
   useEffect(() => {
     const currentId = form.getFieldValue("credential_id");
     if (currentId && !credentialOptions.some((c) => c.value === currentId)) {
@@ -162,7 +162,7 @@ export function RepositoryModal({
         </p>
         <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
           {projectId ? (
-            <Form.Item label="创建后关联产品" className="mb-0">
+            <Form.Item label="创建后关联项目" className="mb-0">
               <Input
                 value={
                   projectOptions.find((p) => p.value === projectId)?.label ||

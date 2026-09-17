@@ -135,7 +135,7 @@ export default function CredentialDetail() {
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: "info", label: "凭证信息" },
-    { key: "loans", label: "产品授权" },
+    { key: "loans", label: "项目授权" },
     { key: "usage", label: "使用记录" },
     { key: "resources", label: "关联资源" },
   ];
@@ -390,7 +390,7 @@ export default function CredentialDetail() {
                       </div>
                       <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium text-slate-900 truncate">
-                    {record.product_name || "兼容流程"} · {record.operation}
+                    {record.project_name || "兼容流程"} · {record.operation}
                   </div>
                   <div className="text-[11px] text-slate-400 truncate">
                     {record.repository_name || credential.name}
@@ -419,7 +419,7 @@ export default function CredentialDetail() {
           {activeTab === "loans" && (
             <div className="space-y-3">
               <p className="text-[12px] leading-5 text-slate-500">
-                产品使用本凭证的方式是：仓库所有者加入该产品成员，再把绑定了本凭证的仓库关联进产品。多个产品都可以对同一仓库发版本。
+                项目使用本凭证的方式是：仓库所有者加入该项目成员，再把绑定了本凭证的仓库关联进项目。多个项目都可以对同一仓库发版本。
               </p>
               {relatedRepos.length === 0 ? (
                 <div className="rounded-lg bg-slate-50 p-4 text-center text-[13px] text-slate-400">
@@ -431,9 +431,9 @@ export default function CredentialDetail() {
                     <div key={repo.id} className="rounded-lg border border-indigo-100 p-3 text-[12px]">
                       <div className="font-medium text-slate-800">{repo.name}</div>
                       <div className="mt-1 text-slate-500">
-                        {(repo.used_by_products || []).length
-                          ? `已授权产品：${(repo.used_by_products || []).map((item) => item.product_name).join("、")}`
-                          : "尚未被任何产品关联"}
+                        {(repo.used_by_projects || []).length
+                          ? `已授权项目：${(repo.used_by_projects || []).map((item) => item.project_name).join("、")}`
+                          : "尚未被任何项目关联"}
                       </div>
                     </div>
                   ))}
@@ -458,7 +458,7 @@ export default function CredentialDetail() {
                       {repo.name}
                     </div>
                     <div className="text-[11px] text-slate-400 truncate">
-                      代码仓库 · {repo.project_name || '-'}
+                      代码仓库 · {(repo.used_by_projects || []).map((item) => item.project_name).join("、") || "未关联项目"}
                     </div>
                   </div>
                 </div>

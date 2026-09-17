@@ -145,7 +145,7 @@ export default function RepositoryDetail() {
                 <span className={`rounded border px-1 py-0.5 font-mono ${badge.cls}`}>{badge.text}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span>
-                  {(repo.used_by_products || []).map((item) => item.product_name).join('、') || '未关联产品'}
+                  {(repo.used_by_projects || []).map((item) => item.project_name).join('、') || '未关联项目'}
                 </span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <a

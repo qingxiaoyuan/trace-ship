@@ -16,7 +16,7 @@ import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages
 interface PackageConfigModalProps {
   open: boolean;
   editing: PackageConfig | null;
-  /** 产品内录入时传入：固定产品并隐藏产品选择 */
+  /** 项目内录入时传入：固定项目并隐藏项目选择 */
   fixedProjectId?: string;
   /** 只读查看（无配置维护权限时字段不可编辑，仅供查看模仿） */
   readOnly?: boolean;
@@ -121,7 +121,7 @@ function ToggleCard({ title, desc, name, disabled, disabledHint }: ToggleCardPro
   );
 }
 
-/** 打包配置弹窗（打包看板与产品内录入共用） */
+/** 打包配置弹窗（打包看板与项目内录入共用） */
 export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, onClose }: PackageConfigModalProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -145,7 +145,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     enabled: open && !fixedProjectId,
   });
 
-  // 产品内录入时：所属产品只读展示，需要产品名称
+  // 项目内录入时：所属项目只读展示，需要项目名称
   const { data: fixedProject } = useQuery({
     queryKey: ['package-modal-project', fixedProjectId],
     queryFn: () => projectApi.getProject(fixedProjectId as string),
@@ -205,7 +205,9 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     if (editing) {
       form.setFieldsValue({
         ...editing,
-        project: fixedProjectId ?? editing.project,
+        project: fixedProjectId ?? editing.project_id,
+        // 响应无裸 repository 字段，回填 repository_id 供仓库下拉与 AI 生成参数使用
+        repository: editing.repository_id,
         image_ref: editing.image_ref || undefined,
       });
     } else {
@@ -233,15 +235,17 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   }, [editing, form, open, fixedProjectId]);
 
   useEffect(() => {
-    if (!open || !editing || editing.product_component || !componentsData?.length) return;
-    const matches = componentsData.filter((item) => item.repository === editing.repository);
-    if (matches.length === 1) form.setFieldValue('product_component', matches[0].id);
+    if (!open || !editing || editing.project_component || !componentsData?.length) return;
+    const matches = componentsData.filter((item) => item.repository === editing.repository_id);
+    if (matches.length === 1) form.setFieldValue('project_component', matches[0].id);
   }, [componentsData, editing, form, open]);
 
   const saveMutation = useMutation({
     mutationFn: (values: Partial<PackageConfig>) => {
       const payload: Partial<PackageConfig> = { ...values };
-      if (fixedProjectId) payload.project = fixedProjectId;
+      // 后端打包配置写字段仅接受 project_component，project/repository 只作表单联动，不下发
+      delete payload.project;
+      delete payload.repository;
       if (payload.executor_type === 'remote_node') {
         // 远程节点不使用镜像；清理本地镜像字段避免后端校验冲突
         payload.image = null;
@@ -269,7 +273,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     },
   });
 
-  // 打包配置仅产品管理员 / 软件管理员可维护：产品下拉只列出可管理的产品（超管放行）
+  // 打包配置仅项目管理员 / 软件管理员可维护：项目下拉只列出可管理的项目（超管放行）
   const projectOptions = useMemo(
     () =>
       (projectsData?.results || [])
@@ -312,7 +316,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     const project = fixedProjectId ?? values.project;
     const repository = values.repository;
     if (!project || !repository) {
-      throw new Error('请先选择产品与关联仓库');
+      throw new Error('请先选择项目与关联仓库');
     }
     const ref = values.image_ref;
     const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
@@ -382,7 +386,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             </div>
             <div className="text-[11px] font-normal text-slate-400">
               {readOnly
-                ? '仅产品管理员或软件管理员可修改，当前为只读查看'
+                ? '仅项目管理员或软件管理员可修改，当前为只读查看'
                 : editing
                   ? `${editing.name} / ${editing.project_name || '-'}`
                   : '配置发布成功后的打包流程'}
@@ -453,21 +457,21 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             {!fixedProjectId ? (
               <Form.Item
                 name="project"
-                label={<FieldLabel text="所属产品" required />}
-                rules={[{ required: true, message: '请选择产品' }]}
+                label={<FieldLabel text="所属项目" required />}
+                rules={[{ required: true, message: '请选择项目' }]}
                 className="mb-0"
-                extra={<p className="mb-0 mt-1 text-[11px] text-slate-400">仅列出你是产品管理员或软件管理员的产品</p>}
+                extra={<p className="mb-0 mt-1 text-[11px] text-slate-400">仅列出你是项目管理员或软件管理员的项目</p>}
               >
                 <Select
                   options={projectOptions}
-                  placeholder="选择产品"
+                  placeholder="选择项目"
                   showSearch
                   optionFilterProp="label"
                   suffixIcon={<ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
                 />
               </Form.Item>
             ) : (
-              <Form.Item label={<FieldLabel text="所属产品" />} className="mb-0">
+              <Form.Item label={<FieldLabel text="所属项目" />} className="mb-0">
                 <Input value={fixedProjectName} disabled className={inputCls} />
               </Form.Item>
             )}
@@ -480,14 +484,14 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
 
           <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
             <Form.Item
-              name="product_component"
+              name="project_component"
               label={<FieldLabel text="软件仓库" required />}
               rules={[{ required: true, message: '请选择软件仓库' }]}
               className="mb-0"
             >
               <Select
                 options={componentOptions}
-                placeholder={projectId ? '选择软件仓库' : '请先选择产品'}
+                placeholder={projectId ? '选择软件仓库' : '请先选择项目'}
                 disabled={!projectId}
                 showSearch
                 optionFilterProp="label"
@@ -683,7 +687,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                 >
                   <Select
                     options={svnCredentialOptions}
-                    placeholder={projectId ? '选择 SVN 凭证' : '请先选择产品'}
+                    placeholder={projectId ? '选择 SVN 凭证' : '请先选择项目'}
                     disabled={!projectId}
                     showSearch
                     optionFilterProp="label"

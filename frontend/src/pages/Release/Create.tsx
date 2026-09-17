@@ -97,8 +97,8 @@ export default function ReleaseCreate() {
     enabled: !projectIdFromQuery,
   });
 
-  const { data: productComponents = [], isLoading: reposLoading } = useQuery({
-    queryKey: ['product-components', watchProject],
+  const { data: projectComponents = [], isLoading: reposLoading } = useQuery({
+    queryKey: ['project-components', watchProject],
     queryFn: () => projectApi.getComponents(watchProject || ''),
     enabled: !!watchProject,
   });
@@ -205,13 +205,13 @@ export default function ReleaseCreate() {
     [projectData]
   );
   const repoOptions = useMemo(
-    () => (productComponents || [])
+    () => (projectComponents || [])
       .filter((item) => item.is_active)
       .map((item) => ({
         label: item.repository_detail?.name || item.display_name,
         value: item.repository,
       })),
-    [productComponents],
+    [projectComponents],
   );
   const branchOptions = useMemo(
     () => (branches || []).map((b) => ({ label: b.name, value: b.name })),
@@ -294,7 +294,7 @@ export default function ReleaseCreate() {
     form.setFieldsValue({ repository: undefined, branch: undefined });
   };
   const handleRepoChange = (repositoryId?: unknown) => {
-    const component = productComponents.find((item) => item.repository === repositoryId);
+    const component = projectComponents.find((item) => item.repository === repositoryId);
     form.setFieldsValue({ branch: component?.default_branch || undefined });
     // 切换仓库后重置发布后自动打包勾选（null 表示默认全选）
     setAutoPackageConfigIds(null);
@@ -334,7 +334,7 @@ export default function ReleaseCreate() {
         </button>
         <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">创建发布</h1>
         <p className="mt-1 text-[13px] text-slate-500">
-          选择产品与一个已关联仓库。版本和 Tag 属于仓库本身，多个产品发布的是同一套仓库版本。
+          选择项目与一个已关联仓库。版本和 Tag 属于仓库本身，多个项目发布的是同一套仓库版本。
         </p>
       </div>
 
@@ -390,15 +390,15 @@ export default function ReleaseCreate() {
               <h3 className="text-[14px] font-semibold text-slate-900">基础配置</h3>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Form.Item name="project" label="产品" rules={[{ required: true, message: '请选择产品' }]}>
+              <Form.Item name="project" label="项目" rules={[{ required: true, message: '请选择项目' }]}>
                 <SelectField
                   icon={<FolderKanban className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
-                  placeholder="选择产品"
+                  placeholder="选择项目"
                   loading={projectsLoading}
                   options={projectOptions}
                   onChange={handleProjectChange}
                   disabled={!!projectIdFromQuery}
-                  hint="只有你参与的产品才会显示"
+                  hint="只有你参与的项目才会显示"
                 />
               </Form.Item>
               <Form.Item name="repository" label="目标仓库" rules={[{ required: true, message: '请选择仓库' }]}>
@@ -408,7 +408,7 @@ export default function ReleaseCreate() {
                   loading={reposLoading}
                   options={repoOptions}
                   onChange={handleRepoChange}
-                  hint="仅列出当前产品已关联且启用的仓库；Tag 推送到该仓库"
+                  hint="仅列出当前项目已关联且启用的仓库；Tag 推送到该仓库"
                 />
               </Form.Item>
             </div>

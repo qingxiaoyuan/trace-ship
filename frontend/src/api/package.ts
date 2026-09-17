@@ -30,6 +30,8 @@ export interface PackageImageListParams {
 export interface PackageConfigListParams {
   project?: string;
   repository?: string;
+  /** 项目组件过滤（后端 project_component 参数） */
+  project_component?: string;
   is_active?: boolean;
   auto_package_on_release?: boolean;
   page?: number;

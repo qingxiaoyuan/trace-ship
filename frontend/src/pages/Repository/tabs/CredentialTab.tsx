@@ -77,17 +77,17 @@ export function CredentialTab({ repo }: CredentialTabProps) {
             <ShieldCheck className="h-4 w-4" strokeWidth={1.5} />
           </div>
           <div>
-            <h4 className="text-[14px] font-semibold text-slate-900">授权给哪些产品</h4>
-            <p className="text-[11px] text-slate-400">仓库所有者加入产品成员后，该产品即可使用本仓库凭证发版本。不展示凭证明文。</p>
+            <h4 className="text-[14px] font-semibold text-slate-900">授权给哪些项目</h4>
+            <p className="text-[11px] text-slate-400">仓库所有者加入项目成员后，该项目即可使用本仓库凭证发版本。不展示凭证明文。</p>
           </div>
         </div>
-        {!repo.used_by_products?.length ? (
-          <div className="rounded-lg bg-amber-50 p-3 text-[12px] text-amber-700">尚未被任何产品关联</div>
+        {!repo.used_by_projects?.length ? (
+          <div className="rounded-lg bg-amber-50 p-3 text-[12px] text-amber-700">尚未被任何项目关联</div>
         ) : (
           <div className="space-y-2">
-            {repo.used_by_products.map((item) => (
+            {repo.used_by_projects.map((item) => (
               <div key={item.component_id} className="flex items-center justify-between rounded-lg border border-slate-100 p-3 text-[12px]">
-                <span className="font-medium text-slate-800">{item.product_name}</span>
+                <span className="font-medium text-slate-800">{item.project_name}</span>
                 <span className="text-slate-400">{item.component_name}</span>
               </div>
             ))}

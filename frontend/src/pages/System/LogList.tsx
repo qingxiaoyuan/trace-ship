@@ -84,7 +84,7 @@ const moduleOptions = [
   { key: 'workflow', label: '工作流' },
   { key: 'package', label: '打包' },
   { key: 'credential', label: '凭证' },
-  { key: 'project', label: '产品' },
+  { key: 'project', label: '项目' },
   { key: 'repository', label: '仓库' },
   { key: 'system', label: '系统' },
 ];

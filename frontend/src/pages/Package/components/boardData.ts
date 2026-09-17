@@ -55,7 +55,8 @@ export function groupConfigsByRepository(configs: PackageConfig[]): ConfigReposi
   >();
 
   configs.forEach((config, index) => {
-    const repositoryId = config.repository_id || config.repository;
+    const repositoryId = config.repository_id;
+    if (!repositoryId) return;
     const existing = map.get(repositoryId);
     if (existing) {
       existing.configs.push(config);
@@ -94,7 +95,8 @@ export function groupTasksByRepository(
 ): TaskRepositoryGroup[] {
   const configCountByRepository = new Map<string, number>();
   configs.forEach((config) => {
-    const repositoryId = config.repository_id || config.repository;
+    const repositoryId = config.repository_id;
+    if (!repositoryId) return;
     configCountByRepository.set(repositoryId, (configCountByRepository.get(repositoryId) || 0) + 1);
   });
 

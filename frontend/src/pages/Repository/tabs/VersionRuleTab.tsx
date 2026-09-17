@@ -120,7 +120,7 @@ export function VersionRuleTab({ repo }: VersionRuleTabProps) {
       <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/50 px-4 py-2.5 text-[12px] text-slate-500">
         推荐版本号时会扫描仓库远端全部 tag（包括系统接入前已存在的历史 tag，如
         <span className="mx-1 font-mono text-slate-600">VB.4.1.5_20250715</span>），
-        只要符合上述规则即参与版本递增；仓库未配置时使用系统默认版本规则，不依赖任何产品。
+        只要符合上述规则即参与版本递增；仓库未配置时使用系统默认版本规则，不依赖任何项目。
       </div>
 
       <div className="mt-6 flex justify-end">

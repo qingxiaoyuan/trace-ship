@@ -258,7 +258,7 @@ const ConfigRow = memo(function ConfigRow({
 
   // 是否启用了 SVN 产物推送（展示「浏览 SVN」入口）
   const svnEnabled = Boolean(config.svn_push_enabled && config.svn_url);
-  // 打包配置参数仅产品管理员 / 软件管理员可维护（后端 my_role：超管返回 software_admin）
+  // 打包配置参数仅项目管理员 / 软件管理员可维护（后端 my_role：超管返回 software_admin）
   const canManage = config.my_role === 'software_admin' || config.my_role === 'manager';
 
   return (

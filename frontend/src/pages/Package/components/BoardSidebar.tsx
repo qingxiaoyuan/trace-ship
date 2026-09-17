@@ -3,15 +3,15 @@ import { Activity, ChevronRight, Clock3, Layers3, LoaderCircle, Package as Packa
 import type { PackageConfig, PackageTask, Project } from '@/types';
 import { formatDuration, isRunning, stageLabels } from './utils';
 
-/** 产品侧栏配色（点 + 图标底色），按产品顺序循环取用 */
-const PRODUCT_DOTS = ['bg-indigo-500', 'bg-cyan-400', 'bg-amber-400', 'bg-rose-400', 'bg-emerald-400', 'bg-violet-400'];
-const PRODUCT_ICONS = ['bg-cyan-50 text-cyan-600', 'bg-amber-50 text-amber-600', 'bg-rose-50 text-rose-600', 'bg-emerald-50 text-emerald-600', 'bg-violet-50 text-violet-600', 'bg-indigo-50 text-indigo-600'];
+/** 项目侧栏配色（点 + 图标底色），按项目顺序循环取用 */
+const PROJECT_DOTS = ['bg-indigo-500', 'bg-cyan-400', 'bg-amber-400', 'bg-rose-400', 'bg-emerald-400', 'bg-violet-400'];
+const PROJECT_ICONS = ['bg-cyan-50 text-cyan-600', 'bg-amber-50 text-amber-600', 'bg-rose-50 text-rose-600', 'bg-emerald-50 text-emerald-600', 'bg-violet-50 text-violet-600', 'bg-indigo-50 text-indigo-600'];
 
 interface BoardSidebarProps {
   projects: Project[];
-  /** 全量打包配置（未按产品过滤），用于统计各产品配置数 */
+  /** 全量打包配置（未按项目过滤），用于统计各项目配置数 */
   configs: PackageConfig[];
-  /** 跨产品进行中 / 排队任务（轮询） */
+  /** 跨项目进行中 / 排队任务（轮询） */
   runningTasks: PackageTask[];
   selectedProject: string;
   onSelectProject: (projectId: string) => void;
@@ -31,7 +31,8 @@ export const BoardSidebar = memo(function BoardSidebar({
   const configCountByProject = useMemo(() => {
     const map = new Map<string, number>();
     configs.forEach((c) => {
-      const key = c.project_id || c.project;
+      const key = c.project_id;
+      if (!key) return;
       map.set(key, (map.get(key) || 0) + 1);
     });
     return map;
@@ -56,12 +57,12 @@ export const BoardSidebar = memo(function BoardSidebar({
   return (
     // 半透明白面板：仅边框，让工作区网格背景透出（窄屏加轻底保证胶囊区可读）
     <aside className="flex h-fit min-w-0 flex-col self-start rounded-xl border border-indigo-100/80 p-3 max-lg:flex-col max-lg:bg-white/70 lg:sticky lg:top-[84px] lg:max-h-[calc(100vh-140px)]">
-      {/* 我的产品：lg 及以上为边框分隔列表，窄屏为横向胶囊筛选条 */}
+      {/* 我的项目：lg 及以上为边框分隔列表，窄屏为横向胶囊筛选条 */}
       <section className="flex max-h-[55%] flex-none flex-col pb-3 max-lg:max-h-none max-lg:pb-0">
         <div className="mb-3 flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <Layers3 className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />
-            <span className="text-[12px] font-semibold text-slate-700">我的产品</span>
+            <span className="text-[12px] font-semibold text-slate-700">我的项目</span>
           </div>
           <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-slate-500">{projects.length} 个</span>
         </div>
@@ -71,14 +72,14 @@ export const BoardSidebar = memo(function BoardSidebar({
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             className="w-full bg-transparent outline-none placeholder:text-slate-400"
-            placeholder="筛选产品"
+            placeholder="筛选项目"
           />
         </div>
 
-        {/* 桌面端产品列表：上下边框 + 条目分隔线 */}
+        {/* 桌面端项目列表：上下边框 + 条目分隔线 */}
         <nav className="hidden max-h-[calc(68vh-250px)] min-h-0 flex-1 space-y-0.5 overflow-y-auto rounded-lg border-y border-indigo-100/80 py-1 lg:block">
-          <ProductItem
-            name="全部产品"
+          <ProjectItem
+            name="全部项目"
             dotClass="bg-slate-400"
             iconClass="bg-slate-50 text-slate-500"
             meta={`共 ${configs.length} 个配置`}
@@ -89,11 +90,11 @@ export const BoardSidebar = memo(function BoardSidebar({
             const configCount = configCountByProject.get(project.id) || 0;
             const runningCount = runningCountByProject.get(project.id) || 0;
             return (
-              <ProductItem
+              <ProjectItem
                 key={project.id}
                 name={project.name}
-                dotClass={PRODUCT_DOTS[idx % PRODUCT_DOTS.length]}
-                iconClass={PRODUCT_ICONS[idx % PRODUCT_ICONS.length]}
+                dotClass={PROJECT_DOTS[idx % PROJECT_DOTS.length]}
+                iconClass={PROJECT_ICONS[idx % PROJECT_ICONS.length]}
                 meta={
                   runningCount > 0
                     ? `${configCount} 个配置 · ${runningCount} 个运行中`
@@ -107,29 +108,29 @@ export const BoardSidebar = memo(function BoardSidebar({
             );
           })}
           {filteredProjects.length === 0 && (
-            <div className="px-2 py-4 text-center text-[11px] text-slate-400">没有匹配的产品</div>
+            <div className="px-2 py-4 text-center text-[11px] text-slate-400">没有匹配的项目</div>
           )}
         </nav>
 
         {/* 窄屏胶囊筛选条 */}
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 lg:hidden">
-          <ProductChip name="全部" dotClass="bg-slate-400" active={!selectedProject} onClick={() => onSelectProject('')} />
+          <ProjectChip name="全部" dotClass="bg-slate-400" active={!selectedProject} onClick={() => onSelectProject('')} />
           {filteredProjects.map((project, idx) => (
-            <ProductChip
+            <ProjectChip
               key={project.id}
               name={project.name}
-              dotClass={PRODUCT_DOTS[idx % PRODUCT_DOTS.length]}
+              dotClass={PROJECT_DOTS[idx % PROJECT_DOTS.length]}
               active={selectedProject === project.id}
               onClick={() => selectProject(project.id)}
             />
           ))}
           {filteredProjects.length === 0 && (
-            <span className="inline-flex h-9 shrink-0 items-center text-[11px] text-slate-400">没有匹配的产品</span>
+            <span className="inline-flex h-9 shrink-0 items-center text-[11px] text-slate-400">没有匹配的项目</span>
           )}
         </div>
       </section>
 
-      {/* 正在打包（跨产品实时任务）：仅双栏桌面布局展示 */}
+      {/* 正在打包（跨项目实时任务）：仅双栏桌面布局展示 */}
       <section className="hidden min-h-0 flex-1 flex-col pt-4 lg:flex">
         <div className="mb-3 flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
@@ -159,7 +160,7 @@ export const BoardSidebar = memo(function BoardSidebar({
   );
 });
 
-interface ProductItemProps {
+interface ProjectItemProps {
   name: string;
   meta: string;
   dotClass: string;
@@ -168,8 +169,8 @@ interface ProductItemProps {
   onClick: () => void;
 }
 
-/** 桌面端产品条目：选中态复用主菜单的 nav-active 样式。 */
-const ProductItem = memo(function ProductItem({ name, meta, dotClass, iconClass, active, onClick }: ProductItemProps) {
+/** 桌面端项目条目：选中态复用主菜单的 nav-active 样式。 */
+const ProjectItem = memo(function ProjectItem({ name, meta, dotClass, iconClass, active, onClick }: ProjectItemProps) {
   return (
     <button
       type="button"
@@ -198,15 +199,15 @@ const ProductItem = memo(function ProductItem({ name, meta, dotClass, iconClass,
   );
 });
 
-interface ProductChipProps {
+interface ProjectChipProps {
   name: string;
   dotClass: string;
   active: boolean;
   onClick: () => void;
 }
 
-/** 移动端产品胶囊（横向滚动筛选条） */
-const ProductChip = memo(function ProductChip({ name, dotClass, active, onClick }: ProductChipProps) {
+/** 移动端项目胶囊（横向滚动筛选条） */
+const ProjectChip = memo(function ProjectChip({ name, dotClass, active, onClick }: ProjectChipProps) {
   return (
     <button
       type="button"
