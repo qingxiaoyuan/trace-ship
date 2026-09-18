@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { App, Button } from 'antd';
 import { ChevronRight, Package as PackageIcon, Plus, Settings2 } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
@@ -103,7 +104,32 @@ export const DetailView = memo(function DetailView({
               </div>
               <div>
                 <div className="text-[15px] font-semibold tracking-tight text-slate-900">{config ? config.name : task.name}</div>
-                <div className="font-mono text-[10px] text-slate-400 max-md:text-xs">{task.repository_name || '-'} · {task.project_name || '-'}</div>
+                <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-400 max-md:text-xs">
+                  {/* 实体回链：所属仓库 / 关联发布（有数据才显示） */}
+                  {task.repository ? (
+                    <Link
+                      to={`/repositories/${task.repository}`}
+                      className="text-indigo-500 transition-colors hover:text-indigo-600"
+                    >
+                      {task.repository_name || '-'}
+                    </Link>
+                  ) : (
+                    <span>{task.repository_name || '-'}</span>
+                  )}
+                  <span>·</span>
+                  <span>{task.project_name || '-'}</span>
+                  {task.release ? (
+                    <>
+                      <span>·</span>
+                      <Link
+                        to={`/releases/${task.release}`}
+                        className="text-indigo-500 transition-colors hover:text-indigo-600"
+                      >
+                        发布 {task.release_version || ''}
+                      </Link>
+                    </>
+                  ) : null}
+                </div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">

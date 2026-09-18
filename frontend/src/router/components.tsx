@@ -1,8 +1,14 @@
 import { Suspense } from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useParams } from 'react-router-dom';
 import { Spin } from 'antd';
 import { useAuthStore } from '@/stores/authStore';
 import Forbidden from '@/pages/Error/Forbidden';
+
+/** 仓库详情旧路径 /repositories/:id → 默认 tab，使用绝对路径避免相对解析歧义 */
+export function RedirectRepositoryDefaultTab() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/repositories/${id}/commits`} replace />;
+}
 
 export function PageLoader({ children }: { children: React.ReactNode }) {
   return (

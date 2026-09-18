@@ -6,7 +6,7 @@
 from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -23,10 +23,17 @@ from apps.workflow.serializers import (
     WorkflowInstanceSerializer,
     WorkflowTaskSerializer,
 )
-from apps.workflow.services import WorkflowEngine
+from apps.workflow.services import WorkflowEngine, count_todo_tasks, visible_workflow_instances
 from utils.permissions import IsProjectDeveloper, IsRepositoryWorkflowEditor
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def todo_count(request: Request) -> Response:
+    """待我审批计数（侧边栏 badge），口径与「我的待办」列表一致。"""
+    return success_response({"count": count_todo_tasks(request.user)})
 
 
 def visible_workflow_definitions(user):
@@ -108,7 +115,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
     """
     工作流实例视图集
 
-    项目开发者可创建实例，项目成员可查看详情。
+    项目开发者可创建实例；项目成员与本人作为审批人（含非项目成员的指定人员）可查看详情。
     """
 
     queryset = WorkflowInstance.objects.all()
@@ -136,10 +143,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         ).prefetch_related("tasks")
         if user.is_superuser:
             return queryset.all()
-        return queryset.filter(
-            Q(definition__repository_id__in=visible_repository_ids(user))
-            | Q(definition__project_id__in=visible_project_ids(user))
-        )
+        return queryset.filter(id__in=visible_workflow_instances(user).values("id"))
 
     def get_permissions(self):
         """创建实例需项目开发者"""
@@ -252,7 +256,9 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
     @action(detail=False, methods=["get"], url_path="todo")
     def todo(self, request: Request) -> Response:
         """我的待办（严格按审批人过滤，超管也不放开全量）"""
-        queryset = self.get_queryset().filter(approver=request.user, status="pending")
+        queryset = self.filter_queryset(
+            self.get_queryset().filter(approver=request.user, status="pending")
+        )
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)

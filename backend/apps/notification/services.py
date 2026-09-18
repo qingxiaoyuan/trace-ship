@@ -154,6 +154,9 @@ class NotificationService:
         """
         审批任务创建时通知审批人
 
+        related_type 统一为 workflow_instance 并携带实例 ID，
+        供前端生成 /workflows/{instance_id} 直达单据的深链（仅影响新生成的通知）。
+
         Args:
             task: WorkflowTask 实例
         """
@@ -165,8 +168,8 @@ class NotificationService:
             notification_type="audit",
             title="新的审批待办",
             content=f"您有一个新的审批任务：{task.node_name}，业务单号 {instance.biz_id}。",
-            related_type="workflow_task",
-            related_id=str(task.id),
+            related_type="workflow_instance",
+            related_id=str(instance.id),
         )
 
     @staticmethod

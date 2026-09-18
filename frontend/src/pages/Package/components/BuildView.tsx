@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { App, Button } from 'antd';
 import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -78,6 +79,29 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
                 ) : (
                   <span className="font-mono">{task.tag_name}</span>
                 )}
+                {/* 实体回链：所属仓库 / 关联发布（有数据才显示） */}
+                {task.repository ? (
+                  <>
+                    <span className="h-1 w-1 rounded-full bg-slate-300" />
+                    <Link
+                      to={`/repositories/${task.repository}`}
+                      className="text-indigo-500 transition-colors hover:text-indigo-600"
+                    >
+                      {task.repository_name || '仓库'}
+                    </Link>
+                  </>
+                ) : null}
+                {task.release ? (
+                  <>
+                    <span className="h-1 w-1 rounded-full bg-slate-300" />
+                    <Link
+                      to={`/releases/${task.release}`}
+                      className="text-indigo-500 transition-colors hover:text-indigo-600"
+                    >
+                      发布 {task.release_version || ''}
+                    </Link>
+                  </>
+                ) : null}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span>{task.triggered_by_name || '-'}</span>
                 {task.started_at && (

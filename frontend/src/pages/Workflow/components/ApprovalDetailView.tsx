@@ -1,7 +1,10 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, GitPullRequestArrow } from 'lucide-react';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
+import { usePageMetaStore } from '@/stores/pageMetaStore';
+import { recordVisit } from '@/hooks/useRecentVisits';
 import { instanceStatusMap, releaseTypeText } from '../constants';
 import { ApprovalTimeline } from './ApprovalTimeline';
 import { ApprovalActions } from './ApprovalActions';
@@ -17,11 +20,27 @@ interface ApprovalDetailViewProps {
 
 /** 审批详情视图：面包屑 + 左主区（审批头/流程/意见）+ 右侧摘要 */
 export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) {
+  const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
   const { data: instance, isLoading } = useQuery({
     queryKey: ['workflow-instance-for-detail', source.instanceId],
     queryFn: () => workflowApi.getInstance(source.instanceId),
     enabled: !!source.instanceId,
   });
+
+  // 面包屑实体名 + 最近访问埋点（实例详情返回后触发）
+  useEffect(() => {
+    if (!instance) return;
+    const title = instance.title || '发布审批';
+    setEntityTitle(title);
+    recordVisit({
+      type: 'workflow',
+      id: instance.id,
+      title,
+      subtitle: `审批 · ${[instance.project_name, instance.repository_name].filter(Boolean).join(' / ') || '-'}`,
+      path: `/workflows/${instance.id}`,
+    });
+    return () => setEntityTitle(null);
+  }, [instance, setEntityTitle]);
 
   const statusInfo = instanceStatusMap[instance?.status || 'running'] || instanceStatusMap.running;
   const isRunning = instance?.status === 'running';

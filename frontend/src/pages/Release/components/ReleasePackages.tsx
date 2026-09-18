@@ -39,7 +39,7 @@ export function ReleasePackages({ release }: { release: Release }) {
                   <span>{task.created_at ? dayjs(task.created_at).format('YYYY-MM-DD HH:mm') : '-'}</span>
                 </div>
               </div>
-              <Button size="small" onClick={() => navigate('/packages')}>
+              <Button size="small" onClick={() => navigate(`/packages/${task.id}`)}>
                 查看任务
               </Button>
             </div>

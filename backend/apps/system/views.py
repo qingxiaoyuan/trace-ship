@@ -10,17 +10,31 @@ import re
 from django_filters import FilterSet
 from django_filters.rest_framework import DateTimeFromToRangeFilter, DjangoFilterBackend
 from rest_framework import filters
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.system.models import AccessToken, OperationLog, SystemConfig
+from apps.system.search import GlobalSearchService
 from apps.system.serializers import AccessTokenSerializer, OperationLogSerializer, SystemConfigSerializer
 from apps.system.services import OperationLogService
 from utils.permissions import HasPermission, IsSuperUser
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def global_search(request: Request) -> Response:
+    """
+    全局聚合搜索（命令面板）
+
+    按关键词分组返回当前用户可见的项目 / 仓库 / 发布 / 审批单 / 打包任务，
+    每组最多 5 条；q 为空时各组返回空数组。
+    """
+    data = GlobalSearchService.search(request.user, request.query_params.get("q", ""))
+    return success_response(data)
 
 # 敏感配置键模式：与前端 isSensitiveKey 口径一致，公开读取接口强制排除，
 # 防止管理员误将密码/密钥类配置标记为公开后泄露给全部登录用户

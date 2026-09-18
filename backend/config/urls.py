@@ -9,6 +9,8 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from rest_framework import status
 
+from apps.system.views import global_search
+
 
 def health_check(request) -> JsonResponse:
     """
@@ -88,6 +90,8 @@ urlpatterns = [
     path("api/workflow/", include("apps.workflow.urls")),
     path("api/notifications/", include("apps.notification.urls")),
     path("api/feedback/", include("apps.feedback.urls")),
+    # 全局聚合搜索（命令面板，登录即可用，按数据可见范围过滤）
+    path("api/search/", global_search, name="global-search"),
     # 对外开放接口（Access Token 认证 + scope 授权，只读）
     path("api/open/", include("config.urls_open")),
     # API 文档（OpenAPI Schema、Swagger UI、ReDoc）

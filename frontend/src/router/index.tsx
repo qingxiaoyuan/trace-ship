@@ -3,7 +3,7 @@ import type { RouteObject } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { MainLayout } from '@/layouts/MainLayout';
 import Login from '@/pages/Login';
-import { AuthGuard, PageLoader, SystemGuard, RequirePermission } from './components';
+import { AuthGuard, PageLoader, RedirectRepositoryDefaultTab, SystemGuard, RequirePermission } from './components';
 import Forbidden from '@/pages/Error/Forbidden';
 import {
   BrowserUpgrade,
@@ -80,16 +80,18 @@ const routes: AppRouteObject[] = [
         children: [
           { index: true, element: <PageLoader><Dashboard /></PageLoader>, handle: { title: '工作台' } },
           { path: 'dashboard', element: <PageLoader><Dashboard /></PageLoader>, handle: { title: '工作台' } },
-          { path: 'projects', element: <PageLoader><ProjectList /></PageLoader>, handle: { title: '项目/产品管理' } },
+          { path: 'projects', element: <PageLoader><ProjectList /></PageLoader>, handle: { title: '项目/产品' } },
           { path: 'projects/:id', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '项目/产品详情' } },
           { path: 'projects/:id/:tab', element: <PageLoader><ProjectDetail /></PageLoader>, handle: { title: '项目/产品详情' } },
-          { path: 'repositories', element: <PageLoader><RepositoryList /></PageLoader>, handle: { title: '仓库管理' } },
-          { path: 'repositories/:id', element: <PageLoader><RepositoryDetail /></PageLoader>, handle: { title: '仓库详情' } },
-          { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader>, handle: { title: '凭证管理' } },
+          { path: 'repositories', element: <PageLoader><RepositoryList /></PageLoader>, handle: { title: '仓库' } },
+          // 仓库详情 tab 已 URL 化，旧路径重定向到默认 tab 保证外链兼容
+          { path: 'repositories/:id', element: <RedirectRepositoryDefaultTab />, handle: { title: '仓库' } },
+          { path: 'repositories/:id/:tab', element: <PageLoader><RepositoryDetail /></PageLoader>, handle: { title: '仓库' } },
+          { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader>, handle: { title: '凭证' } },
           { path: 'credentials/:id', element: <PageLoader><CredentialDetail /></PageLoader>, handle: { title: '凭证详情' } },
           {
             path: 'commits',
-            handle: { title: '提交规范审查' },
+            handle: { title: '提交审查' },
             children: [
               { index: true, element: <PageLoader><CommitList /></PageLoader> },
               { path: ':id', element: <PageLoader><CommitDetail /></PageLoader>, handle: { title: '查看详情' } },
@@ -98,11 +100,13 @@ const routes: AppRouteObject[] = [
           { path: 'tags', element: <Navigate to="/releases/create" replace /> },
           { path: 'packages', element: <PageLoader><PackageTask /></PageLoader>, handle: { title: '打包看板' } },
           { path: 'packages/:id', element: <PageLoader><PackageTask /></PageLoader>, handle: { title: '打包看板' } },
-          { path: 'workflows', element: <PageLoader><Workflow /></PageLoader>, handle: { title: '工作流审批' } },
+          { path: 'workflows', element: <PageLoader><Workflow /></PageLoader>, handle: { title: '审批中心' } },
+          // 审批单详情深链（通知直达），:id 为流程实例 ID（兼容任务 ID 解析）
+          { path: 'workflows/:id', element: <PageLoader><Workflow /></PageLoader>, handle: { title: '审批中心' } },
           { path: 'releases', element: <PageLoader><ReleaseBoard /></PageLoader>, handle: { title: '发布看板' } },
           { path: 'releases/create', element: <PageLoader><ReleaseCreate /></PageLoader>, handle: { title: '新建发布' } },
           { path: 'releases/:id', element: <PageLoader><ReleaseDetail /></PageLoader>, handle: { title: '发布详情' } },
-          { path: 'notifications', element: <PageLoader><Notification /></PageLoader>, handle: { title: '通知中心' } },
+          { path: 'notifications', element: <PageLoader><Notification /></PageLoader>, handle: { title: '通知' } },
           { path: 'guide', element: <PageLoader><Guide /></PageLoader>, handle: { title: '使用说明' } },
           { path: 'feedback', element: <PageLoader><Feedback /></PageLoader>, handle: { title: '使用反馈' } },
           { path: 'changelog', element: <PageLoader><Changelog /></PageLoader>, handle: { title: '更新日志' } },

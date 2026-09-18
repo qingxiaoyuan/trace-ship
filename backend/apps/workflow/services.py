@@ -8,12 +8,14 @@ import uuid
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.account.models import User
 from apps.notification.services import NotificationService
 from apps.project.models import Project, ProjectMember
+from apps.project.services import visible_project_ids, visible_repository_ids
 from apps.repository.models import Repository
 from apps.system.services import OperationLogService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
@@ -798,3 +800,36 @@ class WorkflowEngine:
         if isinstance(text, dict):
             return text.get("value", node.get("id", ""))
         return text or node.get("id", "")
+
+
+def visible_workflow_instances(user):
+    """
+    当前用户可见的流程实例查询集
+
+    超管全量；其他用户可见所属项目 / 仓库范围内的实例，以及本人作为
+    审批人的实例（指定人员可能不是项目成员，但仍需打开通知深链）。
+    """
+    queryset = WorkflowInstance.objects.all()
+    if user.is_superuser:
+        return queryset
+    return queryset.filter(
+        Q(definition__repository_id__in=visible_repository_ids(user))
+        | Q(definition__project_id__in=visible_project_ids(user))
+        | Q(tasks__approver=user)
+    ).distinct()
+
+
+def count_todo_tasks(user) -> int:
+    """
+    当前用户待审批任务数（侧边栏「待我审批」badge）
+
+    口径与「我的待办」列表一致：严格按 approver=本人 且 status=pending 过滤，
+    超管同样只看自己的任务，不放开全量。
+
+    Args:
+        user: 当前登录用户
+
+    Returns:
+        待处理审批任务条数
+    """
+    return WorkflowTask.objects.filter(approver=user, status="pending").count()

@@ -1,7 +1,10 @@
 import { useMemo } from 'react';
 import { Drawer } from 'antd';
+import { Search } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { useWorkflowTodoCount } from '@/hooks/useWorkflowTodoCount';
+import { useCommandPaletteStore } from '@/components/CommandPalette/store';
 import { buildGroups } from './navMenu';
 import { SidebarNav } from './SidebarNav';
 
@@ -15,7 +18,15 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const menus = useAuthStore((state) => state.menus);
-  const navGroups = useMemo(() => buildGroups(menus), [menus]);
+  const todoCount = useWorkflowTodoCount();
+  const navGroups = useMemo(
+    () =>
+      buildGroups(
+        menus,
+        todoCount > 0 ? { '/workflows': todoCount > 99 ? '99+' : String(todoCount) } : undefined,
+      ),
+    [menus, todoCount],
+  );
 
   const handleNavigate = (path: string) => {
     onClose();
@@ -44,6 +55,17 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
           </span>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          useCommandPaletteStore.getState().setOpen(true);
+        }}
+        className="mx-4 mb-2 flex min-h-9 items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-2 text-left text-[13px] text-slate-500"
+      >
+        <Search className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+        搜索功能、项目、仓库…
+      </button>
       <SidebarNav
         groups={navGroups}
         currentPath={location.pathname}

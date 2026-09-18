@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { App, Button } from 'antd';
 import { ChevronRight, History, List, Package as PackageIcon, Plus, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
@@ -41,7 +41,12 @@ export default function PackageTaskPage() {
 
   const [userView, setUserView] = useState<'list' | 'detail' | 'build'>('list');
   const view: 'list' | 'detail' | 'build' = routeTaskId ? 'build' : userView;
-  const [activeTab, setActiveTab] = useState<TabKey>('builds');
+  // 支持 ?tab=configs 深链（命令面板「打包配置」入口），默认构建列表
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab: TabKey = searchParams.get('tab') === 'configs' ? 'configs' : 'builds';
+  const setActiveTab = (tab: TabKey) => {
+    setSearchParams(tab === 'configs' ? { tab: 'configs' } : {}, { replace: true });
+  };
   const [selectedTask, setSelectedTask] = useState<PackageTask | null>(null);
   const [selectedConfig, setSelectedConfig] = useState<PackageConfig | null>(null);
   const [logText, setLogText] = useState('');

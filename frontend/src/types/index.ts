@@ -368,7 +368,9 @@ export interface CommitRecord {
   review_reason?: string;
   parsed_result?: ParsedCommit;
   project_name?: string;
-  repo_name?: string;
+  /** 所属仓库 ID（后端返回） */
+  repository?: string;
+  repository_name?: string;
 }
 
 export type PackageTaskStatus = 'queued' | 'running' | 'success' | 'failure' | 'canceled';

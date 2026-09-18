@@ -103,11 +103,12 @@ function getRelatedAction(
 ): { label: string; icon: typeof Hammer; to: string } | null {
   const id = n.related_id;
   switch (n.related_type) {
+    // 审批通知直达具体审批单；workflow_task 的任务 ID 由审批中心页解析为实例
     case 'workflow_task':
     case 'workflow_instance':
-      return { label: '前往审批', icon: GitPullRequestArrow, to: '/workflows' };
+      return id ? { label: '前往审批', icon: GitPullRequestArrow, to: `/workflows/${id}` } : { label: '前往审批', icon: GitPullRequestArrow, to: '/workflows' };
     case 'package_task':
-      return id ? { label: '查看打包', icon: Hammer, to: '/packages' } : null;
+      return id ? { label: '查看打包', icon: Hammer, to: `/packages/${id}` } : null;
     case 'release_record':
       return id ? { label: '查看发布单', icon: ExternalLink, to: `/releases/${id}` } : null;
     default:

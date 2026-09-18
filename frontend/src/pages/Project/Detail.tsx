@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Empty, Button } from 'antd';
@@ -20,6 +20,8 @@ import { ReleaseTab } from './tabs/ReleaseTab';
 import { PackageTab } from './tabs/PackageTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { projectApi } from '@/api/project';
+import { recordVisit } from '@/hooks/useRecentVisits';
+import { usePageMetaStore } from '@/stores/pageMetaStore';
 import type { ProjectStatus } from '@/types';
 
 /** Tab 配置：基本信息 / 软件仓库 / 成员 / 打包配置 / SVN 制品 / 发布版本 */
@@ -64,11 +66,26 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(validTabKeys.has(tab as typeof tabItems[number]['key']) ? tab : 'overview');
 
+  const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
   const { data: project, isLoading, error } = useQuery({
     queryKey: ['project', id],
     queryFn: () => projectApi.getProject(id || ''),
     enabled: !!id,
   });
+
+  // 面包屑实体名 + 最近访问埋点
+  useEffect(() => {
+    if (!project) return;
+    setEntityTitle(project.name);
+    recordVisit({
+      type: 'project',
+      id: project.id,
+      title: project.name,
+      subtitle: `项目 · ${Number(project.member_count ?? 0)} 个成员`,
+      path: `/projects/${project.id}`,
+    });
+    return () => setEntityTitle(null);
+  }, [project, setEntityTitle]);
 
   const handleTabChange = (key: string) => {
     setActiveTab(key);

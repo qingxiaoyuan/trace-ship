@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Empty, Button, Input, Modal, Typography } from 'antd';
 import { AlertTriangle, ChevronRight, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
@@ -7,6 +7,8 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { releaseApi } from '@/api/release';
+import { usePageMetaStore } from '@/stores/pageMetaStore';
+import { recordVisit } from '@/hooks/useRecentVisits';
 import { releaseTypeText, releaseTypeBadge, statusBadge, releaseStatusText } from './constants';
 import { ReleaseTimeline } from './components/ReleaseTimeline';
 import { ReleaseNotes } from './components/ReleaseNotes';
@@ -30,6 +32,7 @@ export default function ReleaseDetail() {
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
 
   const queryClient = useQueryClient();
   const { data: release, isLoading, error } = useQuery({
@@ -37,6 +40,20 @@ export default function ReleaseDetail() {
     queryFn: () => releaseApi.getRelease(id || ''),
     enabled: !!id,
   });
+
+  // 面包屑实体名 + 最近访问埋点
+  useEffect(() => {
+    if (!release) return;
+    setEntityTitle(release.version);
+    recordVisit({
+      type: 'release',
+      id: release.id,
+      title: release.version,
+      subtitle: `发布 · ${[release.project_name, release.repository_name].filter(Boolean).join(' / ') || '-'}`,
+      path: `/releases/${release.id}`,
+    });
+    return () => setEntityTitle(null);
+  }, [release, setEntityTitle]);
 
   /** 重试推 tag：仅推 tag 环节失败的已驳回发布展示入口（后端仍会二次校验审批状态） */
   const handleRetryPushTag = async () => {
@@ -127,9 +144,18 @@ export default function ReleaseDetail() {
           发布看板
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
-        <span className="font-medium text-slate-800">
-          {release.version} · {release.project_name || '-'}
-        </span>
+        <span className="font-medium text-slate-800">{release.version}</span>
+        {release.project ? (
+          <>
+            <span className="text-slate-300">·</span>
+            <Link
+              to={`/projects/${release.project}`}
+              className="font-medium text-indigo-500 transition-colors hover:text-indigo-600"
+            >
+              {release.project_name || '-'}
+            </Link>
+          </>
+        ) : null}
       </div>
 
       {/* 详情头 */}
@@ -155,7 +181,27 @@ export default function ReleaseDetail() {
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
-                <span>{release.project_name || '-'}</span>
+                {release.project ? (
+                  <Link
+                    to={`/projects/${release.project}`}
+                    className="text-indigo-500 transition-colors hover:text-indigo-600"
+                  >
+                    {release.project_name || '-'}
+                  </Link>
+                ) : (
+                  <span>{release.project_name || '-'}</span>
+                )}
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                {release.repository ? (
+                  <Link
+                    to={`/repositories/${release.repository}`}
+                    className="text-indigo-500 transition-colors hover:text-indigo-600"
+                  >
+                    {release.repository_name || '-'}
+                  </Link>
+                ) : (
+                  <span>{release.repository_name || '-'}</span>
+                )}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span>发布人 {release.publisher_name || release.publisher || '-'}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { message, Popconfirm } from "antd";
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { credentialApi } from "@/api/credential";
 import { repositoryApi } from "@/api/repository";
+import { usePageMetaStore } from "@/stores/pageMetaStore";
 import type { Credential, CredentialUsageLog, Repository } from "@/types";
 import { CredentialIcon } from "./components/CredentialIcon";
 import { StatusBadge } from "./components/StatusBadge";
@@ -59,6 +60,7 @@ export default function CredentialDetail() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabKey>("info");
   const [modalOpen, setModalOpen] = useState(false);
+  const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
 
   const {
     data: credential,
@@ -69,6 +71,13 @@ export default function CredentialDetail() {
     queryFn: () => credentialApi.getCredential(id || ""),
     enabled: !!id,
   });
+
+  // 面包屑实体名
+  useEffect(() => {
+    if (!credential) return;
+    setEntityTitle(credential.name);
+    return () => setEntityTitle(null);
+  }, [credential, setEntityTitle]);
 
   const { data: usageData, isLoading: usageLoading } = useQuery({
     queryKey: ["credential-usage", id],

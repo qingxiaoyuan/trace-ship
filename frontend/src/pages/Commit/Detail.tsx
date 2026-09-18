@@ -1,4 +1,5 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Button, Empty, Typography, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftOutlined } from '@ant-design/icons';
@@ -6,6 +7,7 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { StatusTag } from '@/components/StatusTag';
 import { commitApi } from '@/api/commit';
+import { usePageMetaStore } from '@/stores/pageMetaStore';
 import type { ReviewStatus } from '@/types';
 const { Title, Text } = Typography;
 
@@ -50,12 +52,20 @@ function InfoItem({ label, children }: { label: string; children: React.ReactNod
 export default function CommitDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
 
   const { data: commit, isLoading } = useQuery({
     queryKey: ['commit', id],
     queryFn: () => commitApi.getCommit(id || ''),
     enabled: !!id,
   });
+
+  // 面包屑实体名：提交短哈希
+  useEffect(() => {
+    if (!commit) return;
+    setEntityTitle(commit.commit_hash.slice(0, 12));
+    return () => setEntityTitle(null);
+  }, [commit, setEntityTitle]);
 
   if (isLoading) {
     return <div className="p-6 text-center">加载中...</div>;
@@ -103,6 +113,18 @@ export default function CommitDetail() {
           </InfoItem>
           <InfoItem label="分支">
             <span className="font-mono text-xs text-slate-700">{commit.branch}</span>
+          </InfoItem>
+          <InfoItem label="所属仓库">
+            {commit.repository ? (
+              <Link
+                to={`/repositories/${commit.repository}`}
+                className="text-sm text-indigo-500 transition-colors hover:text-indigo-600"
+              >
+                {commit.repository_name || '-'}
+              </Link>
+            ) : (
+              <span className="text-sm text-slate-900">{commit.repository_name || '-'}</span>
+            )}
           </InfoItem>
           <InfoItem label="变更类型">
             <StatusTag status={changeTypeStatus}>

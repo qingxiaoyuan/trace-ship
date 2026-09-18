@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Empty, Button, App } from 'antd';
@@ -8,6 +8,8 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { RepositoryModal } from './modals/RepositoryModal';
 import { repositoryApi } from '@/api/repository';
 import { useAppMessage } from '@/hooks/useAppMessage';
+import { usePageMetaStore } from '@/stores/pageMetaStore';
+import { recordVisit } from '@/hooks/useRecentVisits';
 import { repoTypeBadge, healthDisplay } from './constants';
 import { CommitsTab } from './tabs/CommitsTab';
 import { BranchesTab } from './tabs/BranchesTab';
@@ -19,7 +21,7 @@ import { WorkflowTab } from './tabs/WorkflowTab';
 import { ReleaseTab } from '@/pages/Project/tabs/ReleaseTab';
 import type { Repository } from '@/types';
 
-/** 详情 Tab */
+/** 详情 Tab（key 即 URL 段，与 /repositories/:id/:tab 对应） */
 const tabs = [
   { key: 'commits', label: '最近提交' },
   { key: 'branches', label: '分支' },
@@ -27,24 +29,61 @@ const tabs = [
   { key: 'releases', label: '发布版本' },
   { key: 'svn', label: 'SVN 制品' },
   { key: 'credential', label: '凭证配置' },
-  { key: 'versionRule', label: '版本规则' },
+  { key: 'version-rule', label: '版本规则' },
   { key: 'workflows', label: '审批流' },
 ] as const;
 
+type TabKey = (typeof tabs)[number]['key'];
+const validTabKeys = new Set<string>(tabs.map((tab) => tab.key));
+/** 旧 tab key 兼容：versionRule → version-rule */
+const tabAliases: Record<string, TabKey> = { versionRule: 'version-rule' };
+
+function resolveTabKey(tab: string | undefined): TabKey {
+  if (!tab) return 'commits';
+  if (validTabKeys.has(tab)) return tab as TabKey;
+  return tabAliases[tab] || 'commits';
+}
+
 export default function RepositoryDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, tab = 'commits' } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { message } = useAppMessage();
   const { modal } = App.useApp();
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('commits');
+  // tab 状态以 URL 为唯一事实源，非法 / 旧 tab 段回退并改写 URL
+  const activeTab = resolveTabKey(tab);
   const [modalOpen, setModalOpen] = useState(false);
+  const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
 
   const { data: repo, isLoading, error } = useQuery({
     queryKey: ['repository', id],
     queryFn: () => repositoryApi.getRepository(id || ''),
     enabled: !!id,
   });
+
+  // 面包屑实体名 + 最近访问埋点
+  useEffect(() => {
+    if (!repo) return;
+    setEntityTitle(repo.name);
+    recordVisit({
+      type: 'repository',
+      id: repo.id,
+      title: repo.name,
+      subtitle: `仓库 · ${(repo.used_by_projects || []).map((item) => item.project_name).join('、') || '未关联项目'}`,
+      path: `/repositories/${repo.id}`,
+    });
+    return () => setEntityTitle(null);
+  }, [repo, setEntityTitle]);
+
+  useEffect(() => {
+    if (!id || !tab) return;
+    if (tab === activeTab) return;
+    navigate(`/repositories/${id}/${activeTab}`, { replace: true });
+  }, [id, tab, activeTab, navigate]);
+
+  const handleTabChange = (key: TabKey) => {
+    navigate(`/repositories/${id}/${key}`, { replace: true });
+  };
 
   const syncMutation = useMutation({
     mutationFn: () => repositoryApi.syncCommits(id || ''),
@@ -198,7 +237,7 @@ export default function RepositoryDetail() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => handleTabChange(tab.key)}
                 className={
                   active
                     ? 'whitespace-nowrap rounded-t-lg border-b-2 border-indigo-600 px-3 py-2.5 text-[13px] font-medium text-indigo-600'
@@ -217,7 +256,7 @@ export default function RepositoryDetail() {
           {activeTab === 'releases' && <ReleaseTab repositoryId={repo.id} />}
           {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}
-          {activeTab === 'versionRule' && <VersionRuleTab repo={repo} />}
+          {activeTab === 'version-rule' && <VersionRuleTab repo={repo} />}
           {activeTab === 'workflows' && <WorkflowTab repository={repo} />}
         </div>
       </TsCard>

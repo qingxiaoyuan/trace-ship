@@ -29,6 +29,3 @@ export interface DetailSource {
   /** 只读：我发起的 / 已办 行不可审批 */
   readOnly: boolean;
 }
-
-/** 视图模式：列表 / 详情 */
-export type ViewMode = 'list' | 'detail';

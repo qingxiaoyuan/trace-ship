@@ -8,6 +8,7 @@ from apps.workflow.views import (
     WorkflowDefinitionViewSet,
     WorkflowInstanceViewSet,
     WorkflowTaskViewSet,
+    todo_count,
 )
 
 router = DefaultRouter()
@@ -16,5 +17,7 @@ router.register(r"instances", WorkflowInstanceViewSet, basename="workflow-instan
 router.register(r"tasks", WorkflowTaskViewSet, basename="workflow-task")
 
 urlpatterns = [
+    # 待我审批计数（侧边栏 badge），需在 router 路由之前注册
+    path("todo-count/", todo_count, name="workflow-todo-count"),
     path("", include(router.urls)),
 ]

@@ -7,7 +7,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.workflow.models import WorkflowDefinition, WorkflowInstance
+from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 
 pytestmark = pytest.mark.django_db
 
@@ -117,6 +117,31 @@ class TestWorkflowInstanceViews:
         assert len(results) == 1
         assert results[0]["biz_id"] == "00000000-0000-0000-0000-000000000004"
         assert results[0]["status"] == "running"
+
+    def test_specified_approver_can_retrieve_instance(self, instance, other_user):
+        """指定审批人即使不是项目成员，也能打开流程实例深链"""
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="指定人员审批",
+            approver=other_user,
+            mode="any",
+            status="pending",
+        )
+        client = APIClient()
+        client.force_authenticate(user=other_user)
+
+        response = client.get(f"/api/workflow/instances/{instance.id}/")
+        assert response.status_code == 200, response.data
+        assert response.data["data"]["id"] == str(instance.id)
+
+    def test_outsider_without_task_cannot_retrieve_instance(self, instance, other_user):
+        """非项目成员且不是审批人时，看不到流程实例"""
+        client = APIClient()
+        client.force_authenticate(user=other_user)
+
+        response = client.get(f"/api/workflow/instances/{instance.id}/")
+        assert response.status_code == 404
 
     def test_initiated_current_node_fallback(self, api_client, instance):
         """无进行中任务时，current_node 回退到 current_node_id"""
@@ -440,3 +465,76 @@ class TestTodoDoneScope:
         results = response.data["data"]["results"]
         assert len(results) == 1
         assert results[0]["approver_name"] == (user.nickname or user.username)
+
+
+class TestTodoCount:
+    """待我审批计数接口（GET /api/workflow/todo-count/）"""
+
+    def test_todo_count_only_own_pending(self, api_client, user, other_user, instance):
+        """仅统计本人 pending 任务，与「我的待办」同口径"""
+        from apps.workflow.models import WorkflowTask
+
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=user,
+            mode="any",
+            status="pending",
+        )
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=user,
+            mode="any",
+            status="approved",
+        )
+        WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=other_user,
+            mode="any",
+            status="pending",
+        )
+
+        response = api_client.get("/api/workflow/todo-count/")
+        assert response.status_code == 200
+        assert response.data["data"] == {"count": 1}
+
+    def test_todo_list_can_filter_by_instance(self, api_client, user, instance, definition):
+        """待办列表支持 instance 过滤，深链只取当前单的待办"""
+        other_instance = WorkflowInstance.objects.create(
+            definition=definition,
+            biz_type="release",
+            biz_id="00000000-0000-0000-0000-000000000020",
+            status="running",
+            created_by=user,
+        )
+        mine = WorkflowTask.objects.create(
+            instance=instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=user,
+            mode="any",
+            status="pending",
+        )
+        WorkflowTask.objects.create(
+            instance=other_instance,
+            node_id="approval_1",
+            node_name="技术负责人审批",
+            approver=user,
+            mode="any",
+            status="pending",
+        )
+
+        response = api_client.get("/api/workflow/tasks/todo/", {"instance": str(instance.id)})
+        assert response.status_code == 200, response.data
+        results = response.data["data"]["results"]
+        assert [item["id"] for item in results] == [str(mine.id)]
+
+    def test_todo_count_requires_authentication(self):
+        """未登录访问返回 401/403"""
+        response = APIClient().get("/api/workflow/todo-count/")
+        assert response.status_code in (401, 403)

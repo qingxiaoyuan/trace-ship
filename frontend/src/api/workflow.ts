@@ -25,6 +25,10 @@ export const workflowApi = {
     get<PaginatedData<WorkflowInstanceListItem>>('/workflow/instances/initiated/', { params }),
   getTodoTasks: (params?: Record<string, unknown>) =>
     get<PaginatedData<WorkflowTask>>('/workflow/tasks/todo/', { params }),
+  /** 单个审批任务详情（深链时用于将任务 ID 解析为流程实例 ID） */
+  getTask: (id: string) => get<WorkflowTask>(`/workflow/tasks/${id}/`),
+  /** 当前用户待审批任务数（侧边栏「审批中心」徽标数据源） */
+  getTodoCount: () => get<{ count: number }>('/workflow/todo-count/', { silent: true }),
   getDoneTasks: (params?: Record<string, unknown>) =>
     get<PaginatedData<WorkflowTask>>('/workflow/tasks/done/', { params }),
   approveTask: (id: string, data?: { comment?: string }) =>

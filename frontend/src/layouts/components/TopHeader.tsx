@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ChevronRight, LogOut, Plus, Search, User } from "lucide-react";
-import { useMatches, useNavigate } from "react-router-dom";
+import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tokens } from "@/styles/theme";
 import { useAuthStore } from "@/stores/authStore";
+import { usePageMetaStore } from "@/stores/pageMetaStore";
+import { useCommandPaletteStore } from "@/components/CommandPalette/store";
 import { notificationApi } from "@/api/notification";
 import { getRoleLabel } from "@/utils/role";
 import { useCurrentRouteTitle } from "./useCurrentRouteTitle";
@@ -19,8 +21,17 @@ const typeMap: Record<string, string> = {
 export function TopHeader() {
   const matches = useMatches();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuthStore();
+  const entityTitle = usePageMetaStore((state) => state.entityTitle);
+  const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
+  const openCommandPalette = useCommandPaletteStore((state) => state.setOpen);
   const queryClient = useQueryClient();
+
+  // 路由切换时清空上一页的实体名；详情页加载到数据后会重新写入
+  useEffect(() => {
+    setEntityTitle(null);
+  }, [location.pathname, setEntityTitle]);
   const [bellOpen, setBellOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -141,15 +152,25 @@ export function TopHeader() {
             )}
           </div>
         ))}
+        {/* 详情页实体名（由 pageMetaStore 提供），追加在路由标题之后 */}
+        {entityTitle ? (
+          <div className="flex items-center gap-1.5">
+            <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
+            <span className="max-w-[240px] truncate font-medium text-slate-800">
+              {entityTitle}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="ml-auto hidden items-center md:flex">
         <button
           type="button"
+          onClick={() => openCommandPalette(true)}
           className="group flex w-[280px] items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-1.5 text-[13px] text-slate-400 transition-colors hover:border-indigo-200 hover:bg-white hover:text-indigo-600"
         >
           <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
-          <span>搜索项目、仓库、发布、提交…</span>
+          <span>搜索功能、项目、仓库、发布…</span>
           <span className="ml-auto flex items-center gap-0.5">
             <kbd className="rounded border border-indigo-100 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-400">
               ⌘

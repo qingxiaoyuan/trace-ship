@@ -226,6 +226,8 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 - 后端代码要求 **中文注释 + type hints**，与现有代码保持一致。
 - 模型字段应加 `verbose_name`；系统类模型表名常以 `sys_` 开头，业务类模型表名常按 app 命名（如 `release_record`、`package_task`）。
 - 新增 API 应通过 `config/urls.py` 注册，统一以 `/api/<resource>/` 开头。
+- `/api/search/`：全局聚合搜索（登录即可用，按数据可见范围过滤，供命令面板调用）。
+- `/api/workflow/todo-count/`：当前用户待审批任务数（侧边栏「审批中心」徽标）。
 - 新增业务逻辑优先放到 `services.py`（体量较大时按职责拆分为 `services/` 包，如 `apps/package/services/`，对外保留统一门面类），视图层保持薄封装。
 - 修改业务流程（状态机、主流程步骤、模块上下线）时，须同步更新本文件对应章节与 `AGENTS.md`，保持两文件一致。
 

@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   ChevronDown,
@@ -119,7 +120,14 @@ export const BuildBoard = memo(function BuildBoard({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h2 className="truncate font-mono text-[13px] font-semibold text-slate-800">{group.repositoryName}</h2>
+                      {/* 仓库名回链仓库详情；阻止冒泡避免触发分组折叠 */}
+                      <Link
+                        to={`/repositories/${group.repositoryId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="truncate font-mono text-[13px] font-semibold text-slate-800 transition-colors hover:text-indigo-600"
+                      >
+                        {group.repositoryName}
+                      </Link>
                       <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-600">仓库集合</span>
                     </div>
                     <div className="mt-0.5 text-[11px] text-slate-400">

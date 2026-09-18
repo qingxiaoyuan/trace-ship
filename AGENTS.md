@@ -167,6 +167,7 @@ npm run preview
 - `/api/workflow/`
 - `/api/notifications/`
 - `/api/feedback/`
+- `/api/search/`（全局聚合搜索，登录即可用，按数据可见范围过滤）
 - `/api/open/`（对外开放只读接口，Access Token + scope 授权，路由集中在 `backend/config/urls_open.py`）
 - `/api/schema/`、`/swagger/`、`/redoc/`
 - `/health/`
@@ -291,11 +292,11 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 
 - `/dashboard`
 - `/projects`、`/projects/:id`、`/projects/:id/:tab`
-- `/repositories`、`/repositories/:id`
+- `/repositories`、`/repositories/:id`、`/repositories/:id/:tab`（旧路径重定向到 `commits`）
 - `/credentials`、`/credentials/:id`
 - `/commits`、`/commits/alerts`、`/commits/:id`
-- `/packages`、`/packages/:id`（打包看板）
-- `/workflows`
+- `/packages`、`/packages/:id`（打包看板；`?tab=configs` 直达打包配置）
+- `/workflows`、`/workflows/:id`（审批单深链，兼容任务 ID）
 - `/releases`、`/releases/create`、`/releases/:id`
 - `/notifications`
 - `/guide`（使用说明）

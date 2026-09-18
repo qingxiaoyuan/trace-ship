@@ -27,13 +27,18 @@ interface ConfigListProps {
   onEdit: (config: PackageConfig) => void;
   onDelete: (config: PackageConfig) => void;
   onTrigger: (config: PackageConfig) => void;
-  onOpenHistory: (config: PackageConfig) => void;
+  /** 点击查看配置打包历史；不传时行不可点击（如项目详情页复用场景） */
+  onOpenHistory?: (config: PackageConfig) => void;
   onNew: () => void;
+  /** 是否展示「新建配置」按钮（默认展示，项目详情按项目角色收口） */
+  canCreate?: boolean;
+  /** 是否展示行内「触发打包」按钮（默认展示，项目详情按项目角色收口） */
+  canTrigger?: boolean;
   /** 切换收藏（星标），由父组件负责乐观更新与缓存失效 */
   onToggleFavorite: (config: PackageConfig) => void;
 }
 
-/** 打包配置：按仓库分组展示，同仓库的配置收敛在同一个分组下 */
+/** 打包配置：按仓库分组展示，同仓库的配置收敛在同一个分组下；打包看板与项目详情共用 */
 export const ConfigList = memo(function ConfigList({
   configs,
   tasks,
@@ -43,6 +48,8 @@ export const ConfigList = memo(function ConfigList({
   onTrigger,
   onOpenHistory,
   onNew,
+  canCreate = true,
+  canTrigger = true,
   onToggleFavorite,
 }: ConfigListProps) {
   const [keyword, setKeyword] = useState('');
@@ -86,14 +93,16 @@ export const ConfigList = memo(function ConfigList({
             className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
         </div>
-        <button
-          type="button"
-          className="btn-glow ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-white"
-          onClick={onNew}
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          新建配置
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            className="btn-glow ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-white"
+            onClick={onNew}
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            新建配置
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -148,6 +157,7 @@ export const ConfigList = memo(function ConfigList({
                           onDelete={onDelete}
                           onTrigger={onTrigger}
                           onOpenHistory={onOpenHistory}
+                          canTrigger={canTrigger}
                           onToggleFavorite={onToggleFavorite}
                           onBrowseSvn={setBrowsing}
                         />
@@ -173,7 +183,8 @@ interface ConfigRowProps {
   onEdit: (config: PackageConfig) => void;
   onDelete: (config: PackageConfig) => void;
   onTrigger: (config: PackageConfig) => void;
-  onOpenHistory: (config: PackageConfig) => void;
+  onOpenHistory?: (config: PackageConfig) => void;
+  canTrigger: boolean;
   onToggleFavorite: (config: PackageConfig) => void;
   onBrowseSvn: (config: PackageConfig) => void;
 }
@@ -195,11 +206,12 @@ const ConfigRow = memo(function ConfigRow({
   onDelete,
   onTrigger,
   onOpenHistory,
+  canTrigger,
   onToggleFavorite,
   onBrowseSvn,
 }: ConfigRowProps) {
   const handleClick = useCallback(() => {
-    onOpenHistory(config);
+    onOpenHistory?.(config);
   }, [config, onOpenHistory]);
 
   const handleTrigger = useCallback(
@@ -263,7 +275,7 @@ const ConfigRow = memo(function ConfigRow({
 
   return (
     <div
-      className={`cursor-pointer transition-colors max-md:rounded-xl max-md:border max-md:bg-white max-md:p-4 ${
+      className={`transition-colors max-md:rounded-xl max-md:border max-md:bg-white max-md:p-4 ${onOpenHistory ? 'cursor-pointer ' : ''}${
         config.is_favorite
           ? 'bg-amber-50/40 hover:bg-amber-50/60 max-md:border-amber-200/70'
           : 'hover:bg-indigo-50/30 max-md:border-indigo-100/70'
@@ -324,13 +336,15 @@ const ConfigRow = memo(function ConfigRow({
               <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
           )}
-          <button
-            title="触发打包"
-            className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
-            onClick={handleTrigger}
-          >
-            <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
+          {canTrigger && (
+            <button
+              title="触发打包"
+              className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
+              onClick={handleTrigger}
+            >
+              <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+          )}
           {/* 无权限用户也可查看配置（只读，用于参考模仿） */}
           <button
             title={canManage ? '编辑配置' : '查看配置（只读）'}
@@ -402,13 +416,15 @@ const ConfigRow = memo(function ConfigRow({
                 <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
               </button>
             )}
-            <button
-              title="触发打包"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
-              onClick={handleTrigger}
-            >
-              <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
-            </button>
+            {canTrigger && (
+              <button
+                title="触发打包"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
+                onClick={handleTrigger}
+              >
+                <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            )}
             {/* 无权限用户也可查看配置（只读，用于参考模仿） */}
             <button
               title={canManage ? '编辑配置' : '查看配置（只读）'}
