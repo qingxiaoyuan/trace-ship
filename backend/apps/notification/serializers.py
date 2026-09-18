@@ -15,11 +15,11 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = [
             "id", "notification_type", "title", "content",
-            "is_read", "read_at", "related_type", "related_id", "created_at",
+            "is_read", "read_at", "is_strong", "related_type", "related_id", "created_at",
         ]
         read_only_fields = [
             "id", "notification_type", "title", "content",
-            "related_type", "related_id", "created_at",
+            "is_strong", "related_type", "related_id", "created_at",
         ]
 
 
@@ -36,6 +36,7 @@ class NotificationBroadcastSerializer(serializers.Serializer):
     user_ids = serializers.ListField(
         child=serializers.UUIDField(), required=False, allow_empty=False
     )
+    is_strong = serializers.BooleanField(required=False, default=False)
 
     def validate_title(self, value: str) -> str:
         """标题去空白后必填"""

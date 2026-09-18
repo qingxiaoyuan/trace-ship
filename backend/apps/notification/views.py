@@ -60,9 +60,15 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="remind-summary")
     def remind_summary(self, request: Request) -> Response:
-        """强提醒聚合：我需要审批的待办任务与需要我整改的意见"""
+        """强提醒聚合：待办审批、待整改意见、未读系统强提醒"""
         data = NotificationService.remind_summary(request.user)
         return success_response(data)
+
+    @action(detail=False, methods=["post"], url_path="remind-ack")
+    def remind_ack(self, request: Request) -> Response:
+        """确认未读系统强提醒（弹窗「知道了」）"""
+        count = NotificationService.ack_strong_notices(request.user)
+        return success_response({"count": count}, message="已确认")
 
     @action(detail=True, methods=["post"], url_path="read")
     def read(self, request: Request, pk=None) -> Response:
@@ -115,9 +121,10 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
         发送系统通知（管理员）
 
         scope=all 下发全部启用用户；scope=users 按 user_ids 指定接收人。
+        is_strong=True 时接收人登录后弹窗强提醒。
 
         Args:
-            request: DRF Request，body 含 title / content / scope / user_ids
+            request: DRF Request，body 含 title / content / scope / user_ids / is_strong
 
         Returns:
             发送条数
@@ -133,5 +140,7 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
             users = list(User.objects.filter(id__in=data["user_ids"], is_active=True))
             if not users:
                 return error_response(40001, "所选用户不存在或已停用")
-        count = NotificationService.notify_system(users, data["title"], data["content"])
+        count = NotificationService.notify_system(
+            users, data["title"], data["content"], is_strong=data.get("is_strong", False)
+        )
         return success_response({"count": count}, message=f"已发送给 {count} 位用户")

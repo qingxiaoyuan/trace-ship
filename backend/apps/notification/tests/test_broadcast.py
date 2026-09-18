@@ -139,3 +139,36 @@ def test_broadcast_validates_params(admin_client):
         "scope": "users",
     }, format="json")
     assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_broadcast_strong_remind(admin_client, normal_user):
+    """is_strong=True 时通知标记为强提醒，未读会出现在 remind-summary"""
+    resp = admin_client.post("/api/notifications/broadcast/", {
+        "title": "强提醒通知",
+        "content": "请立刻阅读",
+        "scope": "users",
+        "user_ids": [str(normal_user.id)],
+        "is_strong": True,
+    }, format="json")
+    assert resp.status_code == 200, resp.data
+    notice = Notification.objects.get(user=normal_user, title="强提醒通知")
+    assert notice.is_strong is True
+    assert notice.is_read is False
+
+    client = APIClient()
+    client.force_authenticate(user=normal_user)
+    summary = client.get("/api/notifications/remind-summary/")
+    assert summary.status_code == 200
+    notices = summary.data["data"]["strong_notices"]
+    assert [item["id"] for item in notices] == [str(notice.id)]
+    assert notices[0]["title"] == "强提醒通知"
+
+    ack = client.post("/api/notifications/remind-ack/")
+    assert ack.status_code == 200
+    assert ack.data["data"]["count"] == 1
+    notice.refresh_from_db()
+    assert notice.is_read is True
+
+    summary = client.get("/api/notifications/remind-summary/")
+    assert summary.data["data"]["strong_notices"] == []

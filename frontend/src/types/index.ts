@@ -1066,6 +1066,8 @@ export interface Notification {
   content: string;
   is_read: boolean;
   read_at?: string;
+  /** 系统广播勾选强提醒后为 true，登录弹窗展示 */
+  is_strong?: boolean;
   related_type: string;
   related_id: string;
   created_at: string;
@@ -1089,12 +1091,21 @@ export interface RemindOpenIssue {
   created_at: string;
 }
 
-/** 通知强提醒汇总（待审批 + 待整改） */
+/** 强提醒：未读的系统强提醒通知 */
+export interface RemindStrongNotice {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+}
+
+/** 通知强提醒汇总（待审批 + 待整改 + 系统强提醒） */
 export interface RemindSummary {
   todo_task_count: number;
   todo_tasks: RemindTodoTask[];
   open_issue_count: number;
   open_issues: RemindOpenIssue[];
+  strong_notices: RemindStrongNotice[];
 }
 
 export type FeedbackCategory = 'suggestion' | 'bug' | 'experience' | 'other';

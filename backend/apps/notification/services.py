@@ -24,6 +24,7 @@ class NotificationService:
         content: str,
         related_type: str = "",
         related_id: str = "",
+        is_strong: bool = False,
     ) -> Notification:
         """
         创建通知
@@ -35,6 +36,7 @@ class NotificationService:
             content: 内容
             related_type: 关联类型
             related_id: 关联 ID
+            is_strong: 是否强提醒（登录弹窗，点「知道了」后关闭）
 
         Returns:
             Notification 实例
@@ -46,25 +48,34 @@ class NotificationService:
             content=content,
             related_type=related_type,
             related_id=related_id,
+            is_strong=is_strong,
         )
 
     @staticmethod
-    def notify_system(users, title: str, content: str) -> int:
+    def notify_system(users, title: str, content: str, is_strong: bool = False) -> int:
         """
         系统通知批量下发（管理员在「系统管理 · 通知发送」触发）
 
         逐用户创建一条 system 类型通知，bulk_create 一次落库。
+        is_strong=True 时接收人登录后弹窗强提醒，点「知道了」后标记已读。
 
         Args:
             users: 接收用户列表
             title: 通知标题
             content: 通知内容
+            is_strong: 是否强提醒
 
         Returns:
             创建的通知条数
         """
         notifications = [
-            Notification(user=user, notification_type="system", title=title, content=content)
+            Notification(
+                user=user,
+                notification_type="system",
+                title=title,
+                content=content,
+                is_strong=is_strong,
+            )
             for user in users
         ]
         return len(Notification.objects.bulk_create(notifications))
@@ -91,16 +102,18 @@ class NotificationService:
         """
         强提醒聚合
 
-        统计当前用户「需要审批」的待办任务与「需要整改」的发布文档意见，
-        各取最近 5 条供强提醒弹窗展示。口径为严格待办（与通知是否已读无关）：
-        审批取 approver=本人且 status=pending 的任务（超管同样只看自己的，
-        不放开全量）；整改取本人发布且 status=open 的整改意见。
+        统计当前用户「需要审批」的待办任务、「需要整改」的发布文档意见，
+        以及未读的系统强提醒通知。待办/整改各取最近 5 条；强提醒通知取
+        未读 is_strong 记录（最多 10 条）。待办口径为严格待办（与通知是否
+        已读无关）：审批取 approver=本人且 status=pending 的任务（超管同样
+        只看自己的，不放开全量）；整改取本人发布且 status=open 的整改意见。
 
         Args:
             user: 当前用户
 
         Returns:
-            强提醒聚合数据：todo_task_count / todo_tasks / open_issue_count / open_issues
+            强提醒聚合数据：todo_task_count / todo_tasks / open_issue_count /
+            open_issues / strong_notices
         """
         from apps.release.models import ReleaseReviewIssue
         from apps.workflow.models import WorkflowTask
@@ -142,12 +155,42 @@ class NotificationService:
             for issue in issue_qs[:5]
         ]
 
+        strong_qs = Notification.objects.filter(
+            user=user, is_strong=True, is_read=False
+        ).order_by("-created_at")
+        strong_notices = [
+            {
+                "id": str(item.id),
+                "title": item.title,
+                "content": item.content,
+                "created_at": item.created_at,
+            }
+            for item in strong_qs[:10]
+        ]
+
         return {
             "todo_task_count": todo_qs.count(),
             "todo_tasks": todo_tasks,
             "open_issue_count": issue_qs.count(),
             "open_issues": open_issues,
+            "strong_notices": strong_notices,
         }
+
+    @staticmethod
+    def ack_strong_notices(user) -> int:
+        """
+        确认当前用户全部未读强提醒（弹窗点「知道了」）
+
+        Args:
+            user: 当前用户
+
+        Returns:
+            标记已读的条数
+        """
+        now = timezone.now()
+        return Notification.objects.filter(user=user, is_strong=True, is_read=False).update(
+            is_read=True, read_at=now
+        )
 
     @staticmethod
     def notify_task_created(task) -> None:

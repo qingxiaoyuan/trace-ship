@@ -1,25 +1,26 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { BellRing, ChevronRight, ClipboardList, GitPullRequestArrow } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { BellRing, ChevronRight, ClipboardList, GitPullRequestArrow, Megaphone } from 'lucide-react';
 import { TsModal } from './TsModal';
 import { notificationApi } from '@/api/notification';
 import { useAuthStore } from '@/stores/authStore';
+import { formatRelativeTime } from '@/utils/time';
 
-/** 每浏览器会话只弹一次的标记键 */
+/** 待办/整改每浏览器会话只弹一次的标记键（系统强提醒未确认前每次登录都弹） */
 const SHOWN_KEY = 'ts-strong-remind-shown';
 
 /**
- * 通知强提醒弹窗：登录后拉取待我审批 / 待我整改汇总，
- * 两项 count 之和 > 0 且本会话未展示过时自动弹出一次。
+ * 通知强提醒弹窗：登录后拉取待我审批 / 待我整改 / 未读系统强提醒。
+ * 系统强提醒未确认前每次进入都会弹出；待办与整改本会话只展示一次。
  */
 export function StrongRemindModal() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const [open, setOpen] = useState(false);
 
   const { data } = useQuery({
-    // queryKey 带用户 id：SPA 内切换账号时不会沿用上一账号的汇总缓存
     queryKey: ['notification-remind-summary', user?.id],
     queryFn: () => notificationApi.getRemindSummary(),
     enabled: !!user,
@@ -28,48 +29,64 @@ export function StrongRemindModal() {
 
   const todoCount = data?.todo_task_count ?? 0;
   const issueCount = data?.open_issue_count ?? 0;
-  const total = todoCount + issueCount;
+  const strongNotices = data?.strong_notices ?? [];
+  const hasStrong = strongNotices.length > 0;
+  const hasTodo = todoCount + issueCount > 0;
 
-  const [checked, setChecked] = useState(false);
-
-  // 数据返回后在渲染期做一次会话级判断（React 官方「渲染期间调整状态」模式，
-  // 避免在 effect 中同步 setState 造成级联渲染）。
-  // 仅在发现待办（total > 0）时闩住：登录瞬间无待办不闩，本会话内后续
-  // refetch 发现新待办仍提醒一次；已弹过的会话靠 sessionStorage 拦截。
-  if (!checked && data && total > 0) {
-    setChecked(true);
-    if (!sessionStorage.getItem(SHOWN_KEY)) {
+  useEffect(() => {
+    if (!user || !data) return;
+    if (hasStrong) {
+      setOpen(true);
+      return;
+    }
+    if (hasTodo && !sessionStorage.getItem(SHOWN_KEY)) {
       setOpen(true);
     }
-  }
+  }, [user, data, hasStrong, hasTodo]);
 
-  // 弹窗打开即写入会话标记：关掉后本会话不再弹（仅同步外部系统，不做 setState）
   useEffect(() => {
-    if (open) sessionStorage.setItem(SHOWN_KEY, '1');
-  }, [open]);
+    if (open && hasTodo && !hasStrong) {
+      sessionStorage.setItem(SHOWN_KEY, '1');
+    }
+  }, [open, hasTodo, hasStrong]);
+
+  const ackMutation = useMutation({
+    mutationFn: () => notificationApi.ackStrongNotices(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notification-remind-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
   if (!user || !data) return null;
 
-  /** 跳转并关闭弹窗 */
-  const go = (to: string) => {
+  const close = () => {
+    if (hasStrong) ackMutation.mutate();
+    if (hasTodo) sessionStorage.setItem(SHOWN_KEY, '1');
     setOpen(false);
+  };
+
+  const go = (to: string) => {
+    close();
     navigate(to);
   };
 
   const todoMore = todoCount - data.todo_tasks.length;
   const issueMore = issueCount - data.open_issues.length;
+  const visible = open && (hasStrong || hasTodo);
 
   return (
     <TsModal
       title="事项提醒"
-      subtitle="有待您处理的审批与整改事项"
+      subtitle={hasStrong ? '有需要您确认的系统通知' : '有待您处理的审批与整改事项'}
       titleIcon={<BellRing className="h-[18px] w-[18px]" strokeWidth={1.5} />}
-      open={open && total > 0}
-      onCancel={() => setOpen(false)}
+      open={visible}
+      onCancel={close}
       footer={
         <div className="flex justify-end">
           <button
-            onClick={() => setOpen(false)}
+            onClick={close}
             className="btn-glow inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-[13px] font-medium text-white"
           >
             知道了
@@ -78,7 +95,30 @@ export function StrongRemindModal() {
       }
     >
       <div className="space-y-5">
-        {/* 待我审批 */}
+        {hasStrong && (
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
+                <Megaphone className="h-4 w-4 text-amber-500" strokeWidth={1.5} />
+                系统通知（{strongNotices.length}）
+              </span>
+            </div>
+            <div className="divide-y divide-indigo-50/60 rounded-lg border border-amber-100/80">
+              {strongNotices.map((notice) => (
+                <div key={notice.id} className="px-3 py-2.5">
+                  <div className="text-[13px] font-medium text-slate-800">{notice.title}</div>
+                  <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-600">
+                    {notice.content}
+                  </p>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    {formatRelativeTime(notice.created_at)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {todoCount > 0 && (
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -120,7 +160,6 @@ export function StrongRemindModal() {
           </div>
         )}
 
-        {/* 待我整改 */}
         {issueCount > 0 && (
           <div>
             <div className="mb-2 flex items-center justify-between">

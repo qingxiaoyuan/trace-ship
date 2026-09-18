@@ -132,6 +132,7 @@ class TestRemindSummary:
         assert data["todo_tasks"] == []
         assert data["open_issue_count"] == 0
         assert data["open_issues"] == []
+        assert data["strong_notices"] == []
 
     def test_counts_my_pending_tasks(self, api_client, user, definition, release):
         """统计我的 pending 审批任务并返回展示字段"""

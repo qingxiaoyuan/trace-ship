@@ -257,6 +257,11 @@ export default function NotificationPage() {
               >
                 {typeText[n.notification_type]}通知
               </span>
+              {n.is_strong ? (
+                <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                  强提醒
+                </span>
+              ) : null}
               {n.is_read ? (
                 <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-400">
                   已读
@@ -537,6 +542,11 @@ export default function NotificationPage() {
                         {!n.is_read && (
                           <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
                         )}
+                        {n.is_strong ? (
+                          <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700">
+                            强提醒
+                          </span>
+                        ) : null}
                         <span
                           className={`inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium max-md:text-xs ${tagTone[n.notification_type]}`}
                         >
@@ -585,10 +595,17 @@ export default function NotificationPage() {
                           未读
                         </span>
                       )}
-                      <span
-                        className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${tagTone[n.notification_type]}`}
-                      >
-                        {typeText[n.notification_type]}
+                      <span className="flex items-center gap-1">
+                        {n.is_strong ? (
+                          <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+                            强提醒
+                          </span>
+                        ) : null}
+                        <span
+                          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${tagTone[n.notification_type]}`}
+                        >
+                          {typeText[n.notification_type]}
+                        </span>
                       </span>
                     </div>
                     <div

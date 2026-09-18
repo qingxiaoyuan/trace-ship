@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { App, Button, Form, Input, Radio, Select } from 'antd';
+import { App, Button, Form, Input, Radio, Select, Switch } from 'antd';
 import { Bell, Send, Users } from 'lucide-react';
 import { notificationApi } from '@/api/notification';
 import { accountApi, type AccountUser } from '@/api/account';
@@ -10,6 +10,7 @@ interface BroadcastFormValues {
   content: string;
   scope: 'all' | 'users';
   user_ids?: string[];
+  is_strong?: boolean;
 }
 
 /** 系统管理 · 通知发送：向全员或指定用户下发系统通知（需 system.notification 权限） */
@@ -44,6 +45,7 @@ export default function NotificationSend() {
         content: values.content,
         scope: values.scope,
         user_ids: values.scope === 'users' ? values.user_ids : undefined,
+        is_strong: values.is_strong === true,
       }),
     onSuccess: (result) => {
       message.success(`已发送给 ${result.count} 位用户`);
@@ -58,7 +60,7 @@ export default function NotificationSend() {
       <div>
         <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">通知发送</h1>
         <p className="mt-1 text-[13px] text-slate-500">
-          向全部用户或指定用户发送系统通知，接收人将在通知中心看到（系统类型）
+          向全部用户或指定用户发送系统通知；勾选强提醒后，接收人登录会弹窗展示，点「知道了」后关闭
         </p>
       </div>
 
@@ -74,7 +76,7 @@ export default function NotificationSend() {
           form={form}
           layout="vertical"
           requiredMark={false}
-          initialValues={{ scope: 'all' }}
+          initialValues={{ scope: 'all', is_strong: false }}
           onFinish={(values) => sendMutation.mutate(values)}
         >
           <Form.Item
@@ -131,6 +133,14 @@ export default function NotificationSend() {
               />
             </Form.Item>
           )}
+          <Form.Item
+            name="is_strong"
+            label={<span className="text-[12px] font-medium text-slate-600">强提醒</span>}
+            valuePropName="checked"
+            extra="开启后接收人登录会弹出强制提醒，点「知道了」后关闭"
+          >
+            <Switch />
+          </Form.Item>
 
           <div className="flex items-center gap-3">
             <Button
