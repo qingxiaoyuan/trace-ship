@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { App, Form, Select, Button } from 'antd';
 import { Plus, Search, User, Trash2, CalendarDays, UserPlus, X, Info } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import { getAvatarColor } from '@/utils/avatar';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { TsModal } from '@/components/TsModal';
+import { useModalDraft } from '@/hooks/useModalDraft';
 
 const roleMap: Record<ProjectMemberRole, string> = {
   manager: '项目负责人',
@@ -106,27 +107,35 @@ function RoleCardSelect({
 
 interface MemberTabProps {
   projectId: string;
+  active?: boolean;
 }
 
-export function MemberTab({ projectId }: MemberTabProps) {
+export function MemberTab({ projectId, active = true }: MemberTabProps) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const draft = useModalDraft(isModalOpen, `project-members:${projectId}`, () => ({ user_ids: [], role: 'developer' as ProjectMemberRole }));
   const [keyword, setKeyword] = useState('');
   const [form] = Form.useForm();
   const selectedUserIds: string[] = Form.useWatch('user_ids', form) || [];
 
+  useEffect(() => {
+    if (!isModalOpen || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [draft.value, form, isModalOpen]);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['project-members', projectId],
     queryFn: () => projectMemberApi.getMembers(projectId),
-    enabled: !!projectId,
+    enabled: active && !!projectId,
   });
 
   // 任意项目成员均可拉人（可授予角色按当前用户角色收缩）；改角色/移除仅项目管理员
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
-    enabled: !!projectId,
+    enabled: active && !!projectId,
   });
   const { canManage, canAddMember, grantableRoles } = useProjectRole(project);
   const roleOptions = useMemo(() => buildRoleOptions(grantableRoles), [grantableRoles]);
@@ -134,7 +143,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
   const { data: usersData, isLoading: usersLoading } = useQuery({
     queryKey: ['account-users-all'],
     queryFn: () => accountApi.getUsers({ page_size: 1000 }),
-    enabled: isModalOpen,
+    enabled: active && isModalOpen,
   });
 
   const addMutation = useMutation({
@@ -146,11 +155,17 @@ export function MemberTab({ projectId }: MemberTabProps) {
           ? `已添加 ${result.created.length} 位成员，${result.skipped} 位已在项目中自动跳过`
           : '添加成功'
       );
-      setIsModalOpen(false);
+      draft.clear();
       form.resetFields();
+      setIsModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] });
     },
   });
+
+  const handleCancelAdd = () => {
+    draft.save(form.getFieldsValue(true));
+    setIsModalOpen(false);
+  };
 
   const updateMutation = useMutation({
     mutationFn: ({
@@ -384,10 +399,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
         subtitle="将成员加入项目并授予角色"
         titleIcon={<UserPlus className="h-[18px] w-[18px]" strokeWidth={1.5} />}
         open={isModalOpen}
-        onCancel={() => {
-          setIsModalOpen(false);
-          form.resetFields();
-        }}
+        onCancel={handleCancelAdd}
         footer={
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-slate-400">
@@ -397,10 +409,7 @@ export function MemberTab({ projectId }: MemberTabProps) {
               <Button
                 type="text"
                 className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"
-                onClick={() => {
-                  setIsModalOpen(false);
-                  form.resetFields();
-                }}
+                onClick={handleCancelAdd}
               >
                 取消
               </Button>

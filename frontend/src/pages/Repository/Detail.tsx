@@ -52,6 +52,7 @@ export default function RepositoryDetail() {
   const { modal } = App.useApp();
   // tab 状态以 URL 为唯一事实源，非法 / 旧 tab 段回退并改写 URL
   const activeTab = resolveTabKey(tab);
+  const [visitedWorkflowRepoId, setVisitedWorkflowRepoId] = useState<string | null>(activeTab === 'workflows' ? id || null : null);
   const [modalOpen, setModalOpen] = useState(false);
   const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
 
@@ -82,6 +83,7 @@ export default function RepositoryDetail() {
   }, [id, tab, activeTab, navigate]);
 
   const handleTabChange = (key: TabKey) => {
+    if (key === 'workflows' || activeTab === 'workflows') setVisitedWorkflowRepoId(id || null);
     navigate(`/repositories/${id}/${key}`, { replace: true });
   };
 
@@ -119,8 +121,10 @@ export default function RepositoryDetail() {
       message.success('保存成功');
       setModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ['repository', id] });
+      return true;
     } catch {
       // 保存失败由全局拦截器统一提示
+      return false;
     }
   };
 
@@ -257,7 +261,9 @@ export default function RepositoryDetail() {
           {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}
           {activeTab === 'version-rule' && <VersionRuleTab repo={repo} />}
-          {activeTab === 'workflows' && <WorkflowTab repository={repo} />}
+          {(activeTab === 'workflows' || visitedWorkflowRepoId === id) && (
+            <div hidden={activeTab !== 'workflows'}><WorkflowTab repository={repo} active={activeTab === 'workflows'} /></div>
+          )}
         </div>
       </TsCard>
 

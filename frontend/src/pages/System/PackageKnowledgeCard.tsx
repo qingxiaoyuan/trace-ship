@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Form, Input, Modal, Switch } from 'antd';
 import { Library, Pencil, Plus, Trash2 } from 'lucide-react';
 import { packageApi } from '@/api/package';
 import type { PackageKnowledge } from '@/types';
+import { useModalDraft } from '@/hooks/useModalDraft';
 
 interface KnowledgeFormValues {
   title: string;
@@ -18,12 +19,21 @@ export function PackageKnowledgeCard() {
   const [form] = Form.useForm<KnowledgeFormValues>();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PackageKnowledge | null>(null);
+  const draft = useModalDraft(modalOpen, editing ? `package-knowledge:${editing.id}` : 'package-knowledge:new', () => editing
+    ? { title: editing.title, content: editing.content, is_active: editing.is_active }
+    : { title: '', content: '', is_active: true });
 
   const { data, isLoading } = useQuery({
     queryKey: ['package-knowledge'],
     queryFn: () => packageApi.getKnowledge({ page_size: 100 }),
   });
   const entries = data?.results || [];
+
+  useEffect(() => {
+    if (!modalOpen || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [draft.value, form, modalOpen]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['package-knowledge'] });
 
@@ -34,6 +44,8 @@ export function PackageKnowledgeCard() {
         : packageApi.createKnowledge(values),
     onSuccess: () => {
       message.success(editing ? '知识已更新' : '知识已创建');
+      draft.clear();
+      form.resetFields();
       setModalOpen(false);
       setEditing(null);
       invalidate();
@@ -59,18 +71,18 @@ export function PackageKnowledgeCard() {
 
   const openCreate = () => {
     setEditing(null);
-    form.setFieldsValue({ title: '', content: '', is_active: true });
     setModalOpen(true);
   };
 
   const openEdit = (item: PackageKnowledge) => {
     setEditing(item);
-    form.setFieldsValue({
-      title: item.title,
-      content: item.content,
-      is_active: item.is_active,
-    });
     setModalOpen(true);
+  };
+
+  const handleModalCancel = () => {
+    draft.save(form.getFieldsValue(true));
+    setModalOpen(false);
+    setEditing(null);
   };
 
   const handleDelete = (item: PackageKnowledge) => {
@@ -176,10 +188,7 @@ export function PackageKnowledgeCard() {
       <Modal
         title={editing ? '编辑知识条目' : '新增知识条目'}
         open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
+        onCancel={handleModalCancel}
         onOk={() => form.validateFields().then((values) => saveMutation.mutate(values))}
         confirmLoading={saveMutation.isPending}
         okText="保存"

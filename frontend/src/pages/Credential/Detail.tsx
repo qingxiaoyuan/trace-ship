@@ -97,8 +97,10 @@ export default function CredentialDetail() {
       message.success("保存成功");
       setModalOpen(false);
       refetch();
+      return true;
     } catch (error) {
       console.error(error);
+      return false;
     }
   };
 

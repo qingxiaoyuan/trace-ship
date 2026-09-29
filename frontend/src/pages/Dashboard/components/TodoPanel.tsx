@@ -25,6 +25,7 @@ export function TodoPanel({
   const { message } = useAppMessage();
   const [rejectTarget, setRejectTarget] = useState<TodoItem | null>(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [rejectDraftTaskId, setRejectDraftTaskId] = useState<string | null>(null);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['workflow-todo'] });
@@ -44,12 +45,22 @@ export function TodoPanel({
       workflowApi.rejectTask(vars.taskId, { comment: vars.comment }),
     onSuccess: () => {
       message.success('已驳回');
-      setRejectTarget(null);
+      setRejectDraftTaskId(null);
       setRejectComment('');
+      setRejectTarget(null);
       invalidate();
     },
     onError: () => message.error('操作失败，请稍后重试'),
   });
+
+  const openReject = (item: TodoItem) => {
+    const taskId = item.taskId || item.key;
+    if (rejectDraftTaskId !== taskId) {
+      setRejectComment('');
+      setRejectDraftTaskId(taskId);
+    }
+    setRejectTarget(item);
+  };
 
   const renderActions = (item: TodoItem) => {
     if (item.kind === 'audit') {
@@ -59,8 +70,7 @@ export function TodoPanel({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setRejectComment('');
-              setRejectTarget(item);
+              openReject(item);
             }}
             className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-medium text-slate-600 transition-colors hover:border-rose-300 hover:text-rose-500"
           >

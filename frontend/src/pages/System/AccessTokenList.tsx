@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
@@ -26,6 +26,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { systemApi } from '@/api/system';
+import { useModalDraft } from '@/hooks/useModalDraft';
 import type { AccessToken, AccessTokenCreated, AccessTokenScope } from '@/api/system';
 
 /** 接口范围中文映射（与后端常量保持一致） */
@@ -78,6 +79,15 @@ export default function AccessTokenList() {
   const [createdToken, setCreatedToken] = useState<AccessToken | null>(null);
   const [createdPlain, setCreatedPlain] = useState('');
   const [form] = Form.useForm<FormValues>();
+  const draft = useModalDraft(formOpen, editing ? `access-token:${editing.id}` : 'access-token:new', () => editing ? {
+    name: editing.name, scopes: editing.scopes || [], expires_at: editing.expires_at ? dayjs(editing.expires_at) : null, remark: editing.remark || '',
+  } : { name: '', scopes: [], expires_at: null, remark: '' });
+
+  useEffect(() => {
+    if (!formOpen || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [draft.value, form, formOpen]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['system-access-tokens', keyword, page, pageSize],
@@ -117,6 +127,8 @@ export default function AccessTokenList() {
         setCreatedToken(res);
         setCreatedPlain(res.token);
       }
+      draft.clear();
+      form.resetFields();
       setFormOpen(false);
       setEditing(null);
     },
@@ -141,20 +153,18 @@ export default function AccessTokenList() {
 
   const openCreate = () => {
     setEditing(null);
-    form.resetFields();
-    form.setFieldsValue({ name: '', scopes: [], expires_at: null, remark: '' });
     setFormOpen(true);
   };
 
   const openEdit = (record: AccessToken) => {
     setEditing(record);
-    form.setFieldsValue({
-      name: record.name,
-      scopes: record.scopes || [],
-      expires_at: record.expires_at ? dayjs(record.expires_at) : null,
-      remark: record.remark || '',
-    });
     setFormOpen(true);
+  };
+
+  const closeForm = () => {
+    draft.save(form.getFieldsValue(true));
+    setFormOpen(false);
+    setEditing(null);
   };
 
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -435,10 +445,7 @@ export default function AccessTokenList() {
       <Modal
         title={editing ? '编辑令牌' : '新建令牌'}
         open={formOpen}
-        onCancel={() => {
-          setFormOpen(false);
-          setEditing(null);
-        }}
+        onCancel={closeForm}
         onOk={() => form.submit()}
         confirmLoading={saveMutation.isPending}
         okText="保存"

@@ -64,7 +64,14 @@ const validTabKeys = new Set(tabItems.map((item) => item.key));
 export default function ProjectDetail() {
   const { id, tab = 'overview' } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState(validTabKeys.has(tab as typeof tabItems[number]['key']) ? tab : 'overview');
+  const activeTab = validTabKeys.has(tab as typeof tabItems[number]['key']) ? tab : 'overview';
+  const [visitedTabs, setVisitedTabs] = useState(() => ({ projectId: id, tabs: new Set([activeTab]) }));
+  // URL 才是当前 tab。深链或后退改地址时也要挂上对应面板，并把访问过的 tab 留在内存里。
+  const mountedTabs = new Set(visitedTabs.projectId === id ? visitedTabs.tabs : []);
+  mountedTabs.add(activeTab);
+  if (visitedTabs.projectId !== id || !visitedTabs.tabs.has(activeTab)) {
+    setVisitedTabs({ projectId: id, tabs: mountedTabs });
+  }
 
   const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
   const { data: project, isLoading, error } = useQuery({
@@ -88,7 +95,10 @@ export default function ProjectDetail() {
   }, [project, setEntityTitle]);
 
   const handleTabChange = (key: string) => {
-    setActiveTab(key);
+    setVisitedTabs((current) => ({
+      projectId: id,
+      tabs: new Set([...(current.projectId === id ? current.tabs : []), activeTab, key]),
+    }));
     navigate(`/projects/${id}/${key}`, { replace: true });
   };
 
@@ -202,9 +212,9 @@ export default function ProjectDetail() {
         </div>
         <div className="p-5">
           {activeTab === 'overview' && <OverviewTab project={project} />}
-          {activeTab === 'repos' && <ProjectComponentTab projectId={id || ''} />}
-          {activeTab === 'members' && <MemberTab projectId={id || ''} />}
-          {activeTab === 'packages' && <PackageTab projectId={id || ''} />}
+          {mountedTabs.has('repos') && <div hidden={activeTab !== 'repos'}><ProjectComponentTab projectId={id || ''} active={activeTab === 'repos'} /></div>}
+          {mountedTabs.has('members') && <div hidden={activeTab !== 'members'}><MemberTab projectId={id || ''} active={activeTab === 'members'} /></div>}
+          {mountedTabs.has('packages') && <div hidden={activeTab !== 'packages'}><PackageTab projectId={id || ''} active={activeTab === 'packages'} /></div>}
           {activeTab === 'svn' && <SvnArtifactsTab projectId={id || ''} />}
           {activeTab === 'releases' && <ReleaseTab projectId={id || ''} />}
         </div>

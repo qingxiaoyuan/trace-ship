@@ -32,17 +32,19 @@ const statusMap: Record<
  * 逐条回复；审查员（issue.can_judge）对每条意见通过/驳回，驳回后可多轮回复，
  * 全部通过即整改完成。
  */
-export function ReleaseReview({ release }: { release: Release }) {
+export function ReleaseReview({ release, active = true }: { release: Release; active?: boolean }) {
   const queryClient = useQueryClient();
   const { message } = useAppMessage();
   const [newContent, setNewContent] = useState('');
   const [replyMap, setReplyMap] = useState<Record<string, string>>({});
   const [rejectIssue, setRejectIssue] = useState<ReleaseReviewIssue | null>(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [rejectDraftIssueId, setRejectDraftIssueId] = useState<string | null>(null);
 
   const { data: issues = [], isLoading } = useQuery({
     queryKey: ['release-review-issues', release.id],
     queryFn: () => releaseApi.getReviewIssues(release.id),
+    enabled: active,
   });
 
   const refresh = () => {
@@ -83,8 +85,9 @@ export function ReleaseReview({ release }: { release: Release }) {
       releaseApi.rejectReviewIssue(release.id, issueId, comment),
     onSuccess: () => {
       message.success('整改意见已驳回，已通知发布人继续整改');
-      setRejectIssue(null);
+      setRejectDraftIssueId(null);
       setRejectComment('');
+      setRejectIssue(null);
       refresh();
     },
   });
@@ -96,6 +99,14 @@ export function ReleaseReview({ release }: { release: Release }) {
 
   const canCreate = release.can_review;
   const canReply = release.can_reply;
+
+  const openReject = (issue: ReleaseReviewIssue) => {
+    if (rejectDraftIssueId !== issue.id) {
+      setRejectComment('');
+      setRejectDraftIssueId(issue.id);
+    }
+    setRejectIssue(issue);
+  };
 
   const handleCreate = () => {
     const content = newContent.trim();
@@ -265,10 +276,7 @@ export function ReleaseReview({ release }: { release: Release }) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setRejectIssue(issue);
-                          setRejectComment('');
-                        }}
+                        onClick={() => openReject(issue)}
                         className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-100"
                       >
                         <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
@@ -287,10 +295,7 @@ export function ReleaseReview({ release }: { release: Release }) {
       <Modal
         title="驳回整改意见"
         open={!!rejectIssue}
-        onCancel={() => {
-          setRejectIssue(null);
-          setRejectComment('');
-        }}
+        onCancel={() => setRejectIssue(null)}
         okText="确认驳回"
         okButtonProps={{ danger: true, loading: rejectMutation.isPending }}
         cancelText="取消"

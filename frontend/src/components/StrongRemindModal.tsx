@@ -36,10 +36,13 @@ export function StrongRemindModal() {
   useEffect(() => {
     if (!user || !data) return;
     if (hasStrong) {
+      // 远端提醒摘要到达后由该 effect 打开提示弹窗。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpen(true);
       return;
     }
     if (hasTodo && !sessionStorage.getItem(SHOWN_KEY)) {
+      // 远端提醒摘要到达后由该 effect 打开提示弹窗。
       setOpen(true);
     }
   }, [user, data, hasStrong, hasTodo]);

@@ -11,6 +11,7 @@ import {
   Users,
 } from 'lucide-react';
 import { TsModal } from '@/components/TsModal';
+import { useModalDraft } from '@/hooks/useModalDraft';
 import {
   credentialTypeOptions,
   credentialTypeIconMap,
@@ -21,7 +22,7 @@ interface CredentialModalProps {
   open: boolean;
   credential: Credential | null;
   onCancel: () => void;
-  onOk: (values: Partial<Credential>) => void;
+  onOk: (values: Partial<Credential>) => void | boolean | Promise<void | boolean>;
 }
 
 const tokenOnlyTypes: CredentialType[] = [
@@ -118,6 +119,13 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
     }
     return { is_active: true };
   }, [credential]);
+  const draft = useModalDraft(open, credential ? `credential:${credential.id}` : 'credential:new', () => initialValues);
+
+  useEffect(() => {
+    if (!open || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [draft.value, form, open]);
 
   // Token 类凭证自动锁定认证模式为 token
   useEffect(() => {
@@ -134,40 +142,42 @@ export function CredentialModal({ open, credential, onCancel, onOk }: Credential
   }, [isPasswordOnly, form]);
 
   const handleCancel = () => {
-    form.resetFields();
+    draft.save(form.getFieldsValue(true));
     onCancel();
   };
 
-  const handleOk = () => {
-    form.validateFields().then((values) => {
-      const payload: Partial<Credential> & { data?: Record<string, string> } = {
-        ...credential,
-        ...values,
-        expires_at: values.expires_at ? values.expires_at.format() : undefined,
-      };
+  const handleOk = async () => {
+    const values = await form.validateFields();
+    const payload: Partial<Credential> & { data?: Record<string, string> } = {
+      ...credential,
+      ...values,
+      expires_at: values.expires_at ? values.expires_at.format() : undefined,
+    };
 
-      payload.auth_mode = effectiveAuthMode;
+    payload.auth_mode = effectiveAuthMode;
 
-      // 凭证内容映射为后端加密需要的 data 字段；留空表示不修改
-      if (values.token) {
-        if (effectiveAuthMode === 'password') {
-          payload.data = {
-            username: values.username || '',
-            password: values.token,
-          };
-        } else {
-          payload.data = { token: values.token };
-          if (isGitlabToken) {
-            payload.data.username = values.username || '';
-          }
+    // 凭证内容映射为后端加密需要的 data 字段；留空表示不修改
+    if (values.token) {
+      if (effectiveAuthMode === 'password') {
+        payload.data = {
+          username: values.username || '',
+          password: values.token,
+        };
+      } else {
+        payload.data = { token: values.token };
+        if (isGitlabToken) {
+          payload.data.username = values.username || '';
         }
       }
+    }
 
-      delete (payload as Record<string, unknown>).token;
+    delete (payload as Record<string, unknown>).token;
 
-      onOk(payload);
+    const saved = await onOk(payload);
+    if (saved !== false) {
+      draft.clear();
       form.resetFields();
-    });
+    }
   };
 
   const tokenLabel = effectiveAuthMode === 'password' ? '密码' : 'Token';

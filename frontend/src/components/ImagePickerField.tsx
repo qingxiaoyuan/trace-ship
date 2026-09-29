@@ -37,6 +37,7 @@ export function ImagePickerField({ value, onChange, placeholder, disabled }: Ima
         </button>
       </div>
       <ImagePickerModal
+        key={value || ''}
         open={open}
         value={value || ''}
         onCancel={() => setOpen(false)}
@@ -63,7 +64,7 @@ const sourceTabs: { label: string; value: PackageImageSource }[] = [
 
 /** 镜像选择弹窗：高密度列表，tag 区分本地 / Nexus，默认本地 */
 function ImagePickerModal({ open, value, onCancel, onSelect }: ImagePickerModalProps) {
-  // Modal destroyOnHidden：每次打开都重新挂载，以最新 value 初始化
+  // 选中项状态由此组件持有，弹窗关闭后仍可恢复；value 改变时由父级 key 重置。
   const [source, setSource] = useState<PackageImageSource>('local');
   const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');

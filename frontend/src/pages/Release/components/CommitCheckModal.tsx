@@ -6,27 +6,16 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { useAppMessage } from '@/hooks/useAppMessage';
 import type { ParsedUpdate, PreviewCommit } from '@/types';
-
-interface CheckRow {
-  hash: string;
-  author: string;
-  type: string;
-  content: string;
-  /** 打开弹窗时的原始内容，用于识别「已编辑但未勾选」的行 */
-  initialContent: string;
-  checked: boolean;
-}
-
-/** 已解析但超出自动填入上限的待勾选条目 */
-interface PendingRow {
-  type: string;
-  content: string;
-  source: 'commit' | 'mr';
-  sourceRef: string;
-  checked: boolean;
-}
+import {
+  buildPendingRows,
+  buildRows,
+  visibleCheckRows,
+  visiblePendingRows,
+  type CheckRow,
+  type PendingRow,
+  type RowEdit,
+} from './commitCheckRows';
 
 interface CommitCheckModalProps {
   lastTag: string | null;
@@ -40,41 +29,7 @@ interface CommitCheckModalProps {
   existingContents?: string[];
   open: boolean;
   onClose: () => void;
-  onAddUpdates: (items: { type: string; content: string; source: 'commit' | 'mr'; source_ref: string }[]) => void;
-}
-
-/** 提取 commit message 的第一行作为标题 */
-function firstLine(message: string): string {
-  return message.split('\n').find((l) => l.trim())?.trim() || message.slice(0, 80);
-}
-
-function buildRows(commits: PreviewCommit[], existingRefs: Set<string>): CheckRow[] {
-  return commits
-    .filter((commit) => !commit.has_af)
-    .filter((commit) => !existingRefs.has(`commit:${commit.hash.slice(0, 8)}`))
-    .map((commit) => {
-      const content = firstLine(commit.message);
-      return {
-        hash: commit.hash,
-        author: commit.author,
-        type: 'A',
-        content,
-        initialContent: content,
-        checked: false,
-      };
-    });
-}
-
-function buildPendingRows(pendingUpdates: ParsedUpdate[], existingContents: Set<string>): PendingRow[] {
-  return pendingUpdates
-    .filter((u) => !existingContents.has(`${u.type || 'A'}:${(u.content || '').trim()}`))
-    .map((u) => ({
-      type: u.type || 'A',
-      content: u.content || '',
-      source: u.source || 'commit',
-      sourceRef: u.source_ref || '',
-      checked: false,
-    }));
+  onAddUpdates: (items: { type: string; content: string; source: 'commit' | 'mr'; source_ref: string }[]) => boolean | void;
 }
 
 export function CommitCheckModal({
@@ -88,28 +43,81 @@ export function CommitCheckModal({
   onClose,
   onAddUpdates,
 }: CommitCheckModalProps) {
-  const { modal } = useAppMessage();
   const existingRefsSet = useMemo(() => new Set(existingRefs), [existingRefs]);
   const existingContentsSet = useMemo(() => new Set(existingContents), [existingContents]);
-  const [rows, setRows] = useState<CheckRow[]>(() => buildRows(commits, existingRefsSet));
-  const [pendingRows, setPendingRows] = useState<PendingRow[]>(() => buildPendingRows(pendingUpdates, existingContentsSet));
+  const [rowEdits, setRowEdits] = useState<Record<string, RowEdit>>({});
+  const [pendingEdits, setPendingEdits] = useState<Record<string, RowEdit>>({});
+  const [removedHashes, setRemovedHashes] = useState<Set<string>>(() => new Set());
   const unparsedCommits = useMemo(() => commits.filter((commit) => !commit.has_af), [commits]);
+  const rows = useMemo(
+    () => visibleCheckRows(buildRows(commits, existingRefsSet), rowEdits, removedHashes),
+    [commits, existingRefsSet, rowEdits, removedHashes],
+  );
+  const pendingRows = useMemo(
+    () => visiblePendingRows(buildPendingRows(pendingUpdates, existingContentsSet), pendingEdits, existingContentsSet),
+    [pendingUpdates, existingContentsSet, pendingEdits],
+  );
 
   const resetRows = useCallback(() => {
-    setRows(buildRows(commits, existingRefsSet));
-    setPendingRows(buildPendingRows(pendingUpdates, existingContentsSet));
-  }, [commits, pendingUpdates, existingRefsSet, existingContentsSet]);
+    setRowEdits({});
+    setPendingEdits({});
+    setRemovedHashes(new Set());
+  }, []);
 
   const updatePendingRow = (idx: number, patch: Partial<PendingRow>) => {
-    setPendingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+    const current = pendingRows[idx];
+    if (!current) return;
+    setPendingEdits((prev) => ({
+      ...prev,
+      [current.originKey]: {
+        type: patch.type ?? current.type,
+        content: patch.content ?? current.content,
+        checked: patch.checked ?? current.checked,
+      },
+    }));
   };
 
   const updateRow = (idx: number, patch: Partial<CheckRow>) => {
-    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+    const current = rows[idx];
+    if (!current) return;
+    setRowEdits((prev) => ({
+      ...prev,
+      [current.hash]: {
+        type: patch.type ?? current.type,
+        content: patch.content ?? current.content,
+        checked: patch.checked ?? current.checked,
+      },
+    }));
   };
 
   const removeRow = (idx: number) => {
-    setRows((prev) => prev.filter((_, i) => i !== idx));
+    const current = rows[idx];
+    if (!current) return;
+    setRemovedHashes((prev) => {
+      const next = new Set(prev);
+      next.add(current.hash);
+      return next;
+    });
+  };
+
+  const setAllPendingChecked = (checked: boolean) => {
+    setPendingEdits((prev) => {
+      const next = { ...prev };
+      pendingRows.forEach((row) => {
+        next[row.originKey] = { type: row.type, content: row.content, checked };
+      });
+      return next;
+    });
+  };
+
+  const setAllRowsChecked = (checked: boolean) => {
+    setRowEdits((prev) => {
+      const next = { ...prev };
+      rows.forEach((row) => {
+        next[row.hash] = { type: row.type, content: row.content, checked };
+      });
+      return next;
+    });
   };
 
   const handleAddUpdates = () => {
@@ -131,7 +139,8 @@ export function CommitCheckModal({
       }));
     const items = [...pendingItems, ...editedItems];
     if (items.length === 0) return;
-    onAddUpdates(items);
+    // 父级一条都没收下时保留候选与勾选，避免「已存在」提示后条目消失
+    if (onAddUpdates(items) === false) return;
     onClose();
   };
 
@@ -139,24 +148,7 @@ export function CommitCheckModal({
   const selectedEditedCount = rows.filter((r) => r.checked && r.content.trim()).length;
   const validCount = selectedPendingCount + selectedEditedCount;
 
-  // 已编辑但未勾选的行：关闭时提示避免误丢修改
-  const editedUnchecked = rows.filter(
-    (r) => !r.checked && r.content.trim() && r.content !== r.initialContent
-  );
-
-  const handleCancel = () => {
-    if (editedUnchecked.length > 0) {
-      modal.confirm({
-        title: '有未勾选但已编辑的 Commit',
-        content: `${editedUnchecked.length} 条未勾选的 Commit 修改将在关闭后丢弃，是否继续？`,
-        okText: '确认关闭',
-        cancelText: '继续编辑',
-        onOk: onClose,
-      });
-      return;
-    }
-    onClose();
-  };
+  const handleCancel = () => onClose();
 
   return (
     <Modal
@@ -225,13 +217,13 @@ export function CommitCheckModal({
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setPendingRows((prev) => prev.map((r) => ({ ...r, checked: true })))}
+                  onClick={() => setAllPendingChecked(true)}
                   className="rounded-md border border-indigo-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
                 >
                   全选
                 </button>
                 <button
-                  onClick={() => setPendingRows((prev) => prev.map((r) => ({ ...r, checked: false })))}
+                  onClick={() => setAllPendingChecked(false)}
                   className="rounded-md border border-indigo-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
                 >
                   清空勾选
@@ -292,13 +284,13 @@ export function CommitCheckModal({
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setRows((prev) => prev.map((r) => ({ ...r, checked: true })))}
+                    onClick={() => setAllRowsChecked(true)}
                     className="rounded-md border border-amber-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-amber-200 hover:text-amber-600"
                   >
                     全选
                   </button>
                   <button
-                    onClick={() => setRows((prev) => prev.map((r) => ({ ...r, checked: false })))}
+                    onClick={() => setAllRowsChecked(false)}
                     className="rounded-md border border-amber-100 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-amber-200 hover:text-amber-600"
                   >
                     清空勾选

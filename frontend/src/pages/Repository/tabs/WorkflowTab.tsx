@@ -41,6 +41,7 @@ import type {
 
 interface WorkflowTabProps {
   repository: Repository;
+  active?: boolean;
 }
 
 type FlowType = 'formal' | 'rc' | 'beta';
@@ -120,7 +121,7 @@ function approverDisplay(apr: WorkflowApproverConfig, usersData?: { results: { i
   return { label, sub, icon: meta.icon, cls: meta.cls };
 }
 
-export function WorkflowTab({ repository }: WorkflowTabProps) {
+export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
   const queryClient = useQueryClient();
   const { message } = useAppMessage();
   const user = useAuthStore((state) => state.user);
@@ -128,6 +129,7 @@ export function WorkflowTab({ repository }: WorkflowTabProps) {
   // 仅仓库创建者（及超管）可编辑审批节点
   const canManage = !!user && (user.is_superuser || user.id === repository.created_by);
 
+  const [boundRepoId, setBoundRepoId] = useState(repository.id);
   const [editOpen, setEditOpen] = useState(false);
   const [editingDef, setEditingDef] = useState<WorkflowDefinition | null>(null);
   const [preview, setPreview] = useState<WorkflowDefinition | null>(null);
@@ -144,14 +146,27 @@ export function WorkflowTab({ repository }: WorkflowTabProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['workflow-definitions-tab', repository.id],
     queryFn: () => workflowApi.getDefinitions({ repository: repository.id, page_size: 1000 }),
-    enabled: !!repository.id,
+    enabled: active && !!repository.id,
   });
 
   const { data: usersData } = useQuery({
     queryKey: ['users-for-workflow'],
     queryFn: () => accountApi.getUsers({ page_size: 1000 }),
-    enabled: editOpen,
+    enabled: active && editOpen,
   });
+
+  // 同一组件切到另一个仓库时丢掉上一份审批草稿，避免把 A 的节点保存到 B。
+  if (repository.id !== boundRepoId) {
+    setBoundRepoId(repository.id);
+    setEditOpen(false);
+    setEditingDef(null);
+    setPreview(null);
+    setNodes([]);
+    setOrigNodes([]);
+    setSelIdx(0);
+    setPendingAprUserId('');
+    setPendingAprType('repo_owner');
+  }
 
  /** 切换节点时清空待添加审批人状态，避免右侧表单项停留在上一节点 */
   const selectNode = (idx: number) => {
@@ -170,22 +185,25 @@ export function WorkflowTab({ repository }: WorkflowTabProps) {
   /** 当前编辑流程对应的发布类型元信息 */
   const curMeta = editingDef ? (FLOW_META[editingDef.release_type as FlowType] || FLOW_META.formal) : FLOW_META.formal;
 
-  /** 打开编辑弹窗：拷贝该流程的 node_config 到本地 */
- const openEdit = (def: WorkflowDefinition) => {
-    const snap = Array.isArray(def.node_config)
-      ? def.node_config.map((n) => ({ ...n, approvers: (n.approvers || []).map((a) => ({ ...a })) }))
-      : [defaultNode()];
-    setNodes(snap);
-    setOrigNodes(JSON.parse(JSON.stringify(snap)));
+  /** 打开同一流程时保留本地编辑状态，切换流程时从服务端重新初始化 */
+  const openEdit = (def: WorkflowDefinition) => {
+    if (editingDef?.id !== def.id) {
+      const snap = Array.isArray(def.node_config)
+        ? def.node_config.map((node) => ({ ...node, approvers: (node.approvers || []).map((approver) => ({ ...approver })) }))
+        : [defaultNode()];
+      setNodes(snap);
+      setOrigNodes(JSON.parse(JSON.stringify(snap)) as WorkflowNodeConfig[]);
+      setSelIdx(0);
+      setPendingAprType('repo_owner');
+      setPendingAprUserId('');
+    }
     setEditingDef(def);
-    selectNode(0);
     setEditOpen(true);
   };
 
-  const closeEdit = () => {
-    setEditOpen(false);
-    setEditingDef(null);
-  };
+  const closeEdit = () => setEditOpen(false);
+
+  const handleCancelEdit = () => closeEdit();
 
   /** 更新当前选中节点 */
   const updateNode = (patch: Partial<WorkflowNodeConfig>) => {
@@ -247,14 +265,22 @@ export function WorkflowTab({ repository }: WorkflowTabProps) {
     if (!editingDef) return;
     if (JSON.stringify(nodes) === JSON.stringify(origNodes)) {
       message.info('无变更');
+      selectNode(0);
       closeEdit();
       return;
     }
     setSaving(true);
     try {
-      await workflowApi.updateDefinition(editingDef.id, { node_config: nodes });
+      const savedDef = await workflowApi.updateDefinition(editingDef.id, { node_config: nodes });
       message.success('保存成功');
-      queryClient.invalidateQueries({ queryKey: ['workflow-definitions-tab'] });
+      queryClient.setQueryData(['workflow-definitions-tab', repository.id], (current: typeof data) => current
+        ? { ...current, results: current.results.map((definition) => definition.id === savedDef.id ? savedDef : definition) }
+        : current);
+      setEditingDef(null);
+      setNodes([]);
+      setOrigNodes([]);
+      selectNode(0);
+      queryClient.invalidateQueries({ queryKey: ['workflow-definitions-tab', repository.id] });
       closeEdit();
     } catch {
       // 保存失败由全局拦截器统一提示
@@ -323,7 +349,7 @@ export function WorkflowTab({ repository }: WorkflowTabProps) {
         subtitle="流程为仓库内置，仅仓库创建者可调整审批节点与审批人"
         titleIcon={<Workflow className="h-[18px] w-[18px]" style={{ strokeWidth: 1.5 }} />}
         open={editOpen}
-        onCancel={closeEdit}
+        onCancel={handleCancelEdit}
         width={1120}
         confirmLoading={saving}
         onOk={handleSave}
@@ -337,7 +363,7 @@ export function WorkflowTab({ repository }: WorkflowTabProps) {
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={closeEdit}
+                onClick={handleCancelEdit}
                 className="rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600"
               >
                 取消

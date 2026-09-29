@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Form, Input, InputNumber, Modal, Select, Switch } from 'antd';
 import { Folder, KeyRound, Monitor, Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import { packageApi } from '@/api/package';
 import { credentialApi } from '@/api/credential';
+import { useModalDraft } from '@/hooks/useModalDraft';
 import type { PackageNode } from '@/types';
 
 interface NodeFormValues {
@@ -59,12 +60,23 @@ export function PackageNodeCard() {
   const [form] = Form.useForm<NodeFormValues>();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PackageNode | null>(null);
+  const draft = useModalDraft<NodeFormValues>(modalOpen, editing ? `package-node:${editing.id}` : 'package-node:new', () => editing ? {
+    name: editing.name, host: editing.host, port: editing.port, os_type: editing.os_type, arch: editing.arch ?? 'x86_64',
+    credential: editing.credential || '', work_root: editing.work_root, max_concurrency: editing.max_concurrency ?? 1,
+    cpu_cores: editing.cpu_cores ?? 0, cpu_priority: editing.cpu_priority ?? 'belownormal', description: editing.description || '', is_active: editing.is_active,
+  } : { name: '', host: '', port: 22, os_type: 'windows', arch: 'x86_64', credential: '', work_root: WORK_ROOT_DEFAULTS.windows, max_concurrency: 1, cpu_cores: 0, cpu_priority: 'belownormal', description: '', is_active: true });
 
   const { data, isLoading } = useQuery({
     queryKey: ['package-nodes'],
     queryFn: () => packageApi.getNodes({ page_size: 100 }),
   });
   const nodes = data?.results || [];
+
+  useEffect(() => {
+    if (!modalOpen || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [draft.value, form, modalOpen]);
 
   // 按表单所选操作系统联动凭证类型：Windows 用 Windows 密码，麒麟 Linux 用 SSH 密码
   const osType = Form.useWatch('os_type', form) ?? 'windows';
@@ -87,6 +99,8 @@ export function PackageNodeCard() {
         : packageApi.createNode(values),
     onSuccess: () => {
       message.success(editing ? '节点已更新' : '节点已创建');
+      draft.clear();
+      form.resetFields();
       setModalOpen(false);
       setEditing(null);
       invalidate();
@@ -132,40 +146,18 @@ export function PackageNodeCard() {
 
   const openCreate = () => {
     setEditing(null);
-    form.setFieldsValue({
-      name: '',
-      host: '',
-      port: 22,
-      os_type: 'windows',
-      arch: 'x86_64',
-      credential: undefined as unknown as string,
-      work_root: WORK_ROOT_DEFAULTS.windows,
-      max_concurrency: 1,
-      cpu_cores: 0,
-      cpu_priority: 'belownormal',
-      description: '',
-      is_active: true,
-    });
     setModalOpen(true);
   };
 
   const openEdit = (node: PackageNode) => {
     setEditing(node);
-    form.setFieldsValue({
-      name: node.name,
-      host: node.host,
-      port: node.port,
-      os_type: node.os_type,
-      arch: node.arch ?? 'x86_64',
-      credential: node.credential || undefined,
-      work_root: node.work_root,
-      max_concurrency: node.max_concurrency ?? 1,
-      cpu_cores: node.cpu_cores ?? 0,
-      cpu_priority: node.cpu_priority ?? 'belownormal',
-      description: node.description || '',
-      is_active: node.is_active,
-    });
     setModalOpen(true);
+  };
+
+  const handleModalCancel = () => {
+    draft.save(form.getFieldsValue(true));
+    setModalOpen(false);
+    setEditing(null);
   };
 
   /** 切换操作系统：工作目录仍为默认值（未手改）时同步切换；登录凭证类型随之变化，需重新选择 */
@@ -367,10 +359,7 @@ export function PackageNodeCard() {
       <Modal
         title={editing ? '编辑打包节点' : '新增打包节点'}
         open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
+        onCancel={handleModalCancel}
         onOk={() => form.validateFields().then((values) => saveMutation.mutate(values))}
         confirmLoading={saveMutation.isPending}
         okText="保存"

@@ -490,8 +490,10 @@ function ReleaseReviewDetail({
   const [svnFailResults, setSvnFailResults] = useState<SvnSyncResult[]>([]);
   const [docRows, setDocRows] = useState<MdTableRow[]>([]);
   const [editContent, setEditContent] = useState('');
-  const [docSaved, setDocSaved] = useState(true);
   const [tableEditMode, setTableEditMode] = useState(true);
+  const [draftReleaseId, setDraftReleaseId] = useState<string | null>(null);
+  const [docDirty, setDocDirty] = useState(false);
+  const [appliedToken, setAppliedToken] = useState<string | null>(null);
 
   // 修改发布说明需 developer 及以上项目角色
   const { data: project } = useQuery({
@@ -510,6 +512,7 @@ function ReleaseReviewDetail({
   const highlightKws = detail?.can_review
     ? parseKeywords(publicConfigs?.review_doc_highlight_keywords)
     : [];
+  const reviewDocContent = detail?.release_doc || '';
 
   const updateDocMutation = useMutation({
     mutationFn: (doc: string) => releaseApi.updateDoc(release.id, doc),
@@ -524,43 +527,44 @@ function ReleaseReviewDetail({
       } else {
         message.success('文档已保存');
       }
+      queryClient.setQueryData<Release>(['release', 'detail', release.id], data);
       queryClient.invalidateQueries({ queryKey: ['release', 'detail', release.id] });
-      setDocSaved(true);
+      setDocDirty(false);
+      setDraftReleaseId(null);
+      setAppliedToken(null);
       setEditOpen(false);
     },
   });
 
-  const openEdit = () => {
-    const md = detail?.release_doc || '';
-    const parsed = parseMdTable(md);
+  // 没有本地改动时跟服务端说明走；有改动时保留，直到保存。
+  const serverToken = `${release.id}:${reviewDocContent}`;
+  if (editOpen && (!docDirty || draftReleaseId !== release.id) && appliedToken !== serverToken) {
+    const parsed = parseMdTable(reviewDocContent);
+    setAppliedToken(serverToken);
+    setDraftReleaseId(release.id);
+    setDocDirty(false);
     setDocRows(parsed);
-    setEditContent(md);
+    setEditContent(reviewDocContent);
     setTableEditMode(parsed.length > 0);
-    setDocSaved(true);
-    setEditOpen(true);
-  };
+  }
+
+  const openEdit = () => setEditOpen(true);
 
   const handleRowChange = (idx: number, value: string) => {
+    setDocDirty(true);
     setDocRows((prev) => prev.map((r, i) => (i === idx ? { ...r, value } : r)));
-    setDocSaved(false);
   };
 
   const handleCheckboxChange = (idx: number, value: string) => {
+    setDocDirty(true);
     setDocRows((prev) => applyCheckboxChange(prev, idx, value));
-    setDocSaved(false);
   };
 
   const handleSaveDoc = () => {
     updateDocMutation.mutate(tableEditMode ? buildMdTable(docRows) : editContent);
   };
 
-  const handleCloseEdit = () => {
-    if (!docSaved) {
-      const ok = window.confirm('有未保存的修改，确定要放弃吗？');
-      if (!ok) return;
-    }
-    setEditOpen(false);
-  };
+  const handleCloseEdit = () => setEditOpen(false);
 
   const handleCloseSvnFail = () => {
     setSvnFailResults([]);
@@ -684,8 +688,10 @@ function ReleaseReviewDetail({
 
           {tab === 'commits' && <ReleaseCommits release={detail || release} />}
 
-          {tab === 'review' && status === 'released' && detail && (
-            <ReleaseReview release={detail} />
+          {status === 'released' && detail && (
+            <div hidden={tab !== 'review'}>
+              <ReleaseReview release={detail} active={tab === 'review'} />
+            </div>
           )}
         </div>
       </div>
@@ -742,8 +748,8 @@ function ReleaseReviewDetail({
           <textarea
             value={editContent}
             onChange={(e) => {
+              setDocDirty(true);
               setEditContent(e.target.value);
-              setDocSaved(false);
             }}
             rows={16}
             placeholder="请输入 Markdown 格式的发布说明"

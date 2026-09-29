@@ -86,8 +86,10 @@ export default function ProjectList() {
       setModalOpen(false);
       setPage(1);
       refetch();
+      return true;
     } catch (error) {
       console.error(error);
+      return false;
     }
   };
 

@@ -3,6 +3,7 @@ import { Form, Input, Select, Button } from "antd";
 import { GitBranch, Link } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { TsModal } from "@/components/TsModal";
+import { useModalDraft } from "@/hooks/useModalDraft";
 import { projectApi } from "@/api/project";
 import { credentialApi } from "@/api/credential";
 import type { Repository, CredentialType } from "@/types";
@@ -12,7 +13,7 @@ interface RepositoryModalProps {
   repo: Repository | null;
   projectId?: string;
   onCancel: () => void;
-  onOk: (values: Partial<Repository>) => void | Promise<void>;
+  onOk: (values: Partial<Repository>) => void | boolean | Promise<unknown>;
 }
 
 // 仓库平台与凭证类型的对应关系，与后端 VENDOR_TO_CRED_TYPE 保持一致
@@ -28,6 +29,16 @@ export function RepositoryModal({
   onOk,
 }: RepositoryModalProps) {
   const [form] = Form.useForm();
+  const draft = useModalDraft(open, repo ? `repository:${repo.id}` : `repository:new:${projectId || ''}`, () => repo
+    ? {
+        repo_type: repo.repo_type,
+        vendor: repo.vendor,
+        name: repo.name,
+        url: repo.clone_url || repo.url,
+        default_branch: repo.default_branch,
+        credential_id: repo.credential_id,
+      }
+    : { repo_type: 'git', vendor: 'gitlab', default_branch: 'main' });
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
     queryKey: ["repository-modal-project", projectId],
@@ -70,45 +81,36 @@ export function RepositoryModal({
   }, [credentialOptions, form]);
 
   useEffect(() => {
-    if (open) {
-      if (repo) {
-        form.setFieldsValue({
-          repo_type: repo.repo_type,
-          vendor: repo.vendor,
-          name: repo.name,
-          // 编辑回填完整克隆地址（url 可能只存服务端根地址）
-          url: repo.clone_url || repo.url,
-          default_branch: repo.default_branch,
-          credential_id: repo.credential_id,
-        });
-      } else {
-        form.resetFields();
-        form.setFieldsValue({
-          repo_type: "git",
-          vendor: "gitlab",
-          default_branch: "main",
-        });
-      }
-    }
-  }, [open, repo, projectId, form]);
+    if (!open || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [open, draft.value, form]);
 
-  const handleOk = () => {
-    form.validateFields().then((values) => {
-      const payload: Partial<Repository> & {
-        project?: string;
-        credential?: string;
-      } = {
-        ...values,
-        ...(projectId ? { project: projectId } : {}),
-        credential: values.credential_id,
-        // 凭证统一为个人凭证（SVN 凭证全系统共享），credential_mode 固定为 personal
-        credential_mode: "personal",
-      };
-      // 删除前端字段，避免污染后端
-      delete (payload as Record<string, unknown>).credential_id;
-      onOk(payload);
-      form.resetFields();
-    });
+  const handleOk = async () => {
+    const values = await form.validateFields();
+    const payload: Partial<Repository> & {
+      project?: string;
+      credential?: string;
+    } = {
+      ...values,
+      ...(projectId ? { project: projectId } : {}),
+      credential: values.credential_id,
+      // 凭证统一为个人凭证（SVN 凭证全系统共享），credential_mode 固定为 personal
+      credential_mode: "personal",
+    };
+    // 删除前端字段，避免污染后端
+    delete (payload as Record<string, unknown>).credential_id;
+    try {
+      const saved = await onOk(payload);
+      if (saved !== false) draft.clear();
+    } catch {
+      // 保存失败时保留表单草稿。
+    }
+  };
+
+  const handleCancel = () => {
+    draft.save(form.getFieldsValue(true));
+    onCancel();
   };
 
   const confirmLoading = (projectId ? projectsLoading : false) || credentialsLoading;
@@ -119,20 +121,14 @@ export function RepositoryModal({
       subtitle="登记可复用的物理代码仓库，版本与 Tag 归属仓库"
       titleIcon={<GitBranch className="h-[18px] w-[18px]" strokeWidth={1.5} />}
       open={open}
-      onCancel={() => {
-        form.resetFields();
-        onCancel();
-      }}
+      onCancel={handleCancel}
       width={640}
       footer={
         <div className="flex items-center justify-end gap-3">
           <Button
             type="text"
             className="h-auto rounded-lg px-4 py-2 text-[13px] font-medium text-slate-500 transition hover:text-slate-700"
-            onClick={() => {
-              form.resetFields();
-              onCancel();
-            }}
+            onClick={handleCancel}
           >
             取消
           </Button>

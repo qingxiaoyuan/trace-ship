@@ -51,6 +51,7 @@ export default function PackageImagePage() {
   const importMutation = useMutation({
     mutationFn: (file: File) => packageApi.importImage(file),
     onSuccess: (result) => {
+      setImportFile(null);
       setImportResult(result.loaded);
       if (result.loaded.length > 0) {
         message.success(`已导入 ${result.loaded.length} 个镜像`);
@@ -63,8 +64,7 @@ export default function PackageImagePage() {
 
   const closeImport = () => {
     setImportOpen(false);
-    setImportFile(null);
-    setImportResult(null);
+    if (!importFile) setImportResult(null);
   };
 
   return (

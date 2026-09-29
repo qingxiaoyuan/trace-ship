@@ -155,6 +155,18 @@ export default function ReleaseCreate() {
     [changesPreview]
   );
 
+  const commitCheckKey = useMemo(
+    () => JSON.stringify([
+      watchRepository || '',
+      watchBranch || '',
+      watchReleaseType || '',
+      changesPreview?.last_tag || '',
+      (changesPreview?.commits || []).map((commit) => commit.hash),
+      pendingParsedUpdates.map((item) => [item.source || 'commit', item.source_ref || '', item.type || 'A', item.content || '']),
+    ]),
+    [watchRepository, watchBranch, watchReleaseType, changesPreview?.last_tag, changesPreview?.commits, pendingParsedUpdates],
+  );
+
   // 已加入更新内容的条目引用（`source:source_ref`），弹窗内据此过滤已填入的未解析 Commit。
   // 跳过空内容条目（如「手动添加」产生的空白行），避免产生无意义的空引用
   const existingUpdateRefs = useMemo(
@@ -1017,15 +1029,15 @@ export default function ReleaseCreate() {
             </div>
           </div>
         </Form>
-        {commitCheckOpen && (
-          <CommitCheckModal
+        <CommitCheckModal
+            key={commitCheckKey}
             lastTag={changesPreview?.last_tag ?? null}
             branch={watchBranch || ''}
             commits={changesPreview?.commits || []}
             pendingUpdates={pendingParsedUpdates}
             existingRefs={existingUpdateRefs}
             existingContents={existingUpdateContents}
-            open
+            open={commitCheckOpen}
             onClose={() => setCommitCheckOpen(false)}
             onAddUpdates={(items) => {
               // 按「类型 + 内容」去重，避免重复勾选/多次添加产生重复条目
@@ -1037,13 +1049,13 @@ export default function ReleaseCreate() {
               );
               if (newItems.length === 0) {
                 message.info('所选条目均已存在于更新内容');
-                return;
+                return false;
               }
               setUpdates((prev) => [...prev, ...newItems]);
               message.success(`已添加 ${newItems.length} 条更新内容`);
+              return true;
             }}
           />
-        )}
         </>
       )}
 

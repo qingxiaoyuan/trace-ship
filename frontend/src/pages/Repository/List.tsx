@@ -98,8 +98,10 @@ export default function RepositoryList() {
       setEditingRepo(null);
       setPage(1);
       refetch();
+      return true;
     } catch (error) {
       console.error(error);
+      return false;
     }
   };
 

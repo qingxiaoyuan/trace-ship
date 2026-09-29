@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Button, Form, Input, Select, Switch } from 'antd';
 import { Boxes, GitBranch, Folder } from 'lucide-react';
 import { projectApi } from '@/api/project';
+import { useModalDraft } from '@/hooks/useModalDraft';
 import { TsModal } from '@/components/TsModal';
 import type { ProjectComponent, Repository } from '@/types';
 
@@ -12,7 +13,7 @@ interface ProjectComponentModalProps {
   component: ProjectComponent | null;
   submitting?: boolean;
   onCancel: () => void;
-  onOk: (values: Partial<ProjectComponent>) => void;
+  onOk: (values: Partial<ProjectComponent>) => void | boolean | Promise<unknown>;
 }
 
 /** 维护“项目如何使用仓库”的配置，不编辑仓库地址或凭证。 */
@@ -25,6 +26,9 @@ export function ProjectComponentModal({
   onOk,
 }: ProjectComponentModalProps) {
   const [form] = Form.useForm();
+  const draft = useModalDraft(open, component ? `project-component:${component.id}` : `project-component:new:${projectId}`, () => component
+    ? { repository: component.repository, default_branch: component.default_branch, source_subdir: component.source_subdir, is_active: component.is_active }
+    : { is_active: true });
 
   const { data: availableRepositories, isLoading } = useQuery({
     queryKey: ['available-project-repositories', projectId],
@@ -38,21 +42,10 @@ export function ProjectComponentModal({
   });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !draft.value) return;
     form.resetFields();
-    if (component) {
-      form.setFieldsValue({
-        repository: component.repository,
-        default_branch: component.default_branch,
-        source_subdir: component.source_subdir,
-        is_active: component.is_active,
-      });
-    } else {
-      form.setFieldsValue({
-        is_active: true,
-      });
-    }
-  }, [component, form, open]);
+    form.setFieldsValue(draft.value);
+  }, [draft.value, form, open]);
 
   const handleRepositoryChange = (repositoryId: string) => {
     const repository = availableRepositories?.find((item) => item.id === repositoryId);
@@ -67,7 +60,17 @@ export function ProjectComponentModal({
     if (component) {
       delete values.repository;
     }
-    onOk(values);
+    try {
+      const saved = await onOk(values);
+      if (saved !== false) draft.clear();
+    } catch {
+      // 保存失败时保留表单草稿。
+    }
+  };
+
+  const handleCancel = () => {
+    draft.save(form.getFieldsValue(true));
+    onCancel();
   };
 
   const linkedRepositoryIds = new Set((linkedRepositories || []).map((item) => item.repository));
@@ -93,7 +96,7 @@ export function ProjectComponentModal({
       subtitle={component ? '调整该仓库在当前项目内的使用配置' : '将可复用的物理仓库组合进当前项目'}
       titleIcon={<Boxes className="h-[18px] w-[18px]" strokeWidth={1.5} />}
       open={open}
-      onCancel={onCancel}
+      onCancel={handleCancel}
       width={640}
       footer={
         <div className="flex items-center justify-end gap-3">

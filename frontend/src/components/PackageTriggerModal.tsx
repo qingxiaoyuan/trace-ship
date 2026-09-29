@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Form, Modal, Select } from 'antd';
+import { App, Form, Input, Modal, Select } from 'antd';
 import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
+import { useModalDraft } from '@/hooks/useModalDraft';
 
 /**
  * 触发打包的目标配置（PackageConfig / 收藏配置均可，只需基础字段）。
@@ -29,12 +30,25 @@ interface PackageTriggerModalProps {
  * 「新建打包」共享弹窗：按已发布 Tag / 按分支最新代码两种触发方式。
  * 供打包看板、常用配置面板、工作台打包速览复用。
  */
+type PackageTriggerFormValues = { release_id?: string; branch?: string; mode?: 'release' | 'branch' };
+
 export function PackageTriggerModal({ open, config, onClose }: PackageTriggerModalProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
-  const [form] = Form.useForm<{ release_id?: string; branch?: string }>();
-  const [mode, setMode] = useState<'release' | 'branch'>('release');
+  const [form] = Form.useForm<PackageTriggerFormValues>();
+  const mode = Form.useWatch('mode', form) || 'release';
+  const draft = useModalDraft<{ values: PackageTriggerFormValues }>(
+    open,
+    config ? `package-trigger:${config.id}` : 'package-trigger:none',
+    () => ({ values: { mode: 'release' } }),
+  );
+
+  useEffect(() => {
+    if (!open || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value.values);
+  }, [draft.value, form, open]);
 
   const { data: releasedData, isLoading: releasesLoading } = useQuery({
     queryKey: ['package-trigger-releases', config?.project, config?.repository],
@@ -88,7 +102,9 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
         message.success('已创建打包任务');
         navigate(`/packages/${task.id}`);
       }
-      handleClose();
+      draft.clear();
+      form.resetFields();
+      onClose();
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['package-favorites'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-package-tasks'] });
@@ -99,13 +115,12 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
   });
 
   const handleClose = useCallback(() => {
-    setMode('release');
-    form.resetFields();
+    draft.save({ values: form.getFieldsValue(true) });
     onClose();
-  }, [form, onClose]);
+  }, [draft, form, onClose]);
 
   const handleFinish = useCallback(
-    (values: { release_id?: string; branch?: string }) => {
+    (values: PackageTriggerFormValues) => {
       if (mode === 'branch') {
         if (!values.branch) {
           message.warning('请选择要打包的分支');
@@ -136,7 +151,8 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
         <div>打包配置：{config?.name || '-'}</div>
         <div>关联仓库：{config?.repository_name || '-'}</div>
       </div>
-      <Form form={form} layout="vertical" onFinish={handleFinish}>
+      <Form form={form} layout="vertical" initialValues={{ mode: 'release' }} onFinish={handleFinish}>
+        <Form.Item name="mode" hidden><Input /></Form.Item>
         <div className="mb-3">
           <div className="mb-1.5 text-[13px] font-medium text-slate-700">打包方式</div>
           <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
@@ -144,8 +160,7 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
               type="button"
               className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${mode === 'release' ? 'on' : ''}`}
               onClick={() => {
-                setMode('release');
-                form.setFieldsValue({ release_id: undefined, branch: undefined });
+                form.setFieldsValue({ mode: 'release', release_id: undefined, branch: undefined });
               }}
             >
               按已发布 Tag
@@ -154,8 +169,7 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
               type="button"
               className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${mode === 'branch' ? 'on' : ''}`}
               onClick={() => {
-                setMode('branch');
-                form.setFieldsValue({ release_id: undefined, branch: undefined });
+                form.setFieldsValue({ mode: 'branch', release_id: undefined, branch: undefined });
               }}
             >
               按分支最新代码

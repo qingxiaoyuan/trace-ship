@@ -360,7 +360,9 @@ export default function ReleaseDetail() {
               })}
             </div>
             <div className="p-5">
-              {activeTab === 'notes' && <ReleaseNotes release={release} />}
+              <div hidden={activeTab !== 'notes'}>
+                <ReleaseNotes release={release} active={activeTab === 'notes'} />
+              </div>
               {activeTab === 'commits' && <ReleaseCommits release={release} />}
               {activeTab === 'packages' && <ReleasePackages release={release} />}
             </div>

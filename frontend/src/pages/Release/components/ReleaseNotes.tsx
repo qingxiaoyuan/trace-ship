@@ -31,14 +31,16 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 /** 发布说明 Tab：渲染 Markdown 表格 + 导出 */
-export function ReleaseNotes({ release }: ReleaseNotesProps) {
+export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { active?: boolean }) {
   const queryClient = useQueryClient();
   const { message } = useAppMessage();
   const [editOpen, setEditOpen] = useState(false);
   const [docRows, setDocRows] = useState<MdTableRow[]>([]);
   const [editContent, setEditContent] = useState('');
-  const [docSaved, setDocSaved] = useState(true);
   const [tableEditMode, setTableEditMode] = useState(true);
+  const [draftReleaseId, setDraftReleaseId] = useState<string | null>(null);
+  const [docDirty, setDocDirty] = useState(false);
+  const [appliedToken, setAppliedToken] = useState<string | null>(null);
 
   const mdContent = release.release_doc || '';
   const hasDoc = !!mdContent.trim();
@@ -48,59 +50,65 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
   const { data: project } = useQuery({
     queryKey: ['project', release.project || release.project_id],
     queryFn: () => projectApi.getProject(release.project || release.project_id || ''),
-    enabled: !!(release.project || release.project_id),
+    enabled: active && !!(release.project || release.project_id),
   });
   const { canDevelop } = useProjectRole(project);
   const hideDownload = useHideFileDownload();
 
   const generateMutation = useMutation({
     mutationFn: () => releaseApi.generateDoc(release.id),
-    onSuccess: () => {
+    onSuccess: (doc) => {
       message.success('发布说明已生成');
+      queryClient.setQueryData<Release>(['release', release.id], (current) => current ? { ...current, release_doc: doc } : current);
+      setDocDirty(false);
+      setDraftReleaseId(null);
+      setAppliedToken(null);
       queryClient.invalidateQueries({ queryKey: ['release', release.id] });
     },
   });
 
   const updateDocMutation = useMutation({
     mutationFn: (doc: string) => releaseApi.updateDoc(release.id, doc),
-    onSuccess: () => {
+    onSuccess: (updatedRelease) => {
       message.success('文档已保存');
+      queryClient.setQueryData<Release>(['release', release.id], updatedRelease);
       queryClient.invalidateQueries({ queryKey: ['release', release.id] });
-      setDocSaved(true);
+      setDocDirty(false);
+      setDraftReleaseId(null);
+      setAppliedToken(null);
       setEditOpen(false);
     },
   });
 
-  const openEdit = () => {
+  // 没有本地改动时跟服务端说明走；有改动时保留，直到保存或重新生成。
+  const serverToken = `${release.id}:${mdContent}`;
+  if (editOpen && (!docDirty || draftReleaseId !== release.id) && appliedToken !== serverToken) {
     const parsed = parseMdTable(mdContent);
+    setAppliedToken(serverToken);
+    setDraftReleaseId(release.id);
+    setDocDirty(false);
     setDocRows(parsed);
     setEditContent(mdContent);
     setTableEditMode(parsed.length > 0);
-    setDocSaved(true);
-    setEditOpen(true);
-  };
+  }
+
+  const openEdit = () => setEditOpen(true);
 
   const handleRowChange = (idx: number, value: string) => {
+    setDocDirty(true);
     setDocRows((prev) => prev.map((r, i) => (i === idx ? { ...r, value } : r)));
-    setDocSaved(false);
   };
 
   const handleCheckboxChange = (idx: number, value: string) => {
+    setDocDirty(true);
     setDocRows((prev) => applyCheckboxChange(prev, idx, value));
-    setDocSaved(false);
   };
 
   const handleSaveDoc = () => {
     updateDocMutation.mutate(tableEditMode ? buildMdTable(docRows) : editContent);
   };
 
-  const handleCloseEdit = () => {
-    if (!docSaved) {
-      const ok = window.confirm('有未保存的修改，确定要放弃吗？');
-      if (!ok) return;
-    }
-    setEditOpen(false);
-  };
+  const handleCloseEdit = () => setEditOpen(false);
 
   const handleExportPdf = async () => {
     try {
@@ -194,8 +202,8 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
             <Input.TextArea
               value={editContent}
               onChange={(e) => {
+                setDocDirty(true);
                 setEditContent(e.target.value);
-                setDocSaved(false);
               }}
               rows={20}
               placeholder="请输入 Markdown 格式的发布说明"
@@ -325,8 +333,8 @@ export function ReleaseNotes({ release }: ReleaseNotesProps) {
           <Input.TextArea
             value={editContent}
             onChange={(e) => {
+              setDocDirty(true);
               setEditContent(e.target.value);
-              setDocSaved(false);
             }}
             rows={20}
             placeholder="请输入 Markdown 格式的发布说明"

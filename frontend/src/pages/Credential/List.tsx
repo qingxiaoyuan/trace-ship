@@ -75,8 +75,10 @@ export default function CredentialList() {
       setModalOpen(false);
       setEditingCredential(null);
       refetch();
+      return true;
     } catch (error) {
       console.error(error);
+      return false;
     }
   };
 

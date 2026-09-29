@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Form, Modal, Select } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { packageApi } from '@/api/package';
+import { useModalDraft } from '@/hooks/useModalDraft';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
 import { PermissionAlert } from '@/components/PermissionAlert';
@@ -14,10 +15,11 @@ import type { PackageConfig } from '@/types';
 
 interface PackageTabProps {
   projectId: string;
+  active?: boolean;
 }
 
 
-export function PackageTab({ projectId }: PackageTabProps) {
+export function PackageTab({ projectId, active = true }: PackageTabProps) {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -26,12 +28,19 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const [editing, setEditing] = useState<PackageConfig | null>(null);
   const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
   const [triggerForm] = Form.useForm<{ release_id: string }>();
+  const triggerDraft = useModalDraft<{ release_id?: string }>(triggerOpen, triggerConfig ? `package-trigger:${triggerConfig.id}` : 'package-trigger:none', () => ({}));
+
+  useEffect(() => {
+    if (!triggerOpen || !triggerDraft.value) return;
+    triggerForm.resetFields();
+    triggerForm.setFieldsValue(triggerDraft.value);
+  }, [triggerDraft.value, triggerForm, triggerOpen]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['package-configs', projectId],
     queryFn: () =>
       fetchAllPages((page, pageSize) => packageApi.getConfigs({ project: projectId, page, page_size: pageSize })),
-    enabled: !!projectId,
+    enabled: active && !!projectId,
   });
 
   // 「最近打包」列：分页拉全量后按配置归并出最新一条（服务端单页上限 100）
@@ -39,14 +48,14 @@ export function PackageTab({ projectId }: PackageTabProps) {
     queryKey: ['package-tasks', 'project', projectId],
     queryFn: () =>
       fetchAllPages((page, pageSize) => packageApi.getTasks({ project: projectId, page, page_size: pageSize })),
-    enabled: !!projectId,
+    enabled: active && !!projectId,
   });
 
   // 项目内操作权限：配置增删改需 manager，触发打包需 tester/developer/manager
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
-    enabled: !!projectId,
+    enabled: active && !!projectId,
   });
   const { canManage, canTriggerPackage } = useProjectRole(project);
 
@@ -59,7 +68,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
         status: 'released',
         page_size: 1000,
       }),
-    enabled: triggerOpen && !!projectId && !!triggerConfig?.repository,
+    enabled: active && triggerOpen && !!projectId && !!triggerConfig?.repository,
   });
 
   const deleteMutation = useMutation({
@@ -91,9 +100,10 @@ export function PackageTab({ projectId }: PackageTabProps) {
         message.success('已创建打包任务');
         navigate(`/packages/${task.id}`);
       }
+      triggerDraft.clear();
+      triggerForm.resetFields();
       setTriggerOpen(false);
       setTriggerConfig(null);
-      triggerForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
     },
   });
@@ -106,7 +116,12 @@ export function PackageTab({ projectId }: PackageTabProps) {
   const openTrigger = (record: PackageConfig) => {
     setTriggerConfig(record);
     setTriggerOpen(true);
-    triggerForm.resetFields();
+  };
+
+  const closeTrigger = () => {
+    triggerDraft.save(triggerForm.getFieldsValue(true));
+    setTriggerOpen(false);
+    setTriggerConfig(null);
   };
 
   const openEdit = (record: PackageConfig) => {
@@ -163,11 +178,7 @@ export function PackageTab({ projectId }: PackageTabProps) {
       <Modal
         title="立即打包"
         open={triggerOpen}
-        onCancel={() => {
-          setTriggerOpen(false);
-          setTriggerConfig(null);
-          triggerForm.resetFields();
-        }}
+        onCancel={closeTrigger}
         onOk={() => triggerForm.submit()}
         confirmLoading={triggerMutation.isPending}
         destroyOnHidden

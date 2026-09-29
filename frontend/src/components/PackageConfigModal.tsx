@@ -12,6 +12,7 @@ import { ImagePickerField } from '@/components/ImagePickerField';
 import { ScriptEditorField } from '@/components/ScriptEditorField';
 import { AIScriptModal } from '@/components/AIScriptModal';
 import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
+import { useModalDraft } from '@/hooks/useModalDraft';
 
 interface PackageConfigModalProps {
   open: boolean;
@@ -127,7 +128,21 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
   const [form] = Form.useForm<Partial<PackageConfig>>();
+  const draft = useModalDraft<Partial<PackageConfig>>(open, editing ? `package-config:${editing.id}` : `package-config:new:${fixedProjectId || ''}`, () => editing
+    ? { ...editing, project: fixedProjectId ?? editing.project_id, repository: editing.repository_id, image_ref: editing.image_ref || undefined }
+    : {
+        project: fixedProjectId, executor_type: 'local_docker', build_path: '.', output_path: 'dist',
+        auto_collect_output: false, auto_compress: false, env_vars: {}, cpu_cores: 0, cpu_priority: '', mem_limit_mb: 0,
+        auto_package_on_release: true, cleanup_workspace: true, is_active: true, svn_push_enabled: false,
+        svn_path_template: '{version}', svn_commit_mode: 'new_dir', clone_submodules: false, inject_git_credential: false,
+      });
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  // AI 结果属于当前配置；关闭同一配置时保留，切换配置或保存成功后重建弹窗。
+  const [aiDraftKey, setAiDraftKey] = useState('');
+  const openAiModal = () => {
+    setAiDraftKey(editing ? 'package-config:' + editing.id : 'package-config:new:' + (fixedProjectId || ''));
+    setAiModalOpen(true);
+  };
 
   const projectId = Form.useWatch('project', form) ?? fixedProjectId;
   const executorType = Form.useWatch('executor_type', form) ?? 'local_docker';
@@ -201,38 +216,10 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   });
 
   useEffect(() => {
-    if (!open) return;
-    if (editing) {
-      form.setFieldsValue({
-        ...editing,
-        project: fixedProjectId ?? editing.project_id,
-        // 响应无裸 repository 字段，回填 repository_id 供仓库下拉与 AI 生成参数使用
-        repository: editing.repository_id,
-        image_ref: editing.image_ref || undefined,
-      });
-    } else {
-      form.setFieldsValue({
-        project: fixedProjectId,
-        executor_type: 'local_docker',
-        build_path: '.',
-        output_path: 'dist',
-        auto_collect_output: false,
-        auto_compress: false,
-        env_vars: {},
-        cpu_cores: 0,
-        cpu_priority: '',
-        mem_limit_mb: 0,
-        auto_package_on_release: true,
-        cleanup_workspace: true,
-        is_active: true,
-        svn_push_enabled: false,
-        svn_path_template: '{version}',
-        svn_commit_mode: 'new_dir',
-        clone_submodules: false,
-        inject_git_credential: false,
-      });
-    }
-  }, [editing, form, open, fixedProjectId]);
+    if (!open || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [draft.value, form, open]);
 
   useEffect(() => {
     if (!open || !editing || editing.project_component || !componentsData?.length) return;
@@ -267,6 +254,10 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     },
     onSuccess: () => {
       message.success('保存成功');
+      draft.clear();
+      form.resetFields();
+      setAiDraftKey('');
+      setAiModalOpen(false);
       onClose();
       queryClient.invalidateQueries({ queryKey: ['package-configs'] });
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
@@ -360,16 +351,21 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     message.success('已应用到打包脚本，可继续编辑后保存');
   };
 
+  const handleClose = () => {
+    if (!readOnly) draft.save(form.getFieldsValue(true));
+    setAiModalOpen(false);
+    onClose();
+  };
+
   const inputCls =
     'rounded-lg border-slate-200 text-[13px] hover:border-slate-300 focus:border-indigo-500';
 
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={handleClose}
       width={880}
       centered
-      destroyOnHidden
       title={
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-600">
@@ -407,7 +403,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={onClose}>{readOnly ? '关闭' : '取消'}</Button>
+            <Button onClick={handleClose}>{readOnly ? '关闭' : '取消'}</Button>
             {!readOnly && (
               <Button
                 type="primary"
@@ -534,7 +530,10 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                 rules={[{ required: true, message: '请选择打包镜像' }]}
                 className="mb-0"
               >
-                <ImagePickerField disabled={readOnly} />
+                <ImagePickerField
+                  key={editing ? `package-config:${editing.id}` : `package-config:new:${fixedProjectId || ''}`}
+                  disabled={readOnly}
+                />
               </Form.Item>
             )}
           </div>
@@ -575,7 +574,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             lang={scriptLang}
             filename={scriptFilename}
             readOnly={readOnly}
-            onAiGenerate={readOnly ? undefined : () => setAiModalOpen(true)}
+            onAiGenerate={readOnly ? undefined : openAiModal}
             hint={scriptHint}
           />
         </Form.Item>
@@ -717,6 +716,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
       </Form>
       </ConfigProvider>
       <AIScriptModal
+        key={aiDraftKey}
         open={aiModalOpen}
         lang={scriptLang}
         filename={scriptFilename}

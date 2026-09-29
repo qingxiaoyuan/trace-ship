@@ -14,10 +14,11 @@ import type { ProjectComponent, Repository } from '@/types';
 
 interface ProjectComponentTabProps {
   projectId: string;
+  active?: boolean;
 }
 
 /** 项目仓库页：维护项目与软件仓库的关联及当前项目下的发布设置。 */
-export function ProjectComponentTab({ projectId }: ProjectComponentTabProps) {
+export function ProjectComponentTab({ projectId, active = true }: ProjectComponentTabProps) {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -29,14 +30,14 @@ export function ProjectComponentTab({ projectId }: ProjectComponentTabProps) {
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
-    enabled: !!projectId,
+    enabled: active && !!projectId,
   });
   const { canManage } = useProjectRole(project);
 
   const { data: components = [], isLoading, error } = useQuery({
     queryKey: ['project-components', projectId],
     queryFn: () => projectApi.getComponents(projectId),
-    enabled: !!projectId,
+    enabled: active && !!projectId,
   });
 
   const refresh = () => {
@@ -253,14 +254,14 @@ export function ProjectComponentTab({ projectId }: ProjectComponentTabProps) {
         component={editingComponent}
         submitting={componentMutation.isPending}
         onCancel={() => { setComponentModalOpen(false); setEditingComponent(null); }}
-        onOk={(values) => componentMutation.mutate(values)}
+        onOk={(values) => componentMutation.mutateAsync(values)}
       />
       <RepositoryModal
         open={repositoryModalOpen}
         repo={null}
         projectId={projectId}
         onCancel={() => setRepositoryModalOpen(false)}
-        onOk={(values) => createRepositoryMutation.mutate(values)}
+        onOk={(values) => createRepositoryMutation.mutateAsync(values)}
       />
     </div>
   );

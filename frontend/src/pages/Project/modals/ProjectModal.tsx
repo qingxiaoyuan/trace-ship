@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Form, Input, Select, Radio } from 'antd';
 import { Package } from 'lucide-react';
 import { TsModal } from '@/components/TsModal';
+import { useModalDraft } from '@/hooks/useModalDraft';
 import { accountApi, type AccountUser } from '@/api/account';
 import { useAuthStore } from '@/stores/authStore';
 import type { Project } from '@/types';
@@ -10,36 +11,44 @@ interface ProjectModalProps {
   open: boolean;
   project: Project | null;
   onCancel: () => void;
-  onOk: (values: Partial<Project>) => void;
+  onOk: (values: Partial<Project>) => void | boolean | Promise<void | boolean>;
 }
 
 export function ProjectModal({ open, project, onCancel, onOk }: ProjectModalProps) {
   const [form] = Form.useForm();
   const [users, setUsers] = useState<AccountUser[]>([]);
   const currentUser = useAuthStore((s) => s.user);
+  const draft = useModalDraft(open, project ? `project:${project.id}` : 'project:new', () => ({
+    ...(project || { status: 'active' }),
+    ...(!project && currentUser ? { leader_id: currentUser.id } : {}),
+  }));
 
   useEffect(() => {
     if (open) {
       accountApi.getUsers({ page_size: 1000 }).then((res) => {
         setUsers(res.results || []);
       });
-      // 新增时项目负责人默认选中当前登录用户，可手动改选
-      if (!project && currentUser) {
-        form.setFieldsValue({ leader_id: currentUser.id });
-      }
     }
-  }, [open, project, currentUser, form]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !draft.value) return;
+    form.resetFields();
+    form.setFieldsValue(draft.value);
+  }, [open, draft.value, form]);
 
   const handleCancel = () => {
-    form.resetFields();
+    draft.save(form.getFieldsValue(true));
     onCancel();
   };
 
-  const handleOk = () => {
-    form.validateFields().then((values) => {
-      onOk({ ...project, ...values });
+  const handleOk = async () => {
+    const values = await form.validateFields();
+    const saved = await onOk({ ...project, ...values });
+    if (saved !== false) {
+      draft.clear();
       form.resetFields();
-    });
+    }
   };
 
   return (
