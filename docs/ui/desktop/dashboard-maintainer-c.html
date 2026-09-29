@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>维保工作台 · 方案 C — 版本时间线交付视图</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+body{ font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; }
+.font-mono{ font-family:'JetBrains Mono','SF Mono',Consolas,monospace; }
+.phone{ width:375px; height:812px; border-radius:44px; border:1px solid #E2E8F0; box-shadow:0 24px 70px -20px rgba(30,27,75,.25),0 0 0 10px #0F172A,0 0 0 11px #334155; overflow:hidden; position:relative; background:#F6F7FB; flex:none; }
+.phone-screen{ position:absolute; inset:0; overflow-y:auto; scrollbar-width:none; }
+.phone-screen::-webkit-scrollbar{ display:none; }
+</style>
+</head>
+<body class="bg-[#F6F7FB] text-slate-800 antialiased">
+
+<div class="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+  <div class="absolute -top-36 right-[-100px] h-[520px] w-[520px] rounded-full opacity-30" style="background:radial-gradient(circle,#818CF8,transparent 70%);filter:blur(110px);"></div>
+  <div class="absolute bottom-[-120px] left-[200px] h-[440px] w-[440px] rounded-full opacity-25" style="background:radial-gradient(circle,#22D3EE,transparent 70%);filter:blur(110px);"></div>
+</div>
+
+<div class="relative z-10 mx-auto max-w-[1400px] px-5 py-6 md:px-7 md:py-8">
+
+  <div class="mb-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-500">
+    <i data-lucide="git-commit-vertical" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+    方案 C · 版本时间线 — 树形下拉选择项目/软件，时间线为主轴，版本卡聚合说明、打包状态与操作
+  </div>
+
+  <!-- ===== 页头 ===== -->
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-[26px] font-semibold tracking-tight text-slate-900">工作台</h1>
+      <p class="mt-1.5 text-[13px] text-slate-500">下午好，林远（维保）。以下是您所属项目的版本交付时间线。</p>
+    </div>
+    <div class="flex items-center gap-2.5">
+      <span class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] text-slate-500">
+        <i data-lucide="shield-check" class="h-3.5 w-3.5 text-emerald-500" style="stroke-width:1.5"></i>
+        我所属的 2 个项目
+      </span>
+    </div>
+  </div>
+
+  <!-- ===== 检索与过滤 ===== -->
+  <div class="mt-5 rounded-xl border border-indigo-100/80 bg-white/85 p-4 shadow-[0_0_0_1px_rgba(99,102,241,0.08)]">
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="relative min-w-[260px] flex-1">
+        <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" style="stroke-width:1.5"></i>
+        <input type="text" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 font-mono text-[13px] text-slate-800 outline-none transition-all placeholder:font-sans placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="搜索版本号 / 软件 / 发布说明关键词…" />
+      </div>
+      <div class="relative">
+        <button class="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600">
+          <i data-lucide="list-tree" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
+          全部项目 / 全部软件
+          <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-300" style="stroke-width:1.5"></i>
+        </button>
+        <!-- 树形下拉（展开态示意） -->
+        <div class="absolute left-0 top-11 z-20 w-[240px] rounded-xl border border-slate-200 bg-white p-2 text-[12.5px] shadow-[0_16px_40px_-12px_rgba(30,27,75,0.25)]">
+          <button class="flex w-full items-center gap-2 rounded-lg bg-indigo-50 px-2.5 py-2 font-medium text-indigo-600">
+            <i data-lucide="layers" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+            全部项目
+            <span class="ml-auto text-[11px] font-normal text-indigo-400">12</span>
+          </button>
+          <div class="mt-0.5">
+            <button class="flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-slate-600 transition-colors hover:bg-slate-50">
+              <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              <i data-lucide="folder-git-2" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              智慧园区平台
+              <span class="ml-auto text-[11px] text-slate-400">8</span>
+            </button>
+            <div class="ml-4 space-y-0.5 border-l border-slate-100 pl-2">
+              <button class="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-50 hover:text-indigo-600">
+                <i data-lucide="git-branch" class="h-3 w-3 text-slate-300" style="stroke-width:1.5"></i>park-server
+                <span class="ml-auto text-[11px] text-slate-400">4</span>
+              </button>
+              <button class="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-50 hover:text-indigo-600">
+                <i data-lucide="git-branch" class="h-3 w-3 text-slate-300" style="stroke-width:1.5"></i>park-web
+                <span class="ml-auto text-[11px] text-slate-400">2</span>
+              </button>
+              <button class="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-50 hover:text-indigo-600">
+                <i data-lucide="git-branch" class="h-3 w-3 text-slate-300" style="stroke-width:1.5"></i>park-gateway
+                <span class="ml-auto text-[11px] text-slate-400">2</span>
+              </button>
+            </div>
+          </div>
+          <div class="mt-0.5">
+            <button class="flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-slate-600 transition-colors hover:bg-slate-50">
+              <i data-lucide="chevron-right" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              <i data-lucide="folder-git-2" class="h-3.5 w-3.5 text-slate-400" style="stroke-width:1.5"></i>
+              对外 SDK
+              <span class="ml-auto text-[11px] text-slate-400">4</span>
+            </button>
+          </div>
+          <div class="mt-1 border-t border-slate-100 px-2.5 pt-2 text-[11px] text-slate-400">软件从属于项目 · 仅显示我所属的项目</div>
+        </div>
+      </div>
+      <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-[12px] font-medium">
+        <button class="rounded-md bg-slate-100 px-3 py-1.5 text-slate-700">全部类型</button>
+        <button class="rounded-md px-3 py-1.5 text-slate-500 transition-colors hover:text-indigo-600">正式</button>
+        <button class="rounded-md px-3 py-1.5 text-slate-500 transition-colors hover:text-indigo-600">RC</button>
+        <button class="rounded-md px-3 py-1.5 text-slate-500 transition-colors hover:text-indigo-600">Beta</button>
+      </div>
+    </div>
+    <div class="mt-3 border-t border-slate-100 pt-3 text-[12px] text-slate-400">当前范围：全部项目 · 搜索仅作用于我所属的项目</div>
+  </div>
+
+  <div class="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
+
+    <!-- ===== 左：版本时间线（2/3） ===== -->
+    <div class="xl:col-span-2">
+      <!-- 分组：今天 -->
+      <div class="flex items-center gap-3 px-1">
+        <span class="text-[12px] font-semibold text-slate-900">今天</span>
+        <span class="text-[11px] text-slate-400">09-22</span>
+        <div class="h-px flex-1 bg-slate-200/80"></div>
+      </div>
+
+      <div class="relative mt-3 space-y-4 pl-6 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-indigo-100">
+        <!-- 版本卡 1：打包全部就绪 -->
+        <div class="relative">
+          <span class="absolute -left-6 top-5 h-[15px] w-[15px] rounded-full border-[3px] border-emerald-400 bg-white"></span>
+          <div class="rounded-xl border border-indigo-100/80 bg-white/85 shadow-[0_0_0_1px_rgba(99,102,241,0.08)] transition-all hover:border-indigo-300">
+            <div class="flex flex-wrap items-center gap-2 px-5 pt-4">
+              <span class="font-mono text-[15px] font-semibold tracking-tight text-slate-900">VA.5.2.0_20260922</span>
+              <span class="rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-px text-[10px] font-medium text-indigo-600">正式</span>
+              <span class="ml-auto text-[11px] text-slate-400">智慧园区平台 / park-server · 10:24</span>
+            </div>
+            <p class="mt-2 px-5 text-[12.5px] leading-relaxed text-slate-500">新增设备批量导入与分组导出；修复 WebSocket 重连导致的告警丢失；优化大屏地图渲染性能，首屏加载降低约 40%……</p>
+            <!-- 打包状态 chips -->
+            <div class="mt-3 flex flex-wrap items-center gap-2 px-5">
+              <span class="text-[11px] text-slate-400">打包</span>
+              <span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-600"><i data-lucide="check" class="h-3 w-3" style="stroke-width:1.5"></i>server-linux-x64 · 4m12s</span>
+              <span class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-600"><i data-lucide="check" class="h-3 w-3" style="stroke-width:1.5"></i>server-kylin-arm64 · 5m03s</span>
+            </div>
+            <div class="mt-3 flex items-center gap-2 border-t border-slate-100 px-5 py-3">
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>完整发布说明</button>
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="download" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>导出</button>
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="package-open" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>产物</button>
+              <button class="ml-auto inline-flex h-8 items-center gap-1 rounded-lg bg-indigo-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-indigo-500">发布详情<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 版本卡 2：有打包失败 -->
+        <div class="relative">
+          <span class="absolute -left-6 top-5 h-[15px] w-[15px] rounded-full border-[3px] border-rose-400 bg-white"></span>
+          <div class="rounded-xl border border-rose-200/80 bg-white/85 shadow-[0_0_0_1px_rgba(244,63,94,0.08)] transition-all hover:border-rose-300">
+            <div class="flex flex-wrap items-center gap-2 px-5 pt-4">
+              <span class="font-mono text-[15px] font-semibold tracking-tight text-slate-900">VA.5.1.3_20260919</span>
+              <span class="rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-px text-[10px] font-medium text-indigo-600">正式</span>
+              <span class="ml-auto text-[11px] text-slate-400">智慧园区平台 / park-web · 09-19 14:45</span>
+            </div>
+            <p class="mt-2 px-5 text-[12.5px] leading-relaxed text-slate-500">修复租户切换后菜单缓存未刷新的问题；升级前端依赖至安全版本……</p>
+            <div class="mt-3 flex flex-wrap items-center gap-2 px-5">
+              <span class="text-[11px] text-slate-400">打包</span>
+              <span class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-600"><i data-lucide="x" class="h-3 w-3" style="stroke-width:1.5"></i>web-dist · 产物上传超时</span>
+            </div>
+            <div class="mt-3 flex items-center gap-2 border-t border-slate-100 px-5 py-3">
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg bg-rose-500 px-3 text-[12px] font-medium text-white transition-colors hover:bg-rose-400"><i data-lucide="rotate-cw" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>重试打包</button>
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="terminal" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>日志</button>
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>发布说明</button>
+              <button class="ml-auto inline-flex h-8 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-[12px] font-medium text-indigo-600 transition-colors hover:bg-indigo-100">发布详情<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分组：昨天 -->
+      <div class="mt-7 flex items-center gap-3 px-1">
+        <span class="text-[12px] font-semibold text-slate-900">昨天</span>
+        <span class="text-[11px] text-slate-400">09-21</span>
+        <div class="h-px flex-1 bg-slate-200/80"></div>
+      </div>
+
+      <div class="relative mt-3 space-y-4 pl-6 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-indigo-100">
+        <!-- 版本卡 3：打包进行中 -->
+        <div class="relative">
+          <span class="absolute -left-6 top-5 h-[15px] w-[15px] rounded-full border-[3px] border-amber-400 bg-white"></span>
+          <div class="rounded-xl border border-indigo-100/80 bg-white/85 shadow-[0_0_0_1px_rgba(99,102,241,0.08)] transition-all hover:border-indigo-300">
+            <div class="flex flex-wrap items-center gap-2 px-5 pt-4">
+              <span class="font-mono text-[15px] font-semibold tracking-tight text-slate-900">VA.2.1.0-rc_20260921</span>
+              <span class="rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-px text-[10px] font-medium text-cyan-600">RC</span>
+              <span class="ml-auto text-[11px] text-slate-400">对外 SDK / sdk-core · 昨天 16:02</span>
+            </div>
+            <p class="mt-2 px-5 text-[12.5px] leading-relaxed text-slate-500">候选发布：新增离线包鉴权接口；设备指纹采集可选关闭；修复 3 个崩溃问题……</p>
+            <div class="mt-3 flex flex-wrap items-center gap-2 px-5">
+              <span class="text-[11px] text-slate-400">打包</span>
+              <span class="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-600"><span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500"></span>core-android-aar · 运行中 2m40s</span>
+              <span class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">core-ios-framework · 排队</span>
+            </div>
+            <div class="mt-3 flex items-center gap-2 border-t border-slate-100 px-5 py-3">
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>完整发布说明</button>
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="terminal" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>打包日志</button>
+              <button class="ml-auto inline-flex h-8 items-center gap-1 rounded-lg bg-indigo-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-indigo-500">发布详情<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 版本卡 4：未打包，可手动触发 -->
+        <div class="relative">
+          <span class="absolute -left-6 top-5 h-[15px] w-[15px] rounded-full border-[3px] border-slate-300 bg-white"></span>
+          <div class="rounded-xl border border-dashed border-slate-300 bg-white/70 transition-all hover:border-indigo-300">
+            <div class="flex flex-wrap items-center gap-2 px-5 pt-4">
+              <span class="font-mono text-[15px] font-semibold tracking-tight text-slate-900">VA.1.4.0-beta_20260918</span>
+              <span class="rounded-md border border-violet-200 bg-violet-50 px-1.5 py-px text-[10px] font-medium text-violet-600">Beta</span>
+              <span class="ml-auto text-[11px] text-slate-400">对外 SDK / sdk-runtime · 09-18 11:30</span>
+            </div>
+            <p class="mt-2 px-5 text-[12.5px] leading-relaxed text-slate-500">Beta：边缘节点运行时重构预览版，仅供内部联调……</p>
+            <div class="mt-3 flex flex-wrap items-center gap-2 px-5">
+              <span class="text-[11px] text-slate-400">打包</span>
+              <span class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-400"><i data-lucide="minus" class="h-3 w-3" style="stroke-width:1.5"></i>尚未打包</span>
+            </div>
+            <div class="mt-3 flex items-center gap-2 border-t border-slate-100 px-5 py-3">
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg bg-indigo-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-indigo-500"><i data-lucide="package-plus" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>手动打包</button>
+              <button class="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>发布说明</button>
+              <button class="ml-auto inline-flex h-8 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-[12px] font-medium text-indigo-600 transition-colors hover:bg-indigo-100">发布详情<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 text-center">
+        <button class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600">
+          加载更早版本
+          <i data-lucide="chevron-down" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== 右栏（1/3） ===== -->
+    <div class="space-y-4">
+      <!-- KPI 竖排 -->
+      <div class="rounded-xl border border-indigo-100/80 bg-white/85 p-5 shadow-[0_0_0_1px_rgba(99,102,241,0.08)]">
+        <div class="flex items-center gap-2">
+          <i data-lucide="gauge" class="h-4 w-4 text-indigo-500" style="stroke-width:1.5"></i>
+          <h2 class="text-[15px] font-semibold tracking-tight text-slate-900">概览 · 近 30 天</h2>
+        </div>
+        <div class="mt-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 text-[12.5px] text-slate-500"><span class="h-1.5 w-1.5 rounded-full bg-indigo-500"></span>发布版本</div>
+            <span class="text-[16px] font-semibold tracking-tight text-slate-900">12</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 text-[12.5px] text-slate-500"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>打包成功率</div>
+            <span class="text-[16px] font-semibold tracking-tight text-slate-900">94%</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 text-[12.5px] text-slate-500"><span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>失败待处理</div>
+            <span class="text-[16px] font-semibold tracking-tight text-rose-500">2</span>
+          </div>
+          <div class="flex items-center justify-between border-t border-slate-100 pt-3">
+            <div class="flex items-center gap-2 text-[12.5px] text-slate-500"><span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>未打包版本</div>
+            <span class="text-[16px] font-semibold tracking-tight text-slate-900">1</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 打包动态 feed -->
+      <div class="rounded-xl border border-indigo-100/80 bg-white/85 shadow-[0_0_0_1px_rgba(99,102,241,0.08)]">
+        <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div class="flex items-center gap-2">
+            <i data-lucide="activity" class="h-4 w-4 text-indigo-500" style="stroke-width:1.5"></i>
+            <h2 class="text-[15px] font-semibold tracking-tight text-slate-900">打包动态</h2>
+          </div>
+          <button class="inline-flex items-center gap-1 text-[12px] font-medium text-indigo-600 transition-colors hover:text-indigo-500">看板<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+        </div>
+        <div class="divide-y divide-slate-100 px-5">
+          <div class="flex items-start gap-2.5 py-3">
+            <i data-lucide="circle-x" class="mt-0.5 h-3.5 w-3.5 flex-none text-rose-500" style="stroke-width:1.5"></i>
+            <div class="min-w-0 text-[12px] leading-relaxed text-slate-600">park-web · <span class="font-mono">VA.5.1.3</span> 打包失败<span class="block text-[11px] text-slate-400">产物上传超时 · 10:24</span></div>
+          </div>
+          <div class="flex items-start gap-2.5 py-3">
+            <i data-lucide="circle-check" class="mt-0.5 h-3.5 w-3.5 flex-none text-emerald-500" style="stroke-width:1.5"></i>
+            <div class="min-w-0 text-[12px] leading-relaxed text-slate-600">park-server · <span class="font-mono">VA.5.2.0</span> 打包成功并已推 SVN<span class="block text-[11px] text-slate-400">用时 4m12s · 10:31</span></div>
+          </div>
+          <div class="flex items-start gap-2.5 py-3">
+            <i data-lucide="loader-circle" class="mt-0.5 h-3.5 w-3.5 flex-none text-amber-500" style="stroke-width:1.5"></i>
+            <div class="min-w-0 text-[12px] leading-relaxed text-slate-600">sdk-core · <span class="font-mono">VA.2.1.0-rc</span> 正在麒麟节点打包<span class="block text-[11px] text-slate-400">手动触发 · 林远 · 2m40s</span></div>
+          </div>
+          <div class="flex items-start gap-2.5 py-3">
+            <i data-lucide="clock" class="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" style="stroke-width:1.5"></i>
+            <div class="min-w-0 text-[12px] leading-relaxed text-slate-600">sdk-runtime · <span class="font-mono">VA.1.4.0-beta</span> 排队等待 Windows 节点<span class="block text-[11px] text-slate-400">前面还有 1 个任务</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 移动端样机 ===== -->
+  <div class="mt-14">
+    <div class="mb-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-500">
+      <i data-lucide="smartphone" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>
+      方案 C · 移动端 375px — 只看发布：搜索 + 树形筛选 + 时间线版本卡片（不含打包信息）
+    </div>
+    <div class="flex flex-wrap items-start gap-10">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="sticky top-0 z-20 flex h-[56px] items-center gap-2.5 border-b border-indigo-100/40 bg-white/75 px-4" style="backdrop-filter:blur(16px)">
+            <div class="flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-semibold text-white" style="background:linear-gradient(135deg,#6366F1,#22D3EE)">TS</div>
+            <div class="text-[14px] font-medium text-slate-800">版本时间线</div>
+            <div class="ml-auto flex items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600">维保</div>
+          </div>
+
+          <div class="space-y-4 px-4 py-4 pb-32">
+            <!-- 搜索与过滤 -->
+            <div class="relative">
+              <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" style="stroke-width:1.5"></i>
+              <input type="text" class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-4 font-mono text-[13px] outline-none placeholder:font-sans placeholder:text-slate-400 focus:border-indigo-400" placeholder="搜索版本号 / 软件 / 关键词…" />
+            </div>
+            <!-- 筛选入口（树形面板以底部抽屉展开） -->
+            <div class="flex items-center gap-2">
+              <button class="flex h-10 flex-1 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-medium text-slate-600">
+                <i data-lucide="list-tree" class="h-4 w-4 text-slate-400" style="stroke-width:1.5"></i>
+                全部项目 / 全部软件
+                <i data-lucide="chevron-down" class="ml-auto h-3.5 w-3.5 text-slate-300" style="stroke-width:1.5"></i>
+              </button>
+              <button class="flex h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-medium text-slate-600">
+                全部类型
+                <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-slate-300" style="stroke-width:1.5"></i>
+              </button>
+            </div>
+
+            <!-- 分组 -->
+            <div class="flex items-center gap-2">
+              <span class="text-[12px] font-semibold text-slate-900">今天</span>
+              <div class="h-px flex-1 bg-slate-200/80"></div>
+            </div>
+
+            <!-- 版本卡 -->
+            <div class="rounded-xl border border-indigo-100/60 bg-white/90 p-4">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-mono text-[14px] font-semibold tracking-tight text-slate-900">VA.5.2.0</span>
+                <span class="flex-none rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-px text-[10px] font-medium text-indigo-600">正式</span>
+              </div>
+              <p class="mt-1 text-[11px] text-slate-400">智慧园区平台 / park-server · 10:24</p>
+              <p class="mt-2 line-clamp-2 text-[12px] leading-relaxed text-slate-500">新增设备批量导入与分组导出；修复 WebSocket 重连告警丢失……</p>
+              <div class="mt-3 flex items-center gap-2">
+                <button class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>发布说明</button>
+                <button class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-slate-200 text-slate-500"><i data-lucide="download" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+                <button class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-indigo-600 text-[12px] font-medium text-white">详情<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-indigo-100/60 bg-white/90 p-4">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-mono text-[14px] font-semibold tracking-tight text-slate-900">VA.5.1.3</span>
+                <span class="flex-none rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-px text-[10px] font-medium text-indigo-600">正式</span>
+              </div>
+              <p class="mt-1 text-[11px] text-slate-400">智慧园区平台 / park-web · 09-19 14:45</p>
+              <p class="mt-2 line-clamp-2 text-[12px] leading-relaxed text-slate-500">修复租户切换后菜单缓存未刷新的问题；升级前端依赖至安全版本……</p>
+              <div class="mt-3 flex items-center gap-2">
+                <button class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>发布说明</button>
+                <button class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-slate-200 text-slate-500"><i data-lucide="download" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+                <button class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-indigo-600 text-[12px] font-medium text-white">详情<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <span class="text-[12px] font-semibold text-slate-900">昨天</span>
+              <div class="h-px flex-1 bg-slate-200/80"></div>
+            </div>
+
+            <div class="rounded-xl border border-indigo-100/60 bg-white/90 p-4">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-mono text-[14px] font-semibold tracking-tight text-slate-900">VA.2.1.0-rc</span>
+                <span class="flex-none rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-px text-[10px] font-medium text-cyan-600">RC</span>
+              </div>
+              <p class="mt-1 text-[11px] text-slate-400">对外 SDK / sdk-core · 昨天 16:02</p>
+              <p class="mt-2 line-clamp-2 text-[12px] leading-relaxed text-slate-500">候选发布：新增离线包鉴权接口；设备指纹采集可选关闭……</p>
+              <div class="mt-3 flex items-center gap-2">
+                <button class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600"><i data-lucide="file-text" class="h-3.5 w-3.5" style="stroke-width:1.5"></i>发布说明</button>
+                <button class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-slate-200 text-slate-500"><i data-lucide="download" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+                <button class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-indigo-600 text-[12px] font-medium text-white">详情<i data-lucide="arrow-right" class="h-3.5 w-3.5" style="stroke-width:1.5"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- MobileTabBar -->
+          <div class="absolute inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/90 px-4 pb-5 pt-2" style="backdrop-filter:blur(16px)">
+            <div class="flex items-center justify-between">
+              <button class="flex h-10 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[12px] font-medium text-slate-600">
+                <i data-lucide="menu" class="h-4 w-4" style="stroke-width:1.5"></i>工作台
+              </button>
+              <button class="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-600 text-white" style="box-shadow:0 6px 18px -6px rgba(99,102,241,.55)">
+                <i data-lucide="search" class="h-5 w-5" style="stroke-width:1.5"></i>
+              </button>
+              <button class="flex h-10 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[12px] font-medium text-slate-600">
+                <i data-lucide="bell" class="h-4 w-4" style="stroke-width:1.5"></i>我的
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>
