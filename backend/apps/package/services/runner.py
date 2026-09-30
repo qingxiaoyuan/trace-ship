@@ -72,8 +72,9 @@ class TaskRunnerMixin:
                 )
             cls._ensure_task_not_canceled(task)
 
-            # SVN 推送阶段
+            # SVN 推送阶段。更新阶段会覆盖 stage_info，先记下上次目录。
             svn_push_result: dict[str, Any] | None = None
+            previous_svn_url = str(((task.stage_info or {}).get("svn_push") or {}).get("remote_url") or "")
             if svn_push_enabled:
                 cls._update_stage(task, "svn_push", 90, "正在推送产物到 SVN…")
                 try:
@@ -86,6 +87,7 @@ class TaskRunnerMixin:
                     cls._append_log(task, f"警告：打包成功，但 SVN 推送失败: {exc}")
                 else:
                     svn_push_result = {"status": "success", **result}
+                    cls._note_svn_directory_change(task, previous_svn_url, result["remote_url"])
                     cls._append_log(
                         task,
                         f"SVN 推送完成: {result['remote_url']}"

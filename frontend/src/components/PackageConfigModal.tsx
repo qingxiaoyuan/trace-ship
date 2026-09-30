@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, ConfigProvider, Form, Input, InputNumber, Modal, Radio, Select, Switch, Typography } from 'antd';
+import { App, Button, ConfigProvider, Form, Input, InputNumber, Modal, Select, Switch, Typography } from 'antd';
 import { Check, ChevronDown, Container, FolderTree, Monitor, Settings2 } from 'lucide-react';
 import type { AIGenerateScriptPayload, AIScriptDraft, PackageConfig } from '@/types';
 import { projectApi } from '@/api/project';
@@ -134,6 +134,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         project: fixedProjectId, executor_type: 'local_docker', build_path: '.', output_path: 'dist',
         auto_collect_output: false, auto_compress: false, env_vars: {}, cpu_cores: 0, cpu_priority: '', mem_limit_mb: 0,
         auto_package_on_release: true, cleanup_workspace: true, is_active: true, svn_push_enabled: false,
+        svn_push_rc: false, svn_push_beta: false,
         svn_path_template: '{version}', svn_commit_mode: 'new_dir', clone_submodules: false, inject_git_credential: false,
       });
   const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -435,7 +436,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         layout="vertical"
         requiredMark={false}
         disabled={readOnly}
-        onFinish={(values) => saveMutation.mutate(values)}
+        onFinish={(values) => {
+          // SVN 子项在总开关关闭时会卸载。preserve 仍留着值，但 onFinish 只带当前挂载字段，
+          // 这里并上全部字段，避免 RC / 测试版 / 覆盖开关在收起后被漏掉。
+          saveMutation.mutate({ ...form.getFieldsValue(true), ...values });
+        }}
       >
         {/* 基本信息 */}
         <SectionLabel>基本信息</SectionLabel>
@@ -660,7 +665,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
               <FolderTree className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
               <div>
                 <div className="text-[12px] font-medium text-slate-700">SVN 产物推送</div>
-                <div className="text-[10px] text-slate-400">打包成功后上传产物到 SVN</div>
+                <div className="text-[10px] text-slate-400">正式版自动打包后按类型目录上传；RC 与测试版需另开开关</div>
               </div>
             </div>
             <Form.Item name="svn_push_enabled" valuePropName="checked" noStyle>
@@ -700,16 +705,45 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                 </Form.Item>
                 <div className="flex items-end pb-1">
                   <Typography.Text type="secondary" className="text-[11px]">
-                    占位符：{'{version}'}、{'{tag_name}'}、{'{project_code}'}、{'{release_type}'}；默认按版本号建目录，RC/测试版自动追加类型后缀
+                    默认目录为 formal、rc、beta 下的版本号。自定义模板按原文渲染，占位符：{'{version}'}、{'{tag_name}'}、{'{project_code}'}、{'{release_type}'}
                   </Typography.Text>
                 </div>
               </div>
-              <Form.Item name="svn_commit_mode" label={<FieldLabel text="提交模式" />} className="mb-0">
-                <Radio.Group>
-                  <Radio value="new_dir">新建版本目录（目录已存在时报错）</Radio>
-                  <Radio value="overwrite">覆盖式提交（目录已存在时镜像覆盖更新，会删除远程多余文件）</Radio>
-                </Radio.Group>
-              </Form.Item>
+              <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div>
+                    <div className="text-[12px] font-medium text-slate-700">RC 提交 SVN</div>
+                    <div className="text-[10px] text-slate-400">自动打包时提交到 rc/版本号</div>
+                  </div>
+                  <Form.Item name="svn_push_rc" valuePropName="checked" noStyle>
+                    <Switch size="small" />
+                  </Form.Item>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div>
+                    <div className="text-[12px] font-medium text-slate-700">测试版提交 SVN</div>
+                    <div className="text-[10px] text-slate-400">自动打包时提交到 beta/版本号</div>
+                  </div>
+                  <Form.Item name="svn_push_beta" valuePropName="checked" noStyle>
+                    <Switch size="small" />
+                  </Form.Item>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div>
+                  <div className="text-[12px] font-medium text-slate-700">同版本号允许覆盖</div>
+                  <div className="text-[10px] text-slate-400">目录已存在时镜像覆盖，会删除远程多余文件；关闭则目录已存在时报错</div>
+                </div>
+                <Form.Item
+                  name="svn_commit_mode"
+                  valuePropName="checked"
+                  getValueProps={(value: string | undefined) => ({ checked: value === 'overwrite' })}
+                  getValueFromEvent={(checked: boolean) => (checked ? 'overwrite' : 'new_dir')}
+                  noStyle
+                >
+                  <Switch size="small" />
+                </Form.Item>
+              </div>
             </div>
           )}
         </div>

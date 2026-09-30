@@ -312,10 +312,14 @@ class TestPushArtifactsToSVN:
         with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService._push_artifacts_to_svn(task, workspace)
 
-        assert result["remote_url"] == "svn://host/releases/V1.0.0"
+        assert result["remote_url"] == "svn://host/releases/formal/V1.0.0"
         assert result["file_count"] == 2
         assert result["files"] == ["app.tar.gz", "release-V1.0.0.md"]
-        mock_provider.remote_exists.assert_called_once_with("svn://host/releases/V1.0.0")
+        assert mock_provider.remote_exists.call_args_list[0].args[0] == "svn://host/releases/formal/V1.0.0"
+        mock_provider.mkdir.assert_called_once_with(
+            "svn://host/releases/formal",
+            message="trace-ship: 自动创建打包产物 SVN 目录",
+        )
         import_path = mock_provider.import_path.call_args.args[0]
         assert (workspace / "tmp" / "svn_upload" / "release-V1.0.0.md").read_text(encoding="utf-8") == release.release_doc
         assert import_path == str(workspace / "tmp" / "svn_upload")
@@ -581,7 +585,7 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
     assert task.stage_info["stage"] == "done"
     assert task.stage_info.get("svn_push") is not None
     assert task.stage_info["svn_push"]["status"] == "success"
-    assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/V1.0.0"
+    assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/formal/V1.0.0"
     mock_provider.import_path.assert_called_once()
 
 
@@ -720,11 +724,11 @@ class TestManualPushSvn:
         with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService.manual_push_svn(task)
 
-        assert result["remote_url"] == "svn://host/releases/V1.0.0"
+        assert result["remote_url"] == "svn://host/releases/formal/V1.0.0"
         task.refresh_from_db()
         assert task.stage_info.get("svn_push") is not None
         assert task.stage_info["svn_push"]["status"] == "success"
-        assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/V1.0.0"
+        assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/formal/V1.0.0"
 
     def test_manual_push_fails_when_task_not_success(self, project, repository, release, svn_credential, tmp_path):
         """非成功状态的任务不能手动推送。"""
@@ -799,7 +803,7 @@ class TestManualPushSvn:
         with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
             result = PackageService.manual_push_svn(task)
 
-        assert result["remote_url"] == "svn://host/releases/V1.0.0"
+        assert result["remote_url"] == "svn://host/releases/formal/V1.0.0"
         mock_provider.import_path.assert_called_once()
         task.refresh_from_db()
         assert task.config_snapshot.get("svn_push_enabled") is True
@@ -822,8 +826,91 @@ class TestManualPushSvn:
             artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100}],
             config_snapshot=PackageService._snapshot(config),
         )
-        with pytest.raises(RuntimeError, match="仅正式发布自动打包"):
+        with pytest.raises(RuntimeError, match="仅已允许推送 SVN 的自动打包任务可以推送"):
             PackageService.manual_push_svn(task)
+
+
+@pytest.mark.django_db
+def test_manual_push_svn_allows_auto_rc(
+    project, repository, release, svn_credential, user, tmp_path, monkeypatch
+):
+    """RC 自动打包且打开对应开关后，成功任务可以补推到 rc/版本号。"""
+    monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
+    config = PackageConfig.objects.create(
+        project_component=project.project_components.get(repository=repository),
+        name="SVN 配置",
+        svn_push_enabled=True,
+        svn_push_rc=True,
+        svn_url="svn://host/releases",
+        svn_credential=svn_credential,
+    )
+    release.release_type = "rc"
+    release.save(update_fields=["release_type"])
+    workspace = tmp_path / "rc-workspace"
+    (workspace / "artifacts").mkdir(parents=True)
+    (workspace / "artifacts" / "app.tar.gz").write_bytes(b"fake")
+    task = PackageService.create_task_for_release(
+        config, release, request_user=user, auto_triggered=True
+    )
+    task.status = "success"
+    task.workspace_path = str(workspace)
+    task.artifact_info = [{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100}]
+    task.save(update_fields=["status", "workspace_path", "artifact_info"])
+
+    mock_provider = MagicMock()
+    mock_provider.remote_exists.return_value = False
+    with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
+        result = PackageService.manual_push_svn(task)
+
+    assert task.config_snapshot["svn_push_enabled"] is True
+    assert task.config_snapshot["trigger_source"] == "auto_release"
+    assert result["remote_url"] == "svn://host/releases/rc/V1.0.0"
+    mock_provider.import_path.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_manual_push_logs_when_directory_changes(
+    project, repository, release, svn_credential, tmp_path
+):
+    """历史平铺目录再推时，日志说明上次目录保留、本次进入类型目录。"""
+    config = PackageConfig.objects.create(
+        project_component=project.project_components.get(repository=repository),
+        name="SVN 配置",
+        svn_push_enabled=True,
+        svn_url="svn://host/releases",
+        svn_credential=svn_credential,
+    )
+    workspace = tmp_path / "workspace"
+    (workspace / "artifacts").mkdir(parents=True)
+    (workspace / "artifacts" / "app.tar.gz").write_bytes(b"fake")
+    log_path = workspace / "logs" / "build.log"
+    task = PackageTask.objects.create(
+        config=config,
+        release=release,
+        project=project,
+        repository=repository,
+        name="打包任务",
+        build_type="web",
+        tag_name=release.tag_name,
+        version=release.version,
+        status="success",
+        workspace_path=str(workspace),
+        log_path=str(log_path),
+        artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
+        config_snapshot=_auto_formal_svn_snapshot(config),
+        stage_info={"svn_push": {"status": "success", "remote_url": "svn://host/releases/V1.0.0"}},
+    )
+
+    mock_provider = MagicMock()
+    mock_provider.remote_exists.return_value = False
+    with patch("apps.package.services.svn.get_provider", return_value=mock_provider):
+        result = PackageService.manual_push_svn(task)
+
+    assert result["remote_url"] == "svn://host/releases/formal/V1.0.0"
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "上次 svn://host/releases/V1.0.0" in log_text
+    assert "本次 svn://host/releases/formal/V1.0.0" in log_text
+    assert "上次目录保留" in log_text
 
 
 @pytest.mark.django_db
@@ -892,23 +979,31 @@ class TestReleaseTypeDistinction:
             artifact_info=[{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100, "sha256": "abc"}],
         )
 
-    def test_formal_default_template_unchanged(self, project, repository, release, svn_credential, tmp_path):
-        """正式版默认模板目录不带后缀（保持既有行为）。"""
+    def test_formal_default_template_uses_type_dir(self, project, repository, release, svn_credential, tmp_path):
+        """正式版默认模板进 formal/版本号。"""
         task = self._make_task(project, repository, release, svn_credential, "formal")
         url = self._push_remote_url(task, tmp_path / "ws1")
-        assert url == "svn://host/releases/V1.0.0"
+        assert url == "svn://host/releases/formal/V1.0.0"
 
-    def test_rc_default_template_gets_type_suffix(self, project, repository, release, svn_credential, tmp_path):
-        """RC 版默认模板目录自动带 -rc 后缀，不覆盖正式版目录。"""
+    def test_rc_default_template_uses_type_dir(self, project, repository, release, svn_credential, tmp_path):
+        """RC 版默认模板进 rc/版本号，与正式版分开。"""
         task = self._make_task(project, repository, release, svn_credential, "rc")
         url = self._push_remote_url(task, tmp_path / "ws2")
-        assert url == "svn://host/releases/V1.0.0-rc"
+        assert url == "svn://host/releases/rc/V1.0.0"
 
-    def test_beta_default_template_gets_type_suffix(self, project, repository, release, svn_credential, tmp_path):
-        """测试版默认模板目录自动带 -beta 后缀。"""
+    def test_beta_default_template_uses_type_dir(self, project, repository, release, svn_credential, tmp_path):
+        """测试版默认模板进 beta/版本号。"""
         task = self._make_task(project, repository, release, svn_credential, "beta")
         url = self._push_remote_url(task, tmp_path / "ws3")
-        assert url == "svn://host/releases/V1.0.0-beta"
+        assert url == "svn://host/releases/beta/V1.0.0"
+
+    def test_custom_template_does_not_insert_type_dir(self, project, repository, release, svn_credential, tmp_path):
+        """自定义模板按原文渲染，不自动插入类型目录。"""
+        task = self._make_task(
+            project, repository, release, svn_credential, "rc", template="{project_code}/{version}"
+        )
+        url = self._push_remote_url(task, tmp_path / "ws-custom")
+        assert url == "svn://host/releases/SVNP/V1.0.0"
 
     def test_custom_template_supports_release_type_placeholder(self, project, repository, release, svn_credential, tmp_path):
         """自定义模板支持 {release_type} 占位符。"""
@@ -969,8 +1064,8 @@ def test_run_task_with_svn_push_for_branch_task(
 
 
 @pytest.mark.django_db
-def test_create_task_svn_policy_only_auto_formal(project, repository, release, svn_credential, user, monkeypatch):
-    """仅正式发布自动打包打开 SVN 推送；手动触发与 RC 自动打包均关闭。"""
+def test_create_task_svn_policy_by_release_type(project, repository, release, svn_credential, user, monkeypatch):
+    """自动打包按发布类型决定是否推 SVN；手动触发始终关闭。"""
     monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
     config = PackageConfig.objects.create(
         project_component=project.project_components.get(repository=repository),
@@ -996,7 +1091,44 @@ def test_create_task_svn_policy_only_auto_formal(project, repository, release, s
         config, release, request_user=user, auto_triggered=True
     )
     assert auto_rc.config_snapshot["svn_push_enabled"] is False
+    assert auto_rc.config_snapshot["svn_push_rc"] is False
     assert auto_rc.config_snapshot["trigger_source"] == "auto_release"
+
+    release.release_type = "beta"
+    release.save(update_fields=["release_type"])
+    auto_beta = PackageService.create_task_for_release(
+        config, release, request_user=user, auto_triggered=True
+    )
+    assert auto_beta.config_snapshot["svn_push_enabled"] is False
+
+    config.svn_push_rc = True
+    config.svn_push_beta = True
+    config.save(update_fields=["svn_push_rc", "svn_push_beta"])
+
+    release.release_type = "rc"
+    release.save(update_fields=["release_type"])
+    auto_rc_on = PackageService.create_task_for_release(
+        config, release, request_user=user, auto_triggered=True
+    )
+    assert auto_rc_on.config_snapshot["svn_push_enabled"] is True
+    assert auto_rc_on.config_snapshot["svn_push_rc"] is True
+    manual_rc = PackageService.create_task_for_release(config, release, request_user=user)
+    assert manual_rc.config_snapshot["svn_push_enabled"] is False
+
+    release.release_type = "beta"
+    release.save(update_fields=["release_type"])
+    auto_beta_on = PackageService.create_task_for_release(
+        config, release, request_user=user, auto_triggered=True
+    )
+    assert auto_beta_on.config_snapshot["svn_push_enabled"] is True
+    assert auto_beta_on.config_snapshot["svn_push_beta"] is True
+
+    config.svn_push_enabled = False
+    config.save(update_fields=["svn_push_enabled"])
+    blocked = PackageService.create_task_for_release(
+        config, release, request_user=user, auto_triggered=True
+    )
+    assert blocked.config_snapshot["svn_push_enabled"] is False
 
 
 @pytest.mark.django_db
@@ -1020,7 +1152,7 @@ def test_manual_push_svn_rejects_manual_trigger_task(
     task.artifact_info = [{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100}]
     task.save(update_fields=["status", "workspace_path", "artifact_info"])
 
-    with pytest.raises(RuntimeError, match="仅正式发布自动打包"):
+    with pytest.raises(RuntimeError, match="仅已允许推送 SVN 的自动打包任务可以推送"):
         PackageService.manual_push_svn(task)
 
 

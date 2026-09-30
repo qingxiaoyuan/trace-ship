@@ -265,9 +265,9 @@ class TestPushArtifactsOverwriteMode:
         mock_provider.sync_directory.assert_called_once()
         mock_provider.import_path.assert_not_called()
         args = mock_provider.sync_directory.call_args.args
-        assert args[0] == "svn://host/releases/V1.0.0"
+        assert args[0] == "svn://host/releases/formal/V1.0.0"
         assert args[1] == str(workspace / "tmp" / "svn_upload")
-        assert result["remote_url"] == "svn://host/releases/V1.0.0"
+        assert result["remote_url"] == "svn://host/releases/formal/V1.0.0"
         assert result["file_count"] == 2
 
     def test_overwrite_new_dir_falls_back_to_import(

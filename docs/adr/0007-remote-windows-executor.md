@@ -33,7 +33,7 @@ ADR-0002 确立的内置打包仅支持在平台宿主机以本地 Docker 容器
 ## 2026-08-11 演进
 
 - 节点增加 `max_concurrency`（默认 1）：`run_task_with_gate` 按快照 node_id 统计 running 任务，槽位不足时任务保持 `queued` 并 30s 延迟重投，不直接失败。
-- `PackageTask` 增加 `release_type`（formal/rc/beta），创建任务时从发布记录带出；SVN 推送在默认模板 `{version}` 下对非正式版自动追加 `-rc`/`-beta` 目录后缀，自定义模板支持 `{release_type}` 占位符。
+- `PackageTask` 增加 `release_type`（formal/rc/beta），创建任务时从发布记录带出。当时默认模板 `{version}` 对非正式版追加 `-rc`/`-beta` 目录后缀；该目录规则已由下方「2026-09-30 演进」取代，现为 `formal` / `rc` / `beta` 分目录。自定义模板仍支持 `{release_type}` 占位符。
 - 打包配置维护权限定为项目管理员 / 软件管理员（`IsProjectPackageAdmin`）；无权限用户在前端可只读查看配置（字段禁用、无保存按钮）用于参考模仿。
 - SVN 连通性测试（test-svn）不再要求管理员，但要求项目成员（响应含目录条目，不对非成员开放）。
 - 任务日志接口支持 tail/offset 增量读取，前端虚拟滚动渲染，解决大日志详情卡顿。
@@ -74,6 +74,12 @@ ADR-0002 确立的内置打包仅支持在平台宿主机以本地 Docker 容器
   的进程树聚合硬顶**不对等**，配置相同的 mem_limit_mb 在两类节点上约束强度不同。
 - **work_root 按 OS 校验**：麒麟须 POSIX 绝对路径且拒绝根目录，Windows 须盘符路径且
   拒绝盘符根目录（与 `cleanup._safe_work_root` 口径对齐）。
+
+## 2026-09-30 演进
+
+- 默认目录模板 `{version}` 改为按发布类型分目录：`formal/{version}`、`rc/{version}`、`beta/{version}`。已推到 `{svn_url}/{version}` 的正式版不迁移。自定义模板按原文渲染，不再追加 `-rc` / `-beta` 后缀。
+- `PackageConfig` 增加 `svn_push_rc`、`svn_push_beta`（默认关闭）。发布后自动打包时，正式版仍看 `svn_push_enabled`；RC、测试版在总开关之外还要打开对应开关。看板手动触发与分支直打不推 SVN。
+- 同版本号是否覆盖继续用 `svn_commit_mode`（`new_dir` / `overwrite`），界面改为「同版本号允许覆盖」开关。
 
 ## Consequences
 

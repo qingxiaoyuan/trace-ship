@@ -241,7 +241,7 @@ npm run preview
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：仓库级审批流程定义、实例和审批任务；仓库创建时补齐 formal/rc/beta 内置流程，仅仓库创建者可编辑节点。正式发布默认仓库拥有者审批，RC / Beta 默认空审批链（提交后直接推 Tag）。审批人类型为仓库拥有者与指定人员（可搜索选择）；存量配置中的项目负责人/角色/发起人仍可解析展示。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
-- `PackageConfig`：项目组件级打包配置，归属以 `project_component` 为唯一事实源（`project` / `repository` 冗余字段已删除，API 响应的 project_id / project_name / repository_id / repository_name 字段由组件推导）；包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（含提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
+- `PackageConfig`：项目组件级打包配置，归属以 `project_component` 为唯一事实源（`project` / `repository` 冗余字段已删除，API 响应的 project_id / project_name / repository_id / repository_name 字段由组件推导）；包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（正式版总开关，RC / 测试版各自开关，默认目录 formal|rc|beta/版本号；提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
 - `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），`arch` 记录芯片架构（`x86_64` / `x86_32` / `arm64` / `arm32`，默认 `x86_64`，选择节点时随节点名展示），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
 - `PackageTask`：打包任务记录，可关联仓库级 `ReleaseRecord`；状态为 `queued` / `running` / `success` / `failure` / `canceled`。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一），「打包配置」列表默认收藏优先排序，并驱动工作台「打包速览」面板的常用配置区；接口为 `POST /api/packages/configs/{id}/favorite/`（toggle）、`GET /api/packages/configs/favorites/`（附最近任务摘要）。任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（口径：我发起的、近 N 天、仅终态），工作台打包成功率 KPI 与速览面板统一使用。
@@ -264,7 +264,7 @@ npm run preview
 4. 提交审批：`ReleaseService.submit_audit` 要求发布处于 `draft` 且发布说明非空；按发布类型查找启用的 `WorkflowDefinition`，创建 `WorkflowInstance`，状态改为 `pending`。
 5. 审批流转：`WorkflowEngine` 根据 `node_config` 生成任务，支持通过、驳回、转交、回退、撤销。
 6. 审批完成：`ReleaseService.handle_workflow_completed` 调用 `push_tag`；推 tag 成功后发布状态变为 `released`，失败则变为 `rejected` 并写入 `rejected_reason`。
-7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送仅在「正式发布 + 自动触发」时启用；看板手动触发（已发布 Tag / 分支直打）以及 RC / Beta 自动打包均不推 SVN。
+7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送仅在发布后自动打包时启用：正式版看总开关，默认目录为 formal/版本号；RC、测试版需另开对应开关，分别进入 rc/版本号、beta/版本号。看板手动触发与分支直打不推 SVN。默认同版本号不覆盖，开启覆盖后镜像提交。
 8. 审批驳回：`ReleaseService.handle_workflow_rejected` 将发布状态改为 `rejected`；回退到初始节点时可恢复为 `draft` 并解除流程实例关联。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
@@ -284,7 +284,7 @@ npm run preview
    - 若配置 `custom_script`，则以 `sh -ec`（遇错即停）执行该脚本；
    - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）；
    - 打包产物写入 `/workspace/artifacts`；
-   - 扫描 `workspace/artifacts`，符合条件时推 SVN（仅正式发布自动打包；`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步）。
+   - 扫描 `workspace/artifacts`，符合条件时推 SVN。仅发布后自动打包：正式版看总开关，默认路径 `{svn_url}/formal/{version}`；RC、测试版还要打开 `svn_push_rc` / `svn_push_beta`，路径为 `rc/{version}`、`beta/{version}`。自定义目录模板按原文渲染。`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步。看板手动触发与分支直打不推 SVN。
 4. 镜像必须满足目录、环境变量、入口脚本约定（详见「镜像接入规范」或 `docker/package/web/README.md`）。
 
 ### 镜像接入规范

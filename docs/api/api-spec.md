@@ -1409,16 +1409,19 @@
   "auto_package_on_release": true,
   "is_active": true,
   "svn_push_enabled": true,
+  "svn_push_rc": false,
+  "svn_push_beta": false,
   "svn_url": "svn://svn.example.com/releases",
   "svn_credential": "uuid",
-  "svn_path_template": "{project}/{version}"
+  "svn_path_template": "{version}",
+  "svn_commit_mode": "new_dir"
 }
 ```
 
 说明：
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
 - 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
-- 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。
+- 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。`svn_push_rc` / `svn_push_beta` 默认 false。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。仅发布后自动打包会推 SVN。
 - 打包配置仅支持 Git 仓库，且仓库必须属于当前项目。
 
 ### 9.7 手动触发打包

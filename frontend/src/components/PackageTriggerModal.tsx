@@ -207,7 +207,7 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
         )}
         {config?.svn_push_enabled ? (
           <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-2.5 text-[12px] leading-relaxed text-amber-800">
-            手动触发的打包不会推送 SVN。仅正式发布且开启「发布后自动打包」的任务才会自动推送 SVN。
+            手动触发的打包不会推送 SVN。发布后自动打包时，正式版在总开关打开后推送到 formal/版本号；RC、测试版还需分别打开对应开关，才会推到 rc/版本号、beta/版本号。
           </div>
         ) : null}
       </Form>

@@ -64,6 +64,8 @@ class TaskLifecycleMixin:
             "cleanup_workspace": config.cleanup_workspace,
             "env_vars": config.env_vars or {},
             "svn_push_enabled": config.svn_push_enabled,
+            "svn_push_rc": bool(config.svn_push_rc),
+            "svn_push_beta": bool(config.svn_push_beta),
             "svn_url": config.svn_url or "",
             "svn_credential_id": str(config.svn_credential_id) if config.svn_credential_id else None,
             "svn_path_template": config.svn_path_template or "{version}",
@@ -83,8 +85,8 @@ class TaskLifecycleMixin:
     ) -> PackageTask:
         """为已发布版本创建打包任务。
 
-        auto_triggered=True 表示发布推 tag 后的自动打包；仅此时且发布类型为
-        正式版时，快照才会打开 SVN 推送。手动触发即使选正式版也不推 SVN。
+        auto_triggered=True 表示发布推 tag 后的自动打包。仅此时按发布类型决定
+        是否推 SVN：正式版看总开关，RC / 测试版还要各自打开。手动触发不推 SVN。
         """
         if release.status != "released":
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})

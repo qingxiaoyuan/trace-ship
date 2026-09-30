@@ -221,6 +221,16 @@ class PackageConfig(models.Model):
         help_text="打包成功后自动清理远程节点工作目录（关闭可保留源码与产物用于调试，仅远程执行生效）",
     )
     svn_push_enabled = models.BooleanField(default=False, verbose_name="启用 SVN 推送")
+    svn_push_rc = models.BooleanField(
+        default=False,
+        verbose_name="RC 版提交 SVN",
+        help_text="发布后自动打包时，RC 版产物提交到 rc/版本号；关闭则不推送",
+    )
+    svn_push_beta = models.BooleanField(
+        default=False,
+        verbose_name="测试版提交 SVN",
+        help_text="发布后自动打包时，测试版产物提交到 beta/版本号；关闭则不推送",
+    )
     svn_url = models.CharField(max_length=500, blank=True, verbose_name="SVN 仓库地址")
     svn_credential = models.ForeignKey(
         "credential.Credential",

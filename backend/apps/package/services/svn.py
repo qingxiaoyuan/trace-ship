@@ -23,6 +23,26 @@ TRIGGER_SOURCE_AUTO_RELEASE = "auto_release"
 TRIGGER_SOURCE_MANUAL_RELEASE = "manual_release"
 TRIGGER_SOURCE_MANUAL_BRANCH = "manual_branch"
 
+# 默认目录模板。渲染时改为 {release_type}/{version}，三类版本分目录存放。
+DEFAULT_SVN_PATH_TEMPLATE = "{version}"
+
+
+def release_type_allows_svn(snapshot: dict[str, Any], release_type: str) -> bool:
+    """总开关打开后，正式版直接允许；RC / 测试版还要看各自开关。
+
+    历史快照没有 svn_push_rc / svn_push_beta 时按关闭处理。
+    """
+    if not snapshot.get("svn_push_enabled"):
+        return False
+    kind = release_type or "formal"
+    if kind == "formal":
+        return True
+    if kind == "rc":
+        return bool(snapshot.get("svn_push_rc"))
+    if kind == "beta":
+        return bool(snapshot.get("svn_push_beta"))
+    return False
+
 
 def apply_svn_push_policy(
     snapshot: dict[str, Any],
@@ -30,13 +50,16 @@ def apply_svn_push_policy(
     trigger_source: str,
     release_type: str,
 ) -> dict[str, Any]:
-    """按触发来源与发布类型写入快照：仅自动触发的正式版才启用 SVN 推送。"""
+    """按触发来源与发布类型写入快照。
+
+    仅发布后自动打包可推 SVN。正式版看总开关；RC、测试版在总开关之外还要打开
+    对应开关。结果写回 svn_push_enabled，后续执行只认这个生效值。
+    """
     snapshot = dict(snapshot)
     snapshot["trigger_source"] = trigger_source
     allow = (
-        bool(snapshot.get("svn_push_enabled"))
-        and trigger_source == TRIGGER_SOURCE_AUTO_RELEASE
-        and release_type == "formal"
+        trigger_source == TRIGGER_SOURCE_AUTO_RELEASE
+        and release_type_allows_svn(snapshot, release_type)
     )
     snapshot["svn_push_enabled"] = allow
     return snapshot
@@ -45,28 +68,43 @@ def apply_svn_push_policy(
 def task_allows_svn_push(task: PackageTask) -> bool:
     """任务是否允许自动/手动推送 SVN。
 
-    仅快照标明 trigger_source=auto_release 且发布类型为正式版时允许。
-    历史任务无 trigger_source 的不允许补推，避免旧手动正式包再推上 SVN。
+    创建任务时已按发布类型把是否推送写入 svn_push_enabled。
+    这里只认该生效值，以及 trigger_source=auto_release。
+    历史任务无 trigger_source 的不允许补推，避免旧手动包再推上 SVN。
     """
     snapshot = task.config_snapshot or {}
     if not snapshot.get("svn_push_enabled"):
         return False
-    source = snapshot.get("trigger_source")
-    if source != TRIGGER_SOURCE_AUTO_RELEASE:
-        return False
-    return (task.release_type or "formal") == "formal"
+    return snapshot.get("trigger_source") == TRIGGER_SOURCE_AUTO_RELEASE
 
 
 class SvnPushMixin:
     """产物推送 SVN 与发布文档同步相关方法。"""
 
+    @classmethod
+    def _note_svn_directory_change(cls, task: PackageTask, previous_url: str, new_url: str) -> None:
+        """上次已推送的目录和本次不同时写入任务日志。
+
+        默认模板从平铺版本号改为 formal/rc/beta 分目录后，历史任务重推会进入新目录，
+        旧目录保持原样。两条地址都写进日志。
+        """
+        previous = (previous_url or "").strip().rstrip("/")
+        current = (new_url or "").strip().rstrip("/")
+        if not previous or not current or previous == current:
+            return
+        cls._append_log(
+            task,
+            "本次 SVN 目录与上次不同："
+            f"上次 {previous}，本次 {current}。"
+            "上次目录保留，不会被这次推送更新。",
+        )
+
     @staticmethod
     def _ensure_svn_parent_dirs(provider, svn_url: str, version_dir: str) -> None:
         """svn import 不会自动创建父目录，逐级创建版本目录缺失的中间父目录。
 
-        发布任务的版本号通常为单级（如 V1.0.0），父目录即 svn_url 本身；分支直打包
-        任务的 version 即分支名（可能含斜杠，如 feature/demo），目标 releases/feature/demo
-        的父目录 releases/feature 需先创建，否则 import 会因路径不存在而失败。
+        版本目录可能多级，例如默认模板 formal/V1.0.0，或版本号本身含斜杠。
+        除最后一级外的父目录需先创建，否则 import 会因路径不存在而失败。
         最后一级目录由 svn import 自动创建，无需预先 mkdir。
         """
         base = svn_url.rstrip("/")
@@ -97,7 +135,7 @@ class SvnPushMixin:
         snapshot = task.config_snapshot or {}
         svn_url = snapshot.get("svn_url", "")
         cred_id = snapshot.get("svn_credential_id")
-        path_template = snapshot.get("svn_path_template", "{version}")
+        path_template = snapshot.get("svn_path_template") or DEFAULT_SVN_PATH_TEMPLATE
 
         if not svn_url or not cred_id:
             raise RuntimeError("SVN 推送配置不完整")
@@ -113,22 +151,23 @@ class SvnPushMixin:
         credential.save(update_fields=["last_used_at", "updated_at"])
         cred_data = credential.get_data()
 
-        # 渲染版本目录名（支持 {release_type} 占位符区分正式/RC/测试版）
-        # 说明：分支直打包任务 version/tag_name 即分支名（如 feature/1.0），
-        # 默认模板 {version} 渲染后保留斜杠，会按分支层级生成嵌套 SVN 目录
-        # （svn_root/feature/1.0/），这是预期行为，便于按分支组织产物。
+        # 渲染版本目录，支持 {release_type}。结果可以含斜杠：默认模板会变成
+        # formal/版本号，版本号本身也可能带斜杠。父目录由 _ensure_svn_parent_dirs
+        # 逐级创建。分支直打不推 SVN，斜杠只描述目录渲染。
+        release_type = task.release_type or "formal"
         version_dir = path_template.format(
             version=task.version,
             tag_name=task.tag_name,
             build_type=task.build_type,
             project_code=task.project.code or task.project.name,
-            release_type=task.release_type or "formal",
+            release_type=release_type,
         ).strip("/")
         if not version_dir:
             raise RuntimeError("SVN 目录模板渲染结果为空")
-        # 默认模板 {version} 下，非正式版目录自动带类型后缀，避免 rc/测试版覆盖正式版目录
-        if path_template == "{version}" and task.release_type and task.release_type != "formal":
-            version_dir = f"{version_dir}-{task.release_type}"
+        # 默认模板按发布类型分目录：formal/版本号、rc/版本号、beta/版本号。
+        # 自定义模板按原文渲染，不再自动插入类型目录或 -rc/-beta 后缀。
+        if path_template == DEFAULT_SVN_PATH_TEMPLATE:
+            version_dir = f"{release_type}/{version_dir}"
         remote_url = f"{svn_url.rstrip('/')}/{version_dir}"
 
         # 创建 provider；提交模式决定目录已存在时的行为：
@@ -310,15 +349,17 @@ class SvnPushMixin:
             snapshot.update({
                 "svn_url": config.svn_url,
                 "svn_credential_id": str(config.svn_credential_id) if config.svn_credential_id else None,
-                "svn_path_template": config.svn_path_template or "{version}",
+                "svn_path_template": config.svn_path_template or DEFAULT_SVN_PATH_TEMPLATE,
             })
             # 只补 URL/凭证，不把 svn_push_enabled 默认打开
         task.config_snapshot = snapshot
         if not task_allows_svn_push(task):
-            raise RuntimeError("仅正式发布自动打包允许推送 SVN")
+            raise RuntimeError("仅已允许推送 SVN 的自动打包任务可以推送")
 
+        previous_url = str(((task.stage_info or {}).get("svn_push") or {}).get("remote_url") or "")
         cls._append_log(task, "开始手动推送产物到 SVN…")
         result = cls._push_artifacts_to_svn(task, workspace)
+        cls._note_svn_directory_change(task, previous_url, result["remote_url"])
         cls._append_log(
             task,
             f"SVN 推送完成: {result['remote_url']} ({result['file_count']} 个文件)",
