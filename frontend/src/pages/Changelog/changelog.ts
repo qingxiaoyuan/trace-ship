@@ -26,6 +26,95 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.09.30',
+    date: '2026-09-30',
+    summary: '打包产物按正式版、RC、测试版分目录提交 SVN',
+    items: [
+      { category: 'feature', text: '打包配置的 SVN 默认目录按发布类型分开：正式版 formal/版本号、RC 版 rc/版本号、测试版 beta/版本号。自定义目录模板按填写内容提交，可使用 {release_type}。以前已经推到平铺版本号目录的产物不会自动搬走' },
+      { category: 'feature', text: 'SVN 配置新增「RC 版提交 SVN」「测试版提交 SVN」，默认关闭。只有发布后自动打包会推送：正式版看总开关，RC 与测试版还要各自打开。看板手动触发和按分支直打仍然不推 SVN' },
+      { category: 'improvement', text: '同版本号是否覆盖改为开关「同版本号允许覆盖」：关闭时目录已存在就报错；打开后检出并镜像覆盖，新增、修改、删除一起同步' },
+      { category: 'improvement', text: '历史任务再次推送且目录与上次不同时，打包日志会写明上次地址和本次地址，并说明上次目录保留、不会被这次更新' },
+    ],
+  },
+  {
+    version: '2026.09.29',
+    date: '2026-09-29',
+    summary: '弹窗误关后草稿还在，隐藏页签不再后台请求',
+    items: [
+      { category: 'improvement', text: '表单、发布说明和「检测 Commit」关掉弹窗后，草稿按当前对象留在页面里，重新打开可以接着改；已经加入更新内容的候选会随内容实时过滤' },
+      { category: 'improvement', text: '切走后被隐藏的详情页签不再在后台继续发请求' },
+    ],
+  },
+  {
+    version: '2026.09.18',
+    date: '2026-09-18',
+    summary: '命令面板、全局搜索、详情直达，系统通知支持强提醒',
+    items: [
+      { category: 'feature', text: '新增命令面板（Ctrl/⌘ K）：可跳转菜单，并按当前可见范围搜索项目、仓库、发布等。仓库页签和审批单支持链接直达，审批通知点开进入对应审批单' },
+      { category: 'improvement', text: '侧边栏审批待办显示数量徽标，页面补上面包屑和回到关联对象的入口' },
+      { category: 'feature', text: '系统通知可勾选强提醒：接收人下次登录后弹窗展示，点「知道了」后关闭并标为已读；通知列表和详情会标出强提醒' },
+    ],
+  },
+  {
+    version: '2026.09.17',
+    date: '2026-09-17',
+    summary: '凭证可做真实连接测试，界面口径统一为项目/产品',
+    items: [
+      { category: 'feature', text: '凭证测试按类型做真实连接校验（GitLab、SVN、LDAP、AI 接口），返回是否可用和失败原因；LDAP 也可按当前系统配置校验用户名密码' },
+      { category: 'improvement', text: '业务入口统一为「项目/产品」：项目通过组件关联可复用的代码仓库，版本和 Tag 属于仓库，发布先选项目再选该项目已关联的仓库' },
+      { category: 'improvement', text: '去掉独立的标签生成页和三步式发布说明流程，发布在发布单里完成。下拉框关掉再打开时不再留下上次的搜索词' },
+    ],
+  },
+  {
+    version: '2026.09.16',
+    date: '2026-09-16',
+    summary: '当时收紧 SVN 推送范围，手机端隐藏下载，项目列表筛选可用',
+    items: [
+      { category: 'improvement', text: '当时调整为仅正式发布的自动打包才推 SVN，手动触发和 RC/测试版自动打包不推。9 月 30 日起 RC 与测试版可在打包配置中单独打开' },
+      { category: 'improvement', text: '从 OA 门户单点登录进入的手机或平板页面隐藏产物、日志和发布单下载，避免文件落到外网终端；电脑浏览器不受影响' },
+      { category: 'fix', text: '修复项目列表搜索不生效、状态筛选对不上的问题；列表计数改为按仓库和成员统计，避免发布单把数量乘大' },
+    ],
+  },
+  {
+    version: '2026.09.11',
+    date: '2026-09-11',
+    summary: '仓库可被多个项目复用，审批流改到仓库上维护',
+    items: [
+      { category: 'feature', text: '同一代码仓库可以关联到多个项目。关联前仓库所有者必须已是该项目成员，凭证随所有者进入项目；已有发布或打包记录的关联只能停用' },
+      { category: 'feature', text: '审批流程改在仓库详情维护，由仓库创建者编辑。正式发布默认需要审批，RC 与测试版默认提交后直接推 Tag。打包配置挂在项目里的仓库关联上' },
+      { category: 'feature', text: '创建发布时可填写 Redmine 任务地址。项目详情可管理关联仓库，并按仓库查看版本' },
+      { category: 'improvement', text: '新建凭证、项目、成员、仓库等录入弹窗统一标题、分区和说明；添加成员改为角色卡片，新建项目时负责人默认是当前用户' },
+      { category: 'improvement', text: '用户列表支持按用户名、姓名搜索，并可按账号来源过滤。看不到的项目和仓库不再出现在列表里' },
+      { category: 'improvement', text: '打包看板任务列表补充分页，长列表可以翻页查看' },
+    ],
+  },
+  {
+    version: '2026.09.07',
+    date: '2026-09-07',
+    summary: '审批列表和详情同时展示项目与软件',
+    items: [
+      { category: 'improvement', text: '审批列表增加软件列，详情头部和发布摘要把项目与所属软件（仓库名）分开显示' },
+    ],
+  },
+  {
+    version: '2026.09.03',
+    date: '2026-09-03',
+    summary: '仓库列表搜索可用，并去掉 Git/SVN 类型筛选',
+    items: [
+      { category: 'fix', text: '修复仓库列表关键字搜索不生效的问题' },
+      { category: 'improvement', text: '仓库只登记 Git/GitLab，列表去掉 Git/SVN 类型筛选。SVN 仍只作为打包产物的推送目标' },
+    ],
+  },
+  {
+    version: '2026.08.28',
+    date: '2026-08-28',
+    summary: '发布记录可按整改状态筛选，工作台布局调整',
+    items: [
+      { category: 'feature', text: '发布列表和已发布回溯支持按整改意见状态筛选；已经有整改意见的版本不再显示「正常」' },
+      { category: 'improvement', text: '工作台去掉打包成功率图，把「我的待办」放到右侧，并修复宽屏下待办面板跨列错位' },
+    ],
+  },
+  {
     version: '2026.08.28',
     date: '2026-08-28',
     summary: '打包节点支持芯片架构、麒麟节点脚本修正为 sh；产品成员授权分级收缩；审查列表新增待复核徽标；管理员可发送系统通知',
