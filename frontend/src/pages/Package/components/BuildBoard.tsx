@@ -31,6 +31,8 @@ interface BuildBoardProps {
   /** 全量打包配置，用于统计各仓库的配置数 */
   configs: PackageConfig[];
   loading: boolean;
+  /** 切项目时仍展示上一份列表，禁止点进旧任务并给出轻量提示 */
+  switching?: boolean;
   keyword: string;
   onKeywordChange: (value: string) => void;
   /** 已完成任务总数（超过加载数量时提示仅展示最近部分） */
@@ -49,6 +51,7 @@ export const BuildBoard = memo(function BuildBoard({
   tasks,
   configs,
   loading,
+  switching = false,
   keyword,
   onKeywordChange,
   historyTotal,
@@ -74,11 +77,11 @@ export const BuildBoard = memo(function BuildBoard({
   }, []);
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 w-full space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 px-1 text-[11px] text-slate-400">
           <Layers3 className="h-3.5 w-3.5 text-indigo-500" strokeWidth={1.5} />
-          按仓库集合查看构建任务；运行中任务与已完成任务统一收纳
+          {switching ? '正在加载该项目的打包任务…' : '按仓库集合查看构建任务；运行中任务与已完成任务统一收纳'}
         </div>
         <div className="relative ml-auto">
           <Hammer className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
@@ -92,7 +95,7 @@ export const BuildBoard = memo(function BuildBoard({
         </div>
       </div>
 
-      {historyTotal > loadedHistoryCount && (
+      {historyTotal > loadedHistoryCount && !switching && (
         <div className="px-1 text-[11px] text-slate-400">
           已完成任务共 {historyTotal} 条，当前展示最近 {loadedHistoryCount} 条
         </div>
@@ -106,7 +109,7 @@ export const BuildBoard = memo(function BuildBoard({
           <p className="mt-3 text-[13px] text-slate-400">{keyword ? '没有匹配的打包任务' : '暂无打包记录'}</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className={`space-y-4 ${switching ? 'pointer-events-none opacity-60' : ''}`}>
           {groups.map((group) => {
             const collapsed = collapsedRepos.has(group.repositoryId);
             return (
@@ -174,7 +177,7 @@ export const BuildBoard = memo(function BuildBoard({
         </div>
       )}
 
-      {hasMoreHistory && !loading && (
+      {hasMoreHistory && !loading && !switching && (
         <div className="flex justify-center pt-1">
           <button
             type="button"

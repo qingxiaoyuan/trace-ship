@@ -9,6 +9,13 @@ body,
   margin: 0;
 }
 
+/* 桌面端预留滚动条槽，避免页面变高出现滚动条时内容区被挤窄；窄屏不预留，以免右侧多一条空隙 */
+@media (min-width: 1024px) {
+  html {
+    scrollbar-gutter: stable;
+  }
+}
+
 body {
   font-family: "Inter", "Noto Sans SC", "SF Pro Display", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";

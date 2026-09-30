@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { App, Button } from 'antd';
 import { ChevronRight, History, List, Package as PackageIcon, Plus, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
@@ -99,7 +99,12 @@ export default function PackageTaskPage() {
   });
 
   // 构建列表 · 进行中任务：5 秒轮询自动刷新
-  const { data: activeTasksData, error: activeTasksError, isPending: activeTasksPending } = useQuery({
+  const {
+    data: activeTasksData,
+    error: activeTasksError,
+    isPending: activeTasksPending,
+    isPlaceholderData: activeTasksPlaceholder,
+  } = useQuery({
     queryKey: ['package-tasks', 'board-active', taskSearch, filterProject],
     queryFn: () =>
       fetchAllPages(
@@ -115,6 +120,8 @@ export default function PackageTaskPage() {
       ),
     enabled: view === 'list' && activeTab === 'builds',
     refetchInterval: 5000,
+    // 切项目时保留上一份列表，避免整卡换成「加载中」导致右侧区域收放抖动
+    placeholderData: keepPreviousData,
   });
 
   // 构建列表 · 已完成任务：与进行中任务合并后按仓库分组统一收纳
@@ -122,6 +129,7 @@ export default function PackageTaskPage() {
     data: historyTasksData,
     error: historyTasksError,
     isPending: historyTasksPending,
+    isPlaceholderData: historyTasksPlaceholder,
     hasNextPage: hasMoreHistory,
     isFetchingNextPage: loadingMoreHistory,
     fetchNextPage: fetchNextHistoryPage,
@@ -139,10 +147,11 @@ export default function PackageTaskPage() {
     getNextPageParam: (lastPage) =>
       lastPage.page * lastPage.page_size < lastPage.total ? lastPage.page + 1 : undefined,
     enabled: view === 'list' && activeTab === 'builds',
+    placeholderData: keepPreviousData,
   });
 
   // 打包配置卡片需要各配置的最新任务（不分状态），仅配置 Tab 下加载
-  const { data: configLatestTasksData } = useQuery({
+  const { data: configLatestTasksData, isPlaceholderData: configLatestPlaceholder } = useQuery({
     queryKey: ['package-tasks', 'latest-by-config', filterProject],
     queryFn: () =>
       packageApi.getTasks({
@@ -151,6 +160,7 @@ export default function PackageTaskPage() {
         project: filterProject || undefined,
       }),
     enabled: view === 'list' && activeTab === 'configs',
+    placeholderData: keepPreviousData,
   });
 
   const projects = useMemo(() => projectsData?.results || [], [projectsData]);
@@ -533,8 +543,8 @@ export default function PackageTaskPage() {
             </div>
           </div>
 
-          {/* 左侧项目栏 + 右侧看板 */}
-          <div className="grid min-h-0 gap-5 lg:grid-cols-[288px_minmax(0,1fr)]">
+          {/* 左侧固定 288px，右侧吃剩余宽度；避免切项目时内容 min-width 把栏宽挤动 */}
+          <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-start">
             <BoardSidebar
               projects={projects}
               configs={configs}
@@ -544,7 +554,7 @@ export default function PackageTaskPage() {
               onOpenTask={openBuild}
             />
 
-            <section className="flex min-w-0 flex-col">
+            <section className="flex min-w-0 flex-1 flex-col overflow-x-hidden lg:min-h-[calc(100vh-220px)]">
               <div className="flex shrink-0 items-center border-b border-indigo-100 pb-3">
                 <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
                   <button
@@ -572,6 +582,7 @@ export default function PackageTaskPage() {
                     tasks={boardTasks}
                     configs={boardConfigs}
                     loading={activeTasksPending || historyTasksPending}
+                    switching={activeTasksPlaceholder || historyTasksPlaceholder}
                     keyword={taskKeyword}
                     onKeywordChange={setTaskKeyword}
                     historyTotal={historyTotal}
@@ -589,6 +600,7 @@ export default function PackageTaskPage() {
                     configs={boardConfigs}
                     tasks={configLatestTasks}
                     loading={configsLoading}
+                    switching={configLatestPlaceholder}
                     onEdit={openEditConfig}
                     onDelete={handleDeleteConfig}
                     onTrigger={openTriggerBuild}

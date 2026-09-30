@@ -24,6 +24,8 @@ interface ConfigListProps {
   configs: PackageConfig[];
   tasks: PackageTask[];
   loading: boolean;
+  /** 切项目时最近任务仍可能是上一份数据，给出轻量提示 */
+  switching?: boolean;
   onEdit: (config: PackageConfig) => void;
   onDelete: (config: PackageConfig) => void;
   onTrigger: (config: PackageConfig) => void;
@@ -43,6 +45,7 @@ export const ConfigList = memo(function ConfigList({
   configs,
   tasks,
   loading,
+  switching = false,
   onEdit,
   onDelete,
   onTrigger,
@@ -81,7 +84,7 @@ export const ConfigList = memo(function ConfigList({
   }, []);
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 w-full space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
@@ -102,6 +105,9 @@ export const ConfigList = memo(function ConfigList({
             <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
             新建配置
           </button>
+        )}
+        {switching && (
+          <span className="text-[11px] text-slate-400">正在刷新最近打包…</span>
         )}
       </div>
 

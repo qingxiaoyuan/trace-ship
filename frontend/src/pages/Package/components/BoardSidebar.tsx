@@ -56,7 +56,7 @@ export const BoardSidebar = memo(function BoardSidebar({
 
   return (
     // 半透明白面板：仅边框，让工作区网格背景透出（窄屏加轻底保证胶囊区可读）
-    <aside className="flex h-fit min-w-0 flex-col self-start rounded-xl border border-indigo-100/80 p-3 max-lg:flex-col max-lg:bg-white/70 lg:sticky lg:top-[84px] lg:max-h-[calc(100vh-140px)]">
+    <aside className="flex h-fit min-w-0 flex-col self-start rounded-xl border border-indigo-100/80 p-3 max-lg:flex-col max-lg:bg-white/70 lg:sticky lg:top-[84px] lg:w-[288px] lg:max-h-[calc(100vh-140px)] lg:shrink-0">
       {/* 我的项目：lg 及以上为边框分隔列表，窄屏为横向胶囊筛选条 */}
       <section className="flex max-h-[55%] flex-none flex-col pb-3 max-lg:max-h-none max-lg:pb-0">
         <div className="mb-3 flex items-center justify-between px-1">
