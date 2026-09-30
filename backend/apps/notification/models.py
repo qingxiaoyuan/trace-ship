@@ -63,7 +63,7 @@ class Notification(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["user", "is_read"]),
-            models.Index(fields=["user", "is_strong", "is_read"]),
+            models.Index(fields=["user", "is_strong", "is_read"], name="notificatio_user_id_strong_idx"),
             models.Index(fields=["notification_type", "created_at"]),
         ]
 
