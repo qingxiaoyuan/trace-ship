@@ -2,7 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-09-18
-**Spec:** `docs/design/frontend-ux-discoverability.md`
+**Spec:** `docs/04-design/frontend-ux-discoverability.md`
 **Deciders:** 产品/研发团队
 
 ## Context

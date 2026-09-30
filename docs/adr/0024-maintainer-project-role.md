@@ -2,7 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-09-29
-**Spec:** `docs/requirements/PRD-维保人员工作台.md`
+**Spec:** `docs/02-prd/PRD-维保人员工作台.md`
 **Deciders:** 产品/研发团队
 **Extends:** ADR-0006
 

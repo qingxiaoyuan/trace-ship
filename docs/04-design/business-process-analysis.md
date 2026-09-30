@@ -1,6 +1,6 @@
 # 业务流程详细分析
 
-> 基于 [design/后台设计.md](后台设计.md)、[requirements/后台需求.md](../requirements/后台需求.md) 与 [requirements/需求.md](../requirements/需求.md) 整理。
+> 基于 [04-design/后台设计.md](后台设计.md)、[01-requirements/后台需求.md](../01-requirements/后台需求.md) 与 [01-requirements/需求.md](../01-requirements/需求.md) 整理。
 >
 > **实现状态说明（2026-07 核对代码后更新）**：本文档原为阶段规划文档，现已按当前代码核对修订。
 > 文中标注「（规划中，未实现）」的内容表示代码中尚未落地，其余描述以当前实现为准。主要差异：
