@@ -34,6 +34,7 @@ export const changelogEntries: ChangelogEntry[] = [
       { category: 'feature', text: 'SVN 配置新增「RC 版提交 SVN」「测试版提交 SVN」，默认关闭。只有发布后自动打包会推送：正式版看总开关，RC 与测试版还要各自打开。看板手动触发和按分支直打仍然不推 SVN' },
       { category: 'improvement', text: '同版本号是否覆盖改为开关「同版本号允许覆盖」：关闭时目录已存在就报错；打开后检出并镜像覆盖，新增、修改、删除一起同步' },
       { category: 'improvement', text: '历史任务再次推送且目录与上次不同时，打包日志会写明上次地址和本次地址，并说明上次目录保留、不会被这次更新' },
+      { category: 'fix', text: '修复新建打包弹窗选不到已发布 Tag 和分支：配置接口改为返回 project_id / repository_id 后，弹窗仍读取旧字段导致下拉为空' },
     ],
   },
   {

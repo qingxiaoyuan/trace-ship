@@ -6,19 +6,9 @@ import { packageApi } from '@/api/package';
 import { releaseApi } from '@/api/release';
 import { repositoryApi } from '@/api/repository';
 import { useModalDraft } from '@/hooks/useModalDraft';
+import { resolvePackageTriggerScope, type PackageTriggerTarget } from './packageTriggerScope';
 
-/**
- * 触发打包的目标配置（PackageConfig / 收藏配置均可，只需基础字段）。
- * project / repository 用于加载可选发布与分支，缺失时对应选项为空。
- */
-export interface PackageTriggerTarget {
-  id: string;
-  name: string;
-  repository_name?: string;
-  project?: string;
-  repository?: string;
-  svn_push_enabled?: boolean;
-}
+export type { PackageTriggerTarget };
 
 interface PackageTriggerModalProps {
   open: boolean;
@@ -50,16 +40,18 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
     form.setFieldsValue(draft.value.values);
   }, [draft.value, form, open]);
 
+  const { projectId, repositoryId } = resolvePackageTriggerScope(config);
+
   const { data: releasedData, isLoading: releasesLoading } = useQuery({
-    queryKey: ['package-trigger-releases', config?.project, config?.repository],
+    queryKey: ['package-trigger-releases', projectId, repositoryId],
     queryFn: () =>
       releaseApi.getReleases({
-        project: config?.project,
-        repository: config?.repository,
+        project: projectId,
+        repository: repositoryId,
         status: 'released',
         page_size: 1000,
       }),
-    enabled: open && !!config?.project && !!config?.repository,
+    enabled: open && !!projectId && !!repositoryId,
   });
 
   const releaseOptions = useMemo(
@@ -72,9 +64,9 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
 
   // 分支直打包：按配置关联仓库加载分支列表（含最新提交哈希）
   const { data: branchesData, isLoading: branchesLoading } = useQuery({
-    queryKey: ['package-trigger-branches', config?.repository],
-    queryFn: () => repositoryApi.getBranches(config!.repository!),
-    enabled: open && mode === 'branch' && !!config?.repository,
+    queryKey: ['package-trigger-branches', repositoryId],
+    queryFn: () => repositoryApi.getBranches(repositoryId!),
+    enabled: open && mode === 'branch' && !!repositoryId,
   });
 
   const branchOptions = useMemo(

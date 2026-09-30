@@ -1,13 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Form, Modal, Select } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { App } from 'antd';
 import { packageApi } from '@/api/package';
-import { useModalDraft } from '@/hooks/useModalDraft';
-import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { PackageConfigModal } from '@/components/PackageConfigModal';
+import { PackageTriggerModal } from '@/components/PackageTriggerModal';
 import { ConfigList } from '@/pages/Package/components/ConfigList';
 import { fetchAllPages } from '@/pages/Package/components/boardData';
 import { useProjectRole } from '@/hooks/useProjectRole';
@@ -21,20 +19,11 @@ interface PackageTabProps {
 
 export function PackageTab({ projectId, active = true }: PackageTabProps) {
   const { message, modal } = App.useApp();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [editing, setEditing] = useState<PackageConfig | null>(null);
   const [triggerConfig, setTriggerConfig] = useState<PackageConfig | null>(null);
-  const [triggerForm] = Form.useForm<{ release_id: string }>();
-  const triggerDraft = useModalDraft<{ release_id?: string }>(triggerOpen, triggerConfig ? `package-trigger:${triggerConfig.id}` : 'package-trigger:none', () => ({}));
-
-  useEffect(() => {
-    if (!triggerOpen || !triggerDraft.value) return;
-    triggerForm.resetFields();
-    triggerForm.setFieldsValue(triggerDraft.value);
-  }, [triggerDraft.value, triggerForm, triggerOpen]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['package-configs', projectId],
@@ -59,18 +48,6 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
   });
   const { canManage, canTriggerPackage } = useProjectRole(project);
 
-  const { data: releasedData, isLoading: releasesLoading } = useQuery({
-    queryKey: ['package-trigger-releases', projectId, triggerConfig?.repository],
-    queryFn: () =>
-      releaseApi.getReleases({
-        project: projectId,
-        repository: triggerConfig?.repository,
-        status: 'released',
-        page_size: 1000,
-      }),
-    enabled: active && triggerOpen && !!projectId && !!triggerConfig?.repository,
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => packageApi.deleteConfig(id),
     onSuccess: () => {
@@ -90,36 +67,12 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
     },
   });
 
-  const triggerMutation = useMutation({
-    mutationFn: ({ configId, releaseId }: { configId: string; releaseId: string }) =>
-      packageApi.triggerConfig(configId, releaseId),
-    onSuccess: (task) => {
-      if (task.status === 'failure') {
-        message.warning(task.error_message || '打包任务创建成功，但任务投递失败');
-      } else {
-        message.success('已创建打包任务');
-        navigate(`/packages/${task.id}`);
-      }
-      triggerDraft.clear();
-      triggerForm.resetFields();
-      setTriggerOpen(false);
-      setTriggerConfig(null);
-      queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
-    },
-  });
-
-  const releaseOptions = (releasedData?.results || []).map((release) => ({
-    label: `${release.version} / ${release.tag_name}`,
-    value: release.id,
-  }));
-
   const openTrigger = (record: PackageConfig) => {
     setTriggerConfig(record);
     setTriggerOpen(true);
   };
 
   const closeTrigger = () => {
-    triggerDraft.save(triggerForm.getFieldsValue(true));
     setTriggerOpen(false);
     setTriggerConfig(null);
   };
@@ -175,38 +128,7 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
         }}
       />
 
-      <Modal
-        title="立即打包"
-        open={triggerOpen}
-        onCancel={closeTrigger}
-        onOk={() => triggerForm.submit()}
-        confirmLoading={triggerMutation.isPending}
-        destroyOnHidden
-      >
-        <div className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 text-[12px] text-slate-600">
-          <div>打包配置：{triggerConfig?.name || '-'}</div>
-          <div>关联仓库：{triggerConfig?.repository_name || '-'}</div>
-        </div>
-        <Form
-          form={triggerForm}
-          layout="vertical"
-          onFinish={(values) => {
-            if (!triggerConfig) return;
-            triggerMutation.mutate({ configId: triggerConfig.id, releaseId: values.release_id });
-          }}
-        >
-          <Form.Item name="release_id" label="选择已发布 Tag" rules={[{ required: true, message: '请选择已发布 Tag' }]}>
-            <Select
-              showSearch
-              loading={releasesLoading}
-              options={releaseOptions}
-              placeholder="选择已发布版本 / Tag"
-              optionFilterProp="label"
-              notFoundContent={releasesLoading ? '加载中...' : '暂无可打包的已发布 Tag'}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <PackageTriggerModal open={triggerOpen} config={triggerConfig} onClose={closeTrigger} />
     </div>
   );
 }
