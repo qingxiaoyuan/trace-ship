@@ -3,12 +3,15 @@ import type {
   PaginatedData,
   RcCandidate,
   Release,
+  FormalChangesPreviewData,
   ReleaseCommit,
   ReleaseReviewIssue,
   SvnSyncResult,
 } from '@/types';
 
 export const releaseApi = {
+  getFormalChanges: (id: string) =>
+    get<FormalChangesPreviewData>(`/releases/${id}/changes-preview/`, { timeout: 300_000 }),
   getRcCandidates: (params: Record<string, unknown>) =>
     get<PaginatedData<RcCandidate>>('/releases/rc-candidates/', { params }),
   updateSource: (id: string, sourceRc: string) =>

@@ -308,6 +308,7 @@ class ReleaseViewSet(StandardModelViewSet):
         data = serializer.validated_data
 
         source_changed = False
+        old_version = instance.version
         try:
             if instance.release_type == "formal":
                 if "source_rc" in data:
@@ -357,14 +358,20 @@ class ReleaseViewSet(StandardModelViewSet):
         except serializers.ValidationError as exc:
             return error_response(40002, _extract_validation_message(exc))
 
+        changes_invalidated = source_changed or (instance.source_rc_id and instance.version != old_version)
+        if changes_invalidated:
+            from apps.release.formal_changes import FormalChanges
+
+            FormalChanges.reset(instance)
         instance.save(
             update_fields=[
                 "branch", "version", "tag_name", "redmine_url", "git_hash", "updated_at",
                 "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
-                "base_tag", "release_doc", "updates", "related_changes",
+                "base_tag", "base_git_hash", "changes_initialized", "changes_warnings",
+                "release_doc", "updates", "related_changes",
             ]
         )
-        if source_changed:
+        if changes_invalidated:
             instance.release_commits.all().delete()
             instance.release_mrs.all().delete()
         return success_response(self._serialize_release(instance), message="更新成功")
@@ -395,6 +402,19 @@ class ReleaseViewSet(StandardModelViewSet):
                 )
         instance.delete()
         return success_response(None, message="删除成功")
+
+    @action(detail=True, methods=["get"], url_path="changes-preview")
+    def changes_preview(self, request: Request, pk=None) -> Response:
+        """预览正式草稿固定区间；首次生成说明时才持久化基线。"""
+        from apps.release.formal_changes import FormalChanges
+
+        release = self.get_object()
+        try:
+            provider = ReleaseService._get_provider(release.repository, request.user, project=release.project)
+            data = FormalChanges.preview(FormalChanges.collect(release, provider))
+        except Exception as exc:
+            return _handle_service_error(exc, "预览正式变更")
+        return success_response(data)
 
     @action(detail=True, methods=["post"], url_path="generate-doc")
     def generate_doc(self, request: Request, pk=None) -> Response:
@@ -437,7 +457,7 @@ class ReleaseViewSet(StandardModelViewSet):
         release = self.get_object()
         md_content = request.data.get("release_doc", "")
         try:
-            ReleaseService.update_doc(release, md_content)
+            release = ReleaseService.update_doc(release, md_content)
             # 保存成功后同步替换已推送 SVN 的发布文档；失败不阻塞保存
             from apps.package.services import PackageService
 

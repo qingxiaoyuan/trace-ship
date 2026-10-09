@@ -1190,6 +1190,17 @@
 
 `commit_ids` 可选（为空时取本次变更范围全部提交）；`merge_similar` 默认 `true`。`data` 为生成后的发布说明 Markdown 字符串（同时已保存到发布记录）。
 
+有来源 RC 的正式版仅草稿允许重新生成，始终包含固定区间的全部提交（忽略 `commit_ids` 的缩减筛选）；非法提交仍关联并在提交审批时拦截。首次成功生成保存 `base_tag`、`base_git_hash`、`changes_initialized=true` 和 `changes_warnings`，后续重新生成沿用基线。来源或目标版本改变后清空这些字段、说明和关联变更。历史无来源正式记录沿用旧行为。
+
+#### 正式累计变更预览
+
+- **GET** `/api/releases/{id}/changes-preview/`
+- 按现有项目可见范围读取；只用于有来源 RC 的正式记录。
+- 首次生成前返回当前候选基线，不写入快照；首次生成后按冻结的完整 SHA 返回同一区间。
+- 基线为同物理仓库中低于目标版本的最高正式版本，平台已发布历史快照优先于同名远端 Tag。
+- `data` 包含 `base_tag`、`base_git_hash`、`head_hash`、`commits`、`merge_requests`、`parsed_updates`、`warnings`、`first_release`、`no_changes`。完整分页后的提交和 MR 在单次响应中返回；MR 只有合并或 squash SHA 位于提交区间内才自动纳入，缺少证据时列入 `warnings`。
+- 无基线取截至来源 SHA 的全部可达历史；同 SHA 返回空提交并标记 `no_changes`；非祖先基线返回 400，提示单独处理回滚/分叉；GitLab 故障返回 502，生成失败不保存部分结果。
+
 ### 8.8 手动编辑发布说明
 
 - **POST** `/api/releases/{id}/update-doc/`
@@ -1201,6 +1212,8 @@
   "release_doc": "| 项目 | 内容 |\n| --- | --- |\n| 版本 | VA.4.1.155 |"
 }
 ```
+
+有来源 RC 的正式版须先成功生成说明；`当前发布版本号`、`Git提交hash`、`来源 RC`、`正式基线`、`基线提交`、`变更范围` 为只读字段。编辑时须原样保留这些表格行，删除或篡改返回 400，其余内容可人工补充。
 
 ### 8.9 导出发布单
 

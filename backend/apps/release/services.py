@@ -584,6 +584,13 @@ class ReleaseDocGenerator:
         # Git提交hash
         rows.append(("Git提交hash", release.git_hash or "-"))
 
+        if release.release_type == "formal" and release.source_rc_id:
+            from apps.release.formal_changes import FormalChanges
+
+            rows = FormalChanges.identity_rows(release)
+            if release.changes_warnings:
+                rows.append(("核验提示", "\n".join(release.changes_warnings)))
+
         # 变更类型
         change_type = "有配置项改动" if release.has_config_changes else "无配置项改动"
         rows.append(("变更类型", change_type))
@@ -661,12 +668,26 @@ class ReleaseDocGenerator:
         Returns:
             Markdown 字符串
         """
-        commits = self._fetch_commits()
-        commits = self._filter_commits(commits, commit_ids)
-        merge_requests = self._fetch_merge_requests()
+        if self.release.release_type == "formal" and self.release.source_rc_id:
+            from apps.release.formal_changes import FormalChanges
+
+            changes = FormalChanges.collect(self.release, self.provider)
+            commits = changes["commits"]
+            merge_requests = changes["merge_requests"]
+            self.release.base_tag = changes["base_tag"]
+            self.release.base_git_hash = changes["base_git_hash"]
+            self.release.changes_initialized = True
+            self.release.changes_warnings = changes["warnings"]
+            manual = [item for item in self.release.updates if not item.get("source_ref")]
+            self.release.updates = changes["parsed_updates"] + manual
+            self.release.save(update_fields=["base_tag", "base_git_hash", "changes_initialized", "changes_warnings", "updates"])
+        else:
+            commits = self._fetch_commits()
+            commits = self._filter_commits(commits, commit_ids)
+            merge_requests = self._fetch_merge_requests()
+            self.release.base_tag = self._get_last_tag() or ""
 
         # 持久化发布时的基线 tag 快照，供详情页展示「上一 tag -> 本次 tag」提交区间
-        self.release.base_tag = self._get_last_tag() or ""
         self.release.save(update_fields=["base_tag"])
 
         # 持久化 ReleaseCommit 关联
@@ -894,10 +915,9 @@ class ReleaseService:
         release.source_rc_tag = source.tag_name
         release.source_rc_git_hash = source.git_hash
         release.branch, release.git_hash = source.branch, source.git_hash
-        release.base_tag = ""
-        release.release_doc = ""
-        release.updates = []
-        release.related_changes = []
+        from apps.release.formal_changes import FormalChanges
+
+        FormalChanges.reset(release)
         return True
 
     @staticmethod
@@ -1082,6 +1102,7 @@ class ReleaseService:
         return release
 
     @classmethod
+    @transaction.atomic
     def generate_doc(
         cls,
         release: ReleaseRecord,
@@ -1101,6 +1122,9 @@ class ReleaseService:
         Returns:
             Markdown 字符串
         """
+        release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
+        if release.release_type == "formal" and release.source_rc_id and release.status != "draft":
+            raise serializers.ValidationError({"status": "只有正式草稿才能重新生成累计说明"})
         provider = cls._get_provider(
             release.repository, request_user, project=release.project,
         )
@@ -1111,6 +1135,7 @@ class ReleaseService:
         return md_doc
 
     @staticmethod
+    @transaction.atomic
     def update_doc(release: ReleaseRecord, md_content: str) -> ReleaseRecord:
         """
         手动更新发布说明 Markdown 文档
@@ -1122,6 +1147,11 @@ class ReleaseService:
         Returns:
             更新后的 ReleaseRecord
         """
+        release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
+        if release.release_type == "formal" and release.source_rc_id:
+            from apps.release.formal_changes import FormalChanges
+
+            FormalChanges.validate_doc_identity(release, md_content)
         release.release_doc = md_content
         release.save(update_fields=["release_doc", "updated_at"])
         return release
@@ -1314,6 +1344,11 @@ class ReleaseService:
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
             if not release.release_doc:
                 raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
+
+            if release.release_type == "formal" and release.source_rc_id:
+                from apps.release.formal_changes import FormalChanges
+
+                FormalChanges.validate_doc_identity(release, release.release_doc)
 
             illegal_exists = release.release_commits.filter(
                 is_included=True,

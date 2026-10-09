@@ -12,7 +12,7 @@ import requests
 from django.utils.dateparse import parse_datetime
 
 from .base import BranchInfo, CommitInfo, GitProvider, MergeRequestInfo, TagInfo
-from .exceptions import AuthenticationError, ConnectionError, NotFoundError
+from .exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,10 @@ class GitLabProvider(GitProvider):
             raise exc
         if resp.status_code == 404:
             raise NotFoundError(f"GitLab 资源不存在: {path}")
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise ProviderError(f"GitLab 请求失败（HTTP {resp.status_code}）") from exc
         return resp
 
     def _encode_identity(self, repo_identity: str) -> str:
@@ -266,6 +269,58 @@ class GitLabProvider(GitProvider):
             )
             for c in resp.json()
         ]
+
+    def _release_pages(self, path: str, params: dict, identity_key: str) -> list[dict]:
+        """拉取全部分页，缺少分页头时继续探测；重复或异常页显式失败。"""
+        result, seen = [], set()
+        page = 1
+        while True:
+            resp = self._request("GET", path, params={**params, "per_page": 100, "page": page})
+            try:
+                items = resp.json()
+            except ValueError as exc:
+                raise ProviderError("GitLab 发布变更响应不是有效 JSON") from exc
+            if not isinstance(items, list):
+                raise ProviderError("GitLab 发布变更响应不完整")
+            for item in items:
+                identity = item.get(identity_key) if isinstance(item, dict) else None
+                if not identity or identity in seen:
+                    raise ProviderError("GitLab 发布变更分页重复或缺少标识，请重试")
+                seen.add(identity)
+                result.append(item)
+            next_page = resp.headers.get("X-Next-Page")
+            if next_page:
+                if not next_page.isdigit() or int(next_page) != page + 1 or not items:
+                    raise ProviderError("GitLab 发布变更分页异常，请重试")
+                page = int(next_page)
+            elif next_page == "" or len(items) < 100:
+                break
+            else:
+                page += 1
+        return result
+
+    def list_release_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
+        """GitLab commits 接口支持 revision range；不用可能截断的 compare 接口。"""
+        encoded = self._encode_identity(repo_identity)
+        items = self._release_pages(
+            f"/projects/{encoded}/repository/commits", {"ref_name": f"{base}..{head}" if base else head}, "id",
+        )
+        return [CommitInfo(
+            hash=c["id"], author=c.get("author_name", ""), author_email=c.get("author_email", ""),
+            message=c.get("message", ""), committed_at=self._parse_datetime(c.get("committed_date")),
+        ) for c in items]
+
+    def list_release_merge_requests(self, repo_identity: str) -> list[MergeRequestInfo]:
+        """跨分支与时间完整获取已合并 MR，由调用方按合并提交核验。"""
+        encoded = self._encode_identity(repo_identity)
+        items = self._release_pages(f"/projects/{encoded}/merge_requests", {"state": "merged", "scope": "all", "order_by": "created_at", "sort": "asc"}, "iid")
+        return [MergeRequestInfo(
+            number=str(mr["iid"]), title=mr.get("title", ""), description=mr.get("description") or "",
+            author=(mr.get("author") or {}).get("name", ""), source_branch=mr.get("source_branch") or "",
+            target_branch=mr.get("target_branch") or "", web_url=mr.get("web_url") or "",
+            merged_at=self._parse_datetime(mr.get("merged_at")),
+            merge_commit_sha=mr.get("merge_commit_sha") or "", squash_commit_sha=mr.get("squash_commit_sha") or "",
+        ) for mr in items]
 
     def get_commit(self, repo_identity: str, commit_hash: str) -> CommitInfo:
         """获取单个 commit 详情"""

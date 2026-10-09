@@ -16,6 +16,7 @@ export function ReleaseSource({ release }: { release: Release }) {
     onSuccess: (data) => {
       queryClient.setQueryData(['release', release.id], data);
       queryClient.invalidateQueries({ queryKey: ['release-commits', release.id] });
+      queryClient.invalidateQueries({ queryKey: ['formal-changes', release.id] });
       setEditing(false);
     },
   });

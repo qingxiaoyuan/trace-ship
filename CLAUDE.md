@@ -193,8 +193,8 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 
 1. 创建发布（`ReleaseService.create_release`）：校验项目已关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；未传版本号时基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个项目发布时共享同一套 Tag。 正式草稿必须传同项目、同仓库已发布的 `source_rc`，实时验证 RC Tag 与完整提交快照一致；保存来源版本、Tag、SHA，忽略客户端分支/哈希，RC/Beta 仍按分支创建。草稿重选来源会清空发布说明及关联变更，进入流程后禁止修改来源；被正式版引用的 RC 记录受删除保护。
 
-2. 预览变更（`ReleaseService.preview_changes`）：拉取上个 tag 到目标分支之间的 commits / MRs，解析 A/F 类更新内容。
-3. 生成发布说明（`ReleaseService.generate_doc`）：保存 Markdown 发布说明。
+2. 预览变更：RC/Beta 沿用分支预览；有来源 RC 的正式版由 `FormalChanges` 在上一正式提交至 `source_rc_git_hash` 的固定 SHA 区间完整分页拉取提交，仅关联合并或 squash SHA 位于区间内的 MR，无证据 MR 显示缺口。首次正式版取全部可达历史，同 SHA 明示无新增代码，非祖先基线拒绝普通晋升，外部失败不得回退移动分支。
+3. 生成发布说明：`ReleaseService.generate_doc` 保存 Markdown。正式版首次生成按同物理仓库中低于目标正式版本的最高正式版本固定 `base_tag` / `base_git_hash`（平台已发布历史快照优先于同名远端 Tag），以 `changes_initialized` 区分首次发布与未生成。重新生成沿用基线；来源或目标版本改变后清空基线、说明及提交/MR 关联。身份字段由系统维护，人工可编辑其余内容；提交审批前必须已生成有效正式说明，并保留非法提交拦截。
 4. 提交审批（`ReleaseService.submit_audit`）：要求 `draft` 状态且发布说明非空；按发布类型查找启用的 `WorkflowDefinition` 创建 `WorkflowInstance`，状态改为 `pending`。
 5. 审批流转（`WorkflowEngine`）：支持通过、驳回、转交、回退、撤销。
 6. 审批完成（`ReleaseService.handle_workflow_completed`）：调用 `push_tag`，成功后状态为 `released`；推 tag 失败则状态为 `rejected` 并写入 `rejected_reason`。审批已通过、仅推 tag 失败的发布单可通过 `ReleaseService.retry_push_tag`（`POST /api/releases/{id}/retry-push-tag/`）重试，无需重新走审批。

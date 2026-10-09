@@ -3,6 +3,11 @@ export interface MdTableRow {
   value: string;
 }
 
+/** 有来源快照的正式版，身份信息不能通过编辑说明改写。 */
+export function isFormalIdentityField(key: string): boolean {
+  return ['当前发布版本号', 'Git提交hash', '来源 RC', '正式基线', '基线提交', '变更范围'].includes(key);
+}
+
 type CheckboxConfig = {
   options: string[];
   exclusive: boolean;
