@@ -36,6 +36,7 @@ import { useAppMessage } from '@/hooks/useAppMessage';
 import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField';
+import { RcSourceSelect } from './components/RcSourceSelect';
 import { CommitCheckModal } from './components/CommitCheckModal';
 import type { Release, ReleaseType, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
 
@@ -56,7 +57,7 @@ const AUTO_FILL_UPDATES_LIMIT = 10;
 
 /** 发布类型卡片配置 */
 const RELEASE_TYPES: { value: ReleaseType; title: string; desc: string }[] = [
-  { value: 'formal', title: '正式', desc: '目标分支须为 main / master' },
+  { value: 'formal', title: '正式', desc: '选择已发布 RC，固定来源代码' },
   { value: 'rc', title: 'RC', desc: 'Tag 自动加 -rc 后缀' },
   { value: 'beta', title: 'Beta', desc: 'Tag 自动加 -beta 后缀' },
 ];
@@ -89,7 +90,9 @@ export default function ReleaseCreate() {
   const watchProject = Form.useWatch('project', form) as string | undefined;
   const watchRepository = Form.useWatch('repository', form) as string | undefined;
   const watchReleaseType = (Form.useWatch('release_type', form) as ReleaseType) || 'formal';
+  const watchSourceRc = Form.useWatch('source_rc', form) as string | undefined;
   const watchBranch = Form.useWatch('branch', form) as string | undefined;
+  const sourceReady = watchReleaseType === 'formal' ? !!watchSourceRc : !!watchBranch;
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-all'],
@@ -110,7 +113,7 @@ export default function ReleaseCreate() {
   } = useQuery({
     queryKey: ['repository-branches', watchRepository],
     queryFn: () => repositoryApi.getBranches(watchRepository || ''),
-    enabled: !!watchRepository,
+    enabled: !!watchRepository && watchReleaseType !== 'formal',
     retry: false,
   });
 
@@ -135,17 +138,17 @@ export default function ReleaseCreate() {
 
   // 自动版本号预览
   const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
-    queryKey: ['repository-next-version', watchRepository, watchReleaseType, watchBranch],
+    queryKey: ['repository-next-version', watchProject, watchRepository, watchReleaseType, watchSourceRc, watchBranch],
     queryFn: () => repositoryApi.getNextVersion(watchRepository || '', watchReleaseType),
-    enabled: !!watchRepository && !!watchBranch,
+    enabled: !!watchRepository && sourceReady,
   });
 
   // 变更预览：选 branch 后拉取 commits + MRs + parsed_updates（按发布类型取基线 tag）
   const { data: changesPreview, isLoading: changesLoading } = useQuery<ChangesPreview>({
-    queryKey: ['repository-changes-preview', watchRepository, watchBranch, watchReleaseType],
+    queryKey: ['repository-changes-preview', watchProject, watchRepository, watchBranch, watchReleaseType],
     queryFn: () =>
       repositoryApi.previewChanges(watchRepository || '', watchBranch || '', watchReleaseType),
-    enabled: !!watchRepository && !!watchBranch,
+    enabled: !!watchRepository && !!watchBranch && watchReleaseType !== 'formal',
     retry: false,
   });
 
@@ -197,7 +200,7 @@ export default function ReleaseCreate() {
   // 选 branch 后自动回填 parsed_updates（仅在首次拉取或切换分支/发布类型时触发）
   const lastPreviewRef = useRef<string>('');
   useEffect(() => {
-    if (!changesPreview) return;
+    if (!changesPreview || watchReleaseType === 'formal') return;
     const key = `${watchRepository}-${watchBranch}-${watchReleaseType}`;
     if (key === lastPreviewRef.current) return;
     lastPreviewRef.current = key;
@@ -240,10 +243,10 @@ export default function ReleaseCreate() {
   const tagNameDirtyRef = useRef(false);
   useEffect(() => {
     const suggested = nextVersionData?.next_tag_name;
-    if (suggested && !tagNameDirtyRef.current) {
+    if (suggested && sourceReady && !tagNameDirtyRef.current) {
       form.setFieldsValue({ tag_name: suggested });
     }
-  }, [nextVersionData?.next_tag_name, form]);
+  }, [nextVersionData?.next_tag_name, form, sourceReady, watchSourceRc, watchProject, watchRepository, watchReleaseType, watchBranch]);
 
   useEffect(() => {
     tagNameDirtyRef.current = false;
@@ -255,7 +258,8 @@ export default function ReleaseCreate() {
         project: values.project as string,
         repository: values.repository as string,
         release_type: values.release_type as ReleaseType,
-        branch: values.branch as string,
+        branch: values.release_type === 'formal' ? undefined : values.branch as string,
+        source_rc: values.release_type === 'formal' ? values.source_rc : undefined,
         tag_name: (values.tag_name as string)?.trim() || undefined,
         redmine_url: (values.redmine_url as string)?.trim() || undefined,
         related_changes: relatedChanges.filter((r) => r.key.trim()),
@@ -302,12 +306,23 @@ export default function ReleaseCreate() {
     },
   });
 
+  const resetSource = () => {
+    form.setFieldsValue({ source_rc: undefined, tag_name: undefined });
+    tagNameDirtyRef.current = false;
+    lastPreviewRef.current = '';
+    setUpdates([]);
+    setRelatedChanges([]);
+    setCommitCheckOpen(false);
+  };
   const handleProjectChange = () => {
+    resetSource();
+    setAutoPackageConfigIds(null);
     form.setFieldsValue({ repository: undefined, branch: undefined });
   };
   const handleRepoChange = (repositoryId?: unknown) => {
+    resetSource();
     const component = projectComponents.find((item) => item.repository === repositoryId);
-    form.setFieldsValue({ branch: component?.default_branch || undefined });
+    form.setFieldsValue({ branch: watchReleaseType === 'formal' ? undefined : component?.default_branch || undefined });
     // 切换仓库后重置发布后自动打包勾选（null 表示默认全选）
     setAutoPackageConfigIds(null);
   };
@@ -330,7 +345,7 @@ export default function ReleaseCreate() {
  ];
 
   // 步骤 1 表单字段是否就绪
-  const formReady = !!watchProject && !!watchRepository && !!watchBranch;
+  const formReady = !!watchProject && !!watchRepository && sourceReady;
 
   return (
     <div className="mx-auto max-w-[960px] space-y-5 page-fade-in">
@@ -392,7 +407,7 @@ export default function ReleaseCreate() {
       {/* ========== 步骤 1：填写表单 ========== */}
       {currentStep === 0 && (
         <>
-        <Form form={form} layout="vertical" onFinish={(v) => createMutation.mutate(v)} requiredMark={false}>
+        <Form form={form} disabled={createMutation.isPending} layout="vertical" onFinish={(v) => createMutation.mutate(v)} requiredMark={false}>
           {/* 1. 基础配置 */}
           <section className="tech-card mb-5 rounded-xl p-5">
             <div className="mb-4 flex items-center gap-2">
@@ -409,7 +424,7 @@ export default function ReleaseCreate() {
                   loading={projectsLoading}
                   options={projectOptions}
                   onChange={handleProjectChange}
-                  disabled={!!projectIdFromQuery}
+                  disabled={!!projectIdFromQuery || createMutation.isPending}
                   hint="只有你参与的项目才会显示"
                 />
               </Form.Item>
@@ -418,6 +433,7 @@ export default function ReleaseCreate() {
                   icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
                   placeholder="选择仓库"
                   loading={reposLoading}
+                  disabled={createMutation.isPending}
                   options={repoOptions}
                   onChange={handleRepoChange}
                   hint="仅列出当前项目已关联且启用的仓库；Tag 推送到该仓库"
@@ -431,7 +447,10 @@ export default function ReleaseCreate() {
               rules={[{ required: true, message: '请选择发布类型' }]}
               className="mb-0 mt-1"
             >
-              <ReleaseTypeCards />
+              <ReleaseTypeCards disabled={createMutation.isPending} onChange={() => {
+                resetSource();
+                form.setFieldsValue({ branch: undefined });
+              }} />
             </Form.Item>
           </section>
 
@@ -441,9 +460,14 @@ export default function ReleaseCreate() {
               <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-cyan">
                 <GitBranch className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
               </div>
-              <h3 className="text-[14px] font-semibold text-slate-900">分支配置</h3>
+              <h3 className="text-[14px] font-semibold text-slate-900">{watchReleaseType === 'formal' ? '来源代码' : '分支配置'}</h3>
             </div>
-            <Form.Item name="branch" label="分支" rules={[{ required: true, message: '请选择分支' }]}>
+            {watchReleaseType === 'formal' ? (
+              <Form.Item name="source_rc" label="来源 RC" rules={[{ required: true, message: '请选择已发布 RC' }]}>
+                <RcSourceSelect disabled={createMutation.isPending} key={`${watchProject}-${watchRepository}`} project={watchProject} repository={watchRepository}
+                  onChange={() => { form.setFieldsValue({ tag_name: undefined }); tagNameDirtyRef.current = false; setUpdates([]); setRelatedChanges([]); }} />
+              </Form.Item>
+            ) : <Form.Item name="branch" label="分支" rules={[{ required: true, message: '请选择分支' }]}>
               <SelectField
                 icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
                 placeholder="选择分支"
@@ -452,11 +476,11 @@ export default function ReleaseCreate() {
                 hint={
                   branchesErrorMsg
                     ? branchesErrorMsg
-                    : '发布说明将拉取此分支的提交，Tag 将推送到此分支；正式版本只能从 main / master 发布'
+                    : '发布说明将拉取此分支的提交，Tag 使用创建草稿时的分支提交'
                 }
                 error={!!branchesErrorMsg}
               />
-            </Form.Item>
+            </Form.Item>}
 
             {/* 基线信息 */}
             {formReady && changesPreview && (
@@ -490,7 +514,7 @@ export default function ReleaseCreate() {
               </div>
               <span className="text-[11px] text-slate-400">不填则自动计算</span>
             </div>
-            <Form.Item name="tag_name" label="Tag 名" className="mb-0">
+            <Form.Item name="tag_name" label="Tag 名" className="mb-0" getValueProps={(value) => ({ value: value ?? '' })}>
               <input
                 placeholder="留空自动生成"
                 onChange={() => { tagNameDirtyRef.current = true; }}
@@ -1163,6 +1187,8 @@ export default function ReleaseCreate() {
 /* ---------------- 子组件 ---------------- */
 
 function SelectField({
+  id,
+  value,
   icon,
   hint,
   loading,
@@ -1172,6 +1198,8 @@ function SelectField({
   onChange,
   error,
 }: {
+  id?: string;
+  value?: string;
   icon: React.ReactNode;
   hint?: string;
   loading?: boolean;
@@ -1184,6 +1212,8 @@ function SelectField({
   return (
     <div>
       <Select
+        id={id}
+        value={value}
         showSearch
         placeholder={placeholder}
         loading={loading}
@@ -1203,7 +1233,7 @@ function SelectField({
   );
 }
 
-function ReleaseTypeCards({ value, onChange }: { value?: ReleaseType; onChange?: (v: ReleaseType) => void }) {
+function ReleaseTypeCards({ value, onChange, disabled }: { value?: ReleaseType; onChange?: (v: ReleaseType) => void; disabled?: boolean }) {
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
       {RELEASE_TYPES.map((t) => {
@@ -1212,6 +1242,7 @@ function ReleaseTypeCards({ value, onChange }: { value?: ReleaseType; onChange?:
           <button
             type="button"
             key={t.value}
+            disabled={disabled}
             onClick={() => onChange?.(t.value)}
             className={`flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${
               on

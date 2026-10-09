@@ -96,6 +96,17 @@ export type ReleaseStatus =
 
 export type ReleaseType = 'formal' | 'rc' | 'beta';
 
+export interface RcCandidate {
+  id: string;
+  version: string;
+  tag_name: string;
+  branch: string;
+  git_hash: string;
+  released_at: string | null;
+  available: boolean;
+  unavailable_reason: string;
+}
+
 export interface Release {
   id: string;
   project: string;
@@ -117,6 +128,10 @@ export interface Release {
   status_display?: string;
   branch: string;
 
+  source_rc?: string | null;
+  source_rc_version?: string;
+  source_rc_tag?: string;
+  source_rc_git_hash?: string;
   git_hash: string;
   publisher: string;
   publisher_name?: string;

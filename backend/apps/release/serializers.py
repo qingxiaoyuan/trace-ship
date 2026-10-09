@@ -37,6 +37,8 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         required=False,
         allow_empty=True,
     )
+    branch = serializers.CharField(required=False, allow_blank=True)
+    source_rc = serializers.UUIDField(required=False, allow_null=True, write_only=True)
     package_tasks = serializers.SerializerMethodField()
     review_issue_counts = serializers.SerializerMethodField()
     can_review = serializers.SerializerMethodField()
@@ -47,6 +49,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         fields = [
             "id", "project", "project_name", "repository", "repository_name",
             "version", "tag_name", "redmine_url", "base_tag", "branch", "git_hash",
+            "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
             "release_type", "release_type_display", "status", "status_display",
             "release_doc", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
@@ -60,9 +63,15 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id", "git_hash", "base_tag", "status",
+            "source_rc_version", "source_rc_tag", "source_rc_git_hash",
             "package_tasks", "rejected_reason",
             "released_at", "created_at", "updated_at",
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["source_rc"] = str(instance.source_rc_id) if instance.source_rc_id else None
+        return data
 
     def get_package_tasks(self, obj: ReleaseRecord) -> list[dict]:
         """返回该发布关联的打包任务概要。"""
@@ -177,11 +186,16 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         Returns:
             校验通过的字典
         """
+        if self.instance:
+            for field in ("project", "repository", "release_type"):
+                if field in attrs and attrs[field] != getattr(self.instance, field):
+                    raise serializers.ValidationError({field: "草稿不能更换项目、仓库或发布类型，请重新创建"})
         release_type = attrs.get("release_type", getattr(self.instance, "release_type", "formal"))
         branch = attrs.get("branch", getattr(self.instance, "branch", ""))
-        if release_type == "formal" and branch not in ["main", "master"]:
-            # 允许具体项目配置在业务服务中再校验，这里仅做基础提示
-            pass
+        if release_type != "formal" and not branch:
+            raise serializers.ValidationError({"branch": "请选择分支"})
+        if release_type != "formal" and attrs.get("source_rc"):
+            raise serializers.ValidationError({"source_rc": "只有正式版可选择来源 RC"})
         return attrs
 
 

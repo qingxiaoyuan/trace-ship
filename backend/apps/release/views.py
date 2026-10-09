@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any
 
+from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -14,6 +15,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters as drf_filters
 from rest_framework import serializers
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -201,6 +203,53 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         return ReleaseRecordSerializer(release, context={"request": self.request}).data
 
+    @action(detail=False, methods=["get"], url_path="rc-candidates")
+    def rc_candidates(self, request: Request) -> Response:
+        """仅返回当前可见项目、启用仓库下的 RC 及实时引用可用性。"""
+        from apps.project.models import Project
+        from apps.repository.models import Repository
+
+        params = serializers.Serializer(data=request.query_params)
+        params.fields["project"] = serializers.UUIDField(required=True)
+        params.fields["repository"] = serializers.UUIDField(required=True)
+        params.is_valid(raise_exception=True)
+        project = Project.objects.filter(
+            id=params.validated_data["project"], id__in=visible_project_ids(request.user),
+        ).first()
+        if project is None:
+            return error_response(40400, "项目不存在或不可见", status_code=404)
+        repository = Repository.objects.filter(
+            id=params.validated_data["repository"],
+            project_components__project=project, project_components__is_active=True,
+        ).first()
+        if repository is None:
+            return error_response(40400, "仓库未在当前项目中启用", status_code=404)
+        try:
+            ReleaseService.validate_source_context(project, repository)
+            queryset = self.get_queryset().filter(
+                project=project, repository=repository, release_type="rc", status="released",
+            ).order_by("-released_at", "-created_at", "id")
+            search = request.query_params.get("search", "").strip()
+            if search:
+                queryset = queryset.filter(Q(version__icontains=search) | Q(tag_name__icontains=search))
+            page = self.paginate_queryset(queryset)
+            provider = ReleaseService._get_provider(repository, request.user, project=project)
+            tags = provider.list_tags(repository.external_identity)
+            results = []
+            for source in page:
+                reason = ReleaseService.rc_source_unavailable_reason(source, tags)
+                results.append({
+                    "id": str(source.id), "version": source.version, "tag_name": source.tag_name,
+                    "branch": source.branch, "git_hash": source.git_hash,
+                    "released_at": source.released_at, "available": not reason,
+                    "unavailable_reason": reason,
+                })
+            return self.get_paginated_response(results)
+        except APIException:
+            raise
+        except Exception as exc:
+            return _handle_service_error(exc, "查询来源 RC")
+
     def create(self, request: Request, *args, **kwargs) -> Response:
         """
         创建发布申请
@@ -219,7 +268,8 @@ class ReleaseViewSet(StandardModelViewSet):
                 project=data["project"],
                 repository=data["repository"],
                 release_type=data["release_type"],
-                branch=data["branch"],
+                branch=data.get("branch", ""),
+                source_rc=data.get("source_rc"),
                 publisher=request.user,
                 version=data.get("version"),
                 tag_name=data.get("tag_name"),
@@ -238,6 +288,7 @@ class ReleaseViewSet(StandardModelViewSet):
             return _handle_service_error(exc, "创建发布")
         return success_response(self._serialize_release(release), message="创建成功", status=201)
 
+    @transaction.atomic
     def update(self, request: Request, *args, **kwargs) -> Response:
         """
         更新发布申请（仅草稿可编辑）
@@ -249,24 +300,27 @@ class ReleaseViewSet(StandardModelViewSet):
             更新后的发布记录
         """
         instance = self.get_object()
+        instance = ReleaseRecord.objects.select_for_update().get(pk=instance.pk)
         if instance.status != "draft":
             return error_response(40002, "只有草稿状态才能编辑")
         serializer = self.get_serializer(instance, data=request.data, partial=kwargs.pop("partial", False))
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        # 更新允许修改的字段
-        instance.branch = data.get("branch", instance.branch)
+        source_changed = False
+        try:
+            if instance.release_type == "formal":
+                if "source_rc" in data:
+                    source_changed = ReleaseService.update_source(instance, data["source_rc"], request.user)
+            else:
+                instance.branch = data.get("branch", instance.branch)
+                if "branch" in data:
+                    instance.git_hash = ReleaseService._resolve_branch_head_hash(
+                        instance.repository, instance.branch, request.user, project=instance.project,
+                    )
+        except Exception as exc:
+            return _handle_service_error(exc, "更新来源提交")
         instance.redmine_url = data.get("redmine_url", instance.redmine_url)
-
-        # 若分支变化则重新获取 git_hash
-        if "branch" in data:
-            try:
-                instance.git_hash = ReleaseService._resolve_branch_head_hash(
-                    instance.repository, instance.branch, request.user
-                )
-            except Exception as exc:
-                return _handle_service_error(exc, "解析分支最新提交")
 
         # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
         version_rule = instance.repository.get_version_rule()
@@ -306,8 +360,13 @@ class ReleaseViewSet(StandardModelViewSet):
         instance.save(
             update_fields=[
                 "branch", "version", "tag_name", "redmine_url", "git_hash", "updated_at",
+                "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
+                "base_tag", "release_doc", "updates", "related_changes",
             ]
         )
+        if source_changed:
+            instance.release_commits.all().delete()
+            instance.release_mrs.all().delete()
         return success_response(self._serialize_release(instance), message="更新成功")
 
     def destroy(self, request: Request, *args, **kwargs) -> Response:
@@ -444,7 +503,7 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         release = self.get_object()
         try:
-            ReleaseService.submit_audit(release, request.user)
+            release = ReleaseService.submit_audit(release, request.user)
         except Exception as exc:
             return _handle_service_error(exc, "提交审批")
         return success_response({

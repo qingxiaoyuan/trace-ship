@@ -191,7 +191,8 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 
 发布保持仓库级流程，`ReleaseRecord` 状态仅有 `draft` / `pending` / `released` / `rejected` 四种，不包含旧文档中的 `building` / `auditing`：
 
-1. 创建发布（`ReleaseService.create_release`）：校验项目已关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；未传版本号时基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个项目发布时共享同一套 Tag。
+1. 创建发布（`ReleaseService.create_release`）：校验项目已关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；未传版本号时基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个项目发布时共享同一套 Tag。 正式草稿必须传同项目、同仓库已发布的 `source_rc`，实时验证 RC Tag 与完整提交快照一致；保存来源版本、Tag、SHA，忽略客户端分支/哈希，RC/Beta 仍按分支创建。草稿重选来源会清空发布说明及关联变更，进入流程后禁止修改来源；被正式版引用的 RC 记录受删除保护。
+
 2. 预览变更（`ReleaseService.preview_changes`）：拉取上个 tag 到目标分支之间的 commits / MRs，解析 A/F 类更新内容。
 3. 生成发布说明（`ReleaseService.generate_doc`）：保存 Markdown 发布说明。
 4. 提交审批（`ReleaseService.submit_audit`）：要求 `draft` 状态且发布说明非空；按发布类型查找启用的 `WorkflowDefinition` 创建 `WorkflowInstance`，状态改为 `pending`。
@@ -199,6 +200,8 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 6. 审批完成（`ReleaseService.handle_workflow_completed`）：调用 `push_tag`，成功后状态为 `released`；推 tag 失败则状态为 `rejected` 并写入 `rejected_reason`。审批已通过、仅推 tag 失败的发布单可通过 `ReleaseService.retry_push_tag`（`POST /api/releases/{id}/retry-push-tag/`）重试，无需重新走审批。
 7. 自动打包：推 tag 成功后调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送仅在发布后自动打包时启用：正式版看总开关，默认目录为 formal/版本号；RC、测试版需另开对应开关，分别进入 rc/版本号、beta/版本号。看板手动触发与分支直打不推 SVN。默认同版本号不覆盖，开启覆盖后镜像提交。
 8. 审批驳回（`ReleaseService.handle_workflow_rejected`）：状态改为 `rejected`；回退到初始节点时可恢复为 `draft`。
+
+RC 晋升按 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5) 分步实施：本阶段覆盖来源候选、正式草稿、来源快照与重选（#12）；正式累计说明（#13）、版本占用（#14）、审批与打包强化（#15）、替代引用与清理（#16–#18）尚待实施。来源候选接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
 
 ### 打包能力（apps.package）
 

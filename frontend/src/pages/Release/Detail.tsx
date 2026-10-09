@@ -10,6 +10,7 @@ import { releaseApi } from '@/api/release';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { releaseTypeText, releaseTypeBadge, statusBadge, releaseStatusText } from './constants';
+import { ReleaseSource } from './components/ReleaseSource';
 import { ReleaseTimeline } from './components/ReleaseTimeline';
 import { ReleaseNotes } from './components/ReleaseNotes';
 import { ReleaseCommits } from './components/ReleaseCommits';
@@ -273,6 +274,7 @@ export default function ReleaseDetail() {
             </span>
           </div>
         </div>
+        <ReleaseSource key={release.id} release={release} />
         {release.redmine_url ? (
           <a
             href={release.redmine_url}
