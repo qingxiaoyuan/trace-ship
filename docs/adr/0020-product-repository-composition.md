@@ -2,7 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-09-11
-**Spec:** `docs/02-prd/PRD-产品仓库组合与版本管理.md`（凭证授权已按本 ADR 修订）
+**Spec:** [GitHub Issue](https://github.com/qingxiaoyuan/trace-ship/issues/6)（凭证授权已按本 ADR 修订）
 **Deciders:** 产品/研发团队
 
 ## Context

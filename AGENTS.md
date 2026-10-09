@@ -2,58 +2,15 @@
 
 本文件用于指导 Codex / AI Agent 在本仓库内工作。所有分析、说明、任务拆解、代码注释和文档输出均使用中文；命令、日志、错误栈可保留原始语言，但解释必须用中文。
 
-<!-- BEGIN AI-WORKFLOW:MANAGED -->
-## 通用 AI 辅助开发流程
+## Agent skills
 
-对新需求、新功能、行为或验收范围变化，以及范围不清晰的任务，按适用阶段推进并保留文档产物。小型修复、纯文档校正等任务只执行适用阶段；跳过阶段时，应能说明原因。遵守项目已有的更具体规则。
+### Issue tracker
 
-### 文档约定
+Matt 技能的需求、规格、任务拆分和进度统一使用 `qingxiaoyuan/trace-ship` 的 GitHub Issues。创建、读取、更新或迁移事项前，先读 [事项管理约定](docs/agents/issue-tracker.md)。
 
-- `docs/README.md` 作为文档索引，链接到各主题的唯一归属文档。
-- 每类信息只维护一个权威文档；其他文档引用链接，避免重复维护完整表格、字段和细节。
-- 新文档沿用仓库已有命名格式；没有既有格式时使用主题清晰、便于排序的文件名。
-- 公共流程目录固定为 `docs/01-requirements/`、`docs/02-prd/`、`docs/03-spec/`、`docs/04-design/`、`docs/05-testing/`、`docs/06-review/` 和 `docs/07-verification/`。项目特有资料使用清晰命名的额外目录（例如 `docs/protocols/`），不得占用或改变这些编号。
-- 架构决策记录放入 `docs/adr/`。
+### Triage labels
 
-### 01 — 需求分析
-
-新需求、功能或范围不清晰时，先记录背景与现状、目标、用户与场景、范围内/范围外、调研结论和待确认问题。产物放入 `docs/01-requirements/`。待确认事项应取得结论，或明确记录默认采纳的决定及其可调整性。需求范围未明确前，不开始依赖该范围的实现。
-
-### 02 — PRD 与决策基线
-
-- 当需求会改变产品行为、范围或验收标准时，编写 PRD，放入 `docs/02-prd/`。记录已确认决策、功能与非功能需求、里程碑、风险和成功标准。
-- 多步骤任务需要拆解、排序或排期时，先制定实施计划，并随工作进展更新。
-- 不满足上述条件时，不为形式而新增 PRD；在交付说明中简要说明不适用即可。
-
-### 03 — 技术规格
-
-当任务涉及新接口、数据结构、文件格式或模块边界时，编写技术规格并放入 `docs/03-spec/`。规格应能对应到实现与验收。简单变更不需要为形式而新增规格。
-
-### 04 — 界面设计与开发
-
-- 涉及新界面、交互流程或视觉方向变化时，先产出并确认设计方案，再实现。设计产物放入 `docs/04-design/`。纯后端、数据处理或内部重构且没有用户界面变化时，设计阶段不适用。
-- 按已确认的需求和规格实现，使用项目现有的语言、框架和工程约定。分小步完成并尽早验证；新增或改变行为时补充相应测试。不要把未确认的产品或接口决定悄悄固化进实现；出现重要方案取舍时记录 ADR。
-
-### 05 — 测试
-
-根据变更补充或更新测试用例，并维护 `docs/05-testing/` 中适用的测试清单、覆盖说明或缺口记录。执行与变更相关且项目可用的测试；测试未运行、失败或受环境限制时，记录实际情况，不得将其描述为通过。
-
-### 06 — 代码 Review
-
-在提交、合并或交付前审查变更，并检查它是否符合需求、技术规格和现有 ADR。按适用情况检查正确性、回归风险、安全、性能、架构一致性、代码质量、测试和文档。发现项按 Critical / High / Medium / Low 分级；Critical 和 High 清零后才能通过关卡，Medium 和 Low 应修复或在审查记录中说明暂缓理由。Review 记录放入 `docs/06-review/`。
-
-### 07 — 验证
-
-按项目已有的构建、测试和运行方式验证本次改动。先从项目文档、脚本和 CI 配置中确认命令，不臆造命令。将验证环境、实际执行的命令、真实输出或结果、未验证项记录在 `docs/07-verification/`。只有取得相应证据后，才能声称构建、测试或运行验证通过；未完成项和限制应明确报告。
-
-### ADR — 架构决策记录
-
-当重要决策选定方案、排除替代方案，或改变现有技术方向时，在 `docs/adr/` 新建或更新 ADR。文件记录 `Status`、`Context`、`Decision`、`Consequences` 和 `Alternatives`；状态应为 `proposed`、`accepted` 等明确值，并随决策结果更新。Review 时检查实现是否违背已接受的 ADR；若需要改变既有决定，先更新或新增 ADR，不让实现与决策文档长期不一致。
-
-### 完成交付
-
-交付说明列出本次适用的文档、Review 结论、验证证据和未完成项。不得在没有实际命令输出或其他可核验证据时宣称验证通过；不得在 Critical 或 High Review 发现项仍未处理时宣称流程关卡通过。
-<!-- END AI-WORKFLOW:MANAGED -->
+创建或调整 Issue 标签时，使用 [中文标签映射](docs/agents/triage-labels.md)。开始任务、创建分支或准备 PR 时，按 [事项管理约定](docs/agents/issue-tracker.md) 中的开发与交付流程执行。
 
 ## 项目概览
 
@@ -66,7 +23,7 @@ Trace Ship 是一个软件版本发布管理系统。业务上项目即产品，
 - `docker/`：Docker Compose 编排 PostgreSQL、Redis、GitLab；`test` profile 追加 OpenLDAP、phpLDAPadmin、SVN 模拟服务；`app` profile 可同时启动后端、前端、Celery。生产编排拆分为 `docker-compose.deps.yml`（数据层，独立项目 `trace-ship-deps`）与 `docker-compose.prod.yml`（应用层，项目 `trace-ship`），经共享网络 `trace-ship-net` 通信。
 - `vscode-commit/`：VS Code 规范提交助手插件子项目，通过 AI 自动生成规范 commit 信息；默认本地 DeepSeek 接口，`commit.apiProtocol` 配置（auto / openai / anthropic）兼容更多 AI 服务。
 - `scripts/`：开发环境管理（`dev.sh`）、发布包构建（`build.sh`）与内网部署（`deploy.sh`）脚本。
-- `docs/`：全部项目文档。共享流程目录为 `01-requirements/`、`02-prd/`、`03-spec/`、`04-design/`、`05-testing/`、`06-review/`、`07-verification/`，索引见 `docs/README.md`。项目特有目录保留 `api/`（接口文档与 Postman Collection）、`adr/`（架构决策记录）、`ui/`（UI 设计稿，再分 overview / desktop / mobile / system）。
+- `docs/`：随代码维护的长期文档，索引见 `docs/README.md`。保留 `design/`（架构、业务与节点接入参考）、`api/`（接口文档与 Postman Collection）、`adr/`（架构决策记录）、`ui/`（UI 原型和资源）、`agents/`（技能配置）。需求、规格、开发任务和过程记录统一在 GitHub Issues / PR 中维护。
 
 ## 常用命令
 
@@ -397,7 +354,7 @@ Jenkins 模块已整体下线：模型通过迁移删除（`jenkins.0006_delete_
 ## 重要注意事项
 
 - 根目录 README 和部分文档可能滞后于代码，例如前端不再是“待实现”，发布流程也已从旧的构建状态链调整为审批后推 tag。实现前优先以代码为准。
-- `docs/04-design/business-process-analysis.md` 原为阶段规划，2026-07 已按代码核对修订（文中标注「规划中，未实现」的除外）；处理需求时仍以代码为准。
+- `docs/design/business-process-analysis.md` 保留业务参考，历史阶段计划与验收已迁移到 GitHub Issue #10；其中历史实现说明可能滞后，处理需求时以代码和现行 ADR 为准。
 - 工作区可能已有用户改动。不要回滚未由自己产生的改动；如遇冲突，先读懂现状再最小化修改。
 - 前端 `src/mock/` 已彻底清理，页面一律对接真实接口。
 - 不要使用破坏性 git 命令。提交、部署、重置等操作必须在用户明确要求后进行。

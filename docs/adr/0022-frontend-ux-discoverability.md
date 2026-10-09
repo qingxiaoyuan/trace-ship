@@ -2,7 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-09-18
-**Spec:** `docs/04-design/frontend-ux-discoverability.md`
+**Spec:** [GitHub Issue](https://github.com/qingxiaoyuan/trace-ship/issues/8)
 **Deciders:** 产品/研发团队
 
 ## Context
