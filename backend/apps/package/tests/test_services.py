@@ -953,10 +953,17 @@ def test_trigger_auto_packages_partial_selection_filters(project, repository, us
 def test_create_release_saves_selected_package_config_ids(project, repository, user, monkeypatch):
     """创建发布时保存用户勾选的自动打包配置，并忽略未开启/不存在的 id。"""
     from apps.release.services import ReleaseService
+    from utils.provider.base import TagInfo
+
+    source_rc = ReleaseRecord.objects.create(
+        project=project, repository=repository, publisher=user,
+        release_type="rc", status="released", version="VA.1.0.0",
+        tag_name="VA.1.0.0-rc", branch="main", git_hash="a" * 40,
+    )
 
     class FakeProvider:
         def list_tags(self, repo_identity):
-            return []
+            return [TagInfo(name=source_rc.tag_name, commit_hash=source_rc.git_hash)]
 
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
@@ -972,16 +979,13 @@ def test_create_release_saves_selected_package_config_ids(project, repository, u
         auto_package_on_release=False,
     )
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
-    monkeypatch.setattr(
-        ReleaseService,
-        "_resolve_branch_head_hash",
-        lambda repo, branch, request_user=None, **_kwargs: "head",
-    )
+
 
     release = ReleaseService.create_release(
         project=project,
         repository=repository,
         release_type="formal",
+        source_rc=source_rc.id,
         branch="main",
         publisher=user,
         version="VA.1.0.0",

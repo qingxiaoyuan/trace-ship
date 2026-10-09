@@ -8,9 +8,11 @@ import re
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from uuid import UUID
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
@@ -845,6 +847,71 @@ class ReleaseService:
         provider = cls._get_provider(repository, request_user)
         cls._validate_tag_not_exists(provider, repository, tag_name)
 
+    @staticmethod
+    def validate_source_context(project: Project, repository: Repository) -> None:
+        """来源读取和草稿重选均遵守启用关联与仓库所有者成员规则。"""
+        from apps.project.models import ProjectComponent, ProjectMember
+        from apps.project.services import repository_owner, repository_owner_association_error
+
+        ReleaseValidator.validate_project_status(project)
+        if not ProjectComponent.objects.filter(project=project, repository=repository, is_active=True).exists():
+            raise serializers.ValidationError({"repository": "该仓库未在当前项目中启用，请先关联仓库"})
+        owner_error = repository_owner_association_error(repository, project)
+        owner = repository_owner(repository)
+        if owner is not None and not ProjectMember.objects.filter(project=project, user=owner).exists():
+            raise serializers.ValidationError({"repository": "仓库所有者已不在当前项目成员中"})
+        if owner_error:
+            raise serializers.ValidationError({"repository": owner_error})
+
+    @classmethod
+    def resolve_rc_source(
+        cls, project: Project, repository: Repository, source_rc: UUID | str | None, request_user,
+    ) -> ReleaseRecord:
+        """校验来源范围与远端引用，绝不使用分支 HEAD 推断 RC 代码。"""
+        cls.validate_source_context(project, repository)
+        source = ReleaseRecord.objects.filter(
+            pk=source_rc, project=project, repository=repository,
+            release_type="rc", status="released",
+        ).first() if source_rc else None
+        if source is None:
+            raise serializers.ValidationError({"source_rc": "请选择当前项目和仓库的已发布 RC"})
+        provider = cls._get_provider(repository, request_user, project=project)
+        reason = cls.rc_source_unavailable_reason(source, provider.list_tags(repository.external_identity))
+        if reason:
+            raise serializers.ValidationError({"source_rc": reason})
+        return source
+
+    @classmethod
+    def update_source(cls, release: ReleaseRecord, source_rc: UUID | str | None, request_user) -> bool:
+        """草稿重选来源时重新固定身份；普通编辑保持原快照。"""
+        if release.status != "draft":
+            raise serializers.ValidationError({"source_rc": "只有草稿状态才能修改来源"})
+        if str(source_rc) == str(release.source_rc_id):
+            return False
+        source = cls.resolve_rc_source(release.project, release.repository, source_rc, request_user)
+        release.source_rc = source
+        release.source_rc_version = source.version
+        release.source_rc_tag = source.tag_name
+        release.source_rc_git_hash = source.git_hash
+        release.branch, release.git_hash = source.branch, source.git_hash
+        release.base_tag = ""
+        release.release_doc = ""
+        release.updates = []
+        release.related_changes = []
+        return True
+
+    @staticmethod
+    def rc_source_unavailable_reason(source: ReleaseRecord, tags: list[TagInfo]) -> str:
+        """返回 RC 引用不可用原因；空字符串表示引用与完整快照一致。"""
+        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", source.git_hash or ""):
+            return "RC 缺少完整提交快照，请先重新发布 RC"
+        tag = next((tag for tag in tags if tag.name == source.tag_name), None)
+        if tag is None:
+            return "RC Tag 已不存在，当前没有可用来源引用"
+        if tag.commit_hash != source.git_hash:
+            return "RC Tag 提交与发布快照不一致"
+        return ""
+
     @classmethod
     def create_release(
         cls,
@@ -865,6 +932,7 @@ class ReleaseService:
         self_test_passed: bool = False,
         retest_passed: bool = False,
         package_config_ids: list | None = None,
+        source_rc: UUID | str | None = None,
     ) -> ReleaseRecord:
         """
         创建发布申请
@@ -892,22 +960,9 @@ class ReleaseService:
         Returns:
             新创建的 ReleaseRecord
         """
-        from apps.project.models import ProjectComponent
-        from apps.project.services import repository_owner_association_error
-
-        ReleaseValidator.validate_project_status(project)
+        cls.validate_source_context(project, repository)
         release_rule = ReleaseValidator.get_release_rule(project)
         version_rule = repository.get_version_rule()
-
-        if not ProjectComponent.objects.filter(
-            project=project, repository=repository, is_active=True,
-        ).exists():
-            raise serializers.ValidationError(
-                {"repository": "该仓库未在当前项目中启用，请先关联仓库"}
-            )
-        owner_error = repository_owner_association_error(repository, project)
-        if owner_error:
-            raise serializers.ValidationError({"repository": owner_error})
 
         provider = cls._get_provider(repository, publisher, project=project)
         tags: list[TagInfo] | None = None
@@ -960,7 +1015,14 @@ class ReleaseService:
         elif any(tag.name == tag_name for tag in tags):
             raise serializers.ValidationError({"tag_name": "Tag 已存在，不能创建发布草稿"})
 
-        git_hash = cls._resolve_branch_head_hash(repository, branch, publisher, project=project)
+        source = None
+        if release_type == "formal":
+            source = cls.resolve_rc_source(project, repository, source_rc, publisher)
+            branch, git_hash = source.branch, source.git_hash
+        else:
+            if source_rc:
+                raise serializers.ValidationError({"source_rc": "只有正式版可选择来源 RC"})
+            git_hash = cls._resolve_branch_head_hash(repository, branch, publisher, project=project)
 
         # 同一发布人反复创建同版本空草稿时清理旧草稿，避免临时草稿堆积。
         ReleaseRecord.objects.filter(
@@ -993,6 +1055,10 @@ class ReleaseService:
             version=version,
             tag_name=tag_name,
             redmine_url=redmine_url or "",
+            source_rc=source,
+            source_rc_version=source.version if source else "",
+            source_rc_tag=source.tag_name if source else "",
+            source_rc_git_hash=source.git_hash if source else "",
             branch=branch,
             git_hash=git_hash,
             release_type=release_type,
@@ -1241,58 +1307,57 @@ class ReleaseService:
         Returns:
             更新后的 ReleaseRecord
         """
-        if release.status != "draft":
-            raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
-        if not release.release_doc:
-            raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
+        with transaction.atomic():
+            # 与草稿重选来源使用同一行锁，并在锁内重新读取状态与说明。
+            release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
+            if release.status != "draft":
+                raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
+            if not release.release_doc:
+                raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
 
-        illegal_exists = release.release_commits.filter(
-            is_included=True,
-            commit__review_status="illegal",
-        ).exists()
-        if illegal_exists:
-            raise serializers.ValidationError({"commits": "包含非法提交，无法提交审批"})
+            illegal_exists = release.release_commits.filter(
+                is_included=True,
+                commit__review_status="illegal",
+            ).exists()
+            if illegal_exists:
+                raise serializers.ValidationError({"commits": "包含非法提交，无法提交审批"})
 
-        # 按发布类型查找仓库生效的审批流程；未迁移存量回退到项目级定义
-        definition = WorkflowDefinition.objects.filter(
-            repository=release.repository,
-            biz_type="release",
-            release_type=release.release_type,
-            is_active=True,
-        ).first()
-        if not definition:
+            # 按发布类型查找仓库生效的审批流程；未迁移存量回退到项目级定义
             definition = WorkflowDefinition.objects.filter(
-                project=release.project,
-                repository__isnull=True,
+                repository=release.repository,
                 biz_type="release",
                 release_type=release.release_type,
                 is_active=True,
             ).first()
-        if not definition:
-            raise serializers.ValidationError(
-                {"workflow": f"仓库未配置 {release.release_type} 发布审批流程"}
-            )
+            if not definition:
+                definition = WorkflowDefinition.objects.filter(
+                    project=release.project,
+                    repository__isnull=True,
+                    biz_type="release",
+                    release_type=release.release_type,
+                    is_active=True,
+                ).first()
+            if not definition:
+                raise serializers.ValidationError(
+                    {"workflow": f"仓库未配置 {release.release_type} 发布审批流程"}
+                )
 
-        # 若流程定义没有中间审批节点，直接推 tag 发布
-        if not definition.node_config:
+            if definition.node_config:
+                instance = WorkflowEngine.create_instance(
+                    definition=definition,
+                    biz_type="release",
+                    biz_id=str(release.id),
+                    user=user,
+                )
+                release.workflow_instance = instance
             release.status = "pending"
-            release.save(update_fields=["status", "updated_at"])
-            return ReleaseService.push_tag(release, request_user=user)
+            release.save(update_fields=["workflow_instance", "status", "updated_at"])
+            if definition.node_config:
+                OperationLogService.log_release(user=user, release=release, action="submit_audit")
 
-        instance = WorkflowEngine.create_instance(
-            definition=definition,
-            biz_type="release",
-            biz_id=str(release.id),
-            user=user,
-        )
-        release.workflow_instance = instance
-        release.status = "pending"
-        release.save(update_fields=["workflow_instance", "status", "updated_at"])
-        OperationLogService.log_release(
-            user=user,
-            release=release,
-            action="submit_audit",
-        )
+        # 空链沿用直接发布语义；远端写入和任务投递在来源冻结事务提交后执行。
+        if not definition.node_config:
+            ReleaseService.push_tag(release, request_user=user)
         return release
 
     @staticmethod
@@ -1566,6 +1631,8 @@ class ReleaseService:
             raise serializers.ValidationError({"status": "仅已发布状态可删除版本"})
         if tag_name != release.tag_name:
             raise serializers.ValidationError({"tag_name": "输入的 Tag 名称与发布版本不一致"})
+        if release.formal_promotions.exists():
+            raise serializers.ValidationError({"source_rc": "该 RC 已被正式版引用，不能删除发布记录"})
 
         user = request_user or release.publisher
         provider = cls._get_provider(

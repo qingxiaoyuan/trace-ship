@@ -1046,7 +1046,7 @@
   "project": "uuid",
   "repository": "uuid",
   "release_type": "formal",
-  "branch": "main",
+  "source_rc": "已发布 RC 的 UUID",
   "version": "VA.4.1.155",
   "tag_name": "VA.4.1.155_20260731",
   "related_changes": [],
@@ -1060,8 +1060,18 @@
 }
 ```
 
-> `version` / `tag_name` 可选，为空时后端基于仓库 tag 和项目 `version_rule` 自动计算；rc/beta 类型自动补类型后缀与日期段。
+> `version` / `tag_name` 可选，为空时后端基于仓库 tag 和仓库 `version_rule` 自动计算；rc/beta 类型自动补类型后缀与日期段。
 > `repository` 必须属于所选项目。
+
+#### 正式草稿的 RC 来源
+
+`POST /api/releases/` 的正式类型必须传 `source_rc`（UUID），选择同项目、同仓库的已发布 RC。服务器验证启用关联、仓库所有者成员资格、个人凭证以及远端 RC Tag 的完整提交；`branch`、`git_hash` 和来源快照由服务端确定，客户端值不能改变代码身份。RC/Beta 继续必填 `branch`，不能传非空 `source_rc`。
+
+`GET /api/releases/rc-candidates/?project=<UUID>&repository=<UUID>` 返回标准分页数据，支持 `search`（版本或 Tag）、`page`、`page_size`，按发布时间倒序。每项包含 `id`、`version`、`tag_name`、`branch`、`git_hash`、`released_at`、`available` 和 `unavailable_reason`。查询受项目可见范围限制；引用缺失、缺少完整 SHA 或 Tag 改写时返回不可用原因，Provider 故障返回错误而非空候选。已清理 Tag 的等价正式引用支持将在 #16 实施。
+
+详情返回 `source_rc`、`source_rc_version`、`source_rc_tag`、`source_rc_git_hash`。历史来源关联为空，快照为空字符串，迁移不推断来源。`PATCH /api/releases/{id}/` 可在草稿中修改 `source_rc`；更换后清空原 `release_doc`、`base_tag`、`updates`、`related_changes` 和关联提交/MR，需要重新生成说明。普通编辑不刷新正式来源提交；进入流程后禁止编辑。草稿的项目、仓库和发布类型不能更换，应重新创建。
+
+被正式版引用的 RC 不能通过删除版本接口移除发布记录；后续只清理 Tag 的接口与该删除操作不同。
 
 ### 8.3 发布详情
 

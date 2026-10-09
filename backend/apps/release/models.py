@@ -67,6 +67,13 @@ class ReleaseRecord(models.Model):
         related_name="releases",
         verbose_name="目标仓库",
     )
+    source_rc = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="formal_promotions", verbose_name="来源 RC",
+    )
+    source_rc_version = models.CharField(max_length=100, blank=True, verbose_name="来源 RC 版本快照")
+    source_rc_tag = models.CharField(max_length=100, blank=True, verbose_name="来源 RC Tag 快照")
+    source_rc_git_hash = models.CharField(max_length=100, blank=True, verbose_name="来源 RC 提交快照")
     version = models.CharField(max_length=100, verbose_name="版本号")
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
     redmine_url = models.URLField(

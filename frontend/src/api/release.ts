@@ -1,6 +1,7 @@
-import { del, get, post } from './request';
+import { del, get, patch, post } from './request';
 import type {
   PaginatedData,
+  RcCandidate,
   Release,
   ReleaseCommit,
   ReleaseReviewIssue,
@@ -8,6 +9,10 @@ import type {
 } from '@/types';
 
 export const releaseApi = {
+  getRcCandidates: (params: Record<string, unknown>) =>
+    get<PaginatedData<RcCandidate>>('/releases/rc-candidates/', { params }),
+  updateSource: (id: string, sourceRc: string) =>
+    patch<Release>(`/releases/${id}/`, { source_rc: sourceRc }),
   getReleases: (params?: Record<string, unknown>) =>
     get<PaginatedData<Release>>('/releases/', { params }),
   getRelease: (id: string) => get<Release>(`/releases/${id}/`),

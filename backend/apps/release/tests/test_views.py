@@ -43,10 +43,22 @@ def patched_provider(monkeypatch, mock_git_provider):
     return mock_git_provider
 
 
+@pytest.fixture
+def ready_rc(project, repository, user, patched_provider):
+    """正式创建测试必须显式选择项目内已发布 RC。"""
+    rc = ReleaseRecord.objects.create(
+        project=project, repository=repository, publisher=user,
+        release_type="rc", status="released", branch="develop",
+        version="VA.9.0.0", tag_name="VA.9.0.0-rc", git_hash="a" * 40,
+    )
+    patched_provider.tags.append(TagInfo(name=rc.tag_name, commit_hash=rc.git_hash))
+    return rc
+
+
 class TestReleaseViews:
     """Release API 测试类"""
 
-    def test_create_formal_release_clears_own_empty_existing_draft(self, api_client, project, repository, patched_provider):
+    def test_create_formal_release_clears_own_empty_existing_draft(self, api_client, project, repository, patched_provider, ready_rc):
         """创建发布时若当前用户已有同版本空草稿，应先删除旧空草稿"""
         old = ReleaseRecord.objects.create(
             project=project,
@@ -64,6 +76,7 @@ class TestReleaseViews:
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "release_type": "formal",
+                "source_rc": str(ready_rc.id),
                 "branch": "main",
             },
             format="json",
@@ -75,7 +88,7 @@ class TestReleaseViews:
             project=project, repository=repository, version="VA.1.0.0", status="draft"
         ).count() == 1
 
-    def test_create_formal_release_keeps_existing_draft_with_content(self, api_client, project, repository, patched_provider):
+    def test_create_formal_release_keeps_existing_draft_with_content(self, api_client, project, repository, patched_provider, ready_rc):
         """创建发布不会删除已有内容的同版本草稿"""
         old = ReleaseRecord.objects.create(
             project=project,
@@ -94,6 +107,7 @@ class TestReleaseViews:
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "release_type": "formal",
+                "source_rc": str(ready_rc.id),
                 "branch": "main",
             },
             format="json",
@@ -104,7 +118,7 @@ class TestReleaseViews:
             project=project, repository=repository, version="VA.1.0.0", status="draft"
         ).count() == 2
 
-    def test_create_formal_release_success(self, api_client, project, repository, patched_provider):
+    def test_create_formal_release_success(self, api_client, project, repository, patched_provider, ready_rc):
         """创建正式发布申请成功"""
         response = api_client.post(
             "/api/releases/",
@@ -112,6 +126,7 @@ class TestReleaseViews:
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "release_type": "formal",
+                "source_rc": str(ready_rc.id),
                 "branch": "main",
                 "redmine_url": "https://redmine.example.com/issues/12345",
             },
@@ -146,7 +161,7 @@ class TestReleaseViews:
         assert ReleaseRecord.objects.count() == 0
 
     def test_create_release_accepts_reused_project_component(
-        self, api_client, user, repository, patched_provider
+        self, api_client, user, repository, patched_provider, ready_rc
     ):
         """仓库通过项目组件复用后，可继续使用兼容的单仓库发布入口。"""
         target = Project.objects.create(
@@ -165,12 +180,16 @@ class TestReleaseViews:
             default_branch="main",
         )
 
+        ready_rc.project = target
+        ready_rc.save(update_fields=["project"])
+
         response = api_client.post(
             "/api/releases/",
             {
                 "project": str(target.id),
                 "repository": str(repository.id),
                 "release_type": "formal",
+                "source_rc": str(ready_rc.id),
                 "branch": "main",
             },
             format="json",
@@ -180,14 +199,15 @@ class TestReleaseViews:
         assert str(response.data["data"]["project"]) == str(target.id)
         assert str(response.data["data"]["repository"]) == str(repository.id)
 
-    def test_create_formal_release_allows_non_main_branch(self, api_client, project, repository, patched_provider):
-        """正式版本不限制发布分支"""
+    def test_create_formal_release_allows_non_main_branch(self, api_client, project, repository, patched_provider, ready_rc):
+        """正式版本允许选用来自 develop 分支的已发布 RC"""
         response = api_client.post(
             "/api/releases/",
             {
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "release_type": "formal",
+                "source_rc": str(ready_rc.id),
                 "branch": "develop",
             },
             format="json",
@@ -511,7 +531,7 @@ class TestReleasePackageConfigSelection:
     """发布创建时勾选「发布后自动打包」配置的接口测试"""
 
     def test_create_release_with_selected_package_configs(
-        self, api_client, project, repository, patched_provider
+        self, api_client, project, repository, patched_provider, ready_rc
     ):
         """创建发布时传入勾选配置：响应与记录仅保留该仓库启用了自动打包的合法 id"""
         from apps.package.models import PackageConfig, PackageImage
@@ -535,6 +555,7 @@ class TestReleasePackageConfigSelection:
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "release_type": "formal",
+                "source_rc": str(ready_rc.id),
                 "branch": "main",
                 "package_config_ids": [
                     str(config.id),
@@ -553,7 +574,7 @@ class TestReleasePackageConfigSelection:
         assert list(record.package_config_ids) == [str(config.id)]
 
     def test_create_release_without_selection_keeps_none(
-        self, api_client, project, repository, patched_provider
+        self, api_client, project, repository, patched_provider, ready_rc
     ):
         """创建发布未勾选打包配置时 package_config_ids 为 None（保留历史全量语义）"""
         response = api_client.post(
@@ -562,6 +583,7 @@ class TestReleasePackageConfigSelection:
                 "project": str(project.id),
                 "repository": str(repository.id),
                 "release_type": "formal",
+                "source_rc": str(ready_rc.id),
                 "branch": "main",
             },
             format="json",

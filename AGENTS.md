@@ -215,7 +215,8 @@ npm run preview
 
 仓库级发布流程：
 
-1. 创建发布：`ReleaseService.create_release` 校验项目已启用关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；如未传版本号，基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个项目发布时共享同一套 Tag。
+1. 创建发布：`ReleaseService.create_release` 校验项目已启用关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；如未传版本号，基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个项目发布时共享同一套 Tag。 正式草稿必须传同项目、同仓库已发布的 `source_rc`，实时验证 RC Tag 与完整提交快照一致；保存来源版本、Tag、SHA，忽略客户端分支/哈希，RC/Beta 仍按分支创建。草稿重选来源会清空发布说明及关联变更，进入流程后禁止修改来源；被正式版引用的 RC 记录受删除保护。
+
 2. 预览变更：`ReleaseService.preview_changes` 拉取上个 tag 到目标分支之间的 commits / MRs，并解析 A/F 类更新内容。
 3. 生成发布说明：`ReleaseService.generate_doc` 保存 Markdown 发布说明。
 4. 提交审批：`ReleaseService.submit_audit` 要求发布处于 `draft` 且发布说明非空；按发布类型查找启用的 `WorkflowDefinition`，创建 `WorkflowInstance`，状态改为 `pending`。
@@ -225,6 +226,8 @@ npm run preview
 8. 审批驳回：`ReleaseService.handle_workflow_rejected` 将发布状态改为 `rejected`；回退到初始节点时可恢复为 `draft` 并解除流程实例关联。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
+
+RC 晋升按 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5) 分步实施：本阶段覆盖来源候选、正式草稿、来源快照与重选（#12）；正式累计说明（#13）、版本占用（#14）、审批与打包强化（#15）、替代引用与清理（#16–#18）尚待实施。来源候选接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
 
 ### 打包流程
 
