@@ -245,5 +245,5 @@ npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(
 ## Important Notes
 
 - 后端使用 ruff 做 lint/format（配置在 `backend/pyproject.toml`，`pip install -r requirements-dev.txt` 后 `ruff check .`）；规则集渐进启用，存量代码已清零告警。
-- `docs/04-design/business-process-analysis.md` 原为阶段规划文档，2026-07 已按代码核对修订（文中标注「规划中，未实现」的除外）；实现需求时仍以代码为准。
+- `docs/design/business-process-analysis.md` 原为阶段规划文档，2026-07 已按代码核对修订（文中标注「规划中，未实现」的除外）；实现需求时仍以代码为准。
 - 根目录 `AGENTS.md` 与本文件保持同步，优先参考 `AGENTS.md` 的"重要注意事项"一节。

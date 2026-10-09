@@ -202,7 +202,7 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 - **前端管理后台**：React + Ant Design 6 完整管理界面，覆盖工作台、项目、仓库、提交、发布、工作流、打包看板、使用指南、使用反馈、系统管理等页面，并内置浏览器兼容性检测与升级引导。
 - **周边工具**：vscode-commit VS Code 规范提交助手（AI 生成规范 commit 信息，apiProtocol 兼容多种 AI 服务）；scripts/build.sh + deploy.sh 离线构建与内网一键部署。
 
-后续里程碑规划可参考 `docs/04-design/business-process-analysis.md`（注意该文档为阶段规划，与当前实现可能存在差异，以代码为准）。
+需求、规格与开发任务统一在 [GitHub Issues](https://github.com/qingxiaoyuan/trace-ship/issues) 管理，具体入口见 [文档索引](docs/README.md)。
 
 ---
 
@@ -212,10 +212,10 @@ curl -X POST http://localhost:8000/api/auth/login/ \
 |------|------|
 | [backend/README.md](backend/README.md) | 后端详细说明 |
 | [docs/api/api-spec.md](docs/api/api-spec.md) | 接口文档 |
-| [docs/04-design/business-process-analysis.md](docs/04-design/business-process-analysis.md) | 业务流程分析与阶段规划 |
+| [docs/design/business-process-analysis.md](docs/design/business-process-analysis.md) | 业务流程参考 |
 | [docs/api/postman/trace-ship-v1.postman_collection.json](docs/api/postman/trace-ship-v1.postman_collection.json) | Postman 接口集合 |
-| [docs/01-requirements/后台需求.md](docs/01-requirements/后台需求.md) | 后台需求文档 |
-| [docs/04-design/后台设计.md](docs/04-design/后台设计.md) | 后台设计文档 |
+| [GitHub Issues](https://github.com/qingxiaoyuan/trace-ship/issues) | 需求、规格、开发任务与历史规划 |
+| [docs/design/后台设计.md](docs/design/后台设计.md) | 后台设计文档 |
 | [vscode-commit/README.md](vscode-commit/README.md) | VS Code 规范提交助手插件说明 |
 
 ---
