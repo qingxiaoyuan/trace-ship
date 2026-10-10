@@ -11,7 +11,9 @@ import {
   type RepositoryTreeGroup,
 } from '@/components/RepositoryTreeTable';
 import { StatusTag, type StatusType } from '@/components/StatusTag';
+import { PermissionAlert } from '@/components/PermissionAlert';
 import { getAvatarColor } from '@/utils/avatar';
+import { fetchAllPages } from '@/pages/Package/components/boardData';
 import type { ProjectComponent, Release } from '@/types';
 
 const typeDisplay: Record<string, { status: StatusType; text: string }> = {
@@ -44,6 +46,12 @@ interface ReleaseTabProps {
 
 const getReleaseSearchText = (item: Release) =>
   `${item.version || ''} ${item.tag_name || ''} ${item.redmine_url || ''} ${item.publisher_name || ''} ${item.release_type_display || ''}`;
+
+/** 历史记录缺少发布时间时排在已知发布时间之后。 */
+function getReleasedTimestamp(value?: string) {
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
 
 const releaseTreeColumns: RepositoryTreeColumn<Release, ReleaseGroupMeta>[] = [
   {
@@ -179,7 +187,7 @@ function buildReleaseGroups(
   components: ProjectComponent[],
 ): RepositoryTreeGroup<Release, ReleaseGroupMeta>[] {
   const releasesByRepository = new Map<string, Release[]>();
-  releases.forEach((release) => {
+  [...releases].sort((a, b) => getReleasedTimestamp(b.released_at) - getReleasedTimestamp(a.released_at)).forEach((release) => {
     const repositoryKey = release.repository || `legacy:${release.repository_name || 'unknown'}`;
     const current = releasesByRepository.get(repositoryKey);
     if (current) current.push(release);
@@ -285,17 +293,19 @@ function RepositoryReleaseList({ releases, loading }: { releases: Release[]; loa
 
 export function ReleaseTab({ projectId, repositoryId }: ReleaseTabProps) {
   const navigate = useNavigate();
-  const { data, isLoading: releasesLoading } = useQuery({
+  const { data, isLoading: releasesLoading, error: releasesError } = useQuery({
     queryKey: ['release-tab', projectId || '', repositoryId || ''],
-    queryFn: () => releaseApi.getReleases({
+    queryFn: () => fetchAllPages((page, pageSize) => releaseApi.getReleases({
       project: projectId || undefined,
       repository: repositoryId || undefined,
       status: 'released',
-      page_size: 1000,
-    }),
+      ordering: '-released_at,-created_at',
+      page,
+      page_size: pageSize,
+    })),
     enabled: !!(projectId || repositoryId),
   });
-  const { data: componentData, isLoading: componentsLoading } = useQuery({
+  const { data: componentData, isLoading: componentsLoading, error: componentsError } = useQuery({
     queryKey: ['project-components', projectId],
     queryFn: () => projectApi.getComponents(projectId || ''),
     enabled: !!projectId,
@@ -307,6 +317,20 @@ export function ReleaseTab({ projectId, repositoryId }: ReleaseTabProps) {
     () => buildReleaseGroups(releases, components),
     [components, releases],
   );
+  const initialExpandedGroupIds = useMemo(() => {
+    // 缺少历史发布时间时，仍应优先展示有发布记录的仓库。
+    let latestGroup = groups.find((group) => group.items.length > 0) || groups[0];
+    for (const group of groups) {
+      if (getReleasedTimestamp(group.meta?.latestReleasedAt) > getReleasedTimestamp(latestGroup.meta?.latestReleasedAt)) {
+        latestGroup = group;
+      }
+    }
+    return latestGroup ? [latestGroup.id] : [];
+  }, [groups]);
+
+  if (releasesError || componentsError) {
+    return <PermissionAlert error={releasesError || componentsError} />;
+  }
 
   if (repositoryId) {
     return <RepositoryReleaseList releases={releases} loading={releasesLoading} />;
@@ -314,7 +338,9 @@ export function ReleaseTab({ projectId, repositoryId }: ReleaseTabProps) {
 
   return (
     <RepositoryTreeTable<Release, ReleaseGroupMeta>
+      key={projectId}
       groups={groups}
+      initialExpandedGroupIds={initialExpandedGroupIds}
       columns={releaseTreeColumns}
       getItemId={(item) => item.id}
       getItemSearchText={getReleaseSearchText}
