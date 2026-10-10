@@ -330,7 +330,7 @@ export default function ReleaseCreate() {
   };
 
   const handleSubmitAudit = () => {
-    if (createdRelease?.id) submitMutation.mutate(createdRelease.id);
+    if (createdRelease?.id && docSaved) submitMutation.mutate(createdRelease.id);
   };
 
   const handleSaveDoc = () => {
@@ -1088,6 +1088,8 @@ export default function ReleaseCreate() {
       {/* ========== 步骤 2：编辑发布说明（表格组件，无表头） ========== */}
       {currentStep >= 1 && createdRelease && (
         <div className="space-y-5">
+          {createdRelease.release_type === 'formal' ? <p className="text-sm text-slate-500">正式版须经配置好的非空人工审批流程确认；来源与版本已固定，审批跨天不自动改名。</p> : null}
+          {submitMutation.error ? <p role="alert" className="text-red-700">{submitMutation.error.message}</p> : null}
           <FormalChangesPreview release={createdRelease} active={!generateDocMutation.isPending} />
           {generateDocMutation.error ? <p role="alert" className="text-red-700">{generateDocMutation.error.message}</p> : null}
           <section className="tech-card rounded-xl p-5">
@@ -1178,7 +1180,7 @@ export default function ReleaseCreate() {
             <button
               type="button"
               onClick={handleSubmitAudit}
-              disabled={currentStep === 2 || submitMutation.isPending}
+              disabled={currentStep === 2 || submitMutation.isPending || !docSaved || !docRows.length}
               className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
             >
               {currentStep === 2 ? '已提交审批' : submitMutation.isPending ? '提交中…' : '提交审批'}

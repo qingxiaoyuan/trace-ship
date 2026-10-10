@@ -79,6 +79,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
                 ) : (
                   <span className="font-mono">{task.tag_name}</span>
                 )}
+                {task.source_ref && task.source_ref !== task.tag_name ? <span className="break-all">检出引用：{task.source_ref}</span> : null}
                 {/* 实体回链：所属仓库 / 关联发布（有数据才显示） */}
                 {task.repository ? (
                   <>

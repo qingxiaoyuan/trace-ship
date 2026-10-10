@@ -5,7 +5,7 @@ import logging
 import threading
 from datetime import timedelta
 
-from django.db import close_old_connections
+from django.db import close_old_connections, transaction
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from rest_framework import serializers
@@ -75,6 +75,7 @@ class TaskLifecycleMixin:
         }
 
     @classmethod
+    @transaction.atomic
     def create_task_for_release(
         cls,
         config: PackageConfig,
@@ -88,6 +89,10 @@ class TaskLifecycleMixin:
         auto_triggered=True 表示发布推 tag 后的自动打包。仅此时按发布类型决定
         是否推 SVN：正式版看总开关，RC / 测试版还要各自打开。手动触发不推 SVN。
         """
+        from apps.repository.models import Repository
+
+        Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+        release.refresh_from_db()
         if release.status != "released":
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})
         if not config.is_active:
@@ -95,6 +100,8 @@ class TaskLifecycleMixin:
         if config.project_component.repository_id != release.repository_id:
             raise serializers.ValidationError({"repository": "打包配置与发布仓库不一致"})
 
+        if config.project_component.project_id != release.project_id:
+            raise serializers.ValidationError({"project": "打包配置与发布项目不一致"})
         snapshot = apply_svn_push_policy(
             cls._snapshot(config),
             trigger_source=(
@@ -110,12 +117,13 @@ class TaskLifecycleMixin:
             triggered_by=request_user,
             name=f"{config.name} / {release.version}",
             tag_name=release.tag_name,
+            source_ref=release.tag_name,
             version=release.version,
             release_type=release.release_type,
             commit_hash=release.git_hash,
             config_snapshot=snapshot,
         )
-        cls.dispatch_task(task)
+        transaction.on_commit(lambda: cls.dispatch_task(task))
         return task
 
     @classmethod

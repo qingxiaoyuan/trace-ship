@@ -9,7 +9,18 @@ import type {
   SvnSyncResult,
 } from '@/types';
 
+export interface CleanupCandidate {
+  id: string; tag_name: string; git_hash: string; allowed: boolean; reason: string;
+  protected_by: string; cleanup_status: string;
+}
+export interface CleanupResult {
+  id: string; tag_name?: string; status: string; reason: string; protected_by?: string;
+}
+
 export const releaseApi = {
+  getCleanupCandidates: (params: Record<string, unknown>) => get<PaginatedData<CleanupCandidate>>('/releases/cleanup-candidates/', { params }),
+  cleanupTags: (items: { id: string; tag_name: string }[]) => post<CleanupResult[]>('/releases/cleanup-tags/', { items }, { timeout: 300_000 }),
+  getSourceReference: (id: string) => get<{ available: boolean; reference: string; reason: string }>(`/releases/${id}/source-reference/`),
   getFormalChanges: (id: string) =>
     get<FormalChangesPreviewData>(`/releases/${id}/changes-preview/`, { timeout: 300_000 }),
   getRcCandidates: (params: Record<string, unknown>) =>

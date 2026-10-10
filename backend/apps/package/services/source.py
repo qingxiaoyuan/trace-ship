@@ -3,6 +3,7 @@
 """
 import base64
 import shutil
+import subprocess
 from pathlib import Path
 
 from utils.markdown_table import table_newlines_to_br
@@ -26,11 +27,15 @@ class SourceCheckoutMixin:
         snapshot = task.config_snapshot or {}
         clone_url = cls._clone_url(task.repository)
         env = cls._build_auth_env(task.repository, task.triggered_by, project=task.project)
-        clone_cmd = ["git", "clone", "--depth", "1", "--branch", task.tag_name]
+        source_ref = cls.resolve_task_source(task)
+        clone_cmd = ["git", "clone", "--depth", "1", "--branch", source_ref]
         if snapshot.get("clone_submodules"):
             clone_cmd.append("--recurse-submodules")
         clone_cmd.extend([clone_url, str(source_dir)])
         cls._run_command(task, clone_cmd, workspace, env)
+        if task.release_id:
+            actual = subprocess.check_output(["git", "-C", str(source_dir), "rev-parse", "HEAD"], text=True).strip()
+            cls.verify_source_hash(task, actual)
         # 写入本次发布说明到源码根目录，供构建脚本读取（分支直打包无发布说明，跳过）
         if task.release_id:
             doc_path = source_dir / f"release-{cls._doc_filename(task.version)}.md"
@@ -38,6 +43,32 @@ class SourceCheckoutMixin:
             cls._append_log(task, f"已将发布说明写入源码根目录: {doc_path}")
         else:
             cls._append_log(task, "分支直打包：无发布说明，跳过写入")
+
+    @staticmethod
+    def resolve_task_source(task) -> str:
+        """任务执行前再次解析引用；显示版本和 Tag 始终不变。"""
+        if not task.release_id:
+            return task.tag_name
+        from django.db import transaction
+
+        from apps.release.references import ReleaseReferences
+        from apps.release.services import ReleaseService
+        from apps.repository.models import Repository
+
+        with transaction.atomic():
+            Repository.objects.select_for_update(no_key=True).get(pk=task.repository_id)
+            provider = ReleaseService._get_provider(task.repository, task.triggered_by, project=task.project)
+            reference = ReleaseReferences.resolve(task.release, provider.list_tags(task.repository.external_identity))
+            if task.commit_hash != task.release.git_hash:
+                raise ValueError("任务源码快照与发布记录不一致")
+            task.source_ref = reference
+            task.save(update_fields=["source_ref"])
+            return reference
+
+    @staticmethod
+    def verify_source_hash(task, actual: str) -> None:
+        if actual.strip() != task.commit_hash:
+            raise ValueError("实际检出的提交与发布快照不一致，已阻止执行构建脚本")
 
     @staticmethod
     def _auth_clone_args(repo, request_user=None, project=None) -> list[str]:

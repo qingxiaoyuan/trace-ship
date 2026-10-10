@@ -46,6 +46,7 @@ class RemoteRunnerMixin:
         quote = sh_quote if kylin else cmd_quote
         remote_workspace = cls._remote_workspace(task)
         source_dir = remote_workspace / "source"
+        source_ref = cls.resolve_task_source(task)
         clone_url = cls._clone_url(task.repository)
         auth_args = cls._auth_clone_args(task.repository, task.triggered_by, project=task.project)
 
@@ -55,7 +56,7 @@ class RemoteRunnerMixin:
         submodule_arg = " --recurse-submodules" if clone_submodules else ""
         cls._append_log(
             task,
-            f'$ git clone --depth 1{submodule_arg} --branch {task.tag_name} {clone_url} "{source_dir}"',
+            f'$ git clone --depth 1{submodule_arg} --branch {source_ref} {clone_url} "{source_dir}"',
         )
 
         def log_line(line: str) -> None:
@@ -70,12 +71,17 @@ class RemoteRunnerMixin:
         client.remove_dir(source_dir)
         client.run_checked(
             f"git {arg_parts} clone --depth 1{submodule_arg} "
-            f"--branch {quote(task.tag_name)} "
+            f"--branch {quote(source_ref)} "
             f"{quote(clone_url)} {quote(str(source_dir))}",
             on_line=log_line,
             should_stop=lambda: cls._ensure_task_not_canceled(task),
             error_hint="节点需安装 git 且能访问代码仓库",
         )
+        if task.release_id:
+            output = []
+            client.run_checked(f"git -C {quote(str(source_dir))} rev-parse HEAD", on_line=output.append,
+                error_hint="无法核验来源提交")
+            cls.verify_source_hash(task, "\n".join(output).strip())
         # 需要脚本内 push 时，把认证头持久化到节点工作副本的 .git/config（含子模块），
         # 打包脚本内 git push 可直接复用；凭证随 cleanup_workspace 清理工作区时一并删除
         if snapshot.get("inject_git_credential") and auth_args:

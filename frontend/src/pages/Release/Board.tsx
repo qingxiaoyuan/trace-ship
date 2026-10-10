@@ -313,6 +313,7 @@ export function ReleaseBoardPage() {
               </button>
             ))}
           </div>
+          <button type="button" className="min-h-9 rounded border px-3 text-sm" onClick={() => navigate('/releases/cleanup')}>RC Tag 清理</button>
           <button
             type="button"
             onClick={() => navigate('/releases/create')}

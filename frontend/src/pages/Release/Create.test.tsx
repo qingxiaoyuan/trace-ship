@@ -96,6 +96,7 @@ it('正式累计说明保留第十二条更新，身份只读，允许补充人�
   const release = { id: 'formal', release_type: 'formal', source_rc: 'rc', version: 'VA.1.0.0', changes_initialized: true };
   const doc = '| 字段 | 内容 |\n|---|---|\n| 当前发布版本号 | VA.1.0.0 |\n| Git提交hash | 固定来源SHA |\n| 正式基线 | VA.0.9.0 |\n| 变更内容 | ' + Array.from({ length: 12 }, (_, i) => `A 累计功能${i + 1}`).join('\n') + ' |';
   let saved = '';
+  let submissions = 0;
   request.defaults.adapter = async (config) => {
     let data: unknown = { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
@@ -105,6 +106,10 @@ it('正式累计说明保留第十二条更新，身份只读，允许补充人�
     if (config.url === '/releases/' || config.url === '/releases/formal/') data = release;
     if (config.url?.endsWith('generate-doc/')) data = doc;
     if (config.url?.endsWith('changes-preview/')) data = { base_tag: 'VA.0.9.0', commits: [], merge_requests: [], warnings: [] };
+    if (config.url?.endsWith('submit-audit/')) {
+      submissions += 1;
+      return {config, status: 200, statusText: 'OK', headers: {}, data: {code: 40002, message: submissions === 1 ? '已有同版本在发布' : '正式流程没有有效审批人'}};
+    }
     if (config.url?.endsWith('update-doc/')) { saved = JSON.parse(config.data).release_doc; data = release; }
     return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data } };
   };
@@ -126,4 +131,9 @@ it('正式累计说明保留第十二条更新，身份只读，允许补充人�
   await waitFor(() => expect(saved).toContain('人工补充'));
   expect(saved).toContain('累计功能12');
   expect(saved).toContain('| Git提交hash | 固定来源SHA |');
+  fireEvent.click(screen.getByRole('button', {name: '提交审批'}));
+  expect(await screen.findByText('已有同版本在发布', {selector: 'p[role=alert]'})).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', {name: '提交审批'}));
+  expect(await screen.findByText('正式流程没有有效审批人', {selector: '[role=alert]'})).toBeTruthy();
+  expect(submissions).toBe(2);
 });

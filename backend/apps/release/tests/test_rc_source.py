@@ -254,3 +254,12 @@ def test_reselection_and_submission_serialize_on_postgresql(client, rc, remote, 
     data = client.get(f"/api/releases/{formal.id}/").data["data"]
     assert data["status"] == "draft"
     assert data["source_rc_git_hash"] == "b" * 40
+
+
+def test_cleaned_rc_remains_candidate_with_verified_formal_reference(client, rc, remote):
+    ReleaseRecord.objects.create(project=rc.project, repository=rc.repository, publisher=rc.publisher,
+        release_type='formal', status='released', version='VA.1.0.0', tag_name='VA.1.0.0',
+        git_hash=rc.git_hash, source_rc=rc, source_rc_git_hash=rc.git_hash)
+    remote.tags = [TagInfo(name='VA.1.0.0', commit_hash=rc.git_hash)]
+    response = client.get('/api/releases/rc-candidates/', {'project': str(rc.project_id), 'repository': str(rc.repository_id)})
+    assert response.data['data']['results'][0]['available'] is True

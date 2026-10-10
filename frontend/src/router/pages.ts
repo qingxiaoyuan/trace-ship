@@ -28,3 +28,5 @@ export const Changelog = lazy(() => import('@/pages/Changelog'));
 export const BrowserUpgrade = lazy(() => import('@/pages/BrowserUpgrade'));
 export const Profile = lazy(() => import('@/pages/Profile'));
 export const SsoEntry = lazy(() => import('@/pages/Sso'));
+
+export const ReleaseTagCleanup = lazy(() => import('@/pages/Release/TagCleanup'));

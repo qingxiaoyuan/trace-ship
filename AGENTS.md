@@ -215,19 +215,19 @@ npm run preview
 
 仓库级发布流程：
 
-1. 创建发布：`ReleaseService.create_release` 校验项目已启用关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；如未传版本号，基于仓库 tag 和仓库版本规则自动计算。同一仓库被多个项目发布时共享同一套 Tag。 正式草稿必须传同项目、同仓库已发布的 `source_rc`，实时验证 RC Tag 与完整提交快照一致；保存来源版本、Tag、SHA，忽略客户端分支/哈希，RC/Beta 仍按分支创建。草稿重选来源会清空发布说明及关联变更，进入流程后禁止修改来源；被正式版引用的 RC 记录受删除保护。
+1. 创建发布：`ReleaseService.create_release` 校验项目已启用关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；如未传版本号，基于远端可识别 Tag、成功发布历史和已消费版本占用自动计算，正式/RC/Beta 独立递增，草稿不抬高编号。同一仓库被多个项目发布时共享同一套 Tag。 正式草稿必须传同项目、同仓库已发布的 `source_rc`，实时验证 RC Tag 与完整提交快照一致；原 Tag 缺失时仅接受同来源链、同 SHA 的平台已发布正式 Tag；保存来源版本、Tag、SHA，忽略客户端分支/哈希，RC/Beta 仍按分支创建。草稿重选来源会清空发布说明及关联变更，进入流程后禁止修改来源；被正式版引用的 RC 记录受删除保护。
 
 2. 预览变更：RC/Beta 沿用分支预览；有来源 RC 的正式版由 `FormalChanges` 在上一正式提交至 `source_rc_git_hash` 的固定 SHA 区间完整分页拉取提交，仅关联合并或 squash SHA 位于区间内的 MR，无证据 MR 显示缺口。首次正式版取全部可达历史，同 SHA 明示无新增代码，非祖先基线拒绝普通晋升，外部失败不得回退移动分支。
 3. 生成发布说明：`ReleaseService.generate_doc` 保存 Markdown。正式版首次生成按同物理仓库中低于目标正式版本的最高正式版本固定 `base_tag` / `base_git_hash`（平台已发布历史快照优先于同名远端 Tag），以 `changes_initialized` 区分首次发布与未生成。重新生成沿用基线；来源或目标版本改变后清空基线、说明及提交/MR 关联。身份字段由系统维护，人工可编辑其余内容；提交审批前必须已生成有效正式说明，并保留非法提交拦截。
-4. 提交审批：`ReleaseService.submit_audit` 要求发布处于 `draft` 且发布说明非空；按发布类型查找启用的 `WorkflowDefinition`，创建 `WorkflowInstance`，状态改为 `pending`。
+4. 提交审批：`ReleaseService.submit_audit` 要求草稿说明非空；正式版必须有来源 RC、启用的非空流程且所有节点有有效审批人。以物理仓库、发布类型、规范化主次修订号原子占用版本，日期与项目不分隔占用；同版本冲突提示“已有同版本在发布”，重复提交复用流程。仓库锁先于发布行锁；仓库锁使用 `no_key=True` 避免外键引用产生锁升级死锁。
 5. 审批流转：`WorkflowEngine` 根据 `node_config` 生成任务，支持通过、驳回、转交、回退、撤销。
-6. 审批完成：`ReleaseService.handle_workflow_completed` 调用 `push_tag`；推 tag 成功后发布状态变为 `released`，失败则变为 `rejected` 并写入 `rejected_reason`。
+6. 审批完成：`ReleaseService.handle_workflow_completed` 按固定 SHA 推 Tag 并核验远端提交。正式版所有入口必须有已完成工作流；仅迁移时标记的存量在途审批可无来源 RC。远端结果不明时保留版本占用，原申请可重试；仅 Tag 提交与本申请标记均匹配时允许对账，不接管外部同 SHA Tag。成功后占用永久消费，失败状态为 `rejected`。
 7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送仅在发布后自动打包时启用：正式版看总开关，默认目录为 formal/版本号；RC、测试版需另开对应开关，分别进入 rc/版本号、beta/版本号。看板手动触发与分支直打不推 SVN。默认同版本号不覆盖，开启覆盖后镜像提交。
-8. 审批驳回：`ReleaseService.handle_workflow_rejected` 将发布状态改为 `rejected`；回退到初始节点时可恢复为 `draft` 并解除流程实例关联。
+8. 审批驳回释放未消费占用；撤销与回退到起点恢复 `draft`、解除流程实例并释放占用。推 Tag 失败保留占用供重试；按既有权限删除失败申请表示显式终止。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
 
-RC 晋升按 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5) 分步实施：本阶段覆盖来源候选、正式草稿、来源快照与重选（#12）；正式累计说明（#13）、版本占用（#14）、审批与打包强化（#15）、替代引用与清理（#16–#18）尚待实施。来源候选接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
+RC 晋升与清理依据 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5)。`ReleaseReferences` 统一核验源码引用并保护最后有效引用。单项与批量清理仅删除远端 RC Tag 及缓存，保留发布、审批、说明和打包历史，记录逐次审计；结果区分平台删除、已清理、外部缺失、未知结果对账、阻止和失败。仓库级锁协调清理、Tag 删除与打包任务创建；排队/执行任务阻止相关引用清理。候选查询受项目可见范围限制，操作沿用项目管理员权限。接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
 
 ### 打包流程
 
@@ -238,6 +238,7 @@ RC 晋升按 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5) �
 3. 打包任务执行流程：
    - 准备 `workspace/{source,artifacts,tmp}`；
    - `git clone` 源码到 `workspace/source`（配置开启「拉取 Git 子模块」时追加 `--recurse-submodules`，子模块完整克隆；开启「注入 Git 凭证」时以 GIT_ASKPASS 方式把凭证与提交身份注入构建环境，打包脚本可自行在（子）仓库内 git push，远程节点则写入 `.git/config` 的 `http.extraHeader`、构建结束即自动回收）；
+   - 发布任务执行前重新解析有效引用；本地 Docker、远程 Windows/麒麟检出后通过 `git rev-parse HEAD` 核验完整 SHA，不一致时禁止执行用户脚本。`source_ref` 记录实际拉取引用，显示的版本、Tag、说明与环境变量保留原发布身份。任务投递使用事务提交回调；
    - 只挂载 `source` / `artifacts` / `tmp` 到容器 `/workspace` 对应目录，`scripts` / `deploy` 使用镜像自身内容；
    - 容器内工作目录为 `/workspace/source`，通过环境变量传入 `DEPLOY_DIR`、`SCRIPTS_DIR` 等；
    - 统一以 `--entrypoint /bin/sh` 启动，镜像自身 ENTRYPOINT 不生效；
