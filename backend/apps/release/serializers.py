@@ -50,6 +50,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "id", "project", "project_name", "repository", "repository_name",
             "version", "tag_name", "redmine_url", "base_tag", "branch", "git_hash",
             "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
+            "base_git_hash", "changes_initialized", "changes_warnings",
             "release_type", "release_type_display", "status", "status_display",
             "release_doc", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
@@ -63,6 +64,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id", "git_hash", "base_tag", "status",
+            "base_git_hash", "changes_initialized", "changes_warnings",
             "source_rc_version", "source_rc_tag", "source_rc_git_hash",
             "package_tasks", "rejected_reason",
             "released_at", "created_at", "updated_at",

@@ -9,8 +9,9 @@ import { useProjectRole } from '@/hooks/useProjectRole';
 import { useHideFileDownload } from '@/hooks/useHideFileDownload';
 import { isOaMobileClient } from '@/utils/oaClient';
 import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
-import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './releaseDocUtils';
+import { isCheckboxField, isFormalIdentityField, applyCheckboxChange, type MdTableRow } from './releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './ReleaseDocField';
+import { FormalChangesPreview } from './FormalChangesPreview';
 import type { Release } from '@/types';
 
 interface ReleaseNotesProps {
@@ -142,7 +143,8 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
 
   if (!hasDoc) {
     return (
-      <div className="py-8 text-center">
+      <div className="space-y-4 py-8 text-center">
+        <FormalChangesPreview release={release} active={active} />
         <p className="text-[13px] text-slate-400">尚未生成发布说明</p>
         {canDevelop ? (
           <div className="mt-3 flex items-center justify-center gap-2">
@@ -179,7 +181,9 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                         {row.key}
                       </td>
                       <td className="px-3 py-2 align-middle">
-                        {isCheckboxField(row.key) ? (
+                        {release.source_rc && isFormalIdentityField(row.key) ? (
+                          <span className="break-all text-[13px]">{row.value}</span>
+                        ) : isCheckboxField(row.key) ? (
                           <CheckboxField
                             value={row.value}
                             fieldKey={row.key}
@@ -212,7 +216,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
           )}
           {tableEditMode && (
             <p className="mt-2 text-[11px] text-slate-400">
-              左列标题只读，右列内容可编辑；保存后将序列化为 Markdown 表格
+              标题和正式版身份字段只读，其余内容可编辑
             </p>
           )}
         </Modal>
@@ -222,6 +226,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
 
   return (
     <div className="space-y-4">
+      <FormalChangesPreview release={release} active={active} />
       <div className="overflow-hidden rounded-lg border border-slate-200">
         {rows.length > 0 ? (
           <table className="w-full border-collapse">
@@ -232,7 +237,9 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                     {row.key}
                   </td>
                   <td className="px-3 py-2 text-[13px] text-slate-700">
-                    {isCheckboxField(row.key) ? (
+                    {release.source_rc && isFormalIdentityField(row.key) ? (
+                          <span className="break-all text-[13px]">{row.value}</span>
+                        ) : isCheckboxField(row.key) ? (
                       <CheckboxField value={row.value} fieldKey={row.key} disabled />
                     ) : (
                       row.value.split(/<br>|\n/).map((line, lineIdx) => (
@@ -250,6 +257,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
       </div>
 
       {/* 操作 */}
+      {canDevelop && release.source_rc && release.status === 'draft' ? <Button loading={generateMutation.isPending} onClick={() => generateMutation.mutate()}>重新生成累计说明</Button> : null}
       <div className="flex flex-wrap items-center gap-2">
         {canDevelop && (
           <button
@@ -310,7 +318,9 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                       {row.key}
                     </td>
                     <td className="px-3 py-2 align-middle">
-                      {isCheckboxField(row.key) ? (
+                      {release.source_rc && isFormalIdentityField(row.key) ? (
+                          <span className="break-all text-[13px]">{row.value}</span>
+                        ) : isCheckboxField(row.key) ? (
                         <CheckboxField
                           value={row.value}
                           fieldKey={row.key}
@@ -343,7 +353,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
         )}
         {tableEditMode && (
           <p className="mt-2 text-[11px] text-slate-400">
-            左列标题只读，右列内容可编辑；保存后将序列化为 Markdown 表格
+            标题和正式版身份字段只读，其余内容可编辑
           </p>
         )}
       </Modal>

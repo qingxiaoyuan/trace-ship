@@ -92,6 +92,8 @@ class MergeRequestInfo:
     target_branch: str = ""
     web_url: str = ""
     merged_at: datetime | None = None
+    merge_commit_sha: str = ""
+    squash_commit_sha: str = ""
 
 
 class GitProvider(ABC):
@@ -172,6 +174,18 @@ class GitProvider(ABC):
             共同祖先 commit hash，不支持或查询失败时返回 None
         """
         return None
+
+    def list_release_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
+        """完整拉取固定提交区间；无基线时返回 head 的全部可达历史。"""
+        from .exceptions import NotSupportedError
+
+        raise NotSupportedError("当前代码平台不支持完整发布区间")
+
+    def list_release_merge_requests(self, repo_identity: str) -> list[MergeRequestInfo]:
+        """完整拉取已合并 MR，包含可用于核验区间的提交证据。"""
+        from .exceptions import NotSupportedError
+
+        raise NotSupportedError("当前代码平台不支持发布 MR 核验")
 
     @abstractmethod
     def list_merge_requests(

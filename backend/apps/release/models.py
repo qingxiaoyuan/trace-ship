@@ -84,6 +84,9 @@ class ReleaseRecord(models.Model):
     # 发布时的基线 tag：生成发布说明时持久化的上一个 tag 快照，
     # 供详情页展示「上一 tag -> 本次 tag」提交区间，历史数据为空。
     base_tag = models.CharField(max_length=100, blank=True, verbose_name="基线 Tag")
+    base_git_hash = models.CharField(max_length=100, blank=True, verbose_name="正式基线提交快照")
+    changes_initialized = models.BooleanField(default=False, verbose_name="正式变更基线已固定")
+    changes_warnings = models.JSONField(default=list, blank=True, verbose_name="正式变更核验提示")
     branch = models.CharField(max_length=200, verbose_name="发布分支")
     git_hash = models.CharField(max_length=100, blank=True, verbose_name="Git 哈希")
     release_type = models.CharField(

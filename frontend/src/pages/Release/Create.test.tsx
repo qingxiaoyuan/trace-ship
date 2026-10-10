@@ -91,3 +91,39 @@ it('创建请求进行中锁定项目、仓库、类型和 RC，避免旧响应�
   await act(async () => finish?.());
   expect(await screen.findByText('发布草稿创建成功')).toBeTruthy();
 });
+
+it('正式累计说明保留第十二条更新，身份只读，允许补充人工说明', async () => {
+  const release = { id: 'formal', release_type: 'formal', source_rc: 'rc', version: 'VA.1.0.0', changes_initialized: true };
+  const doc = '| 字段 | 内容 |\n|---|---|\n| 当前发布版本号 | VA.1.0.0 |\n| Git提交hash | 固定来源SHA |\n| 正式基线 | VA.0.9.0 |\n| 变更内容 | ' + Array.from({ length: 12 }, (_, i) => `A 累计功能${i + 1}`).join('\n') + ' |';
+  let saved = '';
+  request.defaults.adapter = async (config) => {
+    let data: unknown = { results: [], total: 0 };
+    if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
+    if (config.url?.includes('/components/')) data = [{ repository: 'r', is_active: true, repository_detail: { name: '仓库' } }];
+    if (config.url === '/releases/rc-candidates/') data = { total: 1, results: [{ id: 'rc', version: 'VA.9.0.0', tag_name: 'VA.9.0.0-rc', available: true }] };
+    if (config.url?.includes('next-version')) data = { next_tag_name: 'VA.1.0.0' };
+    if (config.url === '/releases/' || config.url === '/releases/formal/') data = release;
+    if (config.url?.endsWith('generate-doc/')) data = doc;
+    if (config.url?.endsWith('changes-preview/')) data = { base_tag: 'VA.0.9.0', commits: [], merge_requests: [], warnings: [] };
+    if (config.url?.endsWith('update-doc/')) { saved = JSON.parse(config.data).release_doc; data = release; }
+    return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data } };
+  };
+  render(<App><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter><ReleaseCreate /></MemoryRouter>
+  </QueryClientProvider></App>);
+  fireEvent.mouseDown(screen.getByLabelText('项目'));
+  fireEvent.click(await screen.findByText('项目', { selector: '.ant-select-item-option-content' }));
+  fireEvent.mouseDown(screen.getByLabelText('目标仓库'));
+  fireEvent.click(await screen.findByText('仓库', { selector: '.ant-select-item-option-content' }));
+  fireEvent.click(await screen.findByRole('radio', { name: /VA.9.0.0/ }));
+  fireEvent.click(screen.getByRole('button', { name: '创建发布' }));
+  const notes = await screen.findByRole('textbox') as HTMLTextAreaElement;
+  expect(notes.value).toContain('累计功能12');
+  expect(screen.queryByDisplayValue('固定来源SHA')).toBeNull();
+  expect(screen.getByText('固定来源SHA')).toBeTruthy();
+  fireEvent.change(notes, { target: { value: notes.value + '\n人工补充' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存编辑' }));
+  await waitFor(() => expect(saved).toContain('人工补充'));
+  expect(saved).toContain('累计功能12');
+  expect(saved).toContain('| Git提交hash | 固定来源SHA |');
+});

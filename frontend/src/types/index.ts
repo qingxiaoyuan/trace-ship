@@ -170,6 +170,9 @@ export interface Release {
   replied_review_count?: number;
   /** 发布时的基线 tag 快照（详情返回；空表示首个版本区间） */
   base_tag?: string;
+  base_git_hash?: string;
+  changes_initialized?: boolean;
+  changes_warnings?: string[];
   /** 整改意见聚合计数（详情返回） */
   review_issue_counts?: {
     total: number;
@@ -291,6 +294,19 @@ export interface ChangesPreview {
   head_hash: string;
   commits: PreviewCommit[];
   merge_requests: PreviewMergeRequest[];
+  parsed_updates: ParsedUpdate[];
+}
+
+/** 正式发布的固定 SHA 区间，完整条目由后端核验。 */
+export interface FormalChangesPreviewData {
+  base_tag: string;
+  base_git_hash: string;
+  head_hash: string;
+  first_release: boolean;
+  no_changes: boolean;
+  warnings: string[];
+  commits: Omit<PreviewCommit, 'has_af'>[];
+  merge_requests: Omit<PreviewMergeRequest, 'has_af'>[];
   parsed_updates: ParsedUpdate[];
 }
 

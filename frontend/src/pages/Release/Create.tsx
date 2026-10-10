@@ -34,8 +34,9 @@ import { releaseApi } from '@/api/release';
 import { packageApi } from '@/api/package';
 import { useAppMessage } from '@/hooks/useAppMessage';
 import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
-import { isCheckboxField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
+import { isCheckboxField, isFormalIdentityField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField';
+import { FormalChangesPreview } from './components/FormalChangesPreview';
 import { RcSourceSelect } from './components/RcSourceSelect';
 import { CommitCheckModal } from './components/CommitCheckModal';
 import type { Release, ReleaseType, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
@@ -283,9 +284,10 @@ export default function ReleaseCreate() {
 
   const generateDocMutation = useMutation({
     mutationFn: (id: string) => releaseApi.generateDoc(id),
-    onSuccess: (md) => {
+    onSuccess: async (md, id) => {
       const mdStr = md as string;
       setDocRows(parseMdTable(mdStr));
+      if (createdRelease?.source_rc) setCreatedRelease(await releaseApi.getRelease(id));
       setDocSaved(true);
     },
   });
@@ -1086,6 +1088,8 @@ export default function ReleaseCreate() {
       {/* ========== 步骤 2：编辑发布说明（表格组件，无表头） ========== */}
       {currentStep >= 1 && createdRelease && (
         <div className="space-y-5">
+          <FormalChangesPreview release={createdRelease} active={!generateDocMutation.isPending} />
+          {generateDocMutation.error ? <p role="alert" className="text-red-700">{generateDocMutation.error.message}</p> : null}
           <section className="tech-card rounded-xl p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1124,7 +1128,9 @@ export default function ReleaseCreate() {
                           {row.key}
                         </td>
                         <td className="px-3 py-2 align-middle">
-                          {isCheckboxField(row.key) ? (
+                          {createdRelease.source_rc && isFormalIdentityField(row.key) ? (
+                            <span className="break-all text-[13px]">{row.value}</span>
+                          ) : isCheckboxField(row.key) ? (
                             <CheckboxField
                               value={row.value}
                               fieldKey={row.key}
