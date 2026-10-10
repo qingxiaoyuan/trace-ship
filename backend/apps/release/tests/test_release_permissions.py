@@ -235,6 +235,9 @@ def test_manager_can_delete_released(project, repository, manager_user, monkeypa
     deleted = []
 
     class FakeProvider:
+        def list_tags(self, repo_identity):
+            return []
+
         def delete_tag(self, repo_identity, tag_name):
             deleted.append(tag_name)
 

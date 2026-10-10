@@ -363,6 +363,7 @@ class GitLabProvider(GitProvider):
                 result.append(
                     TagInfo(
                         name=t["name"],
+                        message=t.get("message") or "",
                         commit_hash=commit.get("id"),
                         created_at=self._parse_datetime(commit.get("committed_date")),
                     )
@@ -388,6 +389,7 @@ class GitLabProvider(GitProvider):
         commit = data.get("commit") or {}
         return TagInfo(
             name=data["name"],
+            message=data.get("message") or "",
             commit_hash=commit.get("id"),
             created_at=self._parse_datetime(commit.get("committed_date")),
         )

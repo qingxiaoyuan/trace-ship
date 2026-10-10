@@ -66,6 +66,7 @@ class TagInfo:
     name: str
     commit_hash: str | None = None
     created_at: datetime | None = None
+    message: str = ""
 
 
 @dataclass

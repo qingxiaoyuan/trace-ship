@@ -923,13 +923,12 @@ class ReleaseService:
     @staticmethod
     def rc_source_unavailable_reason(source: ReleaseRecord, tags: list[TagInfo]) -> str:
         """返回 RC 引用不可用原因；空字符串表示引用与完整快照一致。"""
-        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", source.git_hash or ""):
-            return "RC 缺少完整提交快照，请先重新发布 RC"
-        tag = next((tag for tag in tags if tag.name == source.tag_name), None)
-        if tag is None:
-            return "RC Tag 已不存在，当前没有可用来源引用"
-        if tag.commit_hash != source.git_hash:
-            return "RC Tag 提交与发布快照不一致"
+        from apps.release.references import ReleaseReferences
+
+        try:
+            ReleaseReferences.resolve(source, tags)
+        except serializers.ValidationError as exc:
+            return str(next(iter(exc.detail.values())))
         return ""
 
     @classmethod
@@ -997,8 +996,10 @@ class ReleaseService:
             except ProviderError as exc:
                 raise serializers.ValidationError({"repository": f"获取 tag 列表失败: {exc}"})
             calculator = VersionCalculator(version_rule)
+            from apps.release.versions import version_tags
+
             version, auto_tag_name = calculator.calculate(
-                tags,
+                version_tags(repository, tags),
                 release_type=release_type,
             )
         else:
@@ -1122,6 +1123,7 @@ class ReleaseService:
         Returns:
             Markdown 字符串
         """
+        Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
         release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
         if release.release_type == "formal" and release.source_rc_id and release.status != "draft":
             raise serializers.ValidationError({"status": "只有正式草稿才能重新生成累计说明"})
@@ -1147,6 +1149,7 @@ class ReleaseService:
         Returns:
             更新后的 ReleaseRecord
         """
+        Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
         release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
         if release.release_type == "formal" and release.source_rc_id:
             from apps.release.formal_changes import FormalChanges
@@ -1339,11 +1342,16 @@ class ReleaseService:
         """
         with transaction.atomic():
             # 与草稿重选来源使用同一行锁，并在锁内重新读取状态与说明。
+            Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
             release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
+            if release.status == "pending":
+                return release
             if release.status != "draft":
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
             if not release.release_doc:
                 raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
+            if release.release_type == "formal" and not release.source_rc_id:
+                raise serializers.ValidationError({"source_rc": "请先补选来源 RC 并重新生成正式说明"})
 
             if release.release_type == "formal" and release.source_rc_id:
                 from apps.release.formal_changes import FormalChanges
@@ -1376,6 +1384,14 @@ class ReleaseService:
                 raise serializers.ValidationError(
                     {"workflow": f"仓库未配置 {release.release_type} 发布审批流程"}
                 )
+
+            from apps.release.versions import claim_version
+
+            if release.release_type == "formal":
+                WorkflowEngine.validate_release_definition(definition, release, user)
+
+            provider = ReleaseService._get_provider(release.repository, user, project=release.project)
+            claim_version(release, provider.list_tags(release.repository.external_identity))
 
             if definition.node_config:
                 instance = WorkflowEngine.create_instance(
@@ -1443,6 +1459,9 @@ class ReleaseService:
         release.status = "rejected"
         release.rejected_reason = comment or "审批已驳回"
         release.save(update_fields=["status", "rejected_reason", "updated_at"])
+        from apps.release.versions import release_claim
+
+        release_claim(release)
 
     @staticmethod
     def handle_workflow_rollback_to_start(
@@ -1469,9 +1488,27 @@ class ReleaseService:
         release.save(update_fields=[
             "status", "workflow_instance", "rejected_reason", "updated_at",
         ])
+        from apps.release.versions import release_claim
+
+        release_claim(release)
 
     @classmethod
     def push_tag(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
+        """同仓库发布串行化；远端失败状态提交后再向调用方报告异常。"""
+        error = None
+        with transaction.atomic():
+            Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+            release.refresh_from_db()
+            try:
+                result = cls._push_tag_locked(release, request_user)
+            except Exception as exc:
+                error = exc
+        if error:
+            raise error
+        return result
+
+    @classmethod
+    def _push_tag_locked(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
         """
         推送 tag
 
@@ -1486,6 +1523,15 @@ class ReleaseService:
         """
         if release.status != "pending":
             raise serializers.ValidationError({"status": "只有待审批状态才能推 tag"})
+
+        if release.release_type == "formal":
+            if not release.workflow_instance_id or release.workflow_instance.status != "completed":
+                raise serializers.ValidationError({"workflow": "正式审批尚未完成，不能推送 Tag"})
+            if release.source_rc_id:
+                if release.git_hash != release.source_rc_git_hash:
+                    raise serializers.ValidationError({"source_rc": "正式来源提交与快照不一致"})
+            elif not release.legacy_approval_allowed:
+                raise serializers.ValidationError({"source_rc": "历史申请未取得兼容资格，请补选来源 RC 重新审批"})
 
         # 校验审批流程已结束，避免工作流仍 running 时提前推 tag
         if release.workflow_instance_id and release.workflow_instance.status != "completed":
@@ -1503,18 +1549,29 @@ class ReleaseService:
         )
         user = request_user or release.publisher
         try:
-            cls._validate_tag_not_exists(
-                provider,
-                release.repository,
-                release.tag_name,
-                exists_message="Tag 已存在，无法推送发布",
-            )
-            tag_info = provider.create_tag(
-                repo_identity=release.repository.external_identity,
-                tag_name=release.tag_name,
-                commit_hash=release.git_hash,
-                message="",
-            )
+            from apps.release.versions import claim_version
+
+            marker = f"trace-ship-release:{release.id}"
+            tags = provider.list_tags(release.repository.external_identity)
+            # 升级前申请重试也要取得占用；仅本申请的完整远端证据可参与对账。
+            claim_version(release, [tag for tag in tags if not (
+                tag.name == release.tag_name and tag.commit_hash == release.git_hash and tag.message == marker
+            )])
+            existing = next((tag for tag in tags if tag.name == release.tag_name), None)
+            if existing:
+                if existing.commit_hash != release.git_hash or existing.message != marker:
+                    raise ReleaseTagExistsError("Tag 已存在且不属于本次申请，无法覆盖")
+                tag_info = existing
+            else:
+                tag_info = provider.create_tag(
+                    repo_identity=release.repository.external_identity,
+                    tag_name=release.tag_name,
+                    commit_hash=release.git_hash,
+                    message=marker,
+                )
+                actual = next((tag for tag in provider.list_tags(release.repository.external_identity) if tag.name == release.tag_name), None)
+                if actual is None or actual.commit_hash != release.git_hash:
+                    raise ProviderError("远端 Tag 提交核验失败，请重试原申请")
         except ReleaseTagExistsError as exc:
             release.status = "rejected"
             release.rejected_reason = f"推 tag 失败: {exc}"
@@ -1528,7 +1585,7 @@ class ReleaseService:
                 detail={"error": str(exc), "traceback": traceback.format_exc()},
             )
             raise
-        except ProviderError as exc:
+        except (ProviderError, serializers.ValidationError) as exc:
             release.status = "rejected"
             release.rejected_reason = f"推 tag 失败: {exc}"
             release.save(update_fields=["status", "rejected_reason", "updated_at"])
@@ -1557,6 +1614,7 @@ class ReleaseService:
             raise
 
         release.status = "released"
+        release.version_claims.update(consumed=True)
         release.released_at = timezone.now()
         release.save(update_fields=["status", "released_at", "updated_at"])
         # 推 tag 成功后失效 tag 列表缓存，保证预览/版本号计算立即看到新 tag
@@ -1604,6 +1662,23 @@ class ReleaseService:
 
     @classmethod
     def retry_push_tag(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
+        """重试状态切换与远端对账共用仓库锁，重复请求不重复触发打包。"""
+        error = None
+        with transaction.atomic():
+            Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+            release.refresh_from_db()
+            if release.status == "released":
+                return TagInfo(name=release.tag_name, commit_hash=release.git_hash)
+            try:
+                result = cls._retry_push_tag_locked(release, request_user)
+            except Exception as exc:
+                error = exc
+        if error:
+            raise error
+        return result
+
+    @classmethod
+    def _retry_push_tag_locked(cls, release: ReleaseRecord, request_user=None) -> TagInfo:
         """
         推 tag 失败后重试（不改动状态机，复用 rejected -> pending -> push_tag 路径）
 
@@ -1620,12 +1695,14 @@ class ReleaseService:
         Returns:
             创建的 TagInfo
         """
-        if release.status != "rejected":
+        if release.status not in ("rejected", "pending"):
             raise serializers.ValidationError({"status": "只有已驳回状态才能重试推 tag"})
         if release.workflow_instance_id and release.workflow_instance.status != "completed":
             raise serializers.ValidationError(
                 {"workflow": "审批未通过，无法重试推 tag，请回退草稿后重新提交审批"}
             )
+        if release.release_type == "formal" and not release.workflow_instance_id:
+            raise serializers.ValidationError({"workflow": "正式审批尚未完成，不能重试推送 Tag"})
         release.status = "pending"
         release.rejected_reason = ""
         release.save(update_fields=["status", "rejected_reason", "updated_at"])
@@ -1634,9 +1711,10 @@ class ReleaseService:
             release=release,
             action="retry_push_tag",
         )
-        return cls.push_tag(release, request_user=request_user)
+        return cls._push_tag_locked(release, request_user=request_user)
 
     @classmethod
+    @transaction.atomic
     def delete_released_tag(
         cls,
         release: ReleaseRecord,
@@ -1662,6 +1740,10 @@ class ReleaseService:
             serializers.ValidationError: 状态不符 / tag 名称不匹配
             ProviderError: 远端删除失败（认证、连接等）
         """
+        from apps.release.references import ReleaseReferences
+
+        Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+        release.refresh_from_db()
         if release.status != "released":
             raise serializers.ValidationError({"status": "仅已发布状态可删除版本"})
         if tag_name != release.tag_name:
@@ -1673,6 +1755,7 @@ class ReleaseService:
         provider = cls._get_provider(
             release.repository, request_user, project=release.project, operation="delete_tag",
         )
+        ReleaseReferences.guard_delete(release.repository, tag_name, provider.list_tags(release.repository.external_identity))
         remote_deleted = True
         try:
             provider.delete_tag(
@@ -1727,6 +1810,9 @@ class ReleaseService:
         except Exception:
             pass
 
+        from apps.release.versions import preserve_consumed_version
+
+        preserve_consumed_version(release)
         release.delete()
         OperationLogService.log_release(
             user=user,

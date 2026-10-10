@@ -8,7 +8,7 @@ from typing import Any
 
 from django.db.models import Count, Prefetch, Q
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, permissions
+from rest_framework import filters, permissions, serializers
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -310,6 +310,8 @@ class RepositoryViewSet(StandardModelViewSet):
         try:
             result = RepositoryService.delete_tag(repo, tag_name, request.user)
             return success_response(result, message="标签删除成功")
+        except serializers.ValidationError:
+            raise
         except Exception as exc:
             return error_response(50000, f"删除标签失败: {exc}", status_code=500)
 
@@ -390,6 +392,9 @@ class RepositoryViewSet(StandardModelViewSet):
 
         version_rule = repo.get_version_rule()
         calculator = VersionCalculator(version_rule)
+        from apps.release.versions import version_tags
+
+        tags = version_tags(repo, tags)
 
         # 计算三类发布类型各自的结果
         all_types: dict[str, dict[str, Any]] = {}

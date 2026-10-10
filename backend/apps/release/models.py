@@ -74,6 +74,11 @@ class ReleaseRecord(models.Model):
     source_rc_version = models.CharField(max_length=100, blank=True, verbose_name="来源 RC 版本快照")
     source_rc_tag = models.CharField(max_length=100, blank=True, verbose_name="来源 RC Tag 快照")
     source_rc_git_hash = models.CharField(max_length=100, blank=True, verbose_name="来源 RC 提交快照")
+    legacy_approval_allowed = models.BooleanField(default=False, editable=False, verbose_name="升级前正式审批兼容")
+    tag_cleanup_status = models.CharField(max_length=20, blank=True, verbose_name="Tag 清理状态")
+    tag_cleaned_at = models.DateTimeField(null=True, blank=True, verbose_name="Tag 清理时间")
+    tag_cleaned_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="cleaned_rc_tags", verbose_name="Tag 清理人")
+    tag_cleanup_reference = models.CharField(max_length=100, blank=True, verbose_name="保护正式 Tag 快照")
     version = models.CharField(max_length=100, verbose_name="版本号")
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
     redmine_url = models.URLField(
@@ -163,6 +168,34 @@ class ReleaseRecord(models.Model):
     def __str__(self) -> str:
         """返回版本号描述"""
         return f"{self.project.name} - {self.version}"
+
+
+class ReleaseTagCleanupAttempt(models.Model):
+    """逐次追加清理审计，不覆盖失败或外部缺失证据。"""
+    release = models.ForeignKey(ReleaseRecord, on_delete=models.PROTECT, related_name="cleanup_attempts", verbose_name="RC 发布")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, verbose_name="操作人")
+    status = models.CharField(max_length=30, default="attempting", verbose_name="结果")
+    message = models.TextField(blank=True, verbose_name="说明")
+    protected_by = models.CharField(max_length=100, blank=True, verbose_name="保护正式 Tag")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="操作时间")
+
+    class Meta:
+        db_table = "release_tag_cleanup_attempt"
+
+
+class ReleaseVersionClaim(models.Model):
+    """进入流程后的仓库级占用；成功编号保留，删除历史也不复用。"""
+
+    repository = models.ForeignKey("repository.Repository", on_delete=models.CASCADE, verbose_name="仓库")
+    release_type = models.CharField(max_length=20, verbose_name="发布类型")
+    base_version = models.CharField(max_length=100, verbose_name="规范化基础版本")
+    tag_name = models.CharField(max_length=100, verbose_name="发布 Tag")
+    release = models.ForeignKey(ReleaseRecord, null=True, on_delete=models.SET_NULL, related_name="version_claims", verbose_name="发布申请")
+    consumed = models.BooleanField(default=False, verbose_name="已成功发布")
+
+    class Meta:
+        db_table = "release_version_claim"
+        constraints = [models.UniqueConstraint(fields=["repository", "release_type", "base_version"], name="unique_repository_release_version")]
 
 
 class ReleaseCommit(models.Model):

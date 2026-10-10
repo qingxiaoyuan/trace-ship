@@ -6,6 +6,7 @@
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
+from django.db import transaction
 from django.utils import timezone
 
 from apps.release.services import VersionCalculator
@@ -330,6 +331,7 @@ class RepositoryService:
         ]
 
     @staticmethod
+    @transaction.atomic
     def delete_tag(repo: Repository, tag_name: str, request_user=None) -> dict:
         """
         删除仓库标签
@@ -349,10 +351,14 @@ class RepositoryService:
             ValueError: 非 Git 仓库
             ProviderError: 远端删除失败（认证/连接错误等）
         """
+        from apps.release.references import ReleaseReferences
+
+        Repository.objects.select_for_update(no_key=True).get(pk=repo.pk)
         if repo.repo_type != "git":
             raise ValueError("非 Git 仓库不支持标签删除")
         cred_data = resolve_credential(repo, request_user)
         provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
+        ReleaseReferences.guard_delete(repo, tag_name, provider.list_tags(repo.external_identity))
         remote_deleted = True
         try:
             provider.delete_tag(repo.external_identity, tag_name)

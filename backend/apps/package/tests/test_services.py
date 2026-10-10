@@ -161,7 +161,7 @@ def test_package_images_write_requires_superuser(api_client):
     assert response.status_code == 403
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_create_task_falls_back_to_local_worker_when_celery_broker_unavailable(project, repository, user, monkeypatch):
     """Celery 投递失败时不让手动触发接口 500，而是降级为本地后台执行。"""
     image = PackageImage.objects.create(
@@ -262,6 +262,7 @@ def test_checkout_source_writes_release_doc(project, repository, user, tmp_path,
         branch="main",
         release_type="formal",
         status="released",
+        git_hash="a" * 40,
         release_doc="# 发布说明\n\n- 修复问题",
         publisher=user,
     )
@@ -273,7 +274,15 @@ def test_checkout_source_writes_release_doc(project, repository, user, tmp_path,
         tag_name=release.tag_name,
         version=release.version,
         config_snapshot={},
+        commit_hash="a" * 40,
     )
+    from unittest.mock import MagicMock
+
+    from utils.provider.base import TagInfo
+    remote = MagicMock()
+    remote.list_tags.return_value = [TagInfo(name=release.tag_name, commit_hash=release.git_hash)]
+    monkeypatch.setattr("apps.release.services.ReleaseService._get_provider", lambda *args, **kwargs: remote)
+    monkeypatch.setattr("apps.package.services.source.subprocess.check_output", lambda *args, **kwargs: "a" * 40)
     workspace = tmp_path / "workspace"
     (workspace / "source").mkdir(parents=True)
     monkeypatch.setattr(PackageService, "_run_command", lambda *args, **kwargs: None)

@@ -99,7 +99,11 @@ def node(windows_credential):
 
 
 @pytest.fixture
-def release(project, repository, user):
+def release(project, repository, user, monkeypatch):
+    from utils.provider.base import TagInfo
+    remote = MagicMock()
+    remote.list_tags.return_value = [TagInfo(name="VA.1.0.0", commit_hash="a" * 40)]
+    monkeypatch.setattr("apps.release.services.get_provider", lambda *args: remote)
     return ReleaseRecord.objects.create(
         project=project,
         repository=repository,
@@ -108,6 +112,7 @@ def release(project, repository, user):
         branch="main",
         release_type="formal",
         status="released",
+        git_hash="a" * 40,
         publisher=user,
     )
 
@@ -697,7 +702,10 @@ class TestRemoteRunTask:
         client = MagicMock()
         client.__enter__ = lambda self: self
         client.__exit__ = lambda self, *exc: None
-        client.run_checked.return_value = None
+        def run_checked(command, on_line=None, **kwargs):
+            if "rev-parse HEAD" in command and on_line:
+                on_line("a" * 40)
+        client.run_checked.side_effect = run_checked
         client.upload_text.return_value = None
 
         def download_dir(remote_dir, local_dir, should_stop=None):
@@ -713,6 +721,21 @@ class TestRemoteRunTask:
             classmethod(lambda cls, snapshot: client),
         )
         return client
+
+    def test_checkout_drift_stops_before_user_script(self, project, repository, node, release, user, monkeypatch, tmp_path):
+        """远端执行边界返回不同 HEAD 时，用户脚本和产物收集均不得运行。"""
+        monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
+        client = self._mock_client(monkeypatch)
+        def run_checked(command, on_line=None, **kwargs):
+            if "rev-parse HEAD" in command and on_line:
+                on_line("b" * 40)
+        client.run_checked.side_effect = run_checked
+        task = self._make_task(project, repository, node, release, user)
+        PackageService.run_task(task)
+        task.refresh_from_db()
+        assert task.status == "failure" and "实际检出" in task.error_message
+        assert all("pack-run" not in call.args[0] for call in client.run_checked.call_args_list)
+        client.download_dir.assert_not_called()
 
     def test_remote_pipeline_success(self, project, repository, node, release, user, monkeypatch, tmp_path):
         monkeypatch.setattr(PackageService, "workspace_root", staticmethod(lambda: tmp_path))
@@ -810,7 +833,10 @@ class TestRemoteRunTask:
         client = MagicMock()
         client.mkdirs.return_value = None
         client.remove_dir.return_value = None
-        client.run_checked.return_value = None
+        def run_checked(command, on_line=None, **kwargs):
+            if "rev-parse HEAD" in command and on_line:
+                on_line("a" * 40)
+        client.run_checked.side_effect = run_checked
         task = self._make_task(project, repository, node, release, user)
 
         PackageService._checkout_source_remote(task, client)
@@ -838,6 +864,7 @@ class TestRemoteRunTask:
         snapshot["clone_submodules"] = True
         task.config_snapshot = snapshot
         client = MagicMock()
+        client.run_checked.side_effect = lambda command, on_line=None, **kwargs: on_line("a" * 40) if "rev-parse HEAD" in command and on_line else None
 
         PackageService._checkout_source_remote(task, client)
 

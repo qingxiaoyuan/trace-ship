@@ -43,6 +43,12 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     review_issue_counts = serializers.SerializerMethodField()
     can_review = serializers.SerializerMethodField()
     can_reply = serializers.SerializerMethodField()
+    cleanup_history = serializers.SerializerMethodField()
+
+    def get_cleanup_history(self, obj):
+        return [{"status": item.status, "message": item.message, "protected_by": item.protected_by,
+                 "created_at": item.created_at, "actor_id": item.actor_id, "actor_name": str(item.actor) if item.actor else "已删除账号"}
+                for item in obj.cleanup_attempts.select_related("actor").order_by("created_at")]
 
     class Meta:
         model = ReleaseRecord
@@ -51,6 +57,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "version", "tag_name", "redmine_url", "base_tag", "branch", "git_hash",
             "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
             "base_git_hash", "changes_initialized", "changes_warnings",
+            "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "release_type", "release_type_display", "status", "status_display",
             "release_doc", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
@@ -65,6 +72,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "git_hash", "base_tag", "status",
             "base_git_hash", "changes_initialized", "changes_warnings",
+            "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "source_rc_version", "source_rc_tag", "source_rc_git_hash",
             "package_tasks", "rejected_reason",
             "released_at", "created_at", "updated_at",

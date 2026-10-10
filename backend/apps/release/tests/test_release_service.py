@@ -70,21 +70,21 @@ def test_push_tag_rejects_release_when_tag_already_exists(
         project=project,
         repository=repository,
         version="VA.1.0.0",
-        tag_name="VA.1.0.0",
+        tag_name="VA.1.0.0-rc",
         branch="main",
-        release_type="formal",
+        release_type="rc",
         status="pending",
         publisher=user,
     )
-    mock_git_provider.tags = [TagInfo(name="VA.1.0.0", commit_hash="old")]
+    mock_git_provider.tags = [TagInfo(name="VA.1.0.0-rc", commit_hash="old")]
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
-    with pytest.raises(serializers.ValidationError, match="Tag 已存在"):
+    with pytest.raises(serializers.ValidationError, match="该版本已发布"):
         ReleaseService.push_tag(release, request_user=user)
 
     release.refresh_from_db()
     assert release.status == "rejected"
-    assert "Tag 已存在" in release.rejected_reason
+    assert "该版本已发布" in release.rejected_reason
 
 
 def test_push_tag_keeps_pending_when_tag_check_failed(
@@ -101,9 +101,9 @@ def test_push_tag_keeps_pending_when_tag_check_failed(
         project=project,
         repository=repository,
         version="VA.1.0.0",
-        tag_name="VA.1.0.0",
+        tag_name="VA.1.0.0-rc",
         branch="main",
-        release_type="formal",
+        release_type="rc",
         status="pending",
         publisher=user,
     )
@@ -114,12 +114,12 @@ def test_push_tag_keeps_pending_when_tag_check_failed(
     mock_git_provider.list_tags = raise_provider_error
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: mock_git_provider)
 
-    with pytest.raises(serializers.ValidationError, match="校验 tag 是否存在失败"):
+    with pytest.raises(serializers.ValidationError, match="推 tag 失败"):
         ReleaseService.push_tag(release, request_user=user)
 
     release.refresh_from_db()
-    assert release.status == "pending"
-    assert release.rejected_reason == ""
+    assert release.status == "rejected"
+    assert "远端临时不可用" in release.rejected_reason
 
 
 # ======================== preview_changes 测试 ========================
@@ -547,9 +547,9 @@ def _make_rejected_release(repository, project, user, workflow_instance=None):
         project=project,
         repository=repository,
         version="VA.1.0.0",
-        tag_name="VA.1.0.0",
+        tag_name="VA.1.0.0-rc",
         branch="main",
-        release_type="formal",
+        release_type="rc",
         status="rejected",
         rejected_reason="推 tag 失败: 远端临时不可用",
         publisher=user,
@@ -586,7 +586,7 @@ def test_retry_push_tag_success_without_workflow(repository, project, user, mock
     tag_info = ReleaseService.retry_push_tag(release, request_user=user)
 
     release.refresh_from_db()
-    assert tag_info.name == "VA.1.0.0"
+    assert tag_info.name == "VA.1.0.0-rc"
     assert release.status == "released"
     assert release.rejected_reason == ""
     assert release.released_at is not None
@@ -617,7 +617,7 @@ def test_retry_push_tag_rejects_non_rejected_status(repository, project, user):
         project=project,
         repository=repository,
         version="VA.1.0.0",
-        tag_name="VA.1.0.0",
+        tag_name="VA.1.0.0-rc",
         branch="main",
         release_type="formal",
         status="draft",

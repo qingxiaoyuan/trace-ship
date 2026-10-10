@@ -268,6 +268,7 @@ class TestReleaseViews:
             project=project,
             name="发布审批",
             biz_type="release",
+            release_type="rc",
             is_active=True,
             node_config=[
                 {
@@ -294,9 +295,9 @@ class TestReleaseViews:
             project=project,
             repository=repository,
             version="VA.1.0.0",
-            tag_name="VA.1.0.0",
+            tag_name="VA.1.0.0-rc",
             branch="main",
-            release_type="formal",
+            release_type="rc",
             publisher=api_client.handler._force_user,
             release_doc="| 项目 | 内容 |\n|------|------|\n| 变更类型 | 无配置项改动 |",
         )
@@ -312,7 +313,7 @@ class TestReleaseViews:
             project=project,
             name="发布审批",
             biz_type="release",
-            release_type="formal",
+            release_type="rc",
             is_active=True,
             node_config=[],
             graph_data={"nodes": [], "edges": []},
@@ -322,9 +323,9 @@ class TestReleaseViews:
             project=project,
             repository=repository,
             version="VA.1.0.0",
-            tag_name="VA.1.0.0",
+            tag_name="VA.1.0.0-rc",
             branch="develop",
-            release_type="formal",
+            release_type="rc",
             publisher=api_client.handler._force_user,
             release_doc="| 项目 | 内容 |\n|------|------|\n| 变更类型 | 无配置项改动 |",
             git_hash="head001",
@@ -340,9 +341,9 @@ class TestReleaseViews:
             project=project,
             repository=repository,
             version="VA.1.0.0",
-            tag_name="VA.1.0.0",
+            tag_name="VA.1.0.0-rc",
             branch="main",
-            release_type="formal",
+            release_type="rc",
             status="pending",
             git_hash="targethead001",
             publisher=api_client.handler._force_user,
@@ -350,7 +351,7 @@ class TestReleaseViews:
         response = api_client.post(f"/api/releases/{release.id}/push-tag/", format="json")
         assert response.status_code == 200
         assert response.data["code"] == 0
-        assert response.data["data"]["tag_name"] == "VA.1.0.0"
+        assert response.data["data"]["tag_name"] == "VA.1.0.0-rc"
         release.refresh_from_db()
         assert release.status == "released"
 

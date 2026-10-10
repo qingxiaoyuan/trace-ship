@@ -1067,11 +1067,23 @@
 
 `POST /api/releases/` 的正式类型必须传 `source_rc`（UUID），选择同项目、同仓库的已发布 RC。服务器验证启用关联、仓库所有者成员资格、个人凭证以及远端 RC Tag 的完整提交；`branch`、`git_hash` 和来源快照由服务端确定，客户端值不能改变代码身份。RC/Beta 继续必填 `branch`，不能传非空 `source_rc`。
 
-`GET /api/releases/rc-candidates/?project=<UUID>&repository=<UUID>` 返回标准分页数据，支持 `search`（版本或 Tag）、`page`、`page_size`，按发布时间倒序。每项包含 `id`、`version`、`tag_name`、`branch`、`git_hash`、`released_at`、`available` 和 `unavailable_reason`。查询受项目可见范围限制；引用缺失、缺少完整 SHA 或 Tag 改写时返回不可用原因，Provider 故障返回错误而非空候选。已清理 Tag 的等价正式引用支持将在 #16 实施。
+`GET /api/releases/rc-candidates/?project=<UUID>&repository=<UUID>` 返回标准分页数据，支持 `search`（版本或 Tag）、`page`、`page_size`，按发布时间倒序。每项包含 `id`、`version`、`tag_name`、`branch`、`git_hash`、`released_at`、`available` 和 `unavailable_reason`。查询受项目可见范围限制；引用缺失、缺少完整 SHA 或 Tag 改写时返回不可用原因，Provider 故障返回错误而非空候选。原 RC Tag 缺失时，接受同来源 RC 链中已发布且远端 SHA 一致的正式 Tag；原 Tag 被改写、无等价引用或外部访问失败仍拒绝。
 
 详情返回 `source_rc`、`source_rc_version`、`source_rc_tag`、`source_rc_git_hash`。历史来源关联为空，快照为空字符串，迁移不推断来源。`PATCH /api/releases/{id}/` 可在草稿中修改 `source_rc`；更换后清空原 `release_doc`、`base_tag`、`updates`、`related_changes` 和关联提交/MR，需要重新生成说明。普通编辑不刷新正式来源提交；进入流程后禁止编辑。草稿的项目、仓库和发布类型不能更换，应重新创建。
 
 被正式版引用的 RC 不能通过删除版本接口移除发布记录；后续只清理 Tag 的接口与该删除操作不同。
+
+#### 版本占用、正式审批与 Tag 清理
+
+正式、RC、Beta 编号独立计算，成功历史保留编号依据。提交审批按物理仓库 + 类型 + 主次修订号占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。旧草稿须补选来源，迁移兼容标记不可经 API 写入。
+
+`GET /api/releases/{id}/source-reference/` 返回 `{available, reference, reason}`；Provider 故障返回 502。实际打包任务的 `source_ref` 表示检出引用，`tag_name` / `version` 仍是原发布身份；执行前重新解析并核验实际 HEAD。
+
+`GET /api/releases/cleanup-candidates/?project=<UUID>&repository=<UUID>` 返回标准分页（`page` / `page_size`），每项含 `id`、`tag_name`、`git_hash`、`allowed`、`reason`、`protected_by`、`cleanup_status`。资格为预览，执行时重新核验；无权限或缺少有效正式保护引用不能清理。
+
+`POST /api/releases/{id}/cleanup-tag/` 请求 `{tag_name: 完整Tag名}`。`POST /api/releases/cleanup-tags/` 请求 `{items: [{id, tag_name}, ...]}`，每批 1–50 项。批量逐项返回结果，不以整体 HTTP 200 代表全部成功；重试仅提交待重试项。结果 `status` 为 `success`、`already_cleaned`、`external_missing`、`reconciled_missing`、`blocked`、`failure`，附 `id`、可用时的 `tag_name` 与 `reason`。后两种缺失结果不能宣称由平台完成删除。
+
+清理沿用项目管理员/超管权限，保留所有平台历史。排队/执行中的打包任务阻止相关引用删除，仓库标签删除与发布版本删除也保护最后有效引用。详情提供 `tag_cleanup_status`、`tag_cleaned_at`（最近核验时间）、`tag_cleaned_by`、`tag_cleanup_reference` 和 `cleanup_history`（状态、原因、保护引用、时间、操作者）。
 
 ### 8.3 发布详情
 

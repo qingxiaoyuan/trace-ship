@@ -173,6 +173,10 @@ export interface Release {
   base_git_hash?: string;
   changes_initialized?: boolean;
   changes_warnings?: string[];
+  tag_cleanup_status?: string;
+  tag_cleaned_at?: string;
+  tag_cleanup_reference?: string;
+  cleanup_history?: { status: string; message: string; protected_by: string; created_at: string; actor_name?: string; actor_id: string | null }[];
   /** 整改意见聚合计数（详情返回） */
   review_issue_counts?: {
     total: number;
@@ -709,6 +713,7 @@ export interface PackageTask {
   tag_name: string;
   version: string;
   commit_hash?: string;
+  source_ref?: string;
   config_snapshot?: Record<string, unknown>;
   status: PackageTaskStatus;
   status_display?: string;

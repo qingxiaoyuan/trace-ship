@@ -377,6 +377,7 @@ class PackageTask(models.Model):
         verbose_name="发布类型",
     )
     tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
+    source_ref = models.CharField(max_length=200, blank=True, verbose_name="实际源码拉取引用")
     version = models.CharField(max_length=100, verbose_name="版本号")
     commit_hash = models.CharField(max_length=100, blank=True, verbose_name="提交哈希")
     config_snapshot = models.JSONField(default=dict, blank=True, verbose_name="配置快照")

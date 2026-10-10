@@ -57,7 +57,12 @@ def repository(project):
 
 
 @pytest.fixture
-def release(project, repository, user):
+def release(project, repository, user, monkeypatch):
+    from utils.provider.base import TagInfo
+    remote = MagicMock()
+    remote.list_tags.return_value = [TagInfo(name="V1.0.0", commit_hash="a" * 40)]
+    monkeypatch.setattr("apps.release.services.ReleaseService._get_provider", lambda *args, **kwargs: remote)
+    monkeypatch.setattr("apps.package.services.source.subprocess.check_output", lambda *args, **kwargs: "a" * 40)
     return ReleaseRecord.objects.create(
         project=project,
         repository=repository,
@@ -66,6 +71,7 @@ def release(project, repository, user):
         branch="main",
         release_type="formal",
         status="released",
+        git_hash="a" * 40,
         release_doc="# 发布说明",
         publisher=user,
     )
@@ -95,6 +101,7 @@ def _make_task(project, repository, release, user, snapshot):
         build_type="web",
         tag_name=release.tag_name,
         version=release.version,
+        commit_hash=release.git_hash,
         config_snapshot=snapshot,
         artifact_info=[],
     )

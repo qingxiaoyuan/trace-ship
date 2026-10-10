@@ -86,6 +86,17 @@ class WorkflowEngine:
     END_NODE_TYPE = "end-node"
 
     @classmethod
+    def validate_release_definition(cls, definition, release, user) -> None:
+        """正式申请提交前核验整条审批链，不把未来失效节点留到发布中途。"""
+        nodes = cls._normalize_node_config(definition.node_config or [])
+        if not nodes:
+            raise serializers.ValidationError({"workflow": "正式审批必须配置有效审批节点，请联系仓库管理员"})
+        candidate = WorkflowInstance(definition=definition, biz_type="release", biz_id=str(release.id), created_by=user)
+        for node in nodes:
+            if not cls._resolve_node_approvers(node.get("approvers", []), candidate):
+                raise serializers.ValidationError({"workflow": f"审批节点 {node.get('node_name', '')} 无有效审批人，请联系仓库管理员"})
+
+    @classmethod
     def create_instance(
         cls,
         definition: WorkflowDefinition,
@@ -218,6 +229,10 @@ class WorkflowEngine:
         if instance.created_by_id != user.id:
             raise serializers.ValidationError({"instance": "仅发起人可撤销"})
         cls._finish_instance(instance, "revoked")
+        if instance.biz_type == "release":
+            from apps.release.services import ReleaseService
+
+            ReleaseService.handle_workflow_rollback_to_start(instance, "申请人撤销")
         OperationLogService.log(
             user=user,
             module="工作流审批",
@@ -522,7 +537,7 @@ class WorkflowEngine:
         seen = set()
         unique_approvers: list[User] = []
         for user in all_approvers:
-            if user and user.id not in seen:
+            if user and user.is_active and user.id not in seen:
                 seen.add(user.id)
                 unique_approvers.append(user)
 

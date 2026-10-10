@@ -420,7 +420,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "project", "project_name", "repository", "repository_name",
             "triggered_by", "triggered_by_name", "name",
             "build_type", "release_type", "release_type_display",
-            "tag_name", "version", "commit_hash", "config_snapshot",
+            "tag_name", "source_ref", "version", "commit_hash", "config_snapshot",
             "status", "status_display", "progress", "stage_info", "can_push_svn",
             "artifact_info", "duration", "error_message",
             "started_at", "finished_at", "created_at", "updated_at",

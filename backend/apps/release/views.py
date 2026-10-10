@@ -36,6 +36,7 @@ from apps.release.services import (
     ReleaseTagExistsError,
     ReleaseValidator,
 )
+from apps.repository.models import Repository
 from utils.permissions import IsProjectDeveloper, IsProjectManager
 from utils.provider.exceptions import ProviderError
 from utils.response import error_response, success_response
@@ -187,7 +188,7 @@ class ReleaseViewSet(StandardModelViewSet):
             "generate_doc", "update_doc", "submit_audit", "push_tag", "retry_push_tag",
         ]:
             return [IsAuthenticated(), IsProjectDeveloper()]
-        if self.action == "delete_released":
+        if self.action in ("delete_released", "cleanup_tag"):
             return [IsAuthenticated(), IsProjectManager()]
         return super().get_permissions()
 
@@ -207,7 +208,6 @@ class ReleaseViewSet(StandardModelViewSet):
     def rc_candidates(self, request: Request) -> Response:
         """仅返回当前可见项目、启用仓库下的 RC 及实时引用可用性。"""
         from apps.project.models import Project
-        from apps.repository.models import Repository
 
         params = serializers.Serializer(data=request.query_params)
         params.fields["project"] = serializers.UUIDField(required=True)
@@ -300,6 +300,7 @@ class ReleaseViewSet(StandardModelViewSet):
             更新后的发布记录
         """
         instance = self.get_object()
+        Repository.objects.select_for_update(no_key=True).get(pk=instance.repository_id)
         instance = ReleaseRecord.objects.select_for_update().get(pk=instance.pk)
         if instance.status != "draft":
             return error_response(40002, "只有草稿状态才能编辑")
@@ -376,6 +377,7 @@ class ReleaseViewSet(StandardModelViewSet):
             instance.release_mrs.all().delete()
         return success_response(self._serialize_release(instance), message="更新成功")
 
+    @transaction.atomic
     def destroy(self, request: Request, *args, **kwargs) -> Response:
         """
         删除发布申请
@@ -389,6 +391,8 @@ class ReleaseViewSet(StandardModelViewSet):
             删除结果
         """
         instance = self.get_object()
+        Repository.objects.select_for_update(no_key=True).get(pk=instance.repository_id)
+        instance = ReleaseRecord.objects.select_for_update().get(pk=instance.pk)
         if instance.status not in ["draft", "rejected"]:
             return error_response(40002, "仅草稿或已驳回状态可删除")
         # 项目负责人视同 manager，复用权限类的统一判定，避免 leader 等价逻辑走样
@@ -400,6 +404,9 @@ class ReleaseViewSet(StandardModelViewSet):
                 return error_response(
                     40300, "仅可删除本人创建的草稿", status_code=403
                 )
+        from apps.release.versions import release_claim
+
+        release_claim(instance)
         instance.delete()
         return success_response(None, message="删除成功")
 
@@ -415,6 +422,83 @@ class ReleaseViewSet(StandardModelViewSet):
         except Exception as exc:
             return _handle_service_error(exc, "预览正式变更")
         return success_response(data)
+
+    @action(detail=False, methods=["get"], url_path="cleanup-candidates")
+    def cleanup_candidates(self, request: Request) -> Response:
+        from apps.release.tag_cleanup import TagCleanup
+
+        params = serializers.Serializer(data=request.query_params)
+        params.fields["project"] = serializers.UUIDField(required=True)
+        params.fields["repository"] = serializers.UUIDField(required=True)
+        params.is_valid(raise_exception=True)
+        queryset = self.get_queryset().filter(project_id=params.validated_data["project"],
+            repository_id=params.validated_data["repository"], release_type="rc", status="released")
+        page = self.paginate_queryset(queryset)
+        results = []
+        try:
+            tags = None
+            for release in page:
+                if tags is None:
+                    provider = ReleaseService._get_provider(release.repository, request.user, project=release.project)
+                    tags = provider.list_tags(release.repository.external_identity)
+                result = TagCleanup.preview(release, tags)
+                if not IsProjectManager().has_object_permission(request, self, release):
+                    result.update(allowed=False, reason="仅项目管理员可清理")
+                results.append(result)
+        except Exception as exc:
+            return _handle_service_error(exc, "预览 RC Tag 清理")
+        return self.get_paginated_response(results)
+
+    @action(detail=True, methods=["get"], url_path="source-reference")
+    def source_reference(self, request: Request, pk=None) -> Response:
+        from apps.release.references import ReleaseReferences
+        from apps.release.tag_cleanup import validation_message
+
+        release = self.get_object()
+        source = release.source_rc if release.source_rc_id and release.status != "released" else release
+        try:
+            provider = ReleaseService._get_provider(source.repository, request.user, project=release.project)
+            reference = ReleaseReferences.resolve(source, provider.list_tags(source.repository.external_identity))
+        except serializers.ValidationError as exc:
+            return success_response({"available": False, "reference": "", "reason": validation_message(exc)})
+        except Exception as exc:
+            return _handle_service_error(exc, "核验源码引用")
+        return success_response({"available": True, "reference": reference, "reason": ""})
+
+    @action(detail=True, methods=["post"], url_path="cleanup-tag")
+    def cleanup_tag(self, request: Request, pk=None) -> Response:
+        from apps.release.tag_cleanup import TagCleanup
+
+        release = self.get_object()
+        try:
+            result = TagCleanup.execute(release, request.data.get("tag_name", ""), request.user)
+        except Exception as exc:
+            return _handle_service_error(exc, "清理 RC Tag")
+        return success_response(result)
+
+    @action(detail=False, methods=["post"], url_path="cleanup-tags")
+    def cleanup_tags(self, request: Request) -> Response:
+        from apps.release.tag_cleanup import TagCleanup
+
+        class ItemSerializer(serializers.Serializer):
+            id = serializers.UUIDField()
+            tag_name = serializers.CharField(max_length=100)
+
+        params = serializers.Serializer(data=request.data)
+        params.fields["items"] = serializers.ListField(child=ItemSerializer(), min_length=1, max_length=50)
+        params.is_valid(raise_exception=True)
+        results = []
+        for item in params.validated_data["items"]:
+            release = self.get_queryset().filter(pk=item["id"]).first()
+            if release is None or not IsProjectManager().has_object_permission(request, self, release):
+                results.append({"id": str(item["id"]), "status": "blocked", "reason": "记录不存在或无清理权限"})
+                continue
+            try:
+                results.append(TagCleanup.execute(release, item["tag_name"], request.user))
+            except Exception:
+                logger.exception("单项 RC 清理失败: release=%s", release.id)
+                results.append({"id": str(item["id"]), "status": "failure", "reason": "操作结果未确认，请重试对账"})
+        return success_response(results)
 
     @action(detail=True, methods=["post"], url_path="generate-doc")
     def generate_doc(self, request: Request, pk=None) -> Response:
