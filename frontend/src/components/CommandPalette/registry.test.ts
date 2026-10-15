@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MenuItem } from '@/types';
 import { applyRepoDeepLinks, getVisibleEntries, matchEntry } from './registry';
+import { buildGroups } from '@/layouts/components/navMenu';
 
 const menus: MenuItem[] = [
   { id: 'packages', name: '打包看板', path: '/packages', icon: 'PlayCircleOutlined' },
@@ -16,6 +17,18 @@ describe('getVisibleEntries', () => {
     expect(ids).toContain('package-configs');
     expect(ids).toContain('action-create-release');
     expect(ids).not.toContain('system-users');
+  });
+
+  it.each([
+    [false, '/releases', '发布看板'], [false, '/packages', '打包看板'],
+    [true, '/releases', '发布版本'], [true, '/packages', '打包任务'],
+  ] as const)('%s 模式的 %s 按菜单名称 %s 搜到同一入口', (maintainer, path, name) => {
+    const menu = buildGroups(menus, undefined, maintainer).flatMap((group) => group.items).find((item) => item.path === path);
+    const entry = getVisibleEntries(menus, maintainer).find((item) => item.path === path && item.group === 'menu');
+    expect(menu?.name).toBe(name);
+    expect(entry?.name).toBe(name);
+    expect(matchEntry(entry!, name)).toBe(true);
+    expect(matchEntry(entry!, path === '/releases' ? '发布看板' : '打包看板')).toBe(true);
   });
 });
 

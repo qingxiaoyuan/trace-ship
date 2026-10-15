@@ -135,6 +135,18 @@ const labelMap: Record<string, string> = {
   '/changelog': '更新日志',
 };
 
+const maintainerLabelMap: Record<string, string> = {
+  '/releases': '发布版本',
+  '/packages': '打包任务',
+};
+
+/** 维保菜单与页面标题共用名称；打包详情沿用所属任务入口的标题。 */
+export function getNavLabel(path: string, fallback: string, maintainer = false): string {
+  const pathname = path.replace(/\/+$/, '').toLowerCase();
+  const menuPath = pathname.startsWith('/packages/') ? '/packages' : pathname;
+  return (maintainer && maintainerLabelMap[menuPath]) || fallback;
+}
+
 function flattenMenus(items: MenuItem[]): MenuItem[] {
   return items.flatMap((item) => (item.children?.length ? flattenMenus(item.children) : item));
 }
@@ -143,10 +155,10 @@ function getMenuSource(menus: MenuItem[]): MenuItem[] {
   return menus.length > 0 ? menus : fallbackMenus;
 }
 
-function toNavItem(source: MenuItem, badge?: string): NavItem {
+function toNavItem(source: MenuItem, badge?: string, maintainer = false): NavItem {
   return {
     id: source.id,
-    name: labelMap[source.path] || source.name,
+    name: getNavLabel(source.path, labelMap[source.path] || source.name, maintainer),
     path: source.path,
     icon: pathIconMap[source.path] || FileText,
     badge,
@@ -181,10 +193,7 @@ export function buildGroups(menus: MenuItem[], badges?: Record<string, string>, 
       items: group.paths.reduce<NavItem[]>((items, path) => {
         const source = menuByPath.get(path);
         if (!source) return items;
-        const item = toNavItem(source, badges?.[path]);
-        if (maintainer && path === '/releases') item.name = '发布版本';
-        if (maintainer && path === '/packages') item.name = '打包任务';
-        items.push(item);
+        items.push(toNavItem(source, badges?.[path], maintainer));
         return items;
       }, []),
     }))
@@ -194,7 +203,7 @@ export function buildGroups(menus: MenuItem[], badges?: Record<string, string>, 
   const knownPaths = new Set(groupRules.flatMap((group) => group.paths));
   const orphanItems = flatMenus
     .filter((item) => !knownPaths.has(item.path))
-    .map((item) => toNavItem(item, badges?.[item.path]));
+    .map((item) => toNavItem(item, badges?.[item.path], maintainer));
   if (orphanItems.length > 0) {
     if (import.meta.env.DEV) {
       console.warn(

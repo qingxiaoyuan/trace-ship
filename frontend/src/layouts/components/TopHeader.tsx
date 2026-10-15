@@ -11,6 +11,7 @@ import { getRoleLabel } from "@/utils/role";
 import { useCurrentRouteTitle } from "./useCurrentRouteTitle";
 import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { BrandMark } from './BrandMark';
+import { getNavLabel } from './navMenu';
 
 const typeMap: Record<string, string> = {
   audit: "审批",
@@ -98,7 +99,7 @@ export function TopHeader() {
       const title = (match.handle as { title?: string } | undefined)?.title;
       if (title) {
         items.push({
-          title,
+          title: getNavLabel(match.pathname, title, maintainer),
           path: index === matches.length - 1 ? undefined : match.pathname,
         });
       }
@@ -107,7 +108,7 @@ export function TopHeader() {
       items.push({ title: "工作台" });
     }
     return items;
-  }, [matches]);
+  }, [matches, maintainer]);
 
   const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || "U";
 

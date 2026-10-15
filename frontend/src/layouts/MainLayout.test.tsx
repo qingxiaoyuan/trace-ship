@@ -5,10 +5,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { App } from 'antd';
+import type { AxiosAdapter } from 'axios';
 import request from '@/api/request';
 import { useAuthStore } from '@/stores/authStore';
 import { useCommandPaletteStore } from '@/components/CommandPalette/store';
 import { MainLayout } from './MainLayout';
+import ProjectDetail from '@/pages/Project/Detail';
 
 const originalAdapter = request.defaults.adapter;
 let contextResponse: () => Promise<unknown>;
@@ -35,10 +37,10 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; useAuthStore.setState({ user: null }); });
 
-function renderShell(path = '/dashboard', content: ReactNode = <h1>业务内容</h1>) {
+function renderShell(path = '/dashboard', content: ReactNode = <h1>业务内容</h1>, title?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const router = createMemoryRouter([{ element: <MainLayout />, children: [
-    { path: '*', element: content },
+    { path: '*', element: content, handle: { title } },
   ] }], { initialEntries: [path] });
   render(<QueryClientProvider client={client}><App><RouterProvider router={router} /></App></QueryClientProvider>);
   return { client, router };
@@ -113,6 +115,72 @@ describe('统一工作台上下文与外壳', () => {
     expect(panel.queryByText('打包配置')).toBeNull();
     expect(panel.queryByText('仓库审批流配置')).toBeNull();
     expect(panel.queryByText('触发打包')).toBeNull();
+  });
+
+  it.each([
+    ['maintainer', '/releases', '发布看板', '发布版本'],
+    ['maintainer', '/releases/', '发布看板', '发布版本'],
+    ['maintainer', '/Releases', '发布看板', '发布版本'],
+    ['maintainer', '/packages', '打包看板', '打包任务'],
+    ['maintainer', '/packages/task', '打包看板', '打包任务'],
+    ['maintainer', '/Packages/task/', '打包看板', '打包任务'],
+    ['maintainer', '/releases/version', '发布详情', '发布详情'],
+    ['general', '/releases', '发布看板', '发布看板'],
+    ['general', '/packages', '打包看板', '打包看板'],
+  ])('%s 模式的 %s 在桌面和手机均显示 %s 对应标题 %s', async (mode, path, title, expected) => {
+    contextResponse = async () => ({ layout_mode: mode, visible_project_count: 1 });
+    renderShell(path, undefined, title);
+    await screen.findByRole('heading', { name: '业务内容' });
+    const header = within(screen.getByRole('banner'));
+    expect(header.getAllByText(expected)).toHaveLength(2);
+    expect(screen.getByRole('button', { name: '打开导航菜单' }).parentElement?.textContent).toContain(expected);
+  });
+
+  it.each(['overview', 'repos'])('在 %s 切为纯维保时立即收起写入口，恢复兼任后读取最新项目权限', async (tab) => {
+    let mode = 'general';
+    let projectReads = 0;
+    let finishRefresh: ((role: string) => void) | undefined;
+    const project = { id: 'project', name: '项目权限刷新', status: 1, my_role: 'manager' };
+    contextResponse = async () => ({ layout_mode: mode, visible_project_count: 1 });
+    const shellAdapter = request.defaults.adapter as AxiosAdapter;
+    request.defaults.adapter = async (config) => {
+      if (config.url === '/projects/project/components/') {
+        return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data: [] } };
+      }
+      if (config.url !== '/projects/project/') {
+        return shellAdapter(config);
+      }
+      projectReads++;
+      const data = projectReads === 1 ? project : await new Promise<typeof project>((resolve) => {
+        finishRefresh = (role) => resolve({ ...project, my_role: role });
+      });
+      return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data } };
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
+    const router = createMemoryRouter([{ element: <MainLayout />, children: [
+      { path: '/projects/:id/:tab', element: <ProjectDetail /> },
+    ] }], { initialEntries: [`/projects/project/${tab}`] });
+    render(<QueryClientProvider client={client}><App><RouterProvider router={router} /></App></QueryClientProvider>);
+    await screen.findByRole('heading', { name: '项目权限刷新' });
+    expect(screen.getAllByRole('button', { name: '新建发布' }).length).toBeGreaterThan(1);
+    if (tab === 'repos') expect(await screen.findByRole('button', { name: '关联已有仓库' })).toBeTruthy();
+
+    mode = 'maintainer';
+    await act(() => client.invalidateQueries({ queryKey: ['dashboard-context'] }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '成员' })).toBeNull());
+    expect(screen.queryAllByRole('button', { name: '新建发布' })).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: '关联已有仓库' })).toBeNull();
+    await waitFor(() => expect(projectReads).toBe(2));
+    expect(client.getQueryData(['project', 'project'])).toMatchObject({ my_role: 'manager' });
+    await act(async () => finishRefresh?.('maintainer'));
+    await waitFor(() => expect(client.getQueryData(['project', 'project'])).toMatchObject({ my_role: 'maintainer' }));
+
+    mode = 'general';
+    await act(() => client.invalidateQueries({ queryKey: ['dashboard-context'] }));
+    await waitFor(() => expect(projectReads).toBe(3));
+    await act(async () => finishRefresh?.('developer'));
+    await waitFor(() => expect(client.getQueryData(['project', 'project'])).toMatchObject({ my_role: 'developer' }));
+    expect(screen.getAllByRole('button', { name: '新建发布' }).length).toBeGreaterThan(1);
   });
 
   it('普通账号切换页面内 Tab 时保留已挂载表单草稿', async () => {
