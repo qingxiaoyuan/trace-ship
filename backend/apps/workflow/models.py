@@ -185,6 +185,21 @@ class WorkflowInstance(models.Model):
         """返回实例描述"""
         return f"{self.definition.name} - {self.biz_id}"
 
+    def save(self, *args, **kwargs) -> None:
+        """发布业务 ID 统一保存为规范 UUID，保持查询授权与业务解析一致。"""
+        if self.biz_type == "release":
+            try:
+                canonical_id = str(uuid.UUID(str(self.biz_id)))
+            except ValueError:
+                # 异常历史业务 ID 保持原值，解析服务仍按旧规则返回空值。
+                pass
+            else:
+                if self.biz_id != canonical_id:
+                    self.biz_id = canonical_id
+                    if kwargs.get("update_fields") is not None:
+                        kwargs["update_fields"] = {*kwargs["update_fields"], "biz_id"}
+        super().save(*args, **kwargs)
+
 
 class WorkflowTask(models.Model):
     """

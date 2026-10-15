@@ -23,6 +23,7 @@ const roleMap: Record<ProjectMemberRole, string> = {
   auditor: '审核人',
   viewer: '只读人员',
   software_admin: '软件管理员',
+  maintainer: '维保人员',
 };
 
 /** 按可授予角色集合过滤出角色下拉选项 */
@@ -47,6 +48,7 @@ const roleDescMap: Record<ProjectMemberRole, string> = {
   auditor: '可处理审批任务，不可发起发布',
   viewer: '仅可查看项目与发布信息',
   software_admin: '等同项目内全部权限',
+  maintainer: '查看发布与打包信息，不可管理项目成员',
 };
 
 /** 角色单选卡片：写入 role 表单字段，与原下拉行为一致 */
@@ -131,7 +133,7 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
     enabled: active && !!projectId,
   });
 
-  // 任意项目成员均可拉人（可授予角色按当前用户角色收缩）；改角色/移除仅项目管理员
+  // 除维保外的项目成员可拉人；可授予角色按当前角色收缩，改角色/移除仅项目管理员。
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
@@ -234,7 +236,9 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
           <p className="mt-1 text-[13px] text-slate-500">
             {canManage
               ? '管理项目成员、角色与权限'
-              : '项目成员与角色（可添加成员，角色调整仅项目管理员）'}
+              : canAddMember
+                ? '项目成员与角色（可添加成员，角色调整仅项目管理员）'
+                : '项目成员与角色（只读）'}
           </p>
         </div>
         {canAddMember && (
@@ -310,14 +314,13 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
                     <div className="col-span-2 text-[12px] text-slate-600">{member.user.username}</div>
                     <div className="col-span-2 text-[12px] text-slate-600">{member.user.department || '-'}</div>
                     <div className="col-span-2">
-                      <Select
+                      {canManage ? <Select
                         value={member.role}
                         options={memberRoleOptions}
-                        disabled={!canManage}
                         onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
                         loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
                         style={{ width: 140 }}
-                      />
+                      /> : <span className="text-[12px] text-slate-600">{roleMap[member.role]}</span>}
                     </div>
                     <div className="col-span-2 text-[12px] text-slate-600">
                       {dayjs(member.created_at).format('YYYY-MM-DD HH:mm')}
@@ -365,11 +368,10 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
                       <CalendarDays className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
                       <span>{dayjs(member.created_at).format('YYYY-MM-DD')} 加入</span>
                     </div>
-                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
+                    {canManage && <div className="mt-3 flex items-center justify-between gap-2 border-t border-indigo-50 pt-3">
                       <Select
                         value={member.role}
                         options={memberRoleOptions}
-                        disabled={!canManage}
                         onChange={(newRole) => updateMutation.mutate({ memberId: member.id, role: newRole })}
                         loading={updateMutation.isPending && updateMutation.variables?.memberId === member.id}
                         style={{ width: 132, height: 36 }}
@@ -385,7 +387,7 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
                           <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                         </button>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 </div>
               );

@@ -24,7 +24,7 @@ from apps.repository.serializers import (
     RepositorySerializer,
 )
 from apps.repository.services import RepositoryService
-from utils.permissions import IsProjectDeveloper, IsProjectManager, IsProjectTester
+from utils.permissions import IsNotOnlyProjectMaintainer, IsProjectDeveloper, IsProjectManager, IsProjectTester
 from utils.provider.exceptions import ProviderError
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
@@ -172,7 +172,7 @@ class RepositoryViewSet(StandardModelViewSet):
             权限实例列表
         """
         if self.action in ["create", "update", "partial_update", "destroy", "delete_tag"]:
-            return [IsAuthenticated(), CanManageRepository()]
+            return [IsAuthenticated(), CanManageRepository(), IsNotOnlyProjectMaintainer()]
         if self.action in ["test", "sync_commits", "sync_branches"]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         return super().get_permissions()

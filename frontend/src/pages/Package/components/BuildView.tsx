@@ -114,7 +114,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
               </div>
             </div>
           </div>
-          {running && (
+          {running && task.can_cancel === true && (
             <Button danger icon={<Square className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={() => onCancel(task)}>
               停止构建
             </Button>

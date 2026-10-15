@@ -278,6 +278,7 @@ const ConfigRow = memo(function ConfigRow({
   const svnEnabled = Boolean(config.svn_push_enabled && config.svn_url);
   // 打包配置参数仅项目管理员 / 软件管理员可维护（后端 my_role：超管返回 software_admin）
   const canManage = config.my_role === 'software_admin' || config.my_role === 'manager';
+  const canTriggerConfig = canTrigger && ['manager', 'developer', 'tester', 'software_admin'].includes(config.my_role || '');
 
   return (
     <div
@@ -342,7 +343,7 @@ const ConfigRow = memo(function ConfigRow({
               <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
           )}
-          {canTrigger && (
+          {canTriggerConfig && (
             <button
               title="触发打包"
               className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
@@ -422,7 +423,7 @@ const ConfigRow = memo(function ConfigRow({
                 <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
               </button>
             )}
-            {canTrigger && (
+            {canTriggerConfig && (
               <button
                 title="触发打包"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"

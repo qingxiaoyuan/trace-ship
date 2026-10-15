@@ -5,6 +5,7 @@ import { App, Button } from 'antd';
 import { ChevronRight, Package as PackageIcon, Plus, Settings2 } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import { BuildHistory, ArtifactListPanel } from './BuildHistory';
 import { TerminalLog } from './TerminalLog';
 import { ArtifactActionsDropdown } from './Artifacts';
@@ -38,6 +39,7 @@ export const DetailView = memo(function DetailView({
 }: DetailViewProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const { canManage, canTriggerPackage } = useProjectRole(config);
   const [activeTab, setActiveTab] = useState<'log' | 'artifacts'>('log');
   const [activeBuild, setActiveBuild] = useState<PackageTask>(task);
   const [activeLogText, setActiveLogText] = useState<string>(logText);
@@ -133,7 +135,7 @@ export const DetailView = memo(function DetailView({
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              {task.config && (
+              {task.config && canTriggerPackage && (
                 <button
                   className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white"
                   onClick={onTriggerBuild}
@@ -142,7 +144,7 @@ export const DetailView = memo(function DetailView({
                   新建打包
                 </button>
               )}
-              <Button icon={<Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={onEditConfig}>打包配置</Button>
+              {canManage && <Button icon={<Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={onEditConfig}>打包配置</Button>}
             </div>
           </div>
         </>

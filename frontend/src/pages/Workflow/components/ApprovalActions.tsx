@@ -72,7 +72,7 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
   const [rollbackMode, setRollbackMode] = useState(false);
 
   const taskId = source.taskId;
-  const canApprove = !source.readOnly && !!taskId;
+  const canApprove = !source.readOnly && !!taskId && instance?.tasks?.some((task) => task.id === taskId && task.can_act === true);
 
   // 回退：当前节点不是第一个审批节点时才允许
   const approvalNodes = (instance?.graph_data?.nodes || []).filter(

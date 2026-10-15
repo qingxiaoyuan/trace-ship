@@ -7,6 +7,9 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { releaseApi } from '@/api/release';
+import { projectApi } from '@/api/project';
+import { useProjectRole } from '@/hooks/useProjectRole';
+import { useAuthStore } from '@/stores/authStore';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { releaseTypeText, releaseTypeBadge, statusBadge, releaseStatusText } from './constants';
@@ -41,6 +44,14 @@ export default function ReleaseDetail() {
     queryFn: () => releaseApi.getRelease(id || ''),
     enabled: !!id,
   });
+  const { data: project } = useQuery({
+    queryKey: ['project', release?.project],
+    queryFn: () => projectApi.getProject(release!.project),
+    enabled: !!release?.project,
+  });
+  const { canManage, canDevelop, role } = useProjectRole(project);
+  const user = useAuthStore((state) => state.user);
+  const canDeleteDraft = canManage || (role === 'developer' && release?.status === 'draft' && release.publisher === user?.id);
 
   // 面包屑实体名 + 最近访问埋点
   useEffect(() => {
@@ -210,7 +221,7 @@ export default function ReleaseDetail() {
               </div>
             </div>
           </div>
-          {status === 'released' ? (
+          {status === 'released' && canManage ? (
             <Button
               danger
               icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
@@ -223,7 +234,7 @@ export default function ReleaseDetail() {
           {status === 'draft' || status === 'rejected' ? (
             <div className="flex shrink-0 items-center gap-2">
               {/* 推 tag 失败的发布（驳回原因以「推 tag 失败」开头）提供重试入口 */}
-              {status === 'rejected' && (release.rejected_reason || '').startsWith('推 tag 失败') ? (
+              {canDevelop && status === 'rejected' && (release.rejected_reason || '').startsWith('推 tag 失败') ? (
                 <Button
                   type="primary"
                   icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />}
@@ -233,13 +244,13 @@ export default function ReleaseDetail() {
                   重试推 tag
                 </Button>
               ) : null}
-              <Button
+              {canDeleteDraft && <Button
                 danger
                 icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
                 onClick={handleDeleteDraft}
               >
                 {status === 'draft' ? '删除草稿' : '删除'}
-              </Button>
+              </Button>}
             </div>
           ) : null}
         </div>

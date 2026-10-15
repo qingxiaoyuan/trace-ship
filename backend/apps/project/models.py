@@ -149,6 +149,7 @@ class ProjectMember(models.Model):
         ("auditor", "审核人"),
         ("viewer", "只读人员"),
         ("software_admin", "软件管理员"),
+        ("maintainer", "维保人员"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -1,6 +1,6 @@
 import { useAuthStore } from '@/stores/authStore';
 
-export type ProjectRole = 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin';
+export type ProjectRole = 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin' | 'maintainer';
 
 export interface ProjectPermissions {
   /** 当前用户在项目中的角色（超管视为 manager，非成员为 null） */
@@ -11,7 +11,7 @@ export interface ProjectPermissions {
   canDevelop: boolean;
   /** tester/developer/manager（含 software_admin）：手动触发打包 */
   canTriggerPackage: boolean;
-  /** 任意项目成员均可拉人进项目（可授予角色见 grantableRoles） */
+  /** 除维保外的项目成员可拉人进项目（可授予角色见 grantableRoles） */
   canAddMember: boolean;
   /**
    * 当前用户可授予的成员角色：
@@ -32,10 +32,10 @@ export function useProjectRole(project?: { my_role?: string | null } | null): Pr
 
   const grantableRoles: ProjectRole[] =
     role === 'manager'
-      ? ['developer', 'tester', 'manager', 'auditor', 'viewer', 'software_admin']
+      ? ['developer', 'tester', 'manager', 'auditor', 'viewer', 'software_admin', 'maintainer']
       : role === 'software_admin'
-        ? ['developer', 'tester', 'auditor', 'viewer']
-        : role
+        ? ['developer', 'tester', 'auditor', 'viewer', 'maintainer']
+        : role && role !== 'maintainer'
           ? ['developer', 'tester']
           : [];
 
@@ -45,7 +45,7 @@ export function useProjectRole(project?: { my_role?: string | null } | null): Pr
     canDevelop: role === 'manager' || role === 'developer' || role === 'software_admin',
     canTriggerPackage:
       role === 'manager' || role === 'developer' || role === 'tester' || role === 'software_admin',
-    canAddMember: role !== null,
+    canAddMember: role !== null && role !== 'maintainer',
     grantableRoles,
   };
 }

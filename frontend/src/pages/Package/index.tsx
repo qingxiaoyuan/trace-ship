@@ -7,6 +7,7 @@ import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import { ConfigList } from './components/ConfigList';
 import { BoardSidebar } from './components/BoardSidebar';
 import { BuildBoard } from './components/BuildBoard';
@@ -49,6 +50,7 @@ export default function PackageTaskPage() {
   };
   const [selectedTask, setSelectedTask] = useState<PackageTask | null>(null);
   const [selectedConfig, setSelectedConfig] = useState<PackageConfig | null>(null);
+  const selectedPermissions = useProjectRole(selectedConfig);
   const [logText, setLogText] = useState('');
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<PackageConfig | null>(null);
@@ -78,6 +80,10 @@ export default function PackageTaskPage() {
     queryKey: ['package-board-projects'],
     queryFn: () => fetchAllPages((page, pageSize) => projectApi.getProjects({ page, page_size: pageSize }), API_PAGE_SIZE),
   });
+  const canCreateConfig = !!user?.is_superuser || (projectsData?.results ?? []).some(
+    (project) => (!filterProject || project.id === filterProject)
+      && (project.my_role === 'manager' || project.my_role === 'software_admin'),
+  );
 
   // 打包配置全量加载：同时服务侧栏项目统计与配置面板（按项目在客户端过滤）
   const { data: configsData, isLoading: configsLoading, error: configsError } = useQuery({
@@ -606,6 +612,7 @@ export default function PackageTaskPage() {
                     onTrigger={openTriggerBuild}
                     onOpenHistory={openConfigHistory}
                     onNew={openNewConfig}
+                    canCreate={canCreateConfig}
                     onToggleFavorite={handleToggleFavorite}
                   />
                 )}
@@ -634,14 +641,14 @@ export default function PackageTaskPage() {
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <button
+              {selectedPermissions.canTriggerPackage && <button
                 className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white"
                 onClick={() => openTriggerBuild(selectedConfig)}
               >
                 <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
                 新建打包
-              </button>
-              <Button icon={<Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={() => openEditConfig(selectedConfig)}>打包配置</Button>
+              </button>}
+              {selectedPermissions.canManage && <Button icon={<Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={() => openEditConfig(selectedConfig)}>打包配置</Button>}
             </div>
           </div>
 

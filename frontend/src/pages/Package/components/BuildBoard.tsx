@@ -206,7 +206,7 @@ const BuildRow = memo(function BuildRow({ task, onOpen, canDelete, onDelete }: B
   const running = isRunning(task.status);
   const meta = statusMeta[task.status];
   const svnPushWarning = getSvnPushWarning(task);
-  const canDeleteTask = canDelete && FINISHED_STATUSES.has(task.status);
+  const canDeleteTask = canDelete && task.can_delete === true && FINISHED_STATUSES.has(task.status);
 
   const stageInfo = task.stage_info as { stage?: string; running?: number; max_concurrency?: number } | undefined;
   const stageText = (() => {

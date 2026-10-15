@@ -51,6 +51,35 @@ def auth_client(user):
 
 
 @pytest.mark.django_db
+def test_manager_can_assign_maintainer_and_user_can_read_project(project, manager, outsider):
+    """管理员授予维保角色后，成员可经公开接口确认角色并读取项目。"""
+    response = auth_client(manager).post(f"/api/projects/{project.id}/members/", {
+        "user_id": str(outsider.id),
+        "role": "maintainer",
+    }, format="json")
+
+    assert response.status_code == 201
+    assert response.data["data"]["role_display"] == "维保人员"
+    detail = auth_client(outsider).get(f"/api/projects/{project.id}/")
+    assert detail.status_code == 200
+    assert detail.data["data"]["my_role"] == "maintainer"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("batch", [False, True])
+def test_maintainer_cannot_add_project_members(project, outsider, batch):
+    """维保成员不能通过单个或批量入口添加其他成员。"""
+    ProjectMember.objects.create(project=project, user=outsider, role="maintainer")
+    target = User.objects.create_user(username="new_member", password="pass")
+    data = {"user_ids": [str(target.id)]} if batch else {"user_id": str(target.id)}
+    response = auth_client(outsider).post(
+        f"/api/projects/{project.id}/members/", {**data, "role": "developer"}, format="json"
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
 def test_project_manager_can_list_members(project, manager):
     """
     项目管理员可以查看成员列表
@@ -98,7 +127,7 @@ def test_project_developer_can_add_member_with_dev_or_tester_role(project, devel
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("role", ["manager", "software_admin", "auditor", "viewer"])
+@pytest.mark.parametrize("role", ["manager", "software_admin", "auditor", "viewer", "maintainer"])
 def test_project_developer_cannot_grant_other_roles(project, developer, outsider, role):
     """
     项目普通成员（开发人员）拉人时不能授予 developer / tester 之外的角色

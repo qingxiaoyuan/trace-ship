@@ -375,8 +375,9 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
 
     user = UserSerializer(read_only=True)
     user_id = serializers.UUIDField(write_only=True)
+    role_display = serializers.CharField(source="get_role_display", read_only=True)
 
     class Meta:
         model = ProjectMember
-        fields = ["id", "user", "user_id", "role", "created_at"]
+        fields = ["id", "user", "user_id", "role", "role_display", "created_at"]
         read_only_fields = ["id", "created_at"]
