@@ -5,6 +5,7 @@ import { Tag, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { repositoryApi } from '@/api/repository';
 import { useAppMessage } from '@/hooks/useAppMessage';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 
 interface TagsTabProps {
   repoId: string;
@@ -13,6 +14,7 @@ interface TagsTabProps {
 
 /** 标签 Tab：Git 仓库展示标签列表并支持删除（需输入完整 tag 名称二次确认），SVN 仓库提示不支持 */
 export function TagsTab({ repoId, repoType }: TagsTabProps) {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const queryClient = useQueryClient();
   const { message } = useAppMessage();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export function TagsTab({ repoId, repoType }: TagsTabProps) {
                     {t.created_at ? ` · ${dayjs(t.created_at).format('YYYY-MM-DD')}` : ''}
                   </div>
                 </div>
-                <button
+                {!maintainer && <button
                   type="button"
                   title={`删除标签 ${t.name}`}
                   onClick={() => {
@@ -87,7 +89,7 @@ export function TagsTab({ repoId, repoType }: TagsTabProps) {
                   className="rounded-md p-2 text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500"
                 >
                   <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-                </button>
+                </button>}
               </div>
             );
           })
@@ -97,7 +99,7 @@ export function TagsTab({ repoId, repoType }: TagsTabProps) {
       {/* 删除二次确认：需输入完整 tag 名称 */}
       <Modal
         title="删除标签"
-        open={deleteTarget !== null}
+        open={!maintainer && deleteTarget !== null}
         onCancel={() => {
           setDeleteTarget(null);
           setDeleteInput('');

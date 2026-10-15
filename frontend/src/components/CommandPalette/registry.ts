@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import type { MenuItem } from '@/types';
 import type { LucideIcon } from '@/layouts/components/navMenu';
-import { buildGroups } from '@/layouts/components/navMenu';
+import { buildGroups, isMaintainerRestrictedPath } from '@/layouts/components/navMenu';
 
 /** 命令面板静态条目：功能入口（menu）与快捷操作（action） */
 export interface CommandEntry {
@@ -77,9 +77,11 @@ const COMMAND_ENTRIES: CommandEntry[] = [
 ];
 
 /** 按当前用户可见菜单过滤静态条目（复用 navMenu 的分组可见性逻辑，含未登录时的兜底菜单） */
-export function getVisibleEntries(menus: MenuItem[]): CommandEntry[] {
-  const visiblePaths = new Set(buildGroups(menus).flatMap((group) => group.items.map((item) => item.path)));
-  return COMMAND_ENTRIES.filter((entry) => visiblePaths.has(entry.menuPath));
+export function getVisibleEntries(menus: MenuItem[], maintainer = false): CommandEntry[] {
+  const visiblePaths = new Set(buildGroups(menus, undefined, maintainer).flatMap((group) => group.items.map((item) => item.path)));
+  return COMMAND_ENTRIES.filter((entry) => visiblePaths.has(entry.menuPath)
+    && (!maintainer || (!isMaintainerRestrictedPath(entry.path)
+      && !['repo-audit-flow', 'repo-version-rule', 'action-trigger-package'].includes(entry.id))));
 }
 
 /**

@@ -39,6 +39,8 @@ import { PipelinePanel } from './components/PipelinePanel';
 import { RecentReleasesPanel } from './components/RecentReleasesPanel';
 import { TodoPanel } from './components/TodoPanel';
 import { PackageTriggerModal, type PackageTriggerTarget } from '@/components/PackageTriggerModal';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
+import { MaintainerDashboard } from './MaintainerDashboard';
 
 Chart.register(...registerables);
 
@@ -50,6 +52,13 @@ const auditBadgeClass: Record<string, string> = {
 };
 
 export default function Dashboard() {
+  const context = useDashboardContext();
+  return context?.layout_mode === 'maintainer'
+    ? <MaintainerDashboard projectCount={context.visible_project_count} />
+    : <GeneralDashboard />;
+}
+
+function GeneralDashboard() {
   const navigate = useNavigate();
   const { message } = useAppMessage();
   const user = useAuthStore((state) => state.user);

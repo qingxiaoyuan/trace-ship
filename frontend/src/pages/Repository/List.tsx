@@ -19,6 +19,7 @@ import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
 import { repoTypeBadge, healthDisplay } from './constants';
 import type { Repository } from '@/types';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 
 /** 统计卡配置 */
 const statCards = [
@@ -48,10 +49,11 @@ function relativeTime(value?: string): string {
 }
 
 export default function RepositoryList() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const navigate = useNavigate();
   const { message } = App.useApp();
   const user = useAuthStore((state) => state.user);
-  const canRegisterGlobal = !!(
+  const canRegisterGlobal = !maintainer && !!(
     user?.is_superuser || user?.permissions?.includes('repository.manage')
   );
   const [keyword, setKeyword] = useState('');
@@ -321,7 +323,7 @@ export default function RepositoryList() {
       </div>
 
       <RepositoryModal
-        open={modalOpen}
+        open={!maintainer && modalOpen}
         repo={editingRepo}
         onCancel={() => { setModalOpen(false); setEditingRepo(null); }}
         onOk={handleSave}

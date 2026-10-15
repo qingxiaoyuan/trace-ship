@@ -7,11 +7,12 @@ interface SidebarNavProps {
   onNavigate: (path: string) => void;
   /** 移动端抽屉内加大行高，便于触控 */
   large?: boolean;
+  maintainer?: boolean;
 }
 
-export function SidebarNav({ groups, currentPath, onNavigate, large = false }: SidebarNavProps) {
+export function SidebarNav({ groups, currentPath, onNavigate, large = false, maintainer = false }: SidebarNavProps) {
   return (
-    <nav className="scrollbar-thin flex-1 space-y-5 overflow-y-auto px-3 py-2">
+    <nav className={`scrollbar-thin flex-1 space-y-5 overflow-y-auto px-3 py-2 ${maintainer ? 'mnt-sidebar-nav' : ''}`}>
       {groups.map((group) => (
         <div key={group.title}>
           <div className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">

@@ -6,6 +6,7 @@ import { TsModal } from './TsModal';
 import { notificationApi } from '@/api/notification';
 import { useAuthStore } from '@/stores/authStore';
 import { formatRelativeTime } from '@/utils/time';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 
 /** 待办/整改每浏览器会话只弹一次的标记键（系统强提醒未确认前每次登录都弹） */
 const SHOWN_KEY = 'ts-strong-remind-shown';
@@ -15,6 +16,7 @@ const SHOWN_KEY = 'ts-strong-remind-shown';
  * 系统强提醒未确认前每次进入都会弹出；待办与整改本会话只展示一次。
  */
 export function StrongRemindModal() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -27,8 +29,8 @@ export function StrongRemindModal() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const todoCount = data?.todo_task_count ?? 0;
-  const issueCount = data?.open_issue_count ?? 0;
+  const todoCount = maintainer ? 0 : data?.todo_task_count ?? 0;
+  const issueCount = maintainer ? 0 : data?.open_issue_count ?? 0;
   const strongNotices = data?.strong_notices ?? [];
   const hasStrong = strongNotices.length > 0;
   const hasTodo = todoCount + issueCount > 0;

@@ -8,6 +8,7 @@ import { packageApi } from '@/api/package';
 import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
 import { useProjectRole } from '@/hooks/useProjectRole';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { ConfigList } from './components/ConfigList';
 import { BoardSidebar } from './components/BoardSidebar';
 import { BuildBoard } from './components/BuildBoard';
@@ -34,6 +35,7 @@ type TaskLogState = { offset: number; text: string; partial: boolean };
 type TaskDetailLoadResult = { task: PackageTask; logText: string; logPartial: boolean };
 
 export default function PackageTaskPage() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const navigate = useNavigate();
   const { id: routeTaskId } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -539,13 +541,13 @@ export default function PackageTaskPage() {
               <Button icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={refreshAll}>
                 刷新
               </Button>
-              <button
+              {!maintainer && <button
                 className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
                 onClick={openNewConfig}
               >
                 <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
                 新建打包配置
-              </button>
+              </button>}
             </div>
           </div>
 
@@ -570,13 +572,13 @@ export default function PackageTaskPage() {
                     <List className="h-3.5 w-3.5" strokeWidth={1.5} />
                     构建列表
                   </button>
-                  <button
+                  {!maintainer && <button
                     className={`seg-btn inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium ${activeTab === 'configs' ? 'on' : ''}`}
                     onClick={() => setActiveTab('configs')}
                   >
                     <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
                     打包配置
-                  </button>
+                  </button>}
                 </div>
               </div>
 
@@ -693,10 +695,10 @@ export default function PackageTaskPage() {
         <BuildView task={selectedTask} logText={logText} logPartial={logPartial} onBack={backToList} onCancel={handleCancel} />
       )}
 
-      <PackageTriggerModal open={triggerOpen} config={triggerConfig} onClose={closeTrigger} />
+      <PackageTriggerModal open={!maintainer && triggerOpen} config={triggerConfig} onClose={closeTrigger} />
 
       <PackageConfigModal
-        open={configDrawerOpen}
+        open={!maintainer && configDrawerOpen}
         editing={editingConfig}
         readOnly={
           !!editingConfig &&

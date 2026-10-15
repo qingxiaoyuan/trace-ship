@@ -1035,6 +1035,10 @@
 
 列表项附带 `commit_total` / `pass_count` / `warning_count` / `illegal_count` / `has_doc`。
 
+`component_name` 是该发布所属项目内的软件名称（来自项目组件，空名或关联已移除时回退 `repository_name`）；原物理仓库名称字段保持不变。维保首页使用 `status=released&ordering=-released_at`，含他人发布，仍限定显式所属项目。此排序把缺失 `released_at` 的记录排在最后，并以 ID 稳定同时间记录的分页；界面显示「发布时间未记录」，不使用创建时间替代。未传排序时仍默认按创建时间倒序。
+
+`search` 同时检索版本号、Tag、所属项目内的软件名和已保存的 `release_doc` 正文，可与 `project`、`repository`、`release_type` 组合，查询和总数在服务端完整可见范围内计算。列表附带 `update_summary`（最多 300 字符，保留多行变更内容的文本摘要）及 `package_summary`：`status`、`counts`、`config_count`、`task_id`。后者分别取各关联配置的最新任务，配置删除后以快照中的配置 ID 保持分组，失败配置不会被其他配置成功掩盖。原完整说明及字段保持不变。
+
 ### 8.2 创建发布申请
 
 - **POST** `/api/releases/`
@@ -1278,6 +1282,34 @@
 远端 tag 已存在返回 `code=40003`。
 
 ### 8.12 看板统计
+
+- **GET** `/api/releases/dashboard/context/`
+
+登录后可读，返回工作台、导航与路由共用的上下文，忽略分页和项目筛选参数：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": { "layout_mode": "maintainer", "visible_project_count": 25 }
+}
+```
+
+完整可见项目集合非空且所有有效项目角色均为维保时，`layout_mode=maintainer`；兼任、无项目、超管、负责人或软件管理员使用 `general`。非超管的数量仅含显式成员项目。前端首次加载、重新进入首页及成员变更后重新获取，窗口重新激活及一分钟轮询用于同步其他会话的变动；加载完成前不呈现业务写入口，首次加载失败显示重试状态，后台刷新失败保留页面与表单草稿并提示重试。
+
+该接口不改变下列通用工作台统计口径。第三方问题反馈单当前未接入，本期不提供其列表、计数或处理接口。
+
+- **GET** `/api/releases/dashboard/maintainer-summary/`
+
+登录后按完整可见项目集合返回只读首页摘要，不接受 `project`、`search`、类型或页码改变总览范围：
+
+- `projects`：项目 `id/name/release_count` 和该项目 `software` 数组（仓库 `id`、项目内软件 `name`、已发布 `release_count`），不受分页限制。
+- `software_count`：可见范围内项目→软件引用数，共享仓库按项目分别计数。
+- `stats`：`days=30`、服务端 `since/until`、`released_count`（窗口内实际发布时间，缺失时间排除）、`failed_task_count`（所属项目全部现存失败记录，不限时间）。
+- `stats.package_total/package_success/package_success_rate`：窗口内创建且当前为 success/failure/canceled 的任务，包含他人触发，成功率保留一位小数，分母包含取消任务；无样本时计数 0、成功率为 `null`。
+- `recent_tasks`：所属项目最近 3 个任务。每项包含任务 ID、项目/软件/版本、状态、创建/开始/完成时间、耗时、错误原因、产物数量与触发来源，不包含凭证、脚本、环境变量或配置快照明文。「需要关注」与问题单列显示待接入状态，不以打包失败或发布整改意见替代。
+
+接口失败与零样本分别处理；主版本列表的项目、软件、关键词和类型筛选不改变上述指标与打包近况。原本人发起统计接口及默认工作台调用保持原语义。
 
 - **GET** `/api/releases/dashboard/overview/`
 

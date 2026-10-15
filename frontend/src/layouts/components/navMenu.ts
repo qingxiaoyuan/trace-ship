@@ -153,8 +153,26 @@ function toNavItem(source: MenuItem, badge?: string): NavItem {
   };
 }
 
-export function buildGroups(menus: MenuItem[], badges?: Record<string, string>): NavGroup[] {
-  const flatMenus = flattenMenus(getMenuSource(menus));
+/** 维保外壳的页面边界；菜单、命令入口与直连拦截共用，资源操作仍按项目授权。 */
+export function isMaintainerRestrictedPath(path: string): boolean {
+  const url = new URL(path, 'https://trace-ship.local');
+  let pathname = url.pathname;
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    // 非法转义沿用原路径判断，避免直连错误地址导致整个导航崩溃。
+  }
+  pathname = pathname.replace(/\/+$/, '').toLowerCase();
+  return /^\/(tags|workflows|system)(\/|$)/.test(pathname)
+    || /^\/releases\/(create|cleanup)(\/|$)/.test(pathname)
+    || /^\/projects\/[^/]+\/(members|packages)(\/|$)/.test(pathname)
+    || /^\/repositories\/[^/]+\/(credential|version-rule|versionrule|workflows)(\/|$)/.test(pathname)
+    || (pathname === '/packages' && url.searchParams.get('tab') === 'configs');
+}
+
+export function buildGroups(menus: MenuItem[], badges?: Record<string, string>, maintainer = false): NavGroup[] {
+  const flatMenus = flattenMenus(getMenuSource(menus))
+    .filter((item) => !maintainer || (!isMaintainerRestrictedPath(item.path) && !['/commits', '/credentials'].includes(item.path)));
   const menuByPath = new Map(flatMenus.map((item) => [item.path, item]));
 
   const groups = groupRules
@@ -163,7 +181,10 @@ export function buildGroups(menus: MenuItem[], badges?: Record<string, string>):
       items: group.paths.reduce<NavItem[]>((items, path) => {
         const source = menuByPath.get(path);
         if (!source) return items;
-        items.push(toNavItem(source, badges?.[path]));
+        const item = toNavItem(source, badges?.[path]);
+        if (maintainer && path === '/releases') item.name = '发布版本';
+        if (maintainer && path === '/packages') item.name = '打包任务';
+        items.push(item);
         return items;
       }, []),
     }))

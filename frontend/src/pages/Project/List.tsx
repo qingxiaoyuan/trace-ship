@@ -19,6 +19,7 @@ import { ProjectModal } from './modals/ProjectModal';
 import { projectApi } from '@/api/project';
 import { getAvatarColor } from '@/utils/avatar';
 import type { Project, ProjectStatus } from '@/types';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 
 /** 项目状态选项 */
 const projectStatusOptions = [
@@ -52,6 +53,7 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
 }
 
 export default function ProjectList() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const navigate = useNavigate();
   const { message, modal } = App.useApp();
   const [keyword, setKeyword] = useState('');
@@ -128,14 +130,14 @@ export default function ProjectList() {
             <ArrowUpDown className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span>排序</span>
           </button>
-          <button
+          {!maintainer && <button
             type="button"
             onClick={() => setModalOpen(true)}
             className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span>新增项目</span>
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -239,7 +241,7 @@ export default function ProjectList() {
                   <div className="col-span-2">
                     <StatusBadge status={record.status} />
                   </div>
-                  <div className="col-span-2 flex items-center justify-end gap-1">
+                  {!maintainer && <div className="col-span-2 flex items-center justify-end gap-1">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -260,7 +262,7 @@ export default function ProjectList() {
                     >
                       <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </button>
-                  </div>
+                  </div>}
                 </div>
 
                 {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
@@ -291,7 +293,7 @@ export default function ProjectList() {
                       </span>
                       <span className="text-[12px] text-slate-500">负责人 {record.leader_name || '-'}</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    {!maintainer && <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -312,7 +314,7 @@ export default function ProjectList() {
                       >
                         <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 </div>
               </div>
@@ -368,7 +370,7 @@ export default function ProjectList() {
         ) : null}
       </div>
 
-      <ProjectModal open={modalOpen} project={null} onCancel={() => setModalOpen(false)} onOk={handleAdd} />
+      <ProjectModal open={!maintainer && modalOpen} project={null} onCancel={() => setModalOpen(false)} onOk={handleAdd} />
     </div>
   );
 }

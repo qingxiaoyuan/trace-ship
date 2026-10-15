@@ -8,7 +8,8 @@ import re
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery, Value
+from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
@@ -20,7 +21,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.project.services import visible_project_ids
+from apps.project.models import ProjectComponent
+from apps.project.services import has_only_maintainer_projects, visible_project_ids
 from apps.release.exporters import ReleaseDocExporter
 from apps.release.models import ReleaseRecord, ReleaseReviewIssue
 from apps.release.serializers import (
@@ -118,6 +120,27 @@ class ReleaseFilter(filters.FilterSet):
         return queryset
 
 
+class ReleaseOrderingFilter(drf_filters.OrderingFilter):
+    """实际发布时间倒序在各数据库中均将空值排后，并稳定分页。"""
+
+    def filter_queryset(self, request: Request, queryset: QuerySet, view: Any) -> QuerySet:
+        ordering = self.get_ordering(request, queryset, view)
+        if ordering and "-released_at" in ordering:
+            return queryset.order_by(*[
+                F("released_at").desc(nulls_last=True) if field == "-released_at" else field
+                for field in ordering
+            ], "-id")
+        return super().filter_queryset(request, queryset, view)
+
+
+class ReleaseSearchFilter(drf_filters.SearchFilter):
+    """列表按项目内软件名和保存的说明正文检索，详情查询不依赖列表注记。"""
+
+    def get_search_fields(self, view: Any, request: Request) -> list[str]:
+        fields = super().get_search_fields(view, request)
+        return [*fields, "component_name", "release_doc"] if view.action == "list" else fields
+
+
 class ReleaseViewSet(StandardModelViewSet):
     """
     发布管理视图集
@@ -130,11 +153,26 @@ class ReleaseViewSet(StandardModelViewSet):
     queryset = ReleaseRecord.objects.all()
     serializer_class = ReleaseRecordSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, drf_filters.SearchFilter, drf_filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend, ReleaseSearchFilter, ReleaseOrderingFilter]
     filterset_class = ReleaseFilter
     search_fields = ["version", "tag_name"]
     ordering_fields = ["created_at", "released_at", "version"]
     ordering = ["-created_at"]
+
+    @action(detail=False, methods=["get"], url_path="dashboard/context")
+    def dashboard_context(self, request: Request) -> Response:
+        """工作台和导航共用的只读上下文，按完整可见范围判断布局。"""
+        return success_response({
+            "layout_mode": "maintainer" if has_only_maintainer_projects(request.user) else "general",
+            "visible_project_count": visible_project_ids(request.user).count(),
+        })
+
+    @action(detail=False, methods=["get"], url_path="dashboard/maintainer-summary")
+    def maintainer_summary(self, request: Request) -> Response:
+        """所属项目的范围树、近三十天指标和最近打包；不接受列表筛选改变口径。"""
+        from apps.release.dashboard import MaintainerDashboardService
+
+        return success_response(MaintainerDashboardService.summary(request.user))
 
     def get_serializer_class(self):
         """
@@ -170,6 +208,14 @@ class ReleaseViewSet(StandardModelViewSet):
                 ),
             )
         )
+        if self.action == "list":
+            # 同一物理仓库在不同项目中可使用不同软件名称，停用组件的历史仍可阅读。
+            component_name = ProjectComponent.objects.filter(
+                project_id=OuterRef("project_id"), repository_id=OuterRef("repository_id"),
+            ).values("display_name")[:1]
+            queryset = queryset.annotate(component_name=Coalesce(
+                NullIf(Subquery(component_name), Value("")), F("repository__name"),
+            ))
         if user.is_superuser:
             return queryset.all()
         project_ids = visible_project_ids(user)

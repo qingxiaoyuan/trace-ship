@@ -20,6 +20,8 @@ import { VersionRuleTab } from './tabs/VersionRuleTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
 import { ReleaseTab } from '@/pages/Project/tabs/ReleaseTab';
 import type { Repository } from '@/types';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
+import { isMaintainerRestrictedPath } from '@/layouts/components/navMenu';
 
 /** 详情 Tab（key 即 URL 段，与 /repositories/:id/:tab 对应） */
 const tabs = [
@@ -45,6 +47,7 @@ function resolveTabKey(tab: string | undefined): TabKey {
 }
 
 export default function RepositoryDetail() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const { id, tab = 'commits' } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -202,7 +205,7 @@ export default function RepositoryDetail() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {!maintainer && <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => syncMutation.mutate()}
@@ -228,14 +231,14 @@ export default function RepositoryDetail() {
               <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
               删除
             </button>
-          </div>
+          </div>}
         </div>
       </div>
 
       {/* Tab 区 */}
       <TsCard bodyStyle={{ padding: 0 }}>
         <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto border-b border-indigo-50 px-4">
-          {tabs.map((tab) => {
+          {tabs.filter((tab) => !maintainer || !isMaintainerRestrictedPath(`/repositories/${id}/${tab.key}`)).map((tab) => {
             const active = activeTab === tab.key;
             return (
               <button
@@ -268,7 +271,7 @@ export default function RepositoryDetail() {
       </TsCard>
 
       <RepositoryModal
-        open={modalOpen}
+        open={!maintainer && modalOpen}
         repo={repo}
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}

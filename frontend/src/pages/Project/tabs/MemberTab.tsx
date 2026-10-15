@@ -161,6 +161,7 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
       form.resetFields();
       setIsModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-context'] });
     },
   });
 
@@ -180,6 +181,7 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
     onSuccess: () => {
       message.success('更新成功');
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-context'] });
     },
   });
 
@@ -188,6 +190,7 @@ export function MemberTab({ projectId, active = true }: MemberTabProps) {
     onSuccess: () => {
       message.success('移除成功');
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-context'] });
     },
   });
 

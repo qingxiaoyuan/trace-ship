@@ -24,6 +24,8 @@ import { useProjectRole } from '@/hooks/useProjectRole';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import type { ProjectStatus } from '@/types';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
+import { isMaintainerRestrictedPath } from '@/layouts/components/navMenu';
 
 /** Tab 配置：基本信息 / 软件仓库 / 成员 / 打包配置 / SVN 制品 / 发布版本 */
 const tabItems = [
@@ -63,6 +65,7 @@ function StatusBadge({ status }: { status: ProjectStatus }) {
 const validTabKeys = new Set(tabItems.map((item) => item.key));
 
 export default function ProjectDetail() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const { id, tab = 'overview' } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const activeTab = validTabKeys.has(tab as typeof tabItems[number]['key']) ? tab : 'overview';
@@ -194,7 +197,7 @@ export default function ProjectDetail() {
       {/* Tab 区 */}
       <TsCard bodyStyle={{ padding: 0 }}>
         <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto border-b border-indigo-50 px-4">
-          {tabItems.map((tab) => {
+          {tabItems.filter((tab) => !maintainer || !isMaintainerRestrictedPath(`/projects/${id}/${tab.key}`)).map((tab) => {
             const active = activeTab === tab.key;
             return (
               <button
