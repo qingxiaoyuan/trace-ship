@@ -135,6 +135,18 @@ const labelMap: Record<string, string> = {
   '/changelog': '更新日志',
 };
 
+const maintainerLabelMap: Record<string, string> = {
+  '/releases': '发布版本',
+  '/packages': '打包任务',
+};
+
+/** 维保菜单与页面标题共用名称；打包详情沿用所属任务入口的标题。 */
+export function getNavLabel(path: string, fallback: string, maintainer = false): string {
+  const pathname = path.replace(/\/+$/, '').toLowerCase();
+  const menuPath = pathname.startsWith('/packages/') ? '/packages' : pathname;
+  return (maintainer && maintainerLabelMap[menuPath]) || fallback;
+}
+
 function flattenMenus(items: MenuItem[]): MenuItem[] {
   return items.flatMap((item) => (item.children?.length ? flattenMenus(item.children) : item));
 }
@@ -143,18 +155,36 @@ function getMenuSource(menus: MenuItem[]): MenuItem[] {
   return menus.length > 0 ? menus : fallbackMenus;
 }
 
-function toNavItem(source: MenuItem, badge?: string): NavItem {
+function toNavItem(source: MenuItem, badge?: string, maintainer = false): NavItem {
   return {
     id: source.id,
-    name: labelMap[source.path] || source.name,
+    name: getNavLabel(source.path, labelMap[source.path] || source.name, maintainer),
     path: source.path,
     icon: pathIconMap[source.path] || FileText,
     badge,
   };
 }
 
-export function buildGroups(menus: MenuItem[], badges?: Record<string, string>): NavGroup[] {
-  const flatMenus = flattenMenus(getMenuSource(menus));
+/** 维保外壳的页面边界；菜单、命令入口与直连拦截共用，资源操作仍按项目授权。 */
+export function isMaintainerRestrictedPath(path: string): boolean {
+  const url = new URL(path, 'https://trace-ship.local');
+  let pathname = url.pathname;
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    // 非法转义沿用原路径判断，避免直连错误地址导致整个导航崩溃。
+  }
+  pathname = pathname.replace(/\/+$/, '').toLowerCase();
+  return /^\/(tags|workflows|system)(\/|$)/.test(pathname)
+    || /^\/releases\/(create|cleanup)(\/|$)/.test(pathname)
+    || /^\/projects\/[^/]+\/(members|packages)(\/|$)/.test(pathname)
+    || /^\/repositories\/[^/]+\/(credential|version-rule|versionrule|workflows)(\/|$)/.test(pathname)
+    || (pathname === '/packages' && url.searchParams.get('tab') === 'configs');
+}
+
+export function buildGroups(menus: MenuItem[], badges?: Record<string, string>, maintainer = false): NavGroup[] {
+  const flatMenus = flattenMenus(getMenuSource(menus))
+    .filter((item) => !maintainer || (!isMaintainerRestrictedPath(item.path) && !['/commits', '/credentials'].includes(item.path)));
   const menuByPath = new Map(flatMenus.map((item) => [item.path, item]));
 
   const groups = groupRules
@@ -163,7 +193,7 @@ export function buildGroups(menus: MenuItem[], badges?: Record<string, string>):
       items: group.paths.reduce<NavItem[]>((items, path) => {
         const source = menuByPath.get(path);
         if (!source) return items;
-        items.push(toNavItem(source, badges?.[path]));
+        items.push(toNavItem(source, badges?.[path], maintainer));
         return items;
       }, []),
     }))
@@ -173,7 +203,7 @@ export function buildGroups(menus: MenuItem[], badges?: Record<string, string>):
   const knownPaths = new Set(groupRules.flatMap((group) => group.paths));
   const orphanItems = flatMenus
     .filter((item) => !knownPaths.has(item.path))
-    .map((item) => toNavItem(item, badges?.[item.path]));
+    .map((item) => toNavItem(item, badges?.[item.path], maintainer));
   if (orphanItems.length > 0) {
     if (import.meta.env.DEV) {
       console.warn(

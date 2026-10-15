@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { MobileNavDrawer } from './MobileNavDrawer';
 import { MobileUserSheet } from './MobileUserSheet';
 import { useCurrentRouteTitle } from './useCurrentRouteTitle';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 
 /**
  * 移动端底部操作栏（方案 C · 双胶囊 + 中央 +，见 docs/ui/mobile/mobile-tabbar.html）
@@ -14,6 +15,7 @@ import { useCurrentRouteTitle } from './useCurrentRouteTitle';
  */
 export function MobileTabBar() {
   const navigate = useNavigate();
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const user = useAuthStore((state) => state.user);
   const [navOpen, setNavOpen] = useState(false);
   const [userSheetOpen, setUserSheetOpen] = useState(false);
@@ -41,23 +43,23 @@ export function MobileTabBar() {
           >
             <LayoutGrid className="h-5 w-5" strokeWidth={1.5} />
           </button>
-          <div className="mx-1 flex h-10 max-w-[88px] flex-col justify-center rounded-xl bg-indigo-50/70 px-2.5">
-            <span className="text-[9px] font-medium uppercase tracking-wider text-indigo-400">当前</span>
-            <span className="truncate text-[11px] font-semibold leading-tight text-indigo-700">
+          <div className={`mx-1 flex h-10 flex-col justify-center rounded-xl bg-indigo-50/70 px-2.5 ${maintainer ? 'min-w-[88px] items-center' : 'max-w-[88px]'}`}>
+            {!maintainer && <span className="text-[9px] font-medium uppercase tracking-wider text-indigo-400">当前</span>}
+            <span className={`truncate leading-tight text-indigo-700 ${maintainer ? 'text-[13px] font-medium' : 'text-[11px] font-semibold'}`}>
               {currentTitle}
             </span>
           </div>
         </div>
 
         {/* 中央：新建发布 */}
-        <button
+        {!maintainer && <button
           type="button"
           onClick={() => navigate('/releases/create')}
           className="btn-glow pointer-events-auto flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl text-white"
           aria-label="新建发布"
         >
           <Plus className="h-6 w-6" strokeWidth={1.5} />
-        </button>
+        </button>}
 
         {/* 右胶囊：消息 + 个人空间 */}
         <div className="ts-header-glass pointer-events-auto flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5">
@@ -82,7 +84,7 @@ export function MobileTabBar() {
           >
             <span
               className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg,#818CF8,#22D3EE)' }}
+              style={{ background: maintainer ? '#8877f8' : 'linear-gradient(135deg,#818CF8,#22D3EE)' }}
             >
               {userName.charAt(0)}
             </span>

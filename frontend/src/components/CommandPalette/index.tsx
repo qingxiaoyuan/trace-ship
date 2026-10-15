@@ -11,6 +11,8 @@ import { applyRepoDeepLinks, getVisibleEntries, matchEntry } from './registry';
 import type { CommandEntry } from './registry';
 import { useCommandPaletteStore } from './store';
 import { useRecentVisits } from '@/hooks/useRecentVisits';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
+import { isMaintainerRestrictedPath } from '@/layouts/components/navMenu';
 
 /** 实体搜索结果分组展示配置（与后端 /api/search/ 的分组字段对齐） */
 const ENTITY_GROUPS: { key: keyof SearchResultGroups; label: string; icon: LucideIcon }[] = [
@@ -57,6 +59,7 @@ function entryToItem(entry: CommandEntry): PaletteItem {
  * 无需在关闭时手动重置。
  */
 function PalettePanel() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const menus = useAuthStore((state) => state.menus);
   const navigate = useNavigate();
   const recentVisits = useRecentVisits();
@@ -97,7 +100,7 @@ function PalettePanel() {
   const sections = useMemo<PaletteSection[]>(() => {
     const q = query.trim();
     const matched = applyRepoDeepLinks(
-      getVisibleEntries(menus),
+      getVisibleEntries(menus, maintainer),
       recentRepo ? String(recentRepo.id) : undefined,
       recentRepo?.title,
     ).filter((entry) => matchEntry(entry, q));
@@ -111,7 +114,7 @@ function PalettePanel() {
 
     if (q && entityResults) {
       for (const group of ENTITY_GROUPS) {
-        const list = entityResults[group.key];
+        const list = entityResults[group.key]?.filter((item) => !maintainer || !isMaintainerRestrictedPath(item.path));
         if (!list?.length) continue;
         result.push({
           label: group.label,
@@ -126,7 +129,7 @@ function PalettePanel() {
       }
     }
     return result;
-  }, [query, menus, entityResults, recentRepo]);
+  }, [query, menus, entityResults, recentRepo, maintainer]);
 
   // 键盘导航基于扁平化的可见列表；结果数变化时钳制选中下标（派生值，无需额外 state）
   const flatItems = useMemo(() => sections.flatMap((section) => section.items), [sections]);

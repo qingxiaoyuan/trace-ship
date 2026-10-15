@@ -224,6 +224,7 @@ class ReleaseListSerializer(serializers.ModelSerializer):
     """
 
     project_name = serializers.CharField(source="project.name", read_only=True)
+    component_name = serializers.CharField(read_only=True)
     repository_name = serializers.CharField(source="repository.name", read_only=True)
     publisher_name = serializers.CharField(source="publisher.nickname", read_only=True, default="")
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -233,6 +234,8 @@ class ReleaseListSerializer(serializers.ModelSerializer):
     warning_count = serializers.SerializerMethodField(read_only=True)
     illegal_count = serializers.SerializerMethodField(read_only=True)
     has_doc = serializers.SerializerMethodField(read_only=True)
+    update_summary = serializers.SerializerMethodField()
+    package_summary = serializers.SerializerMethodField()
     # 待整改（open）/ 待复核（replied）整改意见数，由视图 get_queryset 注解提供
     open_review_count = serializers.IntegerField(read_only=True, default=0)
     replied_review_count = serializers.IntegerField(read_only=True, default=0)
@@ -240,12 +243,22 @@ class ReleaseListSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReleaseRecord
         fields = [
-            "id", "project", "project_name", "repository", "repository_name",
+            "id", "project", "project_name", "repository", "repository_name", "component_name",
             "version", "tag_name", "redmine_url", "release_type", "release_type_display",
             "status", "status_display", "branch", "publisher_name", "released_at", "created_at",
             "commit_total", "pass_count", "warning_count", "illegal_count", "has_doc",
-            "open_review_count", "replied_review_count",
+            "open_review_count", "replied_review_count", "update_summary", "package_summary",
         ]
+
+    def get_update_summary(self, obj: ReleaseRecord) -> str:
+        from apps.release.dashboard import release_update_summary
+
+        return release_update_summary(obj)
+
+    def get_package_summary(self, obj: ReleaseRecord) -> dict:
+        from apps.release.dashboard import release_package_summary
+
+        return release_package_summary(obj)
 
     def _review_counts(self, obj: ReleaseRecord) -> dict:
         """聚合该发布关联提交的审查结果计数（单次查询，结果缓存到实例上）"""

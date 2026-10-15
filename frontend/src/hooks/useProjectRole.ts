@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/authStore';
+import { useDashboardContext } from './useDashboardContext';
 
 export type ProjectRole = 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin' | 'maintainer';
 
@@ -25,10 +26,13 @@ export interface ProjectPermissions {
  *
  * 项目内操作只看项目成员角色（my_role，由项目详情接口返回），
  * 与系统角色解耦；超管拥有全部权限。软件管理员拥有项目内全部操作权限。
+ * 服务端已确认纯维保时立即限写，不等待项目旧角色缓存刷新。
  */
 export function useProjectRole(project?: { my_role?: string | null } | null): ProjectPermissions {
   const user = useAuthStore((state) => state.user);
-  const role = (user?.is_superuser ? 'manager' : project?.my_role ?? null) as ProjectRole | null;
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
+  const cachedRole = (user?.is_superuser ? 'manager' : project?.my_role ?? null) as ProjectRole | null;
+  const role = maintainer && cachedRole && !user?.is_superuser ? 'maintainer' : cachedRole;
 
   const grantableRoles: ProjectRole[] =
     role === 'manager'

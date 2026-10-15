@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Empty, Button, Input, Modal, Typography } from 'antd';
 import { AlertTriangle, ChevronRight, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
@@ -30,6 +30,9 @@ const tabs = [
 export default function ReleaseDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const source = (location.state as { maintainerFrom?: string } | null)?.maintainerFrom;
+  const maintainerSource = typeof source === 'string' && /^\/(dashboard)?(?:\?|$)/.test(source) ? source : undefined;
   const { message, modal } = App.useApp();
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('notes');
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -150,10 +153,10 @@ export default function ReleaseDetail() {
       <div className="flex items-center gap-2 text-[13px]">
         <button
           type="button"
-          onClick={() => navigate('/releases')}
+            onClick={() => navigate(maintainerSource || '/releases')}
           className="text-slate-400 transition-colors hover:text-indigo-600"
         >
-          发布看板
+            {maintainerSource ? '维保工作台' : '发布看板'}
         </button>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" strokeWidth={1.5} />
         <span className="font-medium text-slate-800">{release.version}</span>

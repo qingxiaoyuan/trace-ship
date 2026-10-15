@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, ChevronRight, ExternalLink, GitBranch, Loader, Plus, XCircle } from 'lucide-react';
 import dayjs from 'dayjs';
 import { releaseApi } from '@/api/release';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { getAvatarColor } from '@/utils/avatar';
 import { boardColumns, releaseTypeText, releaseTypeBadge } from './constants';
 import type { Release, ReleaseType } from '@/types';
@@ -283,6 +284,7 @@ export function ReleaseList() {
 
 /** 发布看板页：看板 / 列表 视图切换 + 新建发布 */
 export function ReleaseBoardPage() {
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const navigate = useNavigate();
   const [view, setView] = useState<'board' | 'list'>('board');
 
@@ -313,7 +315,7 @@ export function ReleaseBoardPage() {
               </button>
             ))}
           </div>
-          <button type="button" className="min-h-9 rounded border px-3 text-sm" onClick={() => navigate('/releases/cleanup')}>RC Tag 清理</button>
+          {!maintainer && <><button type="button" className="min-h-9 rounded border px-3 text-sm" onClick={() => navigate('/releases/cleanup')}>RC Tag 清理</button>
           <button
             type="button"
             onClick={() => navigate('/releases/create')}
@@ -321,7 +323,7 @@ export function ReleaseBoardPage() {
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
             新建发布
-          </button>
+          </button></>}
         </div>
       </div>
       {view === 'board' ? <ReleaseBoard /> : <ReleaseList />}

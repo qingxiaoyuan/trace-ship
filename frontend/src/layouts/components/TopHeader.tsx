@@ -9,6 +9,9 @@ import { useCommandPaletteStore } from "@/components/CommandPalette/store";
 import { notificationApi } from "@/api/notification";
 import { getRoleLabel } from "@/utils/role";
 import { useCurrentRouteTitle } from "./useCurrentRouteTitle";
+import { useDashboardContext } from '@/hooks/useDashboardContext';
+import { BrandMark } from './BrandMark';
+import { getNavLabel } from './navMenu';
 
 const typeMap: Record<string, string> = {
   audit: "审批",
@@ -20,6 +23,7 @@ const typeMap: Record<string, string> = {
 
 export function TopHeader() {
   const matches = useMatches();
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
@@ -95,7 +99,7 @@ export function TopHeader() {
       const title = (match.handle as { title?: string } | undefined)?.title;
       if (title) {
         items.push({
-          title,
+          title: getNavLabel(match.pathname, title, maintainer),
           path: index === matches.length - 1 ? undefined : match.pathname,
         });
       }
@@ -104,7 +108,7 @@ export function TopHeader() {
       items.push({ title: "工作台" });
     }
     return items;
-  }, [matches]);
+  }, [matches, maintainer]);
 
   const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || "U";
 
@@ -112,19 +116,20 @@ export function TopHeader() {
 
   const displayName = user?.nickname || user?.username || "未登录";
 
-  const roleLabel = getRoleLabel(user);
+  const roleLabel = maintainer ? '维保人员' : getRoleLabel(user);
 
   return (
     <header
-      className="ts-header-glass sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/40 px-5 lg:px-7"
+      className={`sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/40 px-5 lg:px-7 ${maintainer ? 'bg-white max-md:h-14!' : 'ts-header-glass'}`}
       style={{
         height: tokens.layout.headerHeight,
       }}
     >
       {/* 移动端顶部只保留面包屑/标题，操作入口在底部操作栏（MobileTabBar） */}
-      <div className="flex items-center gap-2.5 md:hidden">
-        <img src="/favicon.ico" alt="溯舟" className="h-7 w-7 rounded-lg object-contain" />
+      <div className="flex flex-1 items-center gap-2.5 md:hidden">
+        {maintainer ? <BrandMark small /> : <img src="/favicon.ico" alt="溯舟" className="h-7 w-7 rounded-lg object-contain" />}
         <span className="text-[14px] font-medium text-slate-800">{currentTitle}</span>
+        {maintainer && <span className="ml-auto rounded bg-[#f0f3f9] px-3 py-1 text-[11px] text-[#526987]">维保</span>}
       </div>
 
       <div className="hidden items-center gap-1.5 text-[13px] md:flex">
@@ -183,14 +188,14 @@ export function TopHeader() {
       </div>
 
       <div className="ml-auto hidden items-center gap-2 lg:ml-0 lg:flex">
-        <button
+        {!maintainer && <button
           type="button"
           onClick={() => navigate("/releases/create")}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
           aria-label="新建发布"
         >
           <Plus className="h-4 w-4" strokeWidth={1.5} />
-        </button>
+        </button>}
 
         <div className="relative">
           <button
@@ -293,7 +298,7 @@ export function TopHeader() {
             <span
               className="flex h-6 w-6 shrink-0 leading-[100%] items-center justify-center rounded-md text-[12px] font-semibold text-white"
               style={{
-                background: `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
+                background: maintainer ? '#6e5cff' : `linear-gradient(135deg, ${tokens.colors.primaryLight}, ${tokens.colors.cyan})`,
               }}
             >
               {avatarLetter}

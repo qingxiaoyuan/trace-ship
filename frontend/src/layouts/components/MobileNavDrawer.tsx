@@ -7,6 +7,7 @@ import { useWorkflowTodoCount } from '@/hooks/useWorkflowTodoCount';
 import { useCommandPaletteStore } from '@/components/CommandPalette/store';
 import { buildGroups } from './navMenu';
 import { SidebarNav } from './SidebarNav';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 
 interface MobileNavDrawerProps {
   open: boolean;
@@ -18,14 +19,16 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const menus = useAuthStore((state) => state.menus);
-  const todoCount = useWorkflowTodoCount();
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
+  const todoCount = useWorkflowTodoCount(!maintainer);
   const navGroups = useMemo(
     () =>
       buildGroups(
         menus,
         todoCount > 0 ? { '/workflows': todoCount > 99 ? '99+' : String(todoCount) } : undefined,
+        maintainer,
       ),
-    [menus, todoCount],
+    [menus, todoCount, maintainer],
   );
 
   const handleNavigate = (path: string) => {

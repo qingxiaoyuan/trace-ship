@@ -108,6 +108,17 @@ export interface RcCandidate {
 }
 
 export interface Release {
+  /** 已保存发布说明的列表摘要，完整说明通过详情读取。 */
+  update_summary?: string;
+  /** 各关联配置最近任务的汇总，失败优先，避免单个成功掩盖其他配置失败。 */
+  package_summary?: {
+    status: 'none' | 'queued' | 'running' | 'success' | 'failure' | 'canceled';
+    counts: Partial<Record<'queued' | 'running' | 'success' | 'failure' | 'canceled', number>>;
+    config_count: number;
+    task_id: string | null;
+  };
+  /** 项目内的软件展示名，未设置时回退物理仓库名。 */
+  component_name?: string;
   id: string;
   project: string;
   project_id?: string;
