@@ -23,8 +23,13 @@ from apps.workflow.serializers import (
     WorkflowInstanceSerializer,
     WorkflowTaskSerializer,
 )
-from apps.workflow.services import WorkflowEngine, count_todo_tasks, visible_workflow_instances
-from utils.permissions import IsProjectDeveloper, IsRepositoryWorkflowEditor
+from apps.workflow.services import WorkflowEngine, count_todo_tasks, resolve_release, visible_workflow_instances
+from utils.permissions import (
+    IsNotOnlyProjectMaintainer,
+    IsNotProjectMaintainer,
+    IsProjectDeveloper,
+    IsRepositoryWorkflowEditor,
+)
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
@@ -82,7 +87,9 @@ class WorkflowDefinitionViewSet(StandardModelViewSet):
     def get_permissions(self):
         """写操作仅仓库创建者（超管放行）"""
         if self.action in ["update", "partial_update"]:
-            return [IsAuthenticated(), IsRepositoryWorkflowEditor()]
+            return [IsAuthenticated(), IsRepositoryWorkflowEditor(), IsNotOnlyProjectMaintainer()]
+        if self.action in ("create", "destroy"):
+            return [IsAuthenticated(), IsNotOnlyProjectMaintainer()]
         return super().get_permissions()
 
     def perform_create(self, serializer):
@@ -148,7 +155,9 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
     def get_permissions(self):
         """创建实例需项目开发者"""
         if self.action == "create":
-            return [IsAuthenticated(), IsProjectDeveloper()]
+            return [IsAuthenticated(), IsProjectDeveloper(), IsNotProjectMaintainer()]
+        if self.action == "revoke":
+            return [IsAuthenticated(), IsNotProjectMaintainer()]
         return super().get_permissions()
 
     def create(self, request: Request, *args, **kwargs) -> Response:
@@ -172,6 +181,9 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             )
 
         developer_permission = IsProjectDeveloper()
+        release = resolve_release(WorkflowInstance(definition=definition, biz_type=biz_type, biz_id=biz_id))
+        if release is not None and not developer_permission._check(release.project, request.user):
+            return error_response(40301, "没有在该发布所属项目发起审批的权限", status_code=403)
         projects = Project.objects.none()
         if definition.repository_id:
             projects = Project.objects.filter(
@@ -242,6 +254,12 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
     filterset_fields = ["instance", "node_id", "status"]
     ordering_fields = ["created_at", "action_time"]
     ordering = ["-created_at"]
+
+    def get_permissions(self):
+        """任务分配仍需服从关联发布项目的维保写操作限制。"""
+        if self.action in ("approve", "reject", "transfer", "rollback"):
+            return [IsAuthenticated(), IsNotProjectMaintainer()]
+        return super().get_permissions()
 
     def get_queryset(self):
         """根据用户身份返回可见任务"""

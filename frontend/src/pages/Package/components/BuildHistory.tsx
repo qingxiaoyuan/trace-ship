@@ -89,12 +89,12 @@ const BuildHistoryItem = memo(function BuildHistoryItem({ build, isActive, onSel
                 <span className="h-1 w-1 rounded-full bg-cyan-500 pulse-dot" />
                 {stageLabel || '打包中'}
               </span>
-              <button
+              {build.can_cancel === true && <button
                 className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-white px-1 py-0 text-[10px] font-medium text-rose-600 hover:bg-rose-50 max-md:px-2 max-md:py-1 max-md:text-xs"
                 onClick={handleCancel}
               >
                 停止
-              </button>
+              </button>}
             </div>
           </div>
         ) : (
@@ -135,12 +135,12 @@ const BuildHistoryItem = memo(function BuildHistoryItem({ build, isActive, onSel
                 <span className="h-1 w-1 rounded-full bg-cyan-500 pulse-dot" />
                 {stageLabel || '打包中'}
               </span>
-              <button
+              {build.can_cancel === true && <button
                 className="inline-flex h-9 items-center rounded-md border border-rose-200 bg-white px-3 text-[12px] font-medium text-rose-600 hover:bg-rose-50"
                 onClick={handleCancel}
               >
                 停止
-              </button>
+              </button>}
             </div>
           </>
         ) : (

@@ -1,28 +1,10 @@
 """
 工作流序列化器
 """
-from django.core.exceptions import ValidationError
 from rest_framework import serializers
 
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
-
-
-def resolve_release(instance: WorkflowInstance):
-    """按工作流实例关联的业务 ID 获取发布记录，供任务/实例序列化器共用。
-
-    biz_id 理论上为发布记录的 UUID；对非 release 业务或异常 biz_id 容错返回 None，
-    避免单个实例序列化失败导致整个列表 500。
-    """
-    if instance.biz_type != "release":
-        return None
-    from apps.release.models import ReleaseRecord
-
-    try:
-        return ReleaseRecord.objects.select_related(
-            "project", "repository", "publisher"
-        ).filter(id=instance.biz_id).first()
-    except (ValueError, ValidationError):
-        return None
+from apps.workflow.services import resolve_release
 
 
 def user_display(user) -> str:
@@ -153,6 +135,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
     release_type = serializers.SerializerMethodField()
     branch = serializers.SerializerMethodField()
     package_status = serializers.SerializerMethodField()
+    can_act = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowTask
@@ -165,12 +148,22 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
             "title", "applicant", "project_name", "repository_name", "current_node",
             "submit_time", "version", "release_type",
-            "branch", "package_status",
+            "branch", "package_status", "can_act",
         ]
         read_only_fields = [
             "id", "instance", "created_at", "updated_at",
             "approver_name", "approver_username", "transferred_from_name",
         ]
+
+    def get_can_act(self, obj: WorkflowTask) -> bool:
+        """审批操作能力以实际业务项目和当前任务归属为准。"""
+        from utils.permissions import IsNotProjectMaintainer
+
+        request = self.context.get("request")
+        permission = IsNotProjectMaintainer()
+        return bool(request and str(obj.approver_id) == str(request.user.id)
+                    and obj.status == "pending" and obj.instance.status == "running"
+                    and permission.has_permission(request, None) and permission.has_object_permission(request, None, obj))
 
     def get_title(self, obj: WorkflowTask) -> str:
         """返回审批标题。"""
@@ -236,6 +229,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     git_hash = serializers.SerializerMethodField()
     tag_name = serializers.SerializerMethodField()
     release_doc = serializers.SerializerMethodField()
+    can_revoke = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -246,7 +240,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "created_by", "created_at", "updated_at", "completed_at", "tasks",
             "title", "applicant", "project_name", "repository_name", "current_node", "submit_time",
             "version", "release_type", "branch", "package_status",
-            "git_hash", "tag_name", "release_doc",
+            "git_hash", "tag_name", "release_doc", "can_revoke",
         ]
         read_only_fields = [
             "id", "definition_name", "biz_type", "biz_id", "status",
@@ -256,6 +250,15 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "version", "release_type", "branch", "package_status",
             "git_hash", "tag_name", "release_doc",
         ]
+
+    def get_can_revoke(self, obj: WorkflowInstance) -> bool:
+        """历史发起人变为维保后不再显示撤销能力。"""
+        from utils.permissions import IsNotProjectMaintainer
+
+        request = self.context.get("request")
+        permission = IsNotProjectMaintainer()
+        return bool(request and str(obj.created_by_id) == str(request.user.id) and obj.status == "running"
+                    and permission.has_permission(request, None) and permission.has_object_permission(request, None, obj))
 
     def get_title(self, obj: WorkflowInstance) -> str:
         """返回审批标题。"""

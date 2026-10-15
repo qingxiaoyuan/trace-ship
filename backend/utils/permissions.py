@@ -50,6 +50,16 @@ def _resolve_project(obj):
     component = getattr(obj, "project_component", None)
     if component is not None:
         return component.project
+    instance = getattr(obj, "instance", None)
+    if instance is None and hasattr(obj, "biz_id") and hasattr(obj, "definition"):
+        instance = obj
+    if instance is not None:
+        from apps.workflow.services import resolve_release
+
+        release = resolve_release(instance)
+        if release is not None:
+            return release.project
+        return instance.definition.project
     repository = getattr(obj, "repository", None)
     if repository is not None and hasattr(repository, "project_components"):
         component = (
@@ -190,6 +200,54 @@ class ProjectRolePermission(permissions.BasePermission):
 class IsProjectManager(ProjectRolePermission):
     """项目管理员权限"""
     required_roles = ["manager"]
+
+
+class IsNotProjectMaintainer(permissions.BasePermission):
+    """额外的维保写操作限制；不替代原功能权限和对象可见性校验。"""
+
+    message = "维保人员不能修改该项目的资源"
+
+    def has_permission(self, request, view) -> bool:
+        """创建时也校验声明的项目，防止仓库登记隐式写入项目组件。"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        from apps.project.models import Project
+
+        project_id = getattr(request, "data", {}).get("project")
+        project = Project.objects.filter(id=project_id).first() if project_id else None
+        return project is None or ProjectRolePermission._effective_role(project, request.user) != "maintainer"
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        """按服务端资源归属校验，保留其他项目角色与超管的原授权。"""
+        if request.user.is_superuser:
+            return True
+        from apps.project.models import Project
+        from apps.project.services import visible_project_ids
+        from apps.repository.models import Repository
+        from apps.workflow.models import WorkflowDefinition
+
+        # 仓库与其内置流程属于物理仓库；兼任用户可使用该仓库上的其他项目角色。
+        repository = obj if isinstance(obj, Repository) else getattr(obj, "repository", None)
+        if isinstance(obj, (Repository, WorkflowDefinition)) and repository is not None:
+            projects = Project.objects.filter(
+                id__in=visible_project_ids(request.user),
+                project_components__repository=repository, project_components__is_active=True,
+            ).distinct()
+            if projects.exists():
+                return any(ProjectRolePermission._effective_role(project, request.user) != "maintainer" for project in projects)
+        project = _resolve_project(obj)
+        return project is None or ProjectRolePermission._effective_role(project, request.user) != "maintainer"
+
+
+class IsNotOnlyProjectMaintainer(IsNotProjectMaintainer):
+    """共享资源写入口补充纯维保限制，仍须通过原全局功能权限。"""
+
+    def has_permission(self, request, view) -> bool:
+        from apps.project.services import has_only_maintainer_projects
+
+        return super().has_permission(request, view) and not has_only_maintainer_projects(request.user)
 
 
 class IsRepositoryWorkflowEditor(permissions.BasePermission):

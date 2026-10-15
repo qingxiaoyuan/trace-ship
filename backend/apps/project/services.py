@@ -254,9 +254,21 @@ def get_grantable_roles(project, user) -> list[str]:
         return ALL_GRANTABLE_ROLES
     if role == "software_admin":
         return SOFTWARE_ADMIN_GRANTABLE_ROLES
-    if role is None:
+    if role is None or role == "maintainer":
         return []
     return MEMBER_GRANTABLE_ROLES
+
+
+def has_only_maintainer_projects(user) -> bool:
+    """是否仅在项目中担任维保；负责人有效角色和超管仍按原规则处理。"""
+    if not user or not user.is_authenticated or user.is_superuser:
+        return False
+    memberships = ProjectMember.objects.filter(user=user)
+    return (
+        memberships.exists()
+        and not memberships.exclude(role="maintainer").exists()
+        and not memberships.filter(project__leader=user).exists()
+    )
 
 
 def visible_project_ids(user):

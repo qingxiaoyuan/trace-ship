@@ -5,10 +5,12 @@
 支持节点或签（any）与会签（all）模式。
 """
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import CharField, Q, Value
+from django.db.models.functions import Cast, Lower, Replace
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -19,6 +21,21 @@ from apps.project.services import visible_project_ids, visible_repository_ids
 from apps.repository.models import Repository
 from apps.system.services import OperationLogService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
+
+if TYPE_CHECKING:
+    from apps.release.models import ReleaseRecord
+
+
+def resolve_release(instance: WorkflowInstance) -> "ReleaseRecord | None":
+    """解析实例关联的真实发布；非发布业务和异常业务 ID 返回空值。"""
+    if instance.biz_type != "release":
+        return None
+    from apps.release.models import ReleaseRecord
+
+    try:
+        return ReleaseRecord.objects.select_related("project", "repository", "publisher").filter(id=instance.biz_id).first()
+    except (ValueError, ValidationError):
+        return None
 
 # 内置发布类型 → 流程名称
 BUILTIN_RELEASE_FLOW_NAMES: dict[str, str] = {
@@ -827,10 +844,28 @@ def visible_workflow_instances(user):
     queryset = WorkflowInstance.objects.all()
     if user.is_superuser:
         return queryset
-    return queryset.filter(
+    from apps.release.models import ReleaseRecord
+
+    # 兼容 UUID 的规范、大写、花括号、URN 和无连字符表示；不能落入旧流程回退。
+    normalized_biz_id = Lower("biz_id")
+    for fragment in ("urn:", "uuid:", "{", "}", "-"):
+        normalized_biz_id = Replace(normalized_biz_id, Value(fragment), Value(""))
+    releases = ReleaseRecord.objects.annotate(
+        workflow_biz_id=Replace(Cast("id", CharField()), Value("-"), Value("")),
+    )
+    real_release = Q(biz_type="release", normalized_biz_id__in=releases.values("workflow_biz_id"))
+    definition_scope = (
         Q(definition__repository_id__in=visible_repository_ids(user))
         | Q(definition__project_id__in=visible_project_ids(user))
-        | Q(tasks__approver=user)
+    )
+    return queryset.annotate(
+        normalized_biz_id=normalized_biz_id,
+    ).filter(
+        Q(tasks__approver=user)
+        | Q(biz_type="release", normalized_biz_id__in=releases.filter(
+            project_id__in=visible_project_ids(user),
+        ).values("workflow_biz_id"))
+        | (~real_release & definition_scope)
     ).distinct()
 
 

@@ -48,6 +48,8 @@ from apps.release.models import ReleaseRecord
 from apps.system.services import OperationLogService
 from utils.permissions import (
     HasPermission,
+    IsNotOnlyProjectMaintainer,
+    IsNotProjectMaintainer,
     IsProjectDeveloper,
     IsProjectMember,
     IsProjectPackageAdmin,
@@ -94,7 +96,7 @@ class PackageImageViewSet(StandardModelViewSet):
     def get_permissions(self):
         # 镜像管理（增删改、导入 tar 包）需要 system.package_image 权限，超管自动放行
         if self.action in ("create", "update", "partial_update", "destroy", "import_image"):
-            return [IsAuthenticated(), HasPermission("system.package_image")]
+            return [IsAuthenticated(), HasPermission("system.package_image"), IsNotOnlyProjectMaintainer()]
         return [IsAuthenticated()]
 
     # 允许导入的镜像包格式（docker load 支持 tar 及常见压缩格式）
@@ -208,7 +210,7 @@ class PackageNodeViewSet(StandardModelViewSet):
         if self.action in (
             "create", "update", "partial_update", "destroy", "test", "test_connection",
         ):
-            return [IsAuthenticated(), HasPermission("system.package_image")]
+            return [IsAuthenticated(), HasPermission("system.package_image"), IsNotOnlyProjectMaintainer()]
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):
@@ -669,7 +671,7 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             return [IsAuthenticated(), IsProjectDeveloper()]
         if self.action == "destroy":
             # 删除任务记录是独立高风险权限；任务查询范围仍限制为当前用户可见项目。
-            return [IsAuthenticated(), HasPermission("package.task.delete")]
+            return [IsAuthenticated(), HasPermission("package.task.delete"), IsNotProjectMaintainer()]
         return [IsAuthenticated(), IsProjectMember()]
 
     def destroy(self, request, *args, **kwargs):

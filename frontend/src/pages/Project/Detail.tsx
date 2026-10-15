@@ -20,6 +20,7 @@ import { ReleaseTab } from './tabs/ReleaseTab';
 import { PackageTab } from './tabs/PackageTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { projectApi } from '@/api/project';
+import { useProjectRole } from '@/hooks/useProjectRole';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import type { ProjectStatus } from '@/types';
@@ -79,6 +80,7 @@ export default function ProjectDetail() {
     queryFn: () => projectApi.getProject(id || ''),
     enabled: !!id,
   });
+  const { canDevelop } = useProjectRole(project);
 
   // 面包屑实体名 + 最近访问埋点
   useEffect(() => {
@@ -161,7 +163,7 @@ export default function ProjectDetail() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          {canDevelop && (project.status === 'active' || project.status === 1) && <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => navigate(`/releases/create?project_id=${project.id}`)}
@@ -170,7 +172,7 @@ export default function ProjectDetail() {
               <Rocket className="h-3.5 w-3.5" strokeWidth={1.5} />
               新建发布
             </button>
-          </div>
+          </div>}
         </div>
         {/* 统计 */}
         <div className="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">

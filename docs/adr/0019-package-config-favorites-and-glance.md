@@ -17,7 +17,7 @@
 
 ## Decision
 
-1. **收藏模型**：新增 `PackageConfigFavorite`（`user` + `config` 唯一约束，级联删除），表名 `package_config_favorite`。收藏即个人入口授权：收藏列表不再按项目可见性二次过滤，配置删除则收藏级联消失。
+1. **收藏模型**：新增 `PackageConfigFavorite`（`user` + `config` 唯一约束，级联删除），表名 `package_config_favorite`。收藏记录个人偏好；读取配置与最近任务仍按当前项目可见性过滤，配置删除则收藏级联消失（范围规则见 2026-10-14 修订）。
 2. **接口**：
    - `POST /api/packages/configs/{id}/favorite/` 切换收藏（toggle），返回 `{is_favorite}`；非项目成员因 queryset 过滤得到 404。
    - `GET /api/packages/configs/favorites/` 返回当前用户收藏配置（收藏时间倒序、不分页），每条附 `last_task` 最近任务摘要（Subquery 取最近一次任务，无 N+1）；`PackageConfigSerializer` 输出 `is_favorite`（列表经 `Exists` 注解）。
@@ -33,3 +33,7 @@
 - 工作台打包指标口径由「最近 20 条」变为「近 30 天我发起的终态任务」，与看板数据可对照；历史页面不受影响。
 - 收藏为纯增量能力，无收藏用户界面不出现任何新元素（侧栏/网格不渲染）。
 - 「常用」目前按用户收藏驱动，不做全局推荐；若未来需要管理员推荐位，可在 favorites 接口外层扩展，不改模型。
+
+## 修订（2026-10-14）
+
+Issue #23 要求发布、配置、任务和说明都以显式项目成员范围为准，取代原「收藏即授权」例外。用户被移出项目后保留收藏记录，但收藏接口不再返回该项目的配置或最近任务；重新加入后可恢复个人常用入口。超管按全量项目范围读取。此规则适用于所有账号，维保和兼任角色共用相同数据范围。

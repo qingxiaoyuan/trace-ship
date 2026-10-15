@@ -77,7 +77,7 @@ export interface Project {
   version_rule?: unknown;
   release_rule?: unknown;
   /** 当前用户在该项目的成员角色（详情接口返回，超管为 manager，非成员为 null） */
-  my_role?: 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin' | null;
+  my_role?: 'manager' | 'developer' | 'tester' | 'auditor' | 'viewer' | 'software_admin' | 'maintainer' | null;
 }
 
 /** 项目统计聚合数据（/projects/stats/） */
@@ -693,6 +693,9 @@ export interface PackageTaskStats {
 }
 
 export interface PackageTask {
+  my_role?: string | null;
+  can_cancel?: boolean;
+  can_delete?: boolean;
   id: string;
   config?: string | null;
   config_name?: string;
@@ -960,6 +963,7 @@ export interface WorkflowNodeConfig {
 }
 
 export interface WorkflowTask {
+  can_act?: boolean;
   id: string;
   instance?: string;
   node_id?: string;
@@ -1041,6 +1045,7 @@ export interface WorkflowDefinition {
 }
 
 export interface WorkflowInstance {
+  can_revoke?: boolean;
   id: string;
   definition: string;
   definition_name?: string;

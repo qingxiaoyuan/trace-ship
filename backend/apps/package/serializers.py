@@ -14,7 +14,7 @@ from apps.package.models import (
     PackageNode,
     PackageTask,
 )
-from apps.project.models import ProjectComponent, ProjectMember
+from apps.project.models import ProjectComponent
 
 
 def validate_safe_rel_path(value: str, field: str = "path") -> str:
@@ -285,8 +285,9 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         if user.is_superuser:
             return value
-        member = ProjectMember.objects.filter(project=value.project, user=user).first()
-        if not member or member.role not in ("manager", "software_admin"):
+        from utils.permissions import IsProjectPackageAdmin
+
+        if not IsProjectPackageAdmin()._check(value.project, user):
             raise serializers.ValidationError("只有项目管理员或软件管理员才能维护打包配置")
         return value
 
@@ -412,6 +413,9 @@ class PackageTaskSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     release_type_display = serializers.CharField(source="get_release_type_display", read_only=True)
     can_push_svn = serializers.SerializerMethodField()
+    my_role = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
 
     class Meta:
         model = PackageTask
@@ -421,16 +425,44 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "triggered_by", "triggered_by_name", "name",
             "build_type", "release_type", "release_type_display",
             "tag_name", "source_ref", "version", "commit_hash", "config_snapshot",
-            "status", "status_display", "progress", "stage_info", "can_push_svn",
+            "status", "status_display", "progress", "stage_info", "can_push_svn", "my_role", "can_cancel", "can_delete",
             "artifact_info", "duration", "error_message",
             "started_at", "finished_at", "created_at", "updated_at",
         ]
         read_only_fields = fields
 
+    def get_my_role(self, obj: PackageTask) -> str | None:
+        """任务所属项目的有效角色，同一响应内按项目缓存。"""
+        from apps.project.serializers import resolve_my_role
+
+        request = self.context.get("request")
+        roles = getattr(self, "_project_roles", {})
+        if obj.project_id not in roles:
+            roles[obj.project_id] = resolve_my_role(obj.project, request.user if request else None)
+            self._project_roles = roles
+        return roles[obj.project_id]
+
+    def get_can_cancel(self, obj: PackageTask) -> bool:
+        """取消入口同时要求进行中状态与项目开发权限。"""
+        return obj.status in ("queued", "running") and self.get_my_role(obj) in ("manager", "developer", "software_admin")
+
+    def get_can_delete(self, obj: PackageTask) -> bool:
+        """独立删除权限不能覆盖维保项目的只读边界。"""
+        from utils.permissions import HasPermission
+
+        request = self.context.get("request")
+        if not request or not obj.is_finished or self.get_my_role(obj) in (None, "maintainer"):
+            return False
+        if not hasattr(self, "_can_delete_tasks"):
+            self._can_delete_tasks = HasPermission("package.task.delete").has_permission(request, None)
+        return self._can_delete_tasks
+
     def get_can_push_svn(self, obj: PackageTask) -> bool:
         """任务是否具备手动推送 SVN 的条件（已允许推送的自动打包任务）。"""
         from apps.package.services.svn import task_allows_svn_push
 
+        if self.context.get("request") and self.get_my_role(obj) not in ("manager", "developer", "software_admin"):
+            return False
         snapshot = obj.config_snapshot or {}
         return bool(
             obj.status == "success"

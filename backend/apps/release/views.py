@@ -37,7 +37,7 @@ from apps.release.services import (
     ReleaseValidator,
 )
 from apps.repository.models import Repository
-from utils.permissions import IsProjectDeveloper, IsProjectManager
+from utils.permissions import IsNotProjectMaintainer, IsProjectDeveloper, IsProjectManager
 from utils.provider.exceptions import ProviderError
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet
@@ -190,6 +190,8 @@ class ReleaseViewSet(StandardModelViewSet):
             return [IsAuthenticated(), IsProjectDeveloper()]
         if self.action in ("delete_released", "cleanup_tag"):
             return [IsAuthenticated(), IsProjectManager()]
+        if self.action in ("review_issues", "review_issue_reply", "review_issue_resolve", "review_issue_reject") and self.request.method == "POST":
+            return [IsAuthenticated(), IsNotProjectMaintainer()]
         return super().get_permissions()
 
     def _serialize_release(self, release: ReleaseRecord) -> dict[str, Any]:

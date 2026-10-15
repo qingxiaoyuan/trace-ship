@@ -4,6 +4,7 @@
 from django.db.models import OuterRef, Subquery
 
 from apps.package.models import PackageConfig, PackageConfigFavorite, PackageTask
+from apps.project.services import visible_project_ids
 
 
 class FavoriteMixin:
@@ -27,18 +28,18 @@ class FavoriteMixin:
     def list_favorite_configs(user) -> list[dict]:
         """当前用户收藏的打包配置列表（按收藏时间倒序）。
 
-        收藏即授权入口，不再按配置项目可见性过滤；配置删除后收藏级联消失。
+        收藏保留个人偏好，读取仍要求项目可见；配置删除后收藏级联消失。
         每条附带该配置最近一次任务（last_task，无任务时为 None）。
         通过 Subquery 取最近任务 id 后一次性回表，避免 N+1。
         """
         last_task_id_sq = Subquery(
-            PackageTask.objects.filter(config_id=OuterRef("config_id"))
+            PackageTask.objects.filter(config_id=OuterRef("config_id"), project_id__in=visible_project_ids(user))
             # 次级排序键保证相同 created_at 时结果确定
             .order_by("-created_at", "-id")
             .values("id")[:1]
         )
         favorites = (
-            PackageConfigFavorite.objects.filter(user=user)
+            PackageConfigFavorite.objects.filter(user=user, config__project_component__project_id__in=visible_project_ids(user))
             .select_related(
                 "config__project_component__project",
                 "config__project_component__repository",

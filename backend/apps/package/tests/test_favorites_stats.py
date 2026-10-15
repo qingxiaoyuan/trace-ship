@@ -202,15 +202,15 @@ class TestFavoriteList:
         assert results[str(package_config.id)]["is_favorite"] is True
         assert results[str(other_config.id)]["is_favorite"] is False
 
-    def test_favorites_not_filtered_by_membership(self, api_client, user, package_config, project):
-        """ADR-0019：收藏即个人入口授权——被移出项目后 favorites 仍返回该配置。"""
+    def test_favorites_require_current_membership(self, api_client, user, package_config, project):
+        """Issue #23：收藏不扩大数据范围，被移出项目后不返回配置和任务。"""
         PackageConfigFavorite.objects.create(user=user, config=package_config)
         ProjectMember.objects.filter(project=project, user=user).delete()
 
         resp = api_client.get("/api/packages/configs/favorites/")
         assert resp.status_code == 200
         ids = [item["id"] for item in resp.data["data"]]
-        assert str(package_config.id) in ids
+        assert str(package_config.id) not in ids
 
     def test_favorites_sorted_first_in_config_list(self, api_client, user, package_config, project, repository):
         """配置列表默认收藏优先：收藏的配置排最前，显式 ordering 参数时不强制。"""

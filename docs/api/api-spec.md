@@ -440,7 +440,7 @@
 ### 4.7 项目成员列表
 
 - **GET** `/api/projects/{id}/members/`
-- 仅项目管理员。
+- 所有显式项目成员可读（含维保），超管放行。
 
 **响应：**
 
@@ -461,6 +461,7 @@
           "nickname": "张三"
         },
         "role": "developer",
+        "role_display": "开发人员",
         "created_at": "2026-06-01T10:00:00+08:00"
       }
     ]
@@ -471,7 +472,7 @@
 ### 4.8 添加项目成员
 
 - **POST** `/api/projects/{id}/members/`
-- 仅项目管理员。
+- manager / 超管可授全部角色，software_admin 可授除 manager、software_admin 外的角色；developer / tester / auditor / viewer 仅可授 developer / tester。维保禁止添加成员，单个与批量请求均返回 403。
 
 **请求体：**
 
@@ -482,12 +483,12 @@
 }
 ```
 
-角色可选：`developer`/`tester`/`manager`/`auditor`/`viewer`。
+角色可选：`developer` / `tester` / `manager` / `auditor` / `viewer` / `software_admin` / `maintainer`。响应 `role_display` 为中文角色名，`maintainer` 显示「维保人员」；项目响应 `my_role` 返回有效角色编码。同一用户可在不同项目持有不同角色。
 
 ### 4.9 更新 / 移除项目成员
 
 - **PUT / PATCH / DELETE** `/api/projects/{id}/members/{mid}/`
-- 仅项目管理员；PUT/PATCH 用于调整成员角色。
+- 仅项目管理员（含软件管理员和超管）；PUT/PATCH 用于调整成员角色，并受上述授予上限约束。维保禁止修改角色或移除成员。
 
 > 说明：旧版「项目外站绑定」（`/api/projects/{id}/integrations/`）已废弃。当前仓库直接归属项目并各自绑定凭证，见第六章。
 
@@ -1529,6 +1530,9 @@
   "status_display": "成功",
   "progress": 100,
   "stage_info": {},
+  "my_role": "developer",
+  "can_cancel": false,
+  "can_delete": false,
   "can_push_svn": true,
   "artifact_info": [{"id": "uuid", "name": "app.tar.gz", "path": "app.tar.gz"}],
   "duration": 300000,
@@ -1543,12 +1547,12 @@
 ### 9.11 取消打包任务
 
 - **POST** `/api/packages/tasks/{id}/cancel/`
-- 仅项目管理员；已结束的任务不可取消。
+- 目标项目的 manager / developer / software_admin 可操作，超管放行；仅 queued / running 任务可取消。详情 `can_cancel` 同时反映角色与任务状态，维保为 false。
 
 ### 9.12 手动推送产物到 SVN
 
 - **POST** `/api/packages/tasks/{id}/push-svn/`
-- 仅项目管理员；任务成功且配置快照启用了 SVN 推送时可用（`can_push_svn=true`）。
+- 目标项目的 manager / developer / software_admin 可操作，超管放行；任务成功且配置快照启用了 SVN 推送时可用（`can_push_svn=true`）。维保为 false。任务删除另需 `package.task.delete` 且任务已结束，维保即使具有旧全局权限也不能删除（`can_delete=false`）。
 
 ### 9.13 任务日志与产物下载
 

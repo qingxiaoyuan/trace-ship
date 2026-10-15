@@ -125,8 +125,11 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         user = request.user if request else None
         from apps.release.services import ReleaseReviewService
+        from utils.permissions import IsNotProjectMaintainer
 
-        return ReleaseReviewService.can_review(user)
+        permission = IsNotProjectMaintainer()
+        return bool(request and permission.has_permission(request, None)
+                    and permission.has_object_permission(request, None, obj) and ReleaseReviewService.can_review(user))
 
     def get_can_reply(self, obj: ReleaseRecord) -> bool:
         """当前用户是否为发布人（可回复整改意见）"""
@@ -136,7 +139,11 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             return False
         if user.is_superuser:
             return True
-        return str(obj.publisher_id) == str(user.id)
+        from utils.permissions import IsNotProjectMaintainer
+
+        permission = IsNotProjectMaintainer()
+        return (str(obj.publisher_id) == str(user.id) and permission.has_permission(request, None)
+                and permission.has_object_permission(request, None, obj))
 
     def validate_project(self, value: Project) -> Project:
         """
@@ -348,4 +355,6 @@ class ReleaseReviewIssueSerializer(serializers.ModelSerializer):
             return False
         if user.is_superuser:
             return True
-        return str(obj.author_id) == str(user.id)
+        from utils.permissions import IsNotProjectMaintainer
+
+        return str(obj.author_id) == str(user.id) and IsNotProjectMaintainer().has_object_permission(request, None, obj.release)

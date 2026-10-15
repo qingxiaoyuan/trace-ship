@@ -25,7 +25,7 @@ function taskToDetail(task: WorkflowTask): DetailSource {
     submitTime: task.submit_time,
     currentNode: task.current_node,
     mode: task.mode,
-    readOnly: false,
+    readOnly: task.can_act !== true,
   };
 }
 

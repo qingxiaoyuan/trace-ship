@@ -7,7 +7,8 @@ export type ProjectMemberRole =
   | 'manager'
   | 'auditor'
   | 'viewer'
-  | 'software_admin';
+  | 'software_admin'
+  | 'maintainer';
 
 export interface ProjectMemberUser {
   id: string;
