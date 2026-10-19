@@ -12,6 +12,7 @@ import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, isFormalIdentityField, applyCheckboxChange, type MdTableRow } from './releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './ReleaseDocField';
 import { FormalChangesPreview } from './FormalChangesPreview';
+import { ReleaseMarkdown } from './ReleaseMarkdown';
 import type { Release } from '@/types';
 
 interface ReleaseNotesProps {
@@ -20,7 +21,7 @@ interface ReleaseNotesProps {
 
 /** 仅在两列表格能够完整表达原文时使用结构化展示和编辑。 */
 function parseCompleteTable(content: string): MdTableRow[] {
-  const rows = parseMdTable(content);
+  const rows = parseMdTable(content, { preserveWhitespace: true });
   if (!rows.length) return [];
   const source = content.trim().split(/\r?\n/);
   if (/^\|\s*(?:项目|字段)\s*\|\s*内容\s*\|$/.test(source[0].trim())) source.shift();
@@ -250,15 +251,15 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                   <td className="w-[110px] shrink-0 break-words [overflow-wrap:anywhere] bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500 sm:w-[160px]">
                     {row.key}
                   </td>
-                  <td className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 py-2 text-[13px] text-slate-700">
-                    {row.value.replace(/<br\s*\/?>/gi, '\n')}
+                  <td className="release-note-value break-words [overflow-wrap:anywhere] px-3 py-2 text-[13px] text-slate-700">
+                    <ReleaseMarkdown content={row.value} field />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <pre className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] p-4 font-mono text-[13px] text-slate-700">{mdContent}</pre>
+          <div className="min-w-0 p-4"><ReleaseMarkdown content={mdContent} /></div>
         )}
       </div>
 

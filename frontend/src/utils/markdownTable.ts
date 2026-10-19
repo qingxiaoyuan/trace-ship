@@ -20,7 +20,7 @@ export interface MdTableRow {
  * @param md Markdown 字符串
  * @returns 行数组
  */
-export function parseMdTable(md: string): MdTableRow[] {
+export function parseMdTable(md: string, options: { preserveWhitespace?: boolean } = {}): MdTableRow[] {
   if (!md) return [];
   const rows: MdTableRow[] = [];
   const lines = md.trim().split('\n');
@@ -50,7 +50,10 @@ export function parseMdTable(md: string): MdTableRow[] {
       i++;
       // 后续不以 | 开头的行都是 value 的延续
       while (i < lines.length && !lines[i].trim().startsWith('|')) {
-        valueParts += '\n' + lines[i].trim().replace(/\|$/, '').trim();
+        const continuation = options.preserveWhitespace
+          ? lines[i].replace(/[ \t]*\|$/, '')
+          : lines[i].trim().replace(/\|$/, '').trim();
+        valueParts += '\n' + continuation;
         i++;
       }
       if (/^[-:\s]+$/.test(key)) continue;

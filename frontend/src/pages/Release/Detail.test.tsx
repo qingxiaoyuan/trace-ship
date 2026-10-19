@@ -44,22 +44,64 @@ beforeEach(() => {
 afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
 
 describe('维保发布详情', () => {
+  it('标准表格值渲染链接、强调与换行，保留字段布局', async () => {
+    releaseDoc = '| 字段 | 内容 |\n|------|------|\n| 说明 | [合并请求 !42](https://example.invalid/mr/42) **已修复**<br>第二行 |';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    const link = await screen.findByRole('link', { name: '合并请求 !42' });
+    expect(link.getAttribute('href')).toBe('https://example.invalid/mr/42');
+    expect(screen.getByText('已修复').tagName).toBe('STRONG');
+    const value = screen.getByRole('cell', { name: /合并请求 !42/ });
+    expect(value.querySelector('br')).not.toBeNull();
+    expect(value.textContent).toContain('第二行');
+  });
+
+  it('代码示例保留换行标签原文，说明中的危险链接和 HTML 不执行', async () => {
+    releaseDoc = '# 安全说明\n\n`<br>`\n\n[普通链接](https://example.invalid) [危险链接](javascript:alert%281%29)\n\n<script>alert(1)</script>';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    await screen.findByRole('heading', { name: '安全说明' });
+    expect(screen.getByText('<br>').tagName).toBe('CODE');
+    expect(screen.getByRole('link', { name: '普通链接' }).getAttribute('href')).toBe('https://example.invalid');
+    expect(screen.getByText('危险链接').getAttribute('href') || '').not.toMatch(/^javascript:/i);
+    expect(container.querySelector('script')).toBeNull();
+  });
+
   it('非标准表格和普通说明保留原始正文', async () => {
     releaseDoc = '部署命令：\n  backup --all\n\n| 额外约束 | A \\| B 管道表达式 |\n最后请检查日志。';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
       <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
     </MemoryRouter></App></QueryClientProvider>);
-    expect((await screen.findByText(/部署命令：/)).textContent).toBe(releaseDoc);
+    expect(await screen.findByText(/部署命令：/)).toBeTruthy();
+    expect(screen.getByText(/额外约束/).textContent).toContain('A | B 管道表达式');
+    expect(screen.getByText(/最后请检查日志/)).toBeTruthy();
   });
 
   it('多行说明中的命令缩进不被表格转换删去', async () => {
-    releaseDoc = '| 字段 | 内容 |\n|------|------|\n| 部署步骤 | 执行以下命令\n    backup --all\n完成后重启 |';
+    releaseDoc = '| 字段 | 内容 |\n|------|------|\n| 部署步骤 | 执行以下命令\n    backup_db --all\n完成后重启 |';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
       <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
     </MemoryRouter></App></QueryClientProvider>);
-    expect((await screen.findByText(/backup --all/)).textContent).toContain('\n    backup --all\n');
+    const cell = await screen.findByRole('cell', { name: /执行以下命令/ });
+    expect(cell.textContent).toContain('\n    backup_db --all\n');
+    expect(cell.textContent).toContain('完成后重启');
+  });
+
+  it('行首换行标签渲染为换行，不泄露为说明正文标记', async () => {
+    releaseDoc = '<br>\n第二行';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    expect(await screen.findByText('第二行')).toBeTruthy();
+    expect(container.querySelector('.release-markdown br')).not.toBeNull();
+    expect(screen.queryByText(/<br>/)).toBeNull();
   });
 
   it('无说明时维保只能阅读空状态，没有编辑或生成入口', async () => {
@@ -95,7 +137,7 @@ describe('维保发布详情', () => {
     const rows = within(table).getAllByRole('row').map((row) => within(row).getAllByRole('cell'));
     expect(rows.map((cells) => cells[0].textContent)).toEqual(['额外前置字段', '测试验证', '更新内容', '兼容性说明', '额外末尾字段']);
     expect(rows[1][1].textContent).toBe('研发测试复验通过；专项性能测试待现场确认');
-    expect(rows[2][1].textContent).toBe('第一行\n\n第三行');
+    expect(within(rows[2][1]).getAllByRole('paragraph').map((paragraph) => paragraph.textContent)).toEqual(['第一行', '第三行']);
     expect(rows[3][1].textContent).toBe(longDescription);
     await waitFor(() => expect(client.getQueryState(['project', 'project'])?.status).toBe('success'));
     expect(screen.queryByRole('button', { name: /修改文档|生成.*说明/ })).toBeNull();
@@ -125,8 +167,12 @@ describe('维保发布详情', () => {
       <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
     </MemoryRouter></App></QueryClientProvider>);
 
-    const document = await screen.findByText(/部署前请先备份业务库/);
-    expect(document.textContent).toBe(releaseDoc);
+    expect(await screen.findByText('部署前请先备份业务库。')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '升级说明' })).toBeTruthy();
+    expect(screen.getAllByRole('table')).toHaveLength(2);
+    expect(screen.getByRole('cell', { name: '新索引及完整兼容说明' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '升级步骤' })).toBeTruthy();
+    expect(screen.getByText('附录：升级完成后检查版本。')).toBeTruthy();
   });
 
   it('开发人员保存混合说明时保留表格外正文和全部列', async () => {
@@ -144,7 +190,11 @@ describe('维保发布详情', () => {
     fireEvent.change(editor, { target: { value: updatedDoc } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'OK' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect((await screen.findByText(/补充现场验收步骤/)).textContent).toBe(updatedDoc);
+    expect(await screen.findByText(/补充现场验收步骤/)).toBeTruthy();
+    expect(screen.getByText('部署前备份。')).toBeTruthy();
+    expect(screen.getByRole('cell', { name: 'V2' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '修改文档' }));
+    expect((within(await screen.findByRole('dialog')).getByRole('textbox') as HTMLTextAreaElement).value).toBe(updatedDoc);
   });
 
   it('正式说明保留身份字段只读，开发人员仍可修改其余内容', async () => {

@@ -20,6 +20,14 @@ describe('parseMdTable', () => {
     expect(parseMdTable(md)).toEqual([{ key: '更新内容', value: '第一行\n第二行\n第三行' }]);
   });
 
+  it('阅读模式保留命令缩进和空行，默认解析保持原契约', () => {
+    const md = '| 部署步骤 | 备份\n    backup --all\n\n重启 |';
+    expect(parseMdTable(md, { preserveWhitespace: true })).toEqual([
+      { key: '部署步骤', value: '备份\n    backup --all\n\n重启' },
+    ]);
+    expect(parseMdTable(md)).toEqual([{ key: '部署步骤', value: '备份\nbackup --all\n\n重启' }]);
+  });
+
   it('严格 2 列解析：超出第 2 列的内容被忽略', () => {
     const md = '| 说明 | a | b |';
     expect(parseMdTable(md)).toEqual([{ key: '说明', value: 'a' }]);
