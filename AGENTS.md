@@ -12,6 +12,8 @@ Matt 技能的需求、规格、任务拆分和进度统一使用 `qingxiaoyuan/
 
 创建或调整 Issue 标签时，使用 [中文标签映射](docs/agents/triage-labels.md)。开始任务、创建分支或准备 PR 时，按 [事项管理约定](docs/agents/issue-tracker.md) 中的开发与交付流程执行。
 
+实现、审查或交付时读取[代码审查与交付标准](CODING_STANDARDS.md)；涉及正文渲染时按[渲染验收](docs/agents/rendering-acceptance.md)取证；PR 检查及失败基线见[自动检查约定](docs/agents/pr-checks.md)。
+
 ## 项目概览
 
 Trace Ship 是一个软件版本发布管理系统。业务上项目即产品，UI 主入口显示为「项目/产品」，文档与代码正文统一使用「项目」口径；代码层统一使用 project 命名。项目通过 `ProjectComponent` 组合可复用的物理仓库，并组织提交审查、发布申请、审批工作流、打包推送（Docker 镜像 / 本地脚本 / SVN）、凭证与通知等能力。

@@ -16,6 +16,8 @@ Trace Ship 是一个软件版本发布管理系统。仓库主要部分：
 
 所有输出、思考过程、任务说明、代码注释和文档均使用中文。与仓库交互时的命令、日志、错误信息可保留原始语言，但解释和总结必须用中文。
 
+实现、审查或交付时读取[代码审查与交付标准](CODING_STANDARDS.md)；涉及正文渲染时按[渲染验收](docs/agents/rendering-acceptance.md)取证；PR 检查及失败基线见[自动检查约定](docs/agents/pr-checks.md)。
+
 ## Common Commands
 
 ### 开发环境脚本（scripts/dev.sh）
