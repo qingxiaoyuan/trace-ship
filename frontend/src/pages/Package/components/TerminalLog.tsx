@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, Info } from 'lucide-react';
+import { Alert, Button } from 'antd';
 import { useHideFileDownload } from '@/hooks/useHideFileDownload';
 
 /** 单行高度（11.5px 字号 × 行高 ≈ 18px），虚拟滚动需要固定行高 */
@@ -20,11 +21,13 @@ interface TerminalLogProps {
   /** 仅加载了末尾部分日志（大日志首屏优化） */
   partial?: boolean;
   /** 下载完整日志 */
-  onDownloadFull?: () => void;
+  onDownloadFull?: () => void | Promise<void>;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 /** 终端日志：虚拟滚动渲染，仅挂载可视区行，超大日志不卡顿 */
-export const TerminalLog = memo(function TerminalLog({ text, partial, onDownloadFull }: TerminalLogProps) {
+export const TerminalLog = memo(function TerminalLog({ text, partial, onDownloadFull, error, onRetry }: TerminalLogProps) {
   const hideDownload = useHideFileDownload();
   const canDownload = Boolean(onDownloadFull) && !hideDownload;
   const parentRef = useRef<HTMLDivElement>(null);
@@ -54,6 +57,8 @@ export const TerminalLog = memo(function TerminalLog({ text, partial, onDownload
 
   return (
     <div className="terminal overflow-hidden">
+      {error && <Alert type="error" showIcon title="日志加载失败" description={error}
+        action={onRetry && <Button onClick={onRetry}>重试日志</Button>} />}
       {(partial || canDownload) && (
         <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5 text-[10px] text-slate-500 max-md:text-xs">
           {partial && (
@@ -65,7 +70,9 @@ export const TerminalLog = memo(function TerminalLog({ text, partial, onDownload
           {canDownload && (
             <button
               type="button"
-              onClick={onDownloadFull}
+              onClick={async () => {
+                try { await onDownloadFull?.(); } catch { /* 下载错误由统一拦截器提示。 */ }
+              }}
               className="ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
             >
               <Download className="h-3 w-3" strokeWidth={1.5} />
@@ -80,7 +87,7 @@ export const TerminalLog = memo(function TerminalLog({ text, partial, onDownload
         className="overflow-auto p-4 text-[11.5px] leading-relaxed scrollbar-thin"
         style={{ minHeight: 420, maxHeight: 560 }}
       >
-        {lines.length === 0 ? (
+        {lines.length === 0 ? !error && (
           <div className="text-slate-600">暂无日志</div>
         ) : (
           <div

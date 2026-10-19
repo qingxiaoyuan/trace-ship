@@ -1588,9 +1588,15 @@
 
 ### 9.13 任务日志与产物下载
 
-- **GET** `/api/packages/tasks/{id}/logs/`：纯文本日志（`text/plain`，非 JSON 响应）。
+- **GET** `/api/packages/tasks/{id}/logs/`：默认返回完整纯文本日志（`text/plain`，非 JSON 响应）；`?tail=<bytes>` 读取末尾字节，`?offset=<bytes>` 读取新增字节，两种增量模式返回统一响应中的 `{size, offset, content, truncated}`。下次轮询传上次的 `size`；日志被截断重建时返回全量并标记 `truncated=true`。
 - **GET** `/api/packages/tasks/{id}/artifacts/{artifact_id}/download/`：下载单个产物文件。
-- **GET** `/api/packages/tasks/{id}/download-all/`：全部产物打包为 zip 下载。
+- **GET** `/api/packages/tasks/{id}/download-all/`：全部产物打包为 ZIP 下载（`application/zip`），保留相对目录与文件内容。
+
+上述接口沿任务所属项目授权，维保可读取所属项目中他人发起的任务；共享物理仓库不扩大项目范围。任务不可见、产物 ID 不属于当前任务或文件路径越出工作区时返回 `404`，不泄漏其他任务或文件内容。
+
+- 成功、失败、已取消任务的日志缺失时，全量与增量接口均返回 `404`「日志未生成或已清理」。排队/运行任务尚未建立日志时仍返回成功空态，区别于读取错误；前端读取失败可重试，已有日志保留。
+- 无产物、产物已清理或全部文件失效时，下载返回可读 `404`；部分文件缺失时，批量下载返回「部分产物文件不存在或已清理，请逐个下载仍可用的产物」，避免以成功 ZIP 静默遗漏文件。
+- 单文件与批量下载都核验解析后的产物目录仍在任务工作区内，不接受通过目录链接读取工作区外文件。读取权限不授予取消、删除、配置维护或手动推 SVN 权限。
 
 ---
 

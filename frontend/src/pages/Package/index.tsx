@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { App, Button } from 'antd';
+import { Alert, App, Button } from 'antd';
 import { ChevronRight, History, List, Package as PackageIcon, Plus, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
@@ -32,7 +32,7 @@ const PACKAGE_BOARD_PROJECT_KEY = 'trace-ship.package-board.project';
 
 type TabKey = 'builds' | 'configs';
 type TaskLogState = { offset: number; text: string; partial: boolean };
-type TaskDetailLoadResult = { task: PackageTask; logText: string; logPartial: boolean };
+type TaskDetailLoadResult = { task: PackageTask; logText: string; logPartial: boolean; logError: string | null };
 
 export default function PackageTaskPage() {
   const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
@@ -54,6 +54,8 @@ export default function PackageTaskPage() {
   const [selectedConfig, setSelectedConfig] = useState<PackageConfig | null>(null);
   const selectedPermissions = useProjectRole(selectedConfig);
   const [logText, setLogText] = useState('');
+  const [logError, setLogError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<PackageConfig | null>(null);
   const [triggerOpen, setTriggerOpen] = useState(false);
@@ -204,26 +206,37 @@ export default function PackageTaskPage() {
   });
 
   const selectedTaskId = selectedTask?.id;
-  const shouldPoll = !!selectedTask && isRunning(selectedTask.status);
+  const shouldPoll = !!selectedTask && (!routeTaskId || selectedTask.id === routeTaskId) && isRunning(selectedTask.status);
 
   // 大日志优化：首屏只取末尾 256KB，轮询按字节偏移追加增量
   const logStateRef = useRef<Map<string, TaskLogState>>(new Map());
   const taskDetailLoadsRef = useRef<Map<string, Promise<TaskDetailLoadResult>>>(new Map());
+  const activeTaskLoadIdRef = useRef<string | null>(null);
   const [logPartial, setLogPartial] = useState(false);
 
   const loadTaskDetail = useCallback(
     (taskId: string): Promise<TaskDetailLoadResult> => {
+      activeTaskLoadIdRef.current = taskId;
+      setTaskError(null);
       const inFlight = taskDetailLoadsRef.current.get(taskId);
       if (inFlight) return inFlight;
 
       const load = (async (): Promise<TaskDetailLoadResult> => {
         const state = logStateRef.current.get(taskId);
+        let logErrorMessage: string | null = null;
+        const readChunk = async (params: { offset?: number; tail?: number }) => {
+          try {
+            const result = await packageApi.getTaskLogChunk(taskId, params);
+            logErrorMessage = null;
+            return result;
+          } catch (error) {
+            logErrorMessage = readErrorMessage(error, '日志读取失败，请稍后重试');
+            return null;
+          }
+        };
         const [task, chunk] = await Promise.all([
           packageApi.getTask(taskId),
-          (state
-            ? packageApi.getTaskLogChunk(taskId, { offset: state.offset })
-            : packageApi.getTaskLogChunk(taskId, { tail: LOG_TAIL_BYTES })
-          ).catch(() => null),
+          readChunk(state ? { offset: state.offset } : { tail: LOG_TAIL_BYTES }),
         ]);
         let nextState = state;
 
@@ -247,20 +260,28 @@ export default function PackageTaskPage() {
 
         // 任务状态和日志请求并行，终态时补拉一次避免漏掉最后一段失败或 SVN 警告日志。
         if (!isRunning(task.status) && nextState) {
-          const finalChunk = await packageApi.getTaskLogChunk(taskId, { offset: nextState.offset }).catch(() => null);
+          const finalChunk = await readChunk({ offset: nextState.offset });
           if (finalChunk) mergeChunk(finalChunk);
         }
 
         const resolvedState = nextState ?? { offset: 0, text: '', partial: false };
-        logStateRef.current.set(taskId, resolvedState);
-        setSelectedTask(task);
-        setLogText(resolvedState.text);
-        setLogPartial(resolvedState.partial);
+        if (nextState) logStateRef.current.set(taskId, nextState);
+        // 保留每个任务的日志缓存；只让当前选择的任务更新详情，避免慢响应覆盖新导航。
+        if (activeTaskLoadIdRef.current === taskId) {
+          setSelectedTask(task);
+          setTaskError(null);
+          setLogText(resolvedState.text);
+          setLogPartial(resolvedState.partial);
+          setLogError(logErrorMessage);
+        }
         if (!isRunning(task.status)) {
           queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
         }
-        return { task, logText: resolvedState.text, logPartial: resolvedState.partial };
-      })();
+        return { task, logText: resolvedState.text, logPartial: resolvedState.partial, logError: logErrorMessage };
+      })().catch((error: unknown) => {
+        if (activeTaskLoadIdRef.current === taskId) setTaskError(readErrorMessage(error, '任务读取失败，请稍后重试'));
+        throw error;
+      });
 
       taskDetailLoadsRef.current.set(taskId, load);
       void load.finally(() => {
@@ -340,7 +361,7 @@ export default function PackageTaskPage() {
     onSuccess: () => {
       message.success('已发送取消请求');
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
-      if (selectedTaskId) loadTaskDetail(selectedTaskId);
+      if (selectedTaskId) void loadTaskDetail(selectedTaskId).catch(() => {});
     },
   });
 
@@ -380,6 +401,7 @@ export default function PackageTaskPage() {
   }, []);
 
   const backToList = useCallback(() => {
+    activeTaskLoadIdRef.current = null;
     setUserView('list');
     setSelectedTask(null);
     setSelectedConfig(null);
@@ -448,9 +470,12 @@ export default function PackageTaskPage() {
     (task: PackageTask) => {
       setSelectedTask(task);
       setSelectedConfig(null);
+      setLogText('');
+      setLogError(null);
+      setLogPartial(false);
       setUserView('build');
       navigate(`/packages/${task.id}`);
-      loadTaskDetail(task.id);
+      void loadTaskDetail(task.id).catch(() => {});
     },
     [navigate, loadTaskDetail]
   );
@@ -479,7 +504,7 @@ export default function PackageTaskPage() {
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
       if (latest) {
         setSelectedTask(latest);
-        loadTaskDetail(latest.id);
+        void loadTaskDetail(latest.id).catch(() => {});
       } else {
         setSelectedTask(null);
         setLogText('');
@@ -691,9 +716,16 @@ export default function PackageTaskPage() {
         />
       )}
 
-      {view === 'build' && selectedTask && (
-        <BuildView task={selectedTask} logText={logText} logPartial={logPartial} onBack={backToList} onCancel={handleCancel} />
+      {view === 'build' && selectedTask && (!routeTaskId || selectedTask.id === routeTaskId) && (
+        <BuildView task={selectedTask} logText={logText} logPartial={logPartial} logError={logError}
+          onRetryLog={() => { void loadTaskDetail(selectedTask.id).catch(() => {}); }} onBack={backToList} onCancel={handleCancel} />
       )}
+
+      {view === 'build' && taskError && (
+        <Alert type="error" showIcon title="任务详情加载失败" description={taskError}
+          action={<Button onClick={() => { if (routeTaskId || selectedTaskId) void loadTaskDetail((routeTaskId || selectedTaskId)!).catch(() => {}); }}>重试任务</Button>} />
+      )}
+      {view === 'build' && (!selectedTask || (routeTaskId && selectedTask.id !== routeTaskId)) && !taskError && <div className="tech-card rounded-xl p-12 text-center text-[13px] text-slate-400">任务加载中…</div>}
 
       <PackageTriggerModal open={!maintainer && triggerOpen} config={triggerConfig} onClose={closeTrigger} />
 
@@ -713,4 +745,9 @@ export default function PackageTaskPage() {
 
 function isRunning(status: string): boolean {
   return status === 'running' || status === 'queued';
+}
+
+function readErrorMessage(error: unknown, fallback: string): string {
+  const detail = error as { friendlyMessage?: string; message?: string } | null;
+  return detail?.friendlyMessage || detail?.message || fallback;
 }

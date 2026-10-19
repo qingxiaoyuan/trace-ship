@@ -160,6 +160,8 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
 
   return (
     <button
+      aria-label={`下载 ${artifact.name}`}
+      title={`下载 ${artifact.name}`}
       className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600 shrink-0 disabled:opacity-50 max-md:inline-flex max-md:h-9 max-md:w-9 max-md:items-center max-md:justify-center"
       onClick={handleDownload}
       disabled={downloading}

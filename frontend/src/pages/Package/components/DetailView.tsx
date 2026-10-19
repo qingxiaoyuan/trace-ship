@@ -18,7 +18,7 @@ interface DetailViewProps {
   builds: PackageTask[];
   logText: string;
   onBack: () => void;
-  onLoadTaskLog: (taskId: string) => Promise<{ task: PackageTask; logText: string; logPartial?: boolean }>;
+  onLoadTaskLog: (taskId: string) => Promise<{ task: PackageTask; logText: string; logPartial?: boolean; logError?: string | null }>;
   onCancel: (task: PackageTask) => void;
   onEditConfig: () => void;
   onTriggerBuild: () => void;
@@ -44,24 +44,26 @@ export const DetailView = memo(function DetailView({
   const [activeBuild, setActiveBuild] = useState<PackageTask>(task);
   const [activeLogText, setActiveLogText] = useState<string>(logText);
   const [activeLogPartial, setActiveLogPartial] = useState(false);
+  const [activeLogError, setActiveLogError] = useState<string | null>(null);
   const [pushing, setPushing] = useState(false);
 
   const loadLog = useCallback(async (taskId: string) => {
-    const { task: t, logText: text, logPartial: partial } = await onLoadTaskLog(taskId);
+    const { task: t, logText: text, logPartial: partial, logError: error } = await onLoadTaskLog(taskId);
     setActiveBuild(t);
     setActiveLogText(text);
     setActiveLogPartial(partial ?? false);
+    setActiveLogError(error ?? null);
   }, [onLoadTaskLog]);
 
   useEffect(() => {
     const id = task.id;
-    const timer = window.setTimeout(() => loadLog(id), 0);
+    const timer = window.setTimeout(() => { void loadLog(id).catch(() => {}); }, 0);
     return () => window.clearTimeout(timer);
   }, [task.id, loadLog]);
 
   useEffect(() => {
     if (!isRunning(activeBuild.status)) return;
-    const timer = window.setInterval(() => loadLog(activeBuild.id), 3000);
+    const timer = window.setInterval(() => { void loadLog(activeBuild.id).catch(() => {}); }, 3000);
     return () => window.clearInterval(timer);
   }, [activeBuild.id, activeBuild.status, loadLog]);
 
@@ -72,7 +74,7 @@ export const DetailView = memo(function DetailView({
     onSuccess: () => {
       message.success('已推送到 SVN');
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
-      loadLog(activeBuild.id);
+      void loadLog(activeBuild.id).catch(() => {});
     },
     onSettled: () => setPushing(false),
   });
@@ -84,7 +86,7 @@ export const DetailView = memo(function DetailView({
 
   const handleSelectBuild = useCallback(
     (taskId: string) => {
-      loadLog(taskId);
+      void loadLog(taskId).catch(() => {});
     },
     [loadLog]
   );
@@ -184,6 +186,8 @@ export const DetailView = memo(function DetailView({
             <TerminalLog
               text={activeLogText}
               partial={activeLogPartial}
+              error={activeLogError}
+              onRetry={() => { void loadLog(activeBuild.id).catch(() => {}); }}
               onDownloadFull={() => downloadTaskLog(activeBuild.id)}
             />
           ) : (

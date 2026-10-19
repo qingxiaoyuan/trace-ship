@@ -665,6 +665,13 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
+    def get_object(self) -> PackageTask:
+        """不存在和不可见任务统一返回用户可理解的中文反馈。"""
+        try:
+            return super().get_object()
+        except Http404 as exc:
+            raise Http404("任务不存在或无权查看") from exc
+
     def get_permissions(self):
         if self.action in ("cancel", "push_svn"):
             # 取消任务 / 手动推 SVN：管理员/开发可操作
@@ -740,6 +747,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         incremental = tail is not None or offset is not None
 
         if not task.log_path or not Path(task.log_path).exists():
+            if task.is_finished:
+                raise Http404("日志未生成或已清理")
             if incremental:
                 return success_response({"size": 0, "offset": 0, "content": ""})
             return HttpResponse("", content_type="text/plain; charset=utf-8")
@@ -797,7 +806,9 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         workspace_root = PackageService.workspace_root().resolve()
         if not workspace or (workspace != workspace_root and workspace_root not in workspace.parents):
             raise Http404("工作区路径非法")
-        root = workspace / "artifacts"
+        root = (workspace / "artifacts").resolve()
+        if workspace not in root.parents:
+            raise Http404("产物目录路径非法")
         file_path = (root / artifact["path"]).resolve()
         if root.resolve() not in file_path.parents and file_path != root.resolve():
             raise Http404("产物路径非法")
@@ -818,7 +829,9 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         if not artifacts:
             raise Http404("没有可下载产物")
 
-        root = workspace / "artifacts"
+        root = (workspace / "artifacts").resolve()
+        if workspace not in root.parents:
+            raise Http404("产物目录路径非法")
         if not root.exists() or not root.is_dir():
             raise Http404("产物目录不存在")
 
@@ -836,12 +849,16 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
                     if not file_path.exists() or not file_path.is_file():
                         continue
                     zf.write(file_path, rel_path)
-            if os.path.getsize(zip_path) == 0:
+            if not zf.namelist():
                 os.remove(zip_path)
                 raise Http404("没有可下载的有效产物文件")
+            if len(zf.namelist()) != len(artifacts):
+                raise Http404("部分产物文件不存在或已清理，请逐个下载仍可用的产物")
             safe_name = str(task.name).replace(" ", "_").replace("/", "_") or "artifacts"
             filename = f"{safe_name}-{task.version}-artifacts.zip"
-            return _TempFileResponse(zip_path, as_attachment=True, filename=filename)
+            return _TempFileResponse(
+                zip_path, as_attachment=True, filename=filename, content_type="application/zip"
+            )
         except Exception:
             if os.path.exists(zip_path):
                 os.remove(zip_path)
