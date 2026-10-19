@@ -3,9 +3,11 @@ import subprocess
 import sys
 import zipfile
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pytest_django.fixtures import Settings
 from rest_framework.test import APIClient
 
 from apps.account.models import User
@@ -18,7 +20,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def reading_context(tmp_path, settings):
+def reading_context(tmp_path: Path, settings: Settings) -> SimpleNamespace:
     """他人发起的项目任务，文件系统使用隔离的真实工作区。"""
     manager = User.objects.create_user(username="package_read_manager")
     reader = User.objects.create_user(username="package_read_maintainer")
@@ -58,7 +60,7 @@ def reading_context(tmp_path, settings):
     )
 
 
-def test_expired_artifacts_do_not_download_as_successful_empty_zip(reading_context):
+def test_expired_artifacts_do_not_download_as_successful_empty_zip(reading_context: SimpleNamespace) -> None:
     """产物记录保留而文件已过期时，批量下载明确失败。"""
     response = reading_context.client.get(f"/api/packages/tasks/{reading_context.task.id}/download-all/")
 
@@ -66,7 +68,7 @@ def test_expired_artifacts_do_not_download_as_successful_empty_zip(reading_conte
     assert response.json()["message"] == "没有可下载的有效产物文件"
 
 
-def test_partial_artifacts_do_not_download_as_complete_bundle(reading_context):
+def test_partial_artifacts_do_not_download_as_complete_bundle(reading_context: SimpleNamespace) -> None:
     """全部下载不静默遗漏已经清理的文件。"""
     context = reading_context
     (context.artifacts / "installer.zip").write_bytes(b"package")
@@ -81,7 +83,9 @@ def test_partial_artifacts_do_not_download_as_complete_bundle(reading_context):
 
 @pytest.mark.parametrize("query", ["", "?offset=0"])
 @pytest.mark.parametrize("task_status", ["success", "failure", "canceled"])
-def test_finished_task_missing_logs_report_real_failure(reading_context, query, task_status):
+def test_finished_task_missing_logs_report_real_failure(
+    reading_context: SimpleNamespace, query: str, task_status: str,
+) -> None:
     """终态任务的日志不存在时，完整读取和增量读取都不能伪装为空日志。"""
     context = reading_context
     context.task.status = task_status
@@ -93,7 +97,7 @@ def test_finished_task_missing_logs_report_real_failure(reading_context, query, 
     assert response.json()["message"] == "日志未生成或已清理"
 
 
-def test_maintainer_can_read_other_members_task_and_actual_failure(reading_context):
+def test_maintainer_can_read_other_members_task_and_actual_failure(reading_context: SimpleNamespace) -> None:
     """任务读取不按本人发起过滤，失败原因和只读能力均与真实任务一致。"""
     context = reading_context
     context.task.status = "failure"
@@ -111,7 +115,7 @@ def test_maintainer_can_read_other_members_task_and_actual_failure(reading_conte
     assert (detail["can_cancel"], detail["can_delete"], detail["can_push_svn"]) == (False, False, False)
 
 
-def test_maintainer_reads_full_and_incremental_logs_without_changing_bytes(reading_context):
+def test_maintainer_reads_full_and_incremental_logs_without_changing_bytes(reading_context: SimpleNamespace) -> None:
     """完整日志保留原文，增量游标按实际 UTF-8 字节推进，包含中文和 CRLF。"""
     context = reading_context
     log_path = context.workspace / "build.log"
@@ -139,7 +143,7 @@ def test_maintainer_reads_full_and_incremental_logs_without_changing_bytes(readi
 
 
 @pytest.mark.parametrize("task_status", ["queued", "running"])
-def test_unstarted_task_log_remains_waiting_state(reading_context, task_status):
+def test_unstarted_task_log_remains_waiting_state(reading_context: SimpleNamespace, task_status: str) -> None:
     """未结束任务尚未生成日志时可以继续等待轮询。"""
     context = reading_context
     context.task.status = task_status
@@ -151,7 +155,7 @@ def test_unstarted_task_log_remains_waiting_state(reading_context, task_status):
     assert response.json()["data"] == {"size": 0, "offset": 0, "content": ""}
 
 
-def test_maintainer_downloads_single_and_all_real_artifacts(reading_context):
+def test_maintainer_downloads_single_and_all_real_artifacts(reading_context: SimpleNamespace) -> None:
     """下载属于他人的项目任务产物，单文件及嵌套 ZIP 均保留真实内容。"""
     context = reading_context
     (context.artifacts / "installer.zip").write_bytes(b"package")
@@ -184,7 +188,9 @@ def test_maintainer_downloads_single_and_all_real_artifacts(reading_context):
     ("unknown", "产物不存在"),
     ("installer", "产物文件不存在"),
 ])
-def test_stale_or_missing_single_artifact_returns_real_failure(reading_context, artifact_id, message):
+def test_stale_or_missing_single_artifact_returns_real_failure(
+    reading_context: SimpleNamespace, artifact_id: str, message: str,
+) -> None:
     """过期文件和不存在的文件 ID 返回各自真实失败。"""
     context = reading_context
 
@@ -195,7 +201,7 @@ def test_stale_or_missing_single_artifact_returns_real_failure(reading_context, 
 
 
 @pytest.fixture
-def hidden_task(reading_context):
+def hidden_task(reading_context: SimpleNamespace) -> PackageTask:
     """同仓库另一个项目的任务，即使仓库共享也不对维保成员可见。"""
     context = reading_context
     project = Project.objects.create(code="HIDDEN", name="不可见项目", leader=context.manager)
@@ -215,19 +221,24 @@ def hidden_task(reading_context):
 
 
 @pytest.mark.parametrize("suffix", ["", "logs/", "logs/?offset=0", "download-all/", "artifacts/private-file/download/"])
-def test_shared_repository_does_not_expose_hidden_task_or_files(reading_context, hidden_task, suffix):
+def test_shared_repository_does_not_expose_hidden_task_or_files(
+    reading_context: SimpleNamespace, hidden_task: PackageTask, suffix: str,
+) -> None:
     """直接使用另一项目的任务及文件 ID 不能绕过项目读取范围。"""
     context = reading_context
 
     response = context.client.get(f"/api/packages/tasks/{hidden_task.id}/{suffix}")
 
     assert response.status_code == 404
+    assert response.json()["message"] == "任务不存在或无权查看"
     assert "private" not in response.content.decode()
     listed = context.client.get("/api/packages/tasks/").json()["data"]["results"]
     assert [item["id"] for item in listed] == [str(context.task.id)]
 
 
-def test_visible_task_rejects_file_id_from_other_task(reading_context, hidden_task):
+def test_visible_task_rejects_file_id_from_other_task(
+    reading_context: SimpleNamespace, hidden_task: PackageTask,
+) -> None:
     """可见任务 URL 也不能取得其他任务的产物 ID。"""
     context = reading_context
     response = context.client.get(f"/api/packages/tasks/{context.task.id}/artifacts/private-file/download/")
@@ -237,7 +248,7 @@ def test_visible_task_rejects_file_id_from_other_task(reading_context, hidden_ta
 
 
 @pytest.mark.parametrize("suffix", ["logs/", "logs/?offset=0", "download-all/", "artifacts/installer/download/"])
-def test_revoked_project_member_loses_log_and_download_access(reading_context, suffix):
+def test_revoked_project_member_loses_log_and_download_access(reading_context: SimpleNamespace, suffix: str) -> None:
     """已退出项目的用户不能继续通过旧链接读取日志或下载产物。"""
     context = reading_context
     ProjectMember.objects.filter(project=context.project, user=context.reader).delete()
@@ -248,7 +259,7 @@ def test_revoked_project_member_loses_log_and_download_access(reading_context, s
 
 
 @pytest.mark.parametrize("suffix", ["artifacts/installer/download/", "download-all/"])
-def test_artifact_path_cannot_escape_task_directory(reading_context, suffix):
+def test_artifact_path_cannot_escape_task_directory(reading_context: SimpleNamespace, suffix: str) -> None:
     """产物索引不能借上级路径下载工作区外文件。"""
     context = reading_context
     (context.workspace / "secret.txt").write_bytes(b"workspace secret")
@@ -261,7 +272,7 @@ def test_artifact_path_cannot_escape_task_directory(reading_context, suffix):
     assert b"workspace secret" not in response.content
 
 
-def test_log_path_cannot_escape_task_directory(reading_context):
+def test_log_path_cannot_escape_task_directory(reading_context: SimpleNamespace) -> None:
     """任务日志路径不能借其他工作区读取无关文件。"""
     context = reading_context
     secret = context.root / "secret.log"
@@ -276,7 +287,7 @@ def test_log_path_cannot_escape_task_directory(reading_context):
 
 
 @pytest.mark.parametrize("suffix", ["artifacts/installer/download/", "download-all/"])
-def test_artifact_directory_link_cannot_expose_external_files(reading_context, suffix):
+def test_artifact_directory_link_cannot_expose_external_files(reading_context: SimpleNamespace, suffix: str) -> None:
     """即使整个产物目录被替换为目录链接，也不能下载工作区外文件。"""
     context = reading_context
     external = context.root.parent / "private"

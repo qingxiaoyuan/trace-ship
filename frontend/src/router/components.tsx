@@ -28,8 +28,10 @@ export function AuthGuard() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const hydrated = useAuthStore((state) => state.hydrated);
   const isInitializing = useAuthStore((state) => state.isInitializing);
+  const refreshToken = useAuthStore((state) => state.refreshToken);
 
-  if (!hydrated || isInitializing) {
+  // 持久化只恢复令牌；等待 App 启动会话恢复，避免首轮跳登录丢失深链。
+  if (!hydrated || isInitializing || (!isAuthenticated && !!refreshToken)) {
     return (
       <div className="h-full flex items-center justify-center">
         <Spin size="large" />
