@@ -81,9 +81,24 @@ python -m pytest --junitxml="$CHECK_REPORT_DIR/junit.xml" --cov-report="xml:$CHE
 
 三个节点与上述 Windows 基线中的失败一致，已确认跨平台复现。本 PR 与基点的整个 `backend/` Git tree 均为 `c6fd9e4dee1507444833af8e9f798e4bd7dd9305`，业务代码、测试及配置未变；本轮未观测到新增业务测试失败。未在同一 Linux 环境另跑基点，不声称完成了基点与 PR 的独立对照；失败尚未修复。
 
+## 2026-10-19：分支同步测试的时间依赖修复
+
+后续修复见 [#36](https://github.com/qingxiaoyuan/trace-ship/issues/36)。上述三个分支同步失败的根因是测试使用固定的 2026 年 7 月提交日期，却用执行当天计算 90 天陈旧阈值。定点复现为三项失败；仅将同步时钟固定为 2026-07-21，原三项即通过，确认业务过滤规则没有故障。
+
+测试现通过模块内自动清理的固定时钟隔离真实日期，并在 2026 年、闰年 2028 年和 2035 年三个场景中验证：阈值内与恰好 90 天的分支保留，超过阈值一微秒的分支从本地缓存清除，默认分支即使超过 90 天也保留。生产过滤规则、原断言和全量 CI 门槛不变。
+
+Windows / Python 3.12.12 本地定点验证：分支模块 **14 项通过**，仓库模块 **70 项通过**，退出码均为 0。仓库根目录执行命令如下，`--no-cov` 仅表示本次定点行为验证，不替代完整 CI：
+
+```powershell
+backend/.venv/Scripts/python.exe -m pytest -c backend/pytest.ini backend/apps/repository/tests/test_branches.py --no-cov -q
+backend/.venv/Scripts/python.exe -m pytest -c backend/pytest.ini backend/apps/repository/tests --no-cov -q
+```
+
+三个分支同步失败已在上述范围修复；前两节历史失败结果原样保留，其余 Windows 平台失败没有在本次修复。修复提交的完整 Linux CI 结果、被测提交及归档证据统一记录于 #36 及对应 PR，不能以定点结果推定全量通过。
+
 ## 平台与历史证据的边界
 
-PR 后端自动检查使用 Ubuntu 24.04 与 Python 3.11，独立全量结果见上节。Windows 15 项失败与 Linux 3 项失败分别保留，不能互相替代，也不作为后续运行的预期失败名单；三个分支同步失败仍须继续排查。
+PR 后端自动检查使用 Ubuntu 24.04 与 Python 3.11，独立历史全量结果与后续修复分别见上文。Windows 15 项失败与 Linux 3 项失败分别保留，不能互相替代，也不作为后续运行的预期失败名单；三个分支同步节点的修复状态见 #36。
 
 #25 实施期间曾在历史 `master` 观测到 896 passed、相同 15 failed、4 skipped；增加 #25 测试后为 904 passed、相同 15 failed、4 skipped。这只能作为失败早已存在的历史证据，不代表历史检查通过，也不替代本次覆盖率与退出码记录。当时另一份受沙箱临时目录权限影响的日志包含额外失败，不作为本表的业务失败基线。
 
