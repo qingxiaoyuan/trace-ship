@@ -3,7 +3,8 @@
 
 覆盖分支同步落库、删除远端已不存在分支、分支列表读取、SVN 拒绝同步等场景。
 """
-from datetime import UTC, datetime
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,13 @@ from utils.provider.base import BranchInfo, TagInfo
 def _dt(*args):
     """构造带时区的 datetime，避免 naive datetime 警告"""
     return datetime(*args, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def sync_clock() -> Iterator[MagicMock]:
+    """固定同步时钟，防止活跃分支数据随测试执行日期变成陈旧分支。"""
+    with patch("apps.repository.services.timezone.now", return_value=_dt(2026, 7, 30, 12)) as clock:
+        yield clock
 
 
 @pytest.fixture
@@ -131,6 +139,50 @@ def test_sync_branches_skips_stale_branches(api_client, repository):
     names = set(RepositoryBranch.objects.filter(repository=repository).values_list("name", flat=True))
     # stale 非默认分支被过滤；默认分支即使超过 3 个月也保留
     assert names == {"main", "feature/active"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("sync_at", [
+    _dt(2026, 7, 30, 12),
+    _dt(2028, 3, 1, 12),
+    _dt(2035, 1, 1, 12),
+], ids=["original-calendar", "leap-year", "future-calendar"])
+def test_sync_branches_preserves_stale_boundary_across_calendars(
+    api_client, repository, sync_clock, sync_at,
+):
+    """不同日历下按完整 90 天判断，临界时刻保留且默认分支始终豁免。"""
+    sync_clock.return_value = sync_at
+    cutoff = sync_at - timedelta(days=90)
+    branches = [
+        BranchInfo(name="main", is_default=True, last_commit_hash="default",
+                   last_commit_author="张三", last_commit_message="默认分支",
+                   last_commit_at=sync_at - timedelta(days=365)),
+        BranchInfo(name="feature/active", last_commit_hash="active",
+                   last_commit_author="李四", last_commit_message="阈值内",
+                   last_commit_at=cutoff + timedelta(microseconds=1)),
+        BranchInfo(name="feature/boundary", last_commit_hash="boundary",
+                   last_commit_author="王五", last_commit_message="恰好 90 天",
+                   last_commit_at=cutoff),
+        BranchInfo(name="feature/stale", last_commit_hash="stale",
+                   last_commit_author="赵六", last_commit_message="超过 90 天",
+                   last_commit_at=cutoff - timedelta(microseconds=1)),
+    ]
+    RepositoryBranch.objects.create(
+        repository=repository, name="feature/stale", last_commit_hash="stale",
+        last_commit_at=cutoff - timedelta(microseconds=1),
+    )
+
+    with patch("apps.repository.services.get_provider", return_value=_make_provider(branches)):
+        response = api_client.post(f"/api/repositories/{repository.id}/sync-branches/")
+
+    assert response.status_code == 200
+    assert response.data["code"] == 0
+    assert response.data["data"]["synced_count"] == 3
+    assert response.data["data"]["total"] == 4
+    saved = {branch.name: branch for branch in RepositoryBranch.objects.filter(repository=repository)}
+    assert set(saved) == {"main", "feature/active", "feature/boundary"}
+    assert saved["main"].is_default is True
+    assert saved["feature/boundary"].last_commit_at == cutoff
 
 
 @pytest.mark.django_db
