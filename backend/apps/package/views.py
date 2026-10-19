@@ -665,6 +665,13 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         project_ids = visible_project_ids(user)
         return queryset.filter(project_id__in=project_ids)
 
+    def get_object(self) -> PackageTask:
+        """不存在和不可见任务统一返回用户可理解的中文反馈。"""
+        try:
+            return super().get_object()
+        except Http404 as exc:
+            raise Http404("任务不存在或无权查看") from exc
+
     def get_permissions(self):
         if self.action in ("cancel", "push_svn"):
             # 取消任务 / 手动推 SVN：管理员/开发可操作
