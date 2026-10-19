@@ -52,9 +52,38 @@ $checkExit = $LASTEXITCODE # 当次为 1
 
 同次准备工作中，前端 ESLint 扫描 224 个文件，退出码 0、0 错误、0 警告；后端 Ruff 检查退出码 0、0 诊断。它们是各自检查通过的证据，不能抵消后端测试失败。
 
+## 2026-10-19：首次 Ubuntu PR 自动检查
+
+实际运行见 [PR #35 首次检查](https://github.com/qingxiaoyuan/trace-ship/actions/runs/39224513406)。五项检查均完成，前端 lint、162 项全量测试、类型检查/构建及后端 Ruff 通过；后端测试失败没有取消其他检查。五份独立证据包均上传成功，前后端测试 ZIP 已下载核验，包含原始日志与 JUnit，后端另含覆盖率 XML。
+
+| 项目 | 实测值 |
+| --- | --- |
+| PR 头提交 | `4bdd56bb835b4ea88f125a078d3e4e60724d3a9d` |
+| 实际被测合并提交 | `6f718a68d3ff4501c9c38afc0db22b737f0db0fb`（合入基点 `caf759ab6ca7603009b7a0c203d29c60ee70bfed`） |
+| 平台与运行时 | Ubuntu 24.04.5，Python 3.11.17，pytest 9.1.1，Django 5.0.14 |
+| 测试配置 | `backend/pytest.ini`，`DJANGO_SETTINGS_MODULE=config.settings.test`；保留全量范围与 50% 覆盖率门槛 |
+| 测试结果 | 收集 923 项：916 passed、3 failed、4 skipped、5 warnings；命令退出码 **1** |
+| 覆盖率 | **88.99%**，达到 50% 门槛；整体仍为**失败** |
+| 证据 | [后端测试归档](https://github.com/qingxiaoyuan/trace-ship/actions/runs/39224513406/artifacts/12173675031)，保留至 2026-11-02 |
+
+当次工作目录为 `backend/`，实际执行入口如下；报告目录由运行环境步骤写入 `CHECK_REPORT_DIR`，本次值为 `/home/runner/work/_temp/pr-checks/backend-test`。
+
+```bash
+set -o pipefail
+python -m pytest --junitxml="$CHECK_REPORT_DIR/junit.xml" --cov-report="xml:$CHECK_REPORT_DIR/coverage.xml" 2>&1 | tee "$CHECK_REPORT_DIR/check.log"
+```
+
+| 失败节点（相对仓库根目录） | 实际症状 |
+| --- | --- |
+| `backend/apps/repository/tests/test_branches.py::test_sync_branches_persists_to_db` | 分支同步数量为 1，预期为 2。 |
+| `backend/apps/repository/tests/test_branches.py::test_sync_branches_removes_deleted_remote_branch` | 同步后的分支数量为 1，预期为 2。 |
+| `backend/apps/repository/tests/test_branches.py::test_sync_branches_skips_stale_branches` | 分支同步数量为 1，预期为 2。 |
+
+三个节点与上述 Windows 基线中的失败一致，已确认跨平台复现。本 PR 与基点的整个 `backend/` Git tree 均为 `c6fd9e4dee1507444833af8e9f798e4bd7dd9305`，业务代码、测试及配置未变；本轮未观测到新增业务测试失败。未在同一 Linux 环境另跑基点，不声称完成了基点与 PR 的独立对照；失败尚未修复。
+
 ## 平台与历史证据的边界
 
-PR 后端自动检查使用 Ubuntu 24.04 与 Python 3.11，保留独立的全量测试结果。首次运行之前，该环境的结果为**未验证**；不得预设它会通过，也不得将上述 Windows 15 项失败当作 Linux 的预期失败。尤其是三个分支同步失败，须依实际运行继续排查。
+PR 后端自动检查使用 Ubuntu 24.04 与 Python 3.11，独立全量结果见上节。Windows 15 项失败与 Linux 3 项失败分别保留，不能互相替代，也不作为后续运行的预期失败名单；三个分支同步失败仍须继续排查。
 
 #25 实施期间曾在历史 `master` 观测到 896 passed、相同 15 failed、4 skipped；增加 #25 测试后为 904 passed、相同 15 failed、4 skipped。这只能作为失败早已存在的历史证据，不代表历史检查通过，也不替代本次覆盖率与退出码记录。当时另一份受沙箱临时目录权限影响的日志包含额外失败，不作为本表的业务失败基线。
 
