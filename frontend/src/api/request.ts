@@ -149,6 +149,22 @@ function normalizeError(
   return normalized;
 }
 
+/** 文件下载失败也会按 blob 接收 JSON 错误，解码后沿用统一错误提示。 */
+async function decodeDownloadError(data: unknown): Promise<unknown> {
+  if (!(data instanceof Blob) || !data.type.toLowerCase().includes('json')) return data;
+  try {
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(data);
+    });
+    return JSON.parse(text);
+  } catch {
+    return data;
+  }
+}
+
 request.interceptors.request.use(
   async (config) => {
     const token = localStorage.getItem('accessToken');
@@ -184,9 +200,9 @@ request.interceptors.response.use(
     }
     return response;
   },
-  (error: AxiosError<ApiResponse<unknown>>) => {
+  async (error: AxiosError<ApiResponse<unknown> | Blob>) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
-    const data = error.response?.data;
+    const data = await decodeDownloadError(error.response?.data) as ApiResponse<unknown> | undefined;
 
     if (isAuthRequest(originalRequest?.url)) {
       return Promise.reject(data || error);

@@ -231,7 +231,7 @@ export const packageApi = {
   getTaskLog: (id: string) => get<Blob>(`/packages/tasks/${id}/logs/`, { responseType: 'blob' }),
   /** 增量读取任务日志：tail 取末尾字节（首屏），offset 取增量（轮询） */
   getTaskLogChunk: (id: string, params: { offset?: number; tail?: number }) =>
-    get<TaskLogChunk>(`/packages/tasks/${id}/logs/`, { params }),
+    get<TaskLogChunk>(`/packages/tasks/${id}/logs/`, { params, silent: true }),
   downloadArtifact: (taskId: string, artifactId: string) =>
    get<Blob>(`/packages/tasks/${taskId}/artifacts/${artifactId}/download/`, { responseType: 'blob' }),
   downloadAllArtifacts: (taskId: string) =>

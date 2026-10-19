@@ -16,11 +16,13 @@ interface BuildViewProps {
   logText: string;
   /** 日志仅加载了末尾部分（大日志首屏优化） */
   logPartial?: boolean;
+  logError?: string | null;
+  onRetryLog?: () => void;
   onBack: () => void;
   onCancel: (task: PackageTask) => void;
 }
 
-export const BuildView = memo(function BuildView({ task, logText, logPartial, onBack, onCancel }: BuildViewProps) {
+export const BuildView = memo(function BuildView({ task, logText, logPartial, logError, onRetryLog, onBack, onCancel }: BuildViewProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const artifacts = task.artifact_info || [];
@@ -151,7 +153,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, on
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">构建日志</h3>
             </div>
           </div>
-          <TerminalLog text={logText} partial={logPartial} onDownloadFull={() => downloadTaskLog(task.id)} />
+          <TerminalLog text={logText} partial={logPartial} error={logError} onRetry={onRetryLog} onDownloadFull={() => downloadTaskLog(task.id)} />
         </div>
 
         <div className="lg:col-span-2 tech-card rounded-xl overflow-hidden flex flex-col">

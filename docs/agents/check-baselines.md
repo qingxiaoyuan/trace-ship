@@ -96,6 +96,30 @@ backend/.venv/Scripts/python.exe -m pytest -c backend/pytest.ini backend/apps/re
 
 三个分支同步失败已在上述范围修复；前两节历史失败结果原样保留，其余 Windows 平台失败没有在本次修复。修复提交的完整 Linux CI 结果、被测提交及归档证据统一记录于 #36 及对应 PR，不能以定点结果推定全量通过。
 
+## 2026-10-19：日志与产物读取验收后的 Windows 全量结果
+
+后续验收见 [#26](https://github.com/qingxiaoyuan/trace-ship/issues/26)，基点为 `070556cfe5851af38c94ef40bce9201935196510`。本次相关修复消除了旧日志测试隐式 CRLF 写入造成的五项失败，以及 ZIP MIME 平台推断造成的一项失败。新增真实中文/CRLF 字节读取、维保任务与文件读取权限、过期产物和目录链接隔离回归；历史失败记录继续保留。
+
+Windows / Python 3.12.12 后端全量实测：**946 passed、6 failed、4 skipped、5 warnings，退出码 1**；覆盖率 **86.62%** 达到 50% 门槛，但整体仍为**失败**。实际目录链接测试已执行，没有因权限跳过；原四项跳过保持原状态。仓库根目录执行：
+
+```powershell
+$env:PYTHONIOENCODING = 'utf-8'
+$env:TEMP = Join-Path (Get-Location) 'tmp/pr-checks/temp'
+$env:TMP = $env:TEMP
+backend/.venv/Scripts/python.exe -m pytest -c backend/pytest.ini backend --junitxml=tmp/issue26/backend-junit.xml --cov-report=xml:tmp/issue26/backend-coverage.xml *> tmp/issue26/backend-full.log
+```
+
+仍失败的节点如下，均已出现在最初的 Windows 基线，本次未修改对应行为：
+
+- `backend/apps/package/tests/test_scm_enhancements.py::TestGitCredentialInjection::test_enabled_injects_askpass_and_identity`
+- `backend/apps/package/tests/test_services.py::test_container_package_uses_workspace_and_overrides_env`
+- `backend/apps/package/tests/test_services.py::test_custom_script_ec_fails_fast_on_mid_script_error`
+- `backend/apps/package/tests/test_services.py::test_run_command_terminates_process_group_when_task_canceled`
+- `backend/apps/release/tests/test_source_execution.py::test_cleaned_rc_checkout_preserves_sha_and_stops_before_build_on_drift[False]`
+- `backend/apps/release/tests/test_source_execution.py::test_cleaned_rc_checkout_preserves_sha_and_stops_before_build_on_drift[True]`
+
+本地日志和报告位于 `tmp/issue26/`；修复提交的独立 Linux CI 结果与可下载归档记录在 #26 的关联 PR，不以本记录转换或忽略失败。
+
 ## 平台与历史证据的边界
 
 PR 后端自动检查使用 Ubuntu 24.04 与 Python 3.11，独立历史全量结果与后续修复分别见上文。Windows 15 项失败与 Linux 3 项失败分别保留，不能互相替代，也不作为后续运行的预期失败名单；三个分支同步节点的修复状态见 #36。

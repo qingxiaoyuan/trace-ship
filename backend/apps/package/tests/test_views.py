@@ -208,7 +208,8 @@ def task_with_log(package_config, release, project, repository, user, tmp_path):
     logs_dir = workspace / "logs"
     logs_dir.mkdir(parents=True)
     content = "".join(f"line {i:03d} xxxxxxxxxx\n" for i in range(10))
-    (logs_dir / "build.log").write_text(content, encoding="utf-8")
+    # 日志 API 的游标按字节计算，固定 LF，避免宿主平台隐式改写为 CRLF。
+    (logs_dir / "build.log").write_bytes(content.encode("utf-8"))
     task = PackageTask.objects.create(
         config=package_config,
         release=release,
