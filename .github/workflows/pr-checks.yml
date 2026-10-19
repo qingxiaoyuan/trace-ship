@@ -1,0 +1,164 @@
+name: PR 质量检查
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: 前端 / ${{ matrix.check }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [lint, test, build]
+    defaults:
+      run:
+        shell: bash
+        working-directory: frontend
+    env:
+      CHECK_NAME: ${{ matrix.check }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: 设置 Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          # 仓库当前不跟踪锁文件，关闭依赖锁文件的自动缓存。
+          package-manager-cache: false
+      - name: 记录运行环境
+        run: |
+          report_dir="$RUNNER_TEMP/pr-checks/frontend-$CHECK_NAME"
+          mkdir -p "$report_dir"
+          printf 'CHECK_REPORT_DIR=%s\n' "$report_dir" >> "$GITHUB_ENV"
+          {
+            git rev-parse HEAD
+            uname -a
+            node --version
+            npm --version
+          } > "$report_dir/environment.txt"
+      - name: 安装前端依赖
+        id: install
+        run: |
+          set -o pipefail
+          npm install --no-package-lock 2>&1 | tee "$CHECK_REPORT_DIR/install.log"
+          npm ls --all --json > "$CHECK_REPORT_DIR/dependencies.json"
+      - name: 执行前端检查
+        id: check
+        run: |
+          set -o pipefail
+          if [ "$CHECK_NAME" = test ]; then
+            npm run test -- --reporter=default --reporter=junit --outputFile.junit="$CHECK_REPORT_DIR/junit.xml" 2>&1 | tee "$CHECK_REPORT_DIR/check.log"
+          else
+            npm run "$CHECK_NAME" 2>&1 | tee "$CHECK_REPORT_DIR/check.log"
+          fi
+      - name: 记录检查结论
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          {
+            printf '## 前端 %s\n\n' "$CHECK_NAME"
+            printf '| 阶段 | 实际结果 |\n| --- | --- |\n'
+            printf '| 依赖安装 | %s |\n' "$INSTALL_OUTCOME"
+            printf '| 检查 | %s |\n' "$CHECK_OUTCOME"
+            printf '\n构建包含 TypeScript 检查。已知失败仅作独立记录，不转换为通过；详见 docs/agents/check-baselines.md。\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 保存前端检查证据
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: frontend-${{ matrix.check }}-${{ github.run_attempt }}
+          path: ${{ env.CHECK_REPORT_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+  backend:
+    name: 后端 / ${{ matrix.check }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [lint, test]
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend
+    env:
+      CHECK_NAME: ${{ matrix.check }}
+      DJANGO_SETTINGS_MODULE: config.settings.test
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: 设置 Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+      - name: 记录运行环境
+        run: |
+          report_dir="$RUNNER_TEMP/pr-checks/backend-$CHECK_NAME"
+          mkdir -p "$report_dir"
+          printf 'CHECK_REPORT_DIR=%s\n' "$report_dir" >> "$GITHUB_ENV"
+          {
+            git rev-parse HEAD
+            uname -a
+            python --version
+            python -m pip --version
+          } > "$report_dir/environment.txt"
+      - name: 安装后端依赖
+        id: install
+        run: |
+          set -o pipefail
+          sudo apt-get update 2>&1 | tee "$CHECK_REPORT_DIR/apt-update.log"
+          sudo apt-get install -y libldap2-dev libsasl2-dev 2>&1 | tee "$CHECK_REPORT_DIR/apt-install.log"
+          python -m pip install -r requirements-dev.txt 2>&1 | tee "$CHECK_REPORT_DIR/install.log"
+          python -m pip freeze > "$CHECK_REPORT_DIR/dependencies.txt"
+      - name: 执行后端检查
+        id: check
+        run: |
+          set -o pipefail
+          if [ "$CHECK_NAME" = test ]; then
+            python -m pytest --junitxml="$CHECK_REPORT_DIR/junit.xml" --cov-report="xml:$CHECK_REPORT_DIR/coverage.xml" 2>&1 | tee "$CHECK_REPORT_DIR/check.log"
+          else
+            python -m ruff check . 2>&1 | tee "$CHECK_REPORT_DIR/check.log"
+          fi
+      - name: 记录检查结论
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          {
+            printf '## 后端 %s\n\n' "$CHECK_NAME"
+            printf '| 阶段 | 实际结果 |\n| --- | --- |\n'
+            printf '| 依赖安装 | %s |\n' "$INSTALL_OUTCOME"
+            printf '| 检查 | %s |\n' "$CHECK_OUTCOME"
+            printf '\npytest 沿用配置中的全量覆盖范围和 50%% 门槛。覆盖率达标不代表测试通过。\n'
+            printf '\n本次为 Ubuntu / Python 3.11 结果；Windows 已知失败单独见 docs/agents/check-baselines.md，不作为本检查的豁免。\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 保存后端检查证据
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: backend-${{ matrix.check }}-${{ github.run_attempt }}
+          path: ${{ env.CHECK_REPORT_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
