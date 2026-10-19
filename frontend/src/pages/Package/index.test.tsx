@@ -41,8 +41,11 @@ beforeEach(() => {
   downloadFailureMessage = null;
   useAuthStore.setState({ user: { id: 'maintainer', username: 'maintainer', is_superuser: false,
     permissions: ['package.task.delete', 'package.config.manage', 'package.trigger'] } as UserInfo });
+  // jsdom 不计算布局；同时提供元素外框与可滚动视口尺寸，让真实虚拟列表计算可见行。
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(420);
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(900);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(420);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('URL', class extends URL {
     static createObjectURL(blob: Blob) { pendingBlob = blob; return 'blob:download'; }
