@@ -44,6 +44,51 @@ beforeEach(() => {
 afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
 
 describe('维保发布详情', () => {
+  it('标准生成说明的转义管道和续行保持在同一字段，保存后不重复转义', async () => {
+    projectRole = 'developer';
+    releaseDoc = [
+      '| 项目 | 内容 |', '|------|------|',
+      '| 当前发布版本号 | V1.0.0 |',
+      '| 变更内容 | A 支持 A \\| B',
+      'F 修复终端故障 |',
+      '| 测试验证 | 自测试通过 |',
+    ].join('\n');
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><ConfigProvider theme={{ token: { motion: false } }}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></ConfigProvider></QueryClientProvider>);
+    const value = await screen.findByRole('cell', { name: /A 支持 A \| B/ });
+    expect(value.textContent).toContain('F 修复终端故障');
+    const table = value.closest('table')!;
+    expect(within(table).getAllByRole('row').map((row) => within(row).getAllByRole('cell')[0].textContent))
+      .toEqual(['当前发布版本号', '变更内容', '测试验证']);
+    fireEvent.click(await screen.findByRole('button', { name: '修改文档' }));
+    const dialog = await screen.findByRole('dialog', { name: '修改发布说明' });
+    const editor = within(within(dialog).getByRole('cell', { name: '变更内容' }).parentElement!).getByRole('textbox');
+    expect((editor as HTMLTextAreaElement).value).toBe('A 支持 A | B\nF 修复终端故障');
+    fireEvent.change(editor, { target: { value: 'A 支持 A | B\nF 修复终端故障\n补充验收通过' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'OK' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(releaseDoc).toContain('A 支持 A \\| B\nF 修复终端故障\n补充验收通过 |');
+    expect(screen.getByRole('cell', { name: /A 支持 A \| B/ }).textContent).toContain('补充验收通过');
+    fireEvent.click(screen.getByRole('button', { name: '修改文档' }));
+    const reopened = await screen.findByRole('dialog');
+    expect((within(within(reopened).getByRole('cell', { name: '变更内容' }).parentElement!).getByRole('textbox') as HTMLTextAreaElement).value)
+      .toBe('A 支持 A | B\nF 修复终端故障\n补充验收通过');
+  });
+
+  it('标准字段行首换行后仍渲染强调和链接', async () => {
+    releaseDoc = '| 项目 | 内容 |\n|------|------|\n| 说明 | <br>\n**重要说明**\n[MR](https://example.invalid/mr/1) |';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    expect((await screen.findByText('重要说明')).tagName).toBe('STRONG');
+    const value = screen.getByRole('cell', { name: /重要说明/ });
+    expect(within(value).getByRole('link', { name: 'MR' }).getAttribute('href')).toBe('https://example.invalid/mr/1');
+    expect(value.querySelector('br')).not.toBeNull();
+  });
+
   it('标准表格值渲染链接、强调与换行，保留字段布局', async () => {
     releaseDoc = '| 字段 | 内容 |\n|------|------|\n| 说明 | [合并请求 !42](https://example.invalid/mr/42) **已修复**<br>第二行 |';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

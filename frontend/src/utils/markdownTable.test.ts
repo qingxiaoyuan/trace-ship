@@ -52,4 +52,11 @@ describe('buildMdTable', () => {
     ];
     expect(parseMdTable(buildMdTable(rows))).toEqual(rows);
   });
+
+  it.each(['c|d', 'A 支持 A | B\n    backup_db --all\n\nF 修复终端故障', String.raw`C:\deploy\app | ready`])('转义管道与续行往返保留内容：%s', (value) => {
+    const rows = [{ key: '变更|备注', value }];
+    const md = buildMdTable(rows);
+    expect(parseMdTable(md, { preserveWhitespace: true })).toEqual(rows);
+    expect(buildMdTable(parseMdTable(md, { preserveWhitespace: true }))).toBe(md);
+  });
 });

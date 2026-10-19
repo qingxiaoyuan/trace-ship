@@ -10,14 +10,31 @@ type MarkdownNode = {
 };
 
 /** 只转换 Markdown HTML 节点中的换行标签，不改写代码示例里的原文。 */
-function remarkBreakTags() {
+function remarkBreakTags(this: { parse: (source: string) => MarkdownNode }) {
+  const parse = (source: string) => this.parse(source);
   return (tree: MarkdownNode) => {
+    const shiftOffsets = (node: MarkdownNode, offset: number) => {
+      for (const point of [node.position?.start, node.position?.end]) {
+        if (point?.offset !== undefined) point.offset += offset;
+      }
+      node.children?.forEach((child) => shiftOffsets(child, offset));
+    };
     const visit = (node: MarkdownNode) => {
       if (node.children) node.children = node.children.flatMap((child) => {
-        if (child.type === 'html' && /^<br\s*\/?>/i.test(child.value || '')) {
-          const children = (child.value || '').split(/(<br\s*\/?>)/gi).filter(Boolean).map((part) =>
-            /^<br\s*\/?>$/i.test(part) ? { type: 'break' } : { type: 'text', value: part });
-          return node.type === 'paragraph' ? children : [{ type: 'paragraph', children }];
+        const tag = child.type === 'html' && child.value?.match(/^<br\s*\/?>/i);
+        if (tag) {
+          const lineBreak = { type: 'break' };
+          if (child.value === tag[0]) {
+            return node.type === 'paragraph' ? [lineBreak] : [{ type: 'paragraph', children: [lineBreak] }];
+          }
+          // 行首 br 会把后续 Markdown 吞入 HTML 块，交回原解析器恢复其语义。
+          const remainder = parse(child.value!.slice(tag[0].length));
+          shiftOffsets(remainder, (child.position?.start.offset || 0) + tag[0].length);
+          visit(remainder);
+          const blocks = remainder.children || [];
+          if (blocks[0]?.type === 'paragraph') blocks[0].children?.unshift(lineBreak);
+          else blocks.unshift({ type: 'paragraph', children: [lineBreak] });
+          return blocks;
         }
         visit(child);
         return [child];
