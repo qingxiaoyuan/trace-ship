@@ -10,6 +10,15 @@ export interface MdTableRow {
   value: string;
 }
 
+/** 生成器只转义管道符；分列时保留转义，读取字段时再还原。 */
+function splitCells(line: string): string[] {
+  return line.split(/(?<!\\)\|/).map((cell) => cell.trim());
+}
+
+function unescapePipes(value: string): string {
+  return value.replace(/\\\|/g, '|');
+}
+
 /**
  * 解析 Markdown 2 列表格为行数组
  *
@@ -20,7 +29,7 @@ export interface MdTableRow {
  * @param md Markdown 字符串
  * @returns 行数组
  */
-export function parseMdTable(md: string): MdTableRow[] {
+export function parseMdTable(md: string, options: { preserveWhitespace?: boolean } = {}): MdTableRow[] {
   if (!md) return [];
   const rows: MdTableRow[] = [];
   const lines = md.trim().split('\n');
@@ -32,30 +41,33 @@ export function parseMdTable(md: string): MdTableRow[] {
       continue;
     }
 
-    if (trimmed.endsWith('|')) {
+    if (/(?<!\\)\|$/.test(trimmed)) {
       // 完整单行：| key | value |
-      const cells = trimmed.split('|').map((c) => c.trim());
+      const cells = splitCells(trimmed);
       const inner = cells.slice(1, -1);
       if (inner.length < 2) { i++; continue; }
       if (/^[-:\s]+$/.test(inner[0])) { i++; continue; }
       if ((inner[0] === '项目' || inner[0] === '字段') && inner[1] === '内容') { i++; continue; }
-      rows.push({ key: inner[0], value: inner[1] });
+      rows.push({ key: unescapePipes(inner[0]), value: unescapePipes(inner[1]) });
       i++;
     } else {
       // 多行单元格：| key | value line 1 (未闭合)
-      const cells = trimmed.split('|').map((c) => c.trim());
+      const cells = splitCells(trimmed);
       const key = cells[1] || '';
       // key 之后到行尾的内容是 value 的第一行
       let valueParts = cells.slice(2).join('|').trim();
       i++;
       // 后续不以 | 开头的行都是 value 的延续
       while (i < lines.length && !lines[i].trim().startsWith('|')) {
-        valueParts += '\n' + lines[i].trim().replace(/\|$/, '').trim();
+        const continuation = options.preserveWhitespace
+          ? lines[i].replace(/[ \t]*(?<!\\)\|$/, '')
+          : lines[i].trim().replace(/(?<!\\)\|$/, '').trim();
+        valueParts += '\n' + continuation;
         i++;
       }
       if (/^[-:\s]+$/.test(key)) continue;
       if ((key === '项目' || key === '字段') && valueParts === '内容') continue;
-      rows.push({ key, value: valueParts });
+      rows.push({ key: unescapePipes(key), value: unescapePipes(valueParts) });
     }
   }
   return rows;

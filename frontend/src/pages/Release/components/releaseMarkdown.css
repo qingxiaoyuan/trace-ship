@@ -1,0 +1,42 @@
+.release-markdown {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.release-markdown > :first-child { margin-top: 0; }
+.release-markdown > :last-child { margin-bottom: 0; }
+.release-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #1e293b;
+}
+.release-markdown h1 { font-size: 20px; }
+.release-markdown h2 { font-size: 17px; }
+.release-markdown :is(h3, h4, h5, h6) { font-size: 15px; }
+.release-markdown p { margin: 0.6em 0; white-space: pre-wrap; }
+.release-markdown :is(ul, ol) { margin: 0.6em 0; padding-left: 1.6em; }
+.release-markdown ul { list-style: disc; }
+.release-markdown ol { list-style: decimal; }
+.release-markdown li + li { margin-top: 0.25em; }
+.release-markdown a { color: #4f46e5; text-decoration: underline; text-underline-offset: 2px; }
+.release-markdown a:hover { color: #4338ca; }
+.release-markdown blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #cbd5e1; color: #64748b; }
+.release-markdown pre { max-width: 100%; overflow-x: auto; margin: 1em 0; padding: 12px; border-radius: 6px; background: #f8fafc; }
+.release-markdown code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.release-markdown :not(pre) > code { padding: 2px 4px; border-radius: 4px; background: #f1f5f9; }
+.release-markdown img { max-width: 100%; height: auto; }
+.release-markdown hr { margin: 1.2em 0; border: 0; border-top: 1px solid #e2e8f0; }
+.release-markdown .release-markdown-table { max-width: 100%; overflow-x: auto; margin: 1em 0; border: 1px solid #e2e8f0; border-radius: 6px; }
+.release-markdown table { width: 100%; min-width: 480px; border-collapse: collapse; }
+.release-markdown :is(th, td) { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+.release-markdown th { background: #f8fafc; color: #475569; font-weight: 600; }
+.release-markdown tr:last-child td { border-bottom: 0; }
+.release-markdown td + td, .release-markdown th + th { border-left: 1px solid #e2e8f0; }
+
+/* 项目内生成的两列表格保留原布局，值中也支持链接、强调与换行。 */
+.release-note-value .release-markdown p { margin: 0; }
+.release-note-value .release-markdown p + p { margin-top: 0.6em; }

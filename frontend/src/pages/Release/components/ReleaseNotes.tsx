@@ -12,10 +12,25 @@ import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, isFormalIdentityField, applyCheckboxChange, type MdTableRow } from './releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './ReleaseDocField';
 import { FormalChangesPreview } from './FormalChangesPreview';
+import { ReleaseMarkdown } from './ReleaseMarkdown';
 import type { Release } from '@/types';
 
 interface ReleaseNotesProps {
   release: Release;
+}
+
+/** 仅在两列表格能够完整表达原文时使用结构化展示和编辑。 */
+function parseCompleteTable(content: string): MdTableRow[] {
+  const rows = parseMdTable(content, { preserveWhitespace: true });
+  if (!rows.length) return [];
+  const source = content.trim().split(/\r?\n/);
+  if (/^\|\s*(?:项目|字段)\s*\|\s*内容\s*\|$/.test(source[0].trim())) source.shift();
+  if (/^\|\s*[-:]+\s*\|\s*[-:]+\s*\|$/.test(source[0]?.trim() || '')) source.shift();
+  const rebuilt = buildMdTable(rows).split('\n').slice(2);
+  const normalize = (lines: string[]) => lines.map((line) => line.startsWith('|')
+    ? line.replace(/[ \t]*\|[ \t]*/g, '|')
+    : line.replace(/[ \t]+\|$/, '|')).join('\n');
+  return normalize(source) === normalize(rebuilt) ? rows : [];
 }
 
 /** 下载 Blob */
@@ -45,7 +60,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
 
   const mdContent = release.release_doc || '';
   const hasDoc = !!mdContent.trim();
-  const rows = parseMdTable(mdContent);
+  const rows = parseCompleteTable(mdContent);
 
   // 生成/修改发布说明需 developer 及以上项目角色
   const { data: project } = useQuery({
@@ -84,7 +99,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
   // 没有本地改动时跟服务端说明走；有改动时保留，直到保存或重新生成。
   const serverToken = `${release.id}:${mdContent}`;
   if (editOpen && (!docDirty || draftReleaseId !== release.id) && appliedToken !== serverToken) {
-    const parsed = parseMdTable(mdContent);
+    const parsed = parseCompleteTable(mdContent);
     setAppliedToken(serverToken);
     setDraftReleaseId(release.id);
     setDocDirty(false);
@@ -229,30 +244,22 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
       <FormalChangesPreview release={release} active={active} />
       <div className="overflow-hidden rounded-lg border border-slate-200">
         {rows.length > 0 ? (
-          <table className="w-full border-collapse">
+          <table className="w-full table-fixed border-collapse">
             <tbody>
               {rows.map((row, idx) => (
                 <tr key={idx} className="border-b border-slate-100 last:border-0">
-                  <td className="w-[110px] shrink-0 bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500 sm:w-[160px]">
+                  <td className="w-[110px] shrink-0 break-words [overflow-wrap:anywhere] bg-slate-50/60 px-4 py-2 align-top text-[12px] font-medium text-slate-500 sm:w-[160px]">
                     {row.key}
                   </td>
-                  <td className="px-3 py-2 text-[13px] text-slate-700">
-                    {release.source_rc && isFormalIdentityField(row.key) ? (
-                          <span className="break-all text-[13px]">{row.value}</span>
-                        ) : isCheckboxField(row.key) ? (
-                      <CheckboxField value={row.value} fieldKey={row.key} disabled />
-                    ) : (
-                      row.value.split(/<br>|\n/).map((line, lineIdx) => (
-                        <div key={lineIdx}>{line}</div>
-                      ))
-                    )}
+                  <td className="release-note-value break-words [overflow-wrap:anywhere] px-3 py-2 text-[13px] text-slate-700">
+                    <ReleaseMarkdown content={row.value} field />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <pre className="whitespace-pre-wrap p-4 font-mono text-[13px] text-slate-700">{mdContent}</pre>
+          <div className="min-w-0 p-4"><ReleaseMarkdown content={mdContent} /></div>
         )}
       </div>
 

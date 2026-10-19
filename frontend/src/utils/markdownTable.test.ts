@@ -20,6 +20,14 @@ describe('parseMdTable', () => {
     expect(parseMdTable(md)).toEqual([{ key: '更新内容', value: '第一行\n第二行\n第三行' }]);
   });
 
+  it('阅读模式保留命令缩进和空行，默认解析保持原契约', () => {
+    const md = '| 部署步骤 | 备份\n    backup --all\n\n重启 |';
+    expect(parseMdTable(md, { preserveWhitespace: true })).toEqual([
+      { key: '部署步骤', value: '备份\n    backup --all\n\n重启' },
+    ]);
+    expect(parseMdTable(md)).toEqual([{ key: '部署步骤', value: '备份\nbackup --all\n\n重启' }]);
+  });
+
   it('严格 2 列解析：超出第 2 列的内容被忽略', () => {
     const md = '| 说明 | a | b |';
     expect(parseMdTable(md)).toEqual([{ key: '说明', value: 'a' }]);
@@ -43,5 +51,12 @@ describe('buildMdTable', () => {
       { key: '更新内容', value: '第一行\n第二行' },
     ];
     expect(parseMdTable(buildMdTable(rows))).toEqual(rows);
+  });
+
+  it.each(['c|d', 'A 支持 A | B\n    backup_db --all\n\nF 修复终端故障', String.raw`C:\deploy\app | ready`])('转义管道与续行往返保留内容：%s', (value) => {
+    const rows = [{ key: '变更|备注', value }];
+    const md = buildMdTable(rows);
+    expect(parseMdTable(md, { preserveWhitespace: true })).toEqual(rows);
+    expect(buildMdTable(parseMdTable(md, { preserveWhitespace: true }))).toBe(md);
   });
 });

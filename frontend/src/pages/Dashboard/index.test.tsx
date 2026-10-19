@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { App } from 'antd';
 import request from '@/api/request';
 import { DashboardContextProvider } from '@/layouts/DashboardContextProvider';
 import Dashboard from './index';
+import ReleaseDetail from '@/pages/Release/Detail';
 
 const originalAdapter = request.defaults.adapter;
 const requests: string[] = [];
@@ -46,18 +47,25 @@ beforeEach(() => {
       if (summaryFailure) throw new Error('总览暂不可用');
       data = summary;
     }
-    else if (config.url === '/releases/') { releaseQueries.push(config.params); data = releaseResponse(config.params); }
+    else if (config.url === '/releases/') { releaseQueries.push(config.params); data = await releaseResponse(config.params); }
+    else if (config.url === '/releases/version/') data = { ...release, release_doc: '| 字段 | 内容 |\n| --- | --- |\n| 额外说明 | 返回后保留查询位置 |' };
+    else if (config.url === '/projects/project/') data = { id: 'project', name: '示例项目', my_role: 'maintainer' };
+    else if (config.url?.endsWith('/source-reference/')) data = { available: true, reference: 'V1.2.3' };
     else if (config.url?.endsWith('/trend/') || config.url?.endsWith('/favorites/')) data = [];
     return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data } };
   };
 });
-afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-function renderDashboard() {
+function renderDashboard(entry = '/dashboard') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/dashboard']}>
-    <DashboardContextProvider><Dashboard /></DashboardContextProvider>
+  render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={[entry]}>
+    <DashboardContextProvider><Routes>
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/releases/:id" element={<ReleaseDetail />} />
+    </Routes></DashboardContextProvider>
   </MemoryRouter></App></QueryClientProvider>);
+  return client;
 }
 
 describe('维保工作台', () => {
@@ -101,6 +109,70 @@ describe('维保工作台', () => {
     releaseResponse = () => ({ total: 0, results: [], page: 1, page_size: 10 });
     fireEvent.click(screen.getByRole('button', { name: /重.*试/ }));
     expect(await screen.findByText('所属项目暂无已发布版本')).toBeTruthy();
+  });
+
+  it('快速切换关键词后只显示当前结果，较晚返回的旧响应不会覆盖页面', async () => {
+    let resolveOld!: (value: unknown) => void;
+    let resolveNew!: (value: unknown) => void;
+    releaseResponse = (params) => params.search === '旧条件'
+      ? new Promise((resolve) => { resolveOld = resolve; })
+      : params.search === '新条件'
+        ? new Promise((resolve) => { resolveNew = resolve; })
+        : { total: 1, page: 1, page_size: 6, results: [release] };
+    const client = renderDashboard();
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    await screen.findByRole('link', { name: 'V1.2.3' });
+    const search = screen.getByRole('textbox', { name: '搜索版本、软件或发布说明' });
+    fireEvent.change(search, { target: { value: '旧条件' } });
+    await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
+    fireEvent.change(search, { target: { value: '新条件' } });
+    await waitFor(() => expect(resolveNew).toBeTypeOf('function'));
+    resolveNew({ total: 1, page: 1, page_size: 6, results: [{ ...release, id: 'new', version: 'V2.0.0' }] });
+    await screen.findByRole('link', { name: 'V2.0.0' });
+    resolveOld({ total: 19, page: 1, page_size: 6, results: [{ ...release, id: 'old', version: 'V0.0.1' }] });
+    // 等旧查询完成后再核对页面，避免依赖机器速度的固定等待。
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(screen.getByRole('link', { name: 'V2.0.0' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'V0.0.1' })).toBeNull();
+    expect(screen.getByText('共 1 个版本')).toBeTruthy();
+    expect((search as HTMLInputElement).value).toBe('新条件');
+  });
+
+  it('从筛选后的第二页阅读说明再返回，保留范围、关键词、类型、页码和位置', async () => {
+    releaseResponse = (params) => ({ total: 7, page: params.page, page_size: 6, results: params.page === 2 ? [release] : [{ ...release, version: 'V1.0.0' }] });
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1; });
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(380);
+    renderDashboard('/dashboard?project=project&repository=web&type=rc&search=访客&page=2');
+    fireEvent.click(await screen.findByRole('link', { name: '查看 V1.2.3 的发布说明' }));
+    await screen.findByText('返回后保留查询位置');
+    expect(screen.queryByRole('button', { name: /修改文档|删除版本/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '维保工作台' }));
+    await screen.findByRole('link', { name: '查看 V1.2.3 的发布说明' });
+    expect((screen.getByRole('textbox', { name: '搜索版本、软件或发布说明' }) as HTMLInputElement).value).toBe('访客');
+    expect(screen.getByRole('button', { name: 'RC' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: /选择项目与软件/ }).textContent).toContain('park-web');
+    expect(screen.queryByRole('link', { name: 'V1.0.0' })).toBeNull();
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 380, behavior: 'instant' });
+    expect(releaseQueries.at(-1)).toMatchObject({ project: 'project', repository: 'web', release_type: 'rc', search: '访客', page: 2 });
+  });
+
+  it('第二页变更条件回到第一页，无匹配时保留范围并可恢复全部', async () => {
+    releaseResponse = (params) => ({ total: params.search ? 0 : 7, page: params.page, page_size: 6, results: params.search ? [] : [release] });
+    renderDashboard('/dashboard?project=project&repository=web&type=rc&page=2');
+    await screen.findByRole('link', { name: 'V1.2.3' });
+    const search = screen.getByRole('textbox', { name: '搜索版本、软件或发布说明' });
+    fireEvent.change(search, { target: { value: '无匹配说明' } });
+    await screen.findByText('没有匹配的已发布版本');
+    expect(releaseQueries.at(-1)).toMatchObject({ project: 'project', repository: 'web', release_type: 'rc', search: '无匹配说明', page: 1 });
+    expect((search as HTMLInputElement).value).toBe('无匹配说明');
+    expect(screen.getByRole('button', { name: /选择项目与软件/ }).textContent).toContain('park-web');
+    expect(screen.getByRole('button', { name: 'RC' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getAllByRole('button', { name: '恢复全部' })[0]);
+    await screen.findByRole('link', { name: 'V1.2.3' });
+    expect(releaseQueries.at(-1)).toMatchObject({ project: undefined, repository: undefined, release_type: undefined, search: undefined, page: 1 });
+    expect((search as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('button', { name: '全部类型' }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('无项目的通用模式继续加载原工作台内容', async () => {
