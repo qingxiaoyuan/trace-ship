@@ -47,7 +47,8 @@ export function parseMdTable(md: string, options: { preserveWhitespace?: boolean
       continue;
     }
 
-    if (/(?<!\\)\|$/.test(trimmed)) {
+    // 空首行只有两个分隔符，末尾的管道属于列分隔，尚不是值的闭合符。
+    if (/(?<!\\)\|$/.test(trimmed) && (!options.preserveWhitespace || splitCells(trimmed).length >= 4)) {
       // 完整单行：| key | value |
       const cells = splitCells(rowSource, options.preserveWhitespace);
       const inner = cells.slice(1, -1);
@@ -68,7 +69,8 @@ export function parseMdTable(md: string, options: { preserveWhitespace?: boolean
         : cells.slice(2).join('|').trim();
       i++;
       // 后续不以 | 开头的行都是 value 的延续
-      while (i < lines.length && !lines[i].trim().startsWith('|')) {
+      while (i < lines.length && (!lines[i].trim().startsWith('|')
+        || (options.preserveWhitespace && lines[i].trim() === '|'))) {
         const continuation = options.preserveWhitespace
           ? lines[i].replace(/\r$/, '').replace(/ ?(?<!\\)\|$/, '')
           : lines[i].trim().replace(/(?<!\\)\|$/, '').trim();

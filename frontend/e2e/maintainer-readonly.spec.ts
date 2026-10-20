@@ -67,6 +67,8 @@ async function documentChecks(page: Page, width: number) {
   await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('A 支持 A | B');
   await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('F 修复终端故障');
   await expect(generatedTable.locator('td pre code')).toHaveText('smoke_config --check\nsmoke_config --verify\n');
+  const impact = generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '是否影响其他功能', exact: true }) });
+  await expect(impact.getByRole('cell').nth(1).locator('strong')).toHaveText('首尾空行说明');
   const generatedSource = sample.document_source.documents.find(item => new URL(page.url()).pathname.endsWith(`/${item.release_id}`))!;
   expect(sample.document_source.method).toBe('apps.release.services.ReleaseDocGenerator._build_markdown_doc');
   expect(sample.document_source.commit).toMatch(/^[0-9a-f]{40}$/);

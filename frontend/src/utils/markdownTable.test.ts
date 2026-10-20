@@ -28,7 +28,7 @@ describe('parseMdTable', () => {
     expect(parseMdTable(md)).toEqual([{ key: '部署步骤', value: '备份\nbackup --all\n\n重启' }]);
   });
 
-  it.each(['    首行代码\n    续行代码', '    单行代码', '首行尾部  \n    续行尾部  '])('阅读模式保留生成器分隔空格之外的有效空白：%s', (value) => {
+  it.each(['    首行代码\n    续行代码', '    单行代码', '首行尾部  \n    续行尾部  ', '\n首段\n'])('阅读模式保留生成器分隔空格之外的有效空白：%s', (value) => {
     const rows = [{ key: '配置项改动', value }];
     expect(parseMdTable(buildMdTable(rows), { preserveWhitespace: true })).toEqual(rows);
     expect(parseCompleteMdTable(buildMdTable(rows))).toEqual(rows);

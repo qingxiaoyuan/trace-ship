@@ -96,7 +96,7 @@ def main() -> None:
         "updates": [{"type": "A", "content": "支持 A | B"}, {"type": "F", "content": "修复终端故障"}],
         "has_config_changes": True, "config_change_doc": "    smoke_config --check\n    smoke_config --verify",
         "related_changes": [{"key": "依赖软件", "value": "runtime | stable"}],
-        "impact_other": True, "impact_desc": "仅用于隔离样本的阅读验证",
+        "impact_other": True, "impact_desc": "\n**首尾空行说明**\n",
         "self_test_passed": True, "retest_passed": True,
     }
     release = ReleaseRecord.objects.create(

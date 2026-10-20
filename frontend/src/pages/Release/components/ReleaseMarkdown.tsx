@@ -84,7 +84,7 @@ function remarkGeneratedTables(this: { parse: (source: string) => MarkdownNode }
       let valid = true;
       while (cursor < lines.length && lines[cursor].value.startsWith('|')) {
         const first = lines[cursor].value;
-        const closed = /(?<!\\)\|[ \t]*$/.test(first);
+        const closed = /(?<!\\)\|[ \t]*$/.test(first) && (first.match(/(?<!\\)\|/g) || []).length === 3;
         if ((first.match(/(?<!\\)\|/g) || []).length !== (closed ? 3 : 2)) break;
         cursor++;
         if (closed) continue;

@@ -6,6 +6,17 @@ import { ReleaseMarkdown } from './ReleaseMarkdown';
 afterEach(cleanup);
 
 describe('发布说明 Markdown', () => {
+  it('生成字段以空行开始和结束时仍归同一单元格，后文不被吞入', () => {
+    const { container } = render(<ReleaseMarkdown content={buildMdTable([
+      { key: '配置项改动', value: '\n**独立配置说明**\n' },
+      { key: '测试验证', value: '已验证' },
+    ]) + '\n\n额外正文'} />);
+    const rows = container.querySelectorAll('tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].children[1].querySelector('strong')?.textContent).toBe('独立配置说明');
+    expect(screen.getByText('额外正文').closest('table')).toBeNull();
+  });
+
   it('保留生产配置字段首行缩进代码，混合正文中的代码仍有代码块语义', () => {
     const generated = buildMdTable([
       { key: '配置项改动', value: '    缩进代码首行\n    缩进代码续行' },
