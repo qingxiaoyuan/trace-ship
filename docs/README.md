@@ -20,8 +20,8 @@
 | 内容 | 入口 |
 | --- | --- |
 | 代码审查与交付标准 | [CODING_STANDARDS.md](../CODING_STANDARDS.md) |
-| 渲染验收 | [内容、DOM 语义与桌面/手机布局](agents/rendering-acceptance.md) |
-| PR 自动检查与失败基线 | [检查约定](agents/pr-checks.md)、[已知失败记录](agents/check-baselines.md) |
+| 渲染与交互验收 | [内容、DOM、桌面/手机布局及真实浏览器交互](agents/rendering-acceptance.md) |
+| PR 自动检查与失败基线 | [运行时、Linux 后端、浏览器冒烟及归档](agents/pr-checks.md)、[已知失败记录](agents/check-baselines.md) |
 | 领域术语 | [GLOSSARY.md](../GLOSSARY.md) |
 | 架构决策 | [ADR 目录](adr/)，RC 晋升决策仍为 proposed |
 | 后端架构参考 | [后台设计](design/后台设计.md) |

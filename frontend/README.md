@@ -18,8 +18,9 @@ TraceShip - 软件版本发布管理与提交规范审查系统前端。
 ## 开发
 
 ```bash
-npm install
-npm run dev      # Vite 默认 5173，/api 代理到 http://localhost:8000
+# 先按 .node-version 和 package.json 的 packageManager 准备精确 Node/npm
+npm ci
+npm run dev      # Vite 默认 8855，/api 代理到 http://localhost:8000
 ```
 
 ## 构建与检查
@@ -27,10 +28,15 @@ npm run dev      # Vite 默认 5173，/api 代理到 http://localhost:8000
 ```bash
 npm run build    # tsc -b && vite build
 npm run lint     # ESLint
+npm run test     # 全量页面/工具回归
+npm run test:runtime # 运行时入口回归
+npm run test:browser # 真实浏览器冒烟（先准备 Python 依赖及 Chromium）
 npm run preview  # 预览构建产物
 ```
 
 ## 目录结构
+
+隔离浏览器服务、Linux 后端检查和证据归档方式见[自动检查约定](../docs/agents/pr-checks.md)。普通安装使用 `npm ci`；依赖更新需同时提交清单与锁文件并运行完整检查。
 
 ```
 src/

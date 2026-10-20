@@ -131,15 +131,18 @@ celery -A config beat -l info
 ```bash
 cd frontend
 
-npm install
+npm ci            # Node/npm 版本按 .node-version 与 packageManager，入口自动核验
 npm run dev       # Vite 默认 8855，/api 代理到后端
 npm run build     # tsc -b && vite build
 npm run lint      # ESLint
 npm run test      # vitest（jsdom），测试文件为 src/**/*.test.ts(x)
+npm run test:browser # 隔离 REST 服务 + 真实 Chromium 冒烟，准备方式见自动检查约定
 npm run preview
 ```
 
 前端没有独立 format 命令；修改时保持现有 TypeScript、组件和样式风格。新增 `src/utils/` 纯函数应补充 vitest 用例。
+
+本地复核 CI、运行 Linux 后端检查或浏览器冒烟时，读取[自动检查约定](docs/agents/pr-checks.md)；使用其中共享入口，证据记录实际运行时和退出码。
 
 ## 后端架构
 

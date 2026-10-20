@@ -122,7 +122,13 @@ backend/.venv/Scripts/python.exe -m pytest -c backend/pytest.ini backend --junit
 
 ## 平台与历史证据的边界
 
-PR 后端自动检查使用 Ubuntu 24.04 与 Python 3.11，独立历史全量结果与后续修复分别见上文。Windows 15 项失败与 Linux 3 项失败分别保留，不能互相替代，也不作为后续运行的预期失败名单；三个分支同步节点的修复状态见 #36。
+### 2026-10-20：复盘改进后的隔离 Linux 全量检查
+
+关联 [#39](https://github.com/qingxiaoyuan/trace-ship/issues/39)。共享检查入口在本机 Docker 的 Linux/Python 3.11.17 镜像中执行；源码只读，测试临时目录位于原生 tmpfs，报告单独持久化。实际 Ruff（包含新增检查脚本）通过，完整 pytest **961 passed、4 skipped、5 warnings，退出码 0**，覆盖率 **89.30%**，保留 `pytest.ini` 的 50% 门槛。
+
+本机官方 PyPI 的 TLS EOF 已复现，因此本次显式使用入口允许的清华公开 HTTPS 镜像；实际来源、镜像身份与依赖树记录在 `tmp/issue39/backend-linux-tuna/`。这是该次本地容器的结果，不代表官方源的远端 CI 已执行。前端 Windows/Linux 各 187 项通过，运行时入口 3 项通过，真实 Chromium 冒烟通过；完整环境与证据记录在 #39。本轮未重新执行 Windows 原生后端全量，也未修复或豁免上述六项 Windows 历史失败。
+
+此前 PR 后端自动检查使用 Ubuntu 24.04 与 Python 3.11，独立历史全量结果与后续修复分别见上文；#39 改为 Ubuntu runner 调用共享 Linux 检查容器，以报告中的容器发行版为准。Windows 15 项失败与 Linux 3 项失败分别保留，不能互相替代，也不作为后续运行的预期失败名单；三个分支同步节点的修复状态见 #36。
 
 #25 实施期间曾在历史 `master` 观测到 896 passed、相同 15 failed、4 skipped；增加 #25 测试后为 904 passed、相同 15 failed、4 skipped。这只能作为失败早已存在的历史证据，不代表历史检查通过，也不替代本次覆盖率与退出码记录。当时另一份受沙箱临时目录权限影响的日志包含额外失败，不作为本表的业务失败基线。
 

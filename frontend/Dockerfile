@@ -1,21 +1,15 @@
 # 构建阶段：安装依赖并打包
-FROM node:22-alpine AS builder
+FROM node:24.21.0-bookworm-slim AS builder
 
 WORKDIR /app
 
-# 启用 pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# 复制依赖清单与工作区配置
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-
-# 允许依赖执行 postinstall 脚本
-RUN pnpm approve-builds --all
-
-RUN pnpm install --frozen-lockfile
+# 安装前校验镜像运行时与仓库版本约定；锁文件固定依赖树。
+COPY package.json package-lock.json .npmrc .node-version ./
+COPY scripts ./scripts
+RUN npm ci
 
 COPY . .
-RUN pnpm run build
+RUN npm run build
 
 # 运行阶段：使用 nginx 提供静态资源
 FROM nginx:alpine
