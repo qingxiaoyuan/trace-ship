@@ -1,0 +1,4 @@
+# 仅用于隔离验收：生产打包服务仍调用真实 Docker CLI。
+FROM docker:29.8.2-cli@sha256:35cfcf893c20f2931f4909151b5407aaaeab711277de7ce8b8f521f095d54c32 AS docker_cli
+FROM trace-ship-backend-checks:py311
+COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker

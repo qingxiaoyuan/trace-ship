@@ -1,0 +1,51 @@
+services:
+  postgres:
+    # 仅创建本次检查数据库；不绑定端口、持久卷或业务网络。
+    image: ${TRACE_SHIP_POSTGRES_IMAGE:?请通过 backend-postgresql.py 启动}
+    environment:
+      POSTGRES_DB: trace_ship_checks
+      POSTGRES_USER: trace_ship_checks
+      POSTGRES_PASSWORD: ${TRACE_SHIP_POSTGRES_PASSWORD:?缺少本次临时密码}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    tmpfs:
+      - /var/lib/postgresql/data:rw,mode=1777
+    networks: [checks]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U trace_ship_checks -d trace_ship_checks"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  backend:
+    image: trace-ship-backend-checks:py311
+    build:
+      context: ..
+      dockerfile: docker/checks/Dockerfile
+      args:
+        PIP_INDEX_URL: ${TRACE_SHIP_CHECK_PIP_INDEX_URL:-https://pypi.org/simple}
+    working_dir: /workspace/backend
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:exec,mode=1777
+    networks: [checks]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.postgresql_check
+      TRACE_SHIP_POSTGRES_CHECKS: '1'
+      TRACE_SHIP_POSTGRES_PASSWORD: ${TRACE_SHIP_POSTGRES_PASSWORD:?缺少本次临时密码}
+      TRACE_SHIP_CHECK_RUNTIME_DIR: /tmp/trace-ship-postgresql-checks
+      TRACE_SHIP_CHECK_COMMIT: ${TRACE_SHIP_CHECK_COMMIT:?请通过 backend-postgresql.py 启动}
+      TRACE_SHIP_CHECK_DIRTY: ${TRACE_SHIP_CHECK_DIRTY:-clean}
+      TRACE_SHIP_CHECK_PIP_INDEX_URL: ${TRACE_SHIP_CHECK_PIP_INDEX_URL:-https://pypi.org/simple}
+    volumes:
+      - type: bind
+        source: ${TRACE_SHIP_CHECK_SOURCE:?请通过 backend-postgresql.py 启动}
+        target: /workspace
+        read_only: true
+      - type: bind
+        source: ${TRACE_SHIP_CHECK_REPORTS:?请通过 backend-postgresql.py 启动}
+        target: /reports
+
+networks:
+  checks:
+    internal: true

@@ -34,7 +34,7 @@ CACHES = {
 
 # Celery 使用内存消息队列，无需外部 Redis
 CELERY_BROKER_URL = "memory://"
-CELERY_RESULT_BACKEND = "memory://"
+CELERY_RESULT_BACKEND = "cache+memory://"
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 

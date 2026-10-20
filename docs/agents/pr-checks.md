@@ -12,10 +12,12 @@
 | 后端 / lint | `scripts/checks/backend-linux.py lint`，执行已有 Ruff 规则 | 本地与 CI 共用 `docker/checks/Dockerfile` 的 Linux/Python 3.11 镜像 |
 | 后端 / test | `scripts/checks/backend-linux.py test`，执行全量 pytest 与覆盖率门槛 | 同上 |
 | 浏览器 / 冒烟验收 | `test:browser`，真实 Chromium、完整前端及隔离 REST 服务 | Ubuntu 24.04、精确前端运行时、Python 3.11 |
+| 后端 / PostgreSQL 并发锁 | `scripts/checks/backend-postgresql.py`，现有仓库锁与补打配置行锁的真实竞争 | 独立临时 PostgreSQL、同一 Linux/Python 3.11 检查镜像 |
+| 打包 / 真实执行 | `scripts/checks/package-real.py`，生产 API 与本地 Docker 执行器实际构建隔离样本 | Linux、宿主 Docker、同一 Python 3.11 基础检查镜像 |
 
 检查独立运行；矩阵关闭提前终止，一项失败不会取消其他检查。每项保留命令真实退出状态，日志管道使用 `pipefail`。已知失败不跳过、不标记预期失败，也不使用 `continue-on-error` 将检查转为绿色。
 
-后端使用内存 SQLite、本地缓存与 Celery eager 测试配置，不启动业务 PostgreSQL、Redis、GitLab 或使用真实业务凭证。检查镜像完整安装开发依赖与 LDAP/SASL 系统库，源码只读挂载，运行检查时关闭网络；可写目录仅用于测试临时数据与报告。GitHub runner 为 Ubuntu，实际测试在镜像内执行，报告记录容器发行版与 Python 版本。Python 其他版本的结果单独记录。
+后端全量使用内存 SQLite、本地缓存与 Celery eager 测试配置，不启动业务 PostgreSQL、Redis、GitLab 或使用真实业务凭证。检查镜像完整安装开发依赖与 LDAP/SASL 系统库，源码只读挂载，运行全量检查时关闭网络；可写目录仅用于测试临时数据与报告。另设 PostgreSQL 并发锁及真实 Docker 打包任务，隔离边界见下文。GitHub runner 为 Ubuntu，实际测试在镜像内执行，报告记录容器发行版与 Python 版本。Python 其他版本的结果单独记录。
 
 前端跟踪 `frontend/package-lock.json`，本地和 CI 均以 `npm ci` 安装。Node 精确版本以 `frontend/.node-version` 为准，npm 精确版本以 `package.json` 的 `packageManager` 为准；安装、开发和检查入口共同校验实际运行时，版本不符时失败。`.npmrc` 的 engine-strict 同时拒绝不支持的依赖组合。更新依赖时使用受约定的运行时修改清单与锁文件，并执行完整检查；普通复核不重写锁文件。报告继续保留实际依赖树，跨平台的可选原生包差异按实际记录。
 
@@ -33,6 +35,7 @@
 - 依赖安装日志和实际依赖版本。
 - 检查原始输出；测试任务另含 JUnit，后端测试另含覆盖率 XML。
 - 浏览器报告、实际视口截图和交互/下载校验，失败时保留失败信息；临时数据库、令牌、用户密码与完整浏览器存储不作为附件。
+- PostgreSQL 并发用例的 JUnit、数据库与镜像身份及清理结果；真实打包的固定源码身份、执行日志、产物校验及资源清理结果。两项独立任务均保留 30 天，不将跳过、未执行或清理失败记为通过。
 
 工作流尚未发布或首次运行尚未结束时，远端检查保持**待验证**；本地验证和语法校验不能替代 GitHub runner 的真实执行。依赖安装、报告上传等失败也按实际结果处理。
 
@@ -86,6 +89,32 @@ Linux 首次安装浏览器还需 `npx playwright install --with-deps chromium`�
 只验证某个后端行为时，可显式使用 `pytest --no-cov <测试路径或节点>`，将结果标为定点行为验证。它不替代全量检查，也不构成全项目覆盖率通过的证据；全量 PR 检查继续保留 `pytest.ini` 的 50% 门槛。
 
 Windows 受限环境中若 Vitest 临时文件重命名出现 `EPERM`，可只为本次子进程设置指向仓库内可写临时目录的 `TEMP` / `TMP`，并在报告中注明。不同平台结果分别记录，不将 Windows 基线套用到 Linux。
+
+### PostgreSQL 并发锁
+
+在仓库根目录执行：
+
+```bash
+python scripts/checks/backend-postgresql.py --report-dir tmp/pr-checks/postgresql
+```
+
+入口使用独立临时 PostgreSQL 与内部 Docker 网络，数据放本次临时存储，不连接业务数据库，也不开放宿主数据库端口。测试实际创建独立连接与竞争事务，覆盖既有来源重选/提交、版本占用、清理/任务创建、终止/重试，以及补打配置迁移、停用和快照读取时的配置行锁。只替换外部任务投递与同步暂停点，SQL、授权、任务创建和审计使用生产实现。
+
+该任务要求所选 PostgreSQL 用例全部执行、零失败、零跳过；缺失报告、用例或数据库环境均失败。原 SQLite 全量及覆盖率门槛继续独立执行，其 PostgreSQL 跳过项不得用作并发通过的证据。报告记录实际数据库/镜像/提交与清理结果；仅清理本次入口创建的资源。
+
+### 真实本地 Docker 打包
+
+在仓库根目录执行：
+
+```bash
+python scripts/checks/package-real.py --report-dir tmp/pr-checks/package-real
+```
+
+入口通过真实 Git 仓库和固定 Tag 提供隔离的虚构软件，生产 REST 授权、个人凭证解析、任务创建、Celery eager 与本地 Docker 执行器实际运行，构建脚本在真正的容器中生成产物。验收读取真实任务详情、日志和产物下载，核对实际操作人、版本/Tag/SHA、配置快照及下载内容；手动任务保持禁止 SVN。Tag 漂移场景须真实失败且不得执行构建脚本。
+
+GitLab Tag 查询由本地协议样本从真实 Git 引用生成，Git 克隆和构建均真实执行；该结果不代表已接入组织 GitLab、用户业务软件或远程 Windows/麒麟节点。入口使用本次随机测试凭据与独立数据库/工作区，证据不包含明文凭据。Linux 辅助容器需要宿主 Docker socket，仅用于本次测试镜像和执行容器；结束后按本次资源标识清理，不清理共享镜像或既有业务资源。
+
+两个补充入口与 `backend-linux.py` 一样可显式选择允许的公开依赖镜像源；报告保留实际来源，远端 CI 仍使用默认来源。每次使用新证据目录。
 
 渲染类变更还须满足[渲染验收](rendering-acceptance.md)中的内容、DOM 与真实浏览器布局证据；CI 的 jsdom 测试和构建结果不能单独证明桌面或手机排版正确。
 

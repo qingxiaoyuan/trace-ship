@@ -1,0 +1,2 @@
+# Windows 工作区中的 shell 脚本也必须能在 Linux 容器执行。
+*.sh text eol=lf
