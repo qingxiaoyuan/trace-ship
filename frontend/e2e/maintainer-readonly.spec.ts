@@ -6,7 +6,10 @@ import path from 'node:path';
 interface Fixture {
   username: string;
   password: string;
-  reading: { project_id: string; project_name: string; repository_id: string; software_name: string; release_ids: string[] };
+  reading: {
+    project_id: string; project_name: string; repository_id: string; software_name: string; release_ids: string[];
+    document_source: { method: string; file: string; commit: string; mode: string; documents: { release_id: string; version: string; git_hash: string; publisher: string; fields: Record<string, unknown>; markdown: string; sha256: string }[] };
+  };
   repackage: { release_id: string; config_id: string; dispatch_receipts: string };
   tasks: { success: { id: string; artifacts: { id: string; name: string; size: number }[] } };
 }
@@ -16,6 +19,7 @@ const reportDir = process.env.SMOKE_REPORT_DIR!;
 const sample = fixture.reading;
 const evidence: Record<string, unknown> = {
   role: 'maintainer', data: '隔离 REST 服务中的长名称、14 条已发布版本与 Markdown 边界样本',
+  documentSource: sample.document_source,
   mobile: 'Chromium 视口模拟；未验证手机真机、系统软键盘或 OA 原生容器',
 };
 let pageErrors: string[] = [];
@@ -53,6 +57,22 @@ async function noOperations(page: Page) {
 }
 
 async function documentChecks(page: Page, width: number) {
+  const generatedTable = page.getByRole('table').first();
+  await expect(generatedTable.getByRole('row')).toHaveCount(10);
+  const generatedLabels = await generatedTable.locator('tbody tr > td:first-child').allTextContents();
+  expect(generatedLabels.map(label => label.trim())).toEqual([
+    '当前发布版本号', 'Git提交hash', '变更类型', '配置项改动', '变更内容', '关联项改动', '是否影响其他功能', '测试验证', '发布人',
+  ]);
+  const generatedUpdates = generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '变更内容', exact: true }) });
+  await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('A 支持 A | B');
+  await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('F 修复终端故障');
+  const generatedSource = sample.document_source.documents.find(item => new URL(page.url()).pathname.endsWith(`/${item.release_id}`))!;
+  expect(sample.document_source.method).toBe('apps.release.services.ReleaseDocGenerator._build_markdown_doc');
+  expect(sample.document_source.commit).toMatch(/^[0-9a-f]{40}$/);
+  expect(generatedSource.markdown).toContain('A 支持 A \\| B\nF 修复终端故障');
+  await expect(generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '当前发布版本号', exact: true }) }).getByRole('cell').nth(1)).toHaveText(generatedSource.version);
+  await expect(generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: 'Git提交hash', exact: true }) }).getByRole('cell').nth(1)).toHaveText(generatedSource.git_hash);
+  await expect(generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '发布人', exact: true }) }).getByRole('cell').nth(1)).toHaveText(generatedSource.publisher);
   await expect(page.getByRole('heading', { name: '手机完整阅读验收', exact: true })).toBeVisible();
   await expect(page.getByRole('cell', { name: '原始额外字段必须保留', exact: true })).toBeVisible();
   expect(await page.getByText('重要更新', { exact: true }).evaluate(element => element.tagName)).toBe('STRONG');

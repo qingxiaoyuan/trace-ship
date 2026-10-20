@@ -135,7 +135,7 @@ test('项目管理员从桌面发布详情选择已有配置补打固定版本�
     await expect(select).toBeVisible();
     await select.click();
     await page.getByText(sample.config_name, { exact: true }).click();
-    await expect(section.getByText(sample.config_name, { exact: true })).toBeVisible();
+    await expect(section.getByTitle(sample.config_name, { exact: true })).toBeVisible();
     await select.click();
     await expect(page.getByText('已停用配置不得选择', { exact: true })).toHaveCount(0);
     await expect(page.getByText('其他项目配置不得选择', { exact: true })).toHaveCount(0);

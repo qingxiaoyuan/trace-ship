@@ -10,6 +10,8 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 
+from backend import git_value
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -42,7 +44,7 @@ def main() -> None:
     from apps.package.services import PackageService
     from apps.project.models import Project, ProjectComponent, ProjectMember
     from apps.release.models import ReleaseRecord
-    from apps.release.services import ReleaseService
+    from apps.release.services import ReleaseDocGenerator, ReleaseService
     from apps.repository.models import Repository
     from utils.provider.base import TagInfo
 
@@ -74,8 +76,8 @@ def main() -> None:
     component = ProjectComponent.objects.create(
         project=project, repository=repository, component_code="software", display_name="冒烟软件_用于手机树形筛选的超长软件名称"
     )
-    release_doc = (
-        "# 手机完整阅读验收\n\n表格外首段：这是隔离生成格式的脱敏样本。\n\n"
+    manual_additions = (
+        "# 手机完整阅读验收\n\n表格外首段：在生产生成说明后追加的合法手动编辑边界样本。\n\n"
         "| 项目 | 内容 |\n| --- | --- |\n"
         "| 软件名称 | 冒烟软件 \\| 多模块 |\n"
         "| 更新说明 | 第一行<br>**重要更新**与[安全链接](https://example.invalid/help) |\n"
@@ -90,6 +92,13 @@ def main() -> None:
         + "\n\n".join(f"阅读段落{line:02d}：" + "本段验证长文档信息完整与底部导航安全留白。" * 5 for line in range(1, 21))
         + "\n\n长文档结尾：全部发布说明完整可读。\n"
     )
+    generated_fields = {
+        "updates": [{"type": "A", "content": "支持 A | B"}, {"type": "F", "content": "修复终端故障"}],
+        "has_config_changes": True, "config_change_doc": "调整只读验收配置",
+        "related_changes": [{"key": "依赖软件", "value": "runtime | stable"}],
+        "impact_other": True, "impact_desc": "仅用于隔离样本的阅读验证",
+        "self_test_passed": True, "retest_passed": True,
+    }
     release = ReleaseRecord.objects.create(
         project=project,
         repository=repository,
@@ -100,8 +109,8 @@ def main() -> None:
         release_type="formal",
         status="released",
         released_at=timezone.now(),
-        release_doc=release_doc,
         git_hash="1" * 40,
+        **generated_fields,
     )
     reading_releases = [release]
     for number in range(2, 15):
@@ -109,8 +118,20 @@ def main() -> None:
             project=project, repository=repository, publisher=owner,
             version=f"VA.39.1.{number}", tag_name=f"VA.39.1.{number}_smoke",
             branch="main", release_type="formal", status="released", git_hash="1" * 40,
-            released_at=timezone.now() - timedelta(minutes=number), release_doc=release_doc,
+            released_at=timezone.now() - timedelta(minutes=number), **generated_fields,
         ))
+    generated_documents = []
+    for item in reading_releases:
+        # 保留业务生成器原始输出，再追加合法手动编辑内容，不预处理物理续行或转义。
+        generated = ReleaseDocGenerator._build_markdown_doc(item)
+        item.release_doc = generated + "\n\n" + manual_additions
+        item.save(update_fields=["release_doc"])
+        generated_documents.append({
+            "release_id": str(item.id), "version": item.version, "tag_name": item.tag_name,
+            "git_hash": item.git_hash, "publisher": item.publisher.nickname,
+            "fields": generated_fields, "markdown": generated,
+            "sha256": hashlib.sha256(generated.encode("utf-8")).hexdigest(),
+        })
     # 只替换外部任务投递边界；HTTP、权限、任务创建与操作日志均运行生产实现。
     # 隔离样本使用 example.invalid，入口绝不执行真实构建或访问远端仓库。
     dispatch_receipts = runtime / "dispatch.jsonl"
@@ -147,7 +168,13 @@ def main() -> None:
         "operator": {"username": owner.username, "role": "manager", "id": str(owner.id)}, "tasks": {},
         "reading": {"project_id": str(project.id), "project_name": project.name,
                     "repository_id": str(repository.id), "software_name": component.display_name,
-                    "release_ids": [str(item.id) for item in reading_releases]},
+                    "release_ids": [str(item.id) for item in reading_releases],
+                    "document_source": {
+                        "method": "apps.release.services.ReleaseDocGenerator._build_markdown_doc",
+                        "file": "backend/apps/release/services.py", "commit": git_value("rev-parse", "HEAD"),
+                        "mode": "真实生成器原始输出 + 合法手动编辑追加；未调用完整 generate 流程",
+                        "documents": generated_documents,
+                    }},
         "repackage": {
             "release_id": str(release.id), "config_id": str(repackage_config.id),
             "config_name": repackage_config.name, "project_id": str(project.id),
