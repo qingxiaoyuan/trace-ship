@@ -215,7 +215,7 @@ jobs:
         shell: bash
         working-directory: .
     env:
-      CHECK_REPORT_DIR: ${{ runner.temp }}/pr-checks/package-real
+      CHECK_REPORT_DIR: ${{ github.workspace }}/tmp/pr-checks/package-real
     steps:
       - name: 检出代码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
