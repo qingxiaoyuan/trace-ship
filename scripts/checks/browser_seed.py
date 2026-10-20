@@ -38,9 +38,12 @@ def main() -> None:
 
     from apps.account.models import User
     from apps.package.models import PackageConfig, PackageTask
+    from apps.package.services import PackageService
     from apps.project.models import Project, ProjectComponent, ProjectMember
     from apps.release.models import ReleaseRecord
+    from apps.release.services import ReleaseService
     from apps.repository.models import Repository
+    from utils.provider.base import TagInfo
 
     # 随机握手标识保证入口不会误用某个既有业务服务。
     global urlpatterns
@@ -81,8 +84,49 @@ def main() -> None:
         status="released",
         released_at=timezone.now(),
         release_doc="仅用于隔离验收的虚构发布。",
+        git_hash="1" * 40,
     )
-    manifest = {"username": reader.username, "password": password, "tasks": {}}
+    # 只替换外部任务投递边界；HTTP、权限、任务创建与操作日志均运行生产实现。
+    # 隔离样本使用 example.invalid，入口绝不执行真实构建或访问远端仓库。
+    dispatch_receipts = runtime / "dispatch.jsonl"
+
+    def record_dispatch(task: PackageTask) -> None:
+        with dispatch_receipts.open("a", encoding="utf-8") as receipt:
+            receipt.write(json.dumps({"task_id": str(task.id)}) + "\n")
+
+    PackageService.dispatch_task = staticmethod(record_dispatch)
+
+    class SampleRepository:
+        """只替换远端 Tag 查询，源码引用校验仍走生产实现。"""
+
+        def list_tags(self, repo_identity: str) -> list[TagInfo]:
+            if repo_identity != repository.external_identity:
+                raise RuntimeError("冒烟样本禁止查询其他仓库")
+            return [TagInfo(name=release.tag_name, commit_hash=release.git_hash)]
+
+    ReleaseService._get_provider = staticmethod(lambda *_args, **_kwargs: SampleRepository())
+    repackage_config = PackageConfig.objects.create(
+        project_component=component, name="已发布版本补打配置", is_active=True,
+        custom_script="exit 27", env_vars={"FIXED_SAMPLE": "configured"},
+        svn_push_enabled=True, svn_url="https://example.invalid/smoke/artifacts",
+    )
+    PackageConfig.objects.create(project_component=component, name="已停用配置不得选择", is_active=False)
+    other_project = Project.objects.create(name="隔离的共享仓库项目", code="SMOKE-OTHER", leader=owner, status=1)
+    ProjectMember.objects.create(project=other_project, user=owner, role="manager")
+    other_component = ProjectComponent.objects.create(
+        project=other_project, repository=repository, component_code="shared", display_name="隔离软件"
+    )
+    PackageConfig.objects.create(project_component=other_component, name="其他项目配置不得选择", is_active=True)
+    manifest = {
+        "username": reader.username, "password": password, "tasks": {},
+        "repackage": {
+            "release_id": str(release.id), "config_id": str(repackage_config.id),
+            "config_name": repackage_config.name, "project_id": str(project.id),
+            "repository_id": str(repository.id), "actor_id": str(reader.id),
+            "version": release.version, "tag_name": release.tag_name,
+            "commit_hash": release.git_hash, "dispatch_receipts": str(dispatch_receipts),
+        },
+    }
     for key, status, name in [
         ("success", "success", "万行中文日志任务"),
         ("running", "running", "中文增量日志任务"),

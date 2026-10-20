@@ -45,11 +45,12 @@ leader）对项目资源不可见、不可写；流程节点编辑等高权限�
 | 流程定义节点编辑 | manager（替代原 `IsProjectLeader`） |
 | 发布创建/编辑/生成说明/提交审批/推 tag | developer |
 | 发布删除 | manager 任意草稿/已驳回；developer 仅本人草稿 |
-| 手动触发打包 | developer / tester |
+| 分支直打 | developer / tester |
 | 取消打包任务、手动推 SVN | developer |
 | 仓库连通性测试、同步提交/分支 | developer |
 | 维保项目的发布/说明写入、审批、配置维护、任务删除/取消、SVN 写入 | maintainer 禁止；负责人有效角色与超管仍按原规则 |
-| 已发布版本补打、失败任务重试 | maintainer 的独立授权待 Issue #27 / #28 实现，通用打包权限不开放 |
+| 已发布版本按已有配置补打 | developer / tester / maintainer；独立 `IsProjectReleasePackager`，仅同项目、同仓库的启用配置 |
+| 失败任务重试 | maintainer 的独立授权待 Issue #28 实现 |
 
 超管在所有角色校验中默认放行。
 

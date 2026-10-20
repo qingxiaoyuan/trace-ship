@@ -296,6 +296,16 @@ class IsProjectPackager(ProjectRolePermission):
     required_roles = ["manager", "developer", "tester"]
 
 
+class IsProjectReleasePackager(ProjectRolePermission):
+    """已发布版本补打权限；维保授权不扩展到分支直打。"""
+
+    required_roles = ["manager", "developer", "tester", "maintainer"]
+
+    def has_permission(self, request, view) -> bool:
+        """归属只信任配置对象，避免请求体覆盖目标项目或触发非法 ID 查询。"""
+        return bool(request.user and request.user.is_authenticated)
+
+
 class HasAccessTokenScope(permissions.BasePermission):
     """
     开放接口 Access Token 权限
