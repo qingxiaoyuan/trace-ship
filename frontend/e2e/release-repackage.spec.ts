@@ -39,6 +39,7 @@ interface TaskIdentity {
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
   username: string;
+  operator: { username: string; role: string; id: string };
   password: string;
   repackage: RepackageSample;
 };
@@ -71,6 +72,7 @@ function receipts() {
 }
 
 test.afterEach(async ({ page, browser, context }, info) => {
+  observations.actor = { role: fixture.operator.role, id: fixture.operator.id };
   observations.browser = { name: 'Chromium', version: browser.version(), headless: true };
   observations.environment = { node: process.version, platform: process.platform, arch: process.arch, runReport: 'report.json' };
   observations.mobile = '375px 浏览器视口模拟，未验证手机真机';
@@ -89,7 +91,7 @@ test.afterEach(async ({ page, browser, context }, info) => {
   writeFileSync(path.join(reportDir, 'repackage-evidence.json'), JSON.stringify(observations, null, 2));
 });
 
-test('维保从桌面发布详情选择已有配置补打固定版本，手机隐藏补打入口', async ({ page, context }) => {
+test('项目管理员从桌面发布详情选择已有配置补打固定版本，手机隐藏补打入口', async ({ page, context }) => {
   page.on('pageerror', error => pageErrors.push(error.message));
   context.on('response', response => {
     if (response.status() >= 500) serverErrors.push({ path: new URL(response.url()).pathname, status: response.status() });
@@ -97,17 +99,17 @@ test('维保从桌面发布详情选择已有配置补打固定版本，手机�
   const beforeReceipts = receipts();
   let created: TaskIdentity;
 
-  await test.step('生产登录页与 REST 接口建立维保会话', async () => {
+  await test.step('生产登录页与 REST 接口建立项目管理员会话', async () => {
     await page.goto('/login');
     await page.getByRole('button', { name: '本地账号', exact: true }).click();
-    await page.getByPlaceholder('请输入本地账号').fill(fixture.username);
+    await page.getByPlaceholder('请输入本地账号').fill(fixture.operator.username);
     await page.getByPlaceholder('请输入密码', { exact: true }).fill(fixture.password);
     const response = page.waitForResponse(item => item.url().endsWith('/api/auth/login/') && item.request().method() === 'POST');
     await page.getByRole('button', { name: '登 录', exact: true }).click();
     expect((await response).status()).toBe(200);
     await expect(page).not.toHaveURL(/\/login/);
     await page.waitForLoadState('networkidle');
-    steps.push('维保真实登录通过');
+    steps.push('项目管理员真实登录通过');
   });
 
   await test.step('1440px 发布详情展示固定版本补打和已有启用配置', async () => {
@@ -133,7 +135,7 @@ test('维保从桌面发布详情选择已有配置补打固定版本，手机�
     await expect(select).toBeVisible();
     await select.click();
     await page.getByText(sample.config_name, { exact: true }).click();
-    await expect(section.getByText(sample.config_name, { exact: true })).toBeVisible();
+    await expect(section.getByTitle(sample.config_name, { exact: true })).toBeVisible();
     await select.click();
     await expect(page.getByText('已停用配置不得选择', { exact: true })).toHaveCount(0);
     await expect(page.getByText('其他项目配置不得选择', { exact: true })).toHaveCount(0);
@@ -191,8 +193,8 @@ test('维保从桌面发布详情选择已有配置补打固定版本，手机�
     expect(response.status()).toBe(200);
     const task = (await response.json() as { data: TaskIdentity }).data;
     expect(task).toMatchObject({ ...created });
-    await expect(page.getByRole('main').getByText('冒烟维保', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '停止构建', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('main').getByText('冒烟管理员', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '停止构建', exact: true })).toBeVisible();
     await page.waitForLoadState('networkidle');
     observations.taskDetail = { id: task.id, triggeredBy: task.triggered_by, path: new URL(page.url()).pathname };
     await page.screenshot({ path: path.join(reportDir, 'desktop-repackage-task.png'), fullPage: true, animations: 'disabled' });

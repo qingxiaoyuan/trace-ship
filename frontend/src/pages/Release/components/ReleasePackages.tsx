@@ -31,7 +31,7 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
     enabled: desktop && !!release.project,
   });
   // 维保职责按目标项目判断，不能用用户其他项目的角色推断本次权限。
-  const canRepackage = user?.is_superuser || ['maintainer', 'developer', 'tester', 'manager', 'software_admin']
+  const canRepackage = user?.is_superuser || ['developer', 'tester', 'manager', 'software_admin']
     .includes(project.data?.my_role || '');
   const configs = useQuery({
     queryKey: ['release-package-configs', release.project, release.repository],

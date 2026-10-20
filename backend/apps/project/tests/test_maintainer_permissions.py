@@ -153,6 +153,123 @@ def test_detail_capabilities_are_read_only_for_maintainer(context):
     assert release["can_review"] is False
 
 
+@pytest.mark.parametrize("export_type", ["md", "pdf", "word"])
+def test_maintainer_cannot_export_release_documents(context: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, export_type: str) -> None:
+    """导出路径在生成文件前拒绝，在线正文和已关联变更仍能读取。"""
+    def unexpected_export(*args: object, **kwargs: object) -> None:
+        pytest.fail("维保请求不能进入文件导出器")
+
+    monkeypatch.setattr("apps.release.views.ReleaseDocExporter.export_pdf", unexpected_export)
+    monkeypatch.setattr("apps.release.views.ReleaseDocExporter.export_word", unexpected_export)
+    response = context.client.get(f"/api/releases/{context.release.id}/export-{export_type}/")
+    assert response.status_code == 403
+    assert "Content-Disposition" not in response
+    assert context.client.get(f"/api/releases/{context.release.id}/").data["data"]["release_doc"] == "完整发布说明"
+
+
+@pytest.mark.parametrize("already_favorite", [False, True])
+def test_maintainer_favorite_request_preserves_existing_preference(context: SimpleNamespace, already_favorite: bool) -> None:
+    """维保不再切换收藏，历史收藏数据也不因收权删除。"""
+    from apps.package.models import PackageConfigFavorite
+
+    if already_favorite:
+        PackageConfigFavorite.objects.create(user=context.member, config=context.config)
+    response = context.client.post(f"/api/packages/configs/{context.config.id}/favorite/", {}, format="json")
+    assert response.status_code == 403
+    assert PackageConfigFavorite.objects.filter(user=context.member, config=context.config).exists() is already_favorite
+
+
+@pytest.mark.parametrize("payload", [{"project": "not-a-uuid"}, [], "not-an-object"])
+def test_favorite_permission_uses_real_config_not_request_body(context: SimpleNamespace, payload: object) -> None:
+    """旧调用或构造请求体不能改变配置所属项目，也不能触发权限检查内部错误。"""
+    response = context.client.post(f"/api/packages/configs/{context.config.id}/favorite/", payload, format="json")
+    assert response.status_code == 403
+
+
+def test_favorite_rechecks_role_after_object_authorization(context: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    """在视图对象授权后改任维保，收藏服务必须按当前成员关系拒绝。"""
+    from apps.package.models import PackageConfigFavorite
+    from apps.package.services import PackageService
+
+    membership = ProjectMember.objects.get(project=context.project, user=context.member)
+    membership.role = "developer"
+    membership.save(update_fields=["role"])
+    original_toggle = PackageService.toggle_favorite
+
+    def change_role_then_toggle(config: PackageConfig, user: User) -> bool:
+        ProjectMember.objects.filter(pk=membership.pk).update(role="maintainer")
+        return original_toggle(config, user)
+
+    monkeypatch.setattr(PackageService, "toggle_favorite", change_role_then_toggle)
+    response = context.client.post(f"/api/packages/configs/{context.config.id}/favorite/", {}, format="json")
+    assert response.status_code == 403
+    assert not PackageConfigFavorite.objects.filter(user=context.member, config=context.config).exists()
+
+
+@pytest.mark.parametrize("role", ["developer", "tester", "manager", "software_admin", "viewer", "auditor", "leader", "superuser"])
+def test_original_roles_keep_exports_and_favorites(context: SimpleNamespace, role: str) -> None:
+    """原项目角色、显式成员负责人和超管继续使用既有导出与收藏能力。"""
+    membership = ProjectMember.objects.get(project=context.project, user=context.member)
+    membership.role = role if role not in ("leader", "superuser") else "maintainer"
+    membership.save(update_fields=["role"])
+    if role == "leader":
+        context.project.leader = context.member
+        context.project.save(update_fields=["leader"])
+    elif role == "superuser":
+        context.member.is_superuser = True
+        context.member.save(update_fields=["is_superuser"])
+
+    response = context.client.get(f"/api/releases/{context.release.id}/export-md/")
+    assert response.status_code == 200
+    assert "完整发布说明" in response.content.decode()
+    url = f"/api/packages/configs/{context.config.id}/favorite/"
+    assert context.client.post(url, {}, format="json").data["data"]["is_favorite"] is True
+    assert context.client.post(url, {}, format="json").data["data"]["is_favorite"] is False
+
+
+@pytest.mark.parametrize("other_role", ["developer", "tester", "manager"])
+def test_mixed_project_roles_keep_only_target_project_exports_and_favorites(
+    context: SimpleNamespace, other_role: str,
+) -> None:
+    """共享仓库不串项目授权，降权后旧链接也立即失效且历史收藏保留。"""
+    from apps.package.models import PackageConfigFavorite
+
+    other = Project.objects.create(code="MIXED-FILES", name="兼任项目", leader=context.manager)
+    membership = ProjectMember.objects.create(project=other, user=context.member, role=other_role)
+    component = ProjectComponent.objects.create(project=other, repository=context.repository, component_code="shared")
+    config = PackageConfig.objects.create(project_component=component, image=context.image, name="兼任配置")
+    release = ReleaseRecord.objects.create(
+        project=other, repository=context.repository, publisher=context.manager,
+        version="V2.0.0", status="released", release_doc="兼任项目完整说明",
+    )
+    export_url = f"/api/releases/{release.id}/export-md/"
+    favorite_url = f"/api/packages/configs/{config.id}/favorite/"
+    assert context.client.get(export_url).status_code == 200
+    assert context.client.post(favorite_url, {}, format="json").status_code == 200
+    assert context.client.get(f"/api/releases/{context.release.id}/export-md/").status_code == 403
+    assert context.client.post(f"/api/packages/configs/{context.config.id}/favorite/", {}, format="json").status_code == 403
+    membership.role = "maintainer"
+    membership.save(update_fields=["role"])
+    assert context.client.get(export_url).status_code == 403
+    assert context.client.post(favorite_url, {}, format="json").status_code == 403
+    assert PackageConfigFavorite.objects.filter(user=context.member, config=config).exists()
+    assert context.client.get(f"/api/releases/{release.id}/").data["data"]["release_doc"] == "兼任项目完整说明"
+
+
+def test_project_readonly_does_not_block_personal_profile_or_notifications(context: SimpleNamespace) -> None:
+    """项目业务收权不影响维保用户维护个人资料或标记个人通知已读。"""
+    from apps.notification.models import Notification
+
+    notification = Notification.objects.create(user=context.member, notification_type="system", title="个人通知", content="可标记已读")
+    response = context.client.patch(f"/api/account/users/{context.member.id}/", {"nickname": "更新个人昵称"}, format="json")
+    assert response.status_code == 200
+    context.member.refresh_from_db()
+    assert context.member.nickname == "更新个人昵称"
+    assert context.client.post(f"/api/notifications/{notification.id}/read/", {}, format="json").status_code == 200
+    notification.refresh_from_db()
+    assert notification.is_read is True
+
+
 def test_workflow_capabilities_are_read_only_even_when_assigned(context):
     """详情不会把任务分配或历史发起人身份展示成维保的审批/撤销能力。"""
     definition = WorkflowDefinition.objects.create(
@@ -212,7 +329,9 @@ def test_authorized_roles_can_grant_and_update_maintainer(context, actor_role):
     ("post", "packages/configs/"),
     ("patch", "packages/configs/{config}/"),
     ("delete", "packages/configs/{config}/"),
+    ("post", "packages/configs/{config}/trigger/"),
     ("post", "packages/configs/{config}/trigger-branch/"),
+    ("post", "packages/configs/{config}/favorite/"),
     ("post", "packages/tasks/{task}/cancel/"),
     ("post", "packages/tasks/{task}/push-svn/"),
     ("post", "repositories/{repository}/delete-tag/"),
@@ -299,8 +418,8 @@ def test_shared_repository_and_global_permissions_do_not_expand_read_scope(conte
         assert context.client.get("/api/" + path).status_code == 404
     assert context.client.get(f"/api/projects/{context.project.id}/components/").status_code == 200
     export = context.client.get(f"/api/releases/{context.release.id}/export-md/")
-    assert export.status_code == 200
-    assert "完整发布说明" in export.content.decode("utf-8")
+    assert export.status_code == 403
+    assert "完整发布说明" not in export.content.decode("utf-8")
     for path, hidden_id in (("releases", release.id), ("packages/tasks", task.id)):
         visible = context.client.get(f"/api/{path}/").data["data"]["results"]
         assert str(hidden_id) not in [str(item["id"]) for item in visible]

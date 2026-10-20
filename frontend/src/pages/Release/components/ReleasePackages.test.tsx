@@ -31,7 +31,7 @@ const configs: PackageConfig[] = [{
 
 beforeEach(() => {
   requests.length = 0;
-  role = 'maintainer';
+  role = 'developer';
   mobile = false;
   taskCreated = false;
   triggerFailure = false;
@@ -117,7 +117,7 @@ async function openPackages() {
 }
 
 describe('已发布版本补打', () => {
-  it('维保在详情固定当前版本选择既有配置补打，刷新任务并可进入新任务', async () => {
+  it('开发人员在详情固定当前版本选择既有配置补打，刷新任务并可进入新任务', async () => {
     renderRelease();
     await openPackages();
     const selector = await screen.findByRole('combobox', { name: '打包配置' });
@@ -230,7 +230,7 @@ describe('已发布版本补打', () => {
     expect(await screen.findByRole('combobox', { name: '打包配置' })).toBeTruthy();
   });
 
-  it.each(['viewer', 'auditor', null])('目标项目角色 %s 没有补打入口，不借用其他项目或全局权限', async (projectRole) => {
+  it.each(['maintainer', 'viewer', 'auditor', null])('目标项目角色 %s 没有补打入口，不借用其他项目或全局权限', async (projectRole) => {
     role = projectRole as string;
     useAuthStore.setState({ user: { ...useAuthStore.getState().user!, permissions: ['package.trigger', 'package.config.manage'] } });
     renderRelease();

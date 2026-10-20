@@ -18,6 +18,7 @@ function lineClass(line: string): string {
 
 interface TerminalLogProps {
   text: string;
+  projectRole?: string | null;
   /** 仅加载了末尾部分日志（大日志首屏优化） */
   partial?: boolean;
   /** 下载完整日志 */
@@ -27,8 +28,8 @@ interface TerminalLogProps {
 }
 
 /** 终端日志：虚拟滚动渲染，仅挂载可视区行，超大日志不卡顿 */
-export const TerminalLog = memo(function TerminalLog({ text, partial, onDownloadFull, error, onRetry }: TerminalLogProps) {
-  const hideDownload = useHideFileDownload();
+export const TerminalLog = memo(function TerminalLog({ text, projectRole, partial, onDownloadFull, error, onRetry }: TerminalLogProps) {
+  const hideDownload = useHideFileDownload(projectRole);
   const canDownload = Boolean(onDownloadFull) && !hideDownload;
   const parentRef = useRef<HTMLDivElement>(null);
   const lines = useMemo(() => (text ? text.split('\n') : []), [text]);

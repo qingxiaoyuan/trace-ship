@@ -44,6 +44,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
 
 describe('维保发布详情', () => {
+  it.each(['maintainer', 'developer'])('目标项目 %s 仅在获准时提供导出，完整说明仍可阅读', async (role) => {
+    projectRole = role;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    await screen.findByText('发布说明正文');
+    await waitFor(() => expect(client.getQueryData<{ my_role: string }>(['project', 'project'])?.my_role).toBe(role));
+    if (role === 'maintainer') expect(screen.queryAllByRole('button', { name: /导出/ })).toHaveLength(0);
+    else expect(await screen.findAllByRole('button', { name: /导出/ })).toHaveLength(3);
+  });
+
   it('标准生成说明的转义管道和续行保持在同一字段，保存后不重复转义', async () => {
     projectRole = 'developer';
     releaseDoc = [

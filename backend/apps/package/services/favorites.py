@@ -1,25 +1,41 @@
 """
 打包配置收藏：切换收藏与收藏列表聚合
 """
+from typing import TYPE_CHECKING
+
+from django.db import transaction
 from django.db.models import OuterRef, Subquery
+from rest_framework.exceptions import PermissionDenied
 
 from apps.package.models import PackageConfig, PackageConfigFavorite, PackageTask
 from apps.project.services import visible_project_ids
+
+if TYPE_CHECKING:
+    from apps.account.models import User
 
 
 class FavoriteMixin:
     """打包配置收藏相关方法。"""
 
     @staticmethod
-    def toggle_favorite(config: PackageConfig, user) -> bool:
+    @transaction.atomic
+    def toggle_favorite(config: PackageConfig, user: "User") -> bool:
         """切换收藏状态：已收藏则取消，未收藏则创建。
 
         Returns:
             切换后的收藏状态（True 表示已收藏）
         """
+        from utils.permissions import ProjectRolePermission
+
+        # 配置可能在视图验权后改归属；读取当前配置并锁住，按当前有效角色再次授权。
+        config = PackageConfig.objects.select_for_update().get(pk=config.pk)
+        project = config.project_component.project
+        permission = ProjectRolePermission()
+        if not permission._check(project, user) or (
+            not user.is_superuser and permission._effective_role(project, user) == "maintainer"
+        ):
+            raise PermissionDenied("维保人员或非项目成员不能切换打包配置收藏")
         favorite, created = PackageConfigFavorite.objects.get_or_create(user=user, config=config)
-        # 竞态说明：双击并发时 create/delete 不在同一事务，最终状态可能与先返回的响应相反；
-        # 概率极低且仅影响星标状态（前端以最后一次响应为准），接受该竞态
         if not created:
             favorite.delete()
         return created

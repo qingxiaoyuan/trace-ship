@@ -177,10 +177,12 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
     password = secrets.token_urlsafe(32)
     token = secrets.token_urlsafe(32)
     owner = User.objects.create_user(username="package_owner", password=password, nickname="隔离仓库所有者")
-    actor = User.objects.create_user(username="package_maintainer", password=password, nickname="隔离实际维保操作人")
+    actor = User.objects.create_user(username="package_developer", password=password, nickname="隔离实际开发操作人")
+    reader = User.objects.create_user(username="package_maintainer", password=password, nickname="隔离只读维保")
     project = Project.objects.create(name="隔离真实构建项目", code="REAL-PACKAGE", leader=owner, status=1)
     ProjectMember.objects.create(project=project, user=owner, role="manager")
-    ProjectMember.objects.create(project=project, user=actor, role="maintainer")
+    ProjectMember.objects.create(project=project, user=actor, role="developer")
+    ProjectMember.objects.create(project=project, user=reader, role="maintainer")
     credential = Credential(name="仅本次临时凭据", owner=owner, cred_type="gitlab_token", auth_mode="token")
     credential.set_data({"token": token})
     credential.save()
@@ -223,6 +225,11 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
         return request("GET", f"/api/packages/tasks/{task_id}/").json()["data"]
 
     try:
+        read_login = request("POST", "/api/auth/login/", json={"username": reader.username, "password": password}).json()["data"]
+        session.headers["Authorization"] = "Bearer " + read_login["access_token"]
+        request("POST", f"/api/packages/configs/{config.id}/trigger/", expected=403, json={"release_id": str(release.id)})
+        assert not PackageTask.objects.exists()
+        assert observations == {"authenticated_tag_queries": 0, "authenticated_git_requests": 0}
         login = request("POST", "/api/auth/login/", json={"username": actor.username, "password": password}).json()["data"]
         session.headers["Authorization"] = "Bearer " + login["access_token"]
         payload = {"release_id": str(release.id)}
@@ -290,6 +297,14 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
         assert "docker run" not in failed_log.decode()
         (REPORT / "drift-blocked.log").write_bytes(failed_log)
         request("GET", f"/api/packages/tasks/{failed_id}/download-all/", expected=404)
+        session.headers["Authorization"] = "Bearer " + read_login["access_token"]
+        request("GET", f"/api/packages/tasks/{task_id}/")
+        request("GET", f"/api/packages/tasks/{task_id}/logs/?tail=20")
+        request("GET", f"/api/packages/tasks/{task_id}/logs/", expected=403)
+        request("GET", f"/api/packages/tasks/{task_id}/download-all/", expected=403)
+        request("GET", f"/api/packages/tasks/{task_id}/artifacts/{artifacts[0]['id']}/download/", expected=403)
+        request("POST", f"/api/packages/configs/{config.id}/favorite/", expected=403)
+        assert PackageTask.objects.count() == 2
         assert observations["authenticated_tag_queries"] >= 2 and observations["authenticated_git_requests"] >= 2
         return {
             "success_task": task_id, "drift_task": failed_id, "actor": str(actor.id), "project": str(project.id),
@@ -299,6 +314,10 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
             "manual_svn_disabled": True, "unused_svn_credential": True,
             "credential_audit_count": usage.count(), "operation_audit": {"user": str(audit.user_id), "result": audit.result, "detail": audit.detail},
             "source_and_tmp_cleaned": True, "drift_stopped_before_docker": True, "protocol_sample": observations,
+            "actor_role": "developer", "maintainer_readonly": {
+                "trigger": 403, "file_log": 403, "single_artifact": 403, "zip": 403, "favorite": 403,
+                "task_detail": 200, "online_log": 200, "no_extra_task": True,
+            },
         }
     finally:
         session.close()

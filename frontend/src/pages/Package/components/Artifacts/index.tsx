@@ -17,7 +17,7 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
   onPushSvn?: () => void;
 }) {
   const { message } = App.useApp();
-  const hideDownload = useHideFileDownload();
+  const hideDownload = useHideFileDownload(task.my_role);
   const [downloading, setDownloading] = useState(false);
 
   const hasArtifacts = (task.artifact_info || []).length > 0;
@@ -96,8 +96,8 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
   );
 });
 
-export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { artifact: PackageArtifact; taskId: string }) {
-  const hideDownload = useHideFileDownload();
+export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId, projectRole }: { artifact: PackageArtifact; taskId: string; projectRole?: string | null }) {
+  const hideDownload = useHideFileDownload(projectRole);
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -137,11 +137,13 @@ export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId }: { art
 export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
   artifact,
   taskId,
+  projectRole,
 }: {
   artifact: PackageArtifact;
   taskId: string;
+  projectRole?: string | null;
 }) {
-  const hideDownload = useHideFileDownload();
+  const hideDownload = useHideFileDownload(projectRole);
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -171,14 +173,14 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
   );
 });
 
-export const ArtifactList = memo(function ArtifactList({ artifacts, taskId }: { artifacts: PackageTask['artifact_info']; taskId: string }) {
+export const ArtifactList = memo(function ArtifactList({ artifacts, taskId, projectRole }: { artifacts: PackageTask['artifact_info']; taskId: string; projectRole?: string | null }) {
   const list = artifacts || [];
   return (
     <div className="p-4 space-y-3 scrollbar-thin" style={{ minHeight: 420, maxHeight: 560, overflowY: 'auto' }}>
       {list.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-slate-400">暂无产物</div>
       ) : (
-        list.map((a) => <ArtifactRow key={a.id} artifact={a} taskId={taskId} />)
+        list.map((a) => <ArtifactRow key={a.id} artifact={a} taskId={taskId} projectRole={projectRole} />)
       )}
     </div>
   );
@@ -187,9 +189,11 @@ export const ArtifactList = memo(function ArtifactList({ artifacts, taskId }: { 
 export const ArtifactPanel = memo(function ArtifactPanel({
   artifacts,
   taskId,
+  projectRole,
 }: {
   artifacts: PackageTask['artifact_info'];
   taskId: string;
+  projectRole?: string | null;
 }) {
   const list = artifacts || [];
   return (
@@ -211,7 +215,7 @@ export const ArtifactPanel = memo(function ArtifactPanel({
                   <span className="font-mono truncate">{a.path}</span>
                 </div>
               </div>
-              <ArtifactDownloadButton artifact={a} taskId={taskId} />
+              <ArtifactDownloadButton artifact={a} taskId={taskId} projectRole={projectRole} />
             </div>
           </div>
         ))

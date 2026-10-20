@@ -8,7 +8,7 @@ import { useAppMessage } from '@/hooks/useAppMessage';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import { useHideFileDownload } from '@/hooks/useHideFileDownload';
 import { isOaMobileClient } from '@/utils/oaClient';
-import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
+import { buildMdTable, parseCompleteMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, isFormalIdentityField, applyCheckboxChange, type MdTableRow } from './releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './ReleaseDocField';
 import { FormalChangesPreview } from './FormalChangesPreview';
@@ -17,20 +17,6 @@ import type { Release } from '@/types';
 
 interface ReleaseNotesProps {
   release: Release;
-}
-
-/** 仅在两列表格能够完整表达原文时使用结构化展示和编辑。 */
-function parseCompleteTable(content: string): MdTableRow[] {
-  const rows = parseMdTable(content, { preserveWhitespace: true });
-  if (!rows.length) return [];
-  const source = content.trim().split(/\r?\n/);
-  if (/^\|\s*(?:项目|字段)\s*\|\s*内容\s*\|$/.test(source[0].trim())) source.shift();
-  if (/^\|\s*[-:]+\s*\|\s*[-:]+\s*\|$/.test(source[0]?.trim() || '')) source.shift();
-  const rebuilt = buildMdTable(rows).split('\n').slice(2);
-  const normalize = (lines: string[]) => lines.map((line) => line.startsWith('|')
-    ? line.replace(/[ \t]*\|[ \t]*/g, '|')
-    : line.replace(/[ \t]+\|$/, '|')).join('\n');
-  return normalize(source) === normalize(rebuilt) ? rows : [];
 }
 
 /** 下载 Blob */
@@ -60,7 +46,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
 
   const mdContent = release.release_doc || '';
   const hasDoc = !!mdContent.trim();
-  const rows = parseCompleteTable(mdContent);
+  const rows = parseCompleteMdTable(mdContent);
 
   // 生成/修改发布说明需 developer 及以上项目角色
   const { data: project } = useQuery({
@@ -68,8 +54,8 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
     queryFn: () => projectApi.getProject(release.project || release.project_id || ''),
     enabled: active && !!(release.project || release.project_id),
   });
-  const { canDevelop } = useProjectRole(project);
-  const hideDownload = useHideFileDownload();
+  const { canDevelop, role } = useProjectRole(project);
+  const hideDownload = useHideFileDownload(role);
 
   const generateMutation = useMutation({
     mutationFn: () => releaseApi.generateDoc(release.id),
@@ -99,7 +85,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
   // 没有本地改动时跟服务端说明走；有改动时保留，直到保存或重新生成。
   const serverToken = `${release.id}:${mdContent}`;
   if (editOpen && (!docDirty || draftReleaseId !== release.id) && appliedToken !== serverToken) {
-    const parsed = parseCompleteTable(mdContent);
+    const parsed = parseCompleteMdTable(mdContent);
     setAppliedToken(serverToken);
     setDraftReleaseId(release.id);
     setDocDirty(false);

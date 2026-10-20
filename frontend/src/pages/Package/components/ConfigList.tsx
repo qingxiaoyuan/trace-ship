@@ -261,7 +261,7 @@ const ConfigRow = memo(function ConfigRow({
   );
 
   // 星标收藏按钮：收藏时实心 amber，未收藏 slate 描边，hover 高亮
-  const favoriteButton = (className: string, iconClass: string) => (
+  const favoriteButton = (className: string, iconClass: string) => config.my_role && config.my_role !== 'maintainer' && (
     <button
       type="button"
       title={config.is_favorite ? '取消收藏' : '收藏为常用配置'}

@@ -185,13 +185,14 @@ export const DetailView = memo(function DetailView({
           {activeTab === 'log' ? (
             <TerminalLog
               text={activeLogText}
+              projectRole={activeBuild.my_role}
               partial={activeLogPartial}
               error={activeLogError}
               onRetry={() => { void loadLog(activeBuild.id).catch(() => {}); }}
               onDownloadFull={() => downloadTaskLog(activeBuild.id)}
             />
           ) : (
-            <ArtifactListPanel artifacts={artifacts} taskId={activeBuild.id} />
+            <ArtifactListPanel artifacts={artifacts} taskId={activeBuild.id} projectRole={activeBuild.my_role} />
           )}
         </div>
       </div>

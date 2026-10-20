@@ -377,6 +377,8 @@ class PackageConfigViewSet(StandardModelViewSet):
         if self.action == "trigger_branch":
             # 分支直打保持原角色范围，不包含维保人员。
             return [IsAuthenticated(), IsProjectPackager()]
+        if self.action == "favorite":
+            return [IsAuthenticated(), IsProjectMember(), IsNotProjectMaintainer()]
         return [IsAuthenticated(), IsProjectMember()]
 
     @action(detail=True, methods=["post"], url_path="favorite")
@@ -700,6 +702,13 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         if self.action == "destroy":
             # 删除任务记录是独立高风险权限；任务查询范围仍限制为当前用户可见项目。
             return [IsAuthenticated(), HasPermission("package.task.delete"), IsNotProjectMaintainer()]
+        if self.action in ("download_artifact", "download_all") or (
+            self.action == "logs"
+            and "tail" not in self.request.query_params
+            and "offset" not in self.request.query_params
+        ):
+            # 在线日志 JSON 可读，完整日志与产物文件另行授权，不能按 GET 全部放行。
+            return [IsAuthenticated(), IsProjectMember(), IsNotProjectMaintainer()]
         return [IsAuthenticated(), IsProjectMember()]
 
     def destroy(self, request, *args, **kwargs):
