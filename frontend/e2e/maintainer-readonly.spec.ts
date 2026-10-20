@@ -69,10 +69,16 @@ async function documentChecks(page: Page, width: number) {
   await expect(generatedTable.locator('td pre code')).toHaveText('smoke_config --check\nsmoke_config --verify\n');
   const impact = generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '是否影响其他功能', exact: true }) });
   await expect(impact.getByRole('cell').nth(1).locator('strong')).toHaveText('首尾空行说明');
+  const reference = impact.getByRole('cell').nth(1).getByRole('link', { name: '关联 MR', exact: true });
+  await expect(reference).toHaveAttribute('href', 'https://example.invalid/mr/44');
+  await expect(reference).toHaveAttribute('title', '关联说明');
+  await expect(impact.getByRole('cell').nth(1).locator('br')).toHaveCount(1);
+  await expect(page.locator('.release-markdown')).not.toContainText('[mr]:');
   const generatedSource = sample.document_source.documents.find(item => new URL(page.url()).pathname.endsWith(`/${item.release_id}`))!;
   expect(sample.document_source.method).toBe('apps.release.services.ReleaseDocGenerator._build_markdown_doc');
   expect(sample.document_source.commit).toMatch(/^[0-9a-f]{40}$/);
   expect(generatedSource.markdown).toContain('A 支持 A \\| B\nF 修复终端故障');
+  expect(generatedSource.markdown).toContain('<br>\n[关联 MR][mr]\n |');
   await expect(generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '当前发布版本号', exact: true }) }).getByRole('cell').nth(1)).toHaveText(generatedSource.version);
   await expect(generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: 'Git提交hash', exact: true }) }).getByRole('cell').nth(1)).toHaveText(generatedSource.git_hash);
   await expect(generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '发布人', exact: true }) }).getByRole('cell').nth(1)).toHaveText(generatedSource.publisher);

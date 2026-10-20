@@ -10,6 +10,15 @@ export interface MdTableRow {
   value: string;
 }
 
+/** 发布生成器的两列表头协议，调用方自行决定是否接受行外缩进。 */
+export function isReleaseTableHeader(line: string): boolean {
+  return /^\|\s*(?:项目|字段)\s*\|\s*内容\s*\|$/.test(line);
+}
+
+export function isReleaseTableSeparator(line: string): boolean {
+  return /^\|\s*[-:]+\s*\|\s*[-:]+\s*\|$/.test(line);
+}
+
 /** 生成器只转义管道符；分列时保留转义，读取字段时再还原。 */
 function splitCells(line: string, preserveWhitespace = false): string[] {
   return line.split(/(?<!\\)\|/).map((cell) => preserveWhitespace ? cell : cell.trim());
@@ -90,8 +99,8 @@ export function parseCompleteMdTable(content: string): MdTableRow[] {
   const rows = parseMdTable(content, { preserveWhitespace: true });
   if (!rows.length) return [];
   const source = content.trim().split(/\r?\n/);
-  if (/^\|\s*(?:项目|字段)\s*\|\s*内容\s*\|$/.test(source[0].trim())) source.shift();
-  if (/^\|\s*[-:]+\s*\|\s*[-:]+\s*\|$/.test(source[0]?.trim() || '')) source.shift();
+  if (isReleaseTableHeader(source[0].trim())) source.shift();
+  if (isReleaseTableSeparator(source[0]?.trim() || '')) source.shift();
   const normalize = (lines: string[]) => lines.map((line) => line.startsWith('|')
     ? line.replace(/(?<!\\)\| ?/g, '|').replace(/ ?(?<!\\)\|/g, '|')
     : line.replace(/ (?<!\\)\|$/, '|')).join('\n');

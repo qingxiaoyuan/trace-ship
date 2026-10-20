@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { buildMdTable, parseMdTable, parseCompleteMdTable } from './markdownTable';
 
 describe('parseMdTable', () => {
+  it.each([
+    ['| 项目 | 内容 |', '| :--- | ---: |'],
+    ['|字段|内容|', '|:---:|---|'],
+  ])('兼容生成器两种表头及对齐分隔符：%s', (header, separator) => {
+    const rows = [{ key: '变更内容', value: '首行\n续行' }];
+    expect(parseCompleteMdTable([header, separator, '| 变更内容 | 首行\n续行 |'].join('\n'))).toEqual(rows);
+    expect(parseCompleteMdTable('| 变更内容 | 首行\n续行 |')).toEqual(rows);
+  });
+
   it('解析标准 2 列表格，跳过表头与分隔行', () => {
     const md = ['| 项目 | 内容 |', '|------|------|', '| 版本号 | V1.0.0 |', '| 发布人 | 张三 |'].join('\n');
     expect(parseMdTable(md)).toEqual([

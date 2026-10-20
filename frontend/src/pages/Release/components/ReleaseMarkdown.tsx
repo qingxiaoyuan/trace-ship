@@ -1,6 +1,6 @@
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { parseCompleteMdTable, type MdTableRow } from '@/utils/markdownTable';
+import { isReleaseTableHeader, isReleaseTableSeparator, parseCompleteMdTable, type MdTableRow } from '@/utils/markdownTable';
 import './releaseMarkdown.css';
 
 type MarkdownNode = {
@@ -10,6 +10,25 @@ type MarkdownNode = {
   data?: object;
   position?: { start: { offset?: number }; end: { offset?: number } };
 };
+
+/** 局部重解析沿用整篇引用定义，附加的定义不作为局部正文输出。 */
+function createFragmentParser(parse: (source: string) => MarkdownNode, tree: MarkdownNode, source: string) {
+  const definitions: string[] = [];
+  const collect = (node: MarkdownNode) => {
+    if (node.type === 'definition' || node.type === 'footnoteDefinition') {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start !== undefined && end !== undefined) definitions.push(source.slice(start, end));
+    }
+    node.children?.forEach(collect);
+  };
+  collect(tree);
+  return (value: string) => {
+    const parsed = parse(value + '\n\n' + definitions.join('\n\n'));
+    parsed.children = parsed.children?.filter((node) => (node.position?.start.offset || 0) < value.length);
+    return parsed;
+  };
+}
 
 /** 只转换 Markdown HTML 节点中的换行标签，不改写代码示例里的原文。 */
 function transformBreakTags(tree: MarkdownNode, parse: (source: string) => MarkdownNode) {
@@ -44,7 +63,9 @@ function transformBreakTags(tree: MarkdownNode, parse: (source: string) => Markd
 }
 
 function remarkBreakTags(this: { parse: (source: string) => MarkdownNode }) {
-  return (tree: MarkdownNode) => transformBreakTags(tree, (source) => this.parse(source));
+  return (tree: MarkdownNode, file: { value: unknown }) => {
+    transformBreakTags(tree, createFragmentParser((source) => this.parse(source), tree, String(file.value)));
+  };
 }
 
 /** 恢复字段文本的物理换行和缩进，不改写转义、代码或 HTML 节点。 */
@@ -77,8 +98,8 @@ function remarkGeneratedTables(this: { parse: (source: string) => MarkdownNode }
     for (const node of tree.children || []) {
       if (node.type !== 'table') continue;
       const index = lines.findIndex((line) => line.start === node.position?.start.offset);
-      if (index < 0 || !/^\|\s*(?:项目|字段)\s*\|\s*内容\s*\|$/.test(lines[index].value)
-        || !/^\|\s*[-:]+\s*\|\s*[-:]+\s*\|$/.test(lines[index + 1]?.value || '')) continue;
+      if (index < 0 || !isReleaseTableHeader(lines[index].value)
+        || !isReleaseTableSeparator(lines[index + 1]?.value || '')) continue;
       let cursor = index + 2;
       let multiline = false;
       let valid = true;
@@ -108,23 +129,13 @@ function remarkGeneratedTables(this: { parse: (source: string) => MarkdownNode }
     if (!tables.length) return;
 
     // 引用必须在解析字段时已定义，且最终仍在同一文档树内解析；不能把前后文拆成多个 Markdown。
-    const definitions: string[] = [];
-    const collectDefinitions = (node: MarkdownNode) => {
-      if (node.type === 'definition' || node.type === 'footnoteDefinition') {
-        const start = node.position?.start.offset;
-        const end = node.position?.end.offset;
-        if (start !== undefined && end !== undefined) definitions.push(source.slice(start, end));
-      }
-      node.children?.forEach(collectDefinitions);
-    };
-    collectDefinitions(tree);
+    const parseFragment = createFragmentParser(parse, tree, source);
     const element = (tag: string, children: MarkdownNode[]): MarkdownNode => ({
       type: 'releaseGeneratedElement', data: { hName: tag }, children,
     });
     const field = (value: string): MarkdownNode => {
-      const parsed = parse(value + '\n\n' + definitions.join('\n\n'));
-      parsed.children = parsed.children?.filter((node) => (node.position?.start.offset || 0) < value.length);
-      transformBreakTags(parsed, parse);
+      const parsed = parseFragment(value);
+      transformBreakTags(parsed, parseFragment);
       restoreFieldWhitespace(parsed, value);
       const prepareFieldNodes = (node: MarkdownNode) => {
         // 默认 text 转换还会修剪每行缩进；字段文本走安全的文本节点转换，保留已恢复的空白。
@@ -182,7 +193,7 @@ export function ReleaseMarkdown({ content, field = false }: { content: string; f
       table: ({ children }) => <div className="release-markdown-table" role="region" aria-label="发布说明表格" tabIndex={0}>
         <table>{children}</table>
       </div>,
-      a: ({ href, children }) => <a href={href} target={href?.startsWith('#') ? undefined : '_blank'} rel="noopener noreferrer">{children}</a>,
+      a: ({ href, title, children }) => <a href={href} title={title} target={href?.startsWith('#') ? undefined : '_blank'} rel="noopener noreferrer">{children}</a>,
     }}>{content}</Markdown>
   </div>;
 }

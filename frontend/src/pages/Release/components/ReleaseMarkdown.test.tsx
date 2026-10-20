@@ -6,6 +6,27 @@ import { ReleaseMarkdown } from './ReleaseMarkdown';
 afterEach(cleanup);
 
 describe('发布说明 Markdown', () => {
+  it('生成字段行首换行后保留表外定义的引用链接，前后正文仍共享引用', () => {
+    const generated = buildMdTable([
+      { key: '变更内容', value: '<br>\n[关联 MR][mr]' },
+      { key: '测试验证', value: '已验证' },
+    ]);
+    const { container } = render(<ReleaseMarkdown content={[
+      '[前文引用][mr]', '', generated, '', '[末尾引用][mr]', '',
+      '[mr]: https://example.invalid/mr/44 "关联说明"',
+    ].join('\n')} />);
+
+    const link = screen.getByRole('link', { name: '关联 MR' });
+    expect(link.getAttribute('href')).toBe('https://example.invalid/mr/44');
+    expect(link.getAttribute('title')).toBe('关联说明');
+    expect(link.closest('td')?.querySelector('br')).not.toBeNull();
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
+    for (const name of ['前文引用', '末尾引用']) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe('https://example.invalid/mr/44');
+    }
+    expect(container.textContent).not.toContain('[mr]:');
+  });
+
   it('生成字段以空行开始和结束时仍归同一单元格，后文不被吞入', () => {
     const { container } = render(<ReleaseMarkdown content={buildMdTable([
       { key: '配置项改动', value: '\n**独立配置说明**\n' },
@@ -86,6 +107,23 @@ describe('发布说明 Markdown', () => {
     expect(screen.getByRole('link', { name: 'MR' }).getAttribute('href')).toBe('https://example.invalid/mr/1');
     expect(container.textContent).not.toContain('**重要说明**');
     expect(container.textContent).not.toContain('[MR]');
+  });
+
+  it.each([false, true])('普通正文行首换行后沿用整篇引用定义并过滤危险地址（字段模式：%s）', (field) => {
+    const { container } = render(<ReleaseMarkdown field={field} content={[
+      '<br>', '[关联 MR][mr] [危险引用][unsafe] `<br>`', '',
+      '[后文引用][mr]', '',
+      '[mr]: https://example.invalid/mr/44',
+      '[unsafe]: javascript:alert%281%29',
+    ].join('\n')} />);
+
+    for (const name of ['关联 MR', '后文引用']) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe('https://example.invalid/mr/44');
+    }
+    expect(screen.getByText('危险引用').getAttribute('href') || '').not.toMatch(/^javascript:/i);
+    expect(container.querySelectorAll('br')).toHaveLength(1);
+    expect(container.querySelector('code')?.textContent).toBe('<br>');
+    expect(container.textContent).not.toContain('[mr]:');
   });
 
   it('行内换行前后保留强调和链接', () => {

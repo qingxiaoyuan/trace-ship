@@ -90,13 +90,14 @@ def main() -> None:
         "| 长字段一 | 长字段二 | 长字段三 | 长字段四 |\n| --- | --- | --- | --- |\n"
         "| " + "甲" * 70 + " | " + "乙" * 70 + " | " + "丙" * 70 + " | 表格末列完整 |\n\n"
         + "\n\n".join(f"阅读段落{line:02d}：" + "本段验证长文档信息完整与底部导航安全留白。" * 5 for line in range(1, 21))
-        + "\n\n长文档结尾：全部发布说明完整可读。\n"
+        + "\n\n长文档结尾：全部发布说明完整可读。\n\n"
+        "[mr]: https://example.invalid/mr/44 \"关联说明\"\n"
     )
     generated_fields = {
         "updates": [{"type": "A", "content": "支持 A | B"}, {"type": "F", "content": "修复终端故障"}],
         "has_config_changes": True, "config_change_doc": "    smoke_config --check\n    smoke_config --verify",
         "related_changes": [{"key": "依赖软件", "value": "runtime | stable"}],
-        "impact_other": True, "impact_desc": "\n**首尾空行说明**\n",
+        "impact_other": True, "impact_desc": "\n**首尾空行说明**\n\n<br>\n[关联 MR][mr]\n",
         "self_test_passed": True, "retest_passed": True,
     }
     release = ReleaseRecord.objects.create(
