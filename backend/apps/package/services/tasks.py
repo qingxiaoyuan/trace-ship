@@ -10,6 +10,7 @@ from django.db import close_old_connections, transaction
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.package.models import PackageConfig, PackageNode, PackageTask
 from apps.package.services.svn import (
@@ -92,8 +93,8 @@ class TaskLifecycleMixin:
     def create_task_for_release(
         cls,
         config: PackageConfig,
-        release,
-        request_user=None,
+        release: "ReleaseRecord",
+        request_user: "User | None" = None,
         *,
         auto_triggered: bool = False,
     ) -> PackageTask:
@@ -103,10 +104,20 @@ class TaskLifecycleMixin:
         是否推 SVN：正式版看总开关，RC / 测试版还要各自打开。手动触发不推 SVN。
         """
         from apps.repository.models import Repository
+        from utils.permissions import IsProjectReleasePackager
 
         Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+        # 仓库锁先于配置锁；仅锁配置行，避免可空镜像/节点关联产生外连接锁错误。
+        PackageConfig.objects.select_for_update().only("id").get(pk=config.pk)
         release.refresh_from_db()
         config.refresh_from_db()
+        # 配置归属与成员角色可能在视图验权后变化，按锁定的当前归属重新核验。
+        if not auto_triggered and (
+            request_user is None
+            or not request_user.is_authenticated
+            or not IsProjectReleasePackager()._check(config.project_component.project, request_user)
+        ):
+            raise PermissionDenied("没有在当前项目补打已发布版本的权限")
         if release.status != "released":
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})
         if not config.is_active:

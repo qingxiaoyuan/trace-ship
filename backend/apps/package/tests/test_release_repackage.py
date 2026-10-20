@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import transaction
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.test import APIClient
 
@@ -225,6 +226,63 @@ def test_superuser_keeps_existing_trigger_permission_without_membership(context:
     response = trigger(context)
     assert response.status_code == 201, response.data
     assert PackageTask.objects.get().triggered_by == user
+
+
+@pytest.mark.parametrize("change", ["config-project", "actor-role"])
+def test_repackage_rechecks_current_project_permission_after_view_authorization(
+    context: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, change: str,
+) -> None:
+    """在对象验权和事务创建之间移动配置或降权，不能沿用旧项目授权。"""
+    release = context.release
+    if change == "config-project":
+        other = Project.objects.create(code="RACE", name="只读项目", leader=context.users["manager"])
+        ProjectMember.objects.create(project=other, user=context.users["maintainer"], role="viewer")
+        component = ProjectComponent.objects.create(
+            project=other, repository=context.repository, component_code="shared",
+        )
+        release = ReleaseRecord.objects.create(
+            project=other, repository=context.repository, publisher=context.users["manager"],
+            status="released", version="V8.0.0", tag_name="V8.0.0", git_hash="b" * 40,
+        )
+    original_create = PackageService.create_task_for_release
+
+    def change_after_authorization(
+        config: PackageConfig, target_release: ReleaseRecord, request_user: User | None = None,
+    ) -> PackageTask:
+        if change == "config-project":
+            PackageConfig.objects.filter(pk=config.pk).update(project_component=component)
+        else:
+            ProjectMember.objects.filter(project=context.project, user=request_user).update(role="viewer")
+        return original_create(config, target_release, request_user=request_user)
+
+    monkeypatch.setattr(PackageService, "create_task_for_release", change_after_authorization)
+    response = trigger(context, {"release_id": str(release.id)})
+    assert response.status_code == 403, response.data
+    assert not PackageTask.objects.exists()
+    assert not context.dispatched
+    assert OperationLog.objects.get(action="trigger_release").result == "failure"
+
+
+@pytest.mark.parametrize("actor", ["missing", "viewer", "non-member"])
+def test_manual_creation_service_requires_current_project_authorization(context: SimpleNamespace, actor: str) -> None:
+    """直接调用服务也不能省略实际操作人或绕过当前项目补打权限。"""
+    user = None if actor == "missing" else context.users["viewer"]
+    if actor == "non-member":
+        user = User.objects.create_user(username="unaffiliated_actor")
+    with pytest.raises(PermissionDenied):
+        PackageService.create_task_for_release(context.config, context.release, request_user=user)
+    assert not PackageTask.objects.exists()
+    assert not context.dispatched
+
+
+def test_automatic_creation_keeps_existing_system_trigger_policy(context: SimpleNamespace) -> None:
+    """自动打包仍由已完成发布驱动，不套用手动补打的操作人角色限制。"""
+    task = PackageService.create_task_for_release(
+        context.config, context.release, request_user=None, auto_triggered=True,
+    )
+    assert task.triggered_by is None
+    assert task.config_snapshot["trigger_source"] == "auto_release"
+    assert context.dispatched == [str(task.id)]
 
 
 def test_snapshot_uses_current_saved_config_and_is_immutable_after_creation(context: SimpleNamespace) -> None:
