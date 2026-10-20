@@ -7,6 +7,7 @@ import os
 import secrets
 import sys
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 
@@ -58,7 +59,7 @@ def main() -> None:
     password = secrets.token_urlsafe(24)
     owner = User.objects.create_user(username="smoke_owner", password=password, nickname="冒烟管理员")
     reader = User.objects.create_user(username="smoke_maintainer", password=password, nickname="冒烟维保")
-    project = Project.objects.create(name="隔离冒烟项目", code="SMOKE", leader=owner, status=1)
+    project = Project.objects.create(name="隔离冒烟项目_用于手机窄屏完整阅读的超长项目名称", code="SMOKE", leader=owner, status=1)
     ProjectMember.objects.create(project=project, user=owner, role="manager")
     ProjectMember.objects.create(project=project, user=reader, role="maintainer")
     repository = Repository.objects.create(
@@ -71,7 +72,23 @@ def main() -> None:
         default_branch="main",
     )
     component = ProjectComponent.objects.create(
-        project=project, repository=repository, component_code="software", display_name="冒烟软件"
+        project=project, repository=repository, component_code="software", display_name="冒烟软件_用于手机树形筛选的超长软件名称"
+    )
+    release_doc = (
+        "# 手机完整阅读验收\n\n表格外首段：这是隔离生成格式的脱敏样本。\n\n"
+        "| 项目 | 内容 |\n| --- | --- |\n"
+        "| 软件名称 | 冒烟软件 \\| 多模块 |\n"
+        "| 更新说明 | 第一行<br>**重要更新**与[安全链接](https://example.invalid/help) |\n"
+        "| 额外字段 | 原始额外字段必须保留 |\n\n"
+        "<br>**换行后强调**\n\n"
+        "`<br><script>字面代码</script>`\n\n"
+        "```html\n<br><img src=x onerror=alert(1)>\n```\n\n"
+        "[危险链接](javascript:alert(1))\n<script>window.smokeUnsafe=true</script>\n"
+        "<img src=x onerror=alert(1)>\n\n"
+        "| 长字段一 | 长字段二 | 长字段三 | 长字段四 |\n| --- | --- | --- | --- |\n"
+        "| " + "甲" * 70 + " | " + "乙" * 70 + " | " + "丙" * 70 + " | 表格末列完整 |\n\n"
+        + "\n\n".join(f"阅读段落{line:02d}：" + "本段验证长文档信息完整与底部导航安全留白。" * 5 for line in range(1, 21))
+        + "\n\n长文档结尾：全部发布说明完整可读。\n"
     )
     release = ReleaseRecord.objects.create(
         project=project,
@@ -83,9 +100,17 @@ def main() -> None:
         release_type="formal",
         status="released",
         released_at=timezone.now(),
-        release_doc="仅用于隔离验收的虚构发布。",
+        release_doc=release_doc,
         git_hash="1" * 40,
     )
+    reading_releases = [release]
+    for number in range(2, 15):
+        reading_releases.append(ReleaseRecord.objects.create(
+            project=project, repository=repository, publisher=owner,
+            version=f"VA.39.1.{number}", tag_name=f"VA.39.1.{number}_smoke",
+            branch="main", release_type="formal", status="released", git_hash="1" * 40,
+            released_at=timezone.now() - timedelta(minutes=number), release_doc=release_doc,
+        ))
     # 只替换外部任务投递边界；HTTP、权限、任务创建与操作日志均运行生产实现。
     # 隔离样本使用 example.invalid，入口绝不执行真实构建或访问远端仓库。
     dispatch_receipts = runtime / "dispatch.jsonl"
@@ -102,7 +127,7 @@ def main() -> None:
         def list_tags(self, repo_identity: str) -> list[TagInfo]:
             if repo_identity != repository.external_identity:
                 raise RuntimeError("冒烟样本禁止查询其他仓库")
-            return [TagInfo(name=release.tag_name, commit_hash=release.git_hash)]
+            return [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in reading_releases]
 
     ReleaseService._get_provider = staticmethod(lambda *_args, **_kwargs: SampleRepository())
     repackage_config = PackageConfig.objects.create(
@@ -118,11 +143,15 @@ def main() -> None:
     )
     PackageConfig.objects.create(project_component=other_component, name="其他项目配置不得选择", is_active=True)
     manifest = {
-        "username": reader.username, "password": password, "tasks": {},
+        "username": reader.username, "password": password,
+        "operator": {"username": owner.username, "role": "manager", "id": str(owner.id)}, "tasks": {},
+        "reading": {"project_id": str(project.id), "project_name": project.name,
+                    "repository_id": str(repository.id), "software_name": component.display_name,
+                    "release_ids": [str(item.id) for item in reading_releases]},
         "repackage": {
             "release_id": str(release.id), "config_id": str(repackage_config.id),
             "config_name": repackage_config.name, "project_id": str(project.id),
-            "repository_id": str(repository.id), "actor_id": str(reader.id),
+            "repository_id": str(repository.id), "actor_id": str(owner.id),
             "version": release.version, "tag_name": release.tag_name,
             "commit_hash": release.git_hash, "dispatch_receipts": str(dispatch_receipts),
         },

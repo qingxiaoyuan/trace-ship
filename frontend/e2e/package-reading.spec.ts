@@ -15,6 +15,7 @@ interface TaskSample {
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
   username: string;
+  operator: { username: string; role: string; id: string };
   password: string;
   tasks: Record<'success' | 'running' | 'expired' | 'nolog', TaskSample>;
 };
@@ -40,6 +41,7 @@ async function viewport(page: Page) {
 }
 
 test.afterEach(async ({ page, context, browser }, info) => {
+  observations.actor = { role: fixture.operator.role, id: fixture.operator.id };
   observations.browser = { name: 'Chromium', version: browser.version(), headless: true, mobile: '浏览器视口模拟，未验证手机真机' };
   observations.status = info.status;
   observations.actualViewport = await viewport(page).catch(() => null);
@@ -57,7 +59,7 @@ test.afterEach(async ({ page, context, browser }, info) => {
 
 const pageErrors: string[] = [];
 
-test('维保可恢复任务深链，读取长日志与真实下载，并看到缺失和过期错误', async ({ page, context }) => {
+test('项目管理员可恢复任务深链，读取长日志与真实下载，并看到缺失和过期错误', async ({ page, context }) => {
   page.on('pageerror', error => pageErrors.push(error.message));
   context.on('page', current => current.on('pageerror', error => pageErrors.push(error.message)));
   context.on('requestfailed', request => failedRequests.push({ path: new URL(request.url()).pathname, method: request.method(), error: request.failure()?.errorText, page: request.frame().page().url(), at: new Date().toISOString() }));
@@ -65,10 +67,10 @@ test('维保可恢复任务深链，读取长日志与真实下载，并看到�
     if (response.status() >= 500) serverErrors.push({ path: new URL(response.url()).pathname, status: response.status() });
   });
   // 完整登录页调用生产登录 API；没有 route/mock 或预制 JWT。
-  await test.step('通过真实登录接口建立维保会话', async () => {
+  await test.step('通过真实登录接口建立项目管理员会话', async () => {
     await page.goto('/login');
     await page.getByRole('button', { name: '本地账号', exact: true }).click();
-    await page.getByPlaceholder('请输入本地账号').fill(fixture.username);
+    await page.getByPlaceholder('请输入本地账号').fill(fixture.operator.username);
     await page.getByPlaceholder('请输入密码', { exact: true }).fill(fixture.password);
     const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/login/') && response.request().method() === 'POST');
     await page.getByRole('button', { name: '登 录', exact: true }).click();

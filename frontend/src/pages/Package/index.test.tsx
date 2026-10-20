@@ -155,8 +155,8 @@ describe('打包任务读取', () => {
     expect(logQueries).toHaveLength(3);
   });
 
-  it('维保人员可按产物名称下载所属任务的单个文件', async () => {
-    taskResponse = { ...task, artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha' }] };
+  it('开发人员可按产物名称下载所属任务的单个文件', async () => {
+    taskResponse = { ...task, my_role: 'developer', artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha' }] };
     renderTask();
     fireEvent.click(await screen.findByRole('button', { name: '下载 客户端.zip' }));
     await waitFor(() => expect(downloadFiles).toHaveLength(1));
@@ -165,7 +165,7 @@ describe('打包任务读取', () => {
   });
 
   it('下载全部与完整日志使用当前任务，下载日志不受首屏截尾影响', async () => {
-    taskResponse = { ...task, artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha' }] };
+    taskResponse = { ...task, my_role: 'developer', artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha' }] };
     logResponse = (params) => params.tail
       ? { size: 2000000, offset: 1999990, content: '日志尾行\n' }
       : { size: 2000000, offset: 2000000, content: '' };
@@ -249,8 +249,8 @@ describe('打包任务读取', () => {
     fireEvent.click(screen.getAllByText('所属项目打包任务')[0]);
     await screen.findByText('SVN上传超时');
     expect(screen.queryByRole('button', { name: /停止|删除|配置|新建打包|推送.*SVN/ })).toBeNull();
-    expect(screen.getByRole('button', { name: '下载完整日志' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载 客户端.zip' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /下载/ })).toBeNull();
+    expect(screen.getAllByText('客户端.zip').length).toBeGreaterThan(0);
   });
 
   it('切换任务后，较晚返回的旧任务不会覆盖当前详情', async () => {
@@ -277,7 +277,7 @@ describe('打包任务读取', () => {
   it('单个产物、批量产物和完整日志下载失败都反馈原因且不保存伪文件', async () => {
     const notify = vi.fn();
     registerErrorNotifier(notify);
-    taskResponse = { ...task, artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha' }] };
+    taskResponse = { ...task, my_role: 'developer', artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha' }] };
     renderTask();
     await screen.findByRole('button', { name: '下载 客户端.zip' });
     for (const [button, message] of [

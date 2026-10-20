@@ -25,10 +25,10 @@ def locked_context(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     if connection.vendor != "postgresql":
         pytest.skip("配置并发保护需要 PostgreSQL 行锁")
     manager = User.objects.create_user(username="lock_manager")
-    actor = User.objects.create_user(username="lock_maintainer")
+    actor = User.objects.create_user(username="lock_developer")
     project = Project.objects.create(code="LOCK", name="配置锁项目", leader=manager)
     ProjectMember.objects.create(project=project, user=manager, role="manager")
-    ProjectMember.objects.create(project=project, user=actor, role="maintainer")
+    ProjectMember.objects.create(project=project, user=actor, role="developer")
     repository = Repository.objects.create(
         name="配置锁软件", vendor="gitlab", url="https://example.invalid",
         external_identity="locks/repackage", created_by=manager,

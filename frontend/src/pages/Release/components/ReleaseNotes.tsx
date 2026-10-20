@@ -68,8 +68,8 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
     queryFn: () => projectApi.getProject(release.project || release.project_id || ''),
     enabled: active && !!(release.project || release.project_id),
   });
-  const { canDevelop } = useProjectRole(project);
-  const hideDownload = useHideFileDownload();
+  const { canDevelop, role } = useProjectRole(project);
+  const hideDownload = useHideFileDownload(role);
 
   const generateMutation = useMutation({
     mutationFn: () => releaseApi.generateDoc(release.id),

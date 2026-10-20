@@ -162,16 +162,17 @@ const BuildHistoryItem = memo(function BuildHistoryItem({ build, isActive, onSel
 interface ArtifactListPanelProps {
   artifacts: PackageTask['artifact_info'];
   taskId: string;
+  projectRole?: string | null;
 }
 
-export const ArtifactListPanel = memo(function ArtifactListPanel({ artifacts, taskId }: ArtifactListPanelProps) {
+export const ArtifactListPanel = memo(function ArtifactListPanel({ artifacts, taskId, projectRole }: ArtifactListPanelProps) {
   const list = artifacts || [];
   return (
     <div className="p-4 space-y-3 scrollbar-thin" style={{ minHeight: 420, maxHeight: 560, overflowY: 'auto' }}>
       {list.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-slate-400">暂无产物</div>
       ) : (
-        list.map((a) => <ArtifactRow key={a.id} artifact={a} taskId={taskId} />)
+        list.map((a) => <ArtifactRow key={a.id} artifact={a} taskId={taskId} projectRole={projectRole} />)
       )}
     </div>
   );

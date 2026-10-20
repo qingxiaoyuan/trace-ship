@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { isOaMobileClient } from '@/utils/oaClient';
 
-/** OA 手机内置浏览器下隐藏文件下载入口 */
-export function useHideFileDownload(): boolean {
+/** 按目标项目角色收起文件入口；OA 手机继续沿用下载兼容规则。null 表示角色尚未确认。 */
+export function useHideFileDownload(projectRole?: string | null): boolean {
   const [hide, setHide] = useState(() => isOaMobileClient());
 
   useEffect(() => {
@@ -11,5 +11,5 @@ export function useHideFileDownload(): boolean {
     return () => window.removeEventListener('resize', sync);
   }, []);
 
-  return hide;
+  return hide || projectRole === 'maintainer' || projectRole === null;
 }

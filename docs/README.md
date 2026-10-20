@@ -8,7 +8,7 @@
 | --- | --- |
 | [#5 正式版从已发布 RC 晋升，并支持安全清理 RC Tag](https://github.com/qingxiaoyuan/trace-ship/issues/5) | 规格草稿、验收要求及原需求/PRD 背景 |
 | [#6 多个项目复用同一仓库，并共享仓库版本序列](https://github.com/qingxiaoyuan/trace-ship/issues/6) | 规格与现状核验，已注明兼容期方案被 ADR-0021 替代 |
-| [#7 维保人员查看项目发布信息并处理打包](https://github.com/qingxiaoyuan/trace-ship/issues/7) | 功能规格、权限和移动端范围 |
+| [#7 维保人员只读查看所属项目的发布和打包信息](https://github.com/qingxiaoyuan/trace-ship/issues/7) | 现行只读规格、权限和移动端范围；操作收权见 [#44](https://github.com/qingxiaoyuan/trace-ship/issues/44) |
 | [#8 通过命令面板和详情链接快速定位功能与数据](https://github.com/qingxiaoyuan/trace-ship/issues/8) | 功能规格、设计选择和覆盖核验 |
 | [#9 项目发布版本按仓库分组展示](https://github.com/qingxiaoyuan/trace-ship/issues/9) | 版本树规格与已确认设计方向 |
 | [#10 初始需求与阶段计划的历史归档](https://github.com/qingxiaoyuan/trace-ship/issues/10) | 历史归档，不作为当前开发任务 |

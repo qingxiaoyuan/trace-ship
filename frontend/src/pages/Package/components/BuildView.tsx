@@ -153,7 +153,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">构建日志</h3>
             </div>
           </div>
-          <TerminalLog text={logText} partial={logPartial} error={logError} onRetry={onRetryLog} onDownloadFull={() => downloadTaskLog(task.id)} />
+          <TerminalLog text={logText} projectRole={task.my_role} partial={logPartial} error={logError} onRetry={onRetryLog} onDownloadFull={() => downloadTaskLog(task.id)} />
         </div>
 
         <div className="lg:col-span-2 tech-card rounded-xl overflow-hidden flex flex-col">
@@ -166,7 +166,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
               <ArtifactActionsDropdown task={task} pushing={pushing} onPushSvn={handlePushSvn} />
             </div>
           </div>
-          <ArtifactPanel artifacts={artifacts} taskId={task.id} />
+          <ArtifactPanel artifacts={artifacts} taskId={task.id} projectRole={task.my_role} />
         </div>
       </div>
     </div>

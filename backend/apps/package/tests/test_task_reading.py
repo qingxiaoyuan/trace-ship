@@ -60,17 +60,24 @@ def reading_context(tmp_path: Path, settings: Settings) -> SimpleNamespace:
     )
 
 
-def test_expired_artifacts_do_not_download_as_successful_empty_zip(reading_context: SimpleNamespace) -> None:
+@pytest.fixture
+def download_context(reading_context: SimpleNamespace) -> SimpleNamespace:
+    """文件安全和内容回归继续使用有权的开发角色，保留通用下载保护。"""
+    ProjectMember.objects.filter(project=reading_context.project, user=reading_context.reader).update(role="developer")
+    return reading_context
+
+
+def test_expired_artifacts_do_not_download_as_successful_empty_zip(download_context: SimpleNamespace) -> None:
     """产物记录保留而文件已过期时，批量下载明确失败。"""
-    response = reading_context.client.get(f"/api/packages/tasks/{reading_context.task.id}/download-all/")
+    response = download_context.client.get(f"/api/packages/tasks/{download_context.task.id}/download-all/")
 
     assert response.status_code == 404
     assert response.json()["message"] == "没有可下载的有效产物文件"
 
 
-def test_partial_artifacts_do_not_download_as_complete_bundle(reading_context: SimpleNamespace) -> None:
+def test_partial_artifacts_do_not_download_as_complete_bundle(download_context: SimpleNamespace) -> None:
     """全部下载不静默遗漏已经清理的文件。"""
-    context = reading_context
+    context = download_context
     (context.artifacts / "installer.zip").write_bytes(b"package")
     context.task.artifact_info.append({"id": "symbols", "name": "symbols.zip", "path": "symbols.zip"})
     context.task.save(update_fields=["artifact_info"])
@@ -81,7 +88,7 @@ def test_partial_artifacts_do_not_download_as_complete_bundle(reading_context: S
     assert response.json()["message"] == "部分产物文件不存在或已清理，请逐个下载仍可用的产物"
 
 
-@pytest.mark.parametrize("query", ["", "?offset=0"])
+@pytest.mark.parametrize("query", ["?tail=65536", "?offset=0"])
 @pytest.mark.parametrize("task_status", ["success", "failure", "canceled"])
 def test_finished_task_missing_logs_report_real_failure(
     reading_context: SimpleNamespace, query: str, task_status: str,
@@ -115,20 +122,17 @@ def test_maintainer_can_read_other_members_task_and_actual_failure(reading_conte
     assert (detail["can_cancel"], detail["can_delete"], detail["can_push_svn"]) == (False, False, False)
 
 
-def test_maintainer_reads_full_and_incremental_logs_without_changing_bytes(reading_context: SimpleNamespace) -> None:
-    """完整日志保留原文，增量游标按实际 UTF-8 字节推进，包含中文和 CRLF。"""
+def test_maintainer_reads_online_logs_but_cannot_download_file(reading_context: SimpleNamespace) -> None:
+    """在线日志保留原文及实际 UTF-8 游标，完整日志文件明确拒绝。"""
     context = reading_context
     log_path = context.workspace / "build.log"
     original = "准备构建\r\n第一阶段完成\n".encode()
     log_path.write_bytes(original)
 
     full = context.client.get(f"/api/packages/tasks/{context.task.id}/logs/")
-    try:
-        assert full.status_code == 200
-        assert full["Content-Type"] == "text/plain; charset=utf-8"
-        assert b"".join(full.streaming_content) == original
-    finally:
-        full.close()
+    assert full.status_code == 403
+    assert "Content-Disposition" not in full
+    assert original not in full.content
     initial = context.client.get(f"/api/packages/tasks/{context.task.id}/logs/?tail=65536").json()["data"]
     assert initial == {"content": original.decode(), "size": len(original), "offset": 0, "truncated": False}
 
@@ -155,9 +159,9 @@ def test_unstarted_task_log_remains_waiting_state(reading_context: SimpleNamespa
     assert response.json()["data"] == {"size": 0, "offset": 0, "content": ""}
 
 
-def test_maintainer_downloads_single_and_all_real_artifacts(reading_context: SimpleNamespace) -> None:
-    """下载属于他人的项目任务产物，单文件及嵌套 ZIP 均保留真实内容。"""
-    context = reading_context
+def test_authorized_member_downloads_single_and_all_real_artifacts(download_context: SimpleNamespace) -> None:
+    """原有角色下载他人的项目任务产物，单文件及嵌套 ZIP 均保留真实内容。"""
+    context = download_context
     (context.artifacts / "installer.zip").write_bytes(b"package")
     (context.artifacts / "notes").mkdir()
     (context.artifacts / "notes" / "release.txt").write_bytes("交付说明".encode())
@@ -184,15 +188,86 @@ def test_maintainer_downloads_single_and_all_real_artifacts(reading_context: Sim
         bundle.close()
 
 
+@pytest.mark.parametrize("suffix", ["logs/", "artifacts/installer/download/", "download-all/"])
+def test_maintainer_file_requests_are_denied_before_any_file_access(
+    reading_context: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, suffix: str,
+) -> None:
+    """旧链接即使指向有效文件也在文件访问前拒绝，不生成 ZIP 或返回文件。"""
+    context = reading_context
+    (context.artifacts / "installer.zip").write_bytes(b"package")
+    (context.workspace / "build.log").write_bytes(b"full task log")
+
+    def unexpected_file_access(*args: object, **kwargs: object) -> None:
+        pytest.fail("维保请求不能进入文件读取或临时文件生成流程")
+
+    monkeypatch.setattr("apps.package.views.FileResponse", unexpected_file_access)
+    monkeypatch.setattr("apps.package.views.tempfile.mkstemp", unexpected_file_access)
+    response = context.client.get(f"/api/packages/tasks/{context.task.id}/{suffix}")
+
+    assert response.status_code == 403
+    assert "Content-Disposition" not in response
+    detail = context.client.get(f"/api/packages/tasks/{context.task.id}/").json()["data"]
+    assert detail["artifact_info"][0]["name"] == "安装包.zip"
+    assert detail["artifact_info"][0]["size"] == 7
+
+
+@pytest.mark.parametrize("role", ["developer", "tester", "manager", "software_admin", "viewer", "auditor", "leader", "superuser"])
+def test_file_authorization_follows_current_target_role(
+    reading_context: SimpleNamespace, role: str,
+) -> None:
+    """原角色、负责人和超管保持下载权限，降为维保后同一旧链接立即拒绝。"""
+    context = reading_context
+    membership = ProjectMember.objects.get(project=context.project, user=context.reader)
+    membership.role = role if role not in ("leader", "superuser") else "maintainer"
+    membership.save(update_fields=["role"])
+    if role == "leader":
+        context.project.leader = context.reader
+        context.project.save(update_fields=["leader"])
+    elif role == "superuser":
+        context.reader.is_superuser = True
+        context.reader.save(update_fields=["is_superuser"])
+    (context.artifacts / "installer.zip").write_bytes(b"package")
+    (context.workspace / "build.log").write_bytes(b"online task log")
+    url = f"/api/packages/tasks/{context.task.id}/artifacts/installer/download/"
+
+    response = context.client.get(url)
+    try:
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"package"
+    finally:
+        response.close()
+    if role in ("leader", "superuser"):
+        return
+    membership.role = "maintainer"
+    membership.save(update_fields=["role"])
+    assert context.client.get(url).status_code == 403
+    assert context.client.get(f"/api/packages/tasks/{context.task.id}/logs/?tail=65536").status_code == 200
+
+
+def test_mixed_roles_cannot_download_from_maintainer_project(
+    reading_context: SimpleNamespace, hidden_task: PackageTask,
+) -> None:
+    """同一共享仓库的开发项目文件可下载，维保项目保持只读。"""
+    context = reading_context
+    ProjectMember.objects.create(project=hidden_task.project, user=context.reader, role="developer")
+    response = context.client.get(f"/api/packages/tasks/{hidden_task.id}/artifacts/private-file/download/")
+    try:
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"private artifact"
+    finally:
+        response.close()
+    assert context.client.get(f"/api/packages/tasks/{context.task.id}/artifacts/installer/download/").status_code == 403
+
+
 @pytest.mark.parametrize("artifact_id,message", [
     ("unknown", "产物不存在"),
     ("installer", "产物文件不存在"),
 ])
 def test_stale_or_missing_single_artifact_returns_real_failure(
-    reading_context: SimpleNamespace, artifact_id: str, message: str,
+    download_context: SimpleNamespace, artifact_id: str, message: str,
 ) -> None:
     """过期文件和不存在的文件 ID 返回各自真实失败。"""
-    context = reading_context
+    context = download_context
 
     response = context.client.get(f"/api/packages/tasks/{context.task.id}/artifacts/{artifact_id}/download/")
 
@@ -237,10 +312,10 @@ def test_shared_repository_does_not_expose_hidden_task_or_files(
 
 
 def test_visible_task_rejects_file_id_from_other_task(
-    reading_context: SimpleNamespace, hidden_task: PackageTask,
+    download_context: SimpleNamespace, hidden_task: PackageTask,
 ) -> None:
     """可见任务 URL 也不能取得其他任务的产物 ID。"""
-    context = reading_context
+    context = download_context
     response = context.client.get(f"/api/packages/tasks/{context.task.id}/artifacts/private-file/download/")
 
     assert response.status_code == 404
@@ -259,9 +334,9 @@ def test_revoked_project_member_loses_log_and_download_access(reading_context: S
 
 
 @pytest.mark.parametrize("suffix", ["artifacts/installer/download/", "download-all/"])
-def test_artifact_path_cannot_escape_task_directory(reading_context: SimpleNamespace, suffix: str) -> None:
+def test_artifact_path_cannot_escape_task_directory(download_context: SimpleNamespace, suffix: str) -> None:
     """产物索引不能借上级路径下载工作区外文件。"""
-    context = reading_context
+    context = download_context
     (context.workspace / "secret.txt").write_bytes(b"workspace secret")
     context.task.artifact_info[0]["path"] = "../secret.txt"
     context.task.save(update_fields=["artifact_info"])
@@ -287,9 +362,9 @@ def test_log_path_cannot_escape_task_directory(reading_context: SimpleNamespace)
 
 
 @pytest.mark.parametrize("suffix", ["artifacts/installer/download/", "download-all/"])
-def test_artifact_directory_link_cannot_expose_external_files(reading_context: SimpleNamespace, suffix: str) -> None:
+def test_artifact_directory_link_cannot_expose_external_files(download_context: SimpleNamespace, suffix: str) -> None:
     """即使整个产物目录被替换为目录链接，也不能下载工作区外文件。"""
-    context = reading_context
+    context = download_context
     external = context.root.parent / "private"
     external.mkdir()
     (external / "installer.zip").write_bytes(b"external secret")

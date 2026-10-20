@@ -203,15 +203,18 @@ class IsProjectManager(ProjectRolePermission):
 
 
 class IsNotProjectMaintainer(permissions.BasePermission):
-    """额外的维保写操作限制；不替代原功能权限和对象可见性校验。"""
+    """维保仅查看信息，不授权业务写入、文件下载或导出。"""
 
-    message = "维保人员不能修改该项目的资源"
+    message = "维保人员只能查看该项目的信息"
 
     def has_permission(self, request, view) -> bool:
         """创建时也校验声明的项目，防止仓库登记隐式写入项目组件。"""
         if not request.user or not request.user.is_authenticated:
             return False
         if request.user.is_superuser:
+            return True
+        # 详情动作的真实归属由对象权限判断，不读取可伪造或形状不合法的请求体。
+        if getattr(view, "detail", False):
             return True
         from apps.project.models import Project
 
@@ -297,9 +300,9 @@ class IsProjectPackager(ProjectRolePermission):
 
 
 class IsProjectReleasePackager(ProjectRolePermission):
-    """已发布版本补打权限；维保授权不扩展到分支直打。"""
+    """已发布版本补打权限；维保仅查看已有信息。"""
 
-    required_roles = ["manager", "developer", "tester", "maintainer"]
+    required_roles = ["manager", "developer", "tester"]
 
     def has_permission(self, request, view) -> bool:
         """归属只信任配置对象，避免请求体覆盖目标项目或触发非法 ID 查询。"""

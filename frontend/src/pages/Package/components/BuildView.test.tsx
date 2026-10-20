@@ -27,5 +27,6 @@ describe('维保打包详情', () => {
 
     expect(screen.getByText('只读任务')).toBeTruthy();
     expect(Boolean(screen.queryByRole('button', { name: '停止构建' }))).toBe(canCancel);
+    expect(screen.queryByRole('button', { name: /下载/ })).toBeNull();
   });
 });

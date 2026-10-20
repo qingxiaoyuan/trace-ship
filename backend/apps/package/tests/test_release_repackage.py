@@ -50,7 +50,7 @@ def context(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     dispatched = []
     monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda task_id: dispatched.append(task_id))
     client = APIClient()
-    client.force_authenticate(users["maintainer"])
+    client.force_authenticate(users["developer"])
     return SimpleNamespace(
         users=users, client=client, project=project, repository=repository,
         config=config, release=release, dispatched=dispatched,
@@ -68,9 +68,9 @@ def trigger(
     )
 
 
-@pytest.mark.parametrize("role", ["maintainer", "developer", "tester", "manager", "software_admin"])
+@pytest.mark.parametrize("role", ["developer", "tester", "manager", "software_admin"])
 def test_authorized_roles_repackage_fixed_release_with_actual_actor(context: SimpleNamespace, role: str) -> None:
-    """新维保权限与既有打包角色都创建真实快照任务，并审计实际操作人。"""
+    """既有打包角色创建真实快照任务，并审计实际操作人。"""
     actor = context.users[role]
     context.client.force_authenticate(actor)
     response = trigger(context)
@@ -101,20 +101,23 @@ def test_authorized_roles_repackage_fixed_release_with_actual_actor(context: Sim
     assert log.detail["task_id"] == str(task.id)
 
 
-@pytest.mark.parametrize("role", ["viewer", "auditor"])
+@pytest.mark.parametrize("role", ["maintainer", "viewer", "auditor"])
 def test_read_only_roles_cannot_repackage(context: SimpleNamespace, role: str) -> None:
     context.client.force_authenticate(context.users[role])
     assert trigger(context).status_code == 403
     assert not PackageTask.objects.exists()
+    assert not context.dispatched
     assert OperationLog.objects.get(action="trigger_release").result == "failure"
 
 
 def test_maintainer_cannot_trigger_branch_or_edit_config(context: SimpleNamespace) -> None:
-    """补打授权不能扩大分支直打与配置写权限。"""
+    """维保不再授予任何打包触发或配置写权限。"""
+    context.client.force_authenticate(context.users["maintainer"])
     url = f"/api/packages/configs/{context.config.id}/"
     assert context.client.post(url + "trigger-branch/", {"branch": "main"}, format="json").status_code == 403
     assert context.client.patch(url, {"custom_script": "echo injected"}, format="json").status_code == 403
     assert not PackageTask.objects.exists()
+    assert not context.dispatched
 
 
 @pytest.mark.parametrize("field,value", [
@@ -168,7 +171,7 @@ def test_ineligible_config_release_combinations_do_not_create_tasks(context: Sim
         context.config.save(update_fields=["is_active"])
     elif change == "wrong-project":
         other = Project.objects.create(code="SHARED", name="共享仓库项目", leader=context.users["manager"])
-        ProjectMember.objects.create(project=other, user=context.users["maintainer"], role="maintainer")
+        ProjectMember.objects.create(project=other, user=context.users["developer"], role="developer")
         context.release.project = other
         context.release.save(update_fields=["project"])
     elif change == "wrong-repository":
@@ -236,7 +239,7 @@ def test_repackage_rechecks_current_project_permission_after_view_authorization(
     release = context.release
     if change == "config-project":
         other = Project.objects.create(code="RACE", name="只读项目", leader=context.users["manager"])
-        ProjectMember.objects.create(project=other, user=context.users["maintainer"], role="viewer")
+        ProjectMember.objects.create(project=other, user=context.users["developer"], role="maintainer")
         component = ProjectComponent.objects.create(
             project=other, repository=context.repository, component_code="shared",
         )
@@ -252,7 +255,7 @@ def test_repackage_rechecks_current_project_permission_after_view_authorization(
         if change == "config-project":
             PackageConfig.objects.filter(pk=config.pk).update(project_component=component)
         else:
-            ProjectMember.objects.filter(project=context.project, user=request_user).update(role="viewer")
+            ProjectMember.objects.filter(project=context.project, user=request_user).update(role="maintainer")
         return original_create(config, target_release, request_user=request_user)
 
     monkeypatch.setattr(PackageService, "create_task_for_release", change_after_authorization)
@@ -263,10 +266,10 @@ def test_repackage_rechecks_current_project_permission_after_view_authorization(
     assert OperationLog.objects.get(action="trigger_release").result == "failure"
 
 
-@pytest.mark.parametrize("actor", ["missing", "viewer", "non-member"])
+@pytest.mark.parametrize("actor", ["missing", "viewer", "maintainer", "non-member"])
 def test_manual_creation_service_requires_current_project_authorization(context: SimpleNamespace, actor: str) -> None:
     """直接调用服务也不能省略实际操作人或绕过当前项目补打权限。"""
-    user = None if actor == "missing" else context.users["viewer"]
+    user = None if actor == "missing" else context.users.get(actor)
     if actor == "non-member":
         user = User.objects.create_user(username="unaffiliated_actor")
     with pytest.raises(PermissionDenied):
@@ -290,7 +293,7 @@ def test_snapshot_uses_current_saved_config_and_is_immutable_after_creation(cont
     PackageConfig.objects.filter(pk=context.config.pk).update(
         custom_script="echo current-script", env_vars={"BUILD_FLAG": "current-value"},
     )
-    task = PackageService.create_task_for_release(context.config, context.release, context.users["maintainer"])
+    task = PackageService.create_task_for_release(context.config, context.release, context.users["developer"])
     PackageConfig.objects.filter(pk=context.config.pk).update(
         custom_script="echo future-script", env_vars={"BUILD_FLAG": "future-value"},
     )
@@ -318,7 +321,7 @@ def test_dispatch_failure_marks_task_failed_and_returns_honest_error(
     assert response.data["data"]["task_id"] == str(task.id)
     assert response.data["data"]["status"] == "failure"
     log = OperationLog.objects.get(action="trigger_release")
-    assert log.user == context.users["maintainer"]
+    assert log.user == context.users["developer"]
     assert log.result == "failure"
     assert log.detail["task_id"] == str(task.id)
     assert log.detail["version"] == context.release.version
@@ -342,7 +345,7 @@ def test_successful_local_fallback_is_still_a_valid_dispatch(
 def test_rollback_neither_dispatches_nor_records_false_success(context: SimpleNamespace) -> None:
     """补打仍在事务提交后投递，回滚不会创建任务或成功审计。"""
     with transaction.atomic():
-        PackageService.create_task_for_release(context.config, context.release, context.users["maintainer"])
+        PackageService.create_task_for_release(context.config, context.release, context.users["developer"])
         assert context.dispatched == []
         assert not OperationLog.objects.filter(action="trigger_release", result="success").exists()
         transaction.set_rollback(True)
