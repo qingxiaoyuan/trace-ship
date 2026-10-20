@@ -6,6 +6,16 @@ import { ReleaseMarkdown } from './ReleaseMarkdown';
 afterEach(cleanup);
 
 describe('发布说明 Markdown', () => {
+  it('保留生产配置字段首行缩进代码，混合正文中的代码仍有代码块语义', () => {
+    const generated = buildMdTable([
+      { key: '配置项改动', value: '    缩进代码首行\n    缩进代码续行' },
+      { key: '测试验证', value: '已验证' },
+    ]);
+    const { container } = render(<ReleaseMarkdown content={generated + '\n\n额外正文'} />);
+    expect(container.querySelector('td pre code')?.textContent).toBe('缩进代码首行\n缩进代码续行\n');
+    expect(screen.getByText('额外正文')).toBeTruthy();
+  });
+
   it('生成表格嵌入混合正文时，物理续行和管道仍属于同一值单元格', () => {
     const generated = buildMdTable([
       { key: '版本号', value: 'V44.0.0' },

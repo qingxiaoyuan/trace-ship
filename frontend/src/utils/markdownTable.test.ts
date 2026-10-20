@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMdTable, parseMdTable } from './markdownTable';
+import { buildMdTable, parseMdTable, parseCompleteMdTable } from './markdownTable';
 
 describe('parseMdTable', () => {
   it('解析标准 2 列表格，跳过表头与分隔行', () => {
@@ -26,6 +26,19 @@ describe('parseMdTable', () => {
       { key: '部署步骤', value: '备份\n    backup --all\n\n重启' },
     ]);
     expect(parseMdTable(md)).toEqual([{ key: '部署步骤', value: '备份\nbackup --all\n\n重启' }]);
+  });
+
+  it.each(['    首行代码\n    续行代码', '    单行代码', '首行尾部  \n    续行尾部  '])('阅读模式保留生成器分隔空格之外的有效空白：%s', (value) => {
+    const rows = [{ key: '配置项改动', value }];
+    expect(parseMdTable(buildMdTable(rows), { preserveWhitespace: true })).toEqual(rows);
+    expect(parseCompleteMdTable(buildMdTable(rows))).toEqual(rows);
+  });
+
+  it.each([
+    '| 字段 | 内容 |\n|---|---|\n| 字段一 | 值 |\n\n表格外正文',
+    '| 字段 | 内容 |\n|---|---|\n| 字段一 | 值 | 第三列 |',
+  ])('完整往返检查拒绝吞掉额外正文或列', (content) => {
+    expect(parseCompleteMdTable(content)).toEqual([]);
   });
 
   it('严格 2 列解析：超出第 2 列的内容被忽略', () => {

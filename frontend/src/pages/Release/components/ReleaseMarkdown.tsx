@@ -1,13 +1,13 @@
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { buildMdTable, parseMdTable, type MdTableRow } from '@/utils/markdownTable';
+import { parseCompleteMdTable, type MdTableRow } from '@/utils/markdownTable';
 import './releaseMarkdown.css';
 
 type MarkdownNode = {
   type: string;
   value?: string;
   children?: MarkdownNode[];
-  data?: { hName: string; hProperties?: { className: string[] } };
+  data?: object;
   position?: { start: { offset?: number }; end: { offset?: number } };
 };
 
@@ -101,12 +101,8 @@ function remarkGeneratedTables(this: { parse: (source: string) => MarkdownNode }
       }
       if (!valid || !multiline || cursor <= index + 2) continue;
       const block = lines.slice(index, cursor).map((line) => line.value).join('\n');
-      const rows = parseMdTable(block, { preserveWhitespace: true });
-      const normalize = (value: string) => value.split('\n').map((line) => line.startsWith('|')
-        ? line.replace(/[ \t]*\|[ \t]*/g, '|')
-        : line.replace(/[ \t]+\|$/, '|')).join('\n');
-      if (!rows.length || normalize(block.split('\n').slice(2).join('\n'))
-        !== normalize(buildMdTable(rows).split('\n').slice(2).join('\n'))) continue;
+      const rows = parseCompleteMdTable(block);
+      if (!rows.length) continue;
       tables.push({ start: lines[index].start, end: lines[cursor - 1].end, heading: lines[index].value.split('|')[1].trim(), rows });
     }
     if (!tables.length) return;
@@ -138,7 +134,7 @@ function remarkGeneratedTables(this: { parse: (source: string) => MarkdownNode }
       };
       prepareFieldNodes(parsed);
       const cell = element('td', parsed.children || []);
-      cell.data!.hProperties = { className: ['release-note-value'] };
+      cell.data = { ...cell.data, hProperties: { className: ['release-note-value'] } };
       return cell;
     };
     let marker = 'trace-ship-generated-table';

@@ -66,6 +66,7 @@ async function documentChecks(page: Page, width: number) {
   const generatedUpdates = generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '变更内容', exact: true }) });
   await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('A 支持 A | B');
   await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('F 修复终端故障');
+  await expect(generatedTable.locator('td pre code')).toHaveText('smoke_config --check\nsmoke_config --verify\n');
   const generatedSource = sample.document_source.documents.find(item => new URL(page.url()).pathname.endsWith(`/${item.release_id}`))!;
   expect(sample.document_source.method).toBe('apps.release.services.ReleaseDocGenerator._build_markdown_doc');
   expect(sample.document_source.commit).toMatch(/^[0-9a-f]{40}$/);
@@ -80,7 +81,7 @@ async function documentChecks(page: Page, width: number) {
   await expect(page.getByRole('link', { name: '安全链接', exact: true })).toHaveAttribute('href', 'https://example.invalid/help');
   expect(await page.getByRole('cell', { name: /第一行/ }).locator('br').count()).toBe(1);
   await expect(page.locator('code').filter({ hasText: '<br><script>字面代码</script>' })).toBeVisible();
-  await expect(page.locator('pre code')).toHaveText('<br><img src=x onerror=alert(1)>\n');
+  await expect(page.locator('pre code').filter({ hasText: '<br><img src=x onerror=alert(1)>' })).toHaveText('<br><img src=x onerror=alert(1)>\n');
   expect(await page.locator('.release-markdown a').evaluateAll(links => links.some(link => /^(javascript|data):/i.test(link.getAttribute('href') || '')))).toBe(false);
   await expect(page.locator('.release-markdown script, .release-markdown img[onerror]')).toHaveCount(0);
   expect(await page.evaluate(() => 'smokeUnsafe' in window)).toBe(false);
