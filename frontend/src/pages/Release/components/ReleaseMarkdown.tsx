@@ -30,8 +30,8 @@ function createFragmentParser(parse: (source: string) => MarkdownNode, tree: Mar
     node.children?.forEach(collect);
   };
   collect(tree);
-  // 定义放在前面，局部未闭合代码块不会吞入定义并将它们显示为正文。
-  const prefix = definitions.length ? definitions.join('\n\n') + '\n\n' : '';
+  // 定义前置避免开放代码吞入定义；独立块边界同时终止脚注，保护片段首行缩进。
+  const prefix = definitions.length ? definitions.join('\n\n') + '\n\n<!-- -->\n\n' : '';
   return (value: string) => {
     const parsed = parse(prefix + value);
     parsed.children = parsed.children?.filter((node) => (node.position?.start.offset || 0) >= prefix.length);

@@ -92,6 +92,7 @@ def main() -> None:
         + "\n\n".join(f"阅读段落{line:02d}：" + "本段验证长文档信息完整与底部导航安全留白。" * 5 for line in range(1, 21))
         + "\n\n长文档结尾：全部发布说明完整可读。\n\n"
         "[mr]: https://example.invalid/mr/44 \"关联说明\"\n\n"
+        "[^config]: 配置脚注定义不应吞掉字段内的缩进代码\n\n"
         "<br>\n```text\n末尾代码示例"
     )
     generated_fields = {

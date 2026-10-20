@@ -6,6 +6,18 @@ import { ReleaseMarkdown } from './ReleaseMarkdown';
 afterEach(cleanup);
 
 describe('发布说明 Markdown', () => {
+  it.each(['正文', '生成表格'])('脚注定义不吞掉后续片段的缩进代码：%s', (mode) => {
+    const code = '    配置内容不得丢失\n    第二行';
+    const content = mode === '生成表格'
+      ? buildMdTable([{ key: '配置项改动', value: code }]) + '\n\n正文[^a]\n\n[^a]: 脚注'
+      : '[^a]: 脚注\n\n<br>\n' + code;
+    const { container } = render(<ReleaseMarkdown content={content} />);
+
+    expect(container.querySelector('pre code')?.textContent).toBe('配置内容不得丢失\n第二行\n');
+    if (mode === '生成表格') expect(container.querySelector('td pre code')).not.toBeNull();
+    expect(container.querySelector('pre code')?.textContent).not.toContain('脚注');
+  });
+
   it('行首换行后未闭合的代码块不混入前文引用定义', () => {
     const { container } = render(<ReleaseMarkdown content={[
       '[mr]: https://example.invalid/mr/44 "关联说明"', '', '<br>', '```text', '代码示例',
