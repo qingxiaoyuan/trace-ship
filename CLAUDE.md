@@ -135,14 +135,17 @@ celery -A config beat -l info
 ```bash
 cd frontend
 
-npm install
+npm ci            # Node/npm 版本按 .node-version 与 packageManager，入口自动核验
 npm run dev       # 默认端口 5173，/api 代理到 localhost:8000
 npm run build
 npm run lint
 npm run test      # vitest（jsdom 环境），测试文件为 src/**/*.test.ts(x)
+npm run test:browser # 隔离 REST 服务 + 真实 Chromium 冒烟，准备方式见自动检查约定
 ```
 
 前端目前未配置独立的格式化命令；`npm run lint` 使用 ESLint；`npm run test` 使用 vitest，优先覆盖 `src/utils/` 纯函数与关键 hooks/stores。
+
+本地复核 CI、运行 Linux 后端检查或浏览器冒烟时，读取[自动检查约定](docs/agents/pr-checks.md)；使用其中共享入口，证据记录实际运行时和退出码。
 
 ## Architecture
 

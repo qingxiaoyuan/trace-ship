@@ -116,7 +116,7 @@ trace-ship/
 - Docker >= 24.0
 - Docker Compose >= 2.20
 - Python >= 3.11（后端本地开发）
-- Node.js >= 18（前端本地开发）
+- Node.js 与 npm 按 `frontend/.node-version`、`frontend/package.json` 的 `packageManager`（前端入口会核验版本）
 
 ### 1. 启动第三方依赖（Docker）
 
@@ -268,7 +268,7 @@ python manage.py spectacular --file schema.yml
 ```bash
 cd frontend
 
-npm install
+npm ci
 npm run dev       # 默认端口 5173，/api 代理到 localhost:8000
 npm run build     # tsc -b && vite build
 npm run lint      # ESLint

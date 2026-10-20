@@ -1,0 +1,32 @@
+name: trace-ship-checks
+
+services:
+  backend:
+    image: trace-ship-backend-checks:py311
+    build:
+      context: ..
+      dockerfile: docker/checks/Dockerfile
+      args:
+        PIP_INDEX_URL: ${TRACE_SHIP_CHECK_PIP_INDEX_URL:-https://pypi.org/simple}
+    working_dir: /workspace/backend
+    init: true
+    # 测试只使用内存 SQLite/缓存/Celery，不连接业务服务或宿主 Docker。
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:exec,mode=1777
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      TRACE_SHIP_CHECK_RUNTIME_DIR: /tmp/trace-ship-checks
+      TRACE_SHIP_CHECK_PIP_INDEX_URL: ${TRACE_SHIP_CHECK_PIP_INDEX_URL:-https://pypi.org/simple}
+      TRACE_SHIP_CHECK_COMMIT: ${TRACE_SHIP_CHECK_COMMIT:?请通过 backend-linux.py 启动}
+      TRACE_SHIP_CHECK_DIRTY: ${TRACE_SHIP_CHECK_DIRTY:-clean}
+    volumes:
+      - type: bind
+        source: ${TRACE_SHIP_CHECK_SOURCE:?请通过 backend-linux.py 启动}
+        target: /workspace
+        read_only: true
+      - type: bind
+        source: ${TRACE_SHIP_CHECK_REPORTS:?请通过 backend-linux.py 启动}
+        target: /reports
+    command: [python, /workspace/scripts/checks/backend.py, test, --report-dir, /reports/test]

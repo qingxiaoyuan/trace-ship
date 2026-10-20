@@ -4,6 +4,10 @@
 .git
 docs
 
+# 验收与检查证据不进入任何镜像上下文。
+tmp
+temp
+
 # 前端依赖与构建产物
 frontend/node_modules
 frontend/dist

@@ -215,9 +215,11 @@ cmd_backend() {
 cmd_frontend() {
     cd "${ROOT_DIR}/frontend"
 
+    npm run check:runtime
+
     if [ ! -d node_modules ]; then
         echo "📦 首次运行，安装前端依赖..."
-        npm install
+        npm ci
     fi
 
     echo "🚀 启动 Vite 开发服务器: http://localhost:8855（/api 代理到 localhost:8000）"

@@ -3,13 +3,30 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "npm@11.19.0",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "npm": ">=11.19.0 <12"
+  },
   "scripts": {
+    "check:runtime": "node scripts/check-runtime.mjs",
+    "pretest:runtime": "npm run check:runtime",
+    "test:runtime": "node --test scripts/*.test.mjs",
+    "preinstall": "node scripts/check-runtime.mjs",
+    "predev": "npm run check:runtime",
     "dev": "vite",
+    "prebuild": "npm run check:runtime",
     "build": "tsc -b && vite build",
+    "prelint": "npm run check:runtime",
     "lint": "eslint .",
+    "prepreview": "npm run check:runtime",
     "preview": "vite preview",
+    "pretest": "npm run check:runtime",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "pretest:watch": "npm run check:runtime",
+    "test:watch": "vitest",
+    "pretest:browser": "npm run check:runtime",
+    "test:browser": "node ../scripts/checks/browser.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
@@ -31,6 +48,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.3.1",
     "@testing-library/react": "^16.3.2",
