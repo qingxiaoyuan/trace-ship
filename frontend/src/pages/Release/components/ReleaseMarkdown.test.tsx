@@ -6,6 +6,31 @@ import { ReleaseMarkdown } from './ReleaseMarkdown';
 afterEach(cleanup);
 
 describe('发布说明 Markdown', () => {
+  it('行首换行后未闭合的代码块不混入前文引用定义', () => {
+    const { container } = render(<ReleaseMarkdown content={[
+      '[mr]: https://example.invalid/mr/44 "关联说明"', '', '<br>', '```text', '代码示例',
+    ].join('\n')} />);
+
+    expect(container.querySelector('pre code')?.textContent).toBe('代码示例\n');
+    expect(container.querySelectorAll('br')).toHaveLength(1);
+    expect(container.textContent).not.toContain('[mr]:');
+  });
+
+  it('生成字段以围栏代码结束时，仍识别表外的引用定义', () => {
+    const generated = buildMdTable([
+      { key: '变更内容', value: '[关联 MR][mr]\n\n```text\n代码示例\n```' },
+    ]);
+    const { container } = render(<ReleaseMarkdown content={[
+      generated, '', '[后文引用][mr]', '', '[mr]: https://example.invalid/mr/44 "关联说明"',
+    ].join('\n')} />);
+
+    const link = screen.getByRole('link', { name: '关联 MR' });
+    expect(link.getAttribute('href')).toBe('https://example.invalid/mr/44');
+    expect(link.closest('td')?.querySelector('pre code')?.textContent).toBe('代码示例\n');
+    expect(screen.getByRole('link', { name: '后文引用' }).getAttribute('href')).toBe('https://example.invalid/mr/44');
+    expect(container.querySelectorAll('table')).toHaveLength(1);
+  });
+
   it('生成字段行首换行后保留表外定义的引用链接，前后正文仍共享引用', () => {
     const generated = buildMdTable([
       { key: '变更内容', value: '<br>\n[关联 MR][mr]' },

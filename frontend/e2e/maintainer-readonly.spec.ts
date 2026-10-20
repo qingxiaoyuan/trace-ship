@@ -66,7 +66,11 @@ async function documentChecks(page: Page, width: number) {
   const generatedUpdates = generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '变更内容', exact: true }) });
   await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('A 支持 A | B');
   await expect(generatedUpdates.getByRole('cell').nth(1)).toContainText('F 修复终端故障');
-  await expect(generatedTable.locator('td pre code')).toHaveText('smoke_config --check\nsmoke_config --verify\n');
+  await expect(generatedTable.locator('td pre code')).toHaveText([
+    'smoke_config --check\nsmoke_config --verify\n', '配置代码示例\n',
+  ]);
+  const configReference = generatedTable.getByRole('link', { name: '配置引用', exact: true });
+  await expect(configReference).toHaveAttribute('href', 'https://example.invalid/mr/44');
   const impact = generatedTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '是否影响其他功能', exact: true }) });
   await expect(impact.getByRole('cell').nth(1).locator('strong')).toHaveText('首尾空行说明');
   const reference = impact.getByRole('cell').nth(1).getByRole('link', { name: '关联 MR', exact: true });
@@ -90,12 +94,15 @@ async function documentChecks(page: Page, width: number) {
   expect(await page.getByRole('cell', { name: /第一行/ }).locator('br').count()).toBe(1);
   await expect(page.locator('code').filter({ hasText: '<br><script>字面代码</script>' })).toBeVisible();
   await expect(page.locator('pre code').filter({ hasText: '<br><img src=x onerror=alert(1)>' })).toHaveText('<br><img src=x onerror=alert(1)>\n');
+  await expect(page.locator('pre code').filter({ hasText: '末尾代码示例' })).toHaveText('末尾代码示例\n');
   expect(await page.locator('.release-markdown a').evaluateAll(links => links.some(link => /^(javascript|data):/i.test(link.getAttribute('href') || '')))).toBe(false);
   await expect(page.locator('.release-markdown script, .release-markdown img[onerror]')).toHaveCount(0);
   expect(await page.evaluate(() => 'smokeUnsafe' in window)).toBe(false);
   const table = page.getByRole('region', { name: '发布说明表格', exact: true }).last();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(reportDir, `readonly-${width}-document-top.png`), fullPage: false, animations: 'disabled' });
+  await reference.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(reportDir, `readonly-${width}-document-reference.png`), fullPage: false, animations: 'disabled' });
   const before = await table.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth, left: element.scrollLeft }));
   await table.evaluate(element => { element.scrollLeft = element.scrollWidth; });
   const after = await table.evaluate(element => ({ left: element.scrollLeft, maximum: element.scrollWidth - element.clientWidth }));

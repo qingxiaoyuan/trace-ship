@@ -11,6 +11,13 @@ type MarkdownNode = {
   position?: { start: { offset?: number }; end: { offset?: number } };
 };
 
+function shiftOffsets(node: MarkdownNode, offset: number) {
+  for (const point of [node.position?.start, node.position?.end]) {
+    if (point?.offset !== undefined) point.offset += offset;
+  }
+  node.children?.forEach((child) => shiftOffsets(child, offset));
+}
+
 /** 局部重解析沿用整篇引用定义，附加的定义不作为局部正文输出。 */
 function createFragmentParser(parse: (source: string) => MarkdownNode, tree: MarkdownNode, source: string) {
   const definitions: string[] = [];
@@ -23,21 +30,18 @@ function createFragmentParser(parse: (source: string) => MarkdownNode, tree: Mar
     node.children?.forEach(collect);
   };
   collect(tree);
+  // 定义放在前面，局部未闭合代码块不会吞入定义并将它们显示为正文。
+  const prefix = definitions.length ? definitions.join('\n\n') + '\n\n' : '';
   return (value: string) => {
-    const parsed = parse(value + '\n\n' + definitions.join('\n\n'));
-    parsed.children = parsed.children?.filter((node) => (node.position?.start.offset || 0) < value.length);
+    const parsed = parse(prefix + value);
+    parsed.children = parsed.children?.filter((node) => (node.position?.start.offset || 0) >= prefix.length);
+    shiftOffsets(parsed, -prefix.length);
     return parsed;
   };
 }
 
 /** 只转换 Markdown HTML 节点中的换行标签，不改写代码示例里的原文。 */
 function transformBreakTags(tree: MarkdownNode, parse: (source: string) => MarkdownNode) {
-  const shiftOffsets = (node: MarkdownNode, offset: number) => {
-    for (const point of [node.position?.start, node.position?.end]) {
-      if (point?.offset !== undefined) point.offset += offset;
-    }
-    node.children?.forEach((child) => shiftOffsets(child, offset));
-  };
   const visit = (node: MarkdownNode) => {
     if (node.children) node.children = node.children.flatMap((child) => {
       const tag = child.type === 'html' && child.value?.match(/^<br\s*\/?>/i);
@@ -128,8 +132,6 @@ function remarkGeneratedTables(this: { parse: (source: string) => MarkdownNode }
     }
     if (!tables.length) return;
 
-    // 引用必须在解析字段时已定义，且最终仍在同一文档树内解析；不能把前后文拆成多个 Markdown。
-    const parseFragment = createFragmentParser(parse, tree, source);
     const element = (tag: string, children: MarkdownNode[]): MarkdownNode => ({
       type: 'releaseGeneratedElement', data: { hName: tag }, children,
     });
@@ -157,6 +159,8 @@ function remarkGeneratedTables(this: { parse: (source: string) => MarkdownNode }
       prepared = prepared.slice(0, table.start) + placeholders[index] + prepared.slice(table.end);
     }
     const restored = parse(prepared);
+    // 先移除生成表块再收集定义，避免字段末尾围栏在原始整篇解析时吞掉表外引用。
+    const parseFragment = createFragmentParser(parse, restored, prepared);
     const replace = (node: MarkdownNode) => {
       node.children = node.children?.map((child) => {
         const index = child.type === 'html' ? placeholders.indexOf(child.value || '') : -1;
