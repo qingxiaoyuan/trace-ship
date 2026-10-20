@@ -143,6 +143,29 @@ class PackageNodeSerializer(serializers.ModelSerializer):
         return value
 
 
+class ReleasePackageTriggerSerializer(serializers.Serializer):
+    """补打仅接受固定发布 ID，不接收任何临时构建参数。"""
+
+    release = serializers.UUIDField(required=False)
+    release_id = serializers.UUIDField(required=False)
+
+    def to_internal_value(self, data: object) -> dict[str, object]:
+        if not isinstance(data, dict):
+            raise serializers.ValidationError({"non_field_errors": ["请求体必须为 JSON 对象"]})
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError({key: "补打不允许覆盖此参数" for key in sorted(unknown)})
+        return super().to_internal_value(data)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        release_id = attrs.get("release_id") or attrs.get("release")
+        if release_id is None:
+            raise serializers.ValidationError({"release_id": "必须指定已发布版本"})
+        if attrs.get("release") and attrs.get("release_id") and attrs["release"] != attrs["release_id"]:
+            raise serializers.ValidationError({"release_id": "release 与 release_id 必须指向同一发布"})
+        return {"release_id": release_id}
+
+
 class PackageConfigSerializer(serializers.ModelSerializer):
     """项目组件级打包配置序列化器（项目与仓库归属以 project_component 为唯一事实源）。"""
 

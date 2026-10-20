@@ -212,7 +212,6 @@ def test_authorized_roles_can_grant_and_update_maintainer(context, actor_role):
     ("post", "packages/configs/"),
     ("patch", "packages/configs/{config}/"),
     ("delete", "packages/configs/{config}/"),
-    ("post", "packages/configs/{config}/trigger/"),
     ("post", "packages/configs/{config}/trigger-branch/"),
     ("post", "packages/tasks/{task}/cancel/"),
     ("post", "packages/tasks/{task}/push-svn/"),

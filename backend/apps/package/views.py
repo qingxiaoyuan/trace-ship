@@ -18,6 +18,7 @@ from django.http import FileResponse, Http404, HttpResponse, StreamingHttpRespon
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException, NotFound
 from rest_framework.mixins import DestroyModelMixin
 from rest_framework.permissions import IsAuthenticated
 
@@ -40,8 +41,10 @@ from apps.package.serializers import (
     PackageKnowledgeSerializer,
     PackageNodeSerializer,
     PackageTaskSerializer,
+    ReleasePackageTriggerSerializer,
 )
 from apps.package.services import PackageService
+from apps.package.services.tasks import PackageTaskDispatchError
 from apps.project.models import Project, ProjectMember
 from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
@@ -54,6 +57,7 @@ from utils.permissions import (
     IsProjectMember,
     IsProjectPackageAdmin,
     IsProjectPackager,
+    IsProjectReleasePackager,
 )
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 from utils.provider.factory import get_provider
@@ -368,8 +372,10 @@ class PackageConfigViewSet(StandardModelViewSet):
         ):
             # 打包配置参数仅项目管理员 / 软件管理员可维护
             return [IsAuthenticated(), IsProjectPackageAdmin()]
-        if self.action in ("trigger", "trigger_branch"):
-            # 手动触发打包（按已发布 Tag / 按分支最新代码）：管理员/开发/测试均可
+        if self.action == "trigger":
+            return [IsAuthenticated(), IsProjectReleasePackager()]
+        if self.action == "trigger_branch":
+            # 分支直打保持原角色范围，不包含维保人员。
             return [IsAuthenticated(), IsProjectPackager()]
         return [IsAuthenticated(), IsProjectMember()]
 
@@ -391,14 +397,29 @@ class PackageConfigViewSet(StandardModelViewSet):
     @action(detail=True, methods=["post"], url_path="trigger")
     def trigger(self, request, pk=None):
         """手动触发某个已发布版本的打包。"""
-        config = self.get_object()
-        release_id = request.data.get("release") or request.data.get("release_id")
-        if not release_id:
-            return error_response(40000, "必须指定 release_id", status_code=status.HTTP_400_BAD_REQUEST)
-        release = ReleaseRecord.objects.filter(id=release_id).select_related("project", "repository").first()
-        if not release:
-            return error_response(40400, "发布记录不存在", status_code=status.HTTP_404_NOT_FOUND)
-        task = PackageService.create_task_for_release(config, release, request_user=request.user)
+        config = None
+        release = None
+        try:
+            config = self.get_object()
+            params = ReleasePackageTriggerSerializer(data=request.data)
+            params.is_valid(raise_exception=True)
+            releases = ReleaseRecord.objects.select_related("project", "repository")
+            if not request.user.is_superuser:
+                releases = releases.filter(project_id__in=visible_project_ids(request.user))
+            release = releases.filter(id=params.validated_data["release_id"]).first()
+            if release is None:
+                raise NotFound("发布记录不存在或无权查看")
+            task = PackageService.create_task_for_release(config, release, request_user=request.user)
+        except PackageTaskDispatchError as exc:
+            return error_response(
+                50300, str(exc), {"task_id": str(exc.task.id), "status": exc.task.status},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except (APIException, Http404):
+            PackageService.log_release_trigger(
+                request.user, config=config, release=release, result="failure", reason="参数、权限或发布条件校验失败",
+            )
+            raise
         data = PackageTaskSerializer(task, context={"request": request}).data
         return success_response(data, "已创建打包任务", status=status.HTTP_201_CREATED)
 

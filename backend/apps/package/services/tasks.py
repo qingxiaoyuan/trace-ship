@@ -4,11 +4,13 @@
 import logging
 import threading
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 from django.db import close_old_connections, transaction
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.package.models import PackageConfig, PackageNode, PackageTask
 from apps.package.services.svn import (
@@ -19,6 +21,18 @@ from apps.package.services.svn import (
 )
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from apps.account.models import User
+    from apps.release.models import ReleaseRecord
+
+
+class PackageTaskDispatchError(RuntimeError):
+    """任务已提交，但所有投递方式失败；调用者仍可查看失败任务。"""
+
+    def __init__(self, task: PackageTask) -> None:
+        self.task = task
+        super().__init__("打包任务投递失败，请稍后重试")
 
 
 class TaskLifecycleMixin:
@@ -79,8 +93,8 @@ class TaskLifecycleMixin:
     def create_task_for_release(
         cls,
         config: PackageConfig,
-        release,
-        request_user=None,
+        release: "ReleaseRecord",
+        request_user: "User | None" = None,
         *,
         auto_triggered: bool = False,
     ) -> PackageTask:
@@ -90,9 +104,20 @@ class TaskLifecycleMixin:
         是否推 SVN：正式版看总开关，RC / 测试版还要各自打开。手动触发不推 SVN。
         """
         from apps.repository.models import Repository
+        from utils.permissions import IsProjectReleasePackager
 
         Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+        # 仓库锁先于配置锁；仅锁配置行，避免可空镜像/节点关联产生外连接锁错误。
+        PackageConfig.objects.select_for_update().only("id").get(pk=config.pk)
         release.refresh_from_db()
+        config.refresh_from_db()
+        # 配置归属与成员角色可能在视图验权后变化，按锁定的当前归属重新核验。
+        if not auto_triggered and (
+            request_user is None
+            or not request_user.is_authenticated
+            or not IsProjectReleasePackager()._check(config.project_component.project, request_user)
+        ):
+            raise PermissionDenied("没有在当前项目补打已发布版本的权限")
         if release.status != "released":
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})
         if not config.is_active:
@@ -123,8 +148,57 @@ class TaskLifecycleMixin:
             commit_hash=release.git_hash,
             config_snapshot=snapshot,
         )
-        transaction.on_commit(lambda: cls.dispatch_task(task))
+        transaction.on_commit(lambda: cls._dispatch_release_task(task, auto_triggered=auto_triggered))
         return task
+
+    @staticmethod
+    def log_release_trigger(
+        user: "User | None", *, config: PackageConfig | None = None,
+        release: "ReleaseRecord | None" = None, task: PackageTask | None = None,
+        result: str, reason: str = "",
+    ) -> None:
+        """只记录已授权资源的业务身份，不写入客户端参数或执行凭据。"""
+        from apps.system.services import OperationLogService
+
+        detail = {"reason": reason} if reason else {}
+        if config is not None:
+            detail.update({
+                "project_id": str(config.project_component.project_id),
+                "config_id": str(config.id),
+            })
+        if release is not None:
+            detail.update({"release_id": str(release.id), "version": release.version})
+        if task is not None:
+            detail.update({"task_id": str(task.id), "status": task.status})
+        OperationLogService.log(
+            user=user, module="package", action="trigger_release", resource_type="package_task",
+            resource_id=str(task.id) if task is not None else "",
+            description="补打已发布版本" if result == "success" else "补打已发布版本失败",
+            result=result, detail=detail,
+        )
+
+    @classmethod
+    def _dispatch_release_task(cls, task: PackageTask, *, auto_triggered: bool) -> None:
+        """提交后投递并记录真实结果，完整保留既有 Celery / 本地回退策略。"""
+        try:
+            cls.dispatch_task(task)
+        except Exception as exc:
+            logger.exception("打包任务全部投递方式失败 task_id=%s", task.id)
+            task.status = "failure"
+            task.error_message = "打包任务投递失败，请稍后重试"
+            task.finished_at = timezone.now()
+            task.stage_info = {"stage": "dispatch_failed", "progress": 0}
+            task.save(update_fields=["status", "error_message", "finished_at", "stage_info", "updated_at"])
+            if not auto_triggered:
+                cls.log_release_trigger(
+                    task.triggered_by, config=task.config, release=task.release, task=task,
+                    result="failure", reason="任务投递失败",
+                )
+            raise PackageTaskDispatchError(task) from exc
+        if not auto_triggered:
+            cls.log_release_trigger(
+                task.triggered_by, config=task.config, release=task.release, task=task, result="success",
+            )
 
     @classmethod
     def create_task_for_branch(cls, config: PackageConfig, branch_name: str, request_user=None) -> PackageTask:
