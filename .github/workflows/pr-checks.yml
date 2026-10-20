@@ -152,6 +152,102 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  postgresql:
+    name: 后端 / PostgreSQL 并发锁
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: 设置 Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+      - name: 记录运行环境
+        run: |
+          report_dir="$RUNNER_TEMP/pr-checks/postgresql"
+          mkdir -p "$report_dir"
+          printf 'CHECK_REPORT_DIR=%s\n' "$report_dir" >> "$GITHUB_ENV"
+          {
+            git rev-parse HEAD
+            uname -a
+            python --version
+            docker --version
+            docker compose version
+          } > "$report_dir/environment.txt"
+      - name: 执行隔离 PostgreSQL 并发锁检查
+        id: check
+        run: |
+          set -o pipefail
+          python scripts/checks/backend-postgresql.py --report-dir "$CHECK_REPORT_DIR" 2>&1 | tee "$CHECK_REPORT_DIR/check-output.txt"
+      - name: 记录检查结论
+        if: always()
+        env:
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          {
+            printf '## PostgreSQL 并发锁\n\n'
+            printf '| 阶段 | 实际结果 |\n| --- | --- |\n'
+            printf '| 镜像构建、临时数据库、7 项真实并发验证及清理 | %s |\n' "$CHECK_OUTCOME"
+            printf '\n独立内部网络，无业务数据库连接或宿主端口。JUnit 出现跳过、失败、执行数不符均失败；原 SQLite 全量与覆盖率门槛独立保留。\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 保存 PostgreSQL 并发证据
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: backend-postgresql-${{ github.run_attempt }}
+          path: ${{ env.CHECK_REPORT_DIR }}
+          if-no-files-found: warn
+          retention-days: 30
+
+  package-real:
+    name: 打包 / 真实执行
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    env:
+      CHECK_REPORT_DIR: ${{ runner.temp }}/pr-checks/package-real
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: 设置 Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+      - name: 执行真实本地 Docker 打包验收
+        id: check
+        run: python scripts/checks/package-real.py --report-dir "$CHECK_REPORT_DIR"
+      - name: 记录检查结论
+        if: always()
+        env:
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          {
+            printf '## 真实本地 Docker 打包\n\n'
+            printf '| 阶段 | 实际结果 |\n| --- | --- |\n'
+            printf '| 固定版本构建、日志与下载、Tag 漂移阻断及资源清理 | %s |\n' "$CHECK_OUTCOME"
+            printf '\n使用隔离虚构软件、真实 Git 与生产任务执行器，不连接业务数据库或组织 GitLab，不推送 SVN。环境、身份、校验摘要与清理结果见归档。\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 保存真实打包验收证据
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: package-real-${{ github.run_attempt }}
+          path: ${{ env.CHECK_REPORT_DIR }}
+          if-no-files-found: error
+          retention-days: 30
+
   browser:
     name: 浏览器 / 冒烟验收
     runs-on: ubuntu-24.04
