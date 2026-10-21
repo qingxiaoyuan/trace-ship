@@ -26,11 +26,11 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-indigo-100 lg:flex ${maintainer ? 'bg-white' : 'bg-white/70 backdrop-blur-xl'}`}
+      className="fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-indigo-100 bg-white lg:flex"
       style={{ width: tokens.layout.sidebarWidth }}
     >
       <div className="flex h-[60px] items-center gap-2.5 px-5">
-        {maintainer ? <BrandMark /> : <img src="/favicon.ico" alt="溯舟" className="h-8 w-8 rounded-lg object-contain" />}
+        <BrandMark />
         <div className="flex flex-col leading-none">
           <span className="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span>
           <span className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-indigo-400">
@@ -43,7 +43,6 @@ export function Sidebar() {
         groups={navGroups}
         currentPath={location.pathname}
         onNavigate={(path) => navigate(path)}
-        maintainer={maintainer}
       />
     </aside>
   );

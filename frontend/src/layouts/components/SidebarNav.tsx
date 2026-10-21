@@ -1,5 +1,6 @@
 import type { NavGroup } from './navMenu';
 import { isActivePath } from './navMenu';
+import './sidebarNav.css';
 
 interface SidebarNavProps {
   groups: NavGroup[];
@@ -7,14 +8,13 @@ interface SidebarNavProps {
   onNavigate: (path: string) => void;
   /** 移动端抽屉内加大行高，便于触控 */
   large?: boolean;
-  maintainer?: boolean;
 }
 
-export function SidebarNav({ groups, currentPath, onNavigate, large = false, maintainer = false }: SidebarNavProps) {
+export function SidebarNav({ groups, currentPath, onNavigate, large = false }: SidebarNavProps) {
   return (
-    <nav className={`scrollbar-thin flex-1 space-y-5 overflow-y-auto px-3 py-2 ${maintainer ? 'mnt-sidebar-nav' : ''}`}>
+    <nav aria-label="主导航" className="sidebar-nav scrollbar-thin">
       {groups.map((group) => (
-        <div key={group.title}>
+        <div key={group.title} className={`sidebar-nav-group ${group.title === '支持' ? 'sidebar-nav-support' : ''}`}>
           <div className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             {group.title}
           </div>
@@ -27,6 +27,7 @@ export function SidebarNav({ groups, currentPath, onNavigate, large = false, mai
                 <button
                   key={item.path}
                   type="button"
+                  aria-current={active ? 'page' : undefined}
                   onClick={() => onNavigate(item.path)}
                   className={[
                     'flex w-full items-center gap-2.5 rounded-lg border px-2.5 text-left font-medium transition-colors',

@@ -8,6 +8,7 @@ import { useCommandPaletteStore } from '@/components/CommandPalette/store';
 import { buildGroups } from './navMenu';
 import { SidebarNav } from './SidebarNav';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
+import { BrandMark } from './BrandMark';
 
 interface MobileNavDrawerProps {
   open: boolean;
@@ -50,7 +51,7 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
     >
       <div className="mx-auto mb-2 h-1 w-10 shrink-0 rounded-full bg-slate-200" />
       <div className="flex shrink-0 items-center gap-2.5 px-5 pb-2">
-        <img src="/favicon.ico" alt="溯舟" className="h-8 w-8 rounded-lg object-contain" />
+        <BrandMark />
         <div className="flex flex-col leading-none">
           <span className="text-[15px] font-semibold tracking-tight text-slate-900">溯舟</span>
           <span className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-indigo-400">

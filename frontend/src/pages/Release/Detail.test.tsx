@@ -11,18 +11,21 @@ let projectRole = 'maintainer';
 let releaseStatus = 'released';
 let releaseDoc = '发布说明正文';
 let formalRelease = false;
+let sourceReferenceRequests = 0;
 
 beforeEach(() => {
   projectRole = 'maintainer';
   releaseStatus = 'released';
   releaseDoc = '发布说明正文';
   formalRelease = false;
+  sourceReferenceRequests = 0;
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }),
   });
   request.defaults.adapter = async (config) => {
+    if (config.url?.endsWith('/source-reference/')) sourceReferenceRequests += 1;
     if (config.url?.endsWith('/update-doc/')) releaseDoc = JSON.parse(config.data).release_doc;
     const data = config.url?.includes('/projects/') ? {
       id: 'project', my_role: projectRole, name: '维保项目',
@@ -52,6 +55,9 @@ describe('维保发布详情', () => {
     </MemoryRouter></App></QueryClientProvider>);
     await screen.findByText('发布说明正文');
     await waitFor(() => expect(client.getQueryData<{ my_role: string }>(['project', 'project'])?.my_role).toBe(role));
+    expect(screen.queryByText('RC 标签与源码')).toBeNull();
+    expect(screen.queryByRole('link', { name: '预览并清理 RC Tag' })).toBeNull();
+    expect(sourceReferenceRequests).toBe(0);
     if (role === 'maintainer') expect(screen.queryAllByRole('button', { name: /导出/ })).toHaveLength(0);
     else expect(await screen.findAllByRole('button', { name: /导出/ })).toHaveLength(3);
   });

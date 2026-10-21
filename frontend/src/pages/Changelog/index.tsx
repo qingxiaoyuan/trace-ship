@@ -107,7 +107,7 @@ export default function Changelog() {
                       >
                         {meta.label}
                       </span>
-                      <span className="text-[13px] leading-relaxed text-slate-700">{item.text}</span>
+                      <span className="text-[13px] leading-relaxed text-slate-700 max-md:min-w-0 max-md:flex-1 max-md:[overflow-wrap:anywhere]">{item.text}</span>
                     </li>
                   );
                 })}
