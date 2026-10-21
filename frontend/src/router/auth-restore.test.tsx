@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import App from '@/App';
 import { router } from '@/router';
@@ -60,6 +61,18 @@ afterEach(async () => {
 });
 
 describe('刷新任务深链时恢复会话', () => {
+  it('开发模式重复执行初始化时只恢复一次会话，避免轮换令牌互相失效', async () => {
+    render(<StrictMode><App /></StrictMode>);
+    await waitFor(() => expect(requests).toContain('/auth/token/refresh/'));
+    expect(requests.filter((url) => url === '/auth/token/refresh/')).toHaveLength(1);
+
+    await act(async () => { finishRefresh({ access: 'renewed-access', refresh: 'renewed-refresh' }); });
+
+    expect(await screen.findByText('刷新定位任务')).toBeTruthy();
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    expect(router.state.location.pathname).toBe('/packages/deep-task');
+  });
+
   it('等待持久化会话恢复，恢复后仍停留原任务路径及查询条件', async () => {
     render(<App />);
     await waitFor(() => expect(finishRefresh).toBeTypeOf('function'));

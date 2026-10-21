@@ -18,7 +18,7 @@ TraceShip - 软件版本发布管理与提交规范审查系统前端。
 ## 开发
 
 ```bash
-# 先按 .node-version 和 package.json 的 packageManager 准备精确 Node/npm
+# 建议使用 Node 24.x 与 npm 11.x；版本范围仅作兼容性提示
 npm ci
 npm run dev      # Vite 默认 8855，/api 代理到 http://localhost:8000
 ```

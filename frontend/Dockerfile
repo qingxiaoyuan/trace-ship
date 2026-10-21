@@ -1,10 +1,10 @@
 # 构建阶段：安装依赖并打包
-FROM node:24.21.0-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
-# 安装前校验镜像运行时与仓库版本约定；锁文件固定依赖树。
-COPY package.json package-lock.json .npmrc .node-version ./
+# 安装依赖时保留 lockfile；Node 24 镜像使用兼容的补丁版本。
+COPY package.json package-lock.json .npmrc ./
 COPY scripts ./scripts
 RUN npm ci
 

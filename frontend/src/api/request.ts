@@ -201,6 +201,10 @@ request.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiResponse<unknown> | Blob>) => {
+    // 查询卸载或刷新时会主动取消请求，保留取消结果供调用方处理，不展示网络错误。
+    if (axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
     const data = await decodeDownloadError(error.response?.data) as ApiResponse<unknown> | undefined;
 

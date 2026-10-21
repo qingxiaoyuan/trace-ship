@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronRight, LogOut, Plus, Search, User } from "lucide-react";
+import { ArrowLeft, Bell, ChevronRight, LogOut, Plus, Search, User } from "lucide-react";
 import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tokens } from "@/styles/theme";
@@ -113,6 +113,27 @@ export function TopHeader() {
   const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || "U";
 
   const currentTitle = useCurrentRouteTitle();
+  const isHome = ['/', '/dashboard'].includes(location.pathname);
+
+  const handleMobileBack = () => {
+    const historyIndex = window.history.state?.idx;
+    if (typeof historyIndex === 'number' && historyIndex > 0) {
+      navigate(-1);
+      return;
+    }
+
+    // 深链首次进入时没有站内历史，优先恢复维保来源，否则返回对应列表或工作台。
+    const source = (location.state as { maintainerFrom?: unknown } | null)?.maintainerFrom;
+    if (typeof source === 'string' && /^\/(dashboard)?(?:\?|$)/.test(source)) {
+      navigate(source, { replace: true });
+      return;
+    }
+    const [section, detail] = location.pathname.split('/').filter(Boolean);
+    const listSections = ['projects', 'repositories', 'credentials', 'commits', 'releases', 'packages', 'workflows'];
+    const fallback = detail && listSections.includes(section) && !(maintainer && section === 'releases')
+      ? `/${section}` : '/dashboard';
+    navigate(fallback, { replace: true });
+  };
 
   const displayName = user?.nickname || user?.username || "未登录";
 
@@ -125,11 +146,22 @@ export function TopHeader() {
         height: tokens.layout.headerHeight,
       }}
     >
-      {/* 移动端顶部只保留面包屑/标题，操作入口在底部操作栏（MobileTabBar） */}
-      <div className="flex flex-1 items-center gap-2.5 md:hidden">
-        {maintainer ? <BrandMark small /> : <img src="/favicon.ico" alt="溯舟" className="h-7 w-7 rounded-lg object-contain" />}
-        <span className="text-[14px] font-medium text-slate-800">{currentTitle}</span>
-        {maintainer && <span className="ml-auto rounded bg-[#f0f3f9] px-3 py-1 text-[11px] text-[#526987]">维保</span>}
+      {/* 手机非首页提供返回；业务操作入口仍在底部操作栏（MobileTabBar）。 */}
+      <div className="flex min-w-0 flex-1 items-center gap-2.5 md:hidden">
+        {isHome ? (
+          maintainer ? <BrandMark small /> : <img src="/favicon.ico" alt="溯舟" className="h-7 w-7 rounded-lg object-contain" />
+        ) : (
+          <button
+            type="button"
+            aria-label="返回上一页"
+            onClick={handleMobileBack}
+            className="-ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+          >
+            <ArrowLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+          </button>
+        )}
+        <span className="truncate text-[14px] font-medium text-slate-800">{currentTitle}</span>
+        {maintainer && <span className="ml-auto shrink-0 rounded bg-[#f0f3f9] px-3 py-1 text-[11px] text-[#526987]">维保</span>}
       </div>
 
       <div className="hidden items-center gap-1.5 text-[13px] md:flex">

@@ -116,7 +116,7 @@ trace-ship/
 - Docker >= 24.0
 - Docker Compose >= 2.20
 - Python >= 3.11（后端本地开发）
-- Node.js 与 npm 按 `frontend/.node-version`、`frontend/package.json` 的 `packageManager`（前端入口会核验版本）
+- Node.js 24.x 与 npm 11.x 为前端开发建议环境；`frontend/package.json` 的 `engines` 仅提示兼容范围，不会因补丁版本不同阻止安装或启动
 
 ### 1. 启动第三方依赖（Docker）
 

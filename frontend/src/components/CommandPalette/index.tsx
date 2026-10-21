@@ -284,7 +284,7 @@ export function CommandPalette() {
       title={null}
       width={560}
       styles={{ body: { padding: 0 } }}
-      maskClosable
+      mask={{ closable: true }}
       destroyOnHidden
     >
       <PalettePanel />

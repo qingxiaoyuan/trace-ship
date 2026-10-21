@@ -13,9 +13,11 @@ import { MainLayout } from './MainLayout';
 import ProjectDetail from '@/pages/Project/Detail';
 
 const originalAdapter = request.defaults.adapter;
+const originalHistoryState = window.history.state;
 let contextResponse: () => Promise<unknown>;
 
 beforeEach(() => {
+  window.history.replaceState({ idx: 0 }, '');
   useCommandPaletteStore.getState().setOpen(false);
   Element.prototype.scrollIntoView = () => {};
   useAuthStore.setState({ user: {
@@ -35,7 +37,12 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; useAuthStore.setState({ user: null }); });
+afterEach(() => {
+  cleanup();
+  request.defaults.adapter = originalAdapter;
+  useAuthStore.setState({ user: null });
+  window.history.replaceState(originalHistoryState, '');
+});
 
 function renderShell(path = '/dashboard', content: ReactNode = <h1>业务内容</h1>, title?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -52,6 +59,52 @@ function DraftPage() {
 }
 
 describe('统一工作台上下文与外壳', () => {
+  it.each(['/', '/dashboard'])('首页 %s 保留品牌且不显示手机返回键', async (path) => {
+    renderShell(path);
+    await screen.findByRole('heading', { name: '业务内容' });
+    expect(within(screen.getByRole('banner')).queryByRole('button', { name: '返回上一页' })).toBeNull();
+  });
+
+  it('手机顶栏返回站内上一页并保留维保工作台筛选', async () => {
+    const { router } = renderShell('/dashboard?type=rc&page=2');
+    await screen.findByRole('heading', { name: '业务内容' });
+    await act(() => router.navigate('/releases/version'));
+    window.history.replaceState({ idx: 1 }, '');
+
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: '返回上一页' }));
+
+    await waitFor(() => expect(router.state.location.pathname + router.state.location.search).toBe('/dashboard?type=rc&page=2'));
+  });
+
+  it.each([
+    ['maintainer', '/releases/version', '/dashboard'],
+    ['general', '/releases/version', '/releases'],
+    ['maintainer', '/packages/task', '/packages'],
+    ['maintainer', '/projects/project/overview', '/projects'],
+    ['maintainer', '/repositories/repo/commits', '/repositories'],
+    ['maintainer', '/notifications', '/dashboard'],
+  ])('%s 直接打开 %s 时手机返回键回到 %s', async (mode, path, target) => {
+    contextResponse = async () => ({ layout_mode: mode, visible_project_count: 1 });
+    const { router } = renderShell(path);
+    await screen.findByRole('heading', { name: '业务内容' });
+
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: '返回上一页' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(target));
+  });
+
+  it('没有站内历史时仍恢复发布详情记录的维保来源', async () => {
+    const { router } = renderShell('/dashboard');
+    await screen.findByRole('heading', { name: '业务内容' });
+    await act(() => router.navigate('/releases/version', {
+      replace: true, state: { maintainerFrom: '/dashboard?project=project&type=formal&page=2' },
+    }));
+
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: '返回上一页' }));
+
+    await waitFor(() => expect(router.state.location.pathname + router.state.location.search).toBe('/dashboard?project=project&type=formal&page=2'));
+  });
+
   it('上下文加载中不提前呈现写入口或业务页面', () => {
     contextResponse = () => new Promise(() => {});
     renderShell();

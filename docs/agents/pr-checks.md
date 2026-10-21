@@ -6,12 +6,12 @@
 
 | 检查名称 | 使用的已有入口 | 环境 |
 | --- | --- | --- |
-| 前端 / lint | `lint` 及 `test:runtime` 的运行时入口回归 | Ubuntu 24.04，Node 版本取 `frontend/.node-version` |
+| 前端 / lint | `lint` 及 `test:runtime` 的运行时入口回归 | Ubuntu 24.04，Node 24.x |
 | 前端 / test | `test`，执行全量 Vitest，补充 JUnit 输出 | 同上 |
 | 前端 / build | `build`，包含 `tsc -b` 与 Vite 构建 | 同上 |
 | 后端 / lint | `scripts/checks/backend-linux.py lint`，执行已有 Ruff 规则 | 本地与 CI 共用 `docker/checks/Dockerfile` 的 Linux/Python 3.11 镜像 |
 | 后端 / test | `scripts/checks/backend-linux.py test`，执行全量 pytest 与覆盖率门槛 | 同上 |
-| 浏览器 / 冒烟验收 | `test:browser`，真实 Chromium、完整前端及隔离 REST 服务 | Ubuntu 24.04、精确前端运行时、Python 3.11 |
+| 浏览器 / 冒烟验收 | `test:browser`，真实 Chromium、完整前端及隔离 REST 服务 | Ubuntu 24.04、Node 24.x、Python 3.11 |
 | 后端 / PostgreSQL 并发锁 | `scripts/checks/backend-postgresql.py`，现有仓库锁与补打配置行锁的真实竞争 | 独立临时 PostgreSQL、同一 Linux/Python 3.11 检查镜像 |
 | 打包 / 真实执行 | `scripts/checks/package-real.py`，生产 API 与本地 Docker 执行器实际构建隔离样本 | Linux、宿主 Docker、同一 Python 3.11 基础检查镜像 |
 
@@ -19,9 +19,9 @@
 
 后端全量使用内存 SQLite、本地缓存与 Celery eager 测试配置，不启动业务 PostgreSQL、Redis、GitLab 或使用真实业务凭证。检查镜像完整安装开发依赖与 LDAP/SASL 系统库，源码只读挂载，运行全量检查时关闭网络；可写目录仅用于测试临时数据与报告。另设 PostgreSQL 并发锁及真实 Docker 打包任务，隔离边界见下文。GitHub runner 为 Ubuntu，实际测试在镜像内执行，报告记录容器发行版与 Python 版本。Python 其他版本的结果单独记录。
 
-前端跟踪 `frontend/package-lock.json`，本地和 CI 均以 `npm ci` 安装。Node 精确版本以 `frontend/.node-version` 为准，npm 精确版本以 `package.json` 的 `packageManager` 为准；安装、开发和检查入口共同校验实际运行时，版本不符时失败。`.npmrc` 的 engine-strict 同时拒绝不支持的依赖组合。更新依赖时使用受约定的运行时修改清单与锁文件，并执行完整检查；普通复核不重写锁文件。报告继续保留实际依赖树，跨平台的可选原生包差异按实际记录。
+前端跟踪 `frontend/package-lock.json`，本地和 CI 均以 `npm ci` 安装。CI 使用 Node 24.x；本地可使用其他兼容版本，`package.json` 的 `engines` 与运行时入口只提供兼容性提示，不锁定 Node/npm 的精确补丁版本。`.npmrc` 不启用 engine-strict，依赖声明的运行时范围不符时 npm 给出提示但不因版本号直接拒绝安装。更新依赖时使用受约定的依赖清单与锁文件，并执行完整检查；普通复核不重写锁文件。报告继续保留实际依赖树，跨平台的可选原生包差异按实际记录。
 
-前端镜像同样使用 npm 锁文件与运行时守卫；修改 Node 版本时同步调整 Dockerfile 的基础镜像，安装阶段会拒绝镜像版本与 `.node-version` 不一致。`docker/package/web/` 是业务打包镜像，其 pnpm 入口服务于被打包项目，不属于本仓库前端开发环境。
+前端镜像同样使用 npm 锁文件，并基于 Node 24 的滚动镜像构建，不要求与本地 Node 补丁版本完全一致。`docker/package/web/` 是业务打包镜像，其 pnpm 入口服务于被打包项目，不属于本仓库前端开发环境。
 
 工作流使用 `pull_request` 事件、只读仓库权限和固定提交的官方 Actions，不向被测代码提供写入凭证。上传日志使用 Actions 自身的运行时能力。此变更只定义检查，不更改仓库分支保护；需要强制合入门槛时，可在仓库规则中按上表选择所需检查。
 
@@ -47,7 +47,7 @@
 
 ### 前端与运行时
 
-先按 `frontend/.node-version` 和 `packageManager` 准备 Node/npm，在 `frontend/` 执行：
+建议使用 Node 24.x 和 npm 11.x，在 `frontend/` 执行：
 
 ```bash
 npm ci

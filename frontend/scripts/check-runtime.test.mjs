@@ -26,6 +26,7 @@ async function checkRuntime(t, nodeVersion, packageManager) {
   await writeFile(path.join(frontend, 'package.json'), JSON.stringify({
     type: 'module',
     packageManager,
+    engines: { node: '0.0.0', npm: '0.0.0' },
     scripts: { 'check:runtime': 'node scripts/check-runtime.mjs' },
   }))
   if (existsSync(runtimeScript)) {
@@ -39,20 +40,8 @@ async function checkRuntime(t, nodeVersion, packageManager) {
   })
 }
 
-test('与仓库声明一致的 Node 和 npm 可执行检查', async (t) => {
-  const result = await checkRuntime(t, process.versions.node, `npm@${npmVersion}`)
+test('Node 和 npm 与精确版本 pin 不一致时仍允许继续', async (t) => {
+  const result = await checkRuntime(t, '0.0.0', 'npm@0.0.0')
   assert.equal(result.status, 0, result.stdout + result.stderr)
-  assert.match(result.stdout, /运行时检查通过/)
-})
-
-test('Node 版本不一致时拒绝执行并显示所需版本', async (t) => {
-  const result = await checkRuntime(t, '0.0.0', `npm@${npmVersion}`)
-  assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /需要 Node 0\.0\.0/)
-})
-
-test('npm 版本不一致时拒绝执行并显示所需版本', async (t) => {
-  const result = await checkRuntime(t, process.versions.node, 'npm@0.0.0')
-  assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /需要 npm 0\.0\.0/)
+  assert.match(result.stdout, /仅作兼容性参考，不限制启动/)
 })
