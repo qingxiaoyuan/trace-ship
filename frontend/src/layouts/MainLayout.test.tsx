@@ -177,16 +177,17 @@ describe('统一工作台上下文与外壳', () => {
     ['maintainer', '/packages', '打包看板', '打包任务'],
     ['maintainer', '/packages/task', '打包看板', '打包任务'],
     ['maintainer', '/Packages/task/', '打包看板', '打包任务'],
-    ['maintainer', '/releases/version', '发布详情', '发布详情'],
+    ['maintainer', '/releases/version', '发布详情', '发布详情', '版本详情'],
     ['general', '/releases', '发布看板', '发布看板'],
     ['general', '/packages', '打包看板', '打包看板'],
-  ])('%s 模式的 %s 在桌面和手机均显示 %s 对应标题 %s', async (mode, path, title, expected) => {
+  ])('%s 模式的 %s 使用对应的桌面与手机标题', async (mode, path, title, expected, mobileTitle = expected) => {
     contextResponse = async () => ({ layout_mode: mode, visible_project_count: 1 });
     renderShell(path, undefined, title);
     await screen.findByRole('heading', { name: '业务内容' });
     const header = within(screen.getByRole('banner'));
-    expect(header.getAllByText(expected)).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '打开导航菜单' }).parentElement?.textContent).toContain(expected);
+    expect(header.getAllByText(expected)).toHaveLength(mobileTitle === expected ? 2 : 1);
+    if (mobileTitle !== expected) expect(header.getByText(mobileTitle)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开导航菜单' }).parentElement?.textContent).toContain(mobileTitle);
   });
 
   it.each(['overview', 'repos'])('在 %s 切为纯维保时立即收起写入口，恢复兼任后读取最新项目权限', async (tab) => {

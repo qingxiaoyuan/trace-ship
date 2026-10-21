@@ -35,7 +35,22 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function actualViewport(page: Page) {
-  return page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth, scrollY }));
+  return page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth, scrollY, contentScrollTop: document.querySelector('main')?.scrollTop }));
+}
+
+/** 维保手机页滚动 main 内容区，桌面仍滚动窗口。 */
+async function readingScrollTop(page: Page) {
+  return page.getByRole('main').evaluate(element => matchMedia('(max-width: 767.98px)').matches ? element.scrollTop : scrollY);
+}
+
+async function scrollReadingPage(page: Page, top: number | 'bottom') {
+  await page.getByRole('main').evaluate((element, target) => {
+    if (matchMedia('(max-width: 767.98px)').matches) {
+      element.scrollTo({ top: target === 'bottom' ? element.scrollHeight : target, behavior: 'instant' });
+    } else {
+      window.scrollTo({ top: target === 'bottom' ? document.documentElement.scrollHeight : target, behavior: 'instant' });
+    }
+  }, top);
 }
 
 async function login(page: Page) {
@@ -99,7 +114,7 @@ async function documentChecks(page: Page, width: number) {
   await expect(page.locator('.release-markdown script, .release-markdown img[onerror]')).toHaveCount(0);
   expect(await page.evaluate(() => 'smokeUnsafe' in window)).toBe(false);
   const table = page.getByRole('region', { name: '发布说明表格', exact: true }).last();
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await scrollReadingPage(page, 0);
   await page.screenshot({ path: path.join(reportDir, `readonly-${width}-document-top.png`), fullPage: false, animations: 'disabled' });
   await reference.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(reportDir, `readonly-${width}-document-reference.png`), fullPage: false, animations: 'disabled' });
@@ -116,7 +131,7 @@ async function documentChecks(page: Page, width: number) {
   const tail = page.getByText('长文档结尾：全部发布说明完整可读。', { exact: true });
   await tail.scrollIntoViewIfNeeded();
   await expect(tail).toBeVisible();
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await scrollReadingPage(page, 'bottom');
   const bottom = await tail.boundingBox();
   expect(bottom).not.toBeNull();
   expect(bottom!.y + bottom!.height).toBeLessThanOrEqual((await actualViewport(page)).height - (width === 375 ? 68 : 0));
@@ -141,7 +156,7 @@ test('1440px 维保只读查看说明、在线日志与产物元信息，直接�
   await expect(page.getByRole('heading', { name: '维保工作台', exact: true })).toBeVisible();
   await page.getByRole('link', { name: '查看 VA.39.1.0 的发布说明', exact: true }).click();
   await documentChecks(page, 1440);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await scrollReadingPage(page, 0);
   await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
   await expect(page.getByText(fixture.tasks.success.id)).toHaveCount(0);
   await noOperations(page);
@@ -223,35 +238,40 @@ test('375px 维保组合查询、临时范围、完整说明与返回状态保�
   const link = page.getByRole('link', { name: /^查看 .* 的发布说明$/ }).last();
   await expect(page.locator('.mnt-release-list > li')).toHaveCount(6);
   await expect(link).toBeVisible();
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await scrollReadingPage(page, 0);
   await page.screenshot({ path: path.join(reportDir, 'readonly-mobile-list-viewport.png'), fullPage: false, animations: 'disabled' });
   await link.scrollIntoViewIfNeeded();
-  const scroll = await page.evaluate(() => scrollY);
+  const scroll = await readingScrollTop(page);
   expect(scroll).toBeGreaterThan(100);
   evidence.mobileList = { viewport: await actualViewport(page), from, scroll };
   await page.screenshot({ path: path.join(reportDir, 'readonly-mobile-list.png'), fullPage: true, animations: 'disabled' });
   await link.click();
   await documentChecks(page, 375);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  const back = page.getByRole('button', { name: '维保工作台', exact: true });
+  await scrollReadingPage(page, 0);
+  const back = page.getByRole('banner').getByRole('button', { name: '返回上一页', exact: true });
   const target = await back.boundingBox();
   expect(target!.height).toBeGreaterThanOrEqual(36);
   await back.click();
   await expect(page).toHaveURL(new URL(from, process.env.SMOKE_BASE_URL).href);
   await page.waitForLoadState('networkidle');
-  await expect.poll(async () => Math.abs((await page.evaluate(() => scrollY)) - scroll)).toBeLessThanOrEqual(100);
-  evidence.returnState = { from, restoredScroll: await page.evaluate(() => scrollY), originalScroll: scroll };
+  await expect(search).toHaveValue('长文档');
+  await expect(page.getByRole('button', { name: '正式', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(trigger).toContainText(sample.software_name);
+  await expect(page.locator('.ant-pagination-item-2')).toHaveClass(/ant-pagination-item-active/);
+  await expect.poll(async () => Math.abs((await readingScrollTop(page)) - scroll)).toBeLessThanOrEqual(100);
+  evidence.returnState = { from, restoredScroll: await readingScrollTop(page), originalScroll: scroll };
   await search.scrollIntoViewIfNeeded();
   await search.focus();
   await page.setViewportSize({ width: 375, height: 480 });
   await search.fill('不存在的版本样本');
-  await expect(page.getByText('没有匹配的已发布版本', { exact: true })).toBeVisible();
+  const emptyState = page.getByRole('status').filter({ has: page.getByRole('heading', { name: '当前条件下暂无版本', exact: true }) });
+  await expect(emptyState.getByText('未找到与“不存在的版本样本”匹配的版本', { exact: true })).toBeVisible();
   await expect(search).toBeFocused();
   expect((await actualViewport(page)).documentWidth).toBeLessThanOrEqual(375);
   evidence.inputFocus = { viewport: await actualViewport(page), focusPreserved: true, note: '缩小浏览器高度检查输入与布局，不模拟或证明系统软键盘' };
   await page.screenshot({ path: path.join(reportDir, 'readonly-mobile-input-shrunken.png'), fullPage: false, animations: 'disabled' });
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.getByRole('button', { name: '恢复全部', exact: true }).first().click();
+  await emptyState.getByRole('button', { name: '恢复全部', exact: true }).click();
   await expect(page).toHaveURL(new URL('/dashboard', process.env.SMOKE_BASE_URL).href);
   await expect(page.getByRole('link', { name: '查看 VA.39.1.0 的发布说明', exact: true })).toBeVisible();
   const targets = await page.locator('.mnt-scope-trigger, .mnt-type-filters button, .mnt-release-action a, .mnt-pagination li:not(.ant-pagination-disabled)').evaluateAll(elements => elements.filter(element => !!element.getClientRects().length).map(element => ({ text: element.textContent?.trim(), width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })));
