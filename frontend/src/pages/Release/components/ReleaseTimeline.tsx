@@ -1,5 +1,6 @@
 import { Check, GitPullRequestArrow, Rocket, Tag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import dayjs from 'dayjs';
 import type { Release } from '@/types';
 
 /** 流程节点状态 */
@@ -95,8 +96,34 @@ function TimelineNode({
 }
 
 /** 发布流程时间线（基于发布状态，不依赖 workflow_instance） */
-export function ReleaseTimeline({ release }: { release: Release }) {
+export function ReleaseTimeline({ release, compact = false }: { release: Release; compact?: boolean }) {
   const rejected = release.status === 'rejected';
+
+  if (compact) return <section aria-label="发布流程">
+    <div className="mb-[18px] flex items-center justify-between leading-7">
+      <h3 className="text-[15px] font-semibold text-[#24324b]">发布流程</h3>
+      <span className="text-[11px] font-medium text-[#238264]">{release.status === 'released' ? '已完成' : rejected ? '已驳回' : '进行中'}</span>
+    </div>
+    {flowNodes.map((node, index) => {
+      const state = node.stateOf(release.status);
+      const description = node.key === 'create'
+        ? `${release.publisher_name || release.publisher || '-'} · ${dayjs(release.created_at).format('MM-DD HH:mm')}`
+        : node.key === 'tag' && release.status === 'released' ? release.tag_name : node.sub(release);
+      return <div key={node.key} className="flex min-h-[45px] gap-[14px]">
+        <div className="flex w-[19px] shrink-0 flex-col items-center pt-[5px]">
+          <span className={`flex h-[18px] w-[18px] items-center justify-center rounded-full ${state === 'done' ? 'bg-[#eff8f4] text-[#238264]' : state === 'running' ? 'bg-amber-50 text-amber-600' : 'bg-[#f7f8fc] text-[#9aa8bd]'}`}>
+            {state === 'done' ? <Check className="h-3 w-3" strokeWidth={1.65} /> : <node.icon className="h-3 w-3" strokeWidth={1.65} />}
+          </span>
+          {index < flowNodes.length - 1 && <span className="mt-[3px] w-px flex-1 bg-[#e9edf5]" />}
+        </div>
+        <div className="flex min-w-0 flex-1 items-start justify-between gap-3 pb-[17px] leading-7">
+          <span className="shrink-0 text-[12px] font-medium text-[#24324b]">{node.name}</span>
+          <span className="min-w-0 break-words text-right text-[11px] text-[#76869f] [overflow-wrap:anywhere]">{description}</span>
+        </div>
+      </div>;
+    })}
+    {rejected && release.rejected_reason && <p className="mt-2 text-[12px] text-rose-600">驳回原因：{release.rejected_reason}</p>}
+  </section>;
 
   return (
     <div className="tech-card rounded-xl p-5">

@@ -8,7 +8,7 @@ export function useCurrentRouteTitle(): string {
   const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   for (let i = matches.length - 1; i >= 0; i -= 1) {
     const title = (matches[i].handle as { title?: string } | undefined)?.title;
-    if (title) return getNavLabel(matches[i].pathname, title, maintainer);
+    if (title) return maintainer && title === '发布详情' ? '版本详情' : getNavLabel(matches[i].pathname, title, maintainer);
   }
   return '工作台';
 }

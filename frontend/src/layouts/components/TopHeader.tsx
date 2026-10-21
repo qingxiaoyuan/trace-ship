@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Bell, ChevronRight, LogOut, Plus, Search, User } from "lucide-react";
+import { ArrowLeft, Bell, ChevronLeft, ChevronRight, LogOut, Plus, Search, User } from "lucide-react";
 import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tokens } from "@/styles/theme";
@@ -10,6 +10,7 @@ import { notificationApi } from "@/api/notification";
 import { getRoleLabel } from "@/utils/role";
 import { useCurrentRouteTitle } from "./useCurrentRouteTitle";
 import { useDashboardContext } from '@/hooks/useDashboardContext';
+import { useCompactReleaseHeader } from '@/hooks/useCompactReleaseHeader';
 import { BrandMark } from './BrandMark';
 import { getNavLabel } from './navMenu';
 
@@ -113,6 +114,8 @@ export function TopHeader() {
   const avatarLetter = (user?.nickname || user?.username)?.charAt(0) || "U";
 
   const currentTitle = useCurrentRouteTitle();
+  const maintainerRelease = maintainer && currentTitle === '版本详情';
+  const compactRelease = useCompactReleaseHeader(maintainerRelease);
   const isHome = ['/', '/dashboard'].includes(location.pathname);
 
   const handleMobileBack = () => {
@@ -141,13 +144,13 @@ export function TopHeader() {
 
   return (
     <header
-      className={`sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/40 px-5 lg:px-7 ${maintainer ? 'bg-white max-md:h-14!' : 'ts-header-glass'}`}
+      className={`sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-indigo-100/40 px-5 lg:px-7 ${maintainer ? 'bg-white max-md:h-14! max-md:shrink-0 max-md:border-b-0' : 'ts-header-glass'}`}
       style={{
         height: tokens.layout.headerHeight,
       }}
     >
       {/* 手机非首页提供返回；业务操作入口仍在底部操作栏（MobileTabBar）。 */}
-      <div className="flex min-w-0 flex-1 items-center gap-2.5 md:hidden">
+      <div className={`flex min-w-0 flex-1 items-center md:hidden ${maintainerRelease ? 'gap-0.5' : 'gap-2.5'}`}>
         {isHome ? (
           maintainer ? <BrandMark small /> : <img src="/favicon.ico" alt="溯舟" className="h-7 w-7 rounded-lg object-contain" />
         ) : (
@@ -155,13 +158,13 @@ export function TopHeader() {
             type="button"
             aria-label="返回上一页"
             onClick={handleMobileBack}
-            className="-ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+            className={`flex shrink-0 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${maintainerRelease ? '-ml-3 h-11 w-11' : '-ml-2 h-10 w-10'}`}
           >
-            <ArrowLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+            {maintainerRelease ? <ChevronLeft className="h-5 w-5 text-[#24324b]" strokeWidth={1.65} aria-hidden /> : <ArrowLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden />}
           </button>
         )}
-        <span className="truncate text-[14px] font-medium text-slate-800">{currentTitle}</span>
-        {maintainer && <span className="ml-auto shrink-0 rounded bg-[#f0f3f9] px-3 py-1 text-[11px] text-[#526987]">维保</span>}
+        <span className={`truncate ${maintainer ? 'text-[16px] font-semibold text-[#24324b]' : 'text-[14px] font-medium text-slate-800'}`}>{compactRelease && entityTitle ? entityTitle : currentTitle}</span>
+        {maintainer && !maintainerRelease && <span className="ml-auto flex h-[22px] shrink-0 items-center rounded-[5px] bg-[#f1f3f9] px-3 text-[11px] font-medium text-[#64748b]">维保</span>}
       </div>
 
       <div className="hidden items-center gap-1.5 text-[13px] md:flex">

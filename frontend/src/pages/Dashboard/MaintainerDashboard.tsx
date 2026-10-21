@@ -7,6 +7,7 @@ import { ArrowRight, Box, CalendarDays, ChevronRight, FileText, Hammer, MessageS
 import { dashboardApi, type MaintainerPackageTask } from '@/api/dashboard';
 import { releaseApi } from '@/api/release';
 import { useAuthStore } from '@/stores/authStore';
+import { usePageScroll } from '@/hooks/usePageScroll';
 import type { ReleaseType } from '@/types';
 import { releaseTypeText } from './constants';
 import { formatDurationSeconds, getGreeting } from './utils';
@@ -35,6 +36,7 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
+  const { getScrollTop, scrollTo } = usePageScroll();
   const requestedPage = Number(params.get('page') || 1);
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const project = params.get('project') || undefined;
@@ -61,6 +63,10 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
   const reset = () => updateFilters({ project: undefined, repository: undefined, type: undefined, search: undefined });
   const from = location.pathname + location.search;
   const stats = summary.data?.stats;
+  const selectedProject = summary.data?.projects.find((item) => item.id === project);
+  const selectedSoftware = selectedProject?.software.find((item) => item.id === repository);
+  const emptyReason = search ? `未找到与“${search}”匹配的版本`
+    : `${selectedSoftware?.name || selectedProject?.name || '所属项目'} 暂无${releaseType ? ` ${releaseTypeText[releaseType as ReleaseType] || releaseType} ` : '已发布'}版本`;
   const kpiCards: KpiCard[] = [
     {
       title: '近30天发布',
@@ -101,11 +107,15 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
     // 只在从说明详情返回时恢复该次点击前的位置，首次进入首页不滚动。
     const saved = sessionStorage.getItem(`maintainer-scroll:${from}`);
     if (data && saved !== null) {
-      requestAnimationFrame(() => window.scrollTo({ top: Number(saved), behavior: 'instant' }));
-      sessionStorage.removeItem(`maintainer-scroll:${from}`);
+      const frame = requestAnimationFrame(() => {
+        const top = Number(saved);
+        scrollTo(Number.isFinite(top) ? Math.max(0, top) : 0);
+        sessionStorage.removeItem(`maintainer-scroll:${from}`);
+      });
+      return () => cancelAnimationFrame(frame);
     }
-  }, [data, from]);
-  const rememberScroll = () => sessionStorage.setItem(`maintainer-scroll:${from}`, String(window.scrollY));
+  }, [data, from, scrollTo]);
+  const rememberScroll = () => sessionStorage.setItem(`maintainer-scroll:${from}`, String(getScrollTop()));
 
   return <div className="maintainer-dashboard">
     <header className="mnt-heading">
@@ -125,23 +135,31 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
     <div className="mnt-workspace">
       <section aria-labelledby="maintainer-releases-title" className="mnt-release-panel">
         <div className="mnt-panel-heading">
-          <div><div className="mnt-title-row"><h2 id="maintainer-releases-title"><span className="mnt-pc-only">发布版本</span><span className="mnt-phone-only">最近发布</span></h2>{data && !isError && <span className="mnt-count">{data.total}<span className="mnt-phone-only"> 个版本</span></span>}</div><p>查看各项目已发布的软件与更新内容</p></div>
+          <div><div className="mnt-title-row"><h2 id="maintainer-releases-title"><span className="mnt-pc-only">发布版本</span><span className="mnt-phone-only">{filtered ? '发布版本' : '最近发布'}</span></h2>{data && !isError && <span className="mnt-count">{data.total}<span className="mnt-phone-only"> 个版本</span></span>}</div><p>查看各项目已发布的软件与更新内容</p></div>
           <Link className="mnt-text-link mnt-pc-only" to="/releases">发布记录 <ArrowRight size={14} aria-hidden /></Link>
         </div>
 
         <div className="mnt-filters">
           <MaintainerScopePicker projects={summary.data?.projects || []} value={{ project, repository }} disabled={!summary.data} onApply={(scope) => updateFilters({ project: scope.project, repository: scope.repository })} />
-          <label className="mnt-release-search"><Search size={16} aria-hidden /><input aria-label="搜索版本、软件或发布说明" placeholder="搜索版本号、软件或发布说明" value={search} onChange={(event) => updateFilters({ search: event.target.value })} /></label>
+          <label className="mnt-release-search"><Search size={16} aria-hidden /><input aria-label="搜索版本、软件或发布说明" placeholder="搜索软件、版本号或发布说明" value={search} onChange={(event) => updateFilters({ search: event.target.value })} /></label>
           <div className="mnt-type-filters" role="group" aria-label="发布类型">
             {(['', 'formal', 'rc', 'beta'] as const).map((type) => <button type="button" key={type} aria-pressed={(releaseType || '') === type} className={(releaseType || '') === type ? 'is-active' : ''} onClick={() => updateFilters({ type: type || undefined })}>{type ? releaseTypeText[type as ReleaseType] : '全部类型'}</button>)}
           </div>
-          {filtered ? <button type="button" className="mnt-reset" onClick={reset}>恢复全部</button>
+          {filtered ? <button type="button" className="mnt-reset mnt-pc-only" onClick={reset}>恢复全部</button>
             : <label className="mnt-pending-filter mnt-pc-only" title="第三方问题反馈尚未接入"><input type="checkbox" disabled />仅看未关闭问题</label>}
         </div>
 
         {isPending ? <div role="status" className="mnt-list-state"><Spin />正在加载已发布版本…</div>
           : isError ? <div className="mnt-list-state"><Alert type="error" showIcon title="已发布版本加载失败" description="请重试获取最新版本列表。" action={<Button onClick={() => void refetch()}>重试</Button>} /></div>
-          : !data?.results.length ? <div className="mnt-list-state"><Empty description={filtered ? '没有匹配的已发布版本' : '所属项目暂无已发布版本'} />{filtered && <Button onClick={reset}>恢复全部</Button>}</div>
+          : !data?.results.length ? <>
+            <div className="mnt-list-state mnt-pc-only"><Empty description={filtered ? '没有匹配的已发布版本' : '所属项目暂无已发布版本'} />{filtered && <Button onClick={reset}>恢复全部</Button>}</div>
+            <div className="mnt-mobile-empty" role="status">
+              <span className="mnt-empty-icon"><Search size={24} strokeWidth={1.65} aria-hidden /></span>
+              <h3>{filtered ? '当前条件下暂无版本' : '暂无已发布版本'}</h3>
+              <p>{emptyReason}</p>
+              {filtered && <button type="button" onClick={reset}>恢复全部</button>}
+            </div>
+          </>
           : <>
             <ul className="mnt-release-list">
               {data.results.map((release) => <li key={release.id} className="mnt-release-row">
@@ -156,7 +174,7 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
                 <div className="mnt-release-action"><span className="mnt-phone-only">问题单待接入</span><span className={`mnt-release-package mnt-pc-only ${release.package_summary?.status || 'none'}`}><Hammer size={13} aria-hidden />{packageText[release.package_summary?.status || 'none']}</span><Link className="mnt-text-link" aria-label={`查看 ${release.version} 的发布说明`} onClick={rememberScroll} state={{ maintainerFrom: from }} to={`/releases/${release.id}`}><FileText size={15} aria-hidden />发布说明<ArrowRight className="mnt-pc-only" size={13} aria-hidden /></Link></div>
               </li>)}
             </ul>
-            <div className="mnt-pagination"><span>共 {data.total} 个版本</span><Pagination current={page} pageSize={6} total={data.total} showSizeChanger={false} size="small" responsive onChange={(next) => { const nextParams = new URLSearchParams(params); nextParams.set('page', String(next)); setParams(nextParams); }} /><small>6条 / 页</small></div>
+            <div className="mnt-pagination"><span>共 {data.total} 个版本</span><Pagination current={page} pageSize={6} total={data.total} showSizeChanger={false} size="small" responsive onChange={(next) => { const nextParams = new URLSearchParams(params); nextParams.set('page', String(next)); setParams(nextParams); scrollTo(0); }} /><small>6条 / 页</small></div>
           </>}
       </section>
 

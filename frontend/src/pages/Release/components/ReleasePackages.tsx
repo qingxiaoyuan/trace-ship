@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Grid, Select } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { PackageCheck, PackageX, Loader, Clock } from 'lucide-react';
+import { Check, CircleAlert, ChevronRight, PackageCheck, PackageX, Loader, Clock } from 'lucide-react';
 import dayjs from 'dayjs';
 import { packageApi } from '@/api/package';
 import { projectApi } from '@/api/project';
@@ -107,10 +107,41 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
   </section>;
 }
 
-export function ReleasePackages({ release }: { release: Release }) {
+export function ReleasePackages({ release, maintainerMobile = false }: { release: Release; maintainerMobile?: boolean }) {
   const navigate = useNavigate();
   const screens = Grid.useBreakpoint();
   const tasks = release.package_tasks || [];
+
+  if (maintainerMobile) return <div>
+    <div className="mb-[14px] flex min-h-[30px] items-center justify-between px-2 text-[#76869f]">
+      <h2 className="text-[13px] font-normal">关联打包任务</h2><span className="text-[12px]">{tasks.length} 项</span>
+    </div>
+    {!tasks.length && <p className="py-8 text-center text-[13px] text-[#76869f]">该发布暂无打包任务</p>}
+    <div className="space-y-4">
+      {tasks.map((task) => {
+        const info = statusMap[task.status];
+        const Icon = task.status === 'success' ? Check : task.status === 'failure' ? CircleAlert : info.icon;
+        const color = task.status === 'success' ? 'bg-[#eff8f4] text-[#238264]' : task.status === 'failure' ? 'bg-[#fff1f4] text-[#d9476a]' : `bg-[#f7f8fc] ${info.cls}`;
+        return <article key={task.id} className="rounded-2xl border border-[#e9edf5] bg-white px-[17px] pt-[14px]">
+          <div className="flex items-start gap-3">
+            <span className={`mt-[3px] flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${color}`}><Icon className="h-[18px] w-[18px]" strokeWidth={1.65} /></span>
+            <div className="min-w-0 flex-1">
+              <h3 className="break-words text-[14px] font-medium leading-7 text-[#24324b] [overflow-wrap:anywhere]">{task.name}</h3>
+              <p className="text-[11px] leading-[22px] text-[#76869f]">{task.created_at ? dayjs(task.created_at).format('MM-DD HH:mm') : '-'}</p>
+            </div>
+          </div>
+          <div className="mb-[14px] mt-4 flex min-h-[22px] items-center gap-[13px]">
+            <span className={`rounded-md px-[11px] py-1 text-[11px] leading-[14px] ${color}`}>{task.status_display || info.text}</span>
+            <span className="text-[12px] text-[#76869f]">产物 {task.artifact_count} 个</span>
+          </div>
+          <div className="flex min-h-[47px] items-center justify-between gap-2 border-t border-[#e9edf5]">
+            <span className="text-[11px] text-[#76869f]">{task.status === 'success' ? '打包完成' : task.status === 'failure' ? '查看任务了解失败原因' : task.status_display || info.text}</span>
+            <button type="button" onClick={() => navigate(`/packages/${task.id}`)} className="-mr-1 flex min-h-11 shrink-0 items-center gap-1 px-1 text-[12px] font-medium text-[#4f46e5]">查看任务<ChevronRight className="h-3 w-3" strokeWidth={1.65} /></button>
+          </div>
+        </article>;
+      })}
+    </div>
+  </div>;
 
   return (
     <div className="space-y-3">

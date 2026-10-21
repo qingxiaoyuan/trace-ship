@@ -32,9 +32,9 @@ export function MobileTabBar() {
 
   return (
     <>
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex items-center justify-between px-4 pb-[max(20px,env(safe-area-inset-bottom))] lg:hidden">
+      <div className={`pointer-events-none fixed inset-x-0 bottom-0 z-30 flex items-center justify-between px-4 pb-[max(20px,env(safe-area-inset-bottom))] lg:hidden ${maintainer ? 'max-md:h-[max(80px,calc(62px_+_env(safe-area-inset-bottom)))] max-md:items-start max-md:bg-[#f6f7fb] max-md:px-5 max-md:pt-2.5 max-md:pb-[max(18px,env(safe-area-inset-bottom))]' : ''}`}>
         {/* 左胶囊：菜单 + 当前页 */}
-        <div className="ts-header-glass pointer-events-auto flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5">
+        <div className={`ts-header-glass pointer-events-auto flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5 ${maintainer ? 'max-md:rounded-[17px] max-md:border-[#e5e9f2] max-md:bg-white! max-md:py-[5px] max-md:pl-[3px] max-md:pr-[7px] max-md:shadow-none max-md:backdrop-blur-none!' : ''}`}>
           <button
             type="button"
             onClick={() => setNavOpen(true)}
@@ -43,7 +43,7 @@ export function MobileTabBar() {
           >
             <LayoutGrid className="h-5 w-5" strokeWidth={1.5} />
           </button>
-          <div className={`mx-1 flex h-10 flex-col justify-center rounded-xl bg-indigo-50/70 px-2.5 ${maintainer ? 'min-w-[88px] items-center' : 'max-w-[88px]'}`}>
+          <div className={`mx-1 flex h-10 flex-col justify-center rounded-xl bg-indigo-50/70 px-2.5 ${maintainer ? 'min-w-[88px] items-center max-md:mx-0 max-md:ml-1 max-md:min-w-[94px] max-md:bg-[#eeedff]' : 'max-w-[88px]'}`}>
             {!maintainer && <span className="text-[9px] font-medium uppercase tracking-wider text-indigo-400">当前</span>}
             <span className={`truncate leading-tight text-indigo-700 ${maintainer ? 'text-[13px] font-medium' : 'text-[11px] font-semibold'}`}>
               {currentTitle}
@@ -62,7 +62,7 @@ export function MobileTabBar() {
         </button>}
 
         {/* 右胶囊：消息 + 个人空间 */}
-        <div className="ts-header-glass pointer-events-auto flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5">
+        <div className={`ts-header-glass pointer-events-auto flex items-center rounded-2xl border border-indigo-100/60 p-1.5 shadow-lg shadow-indigo-500/5 ${maintainer ? 'max-md:rounded-[17px] max-md:border-[#e5e9f2] max-md:bg-white! max-md:py-[5px] max-md:pl-[3px] max-md:pr-[11px] max-md:shadow-none max-md:backdrop-blur-none!' : ''}`}>
           <button
             type="button"
             onClick={() => navigate('/notifications')}
@@ -79,11 +79,11 @@ export function MobileTabBar() {
           <button
             type="button"
             onClick={() => setUserSheetOpen(true)}
-            className="ml-1 flex h-10 items-center gap-1.5 rounded-xl px-2 transition-colors hover:bg-indigo-50"
+            className={`ml-1 flex h-10 items-center gap-1.5 rounded-xl px-2 transition-colors hover:bg-indigo-50 ${maintainer ? 'max-md:ml-4 max-md:p-1' : ''}`}
             aria-label="个人空间"
           >
             <span
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold text-white"
+              className={`flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold text-white ${maintainer ? 'max-md:h-8 max-md:w-8 max-md:rounded-[11px] max-md:bg-[#8680f7]! max-md:text-[13px] max-md:font-medium' : ''}`}
               style={{ background: maintainer ? '#8877f8' : 'linear-gradient(135deg,#818CF8,#22D3EE)' }}
             >
               {userName.charAt(0)}

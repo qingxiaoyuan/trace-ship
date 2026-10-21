@@ -48,9 +48,8 @@ export function MaintainerScopePicker({ projects, value, disabled, onApply }: Pr
       {checked ? <CheckCircle2 size={17} aria-hidden /> : <Circle size={17} aria-hidden />}
     </label>;
   };
-  const tree = <>
-    <div className="mnt-scope-search"><Search size={15} aria-hidden /><input aria-label="搜索项目或软件" placeholder="搜索项目或软件" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></div>
-    <div className="mnt-scope-tree" role="radiogroup" aria-label="项目与软件范围">
+  const searchControl = <div className="mnt-scope-search"><Search size={15} aria-hidden /><input aria-label="搜索项目或软件" placeholder="搜索项目或软件" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></div>;
+  const tree = <div className="mnt-scope-tree" role="radiogroup" aria-label="项目与软件范围">
       {option('全部项目 · 全部软件', {}, undefined, true)}
       {orderedProjects.filter((item) => !keyword || item.name.toLowerCase().includes(keyword.toLowerCase()) || item.software.some((entry) => entry.name.toLowerCase().includes(keyword.toLowerCase()))).map((item) => {
         const isExpanded = expanded.includes(item.id) || !!keyword;
@@ -68,18 +67,18 @@ export function MaintainerScopePicker({ projects, value, disabled, onApply }: Pr
         </div>;
       })}
       {!projects.length && <p className="mnt-scope-empty">暂无可选项目</p>}
-    </div>
-  </>;
-  const trigger = <button ref={triggerRef} type="button" className="mnt-scope-trigger" disabled={disabled} aria-label={`选择项目与软件：${label}`} aria-haspopup="dialog" aria-expanded={open}
+    </div>;
+  const trigger = <button ref={triggerRef} type="button" className={`mnt-scope-trigger ${value.project ? 'has-scope' : ''}`} disabled={disabled} aria-label={`选择项目与软件：${label}`} aria-haspopup="dialog" aria-expanded={open}
     onClick={() => { setDraft(value); setKeyword(''); const initialProject = value.project || orderedProjects[0]?.id; setExpanded(initialProject ? [initialProject] : []); setOpen(!open); }}>
     <Workflow size={17} className="mnt-scope-mobile-icon" aria-hidden /><span className="mnt-scope-project-label">项目 · {project?.name || '全部'}</span>
     <ChevronRight className="mnt-scope-desktop-separator" size={12} aria-hidden /><span className="mnt-scope-software-label">软件 · {software?.name || '全部'}</span>
-    <span className="mnt-scope-mobile-label">{label}</span><ChevronDown size={15} aria-hidden />
+    <span className="mnt-scope-mobile-label">{value.project ? <><span>{project?.name || '所选项目'}</span><strong>{software?.name || '全部软件'}</strong></> : label}</span><ChevronDown size={15} aria-hidden />
   </button>;
 
   return <>
+    <div className="mnt-scope-control">
     <Popover open={open && !mobile} placement="bottomLeft" arrow={false} content={<div ref={panelRef} role="dialog" aria-label="选择项目与软件" className="mnt-scope-popover"
-      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); } }}>{tree}</div>}
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); } }}>{searchControl}{tree}</div>}
       afterOpenChange={(next) => {
         if (next) panelRef.current?.querySelector<HTMLInputElement>('input[aria-label="搜索项目或软件"]')?.focus();
         else if (document.activeElement === document.body || panelRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
@@ -87,11 +86,14 @@ export function MaintainerScopePicker({ projects, value, disabled, onApply }: Pr
       onOpenChange={(next) => { if (!next) setOpen(false); }} trigger="click">
       {trigger}
     </Popover>
+    {value.project && <button type="button" className="mnt-scope-reset" aria-label="清除项目与软件范围" disabled={disabled} onClick={() => onApply({})}>清除</button>}
+    </div>
     <Drawer open={open && mobile} aria-label="选择项目与软件" onClose={() => setOpen(false)} placement="bottom" size="min(654px, 82dvh)" closable={false}
-      className="mnt-scope-drawer" styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' }, section: { borderRadius: '20px 20px 0 0' }, mask: { background: 'rgba(34, 47, 77, 0.25)' } }}>
+      className="mnt-scope-drawer" styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, section: { borderRadius: '24px 24px 0 0' }, mask: { background: 'rgba(34, 47, 77, 0.25)' } }}>
       <div className="mnt-scope-handle" />
       <div className="mnt-scope-heading"><h2>选择项目与软件</h2><button type="button" aria-label="关闭范围筛选" onClick={() => setOpen(false)}><X size={18} /></button></div>
       <p className="mnt-scope-description">按项目选择，软件会显示在对应项目下</p>
+      <div className="mnt-scope-search-wrap">{searchControl}</div>
       <div className="mnt-scope-body">{tree}</div>
       <div className="mnt-scope-footer">
         <p>当前选择：{draftProject?.name || '全部项目'} / {draftSoftware?.name || '全部软件'}</p>

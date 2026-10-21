@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Empty, Button, Input, Modal, Typography } from 'antd';
+import { App, Empty, Button, Grid, Input, Modal, Typography } from 'antd';
 import { AlertTriangle, ChevronRight, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
@@ -9,6 +9,7 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
 import { useProjectRole } from '@/hooks/useProjectRole';
+import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { useAuthStore } from '@/stores/authStore';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
@@ -18,6 +19,7 @@ import { ReleaseTimeline } from './components/ReleaseTimeline';
 import { ReleaseNotes } from './components/ReleaseNotes';
 import { ReleaseCommits } from './components/ReleaseCommits';
 import { ReleasePackages } from './components/ReleasePackages';
+import { MaintainerReleaseDetail } from './components/MaintainerReleaseDetail';
 import type { ReleaseStatus, ReleaseType } from '@/types';
 
 /** 详情头 Tab */
@@ -40,6 +42,8 @@ export default function ReleaseDetail() {
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
+  const screens = Grid.useBreakpoint();
+  const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
 
   const queryClient = useQueryClient();
   const { data: release, isLoading, error } = useQuery({
@@ -146,6 +150,8 @@ export default function ReleaseDetail() {
 
   const type = release.release_type as ReleaseType;
   const status = release.status as ReleaseStatus;
+
+  if (maintainer && screens.md === false) return <MaintainerReleaseDetail key={release.id} release={release} />;
 
   return (
     <div className="space-y-5 ts-fade-in-up">
