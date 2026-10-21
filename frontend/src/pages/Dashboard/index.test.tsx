@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { App } from 'antd';
 import request from '@/api/request';
 import { DashboardContextProvider } from '@/layouts/DashboardContextProvider';
+import { MainLayout } from '@/layouts/MainLayout';
 import Dashboard from './index';
 import ReleaseDetail from '@/pages/Release/Detail';
 
@@ -57,14 +58,16 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-function renderDashboard(entry = '/dashboard') {
+function renderDashboard(entry = '/dashboard', withShell = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={[entry]}>
-    <DashboardContextProvider><Routes>
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/releases/:id" element={<ReleaseDetail />} />
-    </Routes></DashboardContextProvider>
-  </MemoryRouter></App></QueryClientProvider>);
+  const router = createMemoryRouter([{
+    element: withShell ? <MainLayout /> : <DashboardContextProvider><Outlet /></DashboardContextProvider>,
+    children: [
+      { path: '/dashboard', element: <Dashboard />, handle: { title: '工作台' } },
+      { path: '/releases/:id', element: <ReleaseDetail />, handle: { title: '发布详情' } },
+    ],
+  }], { initialEntries: [entry] });
+  render(<QueryClientProvider client={client}><App><RouterProvider router={router} /></App></QueryClientProvider>);
   return client;
 }
 
@@ -140,20 +143,24 @@ describe('维保工作台', () => {
 
   it('从筛选后的第二页阅读说明再返回，保留范围、关键词、类型、页码和位置', async () => {
     releaseResponse = (params) => ({ total: 7, page: params.page, page_size: 6, results: params.page === 2 ? [release] : [{ ...release, version: 'V1.0.0' }] });
-    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1; });
-    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(380);
-    renderDashboard('/dashboard?project=project&repository=web&type=rc&search=访客&page=2');
-    fireEvent.click(await screen.findByRole('link', { name: '查看 V1.2.3 的发布说明' }));
+    window.matchMedia = (query) => ({
+      matches: query === '(max-width: 767.98px)', media: query, onchange: null,
+      addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false,
+    });
+    renderDashboard('/dashboard?project=project&repository=web&type=rc&search=访客&page=2', true);
+    const link = await screen.findByRole('link', { name: '查看 V1.2.3 的发布说明' });
+    const content = screen.getByRole('main');
+    content.scrollTop = 380;
+    fireEvent.click(link);
     await screen.findByText('返回后保留查询位置');
     expect(screen.queryByRole('button', { name: /修改文档|删除版本/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '维保工作台' }));
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: '返回上一页' }));
     await screen.findByRole('link', { name: '查看 V1.2.3 的发布说明' });
     expect((screen.getByRole('textbox', { name: '搜索版本、软件或发布说明' }) as HTMLInputElement).value).toBe('访客');
     expect(screen.getByRole('button', { name: 'RC' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: /选择项目与软件/ }).textContent).toContain('park-web');
     expect(screen.queryByRole('link', { name: 'V1.0.0' })).toBeNull();
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 380, behavior: 'instant' });
+    await waitFor(() => expect(screen.getByRole('main').scrollTop).toBe(380));
     expect(releaseQueries.at(-1)).toMatchObject({ project: 'project', repository: 'web', release_type: 'rc', search: '访客', page: 2 });
   });
 

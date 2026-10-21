@@ -68,7 +68,9 @@ describe('刷新任务深链时恢复会话', () => {
 
     await act(async () => { finishRefresh({ access: 'renewed-access', refresh: 'renewed-refresh' }); });
 
-    expect(await screen.findByText('刷新定位任务')).toBeTruthy();
+    // 首次懒加载任务页在全量并发运行时可能超过默认 1 秒，仍须等到真实内容出现。
+    expect(await screen.findByText('刷新定位任务', {}, { timeout: 3000 })).toBeTruthy();
+    expect(requests.filter((url) => url === '/auth/token/refresh/')).toHaveLength(1);
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
     expect(router.state.location.pathname).toBe('/packages/deep-task');
   });
