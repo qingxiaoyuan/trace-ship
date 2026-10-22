@@ -58,7 +58,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
-            "release_type", "release_type_display", "status", "status_display",
+            "release_type", "release_type_display", "status", "status_display", "workflow_instance",
             "release_doc", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
@@ -70,7 +70,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "git_hash", "base_tag", "status",
+            "id", "git_hash", "base_tag", "status", "workflow_instance",
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "source_rc_version", "source_rc_tag", "source_rc_git_hash",
@@ -209,7 +209,8 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({field: "草稿不能更换项目、仓库或发布类型，请重新创建"})
         release_type = attrs.get("release_type", getattr(self.instance, "release_type", "formal"))
         branch = attrs.get("branch", getattr(self.instance, "branch", ""))
-        if release_type != "formal" and not branch:
+        source_rc = attrs.get("source_rc", getattr(self.instance, "source_rc_id", None))
+        if not branch and not (release_type == "formal" and source_rc):
             raise serializers.ValidationError({"branch": "请选择分支"})
         if release_type != "formal" and attrs.get("source_rc"):
             raise serializers.ValidationError({"source_rc": "只有正式版可选择来源 RC"})

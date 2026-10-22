@@ -1053,7 +1053,7 @@
   "project": "uuid",
   "repository": "uuid",
   "release_type": "formal",
-  "source_rc": "已发布 RC 的 UUID",
+  "branch": "main",
   "version": "VA.4.1.155",
   "tag_name": "VA.4.1.155_20260731",
   "related_changes": [],
@@ -1070,19 +1070,19 @@
 > `version` / `tag_name` 可选，为空时后端基于仓库 tag 和仓库 `version_rule` 自动计算；rc/beta 类型自动补类型后缀与日期段。
 > `repository` 必须属于所选项目。
 
-#### 正式草稿的 RC 来源
+#### 分支创建与 RC 来源兼容
 
-`POST /api/releases/` 的正式类型必须传 `source_rc`（UUID），选择同项目、同仓库的已发布 RC。服务器验证启用关联、仓库所有者成员资格、个人凭证以及远端 RC Tag 的完整提交；`branch`、`git_hash` 和来源快照由服务端确定，客户端值不能改变代码身份。RC/Beta 继续必填 `branch`，不能传非空 `source_rc`。
+`POST /api/releases/` 当前的正式版、RC/Beta 均按 `branch` 创建，服务端通过分支专用接口确认真实分支并保存其完整 HEAD 为 `git_hash`，客户端提交的哈希不能覆盖。Tag、SHA、提交范围和不存在的分支均不可替代分支。正式版强制从 RC 晋升暂缓（#52），新建页面不要求 RC。为保留现存来源链处理，正式接口继续兼容显式传入 `source_rc`（UUID）：须为同项目、同仓库的已发布 RC，并核验启用关联、仓库所有者成员资格、凭证及远端完整提交；该兼容路径的分支与哈希由 RC 确定。RC/Beta 不能传非空 `source_rc`。
 
 `GET /api/releases/rc-candidates/?project=<UUID>&repository=<UUID>` 返回标准分页数据，支持 `search`（版本或 Tag）、`page`、`page_size`，按发布时间倒序。每项包含 `id`、`version`、`tag_name`、`branch`、`git_hash`、`released_at`、`available` 和 `unavailable_reason`。查询受项目可见范围限制；引用缺失、缺少完整 SHA 或 Tag 改写时返回不可用原因，Provider 故障返回错误而非空候选。原 RC Tag 缺失时，接受同来源 RC 链中已发布且远端 SHA 一致的正式 Tag；原 Tag 被改写、无等价引用或外部访问失败仍拒绝。
 
-详情返回 `source_rc`、`source_rc_version`、`source_rc_tag`、`source_rc_git_hash`。历史来源关联为空，快照为空字符串，迁移不推断来源。`PATCH /api/releases/{id}/` 可在草稿中修改 `source_rc`；更换后清空原 `release_doc`、`base_tag`、`updates`、`related_changes` 和关联提交/MR，需要重新生成说明。普通编辑不刷新正式来源提交；进入流程后禁止编辑。草稿的项目、仓库和发布类型不能更换，应重新创建。
+详情返回 `source_rc`、`source_rc_version`、`source_rc_tag`、`source_rc_git_hash`。按分支创建时来源关联为空，RC 快照为空字符串，迁移不推断来源。`PATCH /api/releases/{id}/` 可在草稿中修改 `source_rc`；更换后清空原 `release_doc`、`base_tag`、`updates`、`related_changes` 和关联提交/MR，需要重新生成说明。按分支创建的正式草稿修改 `branch` 时重新解析提交并清空原说明及关联变更；已有 RC 来源时普通编辑不刷新来源提交。进入流程后禁止编辑。草稿的项目、仓库和发布类型不能更换，应重新创建。
 
 被正式版引用的 RC 不能通过删除版本接口移除发布记录；后续只清理 Tag 的接口与该删除操作不同。
 
 #### 版本占用、正式审批与 Tag 清理
 
-正式、RC、Beta 编号独立计算，成功历史保留编号依据。提交审批按物理仓库 + 类型 + 主次修订号占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。旧草稿须补选来源，迁移兼容标记不可经 API 写入。
+正式、RC、Beta 编号独立计算，成功历史保留编号依据。提交审批按物理仓库 + 类型 + 主次修订号占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。不强制草稿补选 RC 来源，按保存的提交完成正式审批和推 Tag；历史迁移兼容标记仍不可经 API 写入。
 
 `GET /api/releases/{id}/source-reference/` 返回 `{available, reference, reason}`；Provider 故障返回 502。实际打包任务的 `source_ref` 表示检出引用，`tag_name` / `version` 仍是原发布身份；执行前重新解析并核验实际 HEAD。
 
@@ -1209,7 +1209,7 @@
 
 `commit_ids` 可选（为空时取本次变更范围全部提交）；`merge_similar` 默认 `true`。`data` 为生成后的发布说明 Markdown 字符串（同时已保存到发布记录）。
 
-有来源 RC 的正式版仅草稿允许重新生成，始终包含固定区间的全部提交（忽略 `commit_ids` 的缩减筛选）；非法提交仍关联并在提交审批时拦截。首次成功生成保存 `base_tag`、`base_git_hash`、`changes_initialized=true` 和 `changes_warnings`，后续重新生成沿用基线。来源或目标版本改变后清空这些字段、说明和关联变更。历史无来源正式记录沿用旧行为。
+所有正式版（含按分支创建）按已保存 `git_hash` 收集固定区间的全部提交及有合并提交证据的 MR，不读取移动分支，忽略 `commit_ids` 的缩减筛选；非法提交仍关联并在提交审批时拦截。首次成功生成保存 `base_tag`、`base_git_hash`、`changes_initialized=true` 和 `changes_warnings`，后续重新生成沿用基线。来源或目标版本改变后清空这些字段、说明和关联变更，旧说明不可重新保存或提交审批。已初始化的正式说明仅草稿允许重新生成；已有 RC 来源仍须核验 RC 提交快照。
 
 #### 正式累计变更预览
 
@@ -1232,7 +1232,7 @@
 }
 ```
 
-有来源 RC 的正式版须先成功生成说明；`当前发布版本号`、`Git提交hash`、`来源 RC`、`正式基线`、`基线提交`、`变更范围` 为只读字段。编辑时须原样保留这些表格行，删除或篡改返回 400，其余内容可人工补充。
+正式草稿须先成功生成说明；按分支创建时 `当前发布版本号`、`Git提交hash` 为只读字段；有 RC 来源时还包括 `来源 RC`、`正式基线`、`基线提交`、`变更范围`。编辑时须原样保留这些表格行，删除或篡改返回 400，提审时再次核验，其余内容可人工补充。未初始化快照的存量已发布说明保留原编辑方式。
 
 ### 8.9 导出发布单
 
@@ -1493,7 +1493,7 @@
 说明：
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
 - 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
-- 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。`svn_push_rc` / `svn_push_beta` 默认 false。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。仅发布后自动打包会推 SVN。
+- 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。`svn_push_rc` / `svn_push_beta` 默认 false。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。自动与手动打包均遵循配置：正式版和分支直打看总开关，RC / 测试版还需对应类型开关；分支默认进入 `formal/{分支名}`。
 - 打包配置仅支持 Git 仓库，且仓库必须属于当前项目。
 
 **配置收藏：**
@@ -1518,11 +1518,13 @@
 - 授权按配置所属项目的有效角色判断：`developer`、`tester`、`manager`、`software_admin` 可补打，超管放行；必须显式属于目标项目。维保请求返回 403，不创建或投递任务。分支直打 `trigger-branch` 也不授予维保；另一项目的开发角色不能用于目标维保项目。
 - 配置须启用，发布状态须为 `released`，且项目、物理仓库均与配置一致。不可见发布与不存在的发布统一返回 404；共享仓库不会扩大项目权限。
 - 请求仅接受 `release_id`，兼容旧别名 `release`；两者同时传入须为同一 UUID。缺失、无效 UUID、冲突别名或任何额外字段均返回 400，不接受临时分支、脚本、环境变量、镜像、节点及操作者覆盖。
-- 新任务关联当前发布，使用服务端版本、Tag、完整提交快照和当前已保存配置，`triggered_by` 为实际操作人。任务的 `trigger_source` 为 `manual_release`，即使配置开启 SVN，手动补打也不推 SVN。执行前仍解析有效等价引用并核验实际检出 SHA；无有效引用或提交漂移时真实失败，不退回移动分支。
+- 新任务关联当前发布，使用服务端版本、Tag、完整提交快照和当前已保存配置，`triggered_by` 为实际操作人。任务的 `trigger_source` 为 `manual_release`，SVN 推送遵循保存时的总开关及 RC / 测试版开关，与发布后自动打包一致。执行前仍解析有效等价引用并核验实际检出 SHA；无有效引用或提交漂移时真实失败，不退回移动分支。
 - 任务依次取得仓库锁、配置行锁，刷新配置后按当前项目重新校验实际操作人，再创建任务；配置迁移或成员降权不能沿用请求开始时的授权。事务提交后沿既有 Celery / 本地线程回退策略投递。全部投递方式失败时，保留状态为 `failure` 的任务并返回 HTTP 503：`{code: 50300, message: "打包任务投递失败，请稍后重试", data: {task_id: "uuid", status: "failure"}}`；客户端可据此查看失败任务，不应视为创建成功。
 - 业务操作日志使用 `module=package`、`action=trigger_release`，记录实际操作人、已授权的项目/配置/发布/版本、新任务及投递结果；校验失败也记录失败，不记录未授权资源详情或客户端执行参数。
 
 发布推 Tag 成功后，后端仍为开启 `auto_package_on_release` 的配置自动创建任务，按自动发布策略决定 SVN 推送。
+
+**分支直打：** `POST /api/packages/configs/{id}/trigger-branch/`，请求体为 `{ "branch": "feature/demo" }`。任务的 `trigger_source` 为 `manual_branch`，无关联发布，沿用正式类型与分支名版本；开启 SVN 总开关后打包成功即推送，默认目录为 `formal/feature/demo`，自定义目录模板和提交模式继续按配置生效。
 
 ### 9.8 测试 SVN 推送配置
 
@@ -1602,7 +1604,7 @@
 ### 9.12 手动推送产物到 SVN
 
 - **POST** `/api/packages/tasks/{id}/push-svn/`
-- 目标项目的 manager / developer / software_admin 可操作，超管放行；任务成功且配置快照启用了 SVN 推送时可用（`can_push_svn=true`）。维保为 false。任务删除另需 `package.task.delete` 且任务已结束，维保即使具有旧全局权限也不能删除（`can_delete=false`）。
+- 目标项目的 manager / developer / software_admin 可操作，超管放行；任务成功且创建时配置快照已允许 SVN 推送时可用（`can_push_svn=true`），包括自动发布、手动版本与分支任务；历史关闭快照或缺少触发来源的任务保持不可补推。维保为 false。任务删除另需 `package.task.delete` 且任务已结束，维保即使具有旧全局权限也不能删除（`can_delete=false`）。
 
 ### 9.13 在线日志、产物元信息与文件下载
 
@@ -1697,17 +1699,19 @@
 
 返回当前用户创建的流程实例列表，支持 `status` 过滤。
 
-### 10.7 撤销流程实例
+### 10.7 发起人终止流程实例
 
 - **POST** `/api/workflow/instances/{id}/revoke/`
-- 发起人撤销运行中的实例。
+- 发起人可在运行中的任意审批节点终止流程，包括已有节点通过或转交/回退后的运行实例；不要求当前用户有待办任务。非发起人和已完成/驳回/终止的实例返回参数错误，维保仍无写权限。
+- 详情的 `can_revoke` 按当前用户、运行状态与真实项目权限判定。发布详情返回只读的 `workflow_instance`，页面据此加载实例并展示获准的终止入口。
+- 成功后实例为 `revoked`，剩余 `pending` 任务改为 `revoked`（已终止），原已处理任务保留；发布恢复 `draft`、解除实例关联、释放未消费版本占用，发起人可重新提交生成新实例。审批/终止按仓库、发布、实例依次加锁并重新核验状态，过期审批请求不能继续推进或推 Tag。
 
 ### 10.8 我的待办 / 已办
 
 - **GET** `/api/workflow/tasks/todo/`
 - **GET** `/api/workflow/tasks/done/`
 
-任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked`。
+任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked` / `revoked`（发起人终止后失效）。
 
 ### 10.9 审批通过
 

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Empty, Button, Grid, Input, Modal, Typography } from 'antd';
 import { AlertTriangle, ChevronRight, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
+import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
+import { workflowApi } from '@/api/workflow';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { useAuthStore } from '@/stores/authStore';
@@ -57,8 +59,24 @@ export default function ReleaseDetail() {
     enabled: !!release?.project,
   });
   const { canManage, canDevelop, role } = useProjectRole(project);
+  const { data: workflowInstance } = useQuery({
+    queryKey: ['workflow-instance-for-detail', release?.workflow_instance],
+    queryFn: () => workflowApi.getInstance(release!.workflow_instance!),
+    enabled: release?.status === 'pending' && !!release.workflow_instance && role !== 'maintainer',
+    retry: false,
+  });
   const user = useAuthStore((state) => state.user);
   const canDeleteDraft = canManage || (role === 'developer' && release?.status === 'draft' && release.publisher === user?.id);
+  const submit = useMutation({
+    mutationFn: () => releaseApi.submitAudit(release!.id),
+    onSuccess: () => {
+      message.success('已提交审批');
+      for (const queryKey of [['release', id], ['releases'], ['workflow-initiated'], ['workflow-todo'],
+        ['workflow-stats'], ['workflow-todo-count'], ['notification-remind-summary']]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
 
   // 面包屑实体名 + 最近访问埋点
   useEffect(() => {
@@ -230,6 +248,7 @@ export default function ReleaseDetail() {
               </div>
             </div>
           </div>
+          {status === 'pending' ? <WorkflowTerminateButton instance={workflowInstance} /> : null}
           {status === 'released' && canManage ? (
             <Button
               danger
@@ -242,6 +261,8 @@ export default function ReleaseDetail() {
           ) : null}
           {status === 'draft' || status === 'rejected' ? (
             <div className="flex shrink-0 items-center gap-2">
+              {status === 'draft' && canDevelop ? <Button type="primary" loading={submit.isPending}
+                disabled={!release.release_doc?.trim()} onClick={() => submit.mutate()}>提交审批</Button> : null}
               {/* 推 tag 失败的发布（驳回原因以「推 tag 失败」开头）提供重试入口 */}
               {canDevelop && status === 'rejected' && (release.rejected_reason || '').startsWith('推 tag 失败') ? (
                 <Button
@@ -263,6 +284,7 @@ export default function ReleaseDetail() {
             </div>
           ) : null}
         </div>
+        {submit.error ? <div className="mt-3"><PermissionAlert error={submit.error} errorTitle="提交审批失败" /></div> : null}
         {/* 小信息栏 */}
         <div className="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
           <div className="flex items-center gap-2">
@@ -312,7 +334,7 @@ export default function ReleaseDetail() {
         ) : null}
         {release.rejected_reason ? (
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50/50 p-3 text-[12px] text-rose-600">
-            驳回原因：{release.rejected_reason}
+            {status === 'draft' ? '流程说明' : '驳回原因'}：{release.rejected_reason}
           </div>
         ) : null}
       </div>

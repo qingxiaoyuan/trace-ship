@@ -222,19 +222,19 @@ npm run preview
 
 仓库级发布流程：
 
-1. 创建发布：`ReleaseService.create_release` 校验项目已启用关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；如未传版本号，基于远端可识别 Tag、成功发布历史和已消费版本占用自动计算，正式/RC/Beta 独立递增，草稿不抬高编号。同一仓库被多个项目发布时共享同一套 Tag。 正式草稿必须传同项目、同仓库已发布的 `source_rc`，实时验证 RC Tag 与完整提交快照一致；原 Tag 缺失时仅接受同来源链、同 SHA 的平台已发布正式 Tag；保存来源版本、Tag、SHA，忽略客户端分支/哈希，RC/Beta 仍按分支创建。草稿重选来源会清空发布说明及关联变更，进入流程后禁止修改来源；被正式版引用的 RC 记录受删除保护。
+1. 创建发布：`ReleaseService.create_release` 校验项目已启用关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；如未传版本号，基于远端可识别 Tag、成功发布历史和已消费版本占用自动计算，正式/RC/Beta 独立递增，草稿不抬高编号。同一仓库被多个项目发布时共享同一套 Tag。 正式版、RC/Beta 当前均按分支创建，服务端通过分支详情核验真实分支并保存完整 HEAD，不接受 Tag、SHA、提交范围冒充分支或客户端哈希覆盖；正式版强制从 RC 晋升暂缓（#52）。已有 `source_rc` 的正式记录继续校验来源 Tag 与完整提交快照，原 RC Tag 缺失时仅接受同来源链、同 SHA 的平台已发布正式 Tag；历史来源、累计说明和引用保护继续保留。正式草稿切换分支或已有 RC 来源会清空原说明及关联变更，进入流程后禁止修改来源。
 
-2. 预览变更：RC/Beta 沿用分支预览；有来源 RC 的正式版由 `FormalChanges` 在上一正式提交至 `source_rc_git_hash` 的固定 SHA 区间完整分页拉取提交，仅关联合并或 squash SHA 位于区间内的 MR，无证据 MR 显示缺口。首次正式版取全部可达历史，同 SHA 明示无新增代码，非祖先基线拒绝普通晋升，外部失败不得回退移动分支。
-3. 生成发布说明：`ReleaseService.generate_doc` 保存 Markdown。正式版首次生成按同物理仓库中低于目标正式版本的最高正式版本固定 `base_tag` / `base_git_hash`（平台已发布历史快照优先于同名远端 Tag），以 `changes_initialized` 区分首次发布与未生成。重新生成沿用基线；来源或目标版本改变后清空基线、说明及提交/MR 关联。身份字段由系统维护，人工可编辑其余内容；提交审批前必须已生成有效正式说明，并保留非法提交拦截。
-4. 提交审批：`ReleaseService.submit_audit` 要求草稿说明非空；正式版必须有来源 RC、启用的非空流程且所有节点有有效审批人。以物理仓库、发布类型、规范化主次修订号原子占用版本，日期与项目不分隔占用；同版本冲突提示“已有同版本在发布”，重复提交复用流程。仓库锁先于发布行锁；仓库锁使用 `no_key=True` 避免外键引用产生锁升级死锁。
+2. 预览变更：按分支创建的正式版、RC/Beta 均使用分支预览；正式草稿由 `FormalChanges` 在上一正式提交至已保存 `git_hash` 的固定 SHA 区间完整分页拉取提交，有来源 RC 时同时核验 RC 快照，仅关联合并或 squash SHA 位于区间内的 MR，无证据 MR 显示缺口。首次正式版取全部可达历史，同 SHA 明示无新增代码，非祖先基线拒绝普通晋升，外部失败不得回退移动分支。
+3. 生成发布说明：`ReleaseService.generate_doc` 保存 Markdown。所有正式版（含按分支创建）首次生成按同物理仓库中低于目标正式版本的最高正式版本固定 `base_tag` / `base_git_hash`（平台已发布历史快照优先于同名远端 Tag），以 `changes_initialized` 区分首次发布与未生成。重新生成沿用基线；来源或目标版本改变后清空基线、说明及提交/MR 关联。身份字段由系统维护，人工可编辑其余内容；提交审批前必须已生成有效正式说明，并保留非法提交拦截。
+4. 提交审批：`ReleaseService.submit_audit` 要求草稿说明非空；正式版必须有启用的非空流程且所有节点有有效审批人，不再强制 RC 来源。以物理仓库、发布类型、规范化主次修订号原子占用版本，日期与项目不分隔占用；同版本冲突提示“已有同版本在发布”，重复提交复用流程。仓库锁先于发布行锁；仓库锁使用 `no_key=True` 避免外键引用产生锁升级死锁。
 5. 审批流转：`WorkflowEngine` 根据 `node_config` 生成任务，支持通过、驳回、转交、回退、撤销。
-6. 审批完成：`ReleaseService.handle_workflow_completed` 按固定 SHA 推 Tag 并核验远端提交。正式版所有入口必须有已完成工作流；仅迁移时标记的存量在途审批可无来源 RC。远端结果不明时保留版本占用，原申请可重试；仅 Tag 提交与本申请标记均匹配时允许对账，不接管外部同 SHA Tag。成功后占用永久消费，失败状态为 `rejected`。
-7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送仅在发布后自动打包时启用：正式版看总开关，默认目录为 formal/版本号；RC、测试版需另开对应开关，分别进入 rc/版本号、beta/版本号。看板手动触发与分支直打不推 SVN。默认同版本号不覆盖，开启覆盖后镜像提交。
-8. 审批驳回释放未消费占用；撤销与回退到起点恢复 `draft`、解除流程实例并释放占用。推 Tag 失败保留占用供重试；按既有权限删除失败申请表示显式终止。
+6. 审批完成：`ReleaseService.handle_workflow_completed` 按固定 SHA 推 Tag 并核验远端提交。正式版所有入口必须有已完成工作流；按分支创建时使用草稿保存的提交，有 RC 来源时仍校验来源提交与快照一致。远端结果不明时保留版本占用，原申请可重试；仅 Tag 提交与本申请标记均匹配时允许对账，不接管外部同 SHA Tag。成功后占用永久消费，失败状态为 `rejected`。
+7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送对自动与手动打包均按配置启用：正式版看总开关，默认目录为 formal/版本号；RC、测试版需另开对应开关，分别进入 rc/版本号、beta/版本号。分支直打看总开关，默认进入 formal/分支名。默认同版本号不覆盖，开启覆盖后镜像提交。
+8. 审批驳回释放未消费占用；发起人可在运行中的任意审批节点终止流程；终止与回退到起点恢复 `draft`、解除流程实例并释放占用。终止保留实例与已处理历史，剩余任务标记 `revoked` 并失效；审批与终止共用仓库 → 发布 → 实例锁顺序，在锁内刷新状态，已结束流程不可终止。推 Tag 失败保留占用供重试；按既有权限删除失败申请表示显式终止。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
 
-RC 晋升与清理依据 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5)。`ReleaseReferences` 统一核验源码引用并保护最后有效引用。单项与批量清理仅删除远端 RC Tag 及缓存，保留发布、审批、说明和打包历史，记录逐次审计；结果区分平台删除、已清理、外部缺失、未知结果对账、阻止和失败。仓库级锁协调清理、Tag 删除与打包任务创建；排队/执行任务阻止相关引用清理。候选查询受项目可见范围限制，操作沿用项目管理员权限。接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
+RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5)。`ReleaseReferences` 统一核验源码引用并保护最后有效引用。单项与批量清理仅删除远端 RC Tag 及缓存，保留发布、审批、说明和打包历史，记录逐次审计；结果区分平台删除、已清理、外部缺失、未知结果对账、阻止和失败。仓库级锁协调清理、Tag 删除与打包任务创建；排队/执行任务阻止相关引用清理。候选查询受项目可见范围限制，操作沿用项目管理员权限。接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
 
 ### 打包流程
 
@@ -252,7 +252,7 @@ RC 晋升与清理依据 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/
    - 若配置 `custom_script`，则以 `sh -ec`（遇错即停）执行该脚本；
    - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）；
    - 打包产物写入 `/workspace/artifacts`；
-   - 扫描 `workspace/artifacts`，符合条件时推 SVN。仅发布后自动打包：正式版看总开关，默认路径 `{svn_url}/formal/{version}`；RC、测试版还要打开 `svn_push_rc` / `svn_push_beta`，路径为 `rc/{version}`、`beta/{version}`。自定义目录模板按原文渲染。`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步。看板手动触发与分支直打不推 SVN。
+   - 扫描 `workspace/artifacts`，自动与手动打包均按配置推 SVN：正式版看总开关，默认路径 `{svn_url}/formal/{version}`；RC、测试版还要打开 `svn_push_rc` / `svn_push_beta`，路径为 `rc/{version}`、`beta/{version}`。自定义目录模板按原文渲染。`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步。分支直打看 SVN 总开关，默认进入 formal/分支名。
 4. 镜像必须满足目录、环境变量、入口脚本约定（详见「镜像接入规范」或 `docker/package/web/README.md`）。
 
 ### 镜像接入规范

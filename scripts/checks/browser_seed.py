@@ -40,13 +40,15 @@ def main() -> None:
     from django.utils import timezone
 
     from apps.account.models import User
+    from apps.credential.models import Credential
     from apps.package.models import PackageConfig, PackageTask
     from apps.package.services import PackageService
     from apps.project.models import Project, ProjectComponent, ProjectMember
     from apps.release.models import ReleaseRecord
     from apps.release.services import ReleaseDocGenerator, ReleaseService
-    from apps.repository.models import Repository
-    from utils.provider.base import TagInfo
+    from apps.repository.models import Repository, RepositoryBranch
+    from apps.workflow.models import WorkflowDefinition
+    from utils.provider.base import CommitInfo, TagInfo
 
     # 随机握手标识保证入口不会误用某个既有业务服务。
     global urlpatterns
@@ -75,6 +77,17 @@ def main() -> None:
     )
     component = ProjectComponent.objects.create(
         project=project, repository=repository, component_code="software", display_name="冒烟软件_用于手机树形筛选的超长软件名称"
+    )
+    RepositoryBranch.objects.create(
+        repository=repository, name="main", is_default=True, last_commit_hash="a" * 40,
+        last_commit_at=timezone.now(),
+    )
+    WorkflowDefinition.objects.create(
+        repository=repository, project=project, name="冒烟正式发布流程", release_type="formal",
+        node_config=[{
+            "node_id": f"approval_{index}", "node_name": f"第 {index} 轮审批", "mode": "any",
+            "approvers": [{"type": "user", "user_id": str(owner.id)}],
+        } for index in range(1, 4)],
     )
     manual_additions = (
         "# 手机完整阅读验收\n\n表格外首段：在生产生成说明后追加的合法手动编辑边界样本。\n\n"
@@ -150,18 +163,56 @@ def main() -> None:
     PackageService.dispatch_task = staticmethod(record_dispatch)
 
     class SampleRepository:
-        """只替换远端 Tag 查询，源码引用校验仍走生产实现。"""
+        """固定远端 Tag / 提交样本，发布与审批业务仍走生产实现。"""
 
         def list_tags(self, repo_identity: str) -> list[TagInfo]:
             if repo_identity != repository.external_identity:
                 raise RuntimeError("冒烟样本禁止查询其他仓库")
             return [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in reading_releases]
 
+        def get_branch(self, repo_identity: str, branch_name: str):
+            from utils.provider.base import BranchInfo
+
+            if repo_identity != repository.external_identity or branch_name != "main":
+                raise RuntimeError("冒烟样本禁止查询其他分支")
+            return BranchInfo(name="main", last_commit_hash="a" * 40)
+
+        def list_release_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
+            if base not in ("", "1" * 40) or head != "a" * 40:
+                raise RuntimeError("冒烟样本禁止查询其他提交区间")
+            return self.list_commits(repo_identity, "main")
+
+        def list_release_merge_requests(self, repo_identity: str) -> list:
+            if repo_identity != repository.external_identity:
+                raise RuntimeError("冒烟样本禁止查询其他仓库")
+            return []
+
+        def list_commits(self, repo_identity: str, branch: str, **kwargs) -> list[CommitInfo]:
+            if repo_identity != repository.external_identity or branch != "main":
+                raise RuntimeError("冒烟样本禁止查询其他分支")
+            return [CommitInfo(hash="a" * 40, author="冒烟管理员", author_email="isolated@example.invalid",
+                               message="更新内容：\n1. A 正式版分支发布冒烟", committed_at=timezone.now())]
+
+        def compare_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
+            return self.list_commits(repo_identity, head)
+
+        def list_merge_requests(self, *args, **kwargs) -> list:
+            return []
+
+        def get_merge_base(self, repo_identity: str, refs: list[str]) -> str:
+            return refs[0]
+
     ReleaseService._get_provider = staticmethod(lambda *_args, **_kwargs: SampleRepository())
+    svn_credential = Credential.objects.create(
+        name="冒烟虚构 SVN 凭证", owner=owner, cred_type="svn_password", auth_mode="password",
+    )
+    svn_credential.set_data({"username": "isolated", "password": secrets.token_urlsafe(24)})
+    svn_credential.save()
     repackage_config = PackageConfig.objects.create(
         project_component=component, name="已发布版本补打配置", is_active=True,
         custom_script="exit 27", env_vars={"FIXED_SAMPLE": "configured"},
         svn_push_enabled=True, svn_url="https://example.invalid/smoke/artifacts",
+        svn_push_rc=True, svn_push_beta=True, svn_credential=svn_credential,
     )
     PackageConfig.objects.create(project_component=component, name="已停用配置不得选择", is_active=False)
     other_project = Project.objects.create(name="隔离的共享仓库项目", code="SMOKE-OTHER", leader=owner, status=1)
@@ -173,6 +224,8 @@ def main() -> None:
     manifest = {
         "username": reader.username, "password": password,
         "operator": {"username": owner.username, "role": "manager", "id": str(owner.id)}, "tasks": {},
+        "release_flow": {"project_id": str(project.id), "repository_name": repository.name,
+                         "branch": "main", "git_hash": "a" * 40},
         "reading": {"project_id": str(project.id), "project_name": project.name,
                     "repository_id": str(repository.id), "software_name": component.display_name,
                     "release_ids": [str(item.id) for item in reading_releases],

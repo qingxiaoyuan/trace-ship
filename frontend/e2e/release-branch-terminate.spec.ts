@@ -1,0 +1,123 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
+  operator: { username: string }; password: string;
+  release_flow: { project_id: string; repository_name: string; branch: string; git_hash: string };
+};
+const sample = fixture.release_flow;
+const reportDir = process.env.SMOKE_REPORT_DIR!;
+
+test('正式版按分支创建、生成说明并进入后续审批节点后，发起人可终止并回到草稿', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/login');
+  await page.getByRole('button', { name: '本地账号', exact: true }).click();
+  await page.getByPlaceholder('请输入本地账号').fill(fixture.operator.username);
+  await page.getByPlaceholder('请输入密码', { exact: true }).fill(fixture.password);
+  await page.getByRole('button', { name: '登 录', exact: true }).click();
+  await expect(page).not.toHaveURL(/\/login/);
+  await page.goto(`/releases/create?project_id=${sample.project_id}`);
+  await page.getByLabel('目标仓库', { exact: true }).click();
+  await page.locator('.ant-select-item-option-content').filter({ hasText: sample.repository_name }).click();
+  await page.getByLabel('分支', { exact: true }).click();
+  await page.locator('.ant-select-item-option-content').filter({ hasText: /^main$/ }).click();
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByText('来源 RC', { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: path.join(reportDir, 'desktop-formal-branch.png'), fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByLabel('分支', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: path.join(reportDir, 'mobile-formal-branch.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  const createdResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/releases/' && response.request().method() === 'POST');
+  const generatedResponse = page.waitForResponse(response => response.url().endsWith('/generate-doc/'));
+  await page.getByRole('button', { name: '创建发布', exact: true }).click();
+  const created = await createdResponse;
+  expect(created.status()).toBe(201);
+  expect(created.request().postDataJSON()).toMatchObject({ release_type: 'formal', branch: sample.branch });
+  expect(created.request().postDataJSON().source_rc).toBeUndefined();
+  const release = (await created.json()).data as { id: string; source_rc: string | null; git_hash: string };
+  expect(release).toMatchObject({ source_rc: null, git_hash: sample.git_hash });
+  expect((await generatedResponse).status()).toBe(200);
+  const submittedResponse = page.waitForResponse(response => response.url().endsWith('/submit-audit/'));
+  await page.getByRole('button', { name: '提交审批', exact: true }).click();
+  const submitted = await submittedResponse;
+  expect(submitted.status()).toBe(200);
+  const instanceId = (await submitted.json()).data.workflow_instance_id as string;
+  expect(instanceId).toBeTruthy();
+
+  await page.goto(`/workflows/${instanceId}`);
+  await page.getByRole('dialog', { name: /事项提醒/ }).getByRole('button', { name: '知道了', exact: true }).click();
+  const approvedResponse = page.waitForResponse(response => response.url().endsWith('/approve/'));
+  await page.getByRole('button', { name: '通过', exact: true }).click();
+  expect((await approvedResponse).status()).toBe(200);
+  await expect(page).toHaveURL(/\/workflows$/);
+  await page.goto(`/releases/${release.id}`);
+  await expect(page.getByRole('button', { name: '终止流程', exact: true })).toBeVisible();
+  await page.goto(`/workflows/${instanceId}`);
+  await expect(page.getByText('第 2 轮审批', { exact: true }).first()).toBeVisible();
+  await page.screenshot({ path: path.join(reportDir, 'desktop-terminate-running.png'), fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByRole('button', { name: '终止流程', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))).toEqual({ width: 375, height: 812 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: path.join(reportDir, 'mobile-terminate-running.png'), fullPage: true });
+  await page.getByRole('button', { name: '终止流程', exact: true }).click();
+  await expect(page.getByText(/发布申请恢复为草稿/)).toBeVisible();
+  const confirmDialog = page.getByRole('dialog');
+  await expect(confirmDialog).toHaveCSS('transform', 'none');
+  await expect(confirmDialog).toHaveCSS('opacity', '1');
+  const bounds = await confirmDialog.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.width).toBeGreaterThan(300);
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(812);
+  await page.screenshot({ path: path.join(reportDir, 'mobile-terminate-confirm.png'), fullPage: false });
+  const terminatedResponse = page.waitForResponse(response => response.url().endsWith('/revoke/'));
+  await page.getByRole('button', { name: '确认终止', exact: true }).click();
+  const terminated = await terminatedResponse;
+  expect(terminated.status()).toBe(200);
+  const instance = (await terminated.json()).data as { status: string; tasks: { status: string; can_act: boolean }[] };
+  expect(instance.status).toBe('revoked');
+  expect(instance.tasks.some(task => task.status === 'approved')).toBe(true);
+  expect(instance.tasks.some(task => task.status === 'revoked')).toBe(true);
+  expect(instance.tasks.some(task => task.can_act)).toBe(false);
+  await expect(page.getByRole('button', { name: '终止流程', exact: true })).toHaveCount(0);
+  const detailResponse = page.waitForResponse(response => response.url().endsWith(`/api/releases/${release.id}/`));
+  await page.goto(`/releases/${release.id}`);
+  const restored = (await (await detailResponse).json()).data;
+  expect(restored).toMatchObject({ status: 'draft', workflow_instance: null, source_rc: null, git_hash: sample.git_hash });
+  await expect(page.getByRole('button', { name: '提交审批', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: path.join(reportDir, 'mobile-terminated-draft.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.getByRole('button', { name: '提交审批', exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(reportDir, 'desktop-terminated-draft.png'), fullPage: true });
+  const resubmittedResponse = page.waitForResponse(response => response.url().endsWith('/submit-audit/'));
+  await page.getByRole('button', { name: '提交审批', exact: true }).click();
+  const resubmitted = await resubmittedResponse;
+  expect(resubmitted.status()).toBe(200);
+  const nextInstanceId = (await resubmitted.json()).data.workflow_instance_id as string;
+  expect(nextInstanceId).toBeTruthy();
+  expect(nextInstanceId).not.toBe(instanceId);
+  await expect(page.getByRole('button', { name: '终止流程', exact: true })).toBeVisible();
+  const cleanupResponse = page.waitForResponse(response => response.url().endsWith(`/instances/${nextInstanceId}/revoke/`));
+  await page.getByRole('button', { name: '终止流程', exact: true }).click();
+  await page.getByRole('button', { name: '确认终止', exact: true }).click();
+  expect((await cleanupResponse).status()).toBe(200);
+  writeFileSync(path.join(reportDir, 'release-flow-evidence.json'), JSON.stringify({
+    release_id: release.id, instance_id: instanceId, source: 'branch', git_hash: sample.git_hash,
+    approved_history_retained: true, pending_tasks_revoked: true, release_restored_to_draft: true,
+    resubmitted_with_new_instance: nextInstanceId,
+    new_instance_terminated_after_verification: true,
+    desktop: '1440x1000', mobile: '375x812 浏览器视口模拟', page_errors: errors,
+    mobile_termination_confirmed: true, mobile_restored_to_draft: true,
+    boundary: 'GitLab Tag/提交为固定样本，使用真实 REST、创建/生成/提审/审批/终止及审计；未执行实际打包或业务 SVN 推送',
+  }, null, 2));
+});

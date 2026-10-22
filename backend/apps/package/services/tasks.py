@@ -100,8 +100,8 @@ class TaskLifecycleMixin:
     ) -> PackageTask:
         """为已发布版本创建打包任务。
 
-        auto_triggered=True 表示发布推 tag 后的自动打包。仅此时按发布类型决定
-        是否推 SVN：正式版看总开关，RC / 测试版还要各自打开。手动触发不推 SVN。
+        auto_triggered=True 表示发布推 tag 后的自动打包。自动与手动打包均按发布类型
+        决定是否推 SVN：正式版看总开关，RC / 测试版还要各自打开。
         """
         from apps.repository.models import Repository
         from utils.permissions import IsProjectReleasePackager

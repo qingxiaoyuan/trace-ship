@@ -122,6 +122,7 @@ describe('已发布版本补打', () => {
     await openPackages();
     const selector = await screen.findByRole('combobox', { name: '打包配置' });
     expect(screen.getByText('当前版本：V1.2.3 / V1.2.3')).toBeTruthy();
+    expect(screen.getByText('使用已有配置和当前版本源码补打，SVN 推送遵循配置中的总开关及 RC、测试版开关。')).toBeTruthy();
     fireEvent.mouseDown(selector);
     fireEvent.click(await screen.findByRole('option', { name: '标准安装包' }));
     fireEvent.click(screen.getByRole('button', { name: '补打当前版本' }));

@@ -45,7 +45,7 @@ class FailingProvider(MockProvider):
 
 @pytest.mark.django_db
 class TestReleaseDocGenerator:
-    """ReleaseDocGenerator 测试类"""
+    """RC/Beta 说明的手选提交、非法过滤与外部失败兼容规则。"""
 
     @pytest.fixture
     def release(self, project, repository, user):
@@ -55,9 +55,9 @@ class TestReleaseDocGenerator:
             project=project,
             repository=repository,
             version="VA.1.0.0",
-            tag_name="VA.1.0.0",
+            tag_name="VA.1.0.0-rc",
             branch="main",
-            release_type="formal",
+            release_type="rc",
             publisher=user,
             updates=[{"type": "A", "content": "新增功能", "source": "commit", "source_ref": "h1"}],
             has_config_changes=True,

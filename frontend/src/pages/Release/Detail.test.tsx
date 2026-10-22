@@ -11,14 +11,18 @@ let projectRole = 'maintainer';
 let releaseStatus = 'released';
 let releaseDoc = '发布说明正文';
 let formalRelease = false;
+let formalRcSource = true;
 let sourceReferenceRequests = 0;
+let submitRequests = 0;
 
 beforeEach(() => {
   projectRole = 'maintainer';
   releaseStatus = 'released';
   releaseDoc = '发布说明正文';
   formalRelease = false;
+  formalRcSource = true;
   sourceReferenceRequests = 0;
+  submitRequests = 0;
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -27,6 +31,7 @@ beforeEach(() => {
   request.defaults.adapter = async (config) => {
     if (config.url?.endsWith('/source-reference/')) sourceReferenceRequests += 1;
     if (config.url?.endsWith('/update-doc/')) releaseDoc = JSON.parse(config.data).release_doc;
+    if (config.url?.endsWith('/submit-audit/')) { submitRequests += 1; releaseStatus = 'pending'; }
     const data = config.url?.includes('/projects/') ? {
       id: 'project', my_role: projectRole, name: '维保项目',
     } : config.url?.endsWith('/source-reference/') ? {
@@ -36,7 +41,7 @@ beforeEach(() => {
       no_changes: false, warnings: [], commits: [], merge_requests: [], parsed_updates: [],
     } : config.url?.endsWith('/review-issues/') ? [] : {
       id: 'release', project: 'project', version: 'V1.0.0', status: releaseStatus,
-      release_type: formalRelease ? 'formal' : 'rc', source_rc: formalRelease ? 'source-rc' : undefined,
+      release_type: formalRelease ? 'formal' : 'rc', source_rc: formalRelease && formalRcSource ? 'source-rc' : undefined,
       rejected_reason: '推 tag 失败',
       release_doc: releaseDoc, can_review: false, can_reply: false, package_tasks: [],
     };
@@ -47,6 +52,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
 
 describe('维保发布详情', () => {
+  it('发起人终止后恢复的草稿可从详情重新提交，成功后刷新待审批状态', async () => {
+    projectRole = 'developer';
+    releaseStatus = 'draft';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: '提交审批' }));
+    await waitFor(() => expect(submitRequests).toBe(1));
+    await waitFor(() => expect(client.getQueryData(['release', 'release'])).toMatchObject({ status: 'pending' }));
+    expect(screen.queryByRole('button', { name: '提交审批' })).toBeNull();
+  });
+
+  it('草稿缺少发布说明时不能提交审批', async () => {
+    projectRole = 'developer'; releaseStatus = 'draft'; releaseDoc = '';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    expect((await screen.findByRole('button', { name: '提交审批' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(submitRequests).toBe(0);
+  });
+
   it.each(['maintainer', 'developer'])('目标项目 %s 仅在获准时提供导出，完整说明仍可阅读', async (role) => {
     projectRole = role;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -260,15 +288,16 @@ describe('维保发布详情', () => {
     expect((within(await screen.findByRole('dialog')).getByRole('textbox') as HTMLTextAreaElement).value).toBe(updatedDoc);
   });
 
-  it('正式说明保留身份字段只读，开发人员仍可修改其余内容', async () => {
+  it.each([true, false])('正式说明保留身份字段只读，开发人员仍可修改其余内容（RC 来源：%s）', async (useRc) => {
     projectRole = 'developer';
     formalRelease = true;
+    formalRcSource = useRc;
     const gitHash = 'b'.repeat(40);
     releaseDoc = [
       '| 项目 | 内容 |', '|------|------|',
       '| 当前发布版本号 | V1.0.0 |', `| Git提交hash | ${gitHash} |`,
-      '| 来源 RC | V0.9.0-rc |', '| 正式基线 | 首次正式发布 |', '| 基线提交 | 无 |',
-      '| 变更范围 | 首次正式发布：截至来源提交的全部可达历史 |',
+      ...(useRc ? ['| 来源 RC | V0.9.0-rc |', '| 正式基线 | 首次正式发布 |', '| 基线提交 | 无 |',
+        '| 变更范围 | 首次正式发布：截至来源提交的全部可达历史 |'] : []),
       '| 变更类型 | 无配置项改动 |', '| 配置项改动 | 无 |', '| 变更内容 | 原始说明 |',
       '| 关联项改动 | 无 |', '| 是否影响其他功能 | 否 |', '| 测试验证 | 未完成 |', '| 发布人 | 测试开发 |',
     ].join('\n');
@@ -278,7 +307,8 @@ describe('维保发布详情', () => {
     </MemoryRouter></App></ConfigProvider></QueryClientProvider>);
     fireEvent.click(await screen.findByRole('button', { name: '修改文档' }));
     const dialog = await screen.findByRole('dialog', { name: '修改发布说明' });
-    for (const field of ['当前发布版本号', 'Git提交hash', '来源 RC', '正式基线', '基线提交', '变更范围']) {
+    const identityFields = ['当前发布版本号', 'Git提交hash', ...(useRc ? ['来源 RC', '正式基线', '基线提交', '变更范围'] : [])];
+    for (const field of identityFields) {
       const row = within(dialog).getByRole('cell', { name: field }).parentElement!;
       expect(within(row).queryByRole('textbox')).toBeNull();
     }

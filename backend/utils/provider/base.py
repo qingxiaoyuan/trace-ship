@@ -123,6 +123,12 @@ class GitProvider(ABC):
         """列出分支"""
         pass
 
+    def get_branch(self, repo_identity: str, branch_name: str) -> BranchInfo:
+        """读取真实分支及其 HEAD，不接受 Tag、SHA 或提交范围替代分支。"""
+        from .exceptions import NotSupportedError
+
+        raise NotSupportedError("当前代码平台不支持分支详情查询")
+
     @abstractmethod
     def list_commits(
         self,

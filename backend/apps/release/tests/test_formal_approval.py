@@ -9,18 +9,19 @@ from apps.workflow.models import WorkflowDefinition
 pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.parametrize("mode", ["empty", "missing_source", "direct_push"])
+@pytest.mark.parametrize("mode", ["empty", "missing_workflow", "direct_push"])
 def test_formal_rejects_bypass(user, project, repository, mode):
     api = APIClient()
     api.force_authenticate(user)
-    WorkflowDefinition.objects.create(
-        repository=repository,
-        project=project,
-        name="空正式流程",
-        biz_type="release",
-        release_type="formal",
-        node_config=[],
-    )
+    if mode != "missing_workflow":
+        WorkflowDefinition.objects.create(
+            repository=repository,
+            project=project,
+            name="空正式流程",
+            biz_type="release",
+            release_type="formal",
+            node_config=[],
+        )
     release = ReleaseRecord.objects.create(
         repository=repository,
         project=project,
@@ -31,17 +32,23 @@ def test_formal_rejects_bypass(user, project, repository, mode):
         status="pending" if mode == "direct_push" else "draft",
         release_doc="说明",
         git_hash="a" * 40,
+        changes_initialized=True,
     )
+    from apps.release.services import ReleaseDocGenerator
+
+    release.release_doc = ReleaseDocGenerator._build_markdown_doc(release)
+    release.save(update_fields=["release_doc"])
     action = "push-tag" if mode == "direct_push" else "submit-audit"
     response = api.post(f"/api/releases/{release.id}/{action}/")
     assert response.status_code == 400, response.data
-    assert any(word in response.data["message"] for word in ("来源 RC", "正式审批", "审批节点"))
+    assert any(word in response.data["message"] for word in ("审批流程", "正式审批", "审批节点"))
 
 
-def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, project, repository, monkeypatch):
+@pytest.mark.parametrize("use_rc", [False, True], ids=["branch", "historical_rc"])
+def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, project, repository, monkeypatch, use_rc):
     from datetime import UTC, datetime
 
-    from utils.provider.base import CommitInfo, TagInfo
+    from utils.provider.base import BranchInfo, CommitInfo, TagInfo
 
     api = APIClient()
     api.force_authenticate(user)
@@ -55,13 +62,17 @@ def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, proj
         version="VA.9.0.0",
         tag_name="VA.9.0.0-rc",
         git_hash=sha,
-    )
+    ) if use_rc else None
 
     class Remote:
-        tags = [TagInfo(name=rc.tag_name, commit_hash=sha)]
+        tags = [TagInfo(name=rc.tag_name, commit_hash=sha)] if rc else []
+        branch_head = sha
 
         def list_tags(self, *args):
             return self.tags
+
+        def get_branch(self, repo_identity, branch_name):
+            return BranchInfo(name=branch_name, last_commit_hash=self.branch_head)
 
         def list_release_commits(self, *args):
             return [
@@ -77,6 +88,14 @@ def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, proj
         def list_release_merge_requests(self, *args):
             return []
 
+        def list_commits(self, *args, **kwargs):
+            commit = self.list_release_commits()[0]
+            commit.hash = self.branch_head
+            return [commit]
+
+        def list_merge_requests(self, *args, **kwargs):
+            return []
+
         def create_tag(self, repo_identity, tag_name, commit_hash, message=""):
             tag = TagInfo(name=tag_name, commit_hash=commit_hash, message=message)
             self.tags.append(tag)
@@ -90,15 +109,18 @@ def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, proj
             "project": str(project.id),
             "repository": str(repository.id),
             "release_type": "formal",
-            "source_rc": str(rc.id),
+            **({"source_rc": str(rc.id)} if rc else {"branch": "develop", "git_hash": "c" * 40}),
             "version": "VA.1.0.0",
             "package_config_ids": [],
         },
         format="json",
     )
     assert created.status_code == 201, created.data
+    assert created.data["data"]["git_hash"] == sha
+    assert created.data["data"]["source_rc"] == (str(rc.id) if rc else None)
     identity = created.data["data"]["id"]
     assert api.post(f"/api/releases/{identity}/generate-doc/").status_code == 200
+    remote.branch_head = "b" * 40
     definition = WorkflowDefinition.objects.create(
         repository=repository,
         project=project,

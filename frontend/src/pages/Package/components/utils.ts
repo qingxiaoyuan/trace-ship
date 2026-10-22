@@ -91,8 +91,7 @@ export function canPushSvn(task: PackageTask): boolean {
   if (typeof task.can_push_svn === 'boolean') return task.can_push_svn;
   const snapshot = task.config_snapshot || {};
   const source = snapshot.trigger_source as string | undefined;
-  if (source !== 'auto_release') return false;
-  if (task.release_type && task.release_type !== 'formal') return false;
+  if (!source || !['auto_release', 'manual_release', 'manual_branch'].includes(source)) return false;
   return Boolean(
     task.status === 'success' &&
     (task.artifact_info || []).length > 0 &&

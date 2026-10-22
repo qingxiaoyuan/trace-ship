@@ -100,6 +100,25 @@ class GitLabProvider(GitProvider):
         resp = self._request("GET", "/user")
         return resp.status_code == 200
 
+    @classmethod
+    def _parse_branch(cls, data: dict) -> BranchInfo:
+        """分支列表与详情使用同一套 HEAD 解析规则。"""
+        commit = data.get("commit") or {}
+        return BranchInfo(
+            name=data["name"],
+            is_default=data.get("default", False),
+            last_commit_hash=commit.get("id"),
+            last_commit_author=commit.get("author_name", "") or "",
+            last_commit_message=commit.get("message", "") or "",
+            last_commit_at=cls._parse_datetime(commit.get("committed_date")),
+        )
+
+    def get_branch(self, repo_identity: str, branch_name: str) -> BranchInfo:
+        """查询分支专用接口，含斜杠的名称作为单个路径段编码。"""
+        encoded = self._encode_identity(repo_identity)
+        response = self._request("GET", f"/projects/{encoded}/repository/branches/{quote(branch_name, safe='')}")
+        return self._parse_branch(response.json())
+
     def list_branches(self, repo_identity: str) -> list[BranchInfo]:
         """
         列出仓库全部分支
@@ -116,18 +135,7 @@ class GitLabProvider(GitProvider):
                 f"/projects/{encoded}/repository/branches",
                 params={"per_page": 100, "page": page},
             )
-            for b in resp.json():
-                commit = b.get("commit") or {}
-                result.append(
-                    BranchInfo(
-                        name=b["name"],
-                        is_default=b.get("default", False),
-                        last_commit_hash=commit.get("id"),
-                        last_commit_author=commit.get("author_name", "") or "",
-                        last_commit_message=commit.get("message", "") or "",
-                        last_commit_at=self._parse_datetime(commit.get("committed_date")),
-                    )
-                )
+            result.extend(self._parse_branch(branch) for branch in resp.json())
             next_page = resp.headers.get("X-Next-Page")
             if not next_page:
                 break

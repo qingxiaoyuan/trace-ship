@@ -231,6 +231,7 @@ class WorkflowTask(models.Model):
         ("rejected", "已驳回"),
         ("transferred", "已转交"),
         ("rollbacked", "已回退"),
+        ("revoked", "已终止"),
     ]
 
     MODE_CHOICES = [

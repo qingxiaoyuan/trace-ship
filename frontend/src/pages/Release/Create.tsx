@@ -37,7 +37,6 @@ import { parseMdTable, buildMdTable } from '@/utils/markdownTable';
 import { isCheckboxField, isFormalIdentityField, applyCheckboxChange, type MdTableRow } from './components/releaseDocUtils';
 import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField';
 import { FormalChangesPreview } from './components/FormalChangesPreview';
-import { RcSourceSelect } from './components/RcSourceSelect';
 import { CommitCheckModal } from './components/CommitCheckModal';
 import type { Release, ReleaseType, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
 
@@ -58,7 +57,7 @@ const AUTO_FILL_UPDATES_LIMIT = 10;
 
 /** 发布类型卡片配置 */
 const RELEASE_TYPES: { value: ReleaseType; title: string; desc: string }[] = [
-  { value: 'formal', title: '正式', desc: '选择已发布 RC，固定来源代码' },
+  { value: 'formal', title: '正式', desc: '按分支创建，审批通过后发布' },
   { value: 'rc', title: 'RC', desc: 'Tag 自动加 -rc 后缀' },
   { value: 'beta', title: 'Beta', desc: 'Tag 自动加 -beta 后缀' },
 ];
@@ -91,9 +90,8 @@ export default function ReleaseCreate() {
   const watchProject = Form.useWatch('project', form) as string | undefined;
   const watchRepository = Form.useWatch('repository', form) as string | undefined;
   const watchReleaseType = (Form.useWatch('release_type', form) as ReleaseType) || 'formal';
-  const watchSourceRc = Form.useWatch('source_rc', form) as string | undefined;
   const watchBranch = Form.useWatch('branch', form) as string | undefined;
-  const sourceReady = watchReleaseType === 'formal' ? !!watchSourceRc : !!watchBranch;
+  const sourceReady = !!watchBranch;
 
   const { data: projectData, isLoading: projectsLoading } = useQuery({
     queryKey: ['projects-all'],
@@ -114,7 +112,7 @@ export default function ReleaseCreate() {
   } = useQuery({
     queryKey: ['repository-branches', watchRepository],
     queryFn: () => repositoryApi.getBranches(watchRepository || ''),
-    enabled: !!watchRepository && watchReleaseType !== 'formal',
+    enabled: !!watchRepository,
     retry: false,
   });
 
@@ -139,7 +137,7 @@ export default function ReleaseCreate() {
 
   // 自动版本号预览
   const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
-    queryKey: ['repository-next-version', watchProject, watchRepository, watchReleaseType, watchSourceRc, watchBranch],
+    queryKey: ['repository-next-version', watchProject, watchRepository, watchReleaseType, watchBranch],
     queryFn: () => repositoryApi.getNextVersion(watchRepository || '', watchReleaseType),
     enabled: !!watchRepository && sourceReady,
   });
@@ -149,7 +147,7 @@ export default function ReleaseCreate() {
     queryKey: ['repository-changes-preview', watchProject, watchRepository, watchBranch, watchReleaseType],
     queryFn: () =>
       repositoryApi.previewChanges(watchRepository || '', watchBranch || '', watchReleaseType),
-    enabled: !!watchRepository && !!watchBranch && watchReleaseType !== 'formal',
+    enabled: !!watchRepository && !!watchBranch,
     retry: false,
   });
 
@@ -201,7 +199,7 @@ export default function ReleaseCreate() {
   // 选 branch 后自动回填 parsed_updates（仅在首次拉取或切换分支/发布类型时触发）
   const lastPreviewRef = useRef<string>('');
   useEffect(() => {
-    if (!changesPreview || watchReleaseType === 'formal') return;
+    if (!changesPreview) return;
     const key = `${watchRepository}-${watchBranch}-${watchReleaseType}`;
     if (key === lastPreviewRef.current) return;
     lastPreviewRef.current = key;
@@ -247,7 +245,7 @@ export default function ReleaseCreate() {
     if (suggested && sourceReady && !tagNameDirtyRef.current) {
       form.setFieldsValue({ tag_name: suggested });
     }
-  }, [nextVersionData?.next_tag_name, form, sourceReady, watchSourceRc, watchProject, watchRepository, watchReleaseType, watchBranch]);
+  }, [nextVersionData?.next_tag_name, form, sourceReady, watchProject, watchRepository, watchReleaseType, watchBranch]);
 
   useEffect(() => {
     tagNameDirtyRef.current = false;
@@ -259,8 +257,7 @@ export default function ReleaseCreate() {
         project: values.project as string,
         repository: values.repository as string,
         release_type: values.release_type as ReleaseType,
-        branch: values.release_type === 'formal' ? undefined : values.branch as string,
-        source_rc: values.release_type === 'formal' ? values.source_rc : undefined,
+        branch: values.branch as string,
         tag_name: (values.tag_name as string)?.trim() || undefined,
         redmine_url: (values.redmine_url as string)?.trim() || undefined,
         related_changes: relatedChanges.filter((r) => r.key.trim()),
@@ -324,7 +321,7 @@ export default function ReleaseCreate() {
   const handleRepoChange = (repositoryId?: unknown) => {
     resetSource();
     const component = projectComponents.find((item) => item.repository === repositoryId);
-    form.setFieldsValue({ branch: watchReleaseType === 'formal' ? undefined : component?.default_branch || undefined });
+    form.setFieldsValue({ branch: component?.default_branch || undefined });
     // 切换仓库后重置发布后自动打包勾选（null 表示默认全选）
     setAutoPackageConfigIds(null);
   };
@@ -462,14 +459,9 @@ export default function ReleaseCreate() {
               <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-cyan">
                 <GitBranch className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
               </div>
-              <h3 className="text-[14px] font-semibold text-slate-900">{watchReleaseType === 'formal' ? '来源代码' : '分支配置'}</h3>
+              <h3 className="text-[14px] font-semibold text-slate-900">分支配置</h3>
             </div>
-            {watchReleaseType === 'formal' ? (
-              <Form.Item name="source_rc" label="来源 RC" rules={[{ required: true, message: '请选择已发布 RC' }]}>
-                <RcSourceSelect disabled={createMutation.isPending} key={`${watchProject}-${watchRepository}`} project={watchProject} repository={watchRepository}
-                  onChange={() => { form.setFieldsValue({ tag_name: undefined }); tagNameDirtyRef.current = false; setUpdates([]); setRelatedChanges([]); }} />
-              </Form.Item>
-            ) : <Form.Item name="branch" label="分支" rules={[{ required: true, message: '请选择分支' }]}>
+            <Form.Item name="branch" label="分支" rules={[{ required: true, message: '请选择分支' }]}>
               <SelectField
                 icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
                 placeholder="选择分支"
@@ -482,7 +474,7 @@ export default function ReleaseCreate() {
                 }
                 error={!!branchesErrorMsg}
               />
-            </Form.Item>}
+            </Form.Item>
 
             {/* 基线信息 */}
             {formReady && changesPreview && (
@@ -1130,7 +1122,7 @@ export default function ReleaseCreate() {
                           {row.key}
                         </td>
                         <td className="px-3 py-2 align-middle">
-                          {createdRelease.source_rc && isFormalIdentityField(row.key) ? (
+                          {createdRelease.release_type === 'formal' && isFormalIdentityField(row.key) ? (
                             <span className="break-all text-[13px]">{row.value}</span>
                           ) : isCheckboxField(row.key) ? (
                             <CheckboxField

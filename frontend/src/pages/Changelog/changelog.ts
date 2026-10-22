@@ -27,6 +27,18 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.10.22',
+    date: '2026-10-22',
+    summary: '手动打包推 SVN、正式版按分支创建，发起人可终止审批',
+    items: [
+      { category: 'improvement', text: '手动选择已发布版本打包及发布详情补打均按配置推送 SVN：正式版遵循总开关，RC、测试版还需打开对应开关；成功产物可按现有权限补推' },
+      { category: 'improvement', text: '分支直打也支持 SVN 推送，开启总开关后默认进入 formal/分支名，保留分支目录层级；目录模板与同版本号覆盖设置继续按配置生效' },
+      { category: 'improvement', text: '正式版恢复按分支直接创建，暂时取消必须选择已发布 RC 的要求；创建时保存分支提交，仍需完成正式审批，已有 RC 来源和发布历史继续保留' },
+      { category: 'feature', text: '流程发起人可在发布详情或审批详情终止任意仍在运行的审批流程；申请恢复为草稿，剩余待办失效，已处理审批历史保留，修改后可重新提交' },
+      { category: 'fix', text: '正式版说明及关联变更按创建时保存的提交生成，分支后续提交不会混入；修改目标版本后需重新生成说明，版本号与提交哈希由系统维护，并拒绝将 Tag 或提交范围作为分支发起发布' },
+    ],
+  },
+  {
     version: '2026.10.21',
     date: '2026-10-21',
     summary: '统一所有身份的导航样式，完善维保首页与手机阅读',

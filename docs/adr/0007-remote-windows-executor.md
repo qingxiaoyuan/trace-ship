@@ -81,6 +81,11 @@ ADR-0002 确立的内置打包仅支持在平台宿主机以本地 Docker 容器
 - `PackageConfig` 增加 `svn_push_rc`、`svn_push_beta`（默认关闭）。发布后自动打包时，正式版仍看 `svn_push_enabled`；RC、测试版在总开关之外还要打开对应开关。看板手动触发与分支直打不推 SVN。
 - 同版本号是否覆盖继续用 `svn_commit_mode`（`new_dir` / `overwrite`），界面改为「同版本号允许覆盖」开关。
 
+## 2026-10-22 演进
+
+- 按用户确认的 [事项 #51](https://github.com/qingxiaoyuan/trace-ship/issues/51)，手动选择已发布版本和分支直打均遵循 SVN 配置。正式版与分支直打看总开关，RC / 测试版还要打开各自开关；分支沿用 `formal/{分支名}` 默认目录，自定义模板和提交模式保持现行语义。
+- 自动、手动版本与分支任务均可按创建时快照补推；历史关闭快照和缺少触发来源的任务继续保持不可补推。此决策取代 2026-09-30 演进中“看板手动触发与分支直打不推 SVN”的限制。
+
 ## Consequences
 
 - `requirements.txt` 新增 `paramiko`，外网构建后端镜像时自动装入。

@@ -44,6 +44,32 @@ def test_test_connection_auth_failure(provider):
 
 
 @responses.activate
+def test_get_branch_reads_exact_head_and_encodes_branch_path(provider):
+    """分支专用接口返回准确 HEAD，不能通过提交排序推测分支头。"""
+    url = "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/branches/feature%2Fnested"
+    responses.add(responses.GET, url, json={"name": "feature/nested", "default": False,
+                  "commit": {"id": "a" * 40, "author_name": "开发", "message": "当前分支头"}}, status=200)
+    branch = provider.get_branch("group/project", "feature/nested")
+    assert branch.name == "feature/nested" and branch.last_commit_hash == "a" * 40
+    assert len(responses.calls) == 1 and responses.calls[0].request.url == url
+
+
+@pytest.mark.parametrize("ref", ["only-tag", "a" * 40, "main..only-tag"])
+@responses.activate
+def test_get_branch_rejects_other_git_refs_without_fallback(provider, ref):
+    """通用 commits 接口即使可解析该 ref，分支接口 404 仍必须拒绝。"""
+    encoded = quote(ref, safe="")
+    responses.add(responses.GET,
+                  f"https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/branches/{encoded}",
+                  json={"message": "404 Branch Not Found"}, status=404)
+    responses.add(responses.GET, "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/commits",
+                  json=[{"id": "a" * 40}], status=200)
+    with pytest.raises(NotFoundError):
+        provider.get_branch("group/project", ref)
+    assert len(responses.calls) == 1
+
+
+@responses.activate
 def test_list_branches(provider):
     """测试分支列表"""
     encoded = quote("group/project", safe="")

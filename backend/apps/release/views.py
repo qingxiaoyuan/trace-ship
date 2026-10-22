@@ -361,15 +361,18 @@ class ReleaseViewSet(StandardModelViewSet):
         source_changed = False
         old_version = instance.version
         try:
-            if instance.release_type == "formal":
+            if instance.release_type == "formal" and (instance.source_rc_id or data.get("source_rc")):
                 if "source_rc" in data:
                     source_changed = ReleaseService.update_source(instance, data["source_rc"], request.user)
             else:
+                old_source = (instance.branch, instance.git_hash)
                 instance.branch = data.get("branch", instance.branch)
                 if "branch" in data:
                     instance.git_hash = ReleaseService._resolve_branch_head_hash(
                         instance.repository, instance.branch, request.user, project=instance.project,
                     )
+                    if instance.release_type == "formal":
+                        source_changed = old_source != (instance.branch, instance.git_hash)
         except Exception as exc:
             return _handle_service_error(exc, "更新来源提交")
         instance.redmine_url = data.get("redmine_url", instance.redmine_url)
@@ -409,7 +412,7 @@ class ReleaseViewSet(StandardModelViewSet):
         except serializers.ValidationError as exc:
             return error_response(40002, _extract_validation_message(exc))
 
-        changes_invalidated = source_changed or (instance.source_rc_id and instance.version != old_version)
+        changes_invalidated = source_changed or (instance.release_type == "formal" and instance.version != old_version)
         if changes_invalidated:
             from apps.release.formal_changes import FormalChanges
 

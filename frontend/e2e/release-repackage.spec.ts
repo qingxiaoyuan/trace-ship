@@ -164,7 +164,7 @@ test('项目管理员从桌面发布详情选择已有配置补打固定版本�
       repository: sample.repository_id, triggered_by: sample.actor_id, version: sample.version,
       tag_name: sample.tag_name, commit_hash: sample.commit_hash, status: 'queued',
       config_snapshot: {
-        trigger_source: 'manual_release', svn_push_enabled: false,
+        trigger_source: 'manual_release', svn_push_enabled: true,
         custom_script: 'exit 27', env_vars: { FIXED_SAMPLE: 'configured' },
       },
     });
@@ -182,7 +182,7 @@ test('项目管理员从桌面发布详情选择已有配置补打固定版本�
     observations.summaryRefreshed = true;
     observations.dispatchReceipts = receipts();
     await page.screenshot({ path: path.join(reportDir, 'desktop-repackage-created.png'), fullPage: true, animations: 'disabled' });
-    steps.push('POST 固定发布成功，任务身份与实际操作人正确，手动策略禁 SVN，摘要刷新');
+    steps.push('POST 固定发布成功，任务身份与实际操作人正确，手动打包遵循已启用的 SVN 配置，摘要刷新');
   });
 
   await test.step('查看新任务进入正确详情并由真实 API 再次确认身份', async () => {

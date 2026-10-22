@@ -181,6 +181,17 @@ class WorkflowEngine:
             normalized.append(item)
         return normalized
 
+    @staticmethod
+    def _lock_instance(instance: WorkflowInstance) -> WorkflowInstance:
+        """审批与终止共用仓库 → 发布 → 实例的锁顺序，并读取当前实例状态。"""
+        release = resolve_release(instance)
+        if release is not None:
+            from apps.release.models import ReleaseRecord
+
+            Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+            ReleaseRecord.objects.select_for_update().only("id").get(pk=release.pk)
+        return WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
+
     @classmethod
     def process_task(
         cls,
@@ -206,16 +217,15 @@ class WorkflowEngine:
         Raises:
             serializers.ValidationError: 非法操作或实例已结束时抛出
         """
-        if task.status != "pending":
-            raise serializers.ValidationError({"task": "该任务已处理"})
-
-        instance = task.instance
-        if instance.status != "running":
-            raise serializers.ValidationError({"instance": "流程实例已结束"})
-
-        now = timezone.now()
-
         with transaction.atomic():
+            instance = cls._lock_instance(task.instance)
+            task.refresh_from_db()
+            task.instance = instance
+            if task.status != "pending":
+                raise serializers.ValidationError({"task": "该任务已处理"})
+            if instance.status != "running":
+                raise serializers.ValidationError({"instance": "流程实例已结束"})
+            now = timezone.now()
             if action == "approve":
                 cls._handle_approve(task, comment, now)
             elif action == "reject":
@@ -230,6 +240,7 @@ class WorkflowEngine:
         return instance
 
     @classmethod
+    @transaction.atomic
     def revoke_instance(cls, instance: WorkflowInstance, user) -> WorkflowInstance:
         """
         发起人撤销流程实例
@@ -241,22 +252,26 @@ class WorkflowEngine:
         Returns:
             WorkflowInstance
         """
+        instance = cls._lock_instance(instance)
         if instance.status != "running":
             raise serializers.ValidationError({"instance": "流程实例已结束，无法撤销"})
         if instance.created_by_id != user.id:
             raise serializers.ValidationError({"instance": "仅发起人可撤销"})
         cls._finish_instance(instance, "revoked")
+        instance.tasks.filter(status="pending").update(
+            status="revoked", action_time=instance.completed_at, updated_at=instance.completed_at,
+        )
         if instance.biz_type == "release":
             from apps.release.services import ReleaseService
 
-            ReleaseService.handle_workflow_rollback_to_start(instance, "申请人撤销")
+            ReleaseService.handle_workflow_rollback_to_start(instance, "发起人终止流程")
         OperationLogService.log(
             user=user,
             module="工作流审批",
             action="revoke",
             resource_type="workflow_instance",
             resource_id=str(instance.id),
-            description=f"撤销流程实例 {instance.biz_id}",
+            description=f"发起人终止流程实例 {instance.biz_id}",
         )
         return instance
 
