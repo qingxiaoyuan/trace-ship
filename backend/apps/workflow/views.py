@@ -233,11 +233,11 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         """发起人撤销实例"""
         instance = self.get_object()
         try:
-            WorkflowEngine.revoke_instance(instance, request.user)
+            instance = WorkflowEngine.revoke_instance(instance, request.user)
         except Exception as exc:
             return error_response(40001, str(exc))
         serializer = self.get_serializer(instance)
-        return success_response(serializer.data, message="撤销成功")
+        return success_response(serializer.data, message="流程已终止，发布申请已恢复草稿")
 
 
 class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):

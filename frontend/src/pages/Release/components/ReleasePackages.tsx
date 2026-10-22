@@ -79,7 +79,7 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
     <div>
       <h3 className="text-[13px] font-medium text-slate-900">补打已发布版本</h3>
       <p className="mt-1 text-[12px] text-slate-600">当前版本：{release.version} / {release.tag_name}</p>
-      <p className="mt-1 text-[12px] text-slate-500">使用已有配置和当前版本源码补打，手动补打不推送 SVN。</p>
+      <p className="mt-1 text-[12px] text-slate-500">使用已有配置和当前版本源码补打，SVN 推送遵循配置中的总开关及 RC、测试版开关。</p>
     </div>
     {configs.error ? <div className="space-y-2">
       <PermissionAlert error={configs.error} errorTitle="打包配置加载失败" />

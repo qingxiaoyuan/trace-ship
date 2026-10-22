@@ -13,10 +13,10 @@ with patch.dict(sys.modules, {"backend": runner}):
     postgresql = load_entry("postgresql_check_runner", "backend-postgresql.py")
 
 
-def write_junit(path: Path, count: int = 7, outcome: str | None = None) -> None:
+def write_junit(path: Path, count: int = 9, outcome: str | None = None) -> None:
     """生成包含实际测试节点的 JUnit，汇总属性不能代替逐项执行证据。"""
     root = ET.Element("testsuites")
-    suite = ET.SubElement(root, "testsuite", tests="7", failures="0", errors="0", skipped="0")
+    suite = ET.SubElement(root, "testsuite", tests="9", failures="0", errors="0", skipped="0")
     for index in range(count):
         case = ET.SubElement(suite, "testcase", name=f"行锁行为{index + 1}")
         if index == 0 and outcome is not None:
@@ -24,11 +24,11 @@ def write_junit(path: Path, count: int = 7, outcome: str | None = None) -> None:
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
-def test_postgresql_accepts_seven_executed_passing_tests(tmp_path: Path) -> None:
-    """七项全部实际执行并通过才满足独立行锁验收。"""
+def test_postgresql_accepts_nine_executed_passing_tests(tmp_path: Path) -> None:
+    """九项全部实际执行并通过才满足独立行锁验收。"""
     report = tmp_path / "junit.xml"
     write_junit(report)
-    assert postgresql.validate_junit(report) == {"tests": 7, "skipped": 0, "failures": 0, "errors": 0}
+    assert postgresql.validate_junit(report) == {"tests": 9, "skipped": 0, "failures": 0, "errors": 0}
 
 
 @pytest.mark.parametrize("outcome", ["skipped", "failure", "error"])
@@ -40,12 +40,12 @@ def test_postgresql_rejects_any_unfinished_or_failing_test(tmp_path: Path, outco
         postgresql.validate_junit(report)
 
 
-@pytest.mark.parametrize("count", [0, 1, 6, 8])
+@pytest.mark.parametrize("count", [0, 1, 7, 8, 10])
 def test_postgresql_rejects_missing_or_unexpected_execution_count(tmp_path: Path, count: int) -> None:
     """空报告、漏执行和意外范围都必须失败，不能只相信 JUnit 的 tests 汇总值。"""
     report = tmp_path / "junit.xml"
     write_junit(report, count=count)
-    with pytest.raises(ValueError, match="必须执行 7 项"):
+    with pytest.raises(ValueError, match="必须执行 9 项"):
         postgresql.validate_junit(report)
 
 

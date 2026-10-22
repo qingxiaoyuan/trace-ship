@@ -207,7 +207,8 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
     package_image = PackageImage.objects.create(name="离线虚构软件构建镜像", source="local", image=image)
     config = PackageConfig.objects.create(
         project_component=component, name="虚构软件已有配置", image=package_image, is_active=True,
-        svn_push_enabled=True, svn_url="https://example.invalid/never-push",
+        # 真实构建样本关闭 SVN；开关开启时的推送与补推由 SVN 专项回归覆盖。
+        svn_push_enabled=False, svn_url="https://example.invalid/never-push",
         svn_credential=svn_credential, cleanup_workspace=True,
     )
     app_server = make_server("127.0.0.1", 0, get_wsgi_application(), handler_class=QuietWSGIHandler)
@@ -311,7 +312,7 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
             "config": str(config.id), "release": str(release.id), "version": release.version, "tag": release.tag_name,
             "fixed_sha": sha, "later_branch_sha": branch_sha, "downloads_sha256": hashes,
             "zip_members_verified": True, "downloaded_software_executed": executable,
-            "manual_svn_disabled": True, "unused_svn_credential": True,
+            "svn_disabled_by_config": True, "unused_svn_credential": True,
             "credential_audit_count": usage.count(), "operation_audit": {"user": str(audit.user_id), "result": audit.result, "detail": audit.detail},
             "source_and_tmp_cleaned": True, "drift_stopped_before_docker": True, "protocol_sample": observations,
             "actor_role": "developer", "maintainer_readonly": {

@@ -27,6 +27,9 @@ class FormalChanges:
     @staticmethod
     def identity_rows(release: ReleaseRecord) -> list[tuple[str, str]]:
         """正式说明的系统身份字段，同时用于渲染与保存校验。"""
+        rows = [("当前发布版本号", release.version), ("Git提交hash", release.git_hash)]
+        if not release.source_rc_id:
+            return rows
         scope = (
             "首次正式发布：截至来源提交的全部可达历史"
             if not release.base_git_hash
@@ -36,9 +39,7 @@ class FormalChanges:
                 else "上一正式版至来源 RC 的累计变更"
             )
         )
-        return [
-            ("当前发布版本号", release.version),
-            ("Git提交hash", release.git_hash),
+        return rows + [
             ("来源 RC", release.source_rc_tag),
             ("正式基线", release.base_tag or "首次正式发布"),
             ("基线提交", release.base_git_hash or "无"),
@@ -94,9 +95,11 @@ class FormalChanges:
 
     @classmethod
     def collect(cls, release: ReleaseRecord, provider: GitProvider) -> dict:
-        head = release.source_rc_git_hash
-        if release.release_type != "formal" or not release.source_rc_id or not head or head != release.git_hash:
-            raise serializers.ValidationError({"source_rc": "请先选择有效来源 RC，再生成正式发布说明"})
+        head = release.git_hash
+        if release.release_type != "formal" or not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", head or ""):
+            raise serializers.ValidationError({"git_hash": "正式发布缺少有效的完整提交快照，请重新选择来源"})
+        if release.source_rc_id and release.source_rc_git_hash != head:
+            raise serializers.ValidationError({"source_rc": "正式来源提交与 RC 快照不一致，请重新选择来源"})
         base_tag, base = cls.baseline(release, provider)
         if (
             base
@@ -104,7 +107,7 @@ class FormalChanges:
             and provider.get_merge_base(release.repository.external_identity, [base, head]) != base
         ):
             raise serializers.ValidationError(
-                {"base_tag": "上一正式提交不在来源 RC 的祖先链上，请单独处理回滚或分叉发布"}
+                {"base_tag": "上一正式提交不在来源提交的祖先链上，请单独处理回滚或分叉发布"}
             )
         commits = (
             [] if base == head else provider.list_release_commits(release.repository.external_identity, base, head)

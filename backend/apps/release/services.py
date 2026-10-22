@@ -468,8 +468,8 @@ class ReleaseDocGenerator:
     """
     发布说明生成器
 
-    聚合发布分支到上一个 tag 之间的 commits 与 MRs，由 release 已保存的表单字段
-    组装 2 列 Markdown 表格发布说明文档。
+    正式版按固定 SHA 区间收集可核实的提交与 MR，RC/Beta 沿用分支区间。
+    由 release 已保存的表单字段组装 2 列 Markdown 表格发布说明文档。
     """
 
     def __init__(self, release: ReleaseRecord, provider: GitProvider):
@@ -584,7 +584,7 @@ class ReleaseDocGenerator:
         # Git提交hash
         rows.append(("Git提交hash", release.git_hash or "-"))
 
-        if release.release_type == "formal" and release.source_rc_id:
+        if release.release_type == "formal":
             from apps.release.formal_changes import FormalChanges
 
             rows = FormalChanges.identity_rows(release)
@@ -668,7 +668,7 @@ class ReleaseDocGenerator:
         Returns:
             Markdown 字符串
         """
-        if self.release.release_type == "formal" and self.release.source_rc_id:
+        if self.release.release_type == "formal":
             from apps.release.formal_changes import FormalChanges
 
             changes = FormalChanges.collect(self.release, self.provider)
@@ -803,7 +803,7 @@ class ReleaseService:
         repo: Repository, branch: str, request_user=None, project: Project | None = None,
     ) -> str:
         """
-        获取指定分支当前最新 commit hash
+        从分支详情获取 HEAD，拒绝将其他 Git 引用当作分支。
 
         Args:
             repo: Repository 实例
@@ -818,12 +818,12 @@ class ReleaseService:
         """
         provider = ReleaseService._get_provider(repo, request_user, project=project)
         try:
-            commits = provider.list_commits(repo.external_identity, branch, per_page=1)
+            source = provider.get_branch(repo.external_identity, branch)
         except ProviderError as exc:
             raise serializers.ValidationError({"branch": f"获取分支 {branch} 失败: {exc}"})
-        if not commits:
-            raise serializers.ValidationError({"branch": f"分支 {branch} 无提交记录"})
-        return commits[0].hash
+        if source.name != branch or not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", source.last_commit_hash or ""):
+            raise serializers.ValidationError({"branch": f"分支 {branch} 缺少有效的完整提交快照"})
+        return source.last_commit_hash
 
     @staticmethod
     def _validate_tag_not_exists(
@@ -979,6 +979,9 @@ class ReleaseService:
         Returns:
             新创建的 ReleaseRecord
         """
+        branch = (branch or "").strip()
+        if not branch and not (release_type == "formal" and source_rc):
+            raise serializers.ValidationError({"branch": "请选择分支"})
         cls.validate_source_context(project, repository)
         release_rule = ReleaseValidator.get_release_rule(project)
         version_rule = repository.get_version_rule()
@@ -1037,7 +1040,7 @@ class ReleaseService:
             raise serializers.ValidationError({"tag_name": "Tag 已存在，不能创建发布草稿"})
 
         source = None
-        if release_type == "formal":
+        if release_type == "formal" and source_rc:
             source = cls.resolve_rc_source(project, repository, source_rc, publisher)
             branch, git_hash = source.branch, source.git_hash
         else:
@@ -1125,7 +1128,10 @@ class ReleaseService:
         """
         Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
         release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
-        if release.release_type == "formal" and release.source_rc_id and release.status != "draft":
+        if (
+            release.release_type == "formal" and (release.source_rc_id or release.changes_initialized)
+            and release.status != "draft"
+        ):
             raise serializers.ValidationError({"status": "只有正式草稿才能重新生成累计说明"})
         provider = cls._get_provider(
             release.repository, request_user, project=release.project,
@@ -1151,7 +1157,10 @@ class ReleaseService:
         """
         Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
         release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
-        if release.release_type == "formal" and release.source_rc_id:
+        # 新正式说明核验身份；未初始化快照的存量已发布说明保留原编辑方式。
+        if release.release_type == "formal" and (
+            release.status == "draft" or release.source_rc_id or release.changes_initialized
+        ):
             from apps.release.formal_changes import FormalChanges
 
             FormalChanges.validate_doc_identity(release, md_content)
@@ -1350,10 +1359,7 @@ class ReleaseService:
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
             if not release.release_doc:
                 raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
-            if release.release_type == "formal" and not release.source_rc_id:
-                raise serializers.ValidationError({"source_rc": "请先补选来源 RC 并重新生成正式说明"})
-
-            if release.release_type == "formal" and release.source_rc_id:
+            if release.release_type == "formal":
                 from apps.release.formal_changes import FormalChanges
 
                 FormalChanges.validate_doc_identity(release, release.release_doc)
@@ -1473,7 +1479,7 @@ class ReleaseService:
 
         与 handle_workflow_rejected 的区别：驳回至初始节点视为流程作废，
         不改变发布为"已驳回"，而是将其恢复为草稿态并解除与流程实例的关联，
-        由视图层在调用此方法后删除该流程实例。
+        回退到起点时由调用视图删除旧实例；发起人终止时保留实例和审批历史。
 
         Args:
             instance: WorkflowInstance 实例
@@ -1530,8 +1536,6 @@ class ReleaseService:
             if release.source_rc_id:
                 if release.git_hash != release.source_rc_git_hash:
                     raise serializers.ValidationError({"source_rc": "正式来源提交与快照不一致"})
-            elif not release.legacy_approval_allowed:
-                raise serializers.ValidationError({"source_rc": "历史申请未取得兼容资格，请补选来源 RC 重新审批"})
 
         # 校验审批流程已结束，避免工作流仍 running 时提前推 tag
         if release.workflow_instance_id and release.workflow_instance.status != "completed":

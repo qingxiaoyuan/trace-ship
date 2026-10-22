@@ -307,9 +307,11 @@ class TestAggregateAndBaseTag:
     ):
         """生成发布说明时持久化基线 tag 快照"""
         released_release.status = "draft"
-        released_release.save(update_fields=["status"])
+        released_release.version = released_release.tag_name = "VA.1.0.1"
+        released_release.git_hash = "1" * 40
+        released_release.save(update_fields=["status", "version", "tag_name", "git_hash"])
         patched_provider.tags = [
-            TagInfo(name="VA.1.0.0", commit_hash="base0001"),
+            TagInfo(name="VA.1.0.0", commit_hash="a" * 40),
         ]
         resp = publisher_client.post(
             f"/api/releases/{released_release.id}/generate-doc/", {}, format="json"

@@ -182,7 +182,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                         {row.key}
                       </td>
                       <td className="px-3 py-2 align-middle">
-                        {release.source_rc && isFormalIdentityField(row.key) ? (
+                        {release.release_type === 'formal' && isFormalIdentityField(row.key) ? (
                           <span className="break-all text-[13px]">{row.value}</span>
                         ) : isCheckboxField(row.key) ? (
                           <CheckboxField
@@ -250,7 +250,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
       </div>
 
       {/* 操作 */}
-      {canDevelop && release.source_rc && release.status === 'draft' ? <Button loading={generateMutation.isPending} onClick={() => generateMutation.mutate()}>重新生成累计说明</Button> : null}
+      {canDevelop && release.release_type === 'formal' && release.status === 'draft' ? <Button loading={generateMutation.isPending} onClick={() => generateMutation.mutate()}>重新生成累计说明</Button> : null}
       <div className="flex flex-wrap items-center gap-2">
         {canDevelop && (
           <button
@@ -311,7 +311,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                       {row.key}
                     </td>
                     <td className="px-3 py-2 align-middle">
-                      {release.source_rc && isFormalIdentityField(row.key) ? (
+                      {release.release_type === 'formal' && isFormalIdentityField(row.key) ? (
                           <span className="break-all text-[13px]">{row.value}</span>
                         ) : isCheckboxField(row.key) ? (
                         <CheckboxField

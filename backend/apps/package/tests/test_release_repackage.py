@@ -89,7 +89,7 @@ def test_authorized_roles_repackage_fixed_release_with_actual_actor(context: Sim
     assert task.config_snapshot["env_vars"] == {"BUILD_FLAG": "saved-value"}
     assert task.config_snapshot["image"] == context.config.image.image
     assert task.config_snapshot["trigger_source"] == "manual_release"
-    assert task.config_snapshot["svn_push_enabled"] is False
+    assert task.config_snapshot["svn_push_enabled"] is True
     assert context.dispatched == [str(task.id)]
     log = OperationLog.objects.get(action="trigger_release")
     assert log.user == actor

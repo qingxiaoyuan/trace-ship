@@ -199,7 +199,9 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
         )}
         {config?.svn_push_enabled ? (
           <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-2.5 text-[12px] leading-relaxed text-amber-800">
-            手动触发的打包不会推送 SVN。发布后自动打包时，正式版在总开关打开后推送到 formal/版本号；RC、测试版还需分别打开对应开关，才会推到 rc/版本号、beta/版本号。
+            {mode === 'branch'
+              ? '本配置已开启 SVN 推送，分支打包成功后将推送产物，默认目录为 formal/分支名；自定义目录模板和同版本号覆盖设置按配置生效。'
+              : '手动打包与发布后自动打包遵循相同的 SVN 开关：正式版默认推送到 formal/版本号；RC、测试版还需分别打开对应开关，默认推送到 rc/版本号、beta/版本号。自定义目录模板和同版本号覆盖设置按配置生效。'}
           </div>
         ) : null}
       </Form>

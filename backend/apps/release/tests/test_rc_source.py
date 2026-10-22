@@ -54,6 +54,42 @@ def test_formal_draft_uses_rc_snapshot_instead_of_branch_head(client, rc):
     assert release["version"] == "VA.1.0.0"
 
 
+def test_formal_draft_without_rc_uses_selected_branch(client, project, repository, remote):
+    """没有已发布 RC 也能创建正式草稿，客户端不能覆盖分支提交快照。"""
+    payload = {"project": str(project.id), "repository": str(repository.id), "release_type": "formal"}
+    missing = client.post("/api/releases/", payload, format="json")
+    assert missing.status_code == 400
+    assert "分支" in str(missing.data)
+    created = client.post("/api/releases/", {**payload, "branch": "develop", "git_hash": "b" * 40}, format="json")
+    assert created.status_code == 201, created.data
+    assert created.data["data"]["source_rc"] is None
+    assert created.data["data"]["branch"] == "develop"
+    assert created.data["data"]["git_hash"] == "1" * 40
+    assert not ReleaseRecord.objects.filter(release_type="rc").exists()
+    assert client.post(f"/api/releases/{created.data['data']['id']}/generate-doc/").status_code == 200
+
+
+def test_formal_branch_draft_can_change_branch(client, project, repository, remote, monkeypatch):
+    """按分支创建的正式草稿可切换分支并重新解析 SHA。"""
+    created = client.post("/api/releases/", {
+        "project": str(project.id), "repository": str(repository.id), "release_type": "formal", "branch": "develop",
+    }, format="json")
+    assert created.status_code == 201, created.data
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert client.post(url + "generate-doc/").status_code == 200
+    assert ReleaseRecord.objects.get(pk=created.data["data"]["id"]).release_commits.exists()
+    commits = remote.list_commits(repository.external_identity, "main")
+    commits[0].hash = "b" * 40
+    monkeypatch.setattr(remote, "list_commits", lambda *args, **kwargs: commits)
+    changed = client.patch(url, {"branch": "main", "git_hash": "c" * 40}, format="json")
+    assert changed.status_code == 200, changed.data
+    assert changed.data["data"]["branch"] == "main"
+    assert changed.data["data"]["git_hash"] == "b" * 40
+    assert changed.data["data"]["source_rc"] is None
+    assert changed.data["data"]["release_doc"] == ""
+    assert not ReleaseRecord.objects.get(pk=created.data["data"]["id"]).release_commits.exists()
+
+
 def test_draft_reselection_clears_old_changes_and_plain_edit_keeps_sha(client, rc, remote):
     draft = client.post("/api/releases/", {
         "project": str(rc.project_id), "repository": str(rc.repository_id),
@@ -151,7 +187,7 @@ def test_pending_source_is_immutable_and_rc_creation_stays_branch_based(client, 
     assert denied.status_code == 400
     created = client.post("/api/releases/", payload, format="json")
     assert created.status_code == 201, created.data
-    assert created.data["data"]["git_hash"] == "targethead001"
+    assert created.data["data"]["git_hash"] == "1" * 40
     assert created.data["data"]["source_rc"] is None
 
 

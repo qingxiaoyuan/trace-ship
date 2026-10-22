@@ -18,3 +18,12 @@ it.each([true, false])('正式版详情保留来源 RC 与源码引用可用性�
   expect(await screen.findByText(available?'当前源码引用：VA.1.0.0':'没有有效的关联正式引用')).toBeTruthy();
   expect(screen.getByRole('link', {name:'VA.1.0.0-rc · VA.1.0.0-rc_20261021'}).getAttribute('href')).toBe('/releases/rc');
 });
+
+it('按分支创建的正式草稿展示分支和提交，不引导补选 RC', () => {
+  const release = { id: 'formal', release_type: 'formal', status: 'draft', branch: 'develop', git_hash: 'a'.repeat(40) } as Release;
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ReleaseSource release={release} /></MemoryRouter></QueryClientProvider>);
+  expect(screen.getByText('分支：develop')).toBeTruthy();
+  expect(screen.getByText('a'.repeat(40))).toBeTruthy();
+  expect(screen.queryByText('来源 RC')).toBeNull();
+  expect(screen.queryByRole('button', { name: '重选来源 RC' })).toBeNull();
+});

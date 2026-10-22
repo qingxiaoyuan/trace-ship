@@ -108,6 +108,23 @@ def mock_git_provider():
         def list_tags(self, repo_identity: str):
             return self.tags
 
+        def get_branch(self, repo_identity: str, branch_name: str):
+            from utils.provider.base import BranchInfo
+            from utils.provider.exceptions import NotFoundError
+
+            if branch_name not in ("develop", "main"):
+                raise NotFoundError("测试分支不存在")
+            return BranchInfo(name=branch_name, last_commit_hash=self.list_commits(repo_identity, branch_name)[0].hash)
+
+        def list_release_commits(self, repo_identity: str, base: str, head: str):
+            return [commit for commit in self.list_commits(repo_identity, head) if commit.hash != base]
+
+        def list_release_merge_requests(self, repo_identity: str):
+            return []
+
+        def get_merge_base(self, repo_identity: str, refs: list[str]):
+            return refs[0]
+
         def create_tag(self, repo_identity: str, tag_name: str, commit_hash: str, message: str = ""):
             from utils.provider.base import TagInfo
             self.tags.append(TagInfo(name=tag_name, commit_hash=commit_hash))
@@ -122,7 +139,7 @@ def mock_git_provider():
             from utils.provider.base import CommitInfo
             return [
                 CommitInfo(
-                    hash="targethead001",
+                    hash="1" * 40,
                     author="张三",
                     author_email="",
                     message="变更类型：\n☑ 无配置项改动 □有配置项改动\n\n更新内容：\n1. A 新增功能",

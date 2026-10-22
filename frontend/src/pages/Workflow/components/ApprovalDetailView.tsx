@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, GitPullRequestArrow } from 'lucide-react';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
+import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { instanceStatusMap, releaseTypeText } from '../constants';
@@ -96,6 +97,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                     ) : null}
                     {statusInfo.text}
                   </span>
+                  <WorkflowTerminateButton instance={instance} />
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
                   <span className="font-medium text-slate-700">{detailSource.projectName || '-'}</span>

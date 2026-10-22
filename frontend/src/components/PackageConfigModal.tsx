@@ -665,7 +665,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
               <FolderTree className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
               <div>
                 <div className="text-[12px] font-medium text-slate-700">SVN 产物推送</div>
-                <div className="text-[10px] text-slate-400">正式版自动打包后按类型目录上传；RC 与测试版需另开开关</div>
+                <div className="text-[10px] text-slate-400">自动与手动打包后均可上传；RC 与测试版需另开开关</div>
               </div>
             </div>
             <Form.Item name="svn_push_enabled" valuePropName="checked" noStyle>
@@ -713,7 +713,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
                   <div>
                     <div className="text-[12px] font-medium text-slate-700">RC 提交 SVN</div>
-                    <div className="text-[10px] text-slate-400">自动打包时提交到 rc/版本号</div>
+                    <div className="text-[10px] text-slate-400">打包后提交到 rc/版本号</div>
                   </div>
                   <Form.Item name="svn_push_rc" valuePropName="checked" noStyle>
                     <Switch size="small" />
@@ -722,7 +722,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
                   <div>
                     <div className="text-[12px] font-medium text-slate-700">测试版提交 SVN</div>
-                    <div className="text-[10px] text-slate-400">自动打包时提交到 beta/版本号</div>
+                    <div className="text-[10px] text-slate-400">打包后提交到 beta/版本号</div>
                   </div>
                   <Form.Item name="svn_push_beta" valuePropName="checked" noStyle>
                     <Switch size="small" />

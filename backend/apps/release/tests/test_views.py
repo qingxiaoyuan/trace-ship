@@ -249,6 +249,7 @@ class TestReleaseViews:
             tag_name="VA.1.0.0",
             branch="main",
             release_type="formal",
+            git_hash="1" * 40,
             publisher=api_client.handler._force_user,
         )
         response = api_client.post(
@@ -345,7 +346,7 @@ class TestReleaseViews:
             branch="main",
             release_type="rc",
             status="pending",
-            git_hash="targethead001",
+            git_hash="1" * 40,
             publisher=api_client.handler._force_user,
         )
         response = api_client.post(f"/api/releases/{release.id}/push-tag/", format="json")

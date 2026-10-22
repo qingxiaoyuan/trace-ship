@@ -481,7 +481,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
         return self._can_delete_tasks
 
     def get_can_push_svn(self, obj: PackageTask) -> bool:
-        """任务是否具备手动推送 SVN 的条件（已允许推送的自动打包任务）。"""
+        """任务是否具备手动推送 SVN 的条件（创建时已允许推送的任务）。"""
         from apps.package.services.svn import task_allows_svn_push
 
         if self.context.get("request") and self.get_my_role(obj) not in ("manager", "developer", "software_admin"):

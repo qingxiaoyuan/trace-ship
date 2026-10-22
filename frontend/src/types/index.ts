@@ -140,6 +140,7 @@ export interface Release {
   branch: string;
 
   source_rc?: string | null;
+  workflow_instance?: string | null;
   source_rc_version?: string;
   source_rc_tag?: string;
   source_rc_git_hash?: string;
@@ -958,7 +959,7 @@ export interface RepositoryTag {
   created_at?: string | null;
 }
 
-export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked';
+export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked' | 'revoked';
 
 export interface WorkflowApproverConfig {
   type: 'leader' | 'role' | 'user' | 'self' | 'repo_owner';

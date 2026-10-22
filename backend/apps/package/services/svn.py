@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 TRIGGER_SOURCE_AUTO_RELEASE = "auto_release"
 TRIGGER_SOURCE_MANUAL_RELEASE = "manual_release"
 TRIGGER_SOURCE_MANUAL_BRANCH = "manual_branch"
+SVN_PUSH_TRIGGER_SOURCES = frozenset({
+    TRIGGER_SOURCE_AUTO_RELEASE,
+    TRIGGER_SOURCE_MANUAL_RELEASE,
+    TRIGGER_SOURCE_MANUAL_BRANCH,
+})
 
 # 默认目录模板。渲染时改为 {release_type}/{version}，三类版本分目录存放。
 DEFAULT_SVN_PATH_TEMPLATE = "{version}"
@@ -52,13 +57,13 @@ def apply_svn_push_policy(
 ) -> dict[str, Any]:
     """按触发来源与发布类型写入快照。
 
-    仅发布后自动打包可推 SVN。正式版看总开关；RC、测试版在总开关之外还要打开
-    对应开关。结果写回 svn_push_enabled，后续执行只认这个生效值。
+    自动发布、手动选择版本与分支直打均可推 SVN。正式版和分支直打看总开关；
+    RC、测试版还要打开对应开关。结果写回 svn_push_enabled，执行时沿用该生效值。
     """
     snapshot = dict(snapshot)
     snapshot["trigger_source"] = trigger_source
     allow = (
-        trigger_source == TRIGGER_SOURCE_AUTO_RELEASE
+        trigger_source in SVN_PUSH_TRIGGER_SOURCES
         and release_type_allows_svn(snapshot, release_type)
     )
     snapshot["svn_push_enabled"] = allow
@@ -69,13 +74,13 @@ def task_allows_svn_push(task: PackageTask) -> bool:
     """任务是否允许自动/手动推送 SVN。
 
     创建任务时已按发布类型把是否推送写入 svn_push_enabled。
-    这里只认该生效值，以及 trigger_source=auto_release。
-    历史任务无 trigger_source 的不允许补推，避免旧手动包再推上 SVN。
+    这里只认该生效值及已知触发来源，不按当前配置重新打开历史快照中的关闭值。
+    历史任务无 trigger_source 的仍不允许补推。
     """
     snapshot = task.config_snapshot or {}
     if not snapshot.get("svn_push_enabled"):
         return False
-    return snapshot.get("trigger_source") == TRIGGER_SOURCE_AUTO_RELEASE
+    return snapshot.get("trigger_source") in SVN_PUSH_TRIGGER_SOURCES
 
 
 class SvnPushMixin:
@@ -153,7 +158,7 @@ class SvnPushMixin:
 
         # 渲染版本目录，支持 {release_type}。结果可以含斜杠：默认模板会变成
         # formal/版本号，版本号本身也可能带斜杠。父目录由 _ensure_svn_parent_dirs
-        # 逐级创建。分支直打不推 SVN，斜杠只描述目录渲染。
+        # 逐级创建，分支直打沿用 formal 类型并保留分支名中的目录层级。
         release_type = task.release_type or "formal"
         version_dir = path_template.format(
             version=task.version,
@@ -340,7 +345,7 @@ class SvnPushMixin:
         if not artifacts_dir.exists():
             raise RuntimeError("产物目录不存在，无法推送")
 
-        # 从快照解析 SVN 配置，快照缺失 URL 时回退到配置（不把手动任务重新打开推送开关）
+        # 从快照解析 SVN 配置，缺少 URL 时仅回填配置，不重新打开快照中的关闭值。
         snapshot = dict(task.config_snapshot or {})
         if not snapshot.get("svn_url") or not snapshot.get("svn_credential_id"):
             config = task.config
@@ -354,7 +359,7 @@ class SvnPushMixin:
             # 只补 URL/凭证，不把 svn_push_enabled 默认打开
         task.config_snapshot = snapshot
         if not task_allows_svn_push(task):
-            raise RuntimeError("仅已允许推送 SVN 的自动打包任务可以推送")
+            raise RuntimeError("仅创建时已启用 SVN 推送的打包任务可以推送")
 
         previous_url = str(((task.stage_info or {}).get("svn_push") or {}).get("remote_url") or "")
         cls._append_log(task, "开始手动推送产物到 SVN…")

@@ -23,7 +23,7 @@ ADR-0002 确立的打包触发方式为「发布推 tag 成功后由 `ReleaseSer
 5. 分支直打包无发布说明：克隆源码时跳过发布说明写入，构建环境变量 `RELEASE_DOC_PATH` 不注入，
    避免构建脚本误读不存在的文件。
 6. 分支名可能包含 `/` 等路径特殊字符：发布说明文件名（`_doc_filename`）做路径安全化替换；
-   SVN 推送默认模板 `{version}` 渲染后保留分支层级（如 `svn_root/feature/1.0/`），属于预期行为。
+   SVN 推送默认模板 `{version}` 渲染后保留分支层级（当前目录为 `svn_root/formal/feature/1.0/`），属于预期行为。
 7. 任务完成/失败通知接收人：发布触发的任务通知发布人；分支直打包任务（无发布）通知触发人
    （`notify_package_result` 回退 `triggered_by`）。
 8. 触发权限与「按已发布 Tag 触发」一致：项目管理员 / 开发 / 测试（`IsProjectPackager`）。
@@ -31,6 +31,8 @@ ADR-0002 确立的打包触发方式为「发布推 tag 成功后由 `ReleaseSer
    `trigger_auto_packages_for_release` 仅由发布流程调用）。
 
 ## 后果
+
+2026-10-22 按 [事项 #51](https://github.com/qingxiaoyuan/trace-ship/issues/51) 恢复分支直打遵循 SVN 总开关，允许成功任务按创建时快照补推。默认路径为 `formal/{分支名}`，自定义模板按原文渲染，目录存在时遵循 `new_dir` / `overwrite`；历史关闭快照不重新启用。
 
 - 正面：满足按分支最新代码直接出包的场景；与发布生命周期解耦；复用既有打包主流程、工作区约定、
   凭证体系与远程 Windows 执行能力。
