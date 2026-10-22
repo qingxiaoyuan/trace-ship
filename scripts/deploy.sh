@@ -288,7 +288,7 @@ pre_update_guard() {
     if ! "${db_sh}" --check; then
         echo ""
         echo "❌ 一致性检查未通过，已中止更新。当前运行中的容器未被替换。"
-        echo "   备份在 ./backups/ 。处理完重复仓库后可再次选择 4，或直接 ./deploy.sh --app"
+        echo "   备份在 ./backups/ 。请根据上方具体错误修复检查问题，再选择 4 或执行 ./deploy.sh --upgrade"
         exit 1
     fi
     echo ""

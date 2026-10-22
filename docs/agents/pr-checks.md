@@ -71,6 +71,16 @@ python scripts/checks/backend-linux.py all --report-dir tmp/pr-checks/backend-li
 
 已有 Linux/Python 3.11 开发环境也可直接执行 `python scripts/checks/backend.py lint|test --report-dir <目录>`。共享入口强制使用测试配置，拒绝其他 Python 版本，保留完整 pytest 配置与真实退出码。CI 与本地容器共用 Dockerfile；Python 依赖仍按现有 requirements 范围安装，实际版本在报告归档，不声称已锁定全部后端依赖。
 
+### 数据库盘点脚本回归（按需）
+
+修改 `scripts/db.sh` 的盘点 SQL 时，在仓库根目录执行：
+
+```bash
+python -m unittest discover -s scripts/tests -p test_db_inventory.py -v
+```
+
+需要 Bash、Docker 及本机已有的 `postgres:16-alpine` 镜像。入口创建无网络的临时 PostgreSQL，测试结束自动删除容器及数据，不读取生产环境文件、不连接业务数据库。使用真实盘点函数和只读连接，覆盖旧结构、过渡结构、现行结构、多项目统计与 SQL 错误退出码；该定点验证不代替实际部署环境的备份、迁移或一致性验收。
+
 ### 真实浏览器冒烟
 
 先按后端开发约定安装 Python 依赖，前端执行过 `npm ci`，再在 `frontend/` 执行：
