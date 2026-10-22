@@ -379,15 +379,37 @@ ORDER BY n DESC, vendor, url, identity;
 
 \echo ''
 \echo '重复组成员明细（选发布多、创建早的作为 --primary）:'
+-- 升级前检查可能面对旧库或已迁移的库，先按实际结构选择查询片段。
+-- 不直接在同一条 SQL 中引用两套字段，避免无重复行时也因解析旧列失败。
+SELECT
+  CASE WHEN to_regclass('public.project_component') IS NOT NULL THEN
+    $query$(SELECT string_agg(DISTINCT p.name, '、' ORDER BY p.name)
+            FROM project_component c
+            JOIN sys_project p ON p.id = c.project_id
+            WHERE c.repository_id = r.id)$query$
+  ELSE
+    $query$(SELECT p.name FROM sys_project p WHERE p.id = r.project_id)$query$
+  END AS projects,
+  CASE WHEN EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'package_config' AND column_name = 'repository_id'
+  ) THEN
+    $query$(SELECT COUNT(*) FROM package_config x WHERE x.repository_id = r.id)$query$
+  ELSE
+    $query$(SELECT COUNT(*) FROM package_config x
+            JOIN project_component c ON c.id = x.project_component_id
+            WHERE c.repository_id = r.id)$query$
+  END AS package_configs
+\gset inventory_
+
 SELECT r.external_identity,
        r.id::text AS repository_id,
        r.name,
-       p.name AS product,
+       :inventory_projects AS projects,
        r.created_at,
        (SELECT COUNT(*) FROM release_record x WHERE x.repository_id = r.id) AS releases,
-       (SELECT COUNT(*) FROM package_config x WHERE x.repository_id = r.id) AS package_configs
+       :inventory_package_configs AS package_configs
 FROM sys_repo r
-LEFT JOIN sys_project p ON p.id = r.project_id
 WHERE COALESCE(r.external_identity, '') <> ''
   AND (r.vendor, r.url, r.external_identity) IN (
     SELECT vendor, url, external_identity
