@@ -1285,6 +1285,8 @@
 
 远端 tag 已存在返回 `code=40003`。
 
+新建发布 Tag 为轻量 Tag，按已保存的完整 SHA 创建，不传 `message`，兼容内网 GitLab 注释 Tag 创建失败的环境。推送失败后保留版本占用及已完成审批，可在原申请调用 `POST /api/releases/{id}/retry-push-tag/` 重试。历史带本申请注释标记且 SHA 匹配的 Tag 可对账完成；同名轻量 Tag 缺少归属证据，即使 SHA 相同也返回冲突并要求管理员核对，不自动接管或覆盖。GitLab HTTP 失败的操作日志 `detail.diagnostic` 包含 `method`、`path`、`status_code`、`request_id` 和最多 2000 字符的脱敏 `response_body`；有请求编号时错误提示也会携带该编号。
+
 ### 8.12 看板统计
 
 - **GET** `/api/releases/dashboard/context/`

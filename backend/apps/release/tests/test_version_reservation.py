@@ -80,7 +80,7 @@ def test_same_version_different_dates_cannot_enter_two_workflows(api, repository
     assert repeat.data["data"]["workflow_instance_id"] == first.data["data"]["workflow_instance_id"]
 
 
-def test_unknown_push_result_is_reconciled_only_for_own_tag(api, repository, project, user, remote, monkeypatch):
+def test_unknown_lightweight_push_result_is_not_adopted(api, repository, project, user, remote, monkeypatch):
     from utils.provider.exceptions import ConnectionError
 
     WorkflowDefinition.objects.create(
@@ -106,8 +106,9 @@ def test_unknown_push_result_is_reconciled_only_for_own_tag(api, repository, pro
     result = api.post(f"/api/releases/{record.id}/submit-audit/")
     assert result.status_code == 400
     result = api.post(f"/api/releases/{record.id}/retry-push-tag/")
-    assert result.status_code == 200, result.data
-    assert api.get(f"/api/releases/{record.id}/").data["data"]["status"] == "released"
+    assert result.status_code == 400 and "轻量 Tag" in result.data["message"]
+    assert api.get(f"/api/releases/{record.id}/").data["data"]["status"] == "rejected"
+    assert not record.version_claims.get().consumed
 
 
 def test_foreign_same_sha_tag_is_not_adopted(api, repository, project, user, remote):

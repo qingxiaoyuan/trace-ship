@@ -1557,11 +1557,15 @@ class ReleaseService:
 
             marker = f"trace-ship-release:{release.id}"
             tags = provider.list_tags(release.repository.external_identity)
+            existing = next((tag for tag in tags if tag.name == release.tag_name), None)
+            if existing and existing.commit_hash == release.git_hash and not existing.message:
+                raise ReleaseTagExistsError(
+                    "同名轻量 Tag 已存在，无法确认属于本次申请，请由管理员核对远端 Tag 与操作日志后处理"
+                )
             # 升级前申请重试也要取得占用；仅本申请的完整远端证据可参与对账。
             claim_version(release, [tag for tag in tags if not (
                 tag.name == release.tag_name and tag.commit_hash == release.git_hash and tag.message == marker
             )])
-            existing = next((tag for tag in tags if tag.name == release.tag_name), None)
             if existing:
                 if existing.commit_hash != release.git_hash or existing.message != marker:
                     raise ReleaseTagExistsError("Tag 已存在且不属于本次申请，无法覆盖")
@@ -1571,7 +1575,8 @@ class ReleaseService:
                     repo_identity=release.repository.external_identity,
                     tag_name=release.tag_name,
                     commit_hash=release.git_hash,
-                    message=marker,
+                    # 内网 GitLab 的注释 Tag 创建失败，保持轻量 Tag 兼容性。
+                    message="",
                 )
                 actual = next((tag for tag in provider.list_tags(release.repository.external_identity) if tag.name == release.tag_name), None)
                 if actual is None or actual.commit_hash != release.git_hash:
@@ -1599,7 +1604,10 @@ class ReleaseService:
                 release=release,
                 action="push_tag",
                 result="failure",
-                detail={"error": str(exc), "traceback": traceback.format_exc()},
+                detail={
+                    "error": str(exc), "traceback": traceback.format_exc(),
+                    "diagnostic": getattr(exc, "diagnostic", None),
+                },
             )
             raise serializers.ValidationError({"tag": f"推 tag 失败: {exc}"})
         except Exception:

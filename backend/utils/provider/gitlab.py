@@ -3,7 +3,9 @@ GitLab Provider
 
 基于 GitLab REST API v4 的统一适配器实现。
 """
+import json
 import logging
+import re
 import threading
 from datetime import datetime
 from urllib.parse import quote
@@ -62,34 +64,66 @@ class GitLabProvider(GitProvider):
         except requests.RequestException as exc:
             raise ConnectionError(f"GitLab 请求失败: {exc}") from exc
 
-        if resp.status_code == 401:
-            # 记录 401 细节，帮助定位 token 失效的真实原因
-            # （token 是否为空/被截断，GitLab 返回的具体响应体）
-            token_preview = (
-                f"{self.token[:4]}...{self.token[-4:]}"
-                if len(self.token) >= 8
-                else (self.token or "<空>")
-            )
-            diagnostic = {
-                "url": url,
-                "token_preview": token_preview,
-                "status_code": resp.status_code,
-                "response_body": resp.text[:500],
-            }
-            logger.warning(
-                "GitLab 认证失败(401): url=%s, token脱敏=%s, 响应体=%s",
-                url, token_preview, resp.text[:500],
-            )
-            exc = AuthenticationError("GitLab Token 无效或已过期")
-            exc.diagnostic = diagnostic
-            raise exc
-        if resp.status_code == 404:
-            raise NotFoundError(f"GitLab 资源不存在: {path}")
         try:
             resp.raise_for_status()
         except requests.HTTPError as exc:
-            raise ProviderError(f"GitLab 请求失败（HTTP {resp.status_code}）") from exc
+            diagnostic = self._http_error_diagnostic(resp, method, path)
+            if resp.status_code == 401:
+                message = "GitLab Token 无效或已过期"
+                error_class = AuthenticationError
+                diagnostic["url"] = self._redact_diagnostic(url)
+                diagnostic["token_preview"] = (
+                    f"{self.token[:4]}...{self.token[-4:]}" if len(self.token) > 8
+                    else ("<已设置>" if self.token else "<空>")
+                )
+            elif resp.status_code == 404:
+                message = f"GitLab 资源不存在: {diagnostic['path']}"
+                error_class = NotFoundError
+            else:
+                message = f"GitLab 请求失败（HTTP {resp.status_code}）"
+                error_class = ProviderError
+            if diagnostic["request_id"]:
+                message += f"，请求编号：{diagnostic['request_id']}"
+            logger.warning("GitLab API 请求失败: %s", diagnostic)
+            error = error_class(message)
+            error.diagnostic = diagnostic
+            raise error from exc
         return resp
+
+    def _redact_diagnostic(self, value: object) -> object:
+        """错误响应可能回显凭证，先递归脱敏，再截断或写入日志。"""
+        if isinstance(value, dict):
+            sensitive = {"token", "password", "secret", "authorization", "cookie", "set_cookie", "credentials"}
+            return {
+                key: "<REDACTED>" if (
+                    str(key).lower().replace("-", "_") in sensitive
+                    or str(key).lower().replace("-", "_").endswith(("_token", "_password", "_secret"))
+                ) else self._redact_diagnostic(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._redact_diagnostic(item) for item in value]
+        if isinstance(value, str):
+            if self.token:
+                for secret in {self.token, quote(self.token, safe=""), json.dumps(self.token)[1:-1]}:
+                    value = value.replace(secret, "<REDACTED>")
+            return re.sub(r"(?i)\b(Bearer|Basic)\s+[\w+/=.\-]+", r"\1 <REDACTED>", value)
+        return value
+
+    def _http_error_diagnostic(self, response: requests.Response, method: str, path: str) -> dict:
+        """记录受限响应与请求编号，保留内网 GitLab/网关的定位线索。"""
+        try:
+            body = json.dumps(self._redact_diagnostic(response.json()), ensure_ascii=False)
+        except ValueError:
+            body = str(self._redact_diagnostic(response.text))
+        request_id = response.headers.get("X-Request-Id") or response.headers.get("X-Correlation-Id", "")
+        return {
+            "method": method.upper(),
+            "path": self._redact_diagnostic(path),
+            "status_code": response.status_code,
+            "request_id": " ".join(str(self._redact_diagnostic(request_id)).split())[:200],
+            "response_body": body[:2000],
+        }
 
     def _encode_identity(self, repo_identity: str) -> str:
         """将 owner/repo 编码为 URL 安全格式"""

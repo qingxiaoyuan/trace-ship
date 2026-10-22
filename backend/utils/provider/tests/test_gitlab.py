@@ -3,6 +3,7 @@ GitLabProvider 单元测试
 
 使用 responses 库模拟 GitLab REST API。
 """
+import json
 from urllib.parse import quote
 
 import pytest
@@ -41,6 +42,47 @@ def test_test_connection_auth_failure(provider):
     )
     with pytest.raises(AuthenticationError):
         provider.test_connection()
+
+
+@pytest.mark.parametrize("status", [400, 403, 404, 422, 500, 502])
+@responses.activate
+def test_http_error_retains_redacted_response_and_request_id(provider, status):
+    """各种 HTTP 失败均保留定位信息，不记录返回内容中回显的认证数据。"""
+    responses.add(
+        responses.POST,
+        "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/tags",
+        status=status,
+        json={"message": f"服务端错误 {provider.token}", "nested": {"authorization": "Bearer other-test-secret"}},
+        headers={"X-Request-Id": "gitlab-request-test"},
+    )
+    with pytest.raises(ProviderError) as captured:
+        provider.create_tag("group/project", "VA.1.0.0", "a" * 40)
+    diagnostic = captured.value.diagnostic
+    assert diagnostic["method"] == "POST" and diagnostic["path"].endswith("/repository/tags")
+    assert diagnostic["status_code"] == status and diagnostic["request_id"] == "gitlab-request-test"
+    assert "服务端错误" in diagnostic["response_body"]
+    assert provider.token not in json.dumps(diagnostic)
+    assert "other-test-secret" not in json.dumps(diagnostic)
+    assert "gitlab-request-test" in str(captured.value)
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_non_json_error_is_bounded_and_redacted_before_truncation(provider):
+    """网关 HTML、过长正文与缺失请求编号不应覆盖原始 HTTP 错误。"""
+    responses.add(
+        responses.POST,
+        "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/tags",
+        status=500,
+        body="<html>" + "x" * 1985 + provider.token + "y" * 2000 + "</html>",
+        content_type="text/html",
+    )
+    with pytest.raises(ProviderError, match="HTTP 500") as captured:
+        provider.create_tag("group/project", "VA.1.0.0", "a" * 40)
+    diagnostic = captured.value.diagnostic
+    assert len(diagnostic["response_body"]) <= 2000
+    assert provider.token[:4] not in diagnostic["response_body"]
+    assert diagnostic["request_id"] == ""
 
 
 @responses.activate
