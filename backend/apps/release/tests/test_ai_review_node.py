@@ -441,3 +441,52 @@ def test_partial_review_keeps_coverage_paths_and_does_not_advance(api_client, pr
     assert run.status == "incomplete" and run.coverage["reviewed_paths"] == ["a.py"]
     assert run.coverage["unreviewed_paths"] == ["b.py"]
     assert release.workflow_instance.current_node_id == "ai" and not release.workflow_instance.tasks.exists()
+
+
+def test_model_controlled_missing_path_never_leaks_in_readonly_summary(api_client, project, repository, user,
+                                                                        patched_provider, monkeypatch,
+                                                                        django_capture_on_commit_callbacks):
+    from rest_framework.test import APIClient
+
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
+        "complete": True, "warnings": []}, raising=False)
+    secret = "私有源码标记\n第二行"
+    monkeypatch.setattr(patched_provider, "get_file_raw", lambda *args, **kwargs: None, raising=False)
+    actions = iter([
+        {"action": "read", "path": secret},
+        {"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []},
+    ])
+    monkeypatch.setattr(ai_review_model, "_ask", lambda *args: (next(actions), "{}"))
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=True):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    url = f"/api/workflow/instances/{release.workflow_instance_id}/ai-review/"
+    full_warnings = api_client.get(url).data["data"]["reviews"][0]["coverage"]["warnings"]
+    assert any(secret in warning for warning in full_warnings)
+    # 即便未来的执行器把模型内容写入其他完整报告字段，低权限摘要也不能泄漏。
+    run = release.workflow_instance.ai_reviews.get()
+    run.summary = secret
+    run.dimensions = [secret]
+    run.findings = [{"reason": secret}]
+    run.coverage["reviewed_paths"] = [secret]
+    run.save(update_fields=["summary", "dimensions", "findings", "coverage"])
+    for role in ("maintainer", "viewer"):
+        reader = User.objects.create_user(username=f"ai-summary-{role}", password="testpass")
+        ProjectMember.objects.create(project=project, user=reader, role=role)
+        client = APIClient()
+        client.force_authenticate(reader)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert "私有源码标记" not in str(response.data) and "第二行" not in str(response.data)
+        assert response.data["data"]["reviews"][0]["coverage"]["warnings"] == ["审查存在提示或未覆盖内容"]

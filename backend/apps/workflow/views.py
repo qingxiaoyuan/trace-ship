@@ -307,13 +307,20 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         reviews = []
         for run in instance.ai_reviews.all().order_by("created_at"):
             expired = lease_expired(run)
-            coverage = run.coverage if full else {
-                key: value for key, value in run.coverage.items()
-                if key in ("total_files", "reviewed_files", "warnings")
-            }
+            if full:
+                coverage = run.coverage
+                summary = "审查执行中断或超时，等待重试" if expired else run.summary
+            else:
+                coverage = {key: run.coverage.get(key, 0) for key in ("total_files", "reviewed_files")}
+                coverage["warnings"] = ["审查存在提示或未覆盖内容"] if run.coverage.get("warnings") else []
+                # 摘要使用固定文案，避免模型或后续执行记录将源码混入低权限响应。
+                summary = {
+                    "queued": "等待审查", "running": "审查进行中", "completed": "审查完成，等待人工决定",
+                    "failed": "审查未完成", "incomplete": "审查未完成", "first_release": "首次发布，已跳过 AI 审查",
+                    "no_changes": "无代码变更",
+                }.get("failed" if expired else run.status, "审查状态未知")
             data = {"node_id": run.node_id, "node_name": node_names.get(run.node_id, "AI 代码审查"),
-                    "status": "failed" if expired else run.status,
-                    "summary": "审查执行中断或超时，等待重试" if expired else run.summary, "coverage": coverage}
+                    "status": "failed" if expired else run.status, "summary": summary, "coverage": coverage}
             if full:
                 data.update(dimensions=run.dimensions, findings=run.findings)
             reviews.append(data)
