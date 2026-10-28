@@ -145,6 +145,7 @@ export interface Release {
 
   source_rc?: string | null;
   workflow_instance?: string | null;
+  revision_update_required?: boolean;
   source_rc_version?: string;
   source_rc_tag?: string;
   source_rc_git_hash?: string;
@@ -963,7 +964,7 @@ export interface RepositoryTag {
   created_at?: string | null;
 }
 
-export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked' | 'revoked';
+export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked' | 'revoked' | 'returned';
 
 export interface WorkflowApproverConfig {
   type: 'leader' | 'role' | 'user' | 'self' | 'repo_owner';
@@ -981,6 +982,7 @@ export interface WorkflowNodeConfig {
 
 export interface WorkflowTask {
   can_act?: boolean;
+  can_return_for_revision?: boolean;
   id: string;
   instance?: string;
   node_id?: string;
@@ -1065,12 +1067,14 @@ export interface WorkflowInstance {
   is_current?: boolean;
   has_config_snapshot?: boolean;
   can_revoke?: boolean;
+  returned_by?: string | null;
+  returned_by_name?: string;
   id: string;
   definition: string;
   definition_name?: string;
   biz_type: string;
   biz_id: string;
-  status: 'running' | 'completed' | 'rejected' | 'revoked';
+  status: 'running' | 'completed' | 'rejected' | 'revoked' | 'returned';
   current_node_id: string;
   node_status: Record<string, string>;
   graph_data: WorkflowDefinition['graph_data'];
@@ -1105,7 +1109,7 @@ export interface WorkflowInstanceListItem {
   definition: string;
   biz_type: string;
   biz_id: string;
-  status: 'running' | 'completed' | 'rejected' | 'revoked';
+  status: 'running' | 'completed' | 'rejected' | 'revoked' | 'returned';
   current_node_id: string;
   created_by: string;
   created_at: string;

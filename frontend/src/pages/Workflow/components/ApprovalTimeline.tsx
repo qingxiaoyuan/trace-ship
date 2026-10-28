@@ -20,7 +20,7 @@ interface ApproverConfig {
 }
 
 /** 节点展示状态 */
-type NodeState = 'done' | 'running' | 'pending' | 'revoked';
+type NodeState = 'done' | 'running' | 'pending' | 'revoked' | 'returned';
 
 /** 项目成员角色文案（与仓库审批流 Tab 的 ROLE_LABELS 对齐） */
 const ROLE_LABELS: Record<string, string> = {
@@ -68,7 +68,8 @@ export function ApprovalTimeline({ instance }: { instance: WorkflowInstance }) {
   /** 判断单个节点状态 */
   const stateOf = (node: GraphNode): NodeState => {
     if (node.type === 'start-node') return 'done';
-    if (instance.status === 'revoked' && !['approved', 'completed', 'first_release', 'no_changes'].includes(nodeStatus[node.id])) return 'revoked';
+    if (instance.status === 'returned' && nodeStatus[node.id] === 'returned') return 'returned';
+    if ((instance.status === 'revoked' || instance.status === 'returned') && !['approved', 'completed', 'first_release', 'no_changes'].includes(nodeStatus[node.id])) return 'revoked';
     if (node.type === 'end-node') {
       return instance.status === 'completed' ? 'done' : 'pending';
     }
@@ -131,6 +132,7 @@ function TimelineNode({
     running: 'bg-amber-500 text-white pulse-dot ring-4 ring-amber-100',
     pending: 'border-2 border-slate-200 bg-white text-slate-300',
     revoked: 'border-2 border-slate-200 bg-slate-50 text-slate-400',
+    returned: 'border-2 border-amber-300 bg-amber-50 text-amber-700',
   }[state];
 
   const badge = {
@@ -138,6 +140,7 @@ function TimelineNode({
     running: { text: '进行中', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
     pending: { text: '待处理', cls: 'border-slate-200 bg-slate-50 text-slate-400' },
     revoked: { text: '已终止', cls: 'border-slate-200 bg-slate-50 text-slate-500' },
+    returned: { text: '已退回修改', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
   }[state];
 
   const nameClass = state === 'pending' || state === 'revoked' ? 'text-slate-400' : state === 'running' ? 'text-amber-700' : 'text-slate-900';

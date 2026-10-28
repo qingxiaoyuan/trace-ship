@@ -40,6 +40,7 @@ export function ReleaseSource({ release, canRefresh = false }: { release: Releas
   </div>;
   return <section className="mt-4 space-y-2 rounded-lg border border-indigo-100 p-3 text-[13px]">
     <p className="font-medium">{release.source_rc ? '来源 RC' : '来源代码'}</p>{availability}
+    {release.revision_update_required ? <p className="text-amber-700">申请已退回修改，请更新到新的来源提交，再重新生成发布说明并提审。</p> : null}
     {release.source_rc ? <>
       <Link className="break-all text-indigo-600" to={`/releases/${release.source_rc}`}>{release.source_rc_version} · {release.source_rc_tag}</Link>
       <p className="break-all font-mono text-xs">{release.source_rc_git_hash}</p>

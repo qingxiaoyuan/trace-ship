@@ -1417,6 +1417,8 @@ class ReleaseService:
                 return release
             if release.status != "draft":
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
+            if release.revision_source_hash and release.git_hash.lower() == release.revision_source_hash.lower():
+                raise serializers.ValidationError({"git_hash": "退回修改后请先更新到新的来源提交"})
             if release.doc_needs_regeneration or not release.release_doc:
                 raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
             if release.release_type == "formal":
@@ -1484,7 +1486,9 @@ class ReleaseService:
                     ])
                 release.workflow_instance = instance
             release.status = "pending"
-            release.save(update_fields=["workflow_instance", "status", "updated_at"])
+            if release.has_revision_history:
+                release.rejected_reason = ""
+            release.save(update_fields=["workflow_instance", "status", "rejected_reason", "updated_at"])
             if definition.node_config:
                 OperationLogService.log_release(user=user, release=release, action="submit_audit")
 
@@ -1555,7 +1559,7 @@ class ReleaseService:
 
         与 handle_workflow_rejected 的区别：驳回至初始节点视为流程作废，
         不改变发布为"已驳回"，而是将其恢复为草稿态并解除与流程实例的关联，
-        回退到起点时由调用视图删除旧实例；发起人终止时保留实例和审批历史。
+        回退到起点及发起人终止时均保留实例和审批历史。
 
         Args:
             instance: WorkflowInstance 实例

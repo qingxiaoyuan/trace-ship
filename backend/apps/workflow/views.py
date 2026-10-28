@@ -366,7 +366,7 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
     def get_permissions(self):
         """任务分配仍需服从关联发布项目的维保写操作限制。"""
-        if self.action in ("approve", "reject", "transfer", "rollback"):
+        if self.action in ("approve", "reject", "transfer", "rollback", "return_for_revision"):
             return [IsAuthenticated(), IsNotProjectMaintainer()]
         return super().get_permissions()
 
@@ -453,6 +453,17 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
             return error_response(40001, str(exc))
         serializer = self.get_serializer(task)
         return success_response(serializer.data, message="转交成功")
+
+    @action(detail=True, methods=["post"], url_path="return-for-revision")
+    def return_for_revision(self, request: Request, pk=None) -> Response:
+        """审批人退回修改，保留本轮审批及审查记录。"""
+        task = self.get_object()
+        try:
+            WorkflowEngine.process_task(task, "return_for_revision", request.data.get("comment", ""), actor=request.user)
+        except serializers.ValidationError as exc:
+            return error_response(40001, self._extract_validation_message(exc))
+        task.refresh_from_db()
+        return success_response(self.get_serializer(task).data, message="已退回修改")
 
     @action(detail=True, methods=["post"], url_path="rollback")
     def rollback(self, request: Request, pk=None) -> Response:

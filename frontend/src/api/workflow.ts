@@ -74,6 +74,8 @@ export const workflowApi = {
     post(`/workflow/tasks/${id}/reject/`, data || {}),
   transferTask: (id: string, data: { to_user_id: string; comment?: string }) =>
     post(`/workflow/tasks/${id}/transfer/`, data),
+  returnForRevision: (id: string, data?: { comment?: string }) =>
+    post(`/workflow/tasks/${id}/return-for-revision/`, data || {}),
   rollbackTask: (id: string, data?: { comment?: string; rollback_target?: string }) =>
     post(`/workflow/tasks/${id}/rollback/`, data || {}),
 };

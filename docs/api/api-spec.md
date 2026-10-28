@@ -1716,7 +1716,7 @@
 - **GET** `/api/workflow/tasks/todo/`
 - **GET** `/api/workflow/tasks/done/`
 
-任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked` / `revoked`（终止或回退到起点后失效）。回退到起点保留流程实例、任务和已处理意见，并在事务内恢复草稿、释放未消费版本占用。
+任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked` / `revoked` / `returned`（终止或回退到起点后失效）。回退到起点保留流程实例、任务和已处理意见，并在事务内恢复草稿、释放未消费版本占用。
 
 ### 10.9 审批通过
 
@@ -1759,6 +1759,12 @@
 }
 ```
 
+### 10.11A 退回修改
+
+`POST /api/workflow/tasks/{task_id}/return-for-revision/`，请求体可传 `comment`。当前人工审批任务的实际审批人或超管可操作；目标项目的维保及只读成员不能操作。接口在仓库 → 发布 → 实例锁内重新核验任务、项目、业务身份和当前轮。
+
+成功后当前任务和实例均为 `returned`，其他待办失效，保留原审批任务、报告及操作人；未完成的 AI 执行标记取消，迟到结果不能推进。原申请恢复草稿并释放未消费版本占用；退回前提交被固定，须更新至不同提交并重新生成说明后才能重新提审。原申请不参与自动过期草稿清理。`can_return_for_revision` 表示当前任务对请求用户的操作能力。
+
 ### 10.12 回退
 
 - **POST** `/api/workflow/tasks/{id}/rollback/`
@@ -1772,7 +1778,7 @@
 }
 ```
 
-`rollback_target` 可选（目标节点 ID）；回退到初始节点时流程作废，实例自动删除，关联发布恢复为 `draft`。
+`rollback_target` 可选（目标节点 ID）；回退到初始节点时流程作废，保留实例与已处理历史，关联发布恢复为 `draft`。
 
 > 旧版 `/api/workflow/instances/{id}/progress/` 与任务级 `revoke` 接口已不存在：进度信息包含在实例详情的 `node_status` / `graph_data` 中，撤销改为实例级 `revoke`。
 

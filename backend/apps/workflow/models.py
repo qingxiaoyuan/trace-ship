@@ -134,6 +134,7 @@ class WorkflowInstance(models.Model):
         ("completed", "已完成"),
         ("rejected", "已驳回"),
         ("revoked", "已撤销"),
+        ("returned", "已退回修改"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -183,6 +184,10 @@ class WorkflowInstance(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
+    returned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="returned_workflow_instances", verbose_name="退回修改操作人",
+    )
 
     class Meta:
         db_table = "workflow_instance"
@@ -273,6 +278,7 @@ class WorkflowTask(models.Model):
         ("transferred", "已转交"),
         ("rollbacked", "已回退"),
         ("revoked", "已终止"),
+        ("returned", "已退回修改"),
     ]
 
     MODE_CHOICES = [

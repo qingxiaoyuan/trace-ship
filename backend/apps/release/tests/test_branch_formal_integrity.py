@@ -342,3 +342,75 @@ def test_nonformal_regeneration_rejects_unreliable_baseline(api, project, reposi
     assert api.post(url + "submit-audit/").status_code == 400
     detail = api.get(url).data["data"]
     assert not detail["release_doc"] and not detail["changes_initialized"]
+
+
+@pytest.mark.parametrize("release_type", ["rc", "beta"])
+def test_returned_branch_release_requires_new_commit_and_new_notes(api, user, project, repository, remote, release_type):
+    """RC/Beta 原单退回后更新 SHA，重新生成说明并重新完整审批。"""
+    WorkflowDefinition.objects.create(project=project, repository=repository, name="候选审批", release_type=release_type,
+        node_config=[{"node_id": "check", "node_name": "确认", "mode": "any",
+                      "approvers": [{"type": "user", "user_id": str(user.id)}]}])
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": release_type, "branch": "develop", "package_config_ids": []}, format="json")
+    assert created.status_code == 201, created.data
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    assert api.post(url + "submit-audit/").status_code == 200
+    release = ReleaseRecord.objects.get(pk=created.data["data"]["id"])
+    old = release.workflow_instance
+    task = old.tasks.get(status="pending")
+    assert api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "修复"}, format="json").status_code == 200
+    assert api.post(url + "generate-doc/").status_code == 200
+    assert api.post(url + "submit-audit/").status_code == 400
+    remote.branch_head = remote.commit_list_head = MOVED
+    changed = api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json")
+    assert changed.status_code == 200, changed.data
+    assert api.post(url + "submit-audit/").status_code == 400
+    assert api.post(url + "generate-doc/").status_code == 200
+    submitted = api.post(url + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    release.refresh_from_db()
+    assert release.workflow_instance_id != old.id and release.git_hash == MOVED
+    assert release.workflow_instance.tasks.get(status="pending").node_id == "check"
+
+
+def test_returned_ai_release_restarts_review_with_new_settings(api, user, project, repository, remote,
+                                                               django_capture_on_commit_callbacks):
+    """新轮固定新提交及当前配置，旧轮报告与人工任务保持历史。"""
+    from apps.system.review_settings import save_settings
+
+    first_config = save_settings({"endpoint": "https://model.example/v1", "model": "first", "protocol": "openai", "skill": "code-review-expert"})
+    WorkflowDefinition.objects.create(project=project, repository=repository, name="AI 候选审批", release_type="rc",
+        node_config=[{"node_id": "ai", "node_name": "代码审查", "node_type": "ai_review"},
+                     {"node_id": "check", "node_name": "确认", "mode": "any",
+                      "approvers": [{"type": "user", "user_id": str(user.id)}]}])
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": "rc", "branch": "develop", "package_config_ids": []}, format="json")
+    assert created.status_code == 201, created.data
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    with django_capture_on_commit_callbacks(execute=True):
+        submitted = api.post(url + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    release = ReleaseRecord.objects.get(pk=created.data["data"]["id"])
+    old = release.workflow_instance
+    report = old.ai_reviews.get(node_id="ai")
+    assert report.status == "first_release" and report.settings_version_id == first_config.id
+    assert old.review_scope.head_git_hash == HEAD
+    task = old.tasks.get(status="pending")
+    assert api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "请修复"}, format="json").status_code == 200
+    second_config = save_settings({"endpoint": "https://model.example/v1", "model": "second", "protocol": "openai", "skill": "code-review-expert"})
+    remote.branch_head = remote.commit_list_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    assert api.post(url + "generate-doc/").status_code == 200
+    with django_capture_on_commit_callbacks(execute=True):
+        submitted = api.post(url + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    release.refresh_from_db()
+    new = release.workflow_instance
+    assert new.id != old.id and new.ai_reviews.get(node_id="ai").settings_version_id == second_config.id
+    assert new.review_scope.head_git_hash == MOVED and new.tasks.get(status="pending").node_id == "check"
+    report.refresh_from_db()
+    old.refresh_from_db()
+    assert report.status == "first_release" and report.settings_version_id == first_config.id
+    assert old.status == "returned" and old.review_scope.head_git_hash == HEAD
