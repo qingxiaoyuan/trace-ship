@@ -57,25 +57,60 @@ def _ask(config, messages):
 
 
 def _line_positions(diff):
-    """根据固定 diff 实际行解析可定位位置。"""
+    """只从计数完整的差异块提取行号；有歧义的行不允许定位。"""
     old, new = set(), set()
-    left = right = None
+    ambiguous_old, ambiguous_new = set(), set()
+    invalid_diff = False
+    hunk = None
+
+    def finish():
+        nonlocal invalid_diff
+        if hunk is None:
+            return
+        if not hunk["valid"] or hunk["old_left"] or hunk["new_left"]:
+            invalid_diff = True
+            return
+        for number in hunk["old_positions"]:
+            if number in old:
+                ambiguous_old.add(number)
+            old.add(number)
+        for number in hunk["new_positions"]:
+            if number in new:
+                ambiguous_new.add(number)
+            new.add(number)
+
     for line in diff.splitlines():
-        match = re.match(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+        match = re.match(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
         if match:
-            left, right = int(match.group(1)), int(match.group(2))
-        elif left is not None and line.startswith("-"):
-            old.add(left)
-            left += 1
-        elif right is not None and line.startswith("+"):
-            new.add(right)
-            right += 1
-        elif left is not None and line.startswith(" "):
-            old.add(left)
-            new.add(right)
-            left += 1
-            right += 1
-    return {"old": old, "new": new}
+            finish()
+            hunk = {"old_line": int(match.group(1)), "new_line": int(match.group(3)),
+                    "old_left": int(match.group(2) or 1), "new_left": int(match.group(4) or 1),
+                    "old_positions": [], "new_positions": [], "valid": True}
+            continue
+        if hunk is None:
+            continue
+        if line.startswith("\\ No newline at end of file"):
+            continue
+        if line.startswith(("-", " ")):
+            if hunk["old_left"] <= 0:
+                hunk["valid"] = False
+            else:
+                hunk["old_positions"].append(hunk["old_line"])
+                hunk["old_line"] += 1
+                hunk["old_left"] -= 1
+        if line.startswith(("+", " ")):
+            if hunk["new_left"] <= 0:
+                hunk["valid"] = False
+            else:
+                hunk["new_positions"].append(hunk["new_line"])
+                hunk["new_line"] += 1
+                hunk["new_left"] -= 1
+        if not line.startswith(("-", "+", " ")):
+            hunk["valid"] = False
+    finish()
+    if invalid_diff:
+        return {"old": set(), "new": set()}
+    return {"old": old - ambiguous_old, "new": new - ambiguous_new}
 
 
 def _safe_findings(items, diffs):
@@ -85,7 +120,7 @@ def _safe_findings(items, diffs):
     for item in diffs:
         for side, key in (("old", "old_path"), ("new", "new_path")):
             if item.get(key):
-                files[(item[key], side)] = item
+                files.setdefault((item[key], side), []).append(item)
     result = []
     for item in items:
         if not isinstance(item, dict) or item.get("severity") not in ("P0", "P1", "P2", "P3"):
@@ -98,9 +133,9 @@ def _safe_findings(items, diffs):
         known_paths = {name for name, _ in files}
         if path in known_paths:
             finding["path"] = path
-        if (path, side) in files:
+        if len(files.get((path, side), [])) == 1:
             start, end = item.get("line_start"), item.get("line_end")
-            positions = _line_positions(files[(path, side)].get("diff", ""))
+            positions = _line_positions(files[(path, side)][0].get("diff", ""))
             if side in positions and type(start) is int and type(end) is int and 0 < start <= end and end - start < 500:
                 if all(number in positions[side] for number in range(start, end + 1)):
                     finding.update(side=side, line_start=start, line_end=end)

@@ -19,7 +19,7 @@ interface ApprovalActionsProps {
 }
 
 /** 审批意见历史 */
-function ApprovalHistory({ tasks }: { tasks: WorkflowTask[] }) {
+function ApprovalHistory({ tasks, returnedBy }: { tasks: WorkflowTask[]; returnedBy?: string }) {
   const getTaskTime = (t: WorkflowTask) =>
     new Date(t.action_time || t.created_at || t.submit_time || 0).getTime();
   const history = (tasks || [])
@@ -42,7 +42,7 @@ function ApprovalHistory({ tasks }: { tasks: WorkflowTask[] }) {
             <div className="flex-1 rounded-lg border border-indigo-100 bg-white p-3">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-medium text-slate-900">
-                  {item.approver_name || item.approver_username || '-'}
+                  {item.status === 'returned' && returnedBy ? returnedBy : item.approver_name || item.approver_username || '-'}
                 </span>
                 {action ? <StatusTag status={action.status}>{action.text}</StatusTag> : null}
               </div>
@@ -70,9 +70,11 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
   const [toUserId, setToUserId] = useState('');
   const [transferMode, setTransferMode] = useState(false);
   const [rollbackMode, setRollbackMode] = useState(false);
+  const [returnMode, setReturnMode] = useState(false);
 
   const taskId = source.taskId;
   const canApprove = !source.readOnly && !!taskId && instance?.tasks?.some((task) => task.id === taskId && task.can_act === true);
+  const canReturn = !source.readOnly && !!taskId && instance?.tasks?.some((task) => task.id === taskId && task.can_return_for_revision === true);
 
   // 只回退到紧邻的人工节点，不能跨越已执行的 AI 节点。
   const approvalNodes = (instance?.graph_data?.nodes || []).filter(
@@ -119,17 +121,23 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
     onSuccess: () => onDone('回退成功'),
   });
 
+  const returnMutation = useMutation({
+    mutationFn: (c: string) => workflowApi.returnForRevision(taskId!, { comment: c }),
+    onSuccess: () => onDone('已退回修改'),
+  });
+
   const resetModes = () => {
     setTransferMode(false);
     setRollbackMode(false);
+    setReturnMode(false);
   };
 
   return (
     <div className="tech-card rounded-xl p-5">
       <h3 className="mb-4 text-[15px] font-semibold tracking-tight text-slate-900">审批意见</h3>
-      <ApprovalHistory tasks={instance?.tasks || []} />
+      <ApprovalHistory tasks={instance?.tasks || []} returnedBy={instance?.returned_by_name} />
 
-      {canApprove ? (
+      {canApprove || canReturn ? (
         <div className="mt-4 border-t border-indigo-50 pt-4">
           <textarea
             value={comment}
@@ -163,6 +171,11 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
                   确认转交
                 </Button>
               </>
+            ) : returnMode ? (
+              <>
+                <Button onClick={() => setReturnMode(false)}>取消</Button>
+                <Button disabled={returnMutation.isPending} onClick={() => returnMutation.mutate(comment)}>确认退回修改</Button>
+              </>
             ) : rollbackMode ? (
               <>
                 <Button onClick={() => setRollbackMode(false)}>取消</Button>
@@ -179,20 +192,21 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
               </>
             ) : (
               <>
-                <Button
+                {canReturn ? <Button onClick={() => setReturnMode(true)}>退回修改</Button> : null}
+                {canApprove ? <Button
                   icon={<Forward className="h-3.5 w-3.5" strokeWidth={1.5} />}
                   onClick={() => setTransferMode(true)}
                 >
                   转交
-                </Button>
-                <Button
+                </Button> : null}
+                {canApprove ? <Button
                   danger
                   icon={<X className="h-3.5 w-3.5" strokeWidth={1.5} />}
                   onClick={() => rejectMutation.mutate(comment)}
                 >
                   驳回
-                </Button>
-                {canRollback ? (
+                </Button> : null}
+                {canApprove && canRollback ? (
                   <Button
                     icon={<RollbackIcon className="h-3.5 w-3.5" strokeWidth={1.5} />}
                     onClick={() => setRollbackMode(true)}
@@ -200,14 +214,14 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
                     回退
                   </Button>
                 ) : null}
-                <button
+                {canApprove ? <button
                   type="button"
                   onClick={() => approveMutation.mutate(comment)}
                   className="btn-glow ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
                 >
                   <Check className="h-3.5 w-3.5" strokeWidth={1.5} />
                   通过
-                </button>
+                </button> : null}
               </>
             )}
           </div>

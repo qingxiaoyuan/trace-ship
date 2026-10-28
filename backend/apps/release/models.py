@@ -111,6 +111,9 @@ class ReleaseRecord(models.Model):
     review_context_is_requirement = models.BooleanField(default=False, verbose_name="补充内容包含真实需求")
     review_document_paths = models.JSONField(default=list, blank=True, verbose_name="审查文档路径")
     doc_needs_regeneration = models.BooleanField(default=False, verbose_name="发布说明需要重新生成")
+    has_revision_history = models.BooleanField(default=False, verbose_name="存在退回修改历史")
+    revision_source_hash = models.CharField(max_length=100, blank=True, verbose_name="退回前提交快照")
+    revision_requires_ai_review = models.BooleanField(default=False, verbose_name="退回后须重新 AI 审查")
     doc_source_fixed = models.BooleanField(default=False, verbose_name="说明采用固定提交范围")
     # 关联变更清单：硬件/软件版本条目列表，由发布向导收集
     related_changes = models.JSONField(default=list, blank=True, verbose_name="关联变更清单")

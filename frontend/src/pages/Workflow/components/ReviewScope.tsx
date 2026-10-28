@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { workflowApi } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
+import { useAuthStore } from '@/stores/authStore';
 
 const statusText = {
   first_release: '首次发布，跳过 AI 审查',
@@ -11,12 +12,14 @@ const statusText = {
 
 /** 根据实例 ID 读取本轮快照，不跟随发布草稿后续变化。 */
 export function ReviewScope({ instanceId }: { instanceId: string }) {
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const scope = useQuery({
-    queryKey: ['review-scope', instanceId],
+    queryKey: ['review-scope', instanceId, sessionVersion],
     queryFn: () => workflowApi.getReviewScope(instanceId),
     retry: false,
+    gcTime: 0,
   });
-  if (scope.isLoading) return <p className="text-sm text-slate-500">正在读取审查范围…</p>;
+  if (scope.isFetching) return <p className="text-sm text-slate-500">正在读取审查范围…</p>;
   if (scope.error) {
     const error = scope.error as unknown as NormalizedError;
     if (error.status === 404) return null;

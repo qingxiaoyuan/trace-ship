@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('workflow', '0016_aireviewrun_history_aireviewrun_skip_reason_and_more'),
+        ('workflow', '0017_workflowinstance_returned_by_and_more'),
     ]
 
     operations = [

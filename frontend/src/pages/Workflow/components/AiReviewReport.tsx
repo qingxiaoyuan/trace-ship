@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { workflowApi } from '@/api/workflow';
 import type { AiReviewData, AiReviewFinding } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
+import { ReviewDiff } from './ReviewDiff';
+import { useAuthStore } from '@/stores/authStore';
+import { uniqueHistoryFindings } from './reviewFindings';
 
 const statusText: Record<AiReviewData['status'], string> = {
   queued: '等待审查',
@@ -13,6 +18,7 @@ const statusText: Record<AiReviewData['status'], string> = {
   first_release: '首次发布，跳过 AI 审查',
   no_changes: '无代码变更',
   skipped: '管理员已跳过 AI 审查',
+  canceled: '本轮审查已取消',
 };
 
 function RecoveryActions({ instanceId, nodeId }: { instanceId: string; nodeId: string }) {
@@ -85,13 +91,33 @@ function location(finding: AiReviewFinding): string {
   return `${finding.path} · ${finding.side === 'old' ? '旧侧' : '新侧'} ${lines} 行`;
 }
 
+function ReviewHistory({ review }: { review: AiReviewData }) {
+  const findings = uniqueHistoryFindings(review);
+  if (!review.history?.length) return null;
+  return <details className="rounded border border-slate-200 p-2"><summary className="cursor-pointer font-medium text-slate-700">过往审查执行（{review.history.length}）</summary>
+    {review.history.map((item, index) => <div key={item.token} className="mt-2 rounded bg-slate-50 p-2">
+      <p>第 {index + 1} 次 · {statusText[item.status as AiReviewData['status']] || item.status} · {item.updated_at}</p>
+      <p className="whitespace-pre-wrap break-words">{item.summary}</p>
+      {item.coverage?.warnings?.map((warning, i) => <p key={i} className="break-words text-amber-800">{warning}</p>)}
+      {item.coverage?.unreviewed_paths?.map((path) => <p key={path} className="break-all font-mono text-xs">未审查：{path}</p>)}
+      {(findings.get(item.token) || []).map((finding, i) => <div key={finding.id || i} className="whitespace-pre-wrap break-words">
+        <strong>{finding.title}</strong><span className="ml-2 break-all text-xs text-slate-500">{location(finding)}</span>
+        <Markdown remarkPlugins={[remarkGfm]}>{finding.reason}</Markdown>
+        {finding.suggestion ? <div>建议：<Markdown remarkPlugins={[remarkGfm]}>{finding.suggestion}</Markdown></div> : null}
+      </div>)}
+    </div>)}
+  </details>;
+}
+
 /** 以实例为单位读取服务端授权后的报告，执行期间自动刷新。 */
 export function AiReviewReport({ instanceId }: { instanceId: string }) {
   const client = useQueryClient();
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const query = useQuery({
-    queryKey: ['ai-review', instanceId],
+    queryKey: ['ai-review', instanceId, sessionVersion],
     queryFn: () => workflowApi.getAiReview(instanceId),
     retry: false,
+    gcTime: 0,
     refetchInterval: (state) => state.state.data?.reviews?.some((review) => review.status === 'queued' || review.status === 'running') ? 3000 : false,
   });
   const states = query.data?.reviews?.map((review) => `${review.node_id}:${review.status}`).join('|') || '';
@@ -101,7 +127,7 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
     }
   }, [client, instanceId, states]);
 
-  if (query.isLoading) return <p className="text-sm text-slate-500">正在读取 AI 审查…</p>;
+  if (query.isLoading || (query.isFetching && !query.isFetchedAfterMount)) return <p className="text-sm text-slate-500">正在读取 AI 审查…</p>;
   if (query.error) {
     const error = query.error as unknown as NormalizedError;
     if (error.status === 404) return null;
@@ -132,24 +158,17 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
       </details> : null}
       {review.coverage?.batches?.length ? <BatchProgress batches={review.coverage.batches} /> : null}
       {review.dimensions?.length ? <p className="break-words text-slate-600">实际审查维度：{review.dimensions.join('、')}</p> : null}
-      {review.history?.length ? <details className="rounded border border-slate-200 p-2"><summary className="cursor-pointer font-medium text-slate-700">过往审查执行（{review.history.length}）</summary>
-        {review.history.map((item, index) => <div key={item.token} className="mt-2 rounded bg-slate-50 p-2">
-          <p>第 {index + 1} 次 · {statusText[item.status as AiReviewData['status']] || item.status} · {item.updated_at}</p>
-          <p className="whitespace-pre-wrap break-words">{item.summary}</p>
-          {item.coverage?.warnings?.map((warning, i) => <p key={i} className="break-words text-amber-800">{warning}</p>)}
-          {item.coverage?.unreviewed_paths?.map((path) => <p key={path} className="break-all font-mono text-xs">未审查：{path}</p>)}
-          {item.findings?.map((finding, i) => <p key={finding.id || i} className="whitespace-pre-wrap break-words">{finding.title}：{finding.reason}</p>)}
-        </div>)}
-      </details> : null}
+      <ReviewHistory review={review} />
       {review.findings ? <div className="space-y-3"><h5 className="font-semibold text-slate-800">审查意见</h5>
         {review.findings.length === 0 ? <p className="text-slate-500">未报告意见，仍需人工判断。</p> : review.findings.map((finding, index) => <div key={finding.id || index} className="rounded-lg bg-slate-50 p-3">
           <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">{finding.severity}</span><strong className="break-words">{finding.title}</strong></div>
           <p className="mt-1 break-all font-mono text-xs text-slate-500">{location(finding)}</p>
-          <p className="mt-2 whitespace-pre-wrap break-words">{finding.reason}</p>
-          {finding.suggestion ? <p className="mt-2 whitespace-pre-wrap break-words text-slate-600">建议：{finding.suggestion}</p> : null}
+          <div className="mt-2 whitespace-pre-wrap break-words [&_pre]:overflow-x-auto"><Markdown remarkPlugins={[remarkGfm]}>{finding.reason}</Markdown></div>
+          {finding.suggestion ? <div className="mt-2 whitespace-pre-wrap break-words text-slate-600 [&_pre]:overflow-x-auto">建议：<Markdown remarkPlugins={[remarkGfm]}>{finding.suggestion}</Markdown></div> : null}
         </div>)}
       </div> : null}
       {review.can_recover ? <RecoveryActions instanceId={instanceId} nodeId={review.node_id} /> : null}
     </article>)}
+    <ReviewDiff instanceId={instanceId} reviews={query.data.reviews} />
   </section>;
 }

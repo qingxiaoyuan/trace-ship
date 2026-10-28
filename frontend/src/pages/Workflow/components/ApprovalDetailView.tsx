@@ -6,6 +6,7 @@ import { workflowApi } from '@/api/workflow';
 import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
 import { WorkflowHistory } from '@/components/WorkflowHistory';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
+import { useAuthStore } from '@/stores/authStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { instanceStatusMap, releaseTypeText } from '../constants';
 import { ApprovalTimeline } from './ApprovalTimeline';
@@ -16,6 +17,7 @@ import { ReviewScope } from './ReviewScope';
 import { AiReviewReport } from './AiReviewReport';
 import type { DetailSource } from '../types';
 import type { ReleaseType } from '@/types';
+import type { NormalizedError } from '@/api/request';
 
 interface ApprovalDetailViewProps {
   source: DetailSource;
@@ -25,11 +27,15 @@ interface ApprovalDetailViewProps {
 /** 审批详情视图：面包屑 + 左主区（审批头/流程/意见）+ 右侧摘要 */
 export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) {
   const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
-  const { data: instance, isLoading } = useQuery({
-    queryKey: ['workflow-instance-for-detail', source.instanceId],
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
+  const detail = useQuery({
+    queryKey: ['workflow-instance-for-detail', source.instanceId, sessionVersion],
     queryFn: () => workflowApi.getInstance(source.instanceId),
     enabled: !!source.instanceId,
+    retry: false,
+    gcTime: 0,
   });
+  const instance = detail.error ? undefined : detail.data;
 
   // 面包屑实体名 + 最近访问埋点（实例详情返回后触发）
   useEffect(() => {
@@ -46,20 +52,34 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
     return () => setEntityTitle(null);
   }, [instance, setEntityTitle]);
 
+  if (detail.isLoading || (detail.isFetching && !detail.isFetchedAfterMount)) {
+    return <div className="py-6 text-center text-sm text-slate-500">正在读取审批详情…</div>;
+  }
+  if (detail.error || !instance) {
+    const error = detail.error as unknown as NormalizedError | null;
+    return <div role="alert" className="rounded-lg bg-rose-50 p-4 text-sm text-rose-700">
+      审批详情读取失败：{error?.friendlyMessage || error?.message || '不存在或无权查看'}
+      <button type="button" className="ml-2 underline" onClick={() => void detail.refetch()}>重试</button>
+      <button type="button" className="ml-2 underline" onClick={onBack}>返回审批中心</button>
+    </div>;
+  }
+
   const statusInfo = instanceStatusMap[instance?.status || 'running'] || instanceStatusMap.running;
   const isRunning = instance?.status === 'running';
   const detailSource: DetailSource = {
     ...source,
-    title: instance?.title || source.title,
-    version: instance?.version || source.version,
-    releaseType: (instance?.release_type as ReleaseType | undefined) || source.releaseType,
-    branch: instance?.branch || source.branch,
-    packageStatus: instance?.package_status || source.packageStatus,
-    applicant: instance?.applicant || source.applicant,
-    projectName: instance?.project_name || source.projectName,
-    softwareName: instance?.repository_name || source.softwareName,
-    submitTime: instance?.submit_time || source.submitTime,
-    currentNode: instance?.current_node || source.currentNode,
+    title: instance.title || '发布审批',
+    version: instance.version || '',
+    releaseType: instance.release_type as ReleaseType | undefined,
+    branch: instance.branch || '',
+    packageStatus: instance.package_status || '',
+    applicant: instance.applicant || '',
+    projectName: instance.project_name || '',
+    softwareName: instance.repository_name || '',
+    submitTime: instance.submit_time || '',
+    currentNode: instance.current_node || '',
+    mode: instance.tasks?.find((task) => task.id === source.taskId && task.can_act === true)?.mode,
+    readOnly: !instance.tasks?.some((task) => task.id === source.taskId && task.can_act === true),
   };
 
   return (
@@ -145,9 +165,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
           {/* 流程节点 */}
           <div className="tech-card rounded-xl p-5">
             <h3 className="mb-4 text-[15px] font-semibold tracking-tight text-slate-900">审批流程</h3>
-            {isLoading ? (
-              <div className="py-6 text-center text-[13px] text-slate-400">加载中…</div>
-            ) : instance ? (
+            {instance ? (
               <ApprovalTimeline instance={instance} />
             ) : (
               <div className="py-6 text-center text-[13px] text-slate-400">暂无流程数据</div>

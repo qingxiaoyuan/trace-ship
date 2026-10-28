@@ -54,3 +54,10 @@ it.each([false, true])('来源 RC 重选仅对有权更新来源的用户显示�
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ReleaseSource release={release} canRefresh={canRefresh} /></MemoryRouter></QueryClientProvider>);
   expect(!!screen.queryByRole('button', { name: '重选来源 RC' })).toBe(canRefresh);
 });
+
+it('退回修改的原申请提示先更新提交再重新生成说明', () => {
+  const release = { id: 'r', release_type: 'rc', status: 'draft', branch: 'develop', git_hash: 'a'.repeat(40),
+    revision_update_required: true } as Release;
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ReleaseSource release={release} canRefresh /></MemoryRouter></QueryClientProvider>);
+  expect(screen.getByText('申请已退回修改，请更新到新的来源提交，再重新生成发布说明并提审。')).toBeTruthy();
+});

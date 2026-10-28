@@ -33,7 +33,7 @@ export interface AiReviewFinding {
 export interface AiReviewData {
   node_id: string;
   node_name?: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
   summary: string;
   coverage: { manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[] }> };
   dimensions?: string[];
@@ -44,6 +44,25 @@ export interface AiReviewData {
   skipped_by?: string | null;
   skipped_by_name?: string;
   history?: Array<{ token: string; status: string; summary: string; updated_at: string; coverage?: AiReviewData['coverage']; dimensions?: string[]; findings?: AiReviewFinding[] }>;
+}
+
+export interface ReviewDiffFile {
+  old_path: string;
+  new_path: string;
+  diff: string;
+  new_file?: boolean;
+  deleted_file?: boolean;
+  renamed_file?: boolean;
+  binary?: boolean;
+  too_large?: boolean;
+  collapsed?: boolean;
+}
+
+export interface ReviewDiffData {
+  status: ReviewScopeData['status'];
+  base_git_hash: string;
+  head_git_hash: string;
+  diffs: ReviewDiffFile[];
 }
 
 export const workflowApi = {
@@ -61,6 +80,7 @@ export const workflowApi = {
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
   getReviewScope: (id: string) => get<ReviewScopeData>(`/workflow/instances/${id}/review-scope/`, { silent: true }),
   getAiReview: (id: string) => get<{ reviews: AiReviewData[] }>(`/workflow/instances/${id}/ai-review/`, { silent: true }),
+  getReviewDiff: (id: string) => get<ReviewDiffData>(`/workflow/instances/${id}/review-diff/`, { silent: true }),
   retryAiReview: (id: string, node_id: string) => post(`/workflow/instances/${id}/ai-review-retry/`, { node_id }),
   skipAiReview: (id: string, node_id: string, reason: string) => post(`/workflow/instances/${id}/ai-review-skip/`, { node_id, reason }),
   revokeInstance: (id: string, data?: { comment?: string }) =>
@@ -82,6 +102,8 @@ export const workflowApi = {
     post(`/workflow/tasks/${id}/reject/`, data || {}),
   transferTask: (id: string, data: { to_user_id: string; comment?: string }) =>
     post(`/workflow/tasks/${id}/transfer/`, data),
+  returnForRevision: (id: string, data?: { comment?: string }) =>
+    post(`/workflow/tasks/${id}/return-for-revision/`, data || {}),
   rollbackTask: (id: string, data?: { comment?: string; rollback_target?: string }) =>
     post(`/workflow/tasks/${id}/rollback/`, data || {}),
 };

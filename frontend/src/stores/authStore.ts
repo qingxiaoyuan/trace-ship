@@ -7,6 +7,8 @@ interface AuthState {
   token: string | null;
   refreshToken: string | null;
   user: UserInfo | null;
+  /** 内存会话代次，用于隔离账号或令牌变化前后的敏感查询缓存。 */
+  sessionVersion: number;
   menus: MenuItem[];
   isAuthenticated: boolean;
   hydrated: boolean;
@@ -28,6 +30,7 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       refreshToken: null,
       user: null,
+      sessionVersion: 0,
       menus: [],
       isAuthenticated: false,
       hydrated: false,
@@ -64,7 +67,7 @@ export const useAuthStore = create<AuthState>()(
       clearAuth: () => {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
-        set({ token: null, refreshToken: null, user: null, menus: [], isAuthenticated: false });
+        set((state) => ({ token: null, refreshToken: null, user: null, menus: [], isAuthenticated: false, sessionVersion: state.sessionVersion + 1 }));
       },
 
       setTokens: (token, refreshToken) => {
@@ -72,7 +75,7 @@ export const useAuthStore = create<AuthState>()(
         if (refreshToken) {
           localStorage.setItem('refreshToken', refreshToken);
         }
-        set({ token, ...(refreshToken ? { refreshToken } : {}), isAuthenticated: true });
+        set((state) => ({ token, ...(refreshToken ? { refreshToken } : {}), isAuthenticated: true, sessionVersion: state.sessionVersion + 1 }));
       },
 
       initializeAuth: async () => {
@@ -115,10 +118,10 @@ export const useAuthStore = create<AuthState>()(
           authApi.getUserInfo(),
           authApi.getMenus(),
         ]);
-        set({ user, menus });
+        set((state) => ({ user, menus, sessionVersion: state.sessionVersion + 1 }));
       },
 
-      setUser: (user) => set({ user }),
+      setUser: (user) => set((state) => ({ user, sessionVersion: state.sessionVersion + 1 })),
       setHydrated: (hydrated) => set({ hydrated }),
     }),
     {

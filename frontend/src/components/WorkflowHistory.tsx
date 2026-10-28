@@ -5,17 +5,20 @@ import { Pagination } from 'antd';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
 import { instanceStatusMap } from '@/pages/Workflow/constants';
+import { useAuthStore } from '@/stores/authStore';
 
 /** 当前申请的可见审批轮次，由服务端限制项目及审批人范围。 */
 export function WorkflowHistory({ releaseId }: { releaseId: string }) {
-  return <WorkflowHistoryList key={releaseId} releaseId={releaseId} />;
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
+  return <WorkflowHistoryList key={`${releaseId}:${sessionVersion}`} releaseId={releaseId} sessionVersion={sessionVersion} />;
 }
 
-function WorkflowHistoryList({ releaseId }: { releaseId: string }) {
+function WorkflowHistoryList({ releaseId, sessionVersion }: { releaseId: string; sessionVersion: number }) {
   const [page, setPage] = useState(1);
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['workflow-history', releaseId, page],
+    queryKey: ['workflow-history', releaseId, page, sessionVersion],
     queryFn: () => workflowApi.getInstances({ biz_type: 'release', biz_id: releaseId, page, page_size: 10 }),
+    gcTime: 0,
   });
   return (
     <section className="tech-card rounded-xl p-5" aria-label="审批记录">

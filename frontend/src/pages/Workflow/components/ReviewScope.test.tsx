@@ -1,15 +1,16 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { workflowApi } from '@/api/workflow';
 import { ReviewScope } from './ReviewScope';
+import { useAuthStore } from '@/stores/authStore';
 
 function show() {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <ReviewScope instanceId="round-one" />
   </QueryClientProvider>);
 }
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); useAuthStore.getState().clearAuth(); });
 
 it('展示本轮固定范围与文档原文，代码按字面文本显示', async () => {
   vi.spyOn(workflowApi, 'getReviewScope').mockResolvedValue({ status: 'ready', base_tag: 'v1', base_git_hash: 'a'.repeat(40),
@@ -41,4 +42,14 @@ it('仅在服务端返回时展示本轮真实需求标记', async () => {
   vi.spyOn(workflowApi, 'getReviewScope').mockResolvedValue({ status: 'ready', base_tag: 'v1', base_git_hash: 'a', head_git_hash: 'b', warnings: [], context_is_requirement: true });
   show();
   expect(await screen.findByText('本轮已标记包含真实需求依据')).toBeTruthy();
+});
+
+it('会话切换后不展示上个账号缓存的审查上下文', async () => {
+  vi.spyOn(workflowApi, 'getReviewScope').mockResolvedValueOnce({ status: 'ready', base_tag: 'v1', base_git_hash: 'a',
+    head_git_hash: 'b', warnings: [], context: '原账号私有依据' }).mockRejectedValue({ status: 404 });
+  show();
+  expect(await screen.findByText('原账号私有依据')).toBeTruthy();
+  act(() => useAuthStore.getState().setTokens('another-account-token'));
+  expect(screen.queryByText('原账号私有依据')).toBeNull();
+  await waitFor(() => expect(screen.queryByLabelText('本轮审查范围')).toBeNull());
 });

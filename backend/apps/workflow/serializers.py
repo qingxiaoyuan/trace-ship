@@ -166,6 +166,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
     branch = serializers.SerializerMethodField()
     package_status = serializers.SerializerMethodField()
     can_act = serializers.SerializerMethodField()
+    can_return_for_revision = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowTask
@@ -178,12 +179,38 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
             "title", "applicant", "project_name", "repository_name", "current_node",
             "submit_time", "version", "release_type",
-            "branch", "package_status", "can_act",
+            "branch", "package_status", "can_act", "can_return_for_revision",
         ]
         read_only_fields = [
             "id", "instance", "created_at", "updated_at",
             "approver_name", "approver_username", "transferred_from_name",
         ]
+
+    def to_representation(self, obj: WorkflowTask):
+        """审查轮的人工意见可能含源码，只读角色不读取正文。"""
+        data = super().to_representation(obj)
+        request = self.context.get("request")
+        if not request or request.user.is_superuser:
+            return data
+        key = (str(obj.instance_id), str(request.user.id))
+        cache = self.context.setdefault("_review_comment_redaction", {})
+        if key not in cache:
+            from apps.project.models import ProjectMember
+            from utils.permissions import ProjectRolePermission
+
+            instance = obj.instance
+            if not instance.ai_reviews.exists():
+                cache[key] = False
+            elif not instance.source_project_id or not instance.source_biz_id or instance.source_biz_id != instance.biz_id:
+                cache[key] = True
+            else:
+                project = instance.source_project
+                member = ProjectMember.objects.filter(project=project, user=request.user).exists()
+                role = ProjectRolePermission._effective_role(project, request.user) if member else None
+                cache[key] = role in ("maintainer", "viewer")
+        if cache[key]:
+            data["comment"] = ""
+        return data
 
     def get_can_act(self, obj: WorkflowTask) -> bool:
         """审批操作能力以实际业务项目和当前任务归属为准。"""
@@ -194,6 +221,28 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
         return bool(request and str(obj.approver_id) == str(request.user.id)
                     and obj.status == "pending" and obj.instance.status == "running"
                     and permission.has_permission(request, None) and permission.has_object_permission(request, None, obj))
+
+    def get_can_return_for_revision(self, obj: WorkflowTask) -> bool:
+        """退回能力以当前审批分配与目标项目有效角色为准。"""
+        from apps.project.models import ProjectMember
+        from utils.permissions import ProjectRolePermission
+
+        request = self.context.get("request")
+        if not request or not request.user.is_active or obj.status != "pending" or obj.instance.status != "running":
+            return False
+        if not request.user.is_superuser and obj.approver_id != request.user.id:
+            return False
+        release = resolve_release(obj.instance)
+        if (not release or release.status != "pending" or release.workflow_instance_id != obj.instance_id
+                or obj.instance.source_project_id != release.project_id or not obj.instance.source_biz_id
+                or obj.instance.source_biz_id != obj.instance.biz_id or obj.instance.biz_id != str(release.pk)):
+            return False
+        if obj.node_id != obj.instance.current_node_id:
+            return False
+        if not request.user.is_superuser and ProjectMember.objects.filter(project=release.project, user=request.user).exists():
+            if ProjectRolePermission._effective_role(release.project, request.user) in ("maintainer", "viewer"):
+                return False
+        return True
 
     def get_title(self, obj: WorkflowTask) -> str:
         """返回审批标题。"""
@@ -263,6 +312,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     can_revoke = serializers.SerializerMethodField()
     is_current = serializers.SerializerMethodField()
     has_config_snapshot = serializers.SerializerMethodField()
+    returned_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -273,7 +323,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "created_by", "created_at", "updated_at", "completed_at", "tasks",
             "title", "applicant", "project_name", "repository_name", "current_node", "submit_time",
             "version", "release_type", "branch", "package_status",
-            "git_hash", "tag_name", "release_doc", "can_revoke", "is_current", "has_config_snapshot",
+            "git_hash", "tag_name", "release_doc", "can_revoke", "is_current", "has_config_snapshot", "returned_by", "returned_by_name",
         ]
         read_only_fields = [
             "id", "definition_name", "biz_type", "biz_id", "status",
@@ -283,6 +333,9 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "version", "release_type", "branch", "package_status",
             "git_hash", "tag_name", "release_doc",
         ]
+
+    def get_returned_by_name(self, obj: WorkflowInstance) -> str:
+        return user_display(obj.returned_by)
 
     def get_is_current(self, obj: WorkflowInstance) -> bool:
         release = resolve_release(obj)
