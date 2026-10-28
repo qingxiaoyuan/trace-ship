@@ -283,3 +283,29 @@ def test_future_approver_of_historical_round_cannot_read_current_release(user, p
     assert detail.data["data"]["branch"] == "" and detail.data["data"]["git_hash"] == ""
     scope = client.get(f"/api/workflow/instances/{old.id}/review-scope/")
     assert scope.data["data"]["context"] == "旧轮依据"
+
+
+def test_review_baseline_reads_later_tag_page_with_missing_pagination_header(user, project, repository, draft):
+    import responses
+
+    from apps.release.review_scope import capture_review_scope
+    from apps.workflow.models import WorkflowDefinition, WorkflowInstance
+    from utils.provider.gitlab import GitLabProvider
+
+    base = "a" * 40
+    draft.version, draft.tag_name = "VA.1.0.150", "VA.1.0.150-rc"
+    draft.save()
+    definition = WorkflowDefinition.objects.create(repository=repository, release_type="rc", name="审批")
+    instance = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id=str(draft.id), source_project=project, created_by=user)
+    prefix = "https://gitlab.example.com/api/v4/projects/release%2Fbackend/repository"
+    provider = GitLabProvider("https://gitlab.example.com", {"token": "test"})
+    with responses.RequestsMock() as server:
+        server.add(responses.GET, f"{prefix}/tags", json=[
+            {"name": f"VA.1.0.{index}-rc", "commit": {"id": "f" * 40}} for index in range(100)
+        ], status=200)
+        server.add(responses.GET, f"{prefix}/tags", json=[{"name": "VA.1.0.149-rc", "commit": {"id": base}}], status=200)
+        server.add(responses.GET, f"{prefix}/merge_base", json={"id": base}, status=200)
+        server.add(responses.GET, f"{prefix}/compare", json={"compare_timeout": False, "diffs": []}, status=200)
+        scope = capture_review_scope(draft, instance, user, provider=provider)
+    assert scope.base_tag == "VA.1.0.149-rc"
+    assert scope.base_git_hash == base
