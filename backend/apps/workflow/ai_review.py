@@ -76,18 +76,18 @@ def execute_review(instance_id, node_id, expected_token=None):
     if scope_status in ("first_release", "no_changes"):
         outcome = {"status": scope_status, "summary": "首次发布，已跳过 AI 审查" if scope_status == "first_release" else "无代码变更",
                    "coverage": {"total_files": 0, "reviewed_files": 0, "warnings": []}, "dimensions": [], "findings": []}
-    elif scope_status != "ready":
-        outcome = {"status": "incomplete", "summary": "审查范围不完整，等待处理", "coverage": {
-            "total_files": len(scope.diffs), "reviewed_files": 0, "warnings": scope.warnings}, "dimensions": [], "findings": []}
     else:
         try:
             from apps.workflow.ai_review_model import review_scope
-            outcome = review_scope(run, scope)
+            outcome = review_scope(run, scope, checkpoint=lambda results, result: _checkpoint(
+                instance_id, node_id, token, results, result,
+            ))
+            if outcome is None:
+                return
         except Exception:
             # 模型与远端响应可能含源码、密钥；不得写入日志或用户消息。
             logger.warning("AI 代码审查执行失败")
-            outcome = {"status": "failed", "summary": "代码审查执行失败，请联系管理员", "coverage": {
-                "total_files": len(scope.diffs), "reviewed_files": 0, "warnings": ["审查未完成"]}, "dimensions": [], "findings": []}
+            outcome = None
 
     with transaction.atomic():
         source = WorkflowInstance.objects.filter(pk=instance_id).first()
@@ -97,11 +97,19 @@ def execute_review(instance_id, node_id, expected_token=None):
         run = AIReviewRun.objects.select_for_update().filter(instance=instance, node_id=node_id).first()
         if not _same_identity(source, instance) or not run or run.status != "running" or run.token != token or not _current(instance, node_id):
             return
-        run.status = outcome["status"]
-        run.summary = outcome["summary"]
-        run.coverage = outcome["coverage"]
-        run.dimensions = outcome["dimensions"]
-        run.findings = outcome["findings"]
+        if outcome is None:
+            # 发生异常时保留此前成功保存的批次证据，而不是清空已审查范围。
+            run.status = "failed"
+            run.summary = "代码审查执行失败，请联系管理员"
+            coverage = dict(run.coverage or {})
+            coverage["warnings"] = [*(coverage.get("warnings") or []), "审查执行失败"]
+            run.coverage = coverage
+        else:
+            run.status = outcome["status"]
+            run.summary = outcome["summary"]
+            run.coverage = outcome["coverage"]
+            run.dimensions = outcome["dimensions"]
+            run.findings = outcome["findings"]
         run.save(update_fields=["status", "summary", "coverage", "dimensions", "findings", "updated_at"])
         if run.status in ("completed", "first_release", "no_changes"):
             try:
@@ -117,6 +125,24 @@ def execute_review(instance_id, node_id, expected_token=None):
                 run.status = "failed"
                 run.summary = "人工审批节点不可用，流程未推进"
                 run.save(update_fields=["status", "summary", "updated_at"])
+
+
+def _checkpoint(instance_id, node_id, token, results, outcome):
+    """仅当前轮、当前执行可保存批次检查点；迟到执行不能覆盖新结果。"""
+    with transaction.atomic():
+        source = WorkflowInstance.objects.filter(pk=instance_id).first()
+        if not source or not source.source_project_id or not source.source_biz_id or source.source_biz_id != source.biz_id:
+            return False
+        instance = WorkflowEngine._lock_instance(source)
+        run = AIReviewRun.objects.select_for_update().filter(instance=instance, node_id=node_id).first()
+        if not _same_identity(source, instance) or not run or run.status != "running" or run.token != token or not _current(instance, node_id):
+            return False
+        run.batch_results = results
+        run.coverage = outcome["coverage"]
+        run.dimensions = outcome["dimensions"]
+        run.findings = outcome["findings"]
+        run.save(update_fields=["batch_results", "coverage", "dimensions", "findings", "updated_at"])
+        return True
 
 
 def _authorized_manager(user, project):

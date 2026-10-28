@@ -48,6 +48,35 @@ function RecoveryActions({ instanceId, nodeId }: { instanceId: string; nodeId: s
   </div>;
 }
 
+function PagedPaths({ paths, emptyText = '无' }: { paths: string[]; emptyText?: string }) {
+  const [page, setPage] = useState(0);
+  const pageSize = 50;
+  const pages = Math.max(1, Math.ceil(paths.length / pageSize));
+  const current = Math.min(page, pages - 1);
+  if (!paths.length) return <p className="mt-2 text-xs text-slate-500">{emptyText}</p>;
+  return <>
+    <ul className="mt-2 list-inside list-disc break-all font-mono text-xs">{paths.slice(current * pageSize, (current + 1) * pageSize).map((path) => <li key={path}>{path}</li>)}</ul>
+    {pages > 1 ? <div className="mt-2 flex items-center gap-2 text-xs"><button type="button" disabled={current === 0} onClick={() => setPage(current - 1)}>上一页</button><span>{current + 1} / {pages}</span><button type="button" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)}>下一页</button></div> : null}
+  </>;
+}
+
+function BatchProgress({ batches }: { batches: NonNullable<AiReviewData['coverage']['batches']> }) {
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
+  const pages = Math.max(1, Math.ceil(batches.length / pageSize));
+  const current = Math.min(page, pages - 1);
+  const status: Record<string, string> = { completed: '已完成', failed: '失败', incomplete: '未完成', pending: '待审查' };
+  return <details className="rounded border border-slate-200 p-2">
+    <summary className="cursor-pointer font-medium text-slate-700">分批审查进度</summary>
+    <ol className="mt-2 space-y-2">{batches.slice(current * pageSize, (current + 1) * pageSize).map((batch, index) => <li key={batch.id} className="min-w-0">
+      <p>{`第 ${current * pageSize + index + 1} 批：${status[batch.status] || '未完成'}`}</p>
+      <PagedPaths paths={batch.paths} />
+      {batch.dimensions?.length ? <p className="break-words text-xs text-slate-500">实际维度：{batch.dimensions.join('、')}</p> : null}
+    </li>)}</ol>
+    {pages > 1 ? <div className="mt-2 flex items-center gap-2 text-xs"><button type="button" disabled={current === 0} onClick={() => setPage(current - 1)}>上一页</button><span>{current + 1} / {pages}</span><button type="button" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)}>下一页</button></div> : null}
+  </details>;
+}
+
 function location(finding: AiReviewFinding): string {
   if (!finding.path) return '整体意见';
   if (!finding.side || !finding.line_start) return `${finding.path} · 文件级意见`;
@@ -91,16 +120,17 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
       <h4 className="font-semibold text-slate-800">{review.node_name ? `${review.node_name} · ` : ''}{statusText[review.status] || '审查状态未知'}</h4>
       {review.summary ? <p className="whitespace-pre-wrap break-words text-slate-700">{review.summary}</p> : null}
       {review.status === 'skipped' && review.skip_reason ? <p className="whitespace-pre-wrap break-words text-amber-800">跳过原因：{review.skip_reason}；操作者：{review.skipped_by_name || '已删除用户'}；时间：{review.skipped_at || '未知'}</p> : null}
-      <div className="text-slate-600">覆盖范围：{review.coverage?.total_files === undefined || review.coverage.reviewed_files === undefined ? '尚未统计' : `${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件`}</div>
+      <div className="text-slate-600">覆盖范围：{review.coverage?.total_files === undefined || review.coverage.reviewed_files === undefined ? '尚未统计' : review.coverage.manifest_complete === false ? `已知 ${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件（完整清单未知）` : `${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件`}</div>
       {review.coverage?.warnings?.length ? <ul className="list-inside list-disc text-amber-700">{review.coverage.warnings.map((warning, index) => <li key={`${index}:${warning}`} className="break-words">{warning}</li>)}</ul> : null}
       {review.coverage?.reviewed_paths ? <details className="rounded border border-slate-200 p-2">
         <summary className="cursor-pointer font-medium text-slate-700">已审查文件</summary>
-        {review.coverage.reviewed_paths.length ? <ul className="mt-2 list-inside list-disc break-all font-mono text-xs text-slate-600">{review.coverage.reviewed_paths.map((path) => <li key={path}>{path}</li>)}</ul> : <p className="mt-2 text-xs text-slate-500">无</p>}
+        <PagedPaths paths={review.coverage.reviewed_paths} />
       </details> : null}
       {review.coverage?.unreviewed_paths ? <details open={review.coverage.unreviewed_paths.length > 0} className="rounded border border-amber-200 p-2">
         <summary className="cursor-pointer font-medium text-amber-800">未审查文件</summary>
-        {review.coverage.unreviewed_paths.length ? <ul className="mt-2 list-inside list-disc break-all font-mono text-xs text-amber-800">{review.coverage.unreviewed_paths.map((path) => <li key={path}>{path}</li>)}</ul> : <p className="mt-2 text-xs text-slate-500">无</p>}
+        <PagedPaths paths={review.coverage.unreviewed_paths} />
       </details> : null}
+      {review.coverage?.batches?.length ? <BatchProgress batches={review.coverage.batches} /> : null}
       {review.dimensions?.length ? <p className="break-words text-slate-600">实际审查维度：{review.dimensions.join('、')}</p> : null}
       {review.history?.length ? <details className="rounded border border-slate-200 p-2"><summary className="cursor-pointer font-medium text-slate-700">过往审查执行（{review.history.length}）</summary>
         {review.history.map((item, index) => <div key={item.token} className="mt-2 rounded bg-slate-50 p-2">

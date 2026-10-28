@@ -109,3 +109,20 @@ it('重试失败显示原因并允许再次操作', async () => {
   expect(retry).toHaveBeenCalledWith('round-one', 'ai');
   expect((screen.getByRole('button', { name: '重新审查' }) as HTMLButtonElement).disabled).toBe(false);
 });
+
+it('分批审查显示每批状态和文件覆盖', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'incomplete', summary: '审查未完成',
+    coverage: { total_files: 2, reviewed_files: 1, reviewed_paths: ['first.py'], unreviewed_paths: ['second.py'],
+      batches: [{ id: 'one', status: 'completed', paths: ['first.py'] }, { id: 'two', status: 'failed', paths: ['second.py'] }] } }] });
+  show();
+  expect(await screen.findByText('分批审查进度')).toBeTruthy();
+  expect(screen.getByText('第 1 批：已完成')).toBeTruthy();
+  expect(screen.getByText('第 2 批：失败')).toBeTruthy();
+});
+
+it('差异清单不完整时明确标注总数未知', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'incomplete', summary: '范围未完成',
+    coverage: { manifest_complete: false, total_files: 2, reviewed_files: 2, warnings: ['远端差异范围不完整'] } }] });
+  show();
+  expect(await screen.findByText('覆盖范围：已知 2 / 2 个文件（完整清单未知）')).toBeTruthy();
+});
