@@ -111,3 +111,43 @@ export const systemApi = {
     patch<AccessToken>(`/system/access-tokens/${id}/`, data),
   deleteAccessToken: (id: string) => del<null>(`/system/access-tokens/${id}/`),
 };
+
+export interface ReviewSettings {
+  version_id: string | null;
+  endpoint: string;
+  model: string;
+  protocol: 'auto' | 'openai' | 'anthropic';
+  has_api_key: boolean;
+  skill: { name: string; revision: string; source: string; license: string; files: string[] };
+}
+
+export interface ReviewSettingsPayload {
+  endpoint: string;
+  model: string;
+  protocol: ReviewSettings['protocol'];
+  api_key?: string;
+  skill: string;
+}
+
+export const reviewSettingsApi = {
+  get: () => get<ReviewSettings>('/system/review-settings/'),
+  save: (data: ReviewSettingsPayload) => put<ReviewSettings>('/system/review-settings/', data),
+};
+
+
+export interface ReviewSkill {
+  id: string;
+  name: string;
+  files: string[];
+  created_at: string;
+}
+
+export const reviewSkillApi = {
+  list: () => get<ReviewSkill[]>('/system/review-skills/'),
+  detail: (id: string) => get<ReviewSkill & { documents: Record<string, string> }>(`/system/review-skills/${id}/`),
+  upload: (file: File) => {
+    const data = new FormData();
+    data.append('file', file);
+    return post<ReviewSkill>('/system/review-skills/', data, { headers: { 'Content-Type': 'multipart/form-data' }, silent: true });
+  },
+};

@@ -179,3 +179,49 @@ class AccessToken(models.Model):
     def is_expired(self) -> bool:
         """是否已过期（expires_at 为空视为永久有效）"""
         return bool(self.expires_at and self.expires_at <= timezone.now())
+
+
+class ReviewSettingsVersion(models.Model):
+    """审查配置的不可变快照，供审批轮次固定引用。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    endpoint = models.URLField(max_length=500, verbose_name="模型服务地址")
+    model = models.CharField(max_length=200, verbose_name="模型名称")
+    protocol = models.CharField(max_length=20, verbose_name="模型协议")
+    encrypted_api_key = models.TextField(blank=True, verbose_name="加密后的模型密钥")
+    skill_name = models.CharField(max_length=200, verbose_name="审查技能")
+    skill_revision = models.CharField(max_length=100, verbose_name="技能版本")
+    skill_documents = models.JSONField(verbose_name="技能文档快照")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        db_table = "sys_review_settings_version"
+        verbose_name = "审查配置版本"
+
+
+class ReviewSettings(models.Model):
+    """当前配置指针与历史版本分开保存。"""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    current_version = models.ForeignKey(
+        ReviewSettingsVersion, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="active_settings", verbose_name="当前版本",
+    )
+
+    class Meta:
+        db_table = "sys_review_settings"
+        verbose_name = "审查配置"
+
+
+class ReviewSkillVersion(models.Model):
+    """上传文档包的不可变版本；审查配置另存所选内容快照。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, verbose_name="技能名称")
+    documents = models.JSONField(verbose_name="技能文档")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="上传时间")
+
+    class Meta:
+        db_table = "sys_review_skill_version"
+        verbose_name = "审查技能版本"
+        ordering = ["-created_at", "-id"]

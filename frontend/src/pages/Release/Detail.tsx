@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
+import { WorkflowHistory } from '@/components/WorkflowHistory';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
 import { workflowApi } from '@/api/workflow';
@@ -17,6 +18,7 @@ import { usePageMetaStore } from '@/stores/pageMetaStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { releaseTypeText, releaseTypeBadge, statusBadge, releaseStatusText } from './constants';
 import { ReleaseSource } from './components/ReleaseSource';
+import { ReviewContext } from './components/ReviewContext';
 import { ReleaseTimeline } from './components/ReleaseTimeline';
 import { ReleaseNotes } from './components/ReleaseNotes';
 import { ReleaseCommits } from './components/ReleaseCommits';
@@ -43,6 +45,8 @@ export default function ReleaseDetail() {
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [dirtyContextId, setDirtyContextId] = useState<string | null>(null);
+  const reviewContextDirty = !!id && dirtyContextId === id;
   const setEntityTitle = usePageMetaStore((state) => state.setEntityTitle);
   const screens = Grid.useBreakpoint();
   const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
@@ -59,8 +63,9 @@ export default function ReleaseDetail() {
     enabled: !!release?.project,
   });
   const { canManage, canDevelop, role } = useProjectRole(project);
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const { data: workflowInstance } = useQuery({
-    queryKey: ['workflow-instance-for-detail', release?.workflow_instance],
+    queryKey: ['workflow-instance-for-detail', release?.workflow_instance, sessionVersion],
     queryFn: () => workflowApi.getInstance(release!.workflow_instance!),
     enabled: release?.status === 'pending' && !!release.workflow_instance && role !== 'maintainer',
     retry: false,
@@ -72,7 +77,7 @@ export default function ReleaseDetail() {
     onSuccess: () => {
       message.success('已提交审批');
       for (const queryKey of [['release', id], ['releases'], ['workflow-initiated'], ['workflow-todo'],
-        ['workflow-stats'], ['workflow-todo-count'], ['notification-remind-summary']]) {
+        ['workflow-stats'], ['workflow-todo-count'], ['workflow-history', id], ['notification-remind-summary']]) {
         void queryClient.invalidateQueries({ queryKey });
       }
     },
@@ -197,6 +202,8 @@ export default function ReleaseDetail() {
         ) : null}
       </div>
 
+      {!maintainer ? <WorkflowHistory releaseId={release.id} /> : null}
+
       {/* 详情头 */}
       <div className="tech-card rounded-xl p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -262,7 +269,7 @@ export default function ReleaseDetail() {
           {status === 'draft' || status === 'rejected' ? (
             <div className="flex shrink-0 items-center gap-2">
               {status === 'draft' && canDevelop ? <Button type="primary" loading={submit.isPending}
-                disabled={!release.release_doc?.trim()} onClick={() => submit.mutate()}>提交审批</Button> : null}
+                disabled={!release.release_doc?.trim() || reviewContextDirty} onClick={() => submit.mutate()}>提交审批</Button> : null}
               {/* 推 tag 失败的发布（驳回原因以「推 tag 失败」开头）提供重试入口 */}
               {canDevelop && status === 'rejected' && (release.rejected_reason || '').startsWith('推 tag 失败') ? (
                 <Button
@@ -316,7 +323,13 @@ export default function ReleaseDetail() {
             </span>
           </div>
         </div>
-        <ReleaseSource key={release.id} release={release} />
+        <ReleaseSource key={release.id} release={release}
+          canRefresh={canDevelop && (user?.is_superuser || release.publisher === user?.id)} />
+        {(role === 'developer' || role === 'tester' || role === 'auditor' || role === 'manager' || role === 'software_admin') && (
+          <ReviewContext key={release.id} release={release}
+            canEdit={canDevelop && (user?.is_superuser || release.publisher === user?.id)} onDirtyChange={dirty => setDirtyContextId(dirty ? release.id : null)} />
+        )}
+        {reviewContextDirty ? <p className="mt-2 text-xs text-amber-700">请先保存审查上下文，再提交审批。</p> : null}
         {release.redmine_url ? (
           <a
             href={release.redmine_url}

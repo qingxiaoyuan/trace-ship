@@ -3,7 +3,10 @@
 
 提供流程定义、流程实例、审批任务的 RESTful API。
 """
-from django.db.models import Q
+import uuid
+
+from django.db.models import Q, Value
+from django.db.models.functions import Lower, Replace
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers
 from rest_framework.decorators import action, api_view, permission_classes
@@ -32,6 +35,30 @@ from utils.permissions import (
 )
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
+
+
+def _snapshot_assigns_user(instance: WorkflowInstance, user) -> bool:
+    """仅使用本轮真实审批配置快照，不能从当前流程定义推测。"""
+    return any(
+        str(approver.get("user_id")) == str(user.id)
+        for node in (instance.node_config_snapshot or []) if isinstance(node, dict)
+        for approver in node.get("approvers", [])
+        if isinstance(approver, dict) and approver.get("type") == "user"
+    )
+
+
+def _review_source_project(instance: WorkflowInstance):
+    """只有业务身份仍与本轮快照绑定时才能依据其项目授权源码。"""
+    if instance.biz_type != "release" or not instance.source_biz_id or instance.source_biz_id != instance.biz_id:
+        return None
+    try:
+        uuid.UUID(instance.biz_id)
+    except (ValueError, TypeError, AttributeError):
+        return None
+    release = resolve_release(instance)
+    if release is not None and release.project_id != instance.source_project_id:
+        return None
+    return instance.source_project
 
 
 @api_view(["GET"])
@@ -129,7 +156,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
     serializer_class = WorkflowInstanceSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ["biz_type", "biz_id", "status", "created_by"]
+    filterset_fields = ["biz_type", "status", "created_by"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
     http_method_names = ["get", "post", "head", "options"]
@@ -146,11 +173,21 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             return WorkflowInstance.objects.none()
         user = self.request.user
         queryset = WorkflowInstance.objects.select_related(
-            "definition", "definition__repository", "created_by"
+            "definition", "definition__repository", "source_project", "legacy_project", "created_by"
         ).prefetch_related("tasks")
-        if user.is_superuser:
-            return queryset.all()
-        return queryset.filter(id__in=visible_workflow_instances(user).values("id"))
+        if not user.is_superuser:
+            queryset = queryset.filter(id__in=visible_workflow_instances(user).values("id"))
+        biz_id = self.request.query_params.get("biz_id")
+        if biz_id:
+            try:
+                canonical = uuid.UUID(biz_id).hex
+            except ValueError:
+                return queryset.filter(biz_id=biz_id)
+            normalized = Lower("biz_id")
+            for fragment in ("urn:", "uuid:", "{", "}", "-"):
+                normalized = Replace(normalized, Value(fragment), Value(""))
+            queryset = queryset.annotate(history_biz_id=normalized).filter(history_biz_id=canonical)
+        return queryset
 
     def get_permissions(self):
         """创建实例需项目开发者"""
@@ -213,9 +250,194 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
 
     def retrieve(self, request: Request, *args, **kwargs) -> Response:
         """查询实例详情"""
-        instance = self.get_object()
+        try:
+            uuid.UUID(str(kwargs["pk"]))
+        except ValueError:
+            return error_response(40400, "流程实例不存在或不可见", status_code=404)
+        instance = self.get_queryset().filter(pk=kwargs["pk"]).first()
+        if instance is None:
+            instance = WorkflowInstance.objects.filter(pk=kwargs["pk"], review_scope__isnull=False).first()
+            if instance is None or not instance.source_project_id or not _snapshot_assigns_user(instance, request.user):
+                return error_response(40400, "流程实例不存在或不可见", status_code=404)
         serializer = self.get_serializer(instance)
         return success_response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="review-scope")
+    def review_scope(self, request: Request, pk=None) -> Response:
+        """按项目有效角色和本轮审批分配读取固定审查依据。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.project.models import ProjectMember
+        from apps.release.models import ReleaseReviewScope
+        from utils.permissions import ProjectRolePermission
+
+        instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
+        project = _review_source_project(instance)
+        if not request.user.is_superuser and project is None:
+            return error_response(40400, "本轮审查范围不存在或不可见", status_code=404)
+        member = project and ProjectMember.objects.filter(project=project, user=request.user).exists()
+        assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
+        if not (request.user.is_superuser or member or assigned):
+            return error_response(40400, "本轮审查范围不存在或不可见", status_code=404)
+        scope = ReleaseReviewScope.objects.filter(instance=instance).first()
+        if scope is None:
+            return error_response(40400, "本轮未固定审查范围", status_code=404)
+        role = ProjectRolePermission._effective_role(project, request.user) if member else None
+        full_access = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
+        if not member and assigned:
+            full_access = True
+        data = {
+            "status": scope.status, "base_tag": scope.base_tag, "base_git_hash": scope.base_git_hash,
+            "head_git_hash": scope.head_git_hash,
+            "warnings": scope.warnings if full_access else (["审查范围存在未覆盖内容"] if scope.warnings else []),
+            "created_at": scope.created_at,
+        }
+        if full_access:
+            data.update(context=scope.context, context_is_requirement=scope.context_is_requirement,
+                        documents=scope.documents, diffs=scope.diffs)
+        return success_response(data)
+
+    @action(detail=True, methods=["get"], url_path="ai-review")
+    def ai_review(self, request: Request, pk=None) -> Response:
+        """摘要及完整报告按目标项目和本轮审批分配分别授权。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.project.models import ProjectMember
+        from utils.permissions import ProjectRolePermission
+
+        instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
+        project = _review_source_project(instance)
+        if not request.user.is_superuser and project is None:
+            return error_response(40400, "本轮审查不存在或不可见", status_code=404)
+        member = bool(project and ProjectMember.objects.filter(project=project, user=request.user).exists())
+        assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
+        if not (request.user.is_superuser or member or assigned):
+            return error_response(40400, "本轮审查不存在或不可见", status_code=404)
+        role = ProjectRolePermission._effective_role(project, request.user) if member else None
+        full = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
+        if not member and assigned:
+            full = True
+        from apps.workflow.ai_review import _authorized_manager, _current, lease_expired
+
+        node_names = {node.get("node_id"): node.get("node_name", "AI 代码审查") for node in (instance.node_config_snapshot or [])}
+        reviews = []
+        for run in instance.ai_reviews.select_related("skipped_by", "settings_version").order_by("created_at"):
+            expired = lease_expired(run)
+            if full:
+                coverage = run.coverage
+                summary = "审查执行中断或超时，等待重试" if expired else run.summary
+            else:
+                coverage = {key: run.coverage.get(key, 0) for key in ("total_files", "reviewed_files")}
+                if "manifest_complete" in run.coverage:
+                    coverage["manifest_complete"] = run.coverage["manifest_complete"]
+                coverage["warnings"] = ["审查存在提示或未覆盖内容"] if run.coverage.get("warnings") else []
+                # 摘要使用固定文案，避免模型或后续执行记录将源码混入低权限响应。
+                summary = {
+                    "queued": "等待审查", "running": "审查进行中", "completed": "审查完成，等待人工决定",
+                    "failed": "审查未完成", "incomplete": "审查未完成", "first_release": "首次发布，已跳过 AI 审查",
+                    "no_changes": "无代码变更", "skipped": "管理员已留理由跳过 AI 审查",
+                    "canceled": "本轮已退回修改，未完成的审查已取消",
+                }.get("failed" if expired else run.status, "审查状态未知")
+            data = {"node_id": run.node_id, "node_name": node_names.get(run.node_id, "AI 代码审查"),
+                    "status": "failed" if expired else run.status, "summary": summary, "coverage": coverage,
+                    "can_recover": bool(_authorized_manager(request.user, project) and _current(instance, run.node_id)
+                                        and (run.status in ("failed", "incomplete") or expired))}
+            if full:
+                from apps.system.review_settings import skill_metadata
+
+                config = run.settings_version
+                data["configuration"] = {"version_id": str(config.id), "model": config.model,
+                                         "protocol": config.protocol, "skill": skill_metadata(config)}
+                data.update(dimensions=run.dimensions, findings=run.findings, history=run.history,
+                            skip_reason=run.skip_reason, skipped_at=run.skipped_at,
+                            skipped_by=str(run.skipped_by_id) if run.skipped_by_id else None,
+                            skipped_by_name=(run.skipped_by.nickname or run.skipped_by.username) if run.skipped_by else "")
+            reviews.append(data)
+        return success_response({"reviews": reviews})
+
+    @action(detail=True, methods=["get"], url_path="review-diff")
+    def review_diff(self, request: Request, pk=None) -> Response:
+        """仅向当前有完整审查权限的用户返回本轮固定代码差异。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.project.models import ProjectMember
+        from apps.release.models import ReleaseReviewScope
+        from utils.permissions import ProjectRolePermission
+
+        instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
+        project = _review_source_project(instance)
+        member = bool(project and ProjectMember.objects.filter(project=project, user=request.user).exists())
+        assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
+        role = ProjectRolePermission._effective_role(project, request.user) if member else None
+        full = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
+        if not member and project and assigned:
+            full = True
+        if not full or (not request.user.is_superuser and not project):
+            return error_response(40400, "本轮代码差异不存在或不可见", status_code=404)
+        scope = ReleaseReviewScope.objects.filter(instance=instance).first()
+        if scope is None:
+            return error_response(40400, "本轮未固定代码差异", status_code=404)
+        return success_response({"status": scope.status, "base_git_hash": scope.base_git_hash,
+                                 "head_git_hash": scope.head_git_hash, "diffs": scope.diffs})
+    @action(detail=True, methods=["get", "post"], url_path="remediations")
+    def remediations(self, request: Request, pk=None) -> Response:
+        """采纳意见和读取、处理跨轮整改项。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.workflow.remediation import list_items, mutate
+
+        instance = get_object_or_404(WorkflowInstance, pk=pk)
+        if request.method == "GET":
+            return success_response(list_items(instance, request.user))
+
+        class Input(serializers.Serializer):
+            action = serializers.ChoiceField(choices=("adopt", "fix", "resolve", "dismiss"))
+            node_id = serializers.CharField(required=False, max_length=100)
+            finding_id = serializers.CharField(required=False, max_length=100)
+            id = serializers.UUIDField(required=False)
+            comment = serializers.CharField(required=False, allow_blank=True, max_length=4000, trim_whitespace=False)
+
+            def validate(self, attrs):
+                if attrs["action"] == "adopt" and not (attrs.get("node_id") and attrs.get("finding_id")):
+                    raise serializers.ValidationError("请选择审查节点与意见")
+                if attrs["action"] != "adopt" and not attrs.get("id"):
+                    raise serializers.ValidationError("请选择整改项")
+                return attrs
+
+        data = Input(data=request.data)
+        data.is_valid(raise_exception=True)
+        return success_response({"item": mutate(instance.pk, request.user, data.validated_data)})
+
+    @action(detail=True, methods=["post"], url_path="ai-review-retry")
+    def ai_review_retry(self, request: Request, pk=None) -> Response:
+        """重试当前失败审查，保留本轮依据。"""
+        from rest_framework import serializers
+
+        from apps.workflow.ai_review import recover_review
+
+        class Input(serializers.Serializer):
+            node_id = serializers.CharField(max_length=100)
+
+        data = Input(data=request.data)
+        data.is_valid(raise_exception=True)
+        recover_review(pk, data.validated_data["node_id"], request.user)
+        return success_response(message="已安排重新审查")
+
+    @action(detail=True, methods=["post"], url_path="ai-review-skip")
+    def ai_review_skip(self, request: Request, pk=None) -> Response:
+        """由管理员留理由跳过当前失败审查，继续人工审批。"""
+        from rest_framework import serializers
+
+        from apps.workflow.ai_review import recover_review
+
+        class Input(serializers.Serializer):
+            node_id = serializers.CharField(max_length=100)
+            reason = serializers.CharField(max_length=2000, trim_whitespace=True)
+
+        data = Input(data=request.data)
+        data.is_valid(raise_exception=True)
+        recover_review(pk, data.validated_data["node_id"], request.user, skip_reason=data.validated_data["reason"])
+        return success_response(message="已记录原因并转交人工审批")
 
     @action(detail=False, methods=["get"], url_path="initiated")
     def initiated(self, request: Request) -> Response:
@@ -257,7 +479,7 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
     def get_permissions(self):
         """任务分配仍需服从关联发布项目的维保写操作限制。"""
-        if self.action in ("approve", "reject", "transfer", "rollback"):
+        if self.action in ("approve", "reject", "transfer", "rollback", "return_for_revision"):
             return [IsAuthenticated(), IsNotProjectMaintainer()]
         return super().get_permissions()
 
@@ -345,6 +567,17 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
         serializer = self.get_serializer(task)
         return success_response(serializer.data, message="转交成功")
 
+    @action(detail=True, methods=["post"], url_path="return-for-revision")
+    def return_for_revision(self, request: Request, pk=None) -> Response:
+        """审批人退回修改，保留本轮审批及审查记录。"""
+        task = self.get_object()
+        try:
+            WorkflowEngine.process_task(task, "return_for_revision", request.data.get("comment", ""), actor=request.user)
+        except serializers.ValidationError as exc:
+            return error_response(40001, self._extract_validation_message(exc))
+        task.refresh_from_db()
+        return success_response(self.get_serializer(task).data, message="已退回修改")
+
     @action(detail=True, methods=["post"], url_path="rollback")
     def rollback(self, request: Request, pk=None) -> Response:
         """回退到上一节点或初始节点"""
@@ -366,14 +599,8 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
         serializer = self.get_serializer(task)
 
-        # 驳回到初始节点：流程作废，自动删除该实例并让发布回到待提交态
-        if instance.status == "rejected":
-            try:
-                ReleaseService.handle_workflow_rollback_to_start(instance, comment)
-            except Exception:
-                pass
-            instance.delete()
-            return success_response(serializer.data, message="已回退到初始节点，流程已删除")
+        if instance.status == "revoked":
+            return success_response(serializer.data, message="已回退到初始节点，审批历史已保留")
 
         return success_response(serializer.data, message="回退成功")
 

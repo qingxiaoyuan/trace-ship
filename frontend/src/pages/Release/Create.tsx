@@ -39,6 +39,7 @@ import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField'
 import { FormalChangesPreview } from './components/FormalChangesPreview';
 import { CommitCheckModal } from './components/CommitCheckModal';
 import type { Release, ReleaseType, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
+import './release-create.css';
 
 /** 关联变更清单条目 */
 interface RelatedChange {
@@ -260,6 +261,9 @@ export default function ReleaseCreate() {
         branch: values.branch as string,
         tag_name: (values.tag_name as string)?.trim() || undefined,
         redmine_url: (values.redmine_url as string)?.trim() || undefined,
+        review_context: (values.review_context as string) || '',
+        review_document_paths: ((values.review_document_paths as string) || '').split('\n').map(path => path.trim()).filter(Boolean),
+        review_context_is_requirement: values.review_context_is_requirement === true,
         related_changes: relatedChanges.filter((r) => r.key.trim()),
         updates: updates.filter((u) => u.content.trim()),
         has_config_changes: hasConfigChanges,
@@ -538,6 +542,27 @@ export default function ReleaseCreate() {
             <p className="mt-1 text-[11px] text-slate-400">
               发布后可在版本详情中直接打开关联任务
             </p>
+
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <h4 className="text-[13px] font-semibold text-slate-800">审查上下文（可选）</h4>
+              <p className="mt-1 text-[11px] text-slate-500">填写真实需求或审查重点，以及需要读取的仓库文档。包含 AI 审查节点时，提审将固定本轮内容。</p>
+              <Form.Item name="review_context" label="补充审查说明" className="mb-3 mt-3">
+                <Input.TextArea rows={3} placeholder="填写需求或其他审查重点，可留空" />
+              </Form.Item>
+              <Form.Item name="review_document_paths" label="仓库文档路径" className="mb-0">
+                <Input.TextArea rows={3} className="font-mono" placeholder="每行一个仓库内相对路径，例如 docs/requirements.md" />
+              </Form.Item>
+              <Form.Item name="review_context_is_requirement" valuePropName="checked" dependencies={['review_context', 'review_document_paths']}
+                rules={[({ getFieldValue }) => ({ validator(_, value) {
+                  if (value && !String(getFieldValue('review_context') || '').trim() && !String(getFieldValue('review_document_paths') || '').trim()) {
+                    return Promise.reject(new Error('请先填写需求说明或仓库文档路径'));
+                  }
+                  return Promise.resolve();
+                } })]} className="mb-0 mt-2">
+                <Checkbox>包含真实需求依据</Checkbox>
+              </Form.Item>
+              <p className="text-[11px] text-slate-500">仅当说明或文档确实包含需求时勾选；审查重点与发布说明不自动视为需求。</p>
+            </div>
 
             {/* 自动计算预览 */}
             {nextVersionData?.all_types && (
@@ -1224,6 +1249,7 @@ function SelectField({
         onChange={onChange}
         prefix={icon}
         suffixIcon={<ChevronDown className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
+        classNames={{ popup: { root: 'release-create-select-popup' } }}
         className="w-full"
       />
       {hint && (

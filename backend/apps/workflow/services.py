@@ -5,11 +5,11 @@
 支持节点或签（any）与会签（all）模式。
 """
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import CharField, Q, Value
+from django.db.models import CharField, F, Q, Value
 from django.db.models.functions import Cast, Lower, Replace
 from django.utils import timezone
 from rest_framework import serializers
@@ -99,17 +99,39 @@ class WorkflowEngine:
     """
 
     APPROVAL_NODE_TYPE = "approval-node"
+    AI_NODE_TYPE = "ai-review-node"
     START_NODE_TYPE = "start-node"
     END_NODE_TYPE = "end-node"
+
+    @staticmethod
+    def validate_node_config(nodes: list[dict[str, Any]]) -> None:
+        """AI 节点后必须存在人工审批，不能独自决定发布。"""
+        if not isinstance(nodes, list) or any(not isinstance(node, dict) for node in nodes):
+            raise serializers.ValidationError({"node_config": "审批节点配置不合法"})
+        ids = [node.get("node_id") for node in nodes if "node_id" in node]
+        if any(not isinstance(value, str) or not value.strip() or value.strip() != value or value in ("start", "end")
+               for value in ids) or len(set(ids)) != len(ids):
+            raise serializers.ValidationError({"node_config": "节点标识必须非空且唯一"})
+        for index, node in enumerate(nodes):
+            node_type = node.get("node_type", "approval")
+            if node_type not in ("approval", "ai_review"):
+                raise serializers.ValidationError({"node_config": "不支持的节点类型"})
+            if node_type == "ai_review" and not any(
+                later.get("node_type", "approval") == "approval" for later in nodes[index + 1:]
+            ):
+                raise serializers.ValidationError({"node_config": "AI 代码审查后必须配置人工审批"})
 
     @classmethod
     def validate_release_definition(cls, definition, release, user) -> None:
         """正式申请提交前核验整条审批链，不把未来失效节点留到发布中途。"""
         nodes = cls._normalize_node_config(definition.node_config or [])
+        cls.validate_node_config(nodes)
         if not nodes:
             raise serializers.ValidationError({"workflow": "正式审批必须配置有效审批节点，请联系仓库管理员"})
         candidate = WorkflowInstance(definition=definition, biz_type="release", biz_id=str(release.id), created_by=user)
         for node in nodes:
+            if node.get("node_type") == "ai_review":
+                continue
             if not cls._resolve_node_approvers(node.get("approvers", []), candidate):
                 raise serializers.ValidationError({"workflow": f"审批节点 {node.get('node_name', '')} 无有效审批人，请联系仓库管理员"})
 
@@ -120,6 +142,7 @@ class WorkflowEngine:
         biz_type: str,
         biz_id: str,
         user,
+        allow_ai_release: bool = False,
     ) -> WorkflowInstance:
         """
         根据定义创建实例并生成第一个审批节点的任务
@@ -137,9 +160,25 @@ class WorkflowEngine:
             serializers.ValidationError: 审批链为空或未解析到审批人时抛出
         """
         node_config = cls._normalize_node_config(definition.node_config or [])
+        cls.validate_node_config(node_config)
+        if any(node.get("node_type") == "ai_review" for node in node_config) and not allow_ai_release:
+            raise serializers.ValidationError({"workflow": "AI 审查只能通过发布提审启动"})
         if not node_config:
             raise serializers.ValidationError({"node_config": "流程定义中未配置审批节点"})
 
+        # 解析所有节点的实际审批人，防止后续成员或流程配置变化影响本轮。
+        candidate = WorkflowInstance(definition=definition, biz_type=biz_type, biz_id=biz_id, created_by=user)
+        for node in node_config:
+            if node.get("node_type") == "ai_review":
+                node["approvers"] = []
+                continue
+            approvers = cls._resolve_node_approvers(node.get("approvers", []), candidate)
+            if not approvers:
+                raise serializers.ValidationError({"node_config": f"节点 {node['node_name']} 未解析到有效审批人"})
+            node["approvers"] = [
+                {"type": "user", "user_id": str(approver.id), "user_name": approver.nickname or approver.username}
+                for approver in approvers
+            ]
         graph_data = cls._build_graph_data(node_config)
 
         with transaction.atomic():
@@ -149,6 +188,8 @@ class WorkflowEngine:
                 biz_id=biz_id,
                 status="running",
                 graph_data=graph_data,
+                node_config_snapshot=node_config,
+                source_project=getattr(resolve_release(candidate), "project", None),
                 node_status={},
                 created_by=user,
             )
@@ -181,6 +222,105 @@ class WorkflowEngine:
             normalized.append(item)
         return normalized
 
+    @classmethod
+    def _instance_node_config(cls, instance: WorkflowInstance) -> list[dict[str, Any]]:
+        """旧实例仅从已保存的完整流程图恢复审批链，无法确定时拒绝流转。"""
+        if instance.node_config_snapshot is not None:
+            return instance.node_config_snapshot
+
+        def invalid() -> NoReturn:
+            raise serializers.ValidationError({"workflow": "历史流程图不完整或审批配置不明确，无法安全推进"})
+
+        graph = instance.graph_data
+        if not isinstance(graph, dict):
+            invalid()
+        nodes, edges = graph.get("nodes"), graph.get("edges")
+        if not isinstance(nodes, list) or not isinstance(edges, list) or not nodes:
+            invalid()
+        node_map = {}
+        for node in nodes:
+            if not isinstance(node, dict) or not isinstance(node.get("id"), str) or not node["id"]:
+                invalid()
+            if node["id"] in node_map or node.get("type") not in (
+                cls.START_NODE_TYPE, cls.APPROVAL_NODE_TYPE, cls.END_NODE_TYPE,
+            ):
+                invalid()
+            node_map[node["id"]] = node
+        starts = [node["id"] for node in nodes if node["type"] == cls.START_NODE_TYPE]
+        ends = [node["id"] for node in nodes if node["type"] == cls.END_NODE_TYPE]
+        if len(starts) != 1 or len(ends) != 1:
+            invalid()
+
+        outgoing, incoming = {}, {}
+        for edge in edges:
+            if not isinstance(edge, dict):
+                invalid()
+            source = edge.get("sourceNodeId") or edge.get("source")
+            target = edge.get("targetNodeId") or edge.get("target")
+            if not isinstance(source, str) or not isinstance(target, str):
+                invalid()
+            if ("sourceNodeId" in edge and "source" in edge and edge["sourceNodeId"] != edge["source"]) or (
+                "targetNodeId" in edge and "target" in edge and edge["targetNodeId"] != edge["target"]
+            ):
+                invalid()
+            if source not in node_map or target not in node_map or source in outgoing or target in incoming:
+                invalid()
+            outgoing[source], incoming[target] = target, source
+        start, end = starts[0], ends[0]
+        if start in incoming or end in outgoing or len(edges) != len(nodes) - 1:
+            invalid()
+        if any(node_id != start and node_id not in incoming for node_id in node_map):
+            invalid()
+        if any(node_id != end and node_id not in outgoing for node_id in node_map):
+            invalid()
+
+        chain, visited, node_id = [], set(), start
+        while node_id != end:
+            if node_id in visited or node_id not in outgoing:
+                invalid()
+            visited.add(node_id)
+            node_id = outgoing[node_id]
+            node = node_map[node_id]
+            if node["type"] != cls.APPROVAL_NODE_TYPE:
+                continue
+            props = node.get("properties", {})
+            if not isinstance(props, dict):
+                invalid()
+            if "_approvers" in props:
+                if any(key in props for key in ("approver_type", "user_id", "role")):
+                    invalid()
+                approvers = props["_approvers"]
+            else:
+                approvers = [{"type": props.get("approver_type", "leader"),
+                              "user_id": props.get("user_id"), "role": props.get("role")}]
+            if not isinstance(approvers, list) or not approvers:
+                invalid()
+            for approver in approvers:
+                if not isinstance(approver, dict) or approver.get("type") not in (
+                    "leader", "role", "user", "self", "repo_owner",
+                ):
+                    invalid()
+                if approver["type"] == "user":
+                    try:
+                        uuid.UUID(str(approver.get("user_id") or ""))
+                    except (ValueError, TypeError, AttributeError):
+                        invalid()
+                if approver["type"] == "role" and (
+                    not isinstance(approver.get("role"), str) or not approver["role"]
+                ):
+                    invalid()
+            mode = props.get("mode", "any")
+            if mode not in ("any", "all"):
+                invalid()
+            name = cls._node_name(node)
+            if not isinstance(name, str):
+                invalid()
+            chain.append({"node_id": node_id, "node_name": name.split("\n")[0],
+                          "mode": mode, "approvers": approvers})
+        if len(visited) + 1 != len(node_map) or not chain:
+            invalid()
+        return chain
+
     @staticmethod
     def _lock_instance(instance: WorkflowInstance) -> WorkflowInstance:
         """审批与终止共用仓库 → 发布 → 实例的锁顺序，并读取当前实例状态。"""
@@ -189,8 +329,18 @@ class WorkflowEngine:
             from apps.release.models import ReleaseRecord
 
             Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
-            ReleaseRecord.objects.select_for_update().only("id").get(pk=release.pk)
-        return WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
+            if not ReleaseRecord.objects.select_for_update().filter(pk=release.pk, repository_id=release.repository_id).exists():
+                raise serializers.ValidationError({"release": "发布申请已变化，请重新读取"})
+        locked = WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
+        locked._locked_release_id = release.pk if release is not None else None
+        locked._locked_repository_id = release.repository_id if release is not None else None
+        if locked.biz_type != instance.biz_type or locked.biz_id != instance.biz_id:
+            raise serializers.ValidationError({"instance": "流程业务身份已变更，请重新读取"})
+        if release is not None and locked.source_project_id is None:
+            locked.source_project_id = release.project_id
+            locked.source_biz_id = locked.biz_id
+            locked.save(update_fields=["source_project", "source_biz_id"])
+        return locked
 
     @classmethod
     def process_task(
@@ -200,6 +350,7 @@ class WorkflowEngine:
         comment: str = "",
         to_user: User | None = None,
         rollback_target: str | None = None,
+        actor: User | None = None,
     ) -> WorkflowInstance:
         """
         处理审批任务
@@ -218,6 +369,8 @@ class WorkflowEngine:
             serializers.ValidationError: 非法操作或实例已结束时抛出
         """
         with transaction.atomic():
+            if action == "return_for_revision" and not task.instance.source_project_id:
+                raise serializers.ValidationError({"instance": "无法核验本轮发布的项目快照"})
             instance = cls._lock_instance(task.instance)
             task.refresh_from_db()
             task.instance = instance
@@ -227,6 +380,19 @@ class WorkflowEngine:
                 raise serializers.ValidationError({"instance": "流程实例已结束"})
             now = timezone.now()
             if action == "approve":
+                if instance.biz_type == "release":
+                    from apps.workflow.remediation import assert_no_pending
+                    release = resolve_release(instance)
+                    if instance.ai_reviews.exists() and (
+                        release is None or instance.source_project_id != release.project_id
+                        or not instance.source_biz_id or instance.source_biz_id != instance.biz_id
+                        or instance.biz_id != str(release.pk) or release.workflow_instance_id != instance.id
+                        or release.pk != getattr(instance, "_locked_release_id", None)
+                        or release.repository_id != getattr(instance, "_locked_repository_id", None)
+                    ):
+                        raise serializers.ValidationError({"workflow": "无法核验本轮发布与审批身份"})
+                    if release is not None:
+                        assert_no_pending(release)
                 cls._handle_approve(task, comment, now)
             elif action == "reject":
                 cls._handle_reject(task, comment, now)
@@ -234,6 +400,8 @@ class WorkflowEngine:
                 cls._handle_transfer(task, comment, to_user, now)
             elif action == "rollback":
                 cls._handle_rollback(task, comment, rollback_target, now)
+            elif action == "return_for_revision":
+                cls._handle_return_for_revision(task, actor, comment, now)
             else:
                 raise serializers.ValidationError({"action": "不支持的审批动作"})
 
@@ -274,6 +442,77 @@ class WorkflowEngine:
             description=f"发起人终止流程实例 {instance.biz_id}",
         )
         return instance
+
+    @classmethod
+    def _handle_return_for_revision(cls, task: WorkflowTask, actor: User | None, comment: str, now) -> None:
+        """结束当前轮次并保留历史，将原发布申请交还发起人修改。"""
+        from apps.project.models import ProjectMember
+        from apps.release.models import ReleaseRecord
+        from apps.release.versions import release_claim
+        from apps.workflow.models import AIReviewRun
+        from utils.permissions import ProjectRolePermission
+
+        instance = task.instance
+        if not actor or not User.objects.filter(pk=actor.id, is_active=True).exists() or (
+            not actor.is_superuser and task.approver_id != actor.id
+        ):
+            raise serializers.ValidationError({"task": "只有当前审批人可以退回修改"})
+        if task.node_id != instance.current_node_id:
+            raise serializers.ValidationError({"task": "该任务不属于当前审批节点"})
+        release = resolve_release(instance)
+        if not release or release.pk != getattr(instance, "_locked_release_id", None):
+            raise serializers.ValidationError({"release": "发布申请不存在或无法确认所属项目"})
+        release = ReleaseRecord.objects.select_for_update().filter(
+            pk=release.pk, repository_id=getattr(instance, "_locked_repository_id", None),
+        ).first()
+        if not release:
+            raise serializers.ValidationError({"release": "发布申请已变化，请重新读取"})
+        if (
+            release.status != "pending" or release.workflow_instance_id != instance.id
+            or instance.source_project_id != release.project_id
+            or not instance.source_biz_id or instance.source_biz_id != instance.biz_id
+            or instance.biz_id != str(release.pk)
+        ):
+            raise serializers.ValidationError({"release": "无法核验本轮发布、项目与业务身份"})
+        if not actor.is_superuser and ProjectMember.objects.filter(project=release.project, user=actor).exists():
+            role = ProjectRolePermission._effective_role(release.project, actor)
+            if role in ("maintainer", "viewer"):
+                raise serializers.ValidationError({"task": "只读成员不能退回修改"})
+        if not isinstance(comment, str):
+            raise serializers.ValidationError({"comment": "退回说明格式不正确"})
+        task.status = "returned"
+        task.comment = comment
+        task.action_time = now
+        task.save(update_fields=["status", "comment", "action_time", "updated_at"])
+        instance.tasks.filter(status="pending").exclude(pk=task.pk).update(
+            status="revoked", action_time=now, updated_at=now,
+        )
+        instance.returned_by = actor
+        node_status = instance.node_status or {}
+        node_status[task.node_id] = "returned"
+        instance.node_status = node_status
+        instance.status = "returned"
+        instance.completed_at = now
+        instance.save(update_fields=["status", "completed_at", "returned_by", "node_status", "updated_at"])
+        # 保留执行身份及已收集的覆盖证据；旧执行失效后迟到结果不能写入。
+        from apps.workflow.ai_review import _archive
+
+        for run in AIReviewRun.objects.select_for_update().filter(instance=instance, status__in=["queued", "running"]):
+            _archive(run)
+            run.status = "canceled"
+            run.token = uuid.uuid4()
+            run.summary = "本轮已退回修改，未完成的审查已取消"
+            run.save(update_fields=["history", "status", "token", "summary", "updated_at"])
+        release.status = "draft"
+        release.workflow_instance = None
+        release.doc_needs_regeneration = True
+        release.has_revision_history = True
+        release.revision_source_hash = release.git_hash
+        release.revision_requires_ai_review = release.revision_requires_ai_review or instance.ai_reviews.exists()
+        release.rejected_reason = "退回修改，请查看审批历史"
+        release.save(update_fields=["status", "workflow_instance", "doc_needs_regeneration", "has_revision_history", "revision_source_hash", "revision_requires_ai_review", "rejected_reason", "updated_at"])
+        release_claim(release)
+        OperationLogService.log_workflow(user=actor, task=task, action="return_for_revision", detail={"comment": comment})
 
     @classmethod
     def _handle_approve(cls, task: WorkflowTask, comment: str, now) -> None:
@@ -398,7 +637,7 @@ class WorkflowEngine:
         回退后流程状态仍为 running，目标节点重新生成 pending 任务。
         """
         instance = task.instance
-        node_config = instance.definition.node_config or []
+        node_config = cls._instance_node_config(instance)
         node_ids = [n["node_id"] for n in node_config]
 
         if task.node_id not in node_ids:
@@ -418,6 +657,10 @@ class WorkflowEngine:
 
         target_node_id = node_ids[target_idx]
         target_node = node_config[target_idx]
+        if target_node.get("node_type") == "ai_review" or (target_idx > 0 and any(
+            node.get("node_type") == "ai_review" for node in node_config[target_idx:current_idx]
+        )):
+            raise serializers.ValidationError({"task": "不能回退到或跨越 AI 审查节点，请退回修改后重新提审"})
 
         # 标记当前任务为已回退
         task.status = "rollbacked"
@@ -444,10 +687,16 @@ class WorkflowEngine:
             detail={"comment": comment, "target_node": target_node_id, "to_start": target_idx == 0},
         )
 
-        # 回退到初始节点（第一个审批节点）→ 视为流程作废，结束实例。
-        # 由视图层联动发布回到待提交态并删除该流程实例（关联任务级联删除）。
+        # 回退到初始节点结束本轮并保留历史；发布和版本占用在同一锁事务内恢复。
         if target_idx == 0:
-            cls._finish_instance(instance, "rejected")
+            cls._finish_instance(instance, "revoked")
+            instance.tasks.filter(status="pending").update(
+                status="revoked", action_time=now, updated_at=now,
+            )
+            if instance.biz_type == "release":
+                from apps.release.services import ReleaseService
+
+                ReleaseService.handle_workflow_rollback_to_start(instance, comment)
             return
 
         # 更新实例当前节点，并清除目标节点及之后节点的状态快照
@@ -471,12 +720,11 @@ class WorkflowEngine:
             instance: 流程实例
             current_node_id: 当前节点 ID
         """
-        node_config = instance.definition.node_config or []
+        node_config = cls._instance_node_config(instance)
         node_ids = [n["node_id"] for n in node_config]
 
         if current_node_id not in node_ids:
-            cls._finish_instance(instance, "completed")
-            return
+            raise serializers.ValidationError({"task": "当前任务节点不在审批链中，无法推进"})
 
         current_idx = node_ids.index(current_node_id)
 
@@ -518,11 +766,18 @@ class WorkflowEngine:
             创建的 WorkflowTask 列表
         """
         node_id = node["node_id"]
+        if node.get("node_type") == "ai_review":
+            from apps.workflow.ai_review import queue_review
+
+            transaction.on_commit(lambda: queue_review(instance.pk, node_id))
+            return []
         node_name = node.get("node_name", node_id)
         mode = node.get("mode", "any")
         approvers_config = node.get("approvers", [])
 
         approvers = cls._resolve_node_approvers(approvers_config, instance)
+        if instance.node_config_snapshot is not None and len(approvers) != len(approvers_config):
+            raise serializers.ValidationError({"node_config": f"节点 {node_name} 的固定审批人不可用，请联系管理员处理"})
         if not approvers:
             raise serializers.ValidationError(
                 {"node_config": f"节点 {node_name} 未解析到有效审批人"}
@@ -681,10 +936,10 @@ class WorkflowEngine:
 
             nodes.append({
                 "id": node_id,
-                "type": cls.APPROVAL_NODE_TYPE,
+                "type": cls.AI_NODE_TYPE if node.get("node_type") == "ai_review" else cls.APPROVAL_NODE_TYPE,
                 "x": x_offset,
                 "y": 200,
-                "text": f"{node_name}\n({mode_label})",
+                "text": node_name if node.get("node_type") == "ai_review" else f"{node_name}\n({mode_label})",
                 "properties": {
                     "mode": mode,
                     "_approvers": node.get("approvers", []),
@@ -880,7 +1135,11 @@ def visible_workflow_instances(user):
         | Q(biz_type="release", normalized_biz_id__in=releases.filter(
             project_id__in=visible_project_ids(user),
         ).values("workflow_biz_id"))
-        | (~real_release & definition_scope)
+        | (~real_release & ~Q(source_biz_id="") & Q(source_project_id__in=visible_project_ids(user),
+                                                     source_biz_id=F("biz_id")))
+        | Q(biz_type="release", source_project__isnull=True, definition__repository__isnull=True,
+            legacy_project_id__in=visible_project_ids(user), legacy_biz_id=F("biz_id"))
+        | (~Q(biz_type="release") & definition_scope)
     ).distinct()
 
 

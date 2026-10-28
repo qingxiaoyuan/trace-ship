@@ -220,3 +220,44 @@ def test_delete_tag_not_found(provider):
 
     with pytest.raises(NotFoundError):
         provider.delete_tag("group/project", "VA.1.0.0_20260814")
+
+
+@pytest.mark.parametrize("payload", [
+    {"diffs": []},
+    {"compare_timeout": False, "diffs": [{"old_path": "a.bin", "new_path": "a.bin", "diff": "Binary files a/a.bin and b/a.bin differ"}]},
+])
+@responses.activate
+def test_review_diff_discloses_unknown_or_binary_coverage(provider, payload):
+    responses.add(responses.GET, "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/compare", json=payload, status=200)
+    result = provider.review_diff("group/project", "a" * 40, "b" * 40)
+    assert result["complete"] is False
+    assert result["warnings"]
+
+
+@responses.activate
+def test_list_tags_probes_next_page_when_full_page_lacks_pagination_header(provider):
+    url = "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/tags"
+    first = [{"name": f"tag-{index}", "commit": {"id": f"{index:040x}"}} for index in range(100)]
+    responses.add(responses.GET, url, json=first, status=200)
+    responses.add(responses.GET, url, json=[{"name": "last", "commit": {"id": "f" * 40}}], status=200)
+    result = provider.list_tags("group/project")
+    assert len(result) == 101 and result[-1].name == "last"
+    assert "page=2" in responses.calls[1].request.url
+
+
+@pytest.mark.parametrize("mode", ["duplicate", "invalid_next", "missing_name", "bad_json"])
+@responses.activate
+def test_list_tags_rejects_incomplete_or_repeated_pages(provider, mode):
+    url = "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/tags"
+    if mode == "duplicate":
+        first = [{"name": f"tag-{index}", "commit": {"id": f"{index:040x}"}} for index in range(100)]
+        responses.add(responses.GET, url, json=first, status=200)
+        responses.add(responses.GET, url, json=first, status=200)
+    elif mode == "invalid_next":
+        responses.add(responses.GET, url, json=[{"name": "tag"}], headers={"X-Next-Page": "3"}, status=200)
+    elif mode == "missing_name":
+        responses.add(responses.GET, url, json=[{"commit": {"id": "a" * 40}}], status=200)
+    else:
+        responses.add(responses.GET, url, body="not json", status=200)
+    with pytest.raises(ProviderError):
+        provider.list_tags("group/project")

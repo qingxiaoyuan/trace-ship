@@ -48,8 +48,18 @@ def remote(monkeypatch):
             return self.list_release_merge_requests(repo_identity)
 
         def list_release_commits(self, repo_identity, base, head):
+            if base == HEAD and head == MOVED:
+                return [self.commit(HEAD)]
+            if not base and head == MOVED:
+                return [self.commit(MOVED)]
             assert base == "" and head == HEAD, "必须读取首次生成时固定的提交区间"
             return [self.commit(HEAD)]
+
+        def get_merge_base(self, repo_identity, refs):
+            return refs[0]
+
+        def compare_diff(self, repo_identity, base, head):
+            return [{"old_path": "app.py", "new_path": "app.py", "diff": "-旧代码\n+新代码"}]
 
         def list_release_merge_requests(self, repo_identity):
             return [MergeRequestInfo(number="1", description="A 固定 MR", merge_commit_sha=HEAD),
@@ -192,3 +202,229 @@ def test_incomplete_formal_changes_never_fall_back_to_branch(api, project, repos
     assert not release.release_doc and not release.changes_initialized
     assert not release.release_commits.exists() and not release.release_mrs.exists()
     assert api.post(url + "submit-audit/").status_code == 400
+
+
+def test_refresh_requires_confirmation_of_current_heads(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    doc = api.post(url + "generate-doc/").data["data"]
+    remote.branch_head = MOVED
+    preview = api.get(url + "branch-update/")
+    assert preview.status_code == 200, preview.data
+    assert preview.data["data"]["old_hash"] == HEAD
+    assert preview.data["data"]["new_hash"] == MOVED
+    assert preview.data["data"]["commits"][0]["hash"] == HEAD
+    assert preview.data["data"]["diffs"][0]["diff"] == "-旧代码\n+新代码"
+    remote.branch_head = "c" * 40
+    stale = api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json")
+    assert stale.status_code == 400, stale.data
+    assert api.get(url).data["data"]["release_doc"] == doc
+    remote.branch_head = MOVED
+    result = api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json")
+    assert result.status_code == 200, result.data
+    detail = api.get(url).data["data"]
+    assert detail["git_hash"] == MOVED and detail["release_doc"] == ""
+    assert api.post(url + "update-doc/", {"release_doc": doc}, format="json").status_code == 400
+    assert api.post(url + "submit-audit/").status_code == 400
+
+
+@pytest.mark.parametrize("release_type", ["rc", "beta"])
+def test_updated_nonformal_notes_use_confirmed_commit(api, project, repository, remote, release_type):
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": release_type, "branch": "develop", "version": "VA.1.0.0"}, format="json")
+    assert created.status_code == 201, created.data
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    remote.branch_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    assert api.get(url).data["data"]["release_doc"] == ""
+    assert api.post(url + "submit-audit/").status_code == 400
+    remote.branch_head = "c" * 40
+    remote.list_commits = lambda identity, ref, **kwargs: [remote.commit(ref if ref != "develop" else "c" * 40)]
+    generated = api.post(url + "generate-doc/")
+    assert generated.status_code == 200, generated.data
+    assert "后续功能" in generated.data["data"]
+    assert "后续 MR" in generated.data["data"]
+    assert "固定 MR" not in generated.data["data"]
+    commits = api.get(url + "commits/").data["data"]["results"]
+    assert [item["commit_hash"] for item in commits] == [MOVED]
+    regenerated = api.post(url + "generate-doc/")
+    assert "后续功能" in regenerated.data["data"] and "固定 MR" not in regenerated.data["data"]
+
+
+def test_branch_update_requires_publisher_and_draft(api, user, project, repository, remote):
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    other = User.objects.create_user(username="other", password="test")
+    ProjectMember.objects.create(project=project, user=other, role="developer")
+    api.force_authenticate(other)
+    assert api.get(url + "branch-update/").status_code == 403
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 403
+    api.force_authenticate(user)
+    ReleaseRecord.objects.filter(pk=created.data["data"]["id"]).update(status="pending")
+    assert api.get(url + "branch-update/").status_code == 400
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
+
+
+def test_existing_patch_cannot_silently_refresh_moved_head(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    assert api.patch(url, {"branch": "develop"}, format="json").status_code == 400
+    assert api.get(url).data["data"]["git_hash"] == HEAD
+
+
+def test_existing_draft_can_switch_branches(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    remote.branch_head = MOVED
+    changed = api.patch(url, {"branch": "feature/nested"}, format="json")
+    assert changed.status_code == 200, changed.data
+    assert changed.data["data"]["git_hash"] == MOVED and not changed.data["data"]["release_doc"]
+    assert api.post(url + "submit-audit/").status_code == 400
+
+
+def test_direct_confirmation_cannot_bypass_nonancestor_guard(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    remote.get_merge_base = lambda identity, refs: "c" * 40
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
+    assert api.get(url).data["data"]["git_hash"] == HEAD
+
+
+@pytest.mark.parametrize("release_type,suffix", [("rc", "rc"), ("beta", "alpha")])
+def test_nonformal_regeneration_freezes_base_sha_and_reuses_it(api, project, repository, remote, release_type, suffix):
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": release_type, "branch": "develop", "version": "VA.1.0.0"}, format="json")
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    remote.tags = [TagInfo(name=f"VA.0.9.0-{suffix}", commit_hash=HEAD)]
+    tag_reads = []
+    def read_tags(identity):
+        tag_reads.append(identity)
+        return remote.tags
+    remote.list_tags = read_tags
+    calls = []
+    remote.list_release_commits = lambda identity, base, head: calls.append((base, head)) or [remote.commit(MOVED)]
+    assert api.post(url + "generate-doc/").status_code == 200
+    detail = api.get(url).data["data"]
+    assert detail["base_git_hash"] == HEAD
+    remote.tags = [TagInfo(name=f"VA.0.9.0-{suffix}", commit_hash="c" * 40)]
+    assert api.post(url + "generate-doc/").status_code == 200
+    assert calls == [(HEAD, MOVED), (HEAD, MOVED)]
+    assert len(tag_reads) == 1
+    assert api.get(url).data["data"]["base_git_hash"] == HEAD
+
+
+@pytest.mark.parametrize("failure", ["tags", "fork", "missing_hash"])
+def test_nonformal_regeneration_rejects_unreliable_baseline(api, project, repository, remote, failure):
+    from utils.provider.exceptions import ProviderError
+
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": "rc", "branch": "develop", "version": "VA.1.0.0"}, format="json")
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    remote.tags = [TagInfo(name="VA.0.9.0-rc", commit_hash=None if failure == "missing_hash" else HEAD)]
+    if failure == "tags":
+        def unavailable(identity):
+            raise ProviderError("Tag 查询失败")
+        remote.list_tags = unavailable
+    elif failure == "fork":
+        remote.get_merge_base = lambda identity, refs: "c" * 40
+    assert api.post(url + "generate-doc/").status_code in (400, 502)
+    assert api.post(url + "submit-audit/").status_code == 400
+    detail = api.get(url).data["data"]
+    assert not detail["release_doc"] and not detail["changes_initialized"]
+
+
+@pytest.mark.parametrize("release_type", ["rc", "beta"])
+def test_returned_branch_release_requires_new_commit_and_new_notes(api, user, project, repository, remote, release_type):
+    """RC/Beta 原单退回后更新 SHA，重新生成说明并重新完整审批。"""
+    WorkflowDefinition.objects.create(project=project, repository=repository, name="候选审批", release_type=release_type,
+        node_config=[{"node_id": "check", "node_name": "确认", "mode": "any",
+                      "approvers": [{"type": "user", "user_id": str(user.id)}]}])
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": release_type, "branch": "develop", "package_config_ids": []}, format="json")
+    assert created.status_code == 201, created.data
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    assert api.post(url + "submit-audit/").status_code == 200
+    release = ReleaseRecord.objects.get(pk=created.data["data"]["id"])
+    old = release.workflow_instance
+    task = old.tasks.get(status="pending")
+    assert api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "修复"}, format="json").status_code == 200
+    assert api.post(url + "generate-doc/").status_code == 200
+    assert api.post(url + "submit-audit/").status_code == 400
+    remote.branch_head = remote.commit_list_head = MOVED
+    changed = api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json")
+    assert changed.status_code == 200, changed.data
+    assert api.post(url + "submit-audit/").status_code == 400
+    assert api.post(url + "generate-doc/").status_code == 200
+    definition = old.definition
+    previous_nodes = definition.node_config
+    definition.node_config = []
+    definition.save(update_fields=["node_config"])
+    assert api.post(url + "submit-audit/").status_code == 400
+    definition.node_config = previous_nodes
+    definition.save(update_fields=["node_config"])
+    submitted = api.post(url + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    release.refresh_from_db()
+    assert release.workflow_instance_id != old.id and release.git_hash == MOVED
+    assert release.workflow_instance.tasks.get(status="pending").node_id == "check"
+
+
+def test_returned_ai_release_restarts_review_with_new_settings(api, user, project, repository, remote,
+                                                               django_capture_on_commit_callbacks):
+    """新轮固定新提交及当前配置，旧轮报告与人工任务保持历史。"""
+    from apps.system.review_settings import save_settings
+
+    first_config = save_settings({"endpoint": "https://model.example/v1", "model": "first", "protocol": "openai", "skill": "code-review-expert"})
+    WorkflowDefinition.objects.create(project=project, repository=repository, name="AI 候选审批", release_type="rc",
+        node_config=[{"node_id": "ai", "node_name": "代码审查", "node_type": "ai_review"},
+                     {"node_id": "check", "node_name": "确认", "mode": "any",
+                      "approvers": [{"type": "user", "user_id": str(user.id)}]}])
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": "rc", "branch": "develop", "package_config_ids": []}, format="json")
+    assert created.status_code == 201, created.data
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    with django_capture_on_commit_callbacks(execute=True):
+        submitted = api.post(url + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    release = ReleaseRecord.objects.get(pk=created.data["data"]["id"])
+    old = release.workflow_instance
+    report = old.ai_reviews.get(node_id="ai")
+    assert report.status == "first_release" and report.settings_version_id == first_config.id
+    assert old.review_scope.head_git_hash == HEAD
+    task = old.tasks.get(status="pending")
+    assert api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "请修复"}, format="json").status_code == 200
+    second_config = save_settings({"endpoint": "https://model.example/v1", "model": "second", "protocol": "openai", "skill": "code-review-expert"})
+    remote.branch_head = remote.commit_list_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    assert api.post(url + "generate-doc/").status_code == 200
+    definition = old.definition
+    previous_nodes = definition.node_config
+    definition.node_config = [previous_nodes[-1]]
+    definition.save(update_fields=["node_config"])
+    assert api.post(url + "submit-audit/").status_code == 400
+    definition.node_config = previous_nodes
+    definition.save(update_fields=["node_config"])
+    with django_capture_on_commit_callbacks(execute=True):
+        submitted = api.post(url + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    release.refresh_from_db()
+    new = release.workflow_instance
+    assert new.id != old.id and new.ai_reviews.get(node_id="ai").settings_version_id == second_config.id
+    assert new.review_scope.head_git_hash == MOVED and new.tasks.get(status="pending").node_id == "check"
+    report.refresh_from_db()
+    old.refresh_from_db()
+    assert report.status == "first_release" and report.settings_version_id == first_config.id
+    assert old.status == "returned" and old.review_scope.head_git_hash == HEAD

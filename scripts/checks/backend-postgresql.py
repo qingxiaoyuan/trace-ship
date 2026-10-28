@@ -40,9 +40,11 @@ TEST_NODES = (
     "apps/release/tests/test_version_reservation.py::test_postgresql_serializes_same_version_submissions",
     "apps/release/tests/test_version_reservation.py::test_postgresql_termination_waits_for_retry",
     "apps/release/tests/test_workflow_termination.py::test_postgresql_final_approval_and_termination_are_serialized",
+    "apps/release/tests/test_workflow_termination.py::test_postgresql_final_approval_and_return_are_serialized",
+    "apps/release/tests/test_ai_remediation.py::test_postgresql_adoption_and_approval_are_serialized",
     "apps/package/tests/test_release_repackage_postgresql.py",
 )
-EXPECTED_TESTS = 9
+EXPECTED_TESTS = 13
 
 
 def validate_junit(path: Path) -> dict[str, int]:

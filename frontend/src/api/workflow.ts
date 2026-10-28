@@ -7,6 +7,95 @@ import type {
   WorkflowTask,
 } from '@/types';
 
+export interface ReviewScopeData {
+  status: 'first_release' | 'no_changes' | 'incomplete' | 'ready';
+  base_tag: string;
+  base_git_hash: string;
+  head_git_hash: string;
+  warnings: string[];
+  context?: string;
+  context_is_requirement?: boolean;
+  documents?: Record<string, string>;
+}
+
+export interface AiReviewFinding {
+  id?: string;
+  severity: string;
+  title: string;
+  reason: string;
+  suggestion: string;
+  path?: string;
+  side?: 'old' | 'new';
+  line_start?: number;
+  line_end?: number;
+}
+
+export interface AiReviewData {
+  node_id: string;
+  node_name?: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
+  summary: string;
+  coverage: { manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[] }> };
+  dimensions?: string[];
+  configuration?: { version_id: string; model: string; protocol: string; skill: { name: string; revision: string; source: string; license: string } };
+  findings?: AiReviewFinding[];
+  can_recover?: boolean;
+  skip_reason?: string;
+  skipped_at?: string | null;
+  skipped_by?: string | null;
+  skipped_by_name?: string;
+  history?: Array<{ token: string; status: string; summary: string; updated_at: string; coverage?: AiReviewData['coverage']; dimensions?: string[]; findings?: AiReviewFinding[] }>;
+}
+
+export interface RemediationHistoryEntry {
+  action: 'adopt' | 'fix' | 'resolve' | 'dismiss';
+  actor_name: string;
+  at: string;
+  comment: string;
+  instance_id?: string | null;
+  node_id?: string;
+  task_id?: string | null;
+  git_hash?: string;
+}
+
+export interface ReviewRemediation {
+  id: string;
+  instance_id: string;
+  node_id: string;
+  finding_id: string;
+  source_token?: string;
+  source_git_hash?: string;
+  finding: AiReviewFinding;
+  status: 'pending_fix' | 'pending_review' | 'resolved' | 'dismissed';
+  fix_note: string;
+  history: RemediationHistoryEntry[];
+  can_fix: boolean;
+  can_review: boolean;
+}
+
+export type RemediationAction =
+  | { action: 'adopt'; node_id: string; finding_id: string }
+  | { action: 'fix' | 'resolve' | 'dismiss'; id: string; comment: string };
+
+export interface ReviewDiffFile {
+  old_path: string;
+  new_path: string;
+  diff: string;
+  new_file?: boolean;
+  deleted_file?: boolean;
+  renamed_file?: boolean;
+  binary?: boolean;
+  too_large?: boolean;
+  collapsed?: boolean;
+}
+
+export interface ReviewDiffData {
+  status: ReviewScopeData['status'];
+  base_git_hash: string;
+  head_git_hash: string;
+  diffs: ReviewDiffFile[];
+}
+
 export const workflowApi = {
   getDefinitions: (params?: Record<string, unknown>) =>
     get<PaginatedData<WorkflowDefinition>>('/workflow/definitions/', { params }),
@@ -17,7 +106,16 @@ export const workflowApi = {
   deleteDefinition: (id: string) => del(`/workflow/definitions/${id}/`),
   createInstance: (data: { definition_id: string; biz_type?: string; biz_id: string }) =>
     post<WorkflowInstance>('/workflow/instances/', data),
+  getInstances: (params?: Record<string, unknown>) =>
+    get<PaginatedData<WorkflowInstanceListItem>>('/workflow/instances/', { params }),
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
+  getReviewScope: (id: string) => get<ReviewScopeData>(`/workflow/instances/${id}/review-scope/`, { silent: true }),
+  getAiReview: (id: string) => get<{ reviews: AiReviewData[] }>(`/workflow/instances/${id}/ai-review/`, { silent: true }),
+  getReviewDiff: (id: string) => get<ReviewDiffData>(`/workflow/instances/${id}/review-diff/`, { silent: true }),
+  getRemediations: (id: string) => get<{ items: ReviewRemediation[]; can_adopt: boolean }>(`/workflow/instances/${id}/remediations/`, { silent: true }),
+  actOnRemediation: (id: string, data: RemediationAction) => post<{ item: ReviewRemediation }>(`/workflow/instances/${id}/remediations/`, data, { silent: true }),
+  retryAiReview: (id: string, node_id: string) => post(`/workflow/instances/${id}/ai-review-retry/`, { node_id }),
+  skipAiReview: (id: string, node_id: string, reason: string) => post(`/workflow/instances/${id}/ai-review-skip/`, { node_id, reason }),
   revokeInstance: (id: string, data?: { comment?: string }) =>
     post<WorkflowInstance>(`/workflow/instances/${id}/revoke/`, data || {}),
   /** 我发起的流程实例列表，支持 status 过滤 */
@@ -37,6 +135,8 @@ export const workflowApi = {
     post(`/workflow/tasks/${id}/reject/`, data || {}),
   transferTask: (id: string, data: { to_user_id: string; comment?: string }) =>
     post(`/workflow/tasks/${id}/transfer/`, data),
+  returnForRevision: (id: string, data?: { comment?: string }) =>
+    post(`/workflow/tasks/${id}/return-for-revision/`, data || {}),
   rollbackTask: (id: string, data?: { comment?: string; rollback_target?: string }) =>
     post(`/workflow/tasks/${id}/rollback/`, data || {}),
 };

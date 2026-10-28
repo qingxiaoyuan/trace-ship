@@ -134,6 +134,7 @@ class WorkflowInstance(models.Model):
         ("completed", "已完成"),
         ("rejected", "已驳回"),
         ("revoked", "已撤销"),
+        ("returned", "已退回修改"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -157,6 +158,19 @@ class WorkflowInstance(models.Model):
         default="",
         verbose_name="当前节点ID",
     )
+    source_project = models.ForeignKey(
+        "project.Project", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="workflow_history", verbose_name="发布所属项目快照",
+    )
+    source_biz_id = models.CharField(max_length=200, blank=True, default="", verbose_name="发布项目快照业务ID")
+    # 无法解析的旧业务仅能依据定义中的明确项目授权，保留原 ID 防止换 ID 后沿用授权。
+    legacy_project = models.ForeignKey(
+        "project.Project", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="legacy_workflow_history", verbose_name="异常历史定义项目",
+    )
+    legacy_biz_id = models.CharField(max_length=200, blank=True, default="", verbose_name="异常历史原业务ID")
+    # 存量流程没有真实快照，保留 NULL 以区分历史兼容行为。
+    node_config_snapshot = models.JSONField(null=True, blank=True, verbose_name="提审时审批链快照")
     node_status = models.JSONField(default=dict, verbose_name="节点状态快照")
     graph_data = models.JSONField(default=dict, verbose_name="实例图快照")
     created_by = models.ForeignKey(
@@ -170,6 +184,10 @@ class WorkflowInstance(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
+    returned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="returned_workflow_instances", verbose_name="退回修改操作人",
+    )
 
     class Meta:
         db_table = "workflow_instance"
@@ -186,19 +204,47 @@ class WorkflowInstance(models.Model):
         return f"{self.definition.name} - {self.biz_id}"
 
     def save(self, *args, **kwargs) -> None:
-        """发布业务 ID 统一保存为规范 UUID，保持查询授权与业务解析一致。"""
+        """规范化发布 ID；已有实例变更业务身份时清除原授权依据。"""
+        update_fields = kwargs.get("update_fields")
+        input_biz_id = self.biz_id
+        valid_id = False
         if self.biz_type == "release":
             try:
-                canonical_id = str(uuid.UUID(str(self.biz_id)))
+                self.biz_id = str(uuid.UUID(str(self.biz_id)))
+                valid_id = True
             except ValueError:
-                # 异常历史业务 ID 保持原值，解析服务仍按旧规则返回空值。
                 pass
-            else:
-                if self.biz_id != canonical_id:
-                    self.biz_id = canonical_id
-                    if kwargs.get("update_fields") is not None:
-                        kwargs["update_fields"] = {*kwargs["update_fields"], "biz_id"}
+            if self.biz_id != input_biz_id and update_fields is not None:
+                update_fields = {*update_fields, "biz_id"}
+                kwargs["update_fields"] = update_fields
+
+        if self._state.adding:
+            if self.biz_type == "release" and valid_id and self.source_project_id:
+                self.source_biz_id = self.biz_id
+            # 只有无仓库的历史项目级定义能提供明确的项目归属。
+            if (self.biz_type == "release" and not valid_id and not self.source_project_id
+                    and self.definition_id and self.definition.repository_id is None and self.definition.project_id):
+                self.legacy_project_id = self.definition.project_id
+                self.legacy_biz_id = str(self.biz_id)
+        elif update_fields is None or {"biz_id", "biz_type", "definition", "definition_id"} & set(update_fields):
+            database = kwargs.get("using") or self._state.db
+            previous = type(self).objects.using(database).filter(pk=self.pk).values(
+                "biz_id", "biz_type", "definition_id",
+            ).first()
+            if previous and (
+                (update_fields is None or "biz_id" in update_fields) and previous["biz_id"] != self.biz_id
+                or (update_fields is None or "biz_type" in update_fields) and previous["biz_type"] != self.biz_type
+                or (update_fields is None or {"definition", "definition_id"} & set(update_fields))
+                and previous["definition_id"] != self.definition_id
+            ):
+                self.source_project = None
+                self.source_biz_id = ""
+                self.legacy_project = None
+                self.legacy_biz_id = ""
+                if update_fields is not None:
+                    kwargs["update_fields"] = {*update_fields, "source_project", "source_biz_id", "legacy_project", "legacy_biz_id"}
         super().save(*args, **kwargs)
+
 
 
 class WorkflowTask(models.Model):
@@ -232,6 +278,7 @@ class WorkflowTask(models.Model):
         ("transferred", "已转交"),
         ("rollbacked", "已回退"),
         ("revoked", "已终止"),
+        ("returned", "已退回修改"),
     ]
 
     MODE_CHOICES = [
@@ -299,3 +346,54 @@ class WorkflowTask(models.Model):
     def __str__(self) -> str:
         """返回任务描述"""
         return f"{self.node_name} - {self.approver.username or self.approver.id}"
+
+
+class AIReviewRun(models.Model):
+    """固定审批轮次内的 AI 审查节点及其不可变配置引用。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instance = models.ForeignKey(WorkflowInstance, on_delete=models.CASCADE, related_name="ai_reviews", verbose_name="审批轮次")
+    node_id = models.CharField(max_length=100, verbose_name="节点标识")
+    settings_version = models.ForeignKey("system.ReviewSettingsVersion", on_delete=models.PROTECT, verbose_name="审查配置快照")
+    status = models.CharField(max_length=30, default="queued", verbose_name="审查状态")
+    summary = models.CharField(max_length=500, blank=True, verbose_name="无源码状态摘要")
+    dimensions = models.JSONField(default=list, verbose_name="实际审查维度")
+    coverage = models.JSONField(default=dict, verbose_name="覆盖范围")
+    findings = models.JSONField(default=list, verbose_name="审查发现")
+    history = models.JSONField(default=list, verbose_name="过往执行记录")
+    batch_results = models.JSONField(default=dict, verbose_name="已审查批次检查点")
+    skipped_by = models.ForeignKey("account.User", null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="skipped_ai_reviews", verbose_name="跳过操作者")
+    skipped_at = models.DateTimeField(null=True, blank=True, verbose_name="跳过时间")
+    skip_reason = models.TextField(blank=True, verbose_name="跳过原因")
+    token = models.UUIDField(default=uuid.uuid4, verbose_name="当前执行标识")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "workflow_ai_review_run"
+        verbose_name = "AI 代码审查执行"
+        constraints = [models.UniqueConstraint(fields=["instance", "node_id"], name="workflow_ai_review_node_unique")]
+
+
+class AIReviewRemediation(models.Model):
+    """人工采纳的代码问题；原始发现和处置历史独立于后续模型执行。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    release = models.ForeignKey("release.ReleaseRecord", on_delete=models.CASCADE, related_name="ai_remediations", verbose_name="发布申请")
+    instance = models.ForeignKey(WorkflowInstance, on_delete=models.CASCADE, related_name="ai_remediations", verbose_name="原审查轮次")
+    run = models.ForeignKey(AIReviewRun, on_delete=models.CASCADE, related_name="remediations", verbose_name="原审查节点")
+    finding_id = models.CharField(max_length=100, verbose_name="原发现标识")
+    finding = models.JSONField(verbose_name="原发现证据")
+    source_git_hash = models.CharField(max_length=100, verbose_name="原审查提交")
+    source_token = models.CharField(max_length=100, verbose_name="原审查执行标识")
+    status = models.CharField(max_length=30, default="pending_fix", verbose_name="整改状态")
+    fix_note = models.TextField(blank=True, verbose_name="修复说明")
+    history = models.JSONField(default=list, verbose_name="处置历史")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "workflow_ai_review_remediation"
+        verbose_name = "AI 审查整改项"
+        constraints = [models.UniqueConstraint(fields=["run", "finding_id"], name="workflow_ai_remediation_finding_unique")]

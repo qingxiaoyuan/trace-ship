@@ -16,8 +16,17 @@ export interface CleanupCandidate {
 export interface CleanupResult {
   id: string; tag_name?: string; status: string; reason: string; protected_by?: string;
 }
+export interface BranchUpdatePreview {
+  old_hash: string;
+  new_hash: string;
+  commits: { hash: string; message: string; author: string }[];
+  diffs: { old_path: string; new_path: string; diff: string }[];
+}
 
 export const releaseApi = {
+  previewBranchUpdate: (id: string) => get<BranchUpdatePreview>(`/releases/${id}/branch-update/`),
+  confirmBranchUpdate: (id: string, oldHash: string, newHash: string) =>
+    post<Release>(`/releases/${id}/branch-update/`, { old_hash: oldHash, new_hash: newHash }),
   getCleanupCandidates: (params: Record<string, unknown>) => get<PaginatedData<CleanupCandidate>>('/releases/cleanup-candidates/', { params }),
   cleanupTags: (items: { id: string; tag_name: string }[]) => post<CleanupResult[]>('/releases/cleanup-tags/', { items }, { timeout: 300_000 }),
   getSourceReference: (id: string) => get<{ available: boolean; reference: string; reason: string }>(`/releases/${id}/source-reference/`),
@@ -27,6 +36,8 @@ export const releaseApi = {
     get<PaginatedData<RcCandidate>>('/releases/rc-candidates/', { params }),
   updateSource: (id: string, sourceRc: string) =>
     patch<Release>(`/releases/${id}/`, { source_rc: sourceRc }),
+  updateReviewContext: (id: string, reviewContext: string, reviewDocumentPaths: string[], isRequirement = false) =>
+    patch<Release>(`/releases/${id}/`, { review_context: reviewContext, review_document_paths: reviewDocumentPaths, review_context_is_requirement: isRequirement }),
   getReleases: (params?: Record<string, unknown>) =>
     get<PaginatedData<Release>>('/releases/', { params }),
   getRelease: (id: string) => get<Release>(`/releases/${id}/`),

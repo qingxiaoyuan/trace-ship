@@ -231,7 +231,7 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         if self.action in [
             "create", "update", "partial_update", "destroy",
-            "generate_doc", "update_doc", "submit_audit", "push_tag", "retry_push_tag",
+            "generate_doc", "update_doc", "submit_audit", "push_tag", "retry_push_tag", "branch_update",
         ]:
             return [IsAuthenticated(), IsProjectDeveloper()]
         if self.action in ("delete_released", "cleanup_tag"):
@@ -333,6 +333,9 @@ class ReleaseViewSet(StandardModelViewSet):
                 self_test_passed=data.get("self_test_passed", False),
                 retest_passed=data.get("retest_passed", False),
                 package_config_ids=data.get("package_config_ids"),
+                review_context=data.get("review_context", ""),
+                review_context_is_requirement=data.get("review_context_is_requirement", False),
+                review_document_paths=data.get("review_document_paths", []),
             )
         except Exception as exc:
             return _handle_service_error(exc, "创建发布")
@@ -358,11 +361,18 @@ class ReleaseViewSet(StandardModelViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        if {"review_context", "review_context_is_requirement", "review_document_paths"} & data.keys():
+            if not request.user.is_superuser and instance.publisher_id != request.user.id:
+                return error_response(40300, "只有发布发起人可以修改审查上下文", status_code=403)
+
         source_changed = False
         old_version = instance.version
         try:
             if instance.release_type == "formal" and (instance.source_rc_id or data.get("source_rc")):
                 if "source_rc" in data:
+                    if (str(data["source_rc"]) != str(instance.source_rc_id)
+                        and not request.user.is_superuser and instance.publisher_id != request.user.id):
+                        return error_response(40300, "只有发布发起人可以更新来源提交", status_code=403)
                     source_changed = ReleaseService.update_source(instance, data["source_rc"], request.user)
             else:
                 old_source = (instance.branch, instance.git_hash)
@@ -371,11 +381,17 @@ class ReleaseViewSet(StandardModelViewSet):
                     instance.git_hash = ReleaseService._resolve_branch_head_hash(
                         instance.repository, instance.branch, request.user, project=instance.project,
                     )
-                    if instance.release_type == "formal":
-                        source_changed = old_source != (instance.branch, instance.git_hash)
+                    source_changed = old_source != (instance.branch, instance.git_hash)
+                    if source_changed and instance.branch == old_source[0]:
+                        return error_response(40002, "来源提交发生变化，请先预览并确认更新")
+                    if source_changed and not request.user.is_superuser and instance.publisher_id != request.user.id:
+                        return error_response(40300, "只有发布发起人可以更新来源提交", status_code=403)
         except Exception as exc:
             return _handle_service_error(exc, "更新来源提交")
         instance.redmine_url = data.get("redmine_url", instance.redmine_url)
+        instance.review_context = data.get("review_context", instance.review_context)
+        instance.review_context_is_requirement = data.get("review_context_is_requirement", instance.review_context_is_requirement)
+        instance.review_document_paths = data.get("review_document_paths", instance.review_document_paths)
 
         # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
         version_rule = instance.repository.get_version_rule()
@@ -417,18 +433,69 @@ class ReleaseViewSet(StandardModelViewSet):
             from apps.release.formal_changes import FormalChanges
 
             FormalChanges.reset(instance)
+            instance.doc_needs_regeneration = True
+            instance.doc_source_fixed = True
         instance.save(
             update_fields=[
-                "branch", "version", "tag_name", "redmine_url", "git_hash", "updated_at",
+                "branch", "version", "tag_name", "redmine_url", "review_context", "review_context_is_requirement", "review_document_paths", "git_hash", "updated_at",
                 "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
                 "base_tag", "base_git_hash", "changes_initialized", "changes_warnings",
-                "release_doc", "updates", "related_changes",
+                "release_doc", "updates", "related_changes", "doc_needs_regeneration", "doc_source_fixed",
             ]
         )
         if changes_invalidated:
             instance.release_commits.all().delete()
             instance.release_mrs.all().delete()
         return success_response(self._serialize_release(instance), message="更新成功")
+
+    @action(detail=True, methods=["get", "post"], url_path="branch-update")
+    @transaction.atomic
+    def branch_update(self, request: Request, pk=None) -> Response:
+        """预览并确认分支 HEAD，避免在确认时静默切换到其他提交。"""
+        release = self.get_object()
+        Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+        release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
+        if release.status != "draft":
+            return error_response(40002, "只有草稿可以更新来源提交")
+        if not request.user.is_superuser and release.publisher_id != request.user.id:
+            return error_response(40300, "只有发布发起人可以更新来源提交", status_code=403)
+        if release.source_rc_id:
+            return error_response(40002, "来源 RC 发布请使用重选来源功能")
+        try:
+            ReleaseService.validate_source_context(release.project, release.repository)
+            provider = ReleaseService._get_provider(release.repository, request.user, project=release.project)
+            head = ReleaseService._resolve_branch_head_hash(
+                release.repository, release.branch, request.user, project=release.project,
+            )
+            if request.method == "GET":
+                if head != release.git_hash:
+                    if provider.get_merge_base(release.repository.external_identity, [release.git_hash, head]) != release.git_hash:
+                        return error_response(40002, "当前提交不在新提交的祖先链上，请先处理分支回退或分叉")
+                    commits = provider.list_release_commits(release.repository.external_identity, release.git_hash, head)
+                    diffs = provider.compare_diff(release.repository.external_identity, release.git_hash, head)
+                else:
+                    commits, diffs = [], []
+                return success_response({"old_hash": release.git_hash, "new_hash": head, "commits": [
+                    {"hash": item.hash, "message": item.message, "author": item.author} for item in commits
+                ], "diffs": diffs})
+            if request.data.get("old_hash") != release.git_hash or request.data.get("new_hash") != head:
+                return error_response(40002, "分支或草稿提交已变化，请重新预览")
+            if head != release.git_hash:
+                if provider.get_merge_base(release.repository.external_identity, [release.git_hash, head]) != release.git_hash:
+                    return error_response(40002, "当前提交不在新提交的祖先链上，请先处理分支回退或分叉")
+                from apps.release.formal_changes import FormalChanges
+
+                release.git_hash = head
+                FormalChanges.reset(release)
+                release.doc_needs_regeneration = True
+                release.doc_source_fixed = True
+                release.save(update_fields=["git_hash", "base_tag", "base_git_hash", "changes_initialized",
+                    "changes_warnings", "release_doc", "updates", "related_changes", "doc_needs_regeneration", "doc_source_fixed", "updated_at"])
+                release.release_commits.all().delete()
+                release.release_mrs.all().delete()
+            return success_response(self._serialize_release(release), message="来源提交已更新")
+        except Exception as exc:
+            return _handle_service_error(exc, "更新来源提交")
 
     @transaction.atomic
     def destroy(self, request: Request, *args, **kwargs) -> Response:

@@ -1,4 +1,4 @@
-import { Play, Flag, UserCheck, Users } from 'lucide-react';
+import { Bot, Play, Flag, UserCheck, Users } from 'lucide-react';
 import type { WorkflowNodeConfig, WorkflowApproverConfig } from '@/types';
 
 interface ApprovalFlowPreviewProps {
@@ -57,7 +57,7 @@ export function ApprovalFlowPreview({
       {/* 审批节点 */}
       {nodes.map((node, idx) => {
         const mode = MODE_META[node.mode as 'any' | 'all'] || MODE_META.any;
-        const MIcon = mode.icon;
+        const MIcon = node.node_type === 'ai_review' ? Bot : mode.icon;
         const isDone = doneNodeIds.includes(node.node_id || '');
         const isRunning = currentNodeId === node.node_id;
         const dotCls = isDone
@@ -76,7 +76,7 @@ export function ApprovalFlowPreview({
                   <span className="text-[13px] font-medium text-slate-900">{node.node_name || `节点 ${idx + 1}`}</span>
                   <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${mode.cls}`}>
                     <MIcon className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
-                    {mode.label}
+                    {node.node_type === 'ai_review' ? 'AI 代码审查' : mode.label}
                   </span>
                   {isDone && (
                     <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">

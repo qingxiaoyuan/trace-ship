@@ -131,6 +131,10 @@ export interface Release {
   tag_name: string;
   /** 关联的 Redmine 任务地址 */
   redmine_url?: string;
+  /** 提审时补充的审查说明及仓库内文档路径。 */
+  review_context?: string;
+  review_document_paths?: string[];
+  review_context_is_requirement?: boolean;
   release_type: ReleaseType;
   /** 发布类型中文展示（列表接口返回） */
   release_type_display?: string;
@@ -141,6 +145,7 @@ export interface Release {
 
   source_rc?: string | null;
   workflow_instance?: string | null;
+  revision_update_required?: boolean;
   source_rc_version?: string;
   source_rc_tag?: string;
   source_rc_git_hash?: string;
@@ -959,7 +964,7 @@ export interface RepositoryTag {
   created_at?: string | null;
 }
 
-export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked' | 'revoked';
+export type WorkflowTaskStatus = 'pending' | 'approved' | 'rejected' | 'transferred' | 'rollbacked' | 'revoked' | 'returned';
 
 export interface WorkflowApproverConfig {
   type: 'leader' | 'role' | 'user' | 'self' | 'repo_owner';
@@ -970,12 +975,14 @@ export interface WorkflowApproverConfig {
 export interface WorkflowNodeConfig {
   node_id: string;
   node_name: string;
+  node_type?: 'approval' | 'ai_review';
   approvers: WorkflowApproverConfig[];
   mode: 'any' | 'all';
 }
 
 export interface WorkflowTask {
   can_act?: boolean;
+  can_return_for_revision?: boolean;
   id: string;
   instance?: string;
   node_id?: string;
@@ -1057,13 +1064,17 @@ export interface WorkflowDefinition {
 }
 
 export interface WorkflowInstance {
+  is_current?: boolean;
+  has_config_snapshot?: boolean;
   can_revoke?: boolean;
+  returned_by?: string | null;
+  returned_by_name?: string;
   id: string;
   definition: string;
   definition_name?: string;
   biz_type: string;
   biz_id: string;
-  status: 'running' | 'completed' | 'rejected' | 'revoked';
+  status: 'running' | 'completed' | 'rejected' | 'revoked' | 'returned';
   current_node_id: string;
   node_status: Record<string, string>;
   graph_data: WorkflowDefinition['graph_data'];
@@ -1093,11 +1104,12 @@ export interface WorkflowInstance {
  * 「我发起的」接口返回，字段与审批任务列表兼容，便于在列表中统一渲染。
  */
 export interface WorkflowInstanceListItem {
+  is_current: boolean;
   id: string;
   definition: string;
   biz_type: string;
   biz_id: string;
-  status: 'running' | 'completed' | 'rejected' | 'revoked';
+  status: 'running' | 'completed' | 'rejected' | 'revoked' | 'returned';
   current_node_id: string;
   created_by: string;
   created_at: string;

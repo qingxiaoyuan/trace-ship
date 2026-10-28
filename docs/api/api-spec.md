@@ -1691,7 +1691,14 @@
 ### 10.5 流程实例列表 / 详情
 
 - **GET** `/api/workflow/instances/`：过滤参数 `biz_type` / `biz_id` / `status` / `created_by`。
-- **GET** `/api/workflow/instances/{id}/`：详情含任务列表与节点状态快照（`node_status`）、实例图快照（`graph_data`）。
+- **GET** `/api/workflow/instances/{id}/`：详情含任务列表与节点状态快照（`node_status`）、实例图快照（`graph_data`）。列表和详情的 `is_current` 表示该实例是否为发布当前关联流程，可按 `biz_type=release&biz_id=<发布 ID>` 查询可见历史；仍按发布项目及本单审批分配授权。业务 ID 无法解析且旧定义为无仓库的项目级定义时，仅按原定义项目及原 ID 授权；仓库级定义不能证明发布归属，业务 ID 或定义变化时清除原授权依据；发布项目快照须与原 ID 匹配，合法但已删除的发布不会按共享仓库推断归属。
+- 新流程固定提审时的节点、审批模式和实际审批人；详情的 `has_config_snapshot` 为 `false` 表示存量实例没有保存原配置，运行时按保存的流程图边恢复审批顺序和配置，图缺失、分叉或节点配置不明时拒绝推进，不能用现行定义替代；无法还原原审批人时不伪造快照。历史非成员审批人不能经旧实例读取后续修改的发布正文。
+- **GET** `/api/workflow/instances/{id}/ai-review/`：返回本轮 AI 节点状态及覆盖统计；项目维保和只读角色仅可读取无源码摘要，授权成员和本轮指定审批人可读取审查维度、发现及脱敏的本轮配置版本、模型协议和技能来源版本；不会返回模型密钥。AI 节点必须有后续人工审批；首次发布、无代码变更、失败和覆盖不完整分别记录。大改动按固定差异并行分批（每轮最多两个批次在途），完整报告的 coverage 包含批次状态、已审查与未审查文件；不可完整读取或超出单文件容量时保留缺口，不标为完成。重试复用已完成批次及发现标识。模型可分页或按文件名搜索固定清单，并按需读取其他批次的固定差异；跨批关联检索受交互次数及上下文容量限制，报告明确说明未保证穷举。
+- **GET** `/api/workflow/instances/{id}/review-diff/`：独立校验完整审查权限后返回本轮固定基线、目标提交和已保存的文件差异；维保和只读成员不可读取，非成员审批人只可读取其本轮分配。文件变更类型及旧、新路径随快照返回，差异不完整时状态保持 `incomplete`。
+- **POST** `/api/workflow/instances/{id}/ai-review-retry/`、`ai-review-skip/`：请求含 `node_id`，跳过另须非空 `reason`；仅目标项目管理员、软件管理员和超管可操作当前失败或未完成节点。重试保留原配置及历史执行；跳过保留操作者、时间、理由并转交后续人工审批。
+- **GET/POST** `/api/workflow/instances/{id}/remediations/`：按目标项目及当前人工审批分配授权读取原轮次整改证据；`adopt` 采纳本轮发现，`fix` 保存修复说明，`resolve` 由当前审批人确认处理，`dismiss` 须填写不采纳理由。整改历史保留操作人和原文；未完成复核时禁止审批通过和推 Tag。显式驳回及删除申请沿用既有终止语义，删除时关联整改记录一并删除，不视为整改完成。维保和只读成员不可读取或处理整改内容。
+- 提审固定审查模型版本、完整技能文档与范围；草稿 `review_context_is_requirement` 仅在用户明确提供真实需求依据时标记，快照的 `context_is_requirement` 随范围固定。模型输出行号必须与固定差异核对，无法定位的意见保留为文件级或整体意见。
+- 模型响应正文上限为 2 MB，读取期间检查 300 秒预算，并设置连接及读取超时；DNS、响应头和分块协议元数据的底层阻塞无法保证严格总时限。每个 Celery 进程最多保留两个在途批次；撤销后的迟到结果不得推进流程。
 
 实例状态：`running` / `completed` / `rejected` / `revoked`。
 
@@ -1713,7 +1720,7 @@
 - **GET** `/api/workflow/tasks/todo/`
 - **GET** `/api/workflow/tasks/done/`
 
-任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked` / `revoked`（发起人终止后失效）。
+任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked` / `revoked` / `returned`（终止或回退到起点后失效）。回退到起点保留流程实例、任务和已处理意见，并在事务内恢复草稿、释放未消费版本占用。
 
 ### 10.9 审批通过
 
@@ -1756,6 +1763,12 @@
 }
 ```
 
+### 10.11A 退回修改
+
+`POST /api/workflow/tasks/{task_id}/return-for-revision/`，请求体可传 `comment`。当前人工审批任务的实际审批人或超管可操作；目标项目的维保及只读成员不能操作。接口在仓库 → 发布 → 实例锁内重新核验任务、项目、业务身份和当前轮。
+
+成功后当前任务和实例均为 `returned`，其他待办失效，保留原审批任务、报告及操作人；未完成的 AI 执行标记取消，迟到结果不能推进。原申请恢复草稿并释放未消费版本占用；退回前提交被固定，须更新至不同提交并重新生成说明后，由原发布人或超管重新提审；超管代提时新流程仍属于原发布人。新流程须保留人工审批，原轮含 AI 审查时新流程须重新执行 AI 审查。原申请不参与自动过期草稿清理。`can_return_for_revision` 表示当前任务对请求用户的操作能力。
+
 ### 10.12 回退
 
 - **POST** `/api/workflow/tasks/{id}/rollback/`
@@ -1769,7 +1782,7 @@
 }
 ```
 
-`rollback_target` 可选（目标节点 ID）；回退到初始节点时流程作废，实例自动删除，关联发布恢复为 `draft`。
+`rollback_target` 可选（目标节点 ID）；回退到初始节点时流程作废，保留实例与已处理历史，关联发布恢复为 `draft`。
 
 > 旧版 `/api/workflow/instances/{id}/progress/` 与任务级 `revoke` 接口已不存在：进度信息包含在实例详情的 `node_status` / `graph_data` 中，撤销改为实例级 `revoke`。
 

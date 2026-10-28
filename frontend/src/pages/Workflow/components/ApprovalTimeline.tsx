@@ -1,4 +1,4 @@
-import { Check, Tag, UserCheck } from 'lucide-react';
+import { Bot, Check, Tag, UserCheck } from 'lucide-react';
 import dayjs from 'dayjs';
 import type { LucideIcon } from 'lucide-react';
 import type { WorkflowInstance, WorkflowTask } from '@/types';
@@ -16,10 +16,11 @@ interface ApproverConfig {
   type?: string;
   role?: string;
   user_id?: string;
+  user_name?: string;
 }
 
 /** 节点展示状态 */
-type NodeState = 'done' | 'running' | 'pending' | 'revoked';
+type NodeState = 'done' | 'running' | 'pending' | 'revoked' | 'returned';
 
 /** 项目成员角色文案（与仓库审批流 Tab 的 ROLE_LABELS 对齐） */
 const ROLE_LABELS: Record<string, string> = {
@@ -51,7 +52,7 @@ function configuredApproverText(node: GraphNode): string {
     if (config.type === 'leader') return '项目负责人';
     if (config.type === 'self') return '发起人';
     if (config.type === 'role') return ROLE_LABELS[config.role || ''] || config.role || '指定角色';
-    return '指定人员';
+    return config.user_name || '指定人员';
   });
   return [...new Set(labels)].join('、');
 }
@@ -67,11 +68,12 @@ export function ApprovalTimeline({ instance }: { instance: WorkflowInstance }) {
   /** 判断单个节点状态 */
   const stateOf = (node: GraphNode): NodeState => {
     if (node.type === 'start-node') return 'done';
-    if (instance.status === 'revoked' && nodeStatus[node.id] !== 'approved') return 'revoked';
+    if (instance.status === 'returned' && nodeStatus[node.id] === 'returned') return 'returned';
+    if ((instance.status === 'revoked' || instance.status === 'returned') && !['approved', 'completed', 'first_release', 'no_changes', 'skipped'].includes(nodeStatus[node.id])) return 'revoked';
     if (node.type === 'end-node') {
       return instance.status === 'completed' ? 'done' : 'pending';
     }
-    if (nodeStatus[node.id] === 'approved') return 'done';
+    if (['approved', 'completed', 'first_release', 'no_changes', 'skipped'].includes(nodeStatus[node.id])) return 'done';
     if (node.id === instance.current_node_id && instance.status === 'running') return 'running';
     return 'pending';
   };
@@ -95,6 +97,7 @@ export function ApprovalTimeline({ instance }: { instance: WorkflowInstance }) {
             node={node}
             isLast={isLast}
             nodeType={node.type}
+            result={nodeStatus[node.id]}
           />
         );
       })}
@@ -111,6 +114,7 @@ function TimelineNode({
   node,
   isLast,
   nodeType,
+  result,
 }: {
   name: string;
   state: NodeState;
@@ -119,21 +123,24 @@ function TimelineNode({
   node: GraphNode;
   isLast: boolean;
   nodeType: string;
+  result?: string;
 }) {
-  const Icon: LucideIcon = nodeType === 'start-node' ? Check : nodeType === 'end-node' ? Tag : UserCheck;
+  const Icon: LucideIcon = nodeType === 'start-node' ? Check : nodeType === 'end-node' ? Tag : nodeType === 'ai-review-node' ? Bot : UserCheck;
 
   const dotClass = {
     done: 'bg-emerald-500 text-white',
     running: 'bg-amber-500 text-white pulse-dot ring-4 ring-amber-100',
     pending: 'border-2 border-slate-200 bg-white text-slate-300',
     revoked: 'border-2 border-slate-200 bg-slate-50 text-slate-400',
+    returned: 'border-2 border-amber-300 bg-amber-50 text-amber-700',
   }[state];
 
   const badge = {
-    done: { text: nodeType === 'start-node' ? '已完成' : '已通过', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    done: result === 'skipped' ? { text: '管理员跳过', cls: 'border-amber-200 bg-amber-50 text-amber-700' } : { text: nodeType === 'start-node' || nodeType === 'ai-review-node' ? (result === 'first_release' ? '首次发布跳过' : result === 'no_changes' ? '无代码变更' : '已完成') : '已通过', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
     running: { text: '进行中', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
     pending: { text: '待处理', cls: 'border-slate-200 bg-slate-50 text-slate-400' },
     revoked: { text: '已终止', cls: 'border-slate-200 bg-slate-50 text-slate-500' },
+    returned: { text: '已退回修改', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
   }[state];
 
   const nameClass = state === 'pending' || state === 'revoked' ? 'text-slate-400' : state === 'running' ? 'text-amber-700' : 'text-slate-900';
@@ -163,9 +170,9 @@ function TimelineNode({
         </div>
         {!isLast ? <div className="mt-1 w-px flex-1 bg-indigo-100" /> : null}
       </div>
-      <div className={`flex-1 ${isLast ? '' : 'pb-5'}`}>
-        <div className="flex items-center justify-between">
-          <div>
+      <div className={`min-w-0 flex-1 ${isLast ? '' : 'pb-5'}`}>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="min-w-0 break-words [overflow-wrap:anywhere]">
             <div className={`text-[13px] font-medium ${nameClass}`}>{name}</div>
             <div className="mt-0.5 text-[11px] text-slate-400">
               {nodeType === 'approval-node'
@@ -175,12 +182,14 @@ function TimelineNode({
                   ]
                     .filter(Boolean)
                     .join(' · ')
+                : nodeType === 'ai-review-node'
+                  ? '审查意见由人工决定'
                 : nodeType === 'start-node'
                   ? '发起申请'
                   : '自动执行'}
             </div>
           </div>
-          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${badge.cls}`}>
+          <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${badge.cls}`}>
             {badge.text}
           </span>
         </div>
