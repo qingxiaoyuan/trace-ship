@@ -172,3 +172,20 @@ it('历史执行意见留在原差异旁，跨当前与历史按稳定 ID 去重
   expect(within(cards[1] as HTMLElement).getByText('历史问题')).toBeTruthy();
   expect(within(cards[1] as HTMLElement).getByText('安全审查 · 第 2 次历史执行')).toBeTruthy();
 });
+
+it('多个完整差异块的行号重叠时不展示具有歧义的位置', async () => {
+  vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'ready', base_git_hash: 'a', head_git_hash: 'b', diffs: [
+    { old_path: 'a.py', new_path: 'a.py', diff: '@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-other\n+different' },
+  ] });
+  const cases = [{ node_id: 'ai', status: 'completed' as const, summary: '', coverage: {}, findings: [
+    { severity: 'P1', title: '歧义意见', reason: '原因', suggestion: '检查', path: 'a.py', side: 'new' as const, line_start: 1, line_end: 1 },
+  ] }];
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><ReviewDiff instanceId="overlap" reviews={cases} /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
+  const file = await screen.findByRole('article', { name: 'a.py' });
+  fireEvent.click(within(file).getByRole('button', { name: '展开代码差异' }));
+  expect(within(file).getByText('歧义意见')).toBeTruthy();
+  expect(within(file).getByText('文件级意见（未能可靠定位到行）')).toBeTruthy();
+  expect(within(file).queryByLabelText('新侧第 1 行')).toBeNull();
+});

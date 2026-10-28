@@ -57,10 +57,24 @@ function parseLines(diff: string): DiffLine[] {
       }
     }
   }
-  if (lines.some((line) => line.invalid)) {
+  const oldLines = new Set<number>();
+  const newLines = new Set<number>();
+  let duplicate = false;
+  for (const line of lines) {
+    if (line.oldLine !== undefined) {
+      if (oldLines.has(line.oldLine)) duplicate = true;
+      oldLines.add(line.oldLine);
+    }
+    if (line.newLine !== undefined) {
+      if (newLines.has(line.newLine)) duplicate = true;
+      newLines.add(line.newLine);
+    }
+  }
+  if (duplicate || lines.some((line) => line.invalid)) {
     for (const line of lines) {
       delete line.oldLine;
       delete line.newLine;
+      if (duplicate) line.invalid = true;
     }
   }
   return lines;
