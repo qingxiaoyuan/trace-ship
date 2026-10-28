@@ -150,3 +150,25 @@ it('长差异分页后可读到末尾，未打开文件不会构建所有代码�
   expect(within(file).getByText('line-401')).toBeTruthy();
   expect(within(file).getByText('末尾问题').closest('[data-line-side="new"]')).toBeTruthy();
 });
+
+it('历史执行意见留在原差异旁，跨当前与历史按稳定 ID 去重', async () => {
+  vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'ready', base_git_hash: 'a', head_git_hash: 'b', diffs: [
+    { old_path: 'a.py', new_path: 'a.py', diff: '@@ -1,2 +1,2 @@\n-old1\n-old2\n+new1\n+new2' },
+  ] });
+  const shared = { id: 'stable', severity: 'P1', title: '重复问题', reason: '原因', suggestion: '修复', path: 'a.py', side: 'new' as const, line_start: 1, line_end: 1 };
+  const previous = { id: 'previous', severity: 'P2', title: '历史问题', reason: '旧原因', suggestion: '核对', path: 'a.py', side: 'new' as const, line_start: 2, line_end: 2 };
+  const cases = [{ node_id: 'ai', node_name: '安全审查', status: 'completed' as const, summary: '', coverage: {}, findings: [shared], history: [
+    { token: 'attempt-1', status: 'incomplete', summary: '部分完成', updated_at: '2026-10-28', findings: [shared, previous] },
+    { token: 'attempt-2', status: 'incomplete', summary: '重试', updated_at: '2026-10-28', findings: [previous] },
+  ] }];
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { container } = render(<QueryClientProvider client={client}><ReviewDiff instanceId="history" reviews={cases} /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
+  const file = await screen.findByRole('article', { name: 'a.py' });
+  fireEvent.click(within(file).getByRole('button', { name: '展开代码差异' }));
+  const cards = container.querySelectorAll('[data-line-side]');
+  expect(cards).toHaveLength(2);
+  expect(within(cards[0] as HTMLElement).getByText('重复问题')).toBeTruthy();
+  expect(within(cards[1] as HTMLElement).getByText('历史问题')).toBeTruthy();
+  expect(within(cards[1] as HTMLElement).getByText('安全审查 · 第 2 次历史执行')).toBeTruthy();
+});

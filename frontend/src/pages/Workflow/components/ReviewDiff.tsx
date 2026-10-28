@@ -6,6 +6,7 @@ import { workflowApi } from '@/api/workflow';
 import type { AiReviewData, AiReviewFinding, ReviewDiffFile } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
 import { useAuthStore } from '@/stores/authStore';
+import { uniqueHistoryFindings } from './reviewFindings';
 
 type ReviewFinding = { finding: AiReviewFinding; nodeName: string; key: string };
 type DiffLine = { text: string; oldLine?: number; newLine?: number; invalid?: boolean; kind: 'header' | 'added' | 'deleted' | 'context' | 'other' };
@@ -158,10 +159,18 @@ export function ReviewDiff({ instanceId, reviews }: { instanceId: string; review
   const [open, setOpen] = useState(false);
   const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const query = useQuery({ queryKey: ['review-diff', instanceId, sessionVersion], queryFn: () => workflowApi.getReviewDiff(instanceId), enabled: open, retry: false, gcTime: 0 });
-  const findings = useMemo(() => reviews.flatMap((review) => (review.findings || []).map((finding, index) => ({
-    finding, nodeName: review.node_name || 'AI 代码审查', key: `${review.node_id}:${finding.id || index}`,
-  }))), [reviews]);
-  if (!reviews.some((review) => review.findings !== undefined)) return null;
+  const findings = useMemo(() => reviews.flatMap((review) => {
+    const nodeName = review.node_name || 'AI 代码审查';
+    const current = (review.findings || []).map((finding, index) => ({
+      finding, nodeName: `${nodeName} · 当前执行`, key: `${review.node_id}:current:${finding.id || index}`,
+    }));
+    const unique = uniqueHistoryFindings(review);
+    const history = (review.history || []).flatMap((attempt, attemptIndex) => (unique.get(attempt.token) || []).map((finding, index) => ({
+      finding, nodeName: `${nodeName} · 第 ${attemptIndex + 1} 次历史执行`, key: `${review.node_id}:${attempt.token}:${finding.id || index}`,
+    })));
+    return [...current, ...history];
+  }), [reviews]);
+  if (!reviews.some((review) => review.findings !== undefined || review.history !== undefined)) return null;
   const files = query.data?.diffs || [];
   const assignments = files.map(() => [] as ReviewFinding[]);
   const unassigned: ReviewFinding[] = [];

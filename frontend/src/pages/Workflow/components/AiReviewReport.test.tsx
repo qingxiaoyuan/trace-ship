@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { workflowApi } from '@/api/workflow';
 import { AiReviewReport } from './AiReviewReport';
@@ -108,4 +108,40 @@ it('会话切换或权限收回后不会复用完整报告', async () => {
   act(() => useAuthStore.getState().setTokens('another-account-token'));
   expect(screen.queryByText('原账号私有报告')).toBeNull();
   await waitFor(() => expect(screen.queryByLabelText('AI 代码审查')).toBeNull());
+});
+
+it('管理员留理由跳过并刷新状态，空理由不可提交', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'failed', summary: '失败', coverage: {}, can_recover: true }] });
+  const skip = vi.spyOn(workflowApi, 'skipAiReview').mockResolvedValue(undefined);
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: '留理由跳过' }));
+  const submit = screen.getByRole('button', { name: '确认跳过并交人工审批' }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('跳过原因'), { target: { value: ' 网络故障 ' } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(skip).toHaveBeenCalledWith('round-one', 'ai', '网络故障'));
+});
+
+it('重试失败显示原因并允许再次操作', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'incomplete', summary: '未完成', coverage: {}, can_recover: true }] });
+  const retry = vi.spyOn(workflowApi, 'retryAiReview').mockRejectedValue({ friendlyMessage: '状态已变化' });
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: '重新审查' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('状态已变化');
+  expect(retry).toHaveBeenCalledWith('round-one', 'ai');
+  expect((screen.getByRole('button', { name: '重新审查' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('历史执行保留独有意见，并按稳定 ID 避免重复显示', async () => {
+  const shared = { id: 'shared', severity: 'P1', title: '相同意见', reason: '当前原因', suggestion: '修复' };
+  const old = { id: 'old', severity: 'P2', title: '旧意见', reason: '**旧原因**', suggestion: '检查' };
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '', coverage: {}, findings: [shared], history: [
+    { token: 'one', status: 'failed', summary: '第一次', updated_at: '2026-10-28', findings: [shared, old] },
+    { token: 'two', status: 'incomplete', summary: '第二次', updated_at: '2026-10-28', findings: [old] },
+  ] }] });
+  show();
+  expect(await screen.findByText('过往审查执行（2）')).toBeTruthy();
+  expect(screen.getAllByText('相同意见')).toHaveLength(1);
+  expect(screen.getAllByText('旧意见')).toHaveLength(1);
+  expect(screen.getByText('旧原因').tagName.toLowerCase()).toBe('strong');
 });

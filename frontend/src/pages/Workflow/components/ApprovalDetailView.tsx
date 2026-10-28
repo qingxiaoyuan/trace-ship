@@ -79,6 +79,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
     submitTime: instance.submit_time || '',
     currentNode: instance.current_node || '',
     mode: instance.tasks?.find((task) => task.id === source.taskId && task.can_act === true)?.mode,
+    readOnly: !instance.tasks?.some((task) => task.id === source.taskId && task.can_act === true),
   };
 
   return (
