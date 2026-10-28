@@ -248,7 +248,7 @@ class TestWorkflowTaskSerializer:
 
 
 class TestRollbackToStart:
-    """驳回到初始节点时自动删除流程"""
+    """回退时保留历史并按节点恢复状态。"""
 
     def _make_two_node_instance(self, project, user):
         """构造含两节点的流程定义 + 实例（实例停留在第二个节点）"""
@@ -271,6 +271,7 @@ class TestRollbackToStart:
             biz_id="00000000-0000-0000-0000-000000000099",
             status="running",
             current_node_id="approval_2",
+            node_config_snapshot=definition.node_config,
             node_status={"approval_1": "approved"},
             graph_data={"nodes": [], "edges": []},
             created_by=user,
@@ -299,6 +300,7 @@ class TestRollbackToStart:
             biz_id="00000000-0000-0000-0000-000000000199",
             status="running",
             current_node_id="node_3",
+            node_config_snapshot=definition.node_config,
             node_status={"node_1": "approved", "node_2": "approved"},
             graph_data={"nodes": [], "edges": []},
             created_by=user,

@@ -348,3 +348,92 @@ def test_legacy_workflow_uses_saved_graph_if_definition_changed(flow):
     approve_next(flow)
     second = flow.instance.tasks.get(status="pending")
     assert second.node_id == "approval_2" and second.approver_id == flow.reviewer.id
+
+
+def _legacy_graph(reviewer):
+    """按早期 LogicFlow 格式构造乱序节点与有序边。"""
+    return {
+        "nodes": [
+            {"id": "approval_2", "type": "approval-node", "text": {"value": "旧第二节点"},
+             "properties": {"approver_type": "user", "user_id": str(reviewer.id)}},
+            {"id": "end", "type": "end-node"},
+            {"id": "approval_1", "type": "approval-node", "text": "旧第一节点",
+             "properties": {"approver_type": "user", "user_id": str(reviewer.id)}},
+            {"id": "start", "type": "start-node"},
+        ],
+        "edges": [
+            {"source": "start", "target": "approval_1"},
+            {"sourceNodeId": "approval_1", "targetNodeId": "approval_2"},
+            {"source": "approval_2", "target": "end"},
+        ],
+    }
+
+
+@pytest.mark.parametrize("style", ["early", "modern"])
+def test_legacy_graph_edges_prevent_skipping_removed_approval_node(flow, style):
+    """旧图按边恢复审批顺序，现行定义缩短不能让发布跳过旧节点。"""
+    graph = _legacy_graph(flow.reviewer)
+    if style == "modern":
+        for node in graph["nodes"]:
+            if node["type"] == "approval-node":
+                node["properties"] = {"mode": "all", "_approvers": [
+                    {"type": "user", "user_id": str(flow.reviewer.id)},
+                ]}
+    definition = flow.instance.definition
+    definition.node_config = definition.node_config[:1]
+    definition.save(update_fields=["node_config"])
+    WorkflowInstance.objects.filter(pk=flow.instance.pk).update(
+        node_config_snapshot=None, graph_data=graph,
+    )
+    approve_next(flow)
+    flow.release.refresh_from_db()
+    second = flow.instance.tasks.get(status="pending")
+    assert second.node_id == "approval_2" and second.approver_id == flow.reviewer.id
+    assert second.node_name == "旧第二节点" and second.mode == ("any" if style == "early" else "all")
+    assert flow.release.status == "pending" and not flow.remote.tags
+    approve_next(flow)
+    flow.release.refresh_from_db()
+    assert flow.release.status == "released" and len(flow.remote.tags) == 1
+
+
+@pytest.mark.parametrize("damage", ["missing_end", "branch", "cycle", "disconnected", "duplicate_id", "missing_approver",
+                                    "missing_graph", "malformed_edge", "mixed_alias", "malformed_properties", "null_approvers", "mixed_approvers"])
+def test_ambiguous_legacy_graph_cannot_advance(flow, damage):
+    """旧图残缺、分叉、环或审批人不明时不能依赖现行定义推断放行。"""
+    graph = _legacy_graph(flow.reviewer)
+    if damage == "missing_end":
+        graph["edges"].pop()
+    elif damage == "branch":
+        graph["edges"].append({"source": "approval_1", "target": "end"})
+    elif damage == "cycle":
+        graph["edges"][-1] = {"source": "approval_2", "target": "approval_1"}
+    elif damage == "disconnected":
+        graph["nodes"].append({"id": "other", "type": "approval-node", "properties": {"approver_type": "self"}})
+    elif damage == "duplicate_id":
+        graph["nodes"].append({"id": "approval_2", "type": "approval-node", "properties": {"approver_type": "self"}})
+    elif damage == "missing_approver":
+        graph["nodes"][0]["properties"] = {"approver_type": "user"}
+    elif damage == "missing_graph":
+        graph = {}
+    elif damage == "malformed_edge":
+        graph["edges"][0]["source"] = []
+    elif damage == "mixed_alias":
+        graph["edges"][0]["sourceNodeId"] = "approval_1"
+    elif damage == "malformed_properties":
+        graph["nodes"][0]["properties"] = []
+    elif damage == "null_approvers":
+        graph["nodes"][0]["properties"] = {"_approvers": None}
+    elif damage == "mixed_approvers":
+        graph["nodes"][0]["properties"]["_approvers"] = [{"type": "self"}]
+    definition = flow.instance.definition
+    definition.node_config = definition.node_config[:1]
+    definition.save(update_fields=["node_config"])
+    WorkflowInstance.objects.filter(pk=flow.instance.pk).update(node_config_snapshot=None, graph_data=graph)
+    task = flow.instance.tasks.get(status="pending")
+    flow.api.force_authenticate(flow.reviewer)
+    result = flow.api.post(f"/api/workflow/tasks/{task.id}/approve/")
+    assert result.status_code == 400, result.data
+    assert "流程" in result.data["message"]
+    task.refresh_from_db()
+    flow.release.refresh_from_db()
+    assert task.status == "pending" and flow.release.status == "pending" and not flow.remote.tags
