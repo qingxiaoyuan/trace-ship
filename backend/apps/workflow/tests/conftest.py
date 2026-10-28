@@ -66,6 +66,7 @@ def instance(definition, user):
     """运行中的流程实例（由 user 发起）"""
     return WorkflowInstance.objects.create(
         definition=definition,
+        source_project=definition.project,
         biz_type="release",
         biz_id="00000000-0000-0000-0000-000000000001",
         status="running",

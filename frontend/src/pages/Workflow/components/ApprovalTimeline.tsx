@@ -16,6 +16,7 @@ interface ApproverConfig {
   type?: string;
   role?: string;
   user_id?: string;
+  user_name?: string;
 }
 
 /** 节点展示状态 */
@@ -51,7 +52,7 @@ function configuredApproverText(node: GraphNode): string {
     if (config.type === 'leader') return '项目负责人';
     if (config.type === 'self') return '发起人';
     if (config.type === 'role') return ROLE_LABELS[config.role || ''] || config.role || '指定角色';
-    return '指定人员';
+    return config.user_name || '指定人员';
   });
   return [...new Set(labels)].join('、');
 }

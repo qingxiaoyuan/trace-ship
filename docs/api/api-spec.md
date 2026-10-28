@@ -1691,7 +1691,8 @@
 ### 10.5 流程实例列表 / 详情
 
 - **GET** `/api/workflow/instances/`：过滤参数 `biz_type` / `biz_id` / `status` / `created_by`。
-- **GET** `/api/workflow/instances/{id}/`：详情含任务列表与节点状态快照（`node_status`）、实例图快照（`graph_data`）。
+- **GET** `/api/workflow/instances/{id}/`：详情含任务列表与节点状态快照（`node_status`）、实例图快照（`graph_data`）。列表和详情的 `is_current` 表示该实例是否为发布当前关联流程，可按 `biz_type=release&biz_id=<发布 ID>` 查询可见历史；仍按发布项目及本单审批分配授权。
+- 新流程固定提审时的节点、审批模式和实际审批人；详情的 `has_config_snapshot` 为 `false` 表示存量实例没有保存原配置，运行时优先沿用保存的流程图配置，图缺失时兼容当前定义；无法还原原审批人时不伪造快照。历史非成员审批人不能经旧实例读取后续修改的发布正文。
 
 实例状态：`running` / `completed` / `rejected` / `revoked`。
 
@@ -1713,7 +1714,7 @@
 - **GET** `/api/workflow/tasks/todo/`
 - **GET** `/api/workflow/tasks/done/`
 
-任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked` / `revoked`（发起人终止后失效）。
+任务状态：`pending` / `approved` / `rejected` / `transferred` / `rollbacked` / `revoked`（终止或回退到起点后失效）。回退到起点保留流程实例、任务和已处理意见，并在事务内恢复草稿、释放未消费版本占用。
 
 ### 10.9 审批通过
 

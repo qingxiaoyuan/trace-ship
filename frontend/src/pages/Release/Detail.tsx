@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
+import { WorkflowHistory } from '@/components/WorkflowHistory';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
 import { workflowApi } from '@/api/workflow';
@@ -72,7 +73,7 @@ export default function ReleaseDetail() {
     onSuccess: () => {
       message.success('已提交审批');
       for (const queryKey of [['release', id], ['releases'], ['workflow-initiated'], ['workflow-todo'],
-        ['workflow-stats'], ['workflow-todo-count'], ['notification-remind-summary']]) {
+        ['workflow-stats'], ['workflow-todo-count'], ['workflow-history', id], ['notification-remind-summary']]) {
         void queryClient.invalidateQueries({ queryKey });
       }
     },
@@ -196,6 +197,8 @@ export default function ReleaseDetail() {
           </>
         ) : null}
       </div>
+
+      {!maintainer ? <WorkflowHistory releaseId={release.id} /> : null}
 
       {/* 详情头 */}
       <div className="tech-card rounded-xl p-5">

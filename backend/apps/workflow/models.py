@@ -157,6 +157,12 @@ class WorkflowInstance(models.Model):
         default="",
         verbose_name="当前节点ID",
     )
+    source_project = models.ForeignKey(
+        "project.Project", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="workflow_history", verbose_name="发布所属项目快照",
+    )
+    # 存量流程没有真实快照，保留 NULL 以区分历史兼容行为。
+    node_config_snapshot = models.JSONField(null=True, blank=True, verbose_name="提审时审批链快照")
     node_status = models.JSONField(default=dict, verbose_name="节点状态快照")
     graph_data = models.JSONField(default=dict, verbose_name="实例图快照")
     created_by = models.ForeignKey(

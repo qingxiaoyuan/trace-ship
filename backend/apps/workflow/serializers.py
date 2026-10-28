@@ -7,6 +7,30 @@ from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowT
 from apps.workflow.services import resolve_release
 
 
+def release_for_display(instance: WorkflowInstance, request):
+    """旧审批分配不授予查看当前发布内容的权限；缓存仅存于本次请求。"""
+    cache = None
+    if request is not None:
+        cache = getattr(request, "_workflow_release_display_cache", None)
+        if cache is None:
+            cache = {}
+            request._workflow_release_display_cache = cache
+        if instance.id in cache:
+            return cache[instance.id]
+    release = resolve_release(instance)
+    if release is not None and release.workflow_instance_id != instance.id:
+        user = getattr(request, "user", None)
+        from apps.project.services import visible_project_ids
+
+        if not user or not user.is_authenticated or not (
+            user.is_superuser or visible_project_ids(user).filter(pk=release.project_id).exists()
+        ):
+            release = None
+    if cache is not None:
+        cache[instance.id] = release
+    return release
+
+
 def user_display(user) -> str:
     """返回用户的展示名（昵称优先，回退到用户名）。"""
     if not user:
@@ -167,41 +191,42 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
 
     def get_title(self, obj: WorkflowTask) -> str:
         """返回审批标题。"""
-        release = resolve_release(obj.instance)
+        release = release_for_display(obj.instance, self.context.get("request"))
         return f"审批发布 {release.version}" if release else obj.node_name
 
     def get_applicant(self, obj: WorkflowTask) -> str:
         """返回申请人名称。"""
-        release = resolve_release(obj.instance)
+        release = release_for_display(obj.instance, self.context.get("request"))
         return user_display(release.publisher if release else obj.instance.created_by)
 
     def get_project_name(self, obj: WorkflowTask) -> str:
         """返回项目名称。"""
-        release = resolve_release(obj.instance)
-        return release.project.name if release else obj.instance.definition.project.name
+        release = release_for_display(obj.instance, self.context.get("request"))
+        project = release.project if release else obj.instance.source_project or obj.instance.definition.project
+        return project.name if project else ""
 
     def get_repository_name(self, obj: WorkflowTask) -> str:
         """返回仓库名（审批页「软件」）。"""
-        release = resolve_release(obj.instance)
+        release = release_for_display(obj.instance, self.context.get("request"))
         if release and release.repository_id:
             return release.repository.name
         return ""
 
     def get_version(self, obj: WorkflowTask) -> str:
         """返回发布版本号。"""
-        return release_fields(resolve_release(obj.instance))["version"]
+        return release_fields(release_for_display(obj.instance, self.context.get("request")))["version"]
 
     def get_release_type(self, obj: WorkflowTask) -> str:
         """返回发布类型。"""
-        return release_fields(resolve_release(obj.instance))["release_type"]
+        return release_fields(release_for_display(obj.instance, self.context.get("request")))["release_type"]
 
     def get_branch(self, obj: WorkflowTask) -> str:
         """返回发布分支。"""
-        return release_fields(resolve_release(obj.instance))["branch"]
+        return release_fields(release_for_display(obj.instance, self.context.get("request")))["branch"]
 
     def get_package_status(self, obj: WorkflowTask):
         """返回最近打包任务状态。"""
-        return release_fields(resolve_release(obj.instance))["package_status"]
+        return release_fields(release_for_display(obj.instance, self.context.get("request")))["package_status"]
 
 
 class WorkflowInstanceSerializer(serializers.ModelSerializer):
@@ -230,6 +255,8 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     tag_name = serializers.SerializerMethodField()
     release_doc = serializers.SerializerMethodField()
     can_revoke = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
+    has_config_snapshot = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
@@ -240,7 +267,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "created_by", "created_at", "updated_at", "completed_at", "tasks",
             "title", "applicant", "project_name", "repository_name", "current_node", "submit_time",
             "version", "release_type", "branch", "package_status",
-            "git_hash", "tag_name", "release_doc", "can_revoke",
+            "git_hash", "tag_name", "release_doc", "can_revoke", "is_current", "has_config_snapshot",
         ]
         read_only_fields = [
             "id", "definition_name", "biz_type", "biz_id", "status",
@@ -250,6 +277,13 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
             "version", "release_type", "branch", "package_status",
             "git_hash", "tag_name", "release_doc",
         ]
+
+    def get_is_current(self, obj: WorkflowInstance) -> bool:
+        release = resolve_release(obj)
+        return bool(release and release.workflow_instance_id == obj.id)
+
+    def get_has_config_snapshot(self, obj: WorkflowInstance) -> bool:
+        return obj.node_config_snapshot is not None
 
     def get_can_revoke(self, obj: WorkflowInstance) -> bool:
         """历史发起人变为维保后不再显示撤销能力。"""
@@ -262,22 +296,23 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
 
     def get_title(self, obj: WorkflowInstance) -> str:
         """返回审批标题。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         return f"审批发布 {release.version}" if release else obj.definition.name
 
     def get_applicant(self, obj: WorkflowInstance) -> str:
         """返回发起人名称。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         return user_display(release.publisher if release else obj.created_by)
 
     def get_project_name(self, obj: WorkflowInstance) -> str:
         """返回项目名称。"""
-        release = resolve_release(obj)
-        return release.project.name if release else obj.definition.project.name
+        release = release_for_display(obj, self.context.get("request"))
+        project = release.project if release else obj.source_project or obj.definition.project
+        return project.name if project else ""
 
     def get_repository_name(self, obj: WorkflowInstance) -> str:
         """返回仓库名（审批页「软件」）。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         if release and release.repository_id:
             return release.repository.name
         return ""
@@ -291,33 +326,33 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
 
     def get_version(self, obj: WorkflowInstance) -> str:
         """返回发布版本号。"""
-        return release_fields(resolve_release(obj))["version"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["version"]
 
     def get_release_type(self, obj: WorkflowInstance) -> str:
         """返回发布类型。"""
-        return release_fields(resolve_release(obj))["release_type"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["release_type"]
 
     def get_branch(self, obj: WorkflowInstance) -> str:
         """返回发布分支。"""
-        return release_fields(resolve_release(obj))["branch"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["branch"]
 
     def get_package_status(self, obj: WorkflowInstance):
         """返回最近打包任务状态。"""
-        return release_fields(resolve_release(obj))["package_status"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["package_status"]
 
     def get_git_hash(self, obj: WorkflowInstance) -> str:
         """返回发布分支的 commit hash（创建/修改发布时快照）。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         return release.git_hash if release else ""
 
     def get_tag_name(self, obj: WorkflowInstance) -> str:
         """返回发布目标 tag 名。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         return release.tag_name if release else ""
 
     def get_release_doc(self, obj: WorkflowInstance) -> str:
         """返回发布说明（变更文档）内容，供审批人查看。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         return release.release_doc if release else ""
 
 
@@ -339,11 +374,12 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
     release_type = serializers.SerializerMethodField()
     branch = serializers.SerializerMethodField()
     package_status = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowInstance
         fields = [
-            "id", "definition", "biz_type", "biz_id", "status",
+            "id", "definition", "biz_type", "biz_id", "status", "is_current",
             "current_node_id", "created_by", "created_at", "completed_at",
             "title", "applicant", "project_name", "repository_name", "current_node", "submit_time",
             "version", "release_type",
@@ -351,24 +387,29 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def get_is_current(self, obj: WorkflowInstance) -> bool:
+        release = resolve_release(obj)
+        return bool(release and release.workflow_instance_id == obj.id)
+
     def get_title(self, obj: WorkflowInstance) -> str:
         """返回审批标题。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         return f"审批发布 {release.version}" if release else obj.definition.name
 
     def get_applicant(self, obj: WorkflowInstance) -> str:
         """返回发起人名称。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         return user_display(release.publisher if release else obj.created_by)
 
     def get_project_name(self, obj: WorkflowInstance) -> str:
         """返回项目名称。"""
-        release = resolve_release(obj)
-        return release.project.name if release else obj.definition.project.name
+        release = release_for_display(obj, self.context.get("request"))
+        project = release.project if release else obj.source_project or obj.definition.project
+        return project.name if project else ""
 
     def get_repository_name(self, obj: WorkflowInstance) -> str:
         """返回仓库名（审批页「软件」）。"""
-        release = resolve_release(obj)
+        release = release_for_display(obj, self.context.get("request"))
         if release and release.repository_id:
             return release.repository.name
         return ""
@@ -382,16 +423,16 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
 
     def get_version(self, obj: WorkflowInstance) -> str:
         """返回发布版本号。"""
-        return release_fields(resolve_release(obj))["version"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["version"]
 
     def get_release_type(self, obj: WorkflowInstance) -> str:
         """返回发布类型。"""
-        return release_fields(resolve_release(obj))["release_type"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["release_type"]
 
     def get_branch(self, obj: WorkflowInstance) -> str:
         """返回发布分支。"""
-        return release_fields(resolve_release(obj))["branch"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["branch"]
 
     def get_package_status(self, obj: WorkflowInstance):
         """返回最近打包任务状态。"""
-        return release_fields(resolve_release(obj))["package_status"]
+        return release_fields(release_for_display(obj, self.context.get("request")))["package_status"]

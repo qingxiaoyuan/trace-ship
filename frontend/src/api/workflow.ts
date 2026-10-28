@@ -17,6 +17,8 @@ export const workflowApi = {
   deleteDefinition: (id: string) => del(`/workflow/definitions/${id}/`),
   createInstance: (data: { definition_id: string; biz_type?: string; biz_id: string }) =>
     post<WorkflowInstance>('/workflow/instances/', data),
+  getInstances: (params?: Record<string, unknown>) =>
+    get<PaginatedData<WorkflowInstanceListItem>>('/workflow/instances/', { params }),
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
   revokeInstance: (id: string, data?: { comment?: string }) =>
     post<WorkflowInstance>(`/workflow/instances/${id}/revoke/`, data || {}),

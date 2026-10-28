@@ -11,6 +11,7 @@ const originalAdapter = request.defaults.adapter;
 let canRevoke = true;
 let status = 'running';
 const posts: string[] = [];
+let historyRequests = 0;
 const source: DetailSource = {
   instanceId: 'instance', title: '发布审批', applicant: '发起人', projectName: '项目', softwareName: '软件',
   submitTime: '', currentNode: '第二轮审批', readOnly: true,
@@ -20,9 +21,14 @@ beforeEach(() => {
   canRevoke = true;
   status = 'running';
   posts.length = 0;
+  historyRequests = 0;
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   window.matchMedia = vi.fn().mockReturnValue({ matches: false, addListener() {}, removeListener() {} });
   request.defaults.adapter = async (config) => {
+    if (config.url === '/workflow/instances/' && config.method === 'get') {
+      historyRequests += 1;
+      return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data: { total: 0, results: [] } } };
+    }
     if (config.method === 'post') {
       posts.push(config.url!);
       status = 'revoked';
@@ -57,6 +63,7 @@ it('我发起的详情没有审批待办时仍能终止后续节点流程，保�
   expect(screen.getByText('首轮确认')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '终止流程' })).toBeNull();
   expect(client.getQueryData(['workflow-instance-for-detail', 'instance'])).toMatchObject({ status: 'revoked', can_revoke: false });
+  await waitFor(() => expect(historyRequests).toBeGreaterThanOrEqual(2));
 });
 
 it('非发起人或维保等服务端未授权的运行实例不展示终止入口', async () => {

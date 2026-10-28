@@ -140,6 +140,16 @@ class WorkflowEngine:
         if not node_config:
             raise serializers.ValidationError({"node_config": "流程定义中未配置审批节点"})
 
+        # 解析所有节点的实际审批人，防止后续成员或流程配置变化影响本轮。
+        candidate = WorkflowInstance(definition=definition, biz_type=biz_type, biz_id=biz_id, created_by=user)
+        for node in node_config:
+            approvers = cls._resolve_node_approvers(node.get("approvers", []), candidate)
+            if not approvers:
+                raise serializers.ValidationError({"node_config": f"节点 {node['node_name']} 未解析到有效审批人"})
+            node["approvers"] = [
+                {"type": "user", "user_id": str(approver.id), "user_name": approver.nickname or approver.username}
+                for approver in approvers
+            ]
         graph_data = cls._build_graph_data(node_config)
 
         with transaction.atomic():
@@ -149,6 +159,8 @@ class WorkflowEngine:
                 biz_id=biz_id,
                 status="running",
                 graph_data=graph_data,
+                node_config_snapshot=node_config,
+                source_project=getattr(resolve_release(candidate), "project", None),
                 node_status={},
                 created_by=user,
             )
@@ -181,6 +193,21 @@ class WorkflowEngine:
             normalized.append(item)
         return normalized
 
+    @classmethod
+    def _instance_node_config(cls, instance: WorkflowInstance) -> list[dict[str, Any]]:
+        """旧实例优先采用真实保存的图配置，无法解析时兼容当前定义。"""
+        if instance.node_config_snapshot is not None:
+            return instance.node_config_snapshot
+        graph_nodes = [node for node in (instance.graph_data or {}).get("nodes", [])
+                       if node.get("type") == cls.APPROVAL_NODE_TYPE]
+        if graph_nodes and all(node.get("id") and isinstance((node.get("properties") or {}).get("_approvers"), list)
+                               for node in graph_nodes):
+            return [{"node_id": node["id"],
+                     "node_name": cls._node_name(node).split("\n")[0],
+                     "mode": (node.get("properties") or {}).get("mode", "any"),
+                     "approvers": node["properties"]["_approvers"]} for node in graph_nodes]
+        return instance.definition.node_config or []
+
     @staticmethod
     def _lock_instance(instance: WorkflowInstance) -> WorkflowInstance:
         """审批与终止共用仓库 → 发布 → 实例的锁顺序，并读取当前实例状态。"""
@@ -190,7 +217,11 @@ class WorkflowEngine:
 
             Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
             ReleaseRecord.objects.select_for_update().only("id").get(pk=release.pk)
-        return WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
+        locked = WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
+        if release is not None and locked.source_project_id is None:
+            locked.source_project_id = release.project_id
+            locked.save(update_fields=["source_project"])
+        return locked
 
     @classmethod
     def process_task(
@@ -398,7 +429,7 @@ class WorkflowEngine:
         回退后流程状态仍为 running，目标节点重新生成 pending 任务。
         """
         instance = task.instance
-        node_config = instance.definition.node_config or []
+        node_config = cls._instance_node_config(instance)
         node_ids = [n["node_id"] for n in node_config]
 
         if task.node_id not in node_ids:
@@ -444,10 +475,16 @@ class WorkflowEngine:
             detail={"comment": comment, "target_node": target_node_id, "to_start": target_idx == 0},
         )
 
-        # 回退到初始节点（第一个审批节点）→ 视为流程作废，结束实例。
-        # 由视图层联动发布回到待提交态并删除该流程实例（关联任务级联删除）。
+        # 回退到初始节点结束本轮并保留历史；发布和版本占用在同一锁事务内恢复。
         if target_idx == 0:
-            cls._finish_instance(instance, "rejected")
+            cls._finish_instance(instance, "revoked")
+            instance.tasks.filter(status="pending").update(
+                status="revoked", action_time=now, updated_at=now,
+            )
+            if instance.biz_type == "release":
+                from apps.release.services import ReleaseService
+
+                ReleaseService.handle_workflow_rollback_to_start(instance, comment)
             return
 
         # 更新实例当前节点，并清除目标节点及之后节点的状态快照
@@ -471,12 +508,11 @@ class WorkflowEngine:
             instance: 流程实例
             current_node_id: 当前节点 ID
         """
-        node_config = instance.definition.node_config or []
+        node_config = cls._instance_node_config(instance)
         node_ids = [n["node_id"] for n in node_config]
 
         if current_node_id not in node_ids:
-            cls._finish_instance(instance, "completed")
-            return
+            raise serializers.ValidationError({"task": "当前任务节点不在审批链中，无法推进"})
 
         current_idx = node_ids.index(current_node_id)
 
@@ -523,6 +559,8 @@ class WorkflowEngine:
         approvers_config = node.get("approvers", [])
 
         approvers = cls._resolve_node_approvers(approvers_config, instance)
+        if instance.node_config_snapshot is not None and len(approvers) != len(approvers_config):
+            raise serializers.ValidationError({"node_config": f"节点 {node_name} 的固定审批人不可用，请联系管理员处理"})
         if not approvers:
             raise serializers.ValidationError(
                 {"node_config": f"节点 {node_name} 未解析到有效审批人"}
@@ -880,7 +918,8 @@ def visible_workflow_instances(user):
         | Q(biz_type="release", normalized_biz_id__in=releases.filter(
             project_id__in=visible_project_ids(user),
         ).values("workflow_biz_id"))
-        | (~real_release & definition_scope)
+        | (~real_release & Q(source_project_id__in=visible_project_ids(user)))
+        | (~Q(biz_type="release") & definition_scope)
     ).distinct()
 
 

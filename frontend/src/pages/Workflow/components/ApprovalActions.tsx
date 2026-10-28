@@ -92,6 +92,7 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
     queryClient.invalidateQueries({ queryKey: ['workflow-done'] });
     queryClient.invalidateQueries({ queryKey: ['workflow-initiated'] });
     queryClient.invalidateQueries({ queryKey: ['workflow-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['workflow-history'] });
   };
 
   const onDone = (msg: string) => {

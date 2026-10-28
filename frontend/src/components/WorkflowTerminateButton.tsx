@@ -18,6 +18,7 @@ export function WorkflowTerminateButton({ instance }: { instance?: WorkflowInsta
       }
       if (updated.biz_type === 'release') {
         void queryClient.invalidateQueries({ queryKey: ['release', updated.biz_id] });
+        void queryClient.invalidateQueries({ queryKey: ['workflow-history', updated.biz_id] });
       }
       message.success('流程已终止，发布申请已恢复草稿');
     },

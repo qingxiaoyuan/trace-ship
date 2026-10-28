@@ -4,6 +4,7 @@ import { ChevronRight, GitPullRequestArrow } from 'lucide-react';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
 import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
+import { WorkflowHistory } from '@/components/WorkflowHistory';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
 import { instanceStatusMap, releaseTypeText } from '../constants';
@@ -131,6 +132,14 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
             </div>
           </div>
 
+          {instance?.biz_type === 'release' ? <WorkflowHistory releaseId={instance.biz_id} /> : null}
+          {instance && !instance.has_config_snapshot ? (
+            <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">历史流程没有保存提审时的配置快照，不能还原当时配置。</div>
+          ) : null}
+          {instance && !instance.is_current && !isRunning ? (
+            <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">这是历史审批记录，发布摘要显示的是当前申请信息。</div>
+          ) : null}
+
           {/* 流程节点 */}
           <div className="tech-card rounded-xl p-5">
             <h3 className="mb-4 text-[15px] font-semibold tracking-tight text-slate-900">审批流程</h3>
@@ -144,7 +153,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
           </div>
 
           {/* 变更文档 */}
-          <ReleaseDocCard doc={instance?.release_doc} />
+          {instance && (instance.is_current || isRunning) ? <ReleaseDocCard doc={instance.release_doc} /> : null}
 
           {/* 审批意见 + 操作 */}
           <ApprovalActions source={detailSource} instance={instance ?? null} onBack={onBack} />
