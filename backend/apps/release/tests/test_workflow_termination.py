@@ -673,3 +673,65 @@ def test_superuser_return_records_actual_operator(flow):
     assert str(detail.data["data"]["returned_by"]) == str(admin.id)
     assert detail.data["data"]["returned_by_name"] == "return_admin"
     assert detail.data["data"]["tasks"][0]["approver"] == flow.reviewer.id
+
+
+def _prepare_returned_release_for_resubmission(flow, monkeypatch):
+    """经实际退回、更新来源和重新生成说明，准备下一轮审批。"""
+    task = flow.instance.tasks.get(status="pending")
+    flow.api.force_authenticate(flow.reviewer)
+    response = flow.api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "请修复"}, format="json")
+    assert response.status_code == 200, response.data
+    commits = flow.remote.list_commits(flow.release.repository.external_identity, flow.release.branch)
+    commits[0].hash = "b" * 40
+    monkeypatch.setattr(flow.remote, "list_commits", lambda *args, **kwargs: commits)
+    monkeypatch.setattr(flow.remote, "compare_diff", lambda *args: [], raising=False)
+    flow.api.force_authenticate(flow.user)
+    response = flow.api.post(f"/api/releases/{flow.release.id}/branch-update/", {
+        "old_hash": "a" * 40, "new_hash": "b" * 40,
+    }, format="json")
+    assert response.status_code == 200, response.data
+    response = flow.api.post(f"/api/releases/{flow.release.id}/generate-doc/")
+    assert response.status_code == 200, response.data
+
+
+def test_returned_release_only_publisher_can_resubmit_and_revoke(flow, monkeypatch):
+    """同项目其他开发者不可代重提，原发起人重提后仍可终止。"""
+    _prepare_returned_release_for_resubmission(flow, monkeypatch)
+    flow.api.force_authenticate(flow.reviewer)
+    response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
+    assert response.status_code in (400, 403), response.data
+    flow.release.refresh_from_db()
+    assert flow.release.status == "draft" and flow.release.workflow_instance_id is None
+    assert not flow.release.version_claims.exists()
+    flow.api.force_authenticate(flow.user)
+    response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
+    assert response.status_code == 200, response.data
+    flow.release.refresh_from_db()
+    assert flow.release.workflow_instance.created_by_id == flow.user.id
+    response = flow.api.post(f"/api/workflow/instances/{flow.release.workflow_instance_id}/revoke/")
+    assert response.status_code == 200, response.data
+
+
+def test_superuser_can_resubmit_returned_release_for_publisher(flow, monkeypatch):
+    """超管可代提，流程仍属于原发起人，审计记录实际操作者。"""
+    _prepare_returned_release_for_resubmission(flow, monkeypatch)
+    admin = User.objects.create_superuser(username="resubmit_admin", password="testpass")
+    flow.api.force_authenticate(admin)
+    response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
+    assert response.status_code == 200, response.data
+    flow.release.refresh_from_db()
+    assert flow.release.workflow_instance.created_by_id == flow.user.id
+    assert OperationLog.objects.filter(action="submit_audit", resource_id=str(flow.release.id), user=admin).exists()
+    flow.api.force_authenticate(flow.user)
+    response = flow.api.post(f"/api/workflow/instances/{flow.release.workflow_instance_id}/revoke/")
+    assert response.status_code == 200, response.data
+
+
+def test_other_developer_can_submit_unreturned_draft(flow):
+    """没有退回历史的草稿保留原有提审权限。"""
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    flow.api.force_authenticate(flow.reviewer)
+    response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
+    assert response.status_code == 200, response.data
+    flow.release.refresh_from_db()
+    assert flow.release.workflow_instance.created_by_id == flow.reviewer.id
