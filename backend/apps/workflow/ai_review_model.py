@@ -25,7 +25,10 @@ def _ask(config, messages):
               "禁止修改代码、运行命令、安装或执行技能脚本。只输出 JSON 对象。"
               "可请求 {\"action\":\"read\",\"path\":\"仓库相对路径\"}，"
               "{\"action\":\"search\",\"path\":\"仓库相对路径\",\"query\":\"文字\"}，"
-              "{\"action\":\"diff\",\"path\":\"可选文件路径\"}；可查阅其他批次的固定差异。完成时输出 {\"action\":\"finish\","
+              "{\"action\":\"diff\",\"path\":\"可选文件路径\"}；可查阅其他批次的固定差异。"
+              "完整文件清单可用 {\"action\":\"list_files\",\"offset\":0} 分页查询，"
+              "也可用 {\"action\":\"search_files\",\"query\":\"文件名关键词\",\"offset\":0} 定位。"
+              "每批交互次数和上下文有限，不应宣称穷举全部跨文件关联。完成时输出 {\"action\":\"finish\","
               "\"dimensions\":[\"实际维度\"],\"reviewed_files\":[\"路径\"],"
               "\"findings\":[{\"severity\":\"P0|P1|P2|P3\",\"title\":\"问题\","
               "\"reason\":\"原因\",\"suggestion\":\"建议\",\"path\":\"路径或空\","
@@ -191,7 +194,13 @@ def _review_batch(run, scope):
             coverage["warnings"].extend(gaps)
             return {"status": "incomplete" if gaps else "completed", "summary": "审查未完成" if gaps else "代码审查完成，等待人工决策",
                     "coverage": coverage, "dimensions": dimensions, "findings": findings}
-        if action == "diff":
+        if action in ("list_files", "search_files"):
+            offset = payload.get("offset", 0)
+            query = payload.get("query", "") if action == "search_files" else ""
+            if type(offset) is not int or offset < 0 or not isinstance(query, str) or (action == "search_files" and (not query or len(query) > 200)):
+                raise ValueError("文件清单查询无效")
+            tool_result = _file_page(scope, offset, query=query)
+        elif action == "diff":
             path = payload.get("path")
             all_diffs = getattr(scope, "all_diffs", diffs)
             if path is None:
@@ -240,11 +249,36 @@ def _review_batch(run, scope):
             "dimensions": [], "findings": []}
 
 
+def _file_page(scope, offset, *, query=""):
+    """固定差异文件清单按条数与字节分页，不截断路径或遗漏后续游标。"""
+    items = getattr(scope, "all_diffs", scope.diffs)
+    names = [item.get("new_path") or item.get("old_path") for item in items]
+    if query:
+        names = [name for name in names if query in name]
+    if offset > len(names):
+        raise ValueError("文件清单页码无效")
+    page, size = [], 0
+    budget = min(4000, max(256, MAX_INPUT // 20))
+    index = offset
+    while index < len(names) and len(page) < 100:
+        name = names[index]
+        # 不把不可合理传递的路径裁剪成可误认的真实路径。
+        entry = name if len(name.encode()) <= budget else {"index": index, "error": "文件路径过长"}
+        length = len(json.dumps(entry, ensure_ascii=False).encode()) + 2
+        if page and size + length > budget:
+            break
+        page.append(entry)
+        size += length
+        index += 1
+    return {"files": page, "next_offset": index if index < len(names) else None, "total": len(names)}
+
+
 def _initial_payload(run, scope, diffs):
+    page = _file_page(scope, 0)
     return {"skill_documents": run.settings_version.skill_documents, "base": scope.base_git_hash,
             "head": scope.head_git_hash, "context": scope.context, "documents": scope.documents,
             "context_is_requirement": scope.context_is_requirement, "diffs": diffs,
-            "all_files": [item.get("new_path") or item.get("old_path") for item in getattr(scope, "all_diffs", scope.diffs)]}
+            "all_files": page["files"], "all_files_next": page["next_offset"], "all_files_total": page["total"]}
 
 
 def _valid_hunks(diff):
@@ -319,7 +353,8 @@ def _batch_plan(run, scope):
             continue
         if size([item]) > batch_limit:
             finish()
-            blocked.append({"path": name, "reason": "单个文件差异超过审查容量"})
+            reason = "固定技能和审查上下文超过容量" if base_size >= MAX_INPUT else "单个文件差异超过审查容量"
+            blocked.append({"path": name, "reason": reason})
             continue
         if pending and size([*pending, item]) > batch_limit:
             finish()
@@ -332,6 +367,8 @@ def _batch_outcome(scope, names, plan, blocked, results):
     reviewed, findings = set(), []
     dimensions = None
     warnings = list(scope.warnings or []) if scope.status != "ready" else []
+    if len(plan) > 1:
+        warnings.append("跨批关联按需检索，受模型交互次数和上下文容量限制，未保证穷举")
     batches = []
     for entry in plan:
         result = results.get(entry["id"], {})

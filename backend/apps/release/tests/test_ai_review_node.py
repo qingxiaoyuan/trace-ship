@@ -1025,3 +1025,49 @@ def test_partial_batch_retry_preserves_identical_finding_identity(
     after = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
     assert after["status"] == "completed"
     assert after["findings"][0]["id"] == prior_id == after["history"][0]["findings"][0]["id"]
+
+
+def test_large_file_manifest_is_pageable_without_blocking_batches(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    import json
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    names = [f"dir/{index:04d}-{'x' * 180}.py" for index in range(1001)]
+    diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-a\n+b"} for name in names]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
+    monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    def ask(config, messages):
+        initial = json.loads(messages[0]["content"])
+        assert initial["all_files_total"] == len(names)
+        offset = initial["all_files_next"]
+        assert isinstance(offset, int) and initial["all_files"] == names[:offset]
+        if len(messages) == 1:
+            return ({"action": "list_files", "offset": offset}, json.dumps({"action": "list_files", "offset": offset}))
+        page = json.loads(messages[-1]["content"])
+        if len(messages) == 3:
+            end = page["next_offset"] if page["next_offset"] is not None else len(names)
+            assert page["files"] == names[offset:end]
+            return ({"action": "search_files", "query": "1000-", "offset": 0},
+                    json.dumps({"action": "search_files", "query": "1000-", "offset": 0}))
+        assert page["files"] == [names[-1]] and page["total"] == 1
+        return ({"action": "finish", "dimensions": ["安全"],
+                 "reviewed_files": [item["new_path"] for item in initial["diffs"]], "findings": []}, "{}")
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    execute_review(instance.id, "ai")
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "completed"
+    assert report["coverage"]["reviewed_paths"] == names
+    assert len(report["coverage"]["batches"]) > 1

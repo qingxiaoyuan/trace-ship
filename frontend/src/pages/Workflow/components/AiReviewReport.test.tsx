@@ -169,3 +169,13 @@ it('已退回的旧轮明确显示未完成审查已取消', async () => {
   show();
   expect(await screen.findByText('本轮审查已取消')).toBeTruthy();
 });
+
+it('长意见列表分页后可访问末尾', async () => {
+  const findings = Array.from({ length: 21 }, (_, index) => ({ id: `f${index}`, severity: 'P2', title: `意见 ${index + 1}`, reason: '原因', suggestion: '修复' }));
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '完成', coverage: {}, findings }] });
+  show();
+  expect(await screen.findByText('意见 1')).toBeTruthy();
+  expect(screen.queryByText('意见 21')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '意见下一页' }));
+  expect(screen.getByText('意见 21')).toBeTruthy();
+});
