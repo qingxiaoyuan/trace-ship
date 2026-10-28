@@ -1,8 +1,12 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { workflowApi } from '@/api/workflow';
 import type { AiReviewData, AiReviewFinding } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
+import { ReviewDiff } from './ReviewDiff';
+import { useAuthStore } from '@/stores/authStore';
 
 const statusText: Record<AiReviewData['status'], string> = {
   queued: '等待审查',
@@ -25,10 +29,12 @@ function location(finding: AiReviewFinding): string {
 /** 以实例为单位读取服务端授权后的报告，执行期间自动刷新。 */
 export function AiReviewReport({ instanceId }: { instanceId: string }) {
   const client = useQueryClient();
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const query = useQuery({
-    queryKey: ['ai-review', instanceId],
+    queryKey: ['ai-review', instanceId, sessionVersion],
     queryFn: () => workflowApi.getAiReview(instanceId),
     retry: false,
+    gcTime: 0,
     refetchInterval: (state) => state.state.data?.reviews?.some((review) => review.status === 'queued' || review.status === 'running') ? 3000 : false,
   });
   const states = query.data?.reviews?.map((review) => `${review.node_id}:${review.status}`).join('|') || '';
@@ -38,7 +44,7 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
     }
   }, [client, instanceId, states]);
 
-  if (query.isLoading) return <p className="text-sm text-slate-500">正在读取 AI 审查…</p>;
+  if (query.isLoading || (query.isFetching && !query.isFetchedAfterMount)) return <p className="text-sm text-slate-500">正在读取 AI 审查…</p>;
   if (query.error) {
     const error = query.error as unknown as NormalizedError;
     if (error.status === 404) return null;
@@ -71,10 +77,11 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
         {review.findings.length === 0 ? <p className="text-slate-500">未报告意见，仍需人工判断。</p> : review.findings.map((finding, index) => <div key={finding.id || index} className="rounded-lg bg-slate-50 p-3">
           <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">{finding.severity}</span><strong className="break-words">{finding.title}</strong></div>
           <p className="mt-1 break-all font-mono text-xs text-slate-500">{location(finding)}</p>
-          <p className="mt-2 whitespace-pre-wrap break-words">{finding.reason}</p>
-          {finding.suggestion ? <p className="mt-2 whitespace-pre-wrap break-words text-slate-600">建议：{finding.suggestion}</p> : null}
+          <div className="mt-2 whitespace-pre-wrap break-words [&_pre]:overflow-x-auto"><Markdown remarkPlugins={[remarkGfm]}>{finding.reason}</Markdown></div>
+          {finding.suggestion ? <div className="mt-2 whitespace-pre-wrap break-words text-slate-600 [&_pre]:overflow-x-auto">建议：<Markdown remarkPlugins={[remarkGfm]}>{finding.suggestion}</Markdown></div> : null}
         </div>)}
       </div> : null}
     </article>)}
+    <ReviewDiff instanceId={instanceId} reviews={query.data.reviews} />
   </section>;
 }

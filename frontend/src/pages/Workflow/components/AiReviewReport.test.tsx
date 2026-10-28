@@ -1,15 +1,16 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { workflowApi } from '@/api/workflow';
 import { AiReviewReport } from './AiReviewReport';
+import { useAuthStore } from '@/stores/authStore';
 
 function show() {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <AiReviewReport instanceId="round-one" />
   </QueryClientProvider>);
 }
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); useAuthStore.getState().clearAuth(); });
 
 it('展示完整报告、覆盖和意见并安全呈现模型文本', async () => {
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai-1', status: 'completed',
@@ -86,4 +87,25 @@ it('完整权限展示已审查和未审查文件，摘要权限不显示文件�
   expect(screen.getByText('src/missing.ts')).toBeTruthy();
   expect(screen.getByText('已审查文件')).toBeTruthy();
   expect(screen.getByText('未审查文件')).toBeTruthy();
+});
+
+it('审查正文保留 Markdown 语义并过滤危险 HTML 和链接', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '', coverage: {},
+    findings: [{ severity: 'P1', title: '问题', reason: '**重要** [文档](https://example.com) [危险](javascript:alert(1)) `<br>` <script>alert(1)</script>', suggestion: '核对配置' }] }] });
+  const { container } = show();
+  expect((await screen.findByText('重要')).tagName.toLowerCase()).toBe('strong');
+  expect(screen.getByRole('link', { name: '文档' }).getAttribute('href')).toBe('https://example.com');
+  expect(screen.getByText('危险').getAttribute('href')).not.toMatch(/^javascript:/);
+  expect(screen.getByText('<br>').tagName.toLowerCase()).toBe('code');
+  expect(container.querySelector('script')).toBeNull();
+});
+
+it('会话切换或权限收回后不会复用完整报告', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValueOnce({ reviews: [{ node_id: 'ai', status: 'completed',
+    summary: '原账号私有报告', coverage: {}, findings: [] }] }).mockRejectedValue({ status: 404 });
+  show();
+  expect(await screen.findByText('原账号私有报告')).toBeTruthy();
+  act(() => useAuthStore.getState().setTokens('another-account-token'));
+  expect(screen.queryByText('原账号私有报告')).toBeNull();
+  await waitFor(() => expect(screen.queryByLabelText('AI 代码审查')).toBeNull());
 });

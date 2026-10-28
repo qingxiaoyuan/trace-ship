@@ -63,8 +63,9 @@ export default function ReleaseDetail() {
     enabled: !!release?.project,
   });
   const { canManage, canDevelop, role } = useProjectRole(project);
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const { data: workflowInstance } = useQuery({
-    queryKey: ['workflow-instance-for-detail', release?.workflow_instance],
+    queryKey: ['workflow-instance-for-detail', release?.workflow_instance, sessionVersion],
     queryFn: () => workflowApi.getInstance(release!.workflow_instance!),
     enabled: release?.status === 'pending' && !!release.workflow_instance && role !== 'maintainer',
     retry: false,

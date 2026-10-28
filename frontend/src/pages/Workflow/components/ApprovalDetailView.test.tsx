@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { App, ConfigProvider } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import request from '@/api/request';
+import { workflowApi } from '@/api/workflow';
+import { useAuthStore } from '@/stores/authStore';
 import { ApprovalDetailView } from './ApprovalDetailView';
 import type { DetailSource } from '../types';
 
@@ -41,7 +43,7 @@ beforeEach(() => {
     } } };
   };
 });
-afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.restoreAllMocks(); vi.unstubAllGlobals(); useAuthStore.getState().clearAuth(); });
 
 function renderDetail() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -62,8 +64,38 @@ it('我发起的详情没有审批待办时仍能终止后续节点流程，保�
   await screen.findByText('已终止');
   expect(screen.getByText('首轮确认')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '终止流程' })).toBeNull();
-  expect(client.getQueryData(['workflow-instance-for-detail', 'instance'])).toMatchObject({ status: 'revoked', can_revoke: false });
+  expect(client.getQueryData(['workflow-instance-for-detail', 'instance', useAuthStore.getState().sessionVersion])).toMatchObject({ status: 'revoked', can_revoke: false });
   await waitFor(() => expect(historyRequests).toBeGreaterThanOrEqual(2));
+});
+
+it('权限收回及账号切换时隐藏缓存和来源中的旧详情', async () => {
+  const instance = { id: 'instance', biz_type: 'release', biz_id: 'release', status: 'running', title: '原账号私有标题',
+    graph_data: { nodes: [], edges: [] }, tasks: [] } as unknown as Awaited<ReturnType<typeof workflowApi.getInstance>>;
+  vi.spyOn(workflowApi, 'getInstance').mockResolvedValueOnce(instance).mockRejectedValue({ status: 404, friendlyMessage: '无权查看' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><ConfigProvider theme={{ token: { motion: false } }}><App>
+    <MemoryRouter><ApprovalDetailView source={{ ...source, title: '来源私有标题', mode: 'all' }} onBack={() => {}} /></MemoryRouter>
+  </App></ConfigProvider></QueryClientProvider>);
+  expect(await screen.findAllByText('原账号私有标题')).toBeTruthy();
+  expect(screen.queryByText('会签（all）')).toBeNull();
+  act(() => useAuthStore.getState().setTokens('new-account-token'));
+  expect(screen.queryByText('原账号私有标题')).toBeNull();
+  expect(screen.queryByText('来源私有标题')).toBeNull();
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('无权查看'));
+  expect(screen.queryByText('原账号私有标题')).toBeNull();
+  expect(screen.queryByText('来源私有标题')).toBeNull();
+});
+
+it('审批详情复核权限失败时不渲染之前成功的缓存内容', async () => {
+  const instance = { id: 'instance', biz_type: 'release', biz_id: 'release', status: 'running', title: '原私有标题',
+    graph_data: { nodes: [], edges: [] }, tasks: [] } as unknown as Awaited<ReturnType<typeof workflowApi.getInstance>>;
+  vi.spyOn(workflowApi, 'getInstance').mockResolvedValueOnce(instance).mockRejectedValue({ status: 404, friendlyMessage: '无权查看' });
+  const client = renderDetail();
+  expect(await screen.findAllByText('原私有标题')).toBeTruthy();
+  await act(async () => { await client.invalidateQueries({ queryKey: ['workflow-instance-for-detail', 'instance'] }); });
+  expect((await screen.findByRole('alert')).textContent).toContain('无权查看');
+  expect(screen.queryByText('原私有标题')).toBeNull();
+  expect(screen.queryByText('项目')).toBeNull();
 });
 
 it('非发起人或维保等服务端未授权的运行实例不展示终止入口', async () => {

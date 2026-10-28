@@ -47,6 +47,20 @@ def _snapshot_assigns_user(instance: WorkflowInstance, user) -> bool:
     )
 
 
+def _review_source_project(instance: WorkflowInstance):
+    """只有业务身份仍与本轮快照绑定时才能依据其项目授权源码。"""
+    if instance.biz_type != "release" or not instance.source_biz_id or instance.source_biz_id != instance.biz_id:
+        return None
+    try:
+        uuid.UUID(instance.biz_id)
+    except (ValueError, TypeError, AttributeError):
+        return None
+    release = resolve_release(instance)
+    if release is not None and release.project_id != instance.source_project_id:
+        return None
+    return instance.source_project
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def todo_count(request: Request) -> Response:
@@ -258,7 +272,9 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         from utils.permissions import ProjectRolePermission
 
         instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
-        project = instance.source_project
+        project = _review_source_project(instance)
+        if not request.user.is_superuser and project is None:
+            return error_response(40400, "本轮审查范围不存在或不可见", status_code=404)
         member = project and ProjectMember.objects.filter(project=project, user=request.user).exists()
         assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
         if not (request.user.is_superuser or member or assigned):
@@ -266,15 +282,15 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         scope = ReleaseReviewScope.objects.filter(instance=instance).first()
         if scope is None:
             return error_response(40400, "本轮未固定审查范围", status_code=404)
-        if not request.user.is_superuser and project is None:
-            return error_response(40300, "无法核验所属项目", status_code=403)
         role = ProjectRolePermission._effective_role(project, request.user) if member else None
         full_access = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
         if not member and assigned:
             full_access = True
         data = {
             "status": scope.status, "base_tag": scope.base_tag, "base_git_hash": scope.base_git_hash,
-            "head_git_hash": scope.head_git_hash, "warnings": scope.warnings, "created_at": scope.created_at,
+            "head_git_hash": scope.head_git_hash,
+            "warnings": scope.warnings if full_access else (["审查范围存在未覆盖内容"] if scope.warnings else []),
+            "created_at": scope.created_at,
         }
         if full_access:
             data.update(context=scope.context, context_is_requirement=scope.context_is_requirement,
@@ -290,13 +306,13 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         from utils.permissions import ProjectRolePermission
 
         instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
-        project = instance.source_project
+        project = _review_source_project(instance)
+        if not request.user.is_superuser and project is None:
+            return error_response(40400, "本轮审查不存在或不可见", status_code=404)
         member = bool(project and ProjectMember.objects.filter(project=project, user=request.user).exists())
         assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
         if not (request.user.is_superuser or member or assigned):
             return error_response(40400, "本轮审查不存在或不可见", status_code=404)
-        if not request.user.is_superuser and not project:
-            return error_response(40300, "无法核验所属项目", status_code=403)
         role = ProjectRolePermission._effective_role(project, request.user) if member else None
         full = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
         if not member and assigned:
@@ -325,6 +341,31 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
                 data.update(dimensions=run.dimensions, findings=run.findings)
             reviews.append(data)
         return success_response({"reviews": reviews})
+
+    @action(detail=True, methods=["get"], url_path="review-diff")
+    def review_diff(self, request: Request, pk=None) -> Response:
+        """仅向当前有完整审查权限的用户返回本轮固定代码差异。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.project.models import ProjectMember
+        from apps.release.models import ReleaseReviewScope
+        from utils.permissions import ProjectRolePermission
+
+        instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
+        project = _review_source_project(instance)
+        member = bool(project and ProjectMember.objects.filter(project=project, user=request.user).exists())
+        assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
+        role = ProjectRolePermission._effective_role(project, request.user) if member else None
+        full = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
+        if not member and project and assigned:
+            full = True
+        if not full or (not request.user.is_superuser and not project):
+            return error_response(40400, "本轮代码差异不存在或不可见", status_code=404)
+        scope = ReleaseReviewScope.objects.filter(instance=instance).first()
+        if scope is None:
+            return error_response(40400, "本轮未固定代码差异", status_code=404)
+        return success_response({"status": scope.status, "base_git_hash": scope.base_git_hash,
+                                 "head_git_hash": scope.head_git_hash, "diffs": scope.diffs})
 
     @action(detail=False, methods=["get"], url_path="initiated")
     def initiated(self, request: Request) -> Response:

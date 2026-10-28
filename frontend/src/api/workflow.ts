@@ -40,6 +40,25 @@ export interface AiReviewData {
   findings?: AiReviewFinding[];
 }
 
+export interface ReviewDiffFile {
+  old_path: string;
+  new_path: string;
+  diff: string;
+  new_file?: boolean;
+  deleted_file?: boolean;
+  renamed_file?: boolean;
+  binary?: boolean;
+  too_large?: boolean;
+  collapsed?: boolean;
+}
+
+export interface ReviewDiffData {
+  status: ReviewScopeData['status'];
+  base_git_hash: string;
+  head_git_hash: string;
+  diffs: ReviewDiffFile[];
+}
+
 export const workflowApi = {
   getDefinitions: (params?: Record<string, unknown>) =>
     get<PaginatedData<WorkflowDefinition>>('/workflow/definitions/', { params }),
@@ -55,6 +74,7 @@ export const workflowApi = {
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
   getReviewScope: (id: string) => get<ReviewScopeData>(`/workflow/instances/${id}/review-scope/`, { silent: true }),
   getAiReview: (id: string) => get<{ reviews: AiReviewData[] }>(`/workflow/instances/${id}/ai-review/`, { silent: true }),
+  getReviewDiff: (id: string) => get<ReviewDiffData>(`/workflow/instances/${id}/review-diff/`, { silent: true }),
   revokeInstance: (id: string, data?: { comment?: string }) =>
     post<WorkflowInstance>(`/workflow/instances/${id}/revoke/`, data || {}),
   /** 我发起的流程实例列表，支持 status 过滤 */

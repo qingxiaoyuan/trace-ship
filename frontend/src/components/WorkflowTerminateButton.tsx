@@ -3,15 +3,19 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { workflowApi } from '@/api/workflow';
 import { useAppMessage } from '@/hooks/useAppMessage';
 import type { WorkflowInstance } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
 
 /** 发起人终止仍在运行的流程，能力由服务端按当前项目与实例判定。 */
 export function WorkflowTerminateButton({ instance }: { instance?: WorkflowInstance | null }) {
   const queryClient = useQueryClient();
   const { message, modal } = useAppMessage();
+  const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const terminate = useMutation({
     mutationFn: () => workflowApi.revokeInstance(instance!.id),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['workflow-instance-for-detail', updated.id], updated);
+      if (useAuthStore.getState().sessionVersion === sessionVersion) {
+        queryClient.setQueryData(['workflow-instance-for-detail', updated.id, sessionVersion], updated);
+      }
       for (const key of ['workflow-todo', 'workflow-done', 'workflow-initiated', 'workflow-stats',
         'workflow-todo-count', 'releases', 'dashboard-stats', 'dashboard-todos']) {
         void queryClient.invalidateQueries({ queryKey: [key] });
