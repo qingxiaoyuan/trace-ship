@@ -12,6 +12,7 @@
 | [#8 通过命令面板和详情链接快速定位功能与数据](https://github.com/qingxiaoyuan/trace-ship/issues/8) | 功能规格、设计选择和覆盖核验 |
 | [#9 项目发布版本按仓库分组展示](https://github.com/qingxiaoyuan/trace-ship/issues/9) | 版本树规格与已确认设计方向 |
 | [#10 初始需求与阶段计划的历史归档](https://github.com/qingxiaoyuan/trace-ship/issues/10) | 历史归档，不作为当前开发任务 |
+| [#58 在发布审批中加入可配置技能的 AI 代码审查节点](https://github.com/qingxiaoyuan/trace-ship/issues/58) | 已确认功能规格与八项验收；技能边界见 [ADR-0026](adr/0026-document-based-ai-review-skills.md)，整改闭环见 [ADR-0027](adr/0027-release-review-revision-cycle.md) |
 
 当前进度以对应 Issue 最新正文与评论为准。迁移原文保存在各 Issue 的折叠附录中；归档不意味着验收通过，历史原文不覆盖现行决策。
 
