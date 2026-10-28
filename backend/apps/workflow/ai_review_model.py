@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -12,6 +13,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from threading import BoundedSemaphore, Event, Lock
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 import requests
 from django.db import close_old_connections, connections
@@ -25,11 +27,18 @@ if TYPE_CHECKING:
     from apps.release.models import ReleaseReviewScope
     from apps.workflow.models import AIReviewRun
 
+logger = logging.getLogger(__name__)
+
 MAX_INPUT = 100_000
+MAX_OUTPUT_TOKENS = 8192
+DEEPSEEK_FLASH_OUTPUT_TOKENS = 32768
+DEEPSEEK_FLASH_READ_TIMEOUT = 240
 MAX_TURNS = 10
 MAX_MODEL_RESPONSE = 2_000_000
 MODEL_TOTAL_TIMEOUT = 300
 MODEL_IO_TIMEOUT = 60
+# 一小时租约内为最后一次阻塞请求、代码读取和调度预留余量。
+MAX_BATCH_TIMEOUT = 2700
 MAX_PARALLEL_BATCHES = 2
 VALIDATION_INTERVAL = 5
 # Celery 进程内各轮共享上限，包括模型、仓库读取和凭证审计。
@@ -109,20 +118,40 @@ def _ask(config, messages):
               "无真实需求时不能声称需求符合性已审查；不把发布说明当需求。")
     if anthropic:
         headers.update({"anthropic-version": "2023-06-01", "x-api-key": key})
-        body = {"model": config.model, "max_tokens": 8192, "temperature": 0, "system": system, "messages": messages}
+        body = {"model": config.model, "max_tokens": MAX_OUTPUT_TOKENS, "temperature": 0, "system": system, "messages": messages}
     else:
-        body = {"model": config.model, "max_tokens": 8192, "temperature": 0, "stream": False,
+        body = {"model": config.model, "max_tokens": MAX_OUTPUT_TOKENS, "temperature": 0, "stream": False,
                 "messages": [{"role": "system", "content": system}, *messages]}
+    # 官方 DeepSeek Flash 默认高强度推理，可能耗尽输出预算；只对该服务使用低强度推理和 JSON 输出。
+    is_deepseek_flash = (not anthropic and urlsplit(config.endpoint).hostname == "api.deepseek.com"
+                         and config.model in {"deepseek-flash", "deepseek-v4-flash"})
+    read_timeout = MODEL_IO_TIMEOUT
+    if is_deepseek_flash:
+        body.update(max_tokens=DEEPSEEK_FLASH_OUTPUT_TOKENS, reasoning_effort="low", response_format={"type": "json_object"})
+        read_timeout = DEEPSEEK_FLASH_READ_TIMEOUT
     deadline = time.monotonic() + MODEL_TOTAL_TIMEOUT
     with _ModelSession() as session:
         response = session.post(_build_url(config.endpoint, anthropic), json=body, headers=headers,
-                                timeout=(MODEL_IO_TIMEOUT, MODEL_IO_TIMEOUT), allow_redirects=False, stream=True)
+                                timeout=(MODEL_IO_TIMEOUT, read_timeout), allow_redirects=False, stream=True)
         try:
             data = _read_model_response(response, deadline)
         finally:
             response.close()
     reason = data.get("stop_reason") if anthropic else (data.get("choices") or [{}])[0].get("finish_reason")
     if reason != ("end_turn" if anthropic else "stop"):
+        # 模型响应是不可信输入，只记录白名单中的状态与整数用量，避免泄露源码和凭证。
+        known_reasons = {"length", "content_filter", "tool_calls", "function_call", "max_tokens", "stop_sequence", "pause_turn", "refusal"}
+        safe_reason = "missing" if reason is None or reason == "" else reason if isinstance(reason, str) and reason in known_reasons else "other"
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        details = usage.get("completion_tokens_details") if isinstance(usage.get("completion_tokens_details"), dict) else {}
+        def safe_count(value):
+            return value if type(value) is int and 0 <= value <= 1_000_000_000 else "unknown"
+        logger.warning(
+            "AI审查模型异常结束 protocol=%s finish_reason=%s completion_tokens=%s reasoning_tokens=%s max_tokens=%s",
+            "anthropic" if anthropic else "openai", safe_reason,
+            safe_count(usage.get("output_tokens") if anthropic else usage.get("completion_tokens")),
+            safe_count(details.get("reasoning_tokens")), body["max_tokens"],
+        )
         raise ValueError("模型输出截断或未确认结束")
     text = _extract_text(data)
     if not isinstance(text, str):
@@ -246,6 +275,7 @@ def _limited_batch(callback, canceled, validate=None):
 
 def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
     """读取本轮固定证据，按模型请求限定在固定提交上只读访问。"""
+    batch_deadline = time.monotonic() + MAX_BATCH_TIMEOUT
     diffs = scope.diffs
     files = [item.get("new_path") or item.get("old_path") for item in diffs]
     if not files or any(not isinstance(path, str) or not path for path in files) or len(set(files)) != len(files):
@@ -269,6 +299,8 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
     gaps = []
 
     def ensure_current():
+        if time.monotonic() >= batch_deadline:
+            raise ValueError("审查批次超时")
         if (canceled is not None and canceled.is_set()) or (validate and not validate()):
             if canceled is not None:
                 canceled.set()
@@ -624,7 +656,8 @@ def review_scope(
         except Exception as exc:
             # 外部响应可能含敏感内容，错误只保留固定文案。
             truncated = str(exc) in ("模型输出截断", "模型输出截断或未确认结束")
-            warning = "该批次模型输出截断或未确认结束" if truncated else "该批次执行失败"
+            warning = ("该批次模型输出截断或未确认结束" if truncated
+                       else "该批次审查超时" if str(exc) == "审查批次超时" else "该批次执行失败")
             return {"status": "failed", "coverage": {"warnings": [warning]},
                     "dimensions": [], "findings": []}
         finally:

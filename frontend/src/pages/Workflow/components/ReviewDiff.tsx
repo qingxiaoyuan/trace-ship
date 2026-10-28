@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Button } from 'antd';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { workflowApi } from '@/api/workflow';
@@ -139,7 +140,7 @@ function DiffFile({ file, items }: { file: ReviewDiffFile; items: ReviewFinding[
       {located.length ? <div className="space-y-1 text-xs text-indigo-700">{located.map((item) => <button type="button" key={item.key}
         className="block max-w-full break-words text-left underline" onClick={() => { setExpanded(true); setTargetKey(item.key); }}>
         {expanded ? `跳转至 ${item.finding.title}（${item.finding.side === 'old' ? '旧侧' : '新侧'}第 ${item.finding.line_start} 行）` : `查看意见：${item.finding.title}`}</button>)}</div> : null}
-      {file.diff ? <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700" onClick={() => { setExpanded(!expanded); setTargetKey(null); setPage(0); }}>{expanded ? '收起代码差异' : '展开代码差异'}</button> : null}
+      {file.diff ? <Button size="small" onClick={() => { setExpanded(!expanded); setTargetKey(null); setPage(0); }}>{expanded ? '收起代码差异' : '展开代码差异'}</Button> : null}
     </div>
     {file.binary || file.too_large || file.collapsed || !file.diff ? <p className="p-3 text-sm text-amber-700">此文件差异不可完整读取，请结合覆盖范围核对。</p> : null}
     {expanded && lines.some((line) => line.invalid) ? <p className="p-3 text-sm text-amber-700">差异块不完整或行数不匹配，无法可靠定位行号；原文已保留。</p> : null}
@@ -198,7 +199,7 @@ export function ReviewDiff({ instanceId, reviews }: { instanceId: string; review
     else unassigned.push(item);
   }
   return <div className="min-w-0 space-y-3">
-    <button type="button" className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setOpen(!open)}>{open ? '收起代码差异' : '查看代码差异'}</button>
+    <Button onClick={() => setOpen(!open)}>{open ? '收起代码差异' : '查看代码差异'}</Button>
     {open && query.isFetching ? <p className="text-sm text-slate-500">正在读取本轮固定差异…</p> : null}
     {open && query.error ? <div role="alert" className="rounded bg-rose-50 p-3 text-sm text-rose-700">代码差异读取失败：{(query.error as unknown as NormalizedError).friendlyMessage || '请稍后重试'} <button type="button" className="underline" onClick={() => void query.refetch()}>重试</button></div> : null}
     {open && !query.isFetching && !query.error && query.data ? <section aria-label="本轮代码差异" className="min-w-0 space-y-3">

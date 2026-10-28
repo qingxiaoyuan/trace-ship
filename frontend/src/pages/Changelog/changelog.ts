@@ -31,6 +31,8 @@ export const changelogEntries: ChangelogEntry[] = [
     date: '2026-10-28',
     summary: '发布审查配置、草稿更新与审批历史',
     items: [
+      { category: 'improvement', text: '审查范围按基线和目标提交对照展示，并整理执行详情、分批进度和历史记录；审查及整改按钮与审批页保持一致' },
+      { category: 'improvement', text: 'AI 审查按等待、进行中和完成状态突出待审查文件、实时进度与审查结果；审查失败时显示未审查目录和可用处理入口' },
       { category: 'improvement', text: '审批详情按变更文档与审批、AI 审查、审查范围分成页签，发布摘要下方集中展示审批流程；切换页签时保留未提交的审批意见' },
       { category: 'feature', text: '审批人可采纳代码审查意见形成整改项；开发者提交修复说明后由审批人复核，未完成复核时不能批准发布。' },
       { category: 'improvement', text: '大改动按批次并行审查，报告展示每批进度与未覆盖文件；重新审查保留已完成批次和意见。' },

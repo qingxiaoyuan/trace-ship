@@ -60,3 +60,21 @@ it('未配置固定审查范围时展示空状态', async () => {
   show();
   expect(await screen.findByText('当前没有可查看的审查范围。')).toBeTruthy();
 });
+
+
+it('未提供基线时不误称首次发布，也不虚构摘要角色不可见的依据', async () => {
+  vi.spyOn(workflowApi, 'getReviewScope').mockResolvedValue({ status: 'incomplete', base_tag: '', base_git_hash: '', head_git_hash: 'b', warnings: ['差异尚未完整获取'] });
+  show();
+  expect(await screen.findByText('范围未完整取得')).toBeTruthy();
+  expect(screen.getByText('未提供')).toBeTruthy();
+  expect(screen.queryByText('首次发布，无基线')).toBeNull();
+  expect(screen.queryByText('审查依据')).toBeNull();
+});
+
+it('有完整权限且未填写依据时展示真实空状态', async () => {
+  vi.spyOn(workflowApi, 'getReviewScope').mockResolvedValue({ status: 'ready', base_tag: 'v1', base_git_hash: 'a', head_git_hash: 'b', warnings: [], context: '', context_is_requirement: false, documents: {} });
+  show();
+  expect(await screen.findByText('本轮未标记真实需求依据')).toBeTruthy();
+  expect(screen.getByText('未填写')).toBeTruthy();
+  expect(screen.getByText('未提供参考文档')).toBeTruthy();
+});

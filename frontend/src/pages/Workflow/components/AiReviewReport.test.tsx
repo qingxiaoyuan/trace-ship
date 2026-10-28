@@ -62,7 +62,7 @@ it('排队时尚无覆盖统计也能显示状态', async () => {
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {} }] });
   show();
   expect(await screen.findByText('等待审查')).toBeTruthy();
-  expect(screen.getByText('覆盖范围：尚未统计')).toBeTruthy();
+  expect(screen.getByText('文件目录仅向有完整审查权限的人员展示。')).toBeTruthy();
 });
 
 it('第一个 AI 节点完成时即使后续 AI 仍排队也刷新流程', async () => {
@@ -85,7 +85,8 @@ it('完整权限展示已审查和未审查文件，摘要权限不显示文件�
     coverage: { total_files: 2, reviewed_files: 1, warnings: ['存在未覆盖文件'], reviewed_paths: ['src/checked.ts'], unreviewed_paths: ['src/missing.ts'] } }] });
   show();
   expect(await screen.findByText('src/checked.ts')).toBeTruthy();
-  expect(screen.getByText('src/missing.ts')).toBeTruthy();
+  expect(screen.getByTitle('src/missing.ts')).toBeTruthy();
+  expect(screen.getByText('missing.ts')).toBeTruthy();
   expect(screen.getByText('已审查文件')).toBeTruthy();
   expect(screen.getByText('未审查文件')).toBeTruthy();
 });
@@ -216,4 +217,117 @@ it('完整报告展示本轮配置身份，摘要不展示配置', async () => {
   expect(screen.getByText('技能：code-review-expert · old-revision')).toBeTruthy();
   expect(screen.getByRole('link', { name: '查看技能来源' }).getAttribute('href')).toBe('https://github.com/example/skill');
   expect(screen.getAllByText('本轮审查配置')).toHaveLength(1);
+});
+
+
+it('等待审查时按固定差异展示文件目录，并保留重命名和末页文件', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: { total_files: 102, reviewed_files: 0 }, findings: [], history: [] }] });
+  const files = Array.from({ length: 101 }, (_, index) => ({ old_path: `src/group/file-${index}.ts`, new_path: `src/group/file-${index}.ts`, diff: '' }));
+  files.push({ old_path: 'old/name.ts', new_path: 'src/new-name.ts', diff: '', renamed_file: true } as typeof files[number]);
+  const diff = vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'ready', base_git_hash: 'a', head_git_hash: 'b', diffs: files });
+  show();
+  expect(await screen.findByText('待审查文件')).toBeTruthy();
+  expect(await screen.findByText('file-0.ts')).toBeTruthy();
+  expect(screen.getByText('src')).toBeTruthy();
+  expect(screen.getByText('group')).toBeTruthy();
+  expect(screen.queryByText('file-100.ts')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  expect(screen.getByText('file-100.ts')).toBeTruthy();
+  expect(screen.getByText('new-name.ts')).toBeTruthy();
+  expect(screen.getByText('（原路径：old/name.ts）')).toBeTruthy();
+  expect(screen.queryByText('审查意见')).toBeNull();
+  expect(diff).toHaveBeenCalledWith('round-one');
+});
+
+it('等待审查的摘要角色不请求文件目录，隐藏页签也不请求目录', async () => {
+  const getDiff = vi.spyOn(workflowApi, 'getReviewDiff');
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {} }] });
+  const view = show();
+  expect(await screen.findByText('文件目录仅向有完整审查权限的人员展示。')).toBeTruthy();
+  expect(getDiff).not.toHaveBeenCalled();
+  view.unmount();
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {}, findings: [] }] });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><AiReviewReport instanceId="round-two" active={false} /></MemoryRouter></QueryClientProvider>);
+  expect(await screen.findByText('等待审查')).toBeTruthy();
+  expect(getDiff).not.toHaveBeenCalled();
+});
+
+it('审查进行中只显示真实进度，不提前展示未完成意见', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'running', summary: '',
+    coverage: { total_files: 3, reviewed_files: 1 }, findings: [{ severity: 'P1', title: '尚未完成的意见', reason: '原因', suggestion: '建议' }] }] });
+  show();
+  expect(await screen.findByText('正在审查')).toBeTruthy();
+  expect(screen.getByText('已审查 1 / 3 个文件')).toBeTruthy();
+  expect(screen.queryByText('尚未完成的意见')).toBeNull();
+  expect(screen.queryByText('审查意见')).toBeNull();
+});
+
+it('审查失败时突出未审查目录和恢复入口，不把空结果当作审查完成', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'failed', summary: '模型输出被截断',
+    coverage: { total_files: 1, reviewed_files: 0, unreviewed_paths: ['src/pay.ts'] }, findings: [], can_recover: true }] });
+  show();
+  expect(await screen.findByText('审查失败')).toBeTruthy();
+  expect(screen.getByText('模型输出被截断')).toBeTruthy();
+  expect(screen.getByTitle('src/pay.ts')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '重新审查' })).toBeTruthy();
+  expect(screen.queryByText('审查意见')).toBeNull();
+});
+
+it('文件清单未完整取得时不把空目录当作无代码变更', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {}, findings: [] }] });
+  vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'incomplete', base_git_hash: 'a', head_git_hash: 'b', diffs: [] });
+  show();
+  expect(await screen.findByText('尚未取得文件目录。')).toBeTruthy();
+  expect(screen.getByText('以下仅为已取得的文件，完整范围尚未取得。')).toBeTruthy();
+});
+
+it.each([
+  ['first_release', '首次发布没有基线，本轮将跳过 AI 代码审查，仍需人工审批。'],
+  ['no_changes', '本轮没有代码变更，仍需人工审批。'],
+] as const)('等待审查时区分 %s 和已审查文件', async (status, message) => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {}, findings: [] }] });
+  vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status, base_git_hash: '', head_git_hash: 'b', diffs: [] });
+  show();
+  expect(await screen.findByText(message)).toBeTruthy();
+  expect(screen.queryByText('没有未审查的文件。')).toBeNull();
+});
+
+it('审查失败且清单不完整时，空目录不代表没有未审查文件', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'failed', summary: '审查失败',
+    coverage: { total_files: 0, reviewed_files: 0, unreviewed_paths: [], manifest_complete: false }, findings: [] }] });
+  show();
+  expect(await screen.findByText('尚未取得文件目录。')).toBeTruthy();
+  expect(screen.getByText('以下仅为已取得的文件，完整范围尚未取得。')).toBeTruthy();
+  expect(screen.queryByText('没有未审查的文件。')).toBeNull();
+});
+
+it('重新审查期间可查看过往执行记录', async () => {
+  const finding = { id: 'same', severity: 'P1', title: '已完成批次的意见', reason: '历史原因', suggestion: '建议' };
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'running', summary: '',
+    coverage: { total_files: 1, reviewed_files: 0 }, findings: [finding],
+    history: [{ token: 'previous', status: 'failed', summary: '上次审查失败', updated_at: '2026-10-28T10:00:00Z', findings: [finding] }] }] });
+  show();
+  expect(await screen.findByText('审查进行中')).toBeTruthy();
+  fireEvent.click(screen.getByText('过往审查记录'));
+  expect(screen.getByText('上次审查失败')).toBeTruthy();
+  expect(screen.getByText('已完成批次的意见')).toBeTruthy();
+});
+
+
+it('执行详情集中展示覆盖、批次、配置和历史，操作沿用项目按钮', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'failed', summary: '失败原因', can_recover: true,
+    coverage: { total_files: 1, reviewed_files: 0, batches: [{ id: 'batch', status: 'failed', paths: ['src/a.ts'] }] },
+    configuration: { version_id: 'v1', model: 'review-model', protocol: 'openai', skill: { name: 'review', revision: 'r1', source: '', license: '' } },
+    history: [{ token: 'old', status: 'failed', summary: '上次未完成', updated_at: '2026-10-28T10:00:00Z' }] }] });
+  show();
+  const retry = await screen.findByRole('button', { name: '重新审查' });
+  expect(retry.classList.contains('ant-btn')).toBe(true);
+  expect(screen.getByRole('button', { name: '留理由跳过' }).classList.contains('ant-btn')).toBe(true);
+  fireEvent.click(screen.getByText('执行详情'));
+  expect(screen.getByText('覆盖情况')).toBeTruthy();
+  expect(screen.getByText('分批审查进度')).toBeTruthy();
+  expect(screen.getByText('本轮审查配置')).toBeTruthy();
+  expect(screen.getByText('过往审查执行（1）')).toBeTruthy();
+  fireEvent.click(screen.getByText('查看本批文件'));
+  expect(screen.getByText('src/a.ts')).toBeTruthy();
 });

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from 'antd';
 import { Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -35,17 +36,17 @@ function RemediationCard({ item, pending, onAction }: { item: ReviewRemediation;
     <p className="font-medium text-indigo-700">{statusText[item.status] || '状态未知'}</p>
     {item.fix_note ? <p className="whitespace-pre-wrap break-words">修复说明：{item.fix_note}</p> : null}
     {item.can_fix && (item.status === 'pending_fix' || item.status === 'pending_review') ? <div className="space-y-2">
-      <label className="block">修复说明<textarea value={fix} maxLength={4000} onChange={(event) => setFix(event.target.value)} rows={3} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
-      <button type="button" disabled={pending || !fix.trim()} onClick={() => onAction({ action: 'fix', id: item.id, comment: fix })} className="rounded border border-indigo-300 px-3 py-1 text-indigo-700 disabled:opacity-50">提交修复说明</button>
+      <label className="block">修复说明<textarea value={fix} maxLength={4000} onChange={(event) => setFix(event.target.value)} rows={3} className="mt-1 block w-full rounded-lg border border-indigo-100 bg-white px-3 py-2.5 text-[13px] text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></label>
+      <Button type="primary" disabled={pending || !fix.trim()} onClick={() => onAction({ action: 'fix', id: item.id, comment: fix })}>提交修复说明</Button>
     </div> : null}
     {item.can_review && (item.status === 'pending_fix' || item.status === 'pending_review') ? <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {item.status === 'pending_review' ? <button type="button" disabled={pending} onClick={() => onAction({ action: 'resolve', id: item.id, comment: '' })} className="rounded border border-emerald-400 px-3 py-1 text-emerald-800 disabled:opacity-50">确认已处理</button> : null}
-        <button type="button" disabled={pending} onClick={() => setShowDismiss(!showDismiss)} className="rounded border border-amber-400 px-3 py-1 text-amber-800 disabled:opacity-50">改为不采纳</button>
+        {item.status === 'pending_review' ? <Button type="primary" disabled={pending} onClick={() => onAction({ action: 'resolve', id: item.id, comment: '' })}>确认已处理</Button> : null}
+        <Button disabled={pending} onClick={() => setShowDismiss(!showDismiss)}>改为不采纳</Button>
       </div>
       {showDismiss ? <div className="space-y-2">
-        <label className="block">不采纳理由<textarea value={reason} maxLength={4000} onChange={(event) => setReason(event.target.value)} rows={3} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
-        <button type="button" disabled={pending || !reason.trim()} onClick={() => onAction({ action: 'dismiss', id: item.id, comment: reason })} className="rounded border border-amber-400 px-3 py-1 text-amber-800 disabled:opacity-50">确认不采纳</button>
+        <label className="block">不采纳理由<textarea value={reason} maxLength={4000} onChange={(event) => setReason(event.target.value)} rows={3} className="mt-1 block w-full rounded-lg border border-indigo-100 bg-white px-3 py-2.5 text-[13px] text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" /></label>
+        <Button type="primary" disabled={pending || !reason.trim()} onClick={() => onAction({ action: 'dismiss', id: item.id, comment: reason })}>确认不采纳</Button>
       </div> : null}
     </div> : null}
     {item.history?.length ? <details><summary className="cursor-pointer text-slate-600">处置历史</summary><ol className="mt-2 space-y-1 text-xs text-slate-600">
@@ -108,7 +109,7 @@ function RemediationPanelContent({ instanceId, reviews, sessionVersion }: { inst
     {canAdopt && candidates.length ? <details><summary className="cursor-pointer text-indigo-700">采纳审查意见</summary><div className="mt-2 space-y-2">
       {candidates.slice(safeCandidatePage * pageSize, (safeCandidatePage + 1) * pageSize).map(({ nodeId, finding }) => <div key={`${nodeId}:${finding.id}`} className="space-y-2 rounded border border-slate-200 p-3">
         <FindingContent finding={finding} />
-        <button type="button" aria-label={`采纳：${finding.title}`} disabled={mutation.isPending} onClick={() => submit({ action: 'adopt', node_id: nodeId, finding_id: finding.id! })} className="rounded border border-indigo-300 px-3 py-1 text-indigo-700 disabled:opacity-50">采纳并标记待修复</button>
+        <Button aria-label={`采纳：${finding.title}`} disabled={mutation.isPending} onClick={() => submit({ action: 'adopt', node_id: nodeId, finding_id: finding.id! })}>采纳并标记待修复</Button>
       </div>)}
       {candidateLastPage > 0 ? <div className="flex items-center gap-2 text-xs text-slate-600"><button type="button" disabled={safeCandidatePage === 0} onClick={() => setCandidatePage(safeCandidatePage - 1)} className="underline disabled:opacity-40">待采纳上一页</button><span>{safeCandidatePage + 1} / {candidateLastPage + 1}</span><button type="button" disabled={safeCandidatePage === candidateLastPage} onClick={() => setCandidatePage(safeCandidatePage + 1)} className="underline disabled:opacity-40">待采纳下一页</button></div> : null}
     </div></details> : null}

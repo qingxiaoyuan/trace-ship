@@ -157,7 +157,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
               <ApprovalActions key={instance.id} source={detailSource} instance={instance} onBack={onBack} />
             </div>
             {instance.biz_type === 'release' ? <>
-              <div id={`${tabId}-review-panel`} role="tabpanel" aria-labelledby={`${tabId}-review`} hidden={activeTab !== 'review'} className="min-w-0 p-5 sm:p-6"><AiReviewReport key={`ai-${instance.id}`} instanceId={instance.id} /></div>
+              <div id={`${tabId}-review-panel`} role="tabpanel" aria-labelledby={`${tabId}-review`} hidden={activeTab !== 'review'} className="min-w-0 p-5 sm:p-6"><AiReviewReport key={`ai-${instance.id}`} instanceId={instance.id} active={activeTab === 'review'} /></div>
               <div id={`${tabId}-scope-panel`} role="tabpanel" aria-labelledby={`${tabId}-scope`} hidden={activeTab !== 'scope'} className="min-w-0 p-5 sm:p-6">{activeTab === 'scope' ? <ReviewScope key={instance.id} instanceId={instance.id} /> : null}</div>
             </> : null}
           </section>
