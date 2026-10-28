@@ -278,6 +278,8 @@ def test_expired_execution_reclaims_token_and_creates_one_human_task(api_client,
     execute_review(release.workflow_instance_id, "ai")
     run.refresh_from_db()
     assert run.token != old_token and run.status == "first_release"
+    assert run.history[0]["token"] == str(old_token)
+    assert run.history[0]["status"] == "failed" and "超时" in run.history[0]["summary"]
     assert run.instance.tasks.filter(node_id="human", status="pending").count() == 1
 
 
@@ -490,3 +492,274 @@ def test_model_controlled_missing_path_never_leaks_in_readonly_summary(api_clien
         assert response.status_code == 200
         assert "私有源码标记" not in str(response.data) and "第二行" not in str(response.data)
         assert response.data["data"]["reviews"][0]["coverage"]["warnings"] == ["审查存在提示或未覆盖内容"]
+
+
+def test_failed_review_can_be_retried_with_original_configuration_and_history(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
+        "complete": True, "warnings": []}, raising=False)
+    original = save_settings({"endpoint": "https://model.example/v1", "model": "first", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    run = release.workflow_instance.ai_reviews.get()
+    run.status = "incomplete"
+    run.summary = "部分完成"
+    run.coverage = {"total_files": 1, "reviewed_files": 0, "warnings": ["缺口"]}
+    run.save(update_fields=["status", "summary", "coverage", "updated_at"])
+    old_token = str(run.token)
+    save_settings({"endpoint": "https://model.example/v1", "model": "second", "protocol": "openai", "skill": "code-review-expert"})
+    seen = []
+    monkeypatch.setattr(ai_review_model, "_ask", lambda config, messages: (seen.append(config.model) or {
+        "action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []}, "{}"))
+    url = f"/api/workflow/instances/{release.workflow_instance_id}/ai-review-retry/"
+    with django_capture_on_commit_callbacks(execute=False):
+        response = api_client.post(url, {"node_id": "ai"}, format="json")
+    assert response.status_code == 200, response.data
+    run.refresh_from_db()
+    assert run.status == "queued" and str(run.token) != old_token
+    assert run.settings_version_id == original.id
+    assert run.history[0]["status"] == "incomplete" and run.history[0]["coverage"]["warnings"] == ["缺口"]
+    assert api_client.post(url, {"node_id": "ai"}, format="json").status_code == 400
+    execute_review(release.workflow_instance_id, "ai")
+    run.refresh_from_db()
+    assert seen == ["first"] and run.status == "completed"
+    assert run.instance.tasks.filter(node_id="human", status="pending").count() == 1
+
+
+def test_skip_requires_manager_reason_and_preserves_human_approval(
+    api_client, project, repository, user, patched_provider, django_capture_on_commit_callbacks,
+):
+    from rest_framework.test import APIClient
+
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+    from apps.system.review_settings import save_settings
+    from apps.workflow.ai_review import execute_review
+
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    run = instance.ai_reviews.get()
+    run.status, run.summary = "failed", "模型失败"
+    run.coverage = {"total_files": 1, "reviewed_files": 0, "warnings": ["未覆盖"]}
+    run.save(update_fields=["status", "summary", "coverage", "updated_at"])
+    old_token = str(run.token)
+    url = f"/api/workflow/instances/{instance.id}/ai-review-skip/"
+    assert api_client.post(url, {"node_id": "ai", "reason": "  "}, format="json").status_code == 400
+    for role in ("developer", "tester", "auditor", "viewer", "maintainer"):
+        person = User.objects.create_user(username=f"skip-{role}", password="testpass")
+        ProjectMember.objects.create(project=project, user=person, role=role)
+        client = APIClient()
+        client.force_authenticate(person)
+        assert client.post(url, {"node_id": "ai", "reason": "网络故障"}, format="json").status_code == 403
+    with django_capture_on_commit_callbacks(execute=False):
+        response = api_client.post(url, {"node_id": "ai", "reason": " 网络故障 "}, format="json")
+    assert response.status_code == 200, response.data
+    run.refresh_from_db()
+    instance.refresh_from_db()
+    assert run.status == "skipped" and run.skip_reason == "网络故障"
+    assert run.skipped_by_id == user.id and run.skipped_at
+    assert run.history[0]["coverage"]["warnings"] == ["未覆盖"]
+    assert instance.current_node_id == "human" and instance.node_status["ai"] == "skipped"
+    assert instance.tasks.filter(node_id="human", status="pending").count() == 1
+    execute_review(instance.id, "ai", old_token)
+    assert instance.tasks.filter(node_id="human", status="pending").count() == 1
+    assert api_client.post(url, {"node_id": "ai", "reason": "再次跳过"}, format="json").status_code == 400
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "skipped" and report["skip_reason"] == "网络故障"
+
+
+def test_stale_queued_delivery_cannot_execute_new_retry(api_client, project, repository, user, patched_provider,
+                                                        monkeypatch, django_capture_on_commit_callbacks):
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from apps.workflow.tasks import execute_ai_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
+        "complete": True, "warnings": []}, raising=False)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    run = instance.ai_reviews.get()
+    old_token = str(run.token)
+    run.status = "failed"
+    run.save(update_fields=["status", "updated_at"])
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/workflow/instances/{instance.id}/ai-review-retry/", {"node_id": "ai"}, format="json").status_code == 200
+    called = []
+    monkeypatch.setattr(ai_review_model, "_ask", lambda *args: (called.append(True) or {
+        "action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []}, "{}"))
+    execute_review(instance.id, "ai", old_token)
+    execute_ai_review.run(str(instance.id), "ai")
+    run.refresh_from_db()
+    assert run.status == "queued" and not called and not instance.tasks.exists()
+
+
+def test_recovery_checks_current_project_role_and_revoked_round(api_client, project, repository, user, patched_provider,
+                                                                django_capture_on_commit_callbacks):
+    from rest_framework.test import APIClient
+
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+    from apps.system.review_settings import save_settings
+    from apps.workflow.services import WorkflowEngine
+
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    run = instance.ai_reviews.get()
+    run.status = "failed"
+    run.save(update_fields=["status", "updated_at"])
+    retry = f"/api/workflow/instances/{instance.id}/ai-review-retry/"
+    skip = f"/api/workflow/instances/{instance.id}/ai-review-skip/"
+    software = User.objects.create_user(username="software-admin-recovery", password="testpass")
+    member = ProjectMember.objects.create(project=project, user=software, role="software_admin")
+    client = APIClient()
+    client.force_authenticate(software)
+    assert client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]["can_recover"] is True
+    member.role = "developer"
+    member.save(update_fields=["role"])
+    assert client.post(retry, {"node_id": "ai"}, format="json").status_code == 403
+    assert client.post(skip, {"node_id": "ai", "reason": "故障"}, format="json").status_code == 403
+    admin = User.objects.create_superuser(username="admin-recovery", password="testpass")
+    client.force_authenticate(admin)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert client.post(retry, {"node_id": "ai"}, format="json").status_code == 200
+    run.refresh_from_db()
+    run.status = "incomplete"
+    run.save(update_fields=["status", "updated_at"])
+    WorkflowEngine.revoke_instance(instance, user)
+    assert client.post(skip, {"node_id": "ai", "reason": "故障"}, format="json").status_code == 400
+    assert client.post(retry, {"node_id": "ai"}, format="json").status_code == 400
+
+
+def test_skip_refuses_corrupt_flow_without_later_human(api_client, project, repository, user, patched_provider,
+                                                      django_capture_on_commit_callbacks):
+    from apps.system.review_settings import save_settings
+
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    run = instance.ai_reviews.get()
+    run.status = "failed"
+    run.save(update_fields=["status", "updated_at"])
+    instance.node_config_snapshot = [instance.node_config_snapshot[0]]
+    instance.save(update_fields=["node_config_snapshot"])
+    response = api_client.post(f"/api/workflow/instances/{instance.id}/ai-review-skip/", {"node_id": "ai", "reason": "故障"}, format="json")
+    assert response.status_code == 400
+    run.refresh_from_db()
+    instance.refresh_from_db()
+    assert run.status == "failed" and instance.status == "running"
+
+
+def test_recovery_and_worker_reject_changed_business_identity(api_client, project, repository, user, patched_provider,
+                                                              monkeypatch, django_capture_on_commit_callbacks):
+    from apps.system.review_settings import save_settings
+    from apps.workflow.ai_review import execute_review
+    from apps.workflow.models import WorkflowInstance
+    from apps.workflow.services import WorkflowEngine
+
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    run = instance.ai_reviews.get()
+    run.status = "failed"
+    run.save(update_fields=["status", "updated_at"])
+    retry = f"/api/workflow/instances/{instance.id}/ai-review-retry/"
+    skip = f"/api/workflow/instances/{instance.id}/ai-review-skip/"
+    WorkflowInstance.objects.filter(pk=instance.id).update(source_biz_id="错误的发布身份")
+    assert api_client.post(retry, {"node_id": "ai"}, format="json").status_code == 400
+    assert api_client.post(skip, {"node_id": "ai", "reason": "故障"}, format="json").status_code == 400
+    execute_review(instance.id, "ai", run.token)
+    run.refresh_from_db()
+    assert run.status == "failed" and not instance.tasks.exists()
+
+    WorkflowInstance.objects.filter(pk=instance.id).update(source_biz_id=instance.biz_id)
+    real_lock = WorkflowEngine._lock_instance
+    def changed_during_lock(source):
+        locked = real_lock(source)
+        locked.source_biz_id = "锁等待期间变更"
+        return locked
+    monkeypatch.setattr(WorkflowEngine, "_lock_instance", changed_during_lock)
+    assert api_client.post(retry, {"node_id": "ai"}, format="json").status_code == 400
+    run.refresh_from_db()
+    assert run.status == "failed" and not run.history
+
+
+def test_expired_worker_is_archived_and_late_result_cannot_replace_retry(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
+        "complete": True, "warnings": []}, raising=False)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    original = instance.ai_reviews.get()
+    old_token = str(original.token)
+    calls = []
+    def finish(config, messages):
+        calls.append(True)
+        if len(calls) == 1:
+            AIReviewRun.objects.filter(pk=original.pk).update(updated_at=timezone.now() - timedelta(hours=2))
+            execute_review(instance.id, "ai", old_token)
+            title = "迟到意见"
+        else:
+            title = "新执行意见"
+        return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": [
+            {"severity": "P1", "title": title, "reason": "理由", "suggestion": "修改"}]}, "{}")
+    monkeypatch.setattr(ai_review_model, "_ask", finish)
+    execute_review(instance.id, "ai", old_token)
+    original.refresh_from_db()
+    assert original.status == "completed" and original.findings[0]["title"] == "新执行意见"
+    assert original.history[0]["token"] == old_token and original.history[0]["status"] == "failed"
+    assert instance.tasks.filter(node_id="human", status="pending").count() == 1

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { workflowApi } from '@/api/workflow';
 import { AiReviewReport } from './AiReviewReport';
@@ -86,4 +86,26 @@ it('完整权限展示已审查和未审查文件，摘要权限不显示文件�
   expect(screen.getByText('src/missing.ts')).toBeTruthy();
   expect(screen.getByText('已审查文件')).toBeTruthy();
   expect(screen.getByText('未审查文件')).toBeTruthy();
+});
+
+it('管理员留理由跳过并刷新状态，空理由不可提交', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'failed', summary: '失败', coverage: {}, can_recover: true }] });
+  const skip = vi.spyOn(workflowApi, 'skipAiReview').mockResolvedValue(undefined);
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: '留理由跳过' }));
+  const submit = screen.getByRole('button', { name: '确认跳过并交人工审批' }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('跳过原因'), { target: { value: ' 网络故障 ' } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(skip).toHaveBeenCalledWith('round-one', 'ai', '网络故障'));
+});
+
+it('重试失败显示原因并允许再次操作', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'incomplete', summary: '未完成', coverage: {}, can_recover: true }] });
+  const retry = vi.spyOn(workflowApi, 'retryAiReview').mockRejectedValue({ friendlyMessage: '状态已变化' });
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: '重新审查' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('状态已变化');
+  expect(retry).toHaveBeenCalledWith('round-one', 'ai');
+  expect((screen.getByRole('button', { name: '重新审查' }) as HTMLButtonElement).disabled).toBe(false);
 });

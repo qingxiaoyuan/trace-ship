@@ -301,11 +301,11 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         full = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
         if not member and assigned:
             full = True
-        from apps.workflow.ai_review import lease_expired
+        from apps.workflow.ai_review import _authorized_manager, _current, lease_expired
 
         node_names = {node.get("node_id"): node.get("node_name", "AI 代码审查") for node in (instance.node_config_snapshot or [])}
         reviews = []
-        for run in instance.ai_reviews.all().order_by("created_at"):
+        for run in instance.ai_reviews.select_related("skipped_by").order_by("created_at"):
             expired = lease_expired(run)
             if full:
                 coverage = run.coverage
@@ -317,14 +317,50 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
                 summary = {
                     "queued": "等待审查", "running": "审查进行中", "completed": "审查完成，等待人工决定",
                     "failed": "审查未完成", "incomplete": "审查未完成", "first_release": "首次发布，已跳过 AI 审查",
-                    "no_changes": "无代码变更",
+                    "no_changes": "无代码变更", "skipped": "管理员已留理由跳过 AI 审查",
                 }.get("failed" if expired else run.status, "审查状态未知")
             data = {"node_id": run.node_id, "node_name": node_names.get(run.node_id, "AI 代码审查"),
-                    "status": "failed" if expired else run.status, "summary": summary, "coverage": coverage}
+                    "status": "failed" if expired else run.status, "summary": summary, "coverage": coverage,
+                    "can_recover": bool(_authorized_manager(request.user, project) and _current(instance, run.node_id)
+                                        and (run.status in ("failed", "incomplete") or expired))}
             if full:
-                data.update(dimensions=run.dimensions, findings=run.findings)
+                data.update(dimensions=run.dimensions, findings=run.findings, history=run.history,
+                            skip_reason=run.skip_reason, skipped_at=run.skipped_at,
+                            skipped_by=str(run.skipped_by_id) if run.skipped_by_id else None,
+                            skipped_by_name=(run.skipped_by.nickname or run.skipped_by.username) if run.skipped_by else "")
             reviews.append(data)
         return success_response({"reviews": reviews})
+
+    @action(detail=True, methods=["post"], url_path="ai-review-retry")
+    def ai_review_retry(self, request: Request, pk=None) -> Response:
+        """重试当前失败审查，保留本轮依据。"""
+        from rest_framework import serializers
+
+        from apps.workflow.ai_review import recover_review
+
+        class Input(serializers.Serializer):
+            node_id = serializers.CharField(max_length=100)
+
+        data = Input(data=request.data)
+        data.is_valid(raise_exception=True)
+        recover_review(pk, data.validated_data["node_id"], request.user)
+        return success_response(message="已安排重新审查")
+
+    @action(detail=True, methods=["post"], url_path="ai-review-skip")
+    def ai_review_skip(self, request: Request, pk=None) -> Response:
+        """由管理员留理由跳过当前失败审查，继续人工审批。"""
+        from rest_framework import serializers
+
+        from apps.workflow.ai_review import recover_review
+
+        class Input(serializers.Serializer):
+            node_id = serializers.CharField(max_length=100)
+            reason = serializers.CharField(max_length=2000, trim_whitespace=True)
+
+        data = Input(data=request.data)
+        data.is_valid(raise_exception=True)
+        recover_review(pk, data.validated_data["node_id"], request.user, skip_reason=data.validated_data["reason"])
+        return success_response(message="已记录原因并转交人工审批")
 
     @action(detail=False, methods=["get"], url_path="initiated")
     def initiated(self, request: Request) -> Response:
