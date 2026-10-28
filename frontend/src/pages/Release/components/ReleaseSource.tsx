@@ -47,17 +47,17 @@ export function ReleaseSource({ release, canRefresh = false }: { release: Releas
       <p className="break-all text-slate-500">分支：{release.branch || '-'}</p>
       <p className="break-all font-mono text-xs">{release.git_hash || '-'}</p>
     </>}
-    {release.source_rc && release.status === 'draft' && !editing ? <Button onClick={() => { setSelected(undefined); setEditing(true); }}>重选来源 RC</Button> : null}
+    {release.source_rc && release.status === 'draft' && canRefresh && !editing ? <Button onClick={() => { setSelected(undefined); setEditing(true); }}>重选来源 RC</Button> : null}
     {!release.source_rc && release.status === 'draft' && canRefresh ? <>
       <Button onClick={() => { refresh.reset(); setPreviewOpen(true); }}>更新到分支最新提交</Button>
       <Modal title="确认更新来源提交" open={previewOpen} onCancel={() => setPreviewOpen(false)}
         okText="确认更新" cancelText="取消" confirmLoading={refresh.isPending}
-        okButtonProps={{ disabled: preview.isFetching || !preview.data || preview.data.old_hash === preview.data.new_hash }}
+        okButtonProps={{ disabled: preview.isFetching || !!preview.error || !preview.data || preview.data.old_hash === preview.data.new_hash }}
         onOk={() => refresh.mutate()}>
         {preview.isFetching ? <p>正在获取分支变更…</p> : null}
         {preview.error ? <p role="alert">预览失败：{preview.error.message}</p> : null}
         {refresh.error ? <p role="alert">更新失败：{refresh.error.message}，请关闭后重新预览。</p> : null}
-        {preview.data && !preview.isFetching ? <div className="space-y-2 text-sm">
+        {preview.data && !preview.isFetching && !preview.error ? <div className="space-y-2 text-sm">
           <p className="break-all">当前提交：{preview.data.old_hash}</p>
           <p className="break-all">最新提交：{preview.data.new_hash}</p>
           <p>确认后原发布说明及关联变更将清空，必须重新生成说明。</p>
@@ -71,7 +71,7 @@ export function ReleaseSource({ release, canRefresh = false }: { release: Releas
         </div> : null}
       </Modal>
     </> : null}
-    {editing ? <>
+    {editing && canRefresh ? <>
       <p className="text-amber-700">保存新来源后，原发布说明和关联变更将清空，需要重新生成。</p>
       <RcSourceSelect project={release.project} repository={release.repository} value={selected} onChange={setSelected} />
       {update.error ? <p role="alert">{update.error.message}</p> : null}

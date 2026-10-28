@@ -47,3 +47,10 @@ it('发布人预览新旧提交与代码差异并确认更新草稿', async () =
   fireEvent.click(screen.getByRole('button', { name: '确认更新' }));
   await waitFor(() => expect(confirmed).toEqual({ old_hash: oldHash, new_hash: newHash }));
 });
+
+it.each([false, true])('来源 RC 重选仅对有权更新来源的用户显示（权限=%s）', (canRefresh) => {
+  const release = { id: 'formal', release_type: 'formal', status: 'draft', source_rc: 'rc',
+    source_rc_version: 'VA.1.0.0-rc', source_rc_tag: 'VA.1.0.0-rc', git_hash: 'a'.repeat(40) } as Release;
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ReleaseSource release={release} canRefresh={canRefresh} /></MemoryRouter></QueryClientProvider>);
+  expect(!!screen.queryByRole('button', { name: '重选来源 RC' })).toBe(canRefresh);
+});

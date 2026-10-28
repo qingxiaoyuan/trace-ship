@@ -345,3 +345,32 @@ def test_target_version_change_invalidates_baseline_and_stale_manual_doc(client,
     assert not result.data["data"]["changes_initialized"] and not result.data["data"]["release_doc"]
     result = client.post(f"/api/releases/{formal.id}/update-doc/", {"release_doc": doc}, format="json")
     assert result.status_code == 400
+
+
+def test_reselect_rc_requires_publisher_or_superuser_and_project_access(client, formal, remote):
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    new_rc = ReleaseRecord.objects.create(project=formal.project, repository=formal.repository,
+        publisher=formal.publisher, release_type="rc", status="released", version="VA.9.0.1",
+        tag_name="VA.9.0.1-rc", branch="develop", git_hash="c" * 40)
+    remote.tags.append(TagInfo(name=new_rc.tag_name, commit_hash=new_rc.git_hash))
+    other = User.objects.create_user(username="other-publisher", password="test")
+    ProjectMember.objects.create(project=formal.project, user=other, role="developer")
+    url = f"/api/releases/{formal.id}/"
+    client.force_authenticate(other)
+    assert client.patch(url, {"source_rc": str(new_rc.id)}, format="json").status_code == 403
+    assert client.get(url).data["data"]["source_rc"] == str(formal.source_rc_id)
+    member = ProjectMember.objects.get(project=formal.project, user=other)
+    member.role = "viewer"
+    member.save(update_fields=["role"])
+    assert client.patch(url, {"source_rc": str(new_rc.id)}, format="json").status_code == 403
+    outsider = User.objects.create_user(username="outside-project", password="test")
+    client.force_authenticate(outsider)
+    assert client.patch(url, {"source_rc": str(new_rc.id)}, format="json").status_code == 404
+    client.force_authenticate(formal.publisher)
+    assert client.patch(url, {"source_rc": str(new_rc.id)}, format="json").status_code == 200
+    superuser = User.objects.create_superuser(username="root-review", password="test")
+    client.force_authenticate(superuser)
+    remote.tags.append(TagInfo(name=formal.source_rc.tag_name, commit_hash=formal.source_rc.git_hash))
+    assert client.patch(url, {"source_rc": str(formal.source_rc_id)}, format="json").status_code == 200

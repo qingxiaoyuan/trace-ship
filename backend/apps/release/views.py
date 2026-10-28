@@ -363,6 +363,9 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             if instance.release_type == "formal" and (instance.source_rc_id or data.get("source_rc")):
                 if "source_rc" in data:
+                    if (str(data["source_rc"]) != str(instance.source_rc_id)
+                        and not request.user.is_superuser and instance.publisher_id != request.user.id):
+                        return error_response(40300, "只有发布发起人可以更新来源提交", status_code=403)
                     source_changed = ReleaseService.update_source(instance, data["source_rc"], request.user)
             else:
                 old_source = (instance.branch, instance.git_hash)

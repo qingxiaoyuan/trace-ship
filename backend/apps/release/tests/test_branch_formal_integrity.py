@@ -295,3 +295,50 @@ def test_direct_confirmation_cannot_bypass_nonancestor_guard(api, project, repos
     remote.get_merge_base = lambda identity, refs: "c" * 40
     assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
     assert api.get(url).data["data"]["git_hash"] == HEAD
+
+
+@pytest.mark.parametrize("release_type,suffix", [("rc", "rc"), ("beta", "alpha")])
+def test_nonformal_regeneration_freezes_base_sha_and_reuses_it(api, project, repository, remote, release_type, suffix):
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": release_type, "branch": "develop", "version": "VA.1.0.0"}, format="json")
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    remote.tags = [TagInfo(name=f"VA.0.9.0-{suffix}", commit_hash=HEAD)]
+    tag_reads = []
+    def read_tags(identity):
+        tag_reads.append(identity)
+        return remote.tags
+    remote.list_tags = read_tags
+    calls = []
+    remote.list_release_commits = lambda identity, base, head: calls.append((base, head)) or [remote.commit(MOVED)]
+    assert api.post(url + "generate-doc/").status_code == 200
+    detail = api.get(url).data["data"]
+    assert detail["base_git_hash"] == HEAD
+    remote.tags = [TagInfo(name=f"VA.0.9.0-{suffix}", commit_hash="c" * 40)]
+    assert api.post(url + "generate-doc/").status_code == 200
+    assert calls == [(HEAD, MOVED), (HEAD, MOVED)]
+    assert len(tag_reads) == 1
+    assert api.get(url).data["data"]["base_git_hash"] == HEAD
+
+
+@pytest.mark.parametrize("failure", ["tags", "fork", "missing_hash"])
+def test_nonformal_regeneration_rejects_unreliable_baseline(api, project, repository, remote, failure):
+    from utils.provider.exceptions import ProviderError
+
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": "rc", "branch": "develop", "version": "VA.1.0.0"}, format="json")
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    remote.tags = [TagInfo(name="VA.0.9.0-rc", commit_hash=None if failure == "missing_hash" else HEAD)]
+    if failure == "tags":
+        def unavailable(identity):
+            raise ProviderError("Tag 查询失败")
+        remote.list_tags = unavailable
+    elif failure == "fork":
+        remote.get_merge_base = lambda identity, refs: "c" * 40
+    assert api.post(url + "generate-doc/").status_code in (400, 502)
+    assert api.post(url + "submit-audit/").status_code == 400
+    detail = api.get(url).data["data"]
+    assert not detail["release_doc"] and not detail["changes_initialized"]

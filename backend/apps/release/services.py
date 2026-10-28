@@ -509,9 +509,28 @@ class ReleaseDocGenerator:
         """
         repo_identity = self.release.repository.external_identity
         head = self.release.git_hash or self.release.branch
-        last_tag = self.release.base_tag if self.release.doc_source_fixed and self.release.changes_initialized else self._get_last_tag()
         if self.release.doc_source_fixed:
-            return self.provider.list_release_commits(repo_identity, last_tag or "", head)
+            if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", head):
+                raise serializers.ValidationError({"git_hash": "发布缺少完整提交快照"})
+            if not self.release.changes_initialized:
+                tags = self.provider.list_tags(repo_identity)
+                calculator = VersionCalculator(self.release.repository.get_version_rule())
+                tag = calculator.find_latest_tag_by_type(tags, self.release.release_type)
+                source = next((item for item in tags if item.name == tag), None) if tag else None
+                sha = source.commit_hash if source else ""
+                if tag and not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", sha or ""):
+                    raise serializers.ValidationError({"base_tag": "基线 Tag 缺少完整提交快照"})
+                self.release.base_tag, self.release.base_git_hash = tag or "", sha or ""
+            base = self.release.base_git_hash
+            if base and base != head and self.provider.get_merge_base(repo_identity, [base, head]) != base:
+                raise serializers.ValidationError({"base_tag": "基线提交不在目标提交的祖先链上，请处理回滚或分叉"})
+            if base == head:
+                return []
+            commits = self.provider.list_release_commits(repo_identity, base, head)
+            if not commits:
+                raise serializers.ValidationError({"commits": "无法获取完整的发布提交区间"})
+            return commits
+        last_tag = self._get_last_tag()
         if last_tag:
             try:
                 return self.provider.compare_commits(repo_identity, base=last_tag, head=head)
@@ -712,15 +731,13 @@ class ReleaseDocGenerator:
                                 seen.add(key)
                 manual = [item for item in self.release.updates if not item.get("source_ref")]
                 self.release.updates = updates + manual
-                if not self.release.changes_initialized:
-                    self.release.base_tag = self._get_last_tag() or ""
                 self.release.changes_initialized = True
                 self.release.save(update_fields=["updates", "changes_initialized"])
             else:
                 self.release.base_tag = self._get_last_tag() or ""
 
         # 持久化发布时的基线 tag 快照，供详情页展示「上一 tag -> 本次 tag」提交区间
-        self.release.save(update_fields=["base_tag"])
+        self.release.save(update_fields=["base_tag", "base_git_hash"])
 
         # 持久化 ReleaseCommit 关联
         repo = self.release.repository
