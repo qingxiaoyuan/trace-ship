@@ -27,6 +27,7 @@ drf-spectacular>=0.27.0
 python-dotenv>=1.0.0
 Pillow>=10.0.0
 requests>=2.31.0
+markdown-it-py>=4.0,<5
 
 # 远程打包节点（SSH/SFTP）
 paramiko>=3.4.0

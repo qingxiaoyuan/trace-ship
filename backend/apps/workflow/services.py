@@ -5,7 +5,7 @@
 支持节点或签（any）与会签（all）模式。
 """
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -195,18 +195,102 @@ class WorkflowEngine:
 
     @classmethod
     def _instance_node_config(cls, instance: WorkflowInstance) -> list[dict[str, Any]]:
-        """旧实例优先采用真实保存的图配置，无法解析时兼容当前定义。"""
+        """旧实例仅从已保存的完整流程图恢复审批链，无法确定时拒绝流转。"""
         if instance.node_config_snapshot is not None:
             return instance.node_config_snapshot
-        graph_nodes = [node for node in (instance.graph_data or {}).get("nodes", [])
-                       if node.get("type") == cls.APPROVAL_NODE_TYPE]
-        if graph_nodes and all(node.get("id") and isinstance((node.get("properties") or {}).get("_approvers"), list)
-                               for node in graph_nodes):
-            return [{"node_id": node["id"],
-                     "node_name": cls._node_name(node).split("\n")[0],
-                     "mode": (node.get("properties") or {}).get("mode", "any"),
-                     "approvers": node["properties"]["_approvers"]} for node in graph_nodes]
-        return instance.definition.node_config or []
+
+        def invalid() -> NoReturn:
+            raise serializers.ValidationError({"workflow": "历史流程图不完整或审批配置不明确，无法安全推进"})
+
+        graph = instance.graph_data
+        if not isinstance(graph, dict):
+            invalid()
+        nodes, edges = graph.get("nodes"), graph.get("edges")
+        if not isinstance(nodes, list) or not isinstance(edges, list) or not nodes:
+            invalid()
+        node_map = {}
+        for node in nodes:
+            if not isinstance(node, dict) or not isinstance(node.get("id"), str) or not node["id"]:
+                invalid()
+            if node["id"] in node_map or node.get("type") not in (
+                cls.START_NODE_TYPE, cls.APPROVAL_NODE_TYPE, cls.END_NODE_TYPE,
+            ):
+                invalid()
+            node_map[node["id"]] = node
+        starts = [node["id"] for node in nodes if node["type"] == cls.START_NODE_TYPE]
+        ends = [node["id"] for node in nodes if node["type"] == cls.END_NODE_TYPE]
+        if len(starts) != 1 or len(ends) != 1:
+            invalid()
+
+        outgoing, incoming = {}, {}
+        for edge in edges:
+            if not isinstance(edge, dict):
+                invalid()
+            source = edge.get("sourceNodeId") or edge.get("source")
+            target = edge.get("targetNodeId") or edge.get("target")
+            if not isinstance(source, str) or not isinstance(target, str):
+                invalid()
+            if ("sourceNodeId" in edge and "source" in edge and edge["sourceNodeId"] != edge["source"]) or (
+                "targetNodeId" in edge and "target" in edge and edge["targetNodeId"] != edge["target"]
+            ):
+                invalid()
+            if source not in node_map or target not in node_map or source in outgoing or target in incoming:
+                invalid()
+            outgoing[source], incoming[target] = target, source
+        start, end = starts[0], ends[0]
+        if start in incoming or end in outgoing or len(edges) != len(nodes) - 1:
+            invalid()
+        if any(node_id != start and node_id not in incoming for node_id in node_map):
+            invalid()
+        if any(node_id != end and node_id not in outgoing for node_id in node_map):
+            invalid()
+
+        chain, visited, node_id = [], set(), start
+        while node_id != end:
+            if node_id in visited or node_id not in outgoing:
+                invalid()
+            visited.add(node_id)
+            node_id = outgoing[node_id]
+            node = node_map[node_id]
+            if node["type"] != cls.APPROVAL_NODE_TYPE:
+                continue
+            props = node.get("properties", {})
+            if not isinstance(props, dict):
+                invalid()
+            if "_approvers" in props:
+                if any(key in props for key in ("approver_type", "user_id", "role")):
+                    invalid()
+                approvers = props["_approvers"]
+            else:
+                approvers = [{"type": props.get("approver_type", "leader"),
+                              "user_id": props.get("user_id"), "role": props.get("role")}]
+            if not isinstance(approvers, list) or not approvers:
+                invalid()
+            for approver in approvers:
+                if not isinstance(approver, dict) or approver.get("type") not in (
+                    "leader", "role", "user", "self", "repo_owner",
+                ):
+                    invalid()
+                if approver["type"] == "user":
+                    try:
+                        uuid.UUID(str(approver.get("user_id") or ""))
+                    except (ValueError, TypeError, AttributeError):
+                        invalid()
+                if approver["type"] == "role" and (
+                    not isinstance(approver.get("role"), str) or not approver["role"]
+                ):
+                    invalid()
+            mode = props.get("mode", "any")
+            if mode not in ("any", "all"):
+                invalid()
+            name = cls._node_name(node)
+            if not isinstance(name, str):
+                invalid()
+            chain.append({"node_id": node_id, "node_name": name.split("\n")[0],
+                          "mode": mode, "approvers": approvers})
+        if len(visited) + 1 != len(node_map) or not chain:
+            invalid()
+        return chain
 
     @staticmethod
     def _lock_instance(instance: WorkflowInstance) -> WorkflowInstance:

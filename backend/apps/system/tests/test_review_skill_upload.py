@@ -156,3 +156,72 @@ def test_unsupported_zip_compression_returns_validation_error():
     content[8:10] = (99).to_bytes(2, 'little')
     content[central + 10:central + 12] = (99).to_bytes(2, 'little')
     assert upload(client, 'bad.zip', bytes(content)).status_code == 400
+
+
+@pytest.mark.django_db
+def test_markdown_references_with_spaces_ignore_code_examples():
+    admin = User.objects.create_superuser(username='skill-markdown-admin', password='testpass')
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    text = '''# 审查
+[参考](<references/user guide.md> "参考文档")
+[规则][ref]
+
+[ref]: <references/user guide.md>
+
+代码示例：`[占位](missing.md)`
+\\[转义字面](missing.md)
+
+```markdown
+[占位](missing.md)
+![图片](missing.png)
+```
+'''
+    response = upload(client, 'review.zip', archive({'SKILL.md': text, 'references/user guide.md': '# 清单'}))
+    assert response.status_code == 201, response.data
+    skill_id = response.data['data']['id']
+    assert client.get(f'/api/system/review-skills/{skill_id}/').data['data']['documents']['SKILL.md'] == text
+
+
+@pytest.mark.django_db
+def test_markdown_real_unsafe_references_still_rejected():
+    admin = User.objects.create_superuser(username='skill-markdown-admin-2', password='testpass')
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    for reference in ('[越界](<../a b.md>)', '[缺失](<references/missing file.md>)'):
+        result = upload(client, 'review.zip', archive({'SKILL.md': '# 审查\n' + reference}))
+        assert result.status_code == 400
+    assert client.get('/api/system/review-skills/').data['data'] == []
+
+
+@pytest.mark.django_db
+def test_reject_non_readonly_command_arguments():
+    admin = User.objects.create_superuser(username='skill-command-admin', password='testpass')
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    for command in ('cat /etc/shadow', 'git show --output=/tmp/result HEAD', 'rg --pre=sh pattern .', 'cat ../secret', 'git diff --output=out'):
+        response = upload(client, 'SKILL.md', f'# 审查\n```sh\n{command}\n```'.encode())
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_corrupt_deflate_returns_bad_request():
+    admin = User.objects.create_superuser(username='skill-zip-admin', password='testpass')
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, 'w', compression=zipfile.ZIP_DEFLATED) as package:
+        package.writestr('SKILL.md', '# 审查\n' * 100)
+    broken = bytearray(data.getvalue())
+    broken[30 + len('SKILL.md')] = 0x06
+    response = upload(client, 'bad.zip', bytes(broken))
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_markdown_parser_rejects_unsafe_links_and_indented_shell():
+    admin = User.objects.create_superuser(username='skill-markdown-admin-3', password='testpass')
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    for text in ('# 审查\n[危险](javascript:alert(1))', '# 审查\n   ```sh\ncat /etc/shadow\n   ```'):
+        assert upload(client, 'SKILL.md', text.encode()).status_code == 400
