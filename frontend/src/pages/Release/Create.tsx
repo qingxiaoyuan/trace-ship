@@ -39,6 +39,7 @@ import { CheckboxField, AutoResizeTextarea } from './components/ReleaseDocField'
 import { FormalChangesPreview } from './components/FormalChangesPreview';
 import { CommitCheckModal } from './components/CommitCheckModal';
 import type { Release, ReleaseType, ChangesPreview, ParsedUpdate, PackageConfig } from '@/types';
+import './release-create.css';
 
 /** 关联变更清单条目 */
 interface RelatedChange {
@@ -1248,6 +1249,7 @@ function SelectField({
         onChange={onChange}
         prefix={icon}
         suffixIcon={<ChevronDown className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
+        classNames={{ popup: { root: 'release-create-select-popup' } }}
         className="w-full"
       />
       {hint && (
