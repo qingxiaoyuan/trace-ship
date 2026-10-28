@@ -459,7 +459,9 @@ def test_release_biz_id_migration_preserves_links_and_invalid_history(context):
     original_id = "{" + str(context.release.id).upper() + "}"
     # 模拟迁移前的历史数据库内容，避免新模型 save 提前完成规范化。
     WorkflowInstance.objects.filter(pk=valid.pk).update(biz_id=original_id)
-    invalid = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id="无法解析的旧业务", status="revoked", created_by=context.manager)
+    # 异常 ID 没有可验证的发布归属；仅历史项目级定义可作为可靠项目来源。
+    legacy_definition = WorkflowDefinition.objects.create(project=context.project, name="项目级历史流程")
+    invalid = WorkflowInstance.objects.create(definition=legacy_definition, biz_type="release", biz_id="无法解析的旧业务", status="revoked", created_by=context.manager)
     other = WorkflowInstance.objects.create(definition=definition, biz_type="legacy", biz_id=original_id, created_by=context.manager)
     migration = import_module("apps.workflow.migrations.0010_normalize_release_biz_ids")
     migration.normalize_release_biz_ids(apps, connection.schema_editor())
@@ -468,3 +470,197 @@ def test_release_biz_id_migration_preserves_links_and_invalid_history(context):
         assert detail["biz_id"] == expected
     assert context.client.get(f"/api/workflow/instances/{valid.id}/").data["data"]["release_doc"] == "完整发布说明"
     assert context.client.get(f"/api/workflow/instances/{invalid.id}/").data["data"]["status"] == "revoked"
+
+
+def test_unparseable_legacy_workflow_uses_explicit_project_not_shared_repository(context):
+    """不可解析业务只按旧流程定义项目授权，不能跨共享仓库扩大。"""
+    other = Project.objects.create(code="LEGACYPRIVATE", name="其他项目", leader=context.manager)
+    ProjectMember.objects.create(project=other, user=context.manager, role="manager")
+    ProjectComponent.objects.create(project=other, repository=context.repository, component_code="shared")
+    definition = WorkflowDefinition.objects.create(
+        project=other, name="其他项目级历史流程", node_config=[],
+    )
+    history = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id="无法解析的历史业务", status="revoked")
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 404
+    visible = context.client.get("/api/workflow/instances/").data["data"]["results"]
+    assert str(history.id) not in [str(item["id"]) for item in visible]
+    ProjectMember.objects.create(project=other, user=context.member, role="maintainer")
+    authorized = context.client.get(f"/api/workflow/instances/{history.id}/")
+    assert authorized.status_code == 200 and authorized.data["data"]["project_name"] == other.name
+    definition.project = context.project
+    definition.save(update_fields=["project"])
+    authorized = context.client.get(f"/api/workflow/instances/{history.id}/")
+    assert authorized.status_code == 200 and authorized.data["data"]["project_name"] == other.name
+    definition.repository = context.repository
+    definition.save(update_fields=["repository"])
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 404
+    definition.repository = None
+    definition.save(update_fields=["repository"])
+    ProjectMember.objects.filter(project=other, user=context.member).delete()
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 404
+
+
+def test_unparseable_history_backfill_does_not_infer_deleted_release_project(context):
+    """迁移只记录无法解析 ID 的旧项目，已删除的合法发布不能按流程项目授权。"""
+    import uuid
+    from importlib import import_module
+
+    from django.apps import apps
+    from django.db import connection
+
+    definition = WorkflowDefinition.objects.create(project=context.project, name="项目级旧流程")
+    invalid = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id="旧格式业务", status="revoked")
+    deleted = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id=str(uuid.uuid4()), status="revoked")
+    WorkflowInstance.objects.filter(pk=invalid.pk).update(legacy_project=None, legacy_biz_id="")
+    migration = import_module("apps.workflow.migrations.0014_workflowinstance_legacy_biz_id_and_more")
+    migration.backfill_invalid_legacy_projects(apps, connection.schema_editor())
+    invalid.refresh_from_db()
+    deleted.refresh_from_db()
+    assert invalid.legacy_project_id == context.project.id and invalid.legacy_biz_id == "旧格式业务"
+    assert deleted.legacy_project_id is None
+    assert context.client.get(f"/api/workflow/instances/{invalid.id}/").status_code == 200
+    assert context.client.get(f"/api/workflow/instances/{deleted.id}/").status_code == 404
+    WorkflowInstance.objects.filter(pk=invalid.pk).update(biz_id=str(uuid.uuid4()))
+    assert context.client.get(f"/api/workflow/instances/{invalid.id}/").status_code == 404
+    invalid.refresh_from_db()
+    invalid.biz_id = str(uuid.uuid4())
+    invalid.save(update_fields=["biz_id"])
+    invalid.refresh_from_db()
+    assert invalid.legacy_project_id is None and invalid.legacy_biz_id == ""
+
+
+@pytest.mark.parametrize("biz_id_style", ["canonical", "upper", "braces", "urn", "hex", "plus", "underscore", "unicode_decimal"])
+def test_changed_legacy_id_cannot_reuse_project_authorization(context, biz_id_style):
+    """原异常 ID 与当前 ID 不一致时，不得用旧项目授权读取其他项目发布。"""
+    other = Project.objects.create(code="LEGACYTARGET", name="其他项目", leader=context.manager)
+    ProjectMember.objects.create(project=other, user=context.manager, role="manager")
+    ProjectComponent.objects.create(project=other, repository=context.repository, component_code="shared")
+    release = ReleaseRecord.objects.create(
+        id="01234567-89ab-4def-8123-456789abcdef", project=other, repository=context.repository,
+        version="V9.0.0", branch="main", publisher=context.manager,
+    )
+    release.refresh_from_db()
+    definition = WorkflowDefinition.objects.create(project=context.project, name="项目级旧流程")
+    history = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id="历史异常", status="revoked")
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 200
+    raw = {
+        "canonical": str(release.id), "upper": str(release.id).upper(), "braces": "{" + str(release.id) + "}",
+        "urn": "urn:uuid:" + str(release.id), "hex": release.id.hex,
+        "plus": "+" + release.id.hex[1:], "underscore": release.id.hex[1:12] + "_" + release.id.hex[12:],
+        "unicode_decimal": release.id.hex.replace("1", "١"),
+    }[biz_id_style]
+    WorkflowInstance.objects.filter(pk=history.pk).update(biz_id=raw)
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 404
+
+
+def test_shared_workflow_definition_cannot_authorize_invalid_legacy_id(context):
+    """仓库级流程的历史项目字段不能证明异常记录属于该项目。"""
+    from importlib import import_module
+
+    from django.apps import apps
+    from django.db import connection
+
+    other = Project.objects.create(code="SHARED_B", name="共享仓库另一项目", leader=context.manager)
+    ProjectMember.objects.create(project=other, user=context.manager, role="manager")
+    ProjectComponent.objects.create(project=other, repository=context.repository, component_code="shared")
+    definition = WorkflowDefinition.objects.create(
+        project=context.project, repository=context.repository, name="跨项目复用的仓库流程",
+    )
+    history = WorkflowInstance.objects.create(
+        definition=definition, biz_type="release", biz_id="无法解析业务", status="revoked", created_by=context.manager,
+    )
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 404
+    WorkflowInstance.objects.filter(pk=history.pk).update(legacy_project=None, legacy_biz_id="")
+    migration = import_module("apps.workflow.migrations.0014_workflowinstance_legacy_biz_id_and_more")
+    migration.backfill_invalid_legacy_projects(apps, connection.schema_editor())
+    history.refresh_from_db()
+    assert history.legacy_project_id is None
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 404
+    WorkflowTask.objects.create(instance=history, node_id="old", node_name="旧审批", approver=context.member, status="approved")
+    assert context.client.get(f"/api/workflow/instances/{history.id}/").status_code == 200
+
+
+@pytest.mark.parametrize("has_source_project", [False, True])
+def test_orm_biz_id_change_cannot_infer_legacy_project(context, has_source_project):
+    """已有实例修改业务 ID 时清除旧来源，不能从定义项目重新推断。"""
+    definition = WorkflowDefinition.objects.create(project=context.project, name="项目级旧流程")
+    instance = WorkflowInstance.objects.create(
+        definition=definition, source_project=context.project if has_source_project else None,
+        biz_type="release", biz_id=str(context.release.id), status="revoked", created_by=context.manager,
+    )
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 200
+    instance.biz_id = "新异常业务"
+    instance.save(update_fields=["biz_id"])
+    instance.refresh_from_db()
+    assert instance.source_project_id is None
+    assert instance.legacy_project_id is None and instance.legacy_biz_id == ""
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 404
+
+
+def test_orm_legacy_id_change_clears_authorization(context):
+    """项目级历史实例更换异常业务 ID 后，不能继承原异常业务的授权。"""
+    definition = WorkflowDefinition.objects.create(project=context.project, name="项目级历史流程")
+    instance = WorkflowInstance.objects.create(
+        definition=definition, biz_type="release", biz_id="旧异常业务", status="revoked", created_by=context.manager,
+    )
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 200
+    instance.biz_id = "另一异常业务"
+    instance.save(update_fields=["biz_id"])
+    instance.refresh_from_db()
+    assert instance.legacy_project_id is None and instance.legacy_biz_id == ""
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 404
+
+
+def test_orm_definition_change_clears_legacy_authorization(context):
+    """历史实例改换定义时不得沿用旧定义项目的授权依据。"""
+    other = Project.objects.create(code="OTHER_DEFINITION", name="其他项目", leader=context.manager)
+    ProjectMember.objects.create(project=other, user=context.manager, role="manager")
+    original = WorkflowDefinition.objects.create(project=context.project, name="原项目级定义")
+    replacement = WorkflowDefinition.objects.create(project=other, name="新项目级定义")
+    instance = WorkflowInstance.objects.create(
+        definition=original, biz_type="release", biz_id="异常历史", status="revoked", created_by=context.manager,
+    )
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 200
+    instance.definition = replacement
+    instance.save(update_fields=["definition"])
+    instance.refresh_from_db()
+    assert instance.legacy_project_id is None and instance.legacy_biz_id == ""
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 404
+
+
+@pytest.mark.parametrize("replacement_id", ["业务标识已损坏", "11111111-1111-4111-8111-111111111111"])
+def test_bulk_biz_id_change_cannot_reuse_source_project(context, replacement_id):
+    """批量更新绕过模型 save 时，也不能沿用原发布项目快照放权。"""
+    definition = WorkflowDefinition.objects.create(project=context.project, repository=context.repository, name="旧仓库流程")
+    instance = WorkflowInstance.objects.create(
+        definition=definition, source_project=context.project, biz_type="release",
+        biz_id=str(context.release.id), status="revoked", created_by=context.manager,
+    )
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 200
+    WorkflowInstance.objects.filter(pk=instance.pk).update(biz_id=replacement_id)
+    assert context.client.get(f"/api/workflow/instances/{instance.id}/").status_code == 404
+
+
+def test_source_project_backfill_only_binds_existing_matching_release(context):
+    """来源快照仅在现存发布项目可核实时绑定原 ID，已删除发布不推断。"""
+    import uuid
+    from importlib import import_module
+
+    from django.apps import apps
+    from django.db import connection
+
+    definition = WorkflowDefinition.objects.create(project=context.project, repository=context.repository, name="仓库流程")
+    existing = WorkflowInstance.objects.create(
+        definition=definition, source_project=context.project, biz_type="release", biz_id=str(context.release.id), status="revoked",
+    )
+    missing = WorkflowInstance.objects.create(
+        definition=definition, source_project=context.project, biz_type="release", biz_id=str(uuid.uuid4()), status="revoked",
+    )
+    WorkflowInstance.objects.filter(pk__in=[existing.pk, missing.pk]).update(source_biz_id="")
+    migration = import_module("apps.workflow.migrations.0014_workflowinstance_legacy_biz_id_and_more")
+    migration.backfill_source_project_ids(apps, connection.schema_editor())
+    existing.refresh_from_db()
+    missing.refresh_from_db()
+    assert existing.source_biz_id == str(context.release.id)
+    assert missing.source_biz_id == ""
+    assert context.client.get(f"/api/workflow/instances/{missing.id}/").status_code == 404

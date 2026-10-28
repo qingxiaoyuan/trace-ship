@@ -37,6 +37,7 @@ export const changelogEntries: ChangelogEntry[] = [
       { category: 'improvement', text: '提交审批后固定本轮节点和审批人，后续流程配置修改只影响新提交的审批；历史审批记录可在发布及审批详情查看' },
       { category: 'fix', text: '回退到初始节点时保留已处理任务和审批意见，旧待办失效，发布恢复为草稿' },
       { category: 'fix', text: '存量审批按原流程图顺序恢复节点；历史流程图不完整时停止推进，避免跳过审批人' },
+      { category: 'fix', text: '恢复项目级历史审批中业务标识异常的记录查看；仓库级流程不会据此扩大可见范围' },
     ],
   },
   {

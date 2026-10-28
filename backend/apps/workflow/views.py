@@ -159,7 +159,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             return WorkflowInstance.objects.none()
         user = self.request.user
         queryset = WorkflowInstance.objects.select_related(
-            "definition", "definition__repository", "source_project", "created_by"
+            "definition", "definition__repository", "source_project", "legacy_project", "created_by"
         ).prefetch_related("tasks")
         if not user.is_superuser:
             queryset = queryset.filter(id__in=visible_workflow_instances(user).values("id"))

@@ -1691,7 +1691,7 @@
 ### 10.5 流程实例列表 / 详情
 
 - **GET** `/api/workflow/instances/`：过滤参数 `biz_type` / `biz_id` / `status` / `created_by`。
-- **GET** `/api/workflow/instances/{id}/`：详情含任务列表与节点状态快照（`node_status`）、实例图快照（`graph_data`）。列表和详情的 `is_current` 表示该实例是否为发布当前关联流程，可按 `biz_type=release&biz_id=<发布 ID>` 查询可见历史；仍按发布项目及本单审批分配授权。
+- **GET** `/api/workflow/instances/{id}/`：详情含任务列表与节点状态快照（`node_status`）、实例图快照（`graph_data`）。列表和详情的 `is_current` 表示该实例是否为发布当前关联流程，可按 `biz_type=release&biz_id=<发布 ID>` 查询可见历史；仍按发布项目及本单审批分配授权。业务 ID 无法解析且旧定义为无仓库的项目级定义时，仅按原定义项目及原 ID 授权；仓库级定义不能证明发布归属，业务 ID 或定义变化时清除原授权依据；发布项目快照须与原 ID 匹配，合法但已删除的发布不会按共享仓库推断归属。
 - 新流程固定提审时的节点、审批模式和实际审批人；详情的 `has_config_snapshot` 为 `false` 表示存量实例没有保存原配置，运行时按保存的流程图边恢复审批顺序和配置，图缺失、分叉或节点配置不明时拒绝推进，不能用现行定义替代；无法还原原审批人时不伪造快照。历史非成员审批人不能经旧实例读取后续修改的发布正文。
 
 实例状态：`running` / `completed` / `rejected` / `revoked`。
