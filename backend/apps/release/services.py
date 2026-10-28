@@ -1453,6 +1453,15 @@ class ReleaseService:
                     {"workflow": f"仓库未配置 {release.release_type} 发布审批流程"}
                 )
 
+            if release.has_revision_history:
+                nodes = definition.node_config or []
+                if not any(isinstance(node, dict) and node.get("node_type") != "ai_review" for node in nodes):
+                    raise serializers.ValidationError({"workflow": "退回修改后须重新完成人工审批"})
+                if release.revision_requires_ai_review and not any(
+                    isinstance(node, dict) and node.get("node_type") == "ai_review" for node in nodes
+                ):
+                    raise serializers.ValidationError({"workflow": "退回修改后须重新执行 AI 代码审查"})
+
             from apps.release.versions import claim_version
 
             if release.release_type == "formal":

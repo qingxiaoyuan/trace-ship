@@ -536,10 +536,15 @@ def test_return_cancels_unfinished_ai_and_keeps_completed_report(flow):
     pending.refresh_from_db()
     report.refresh_from_db()
     assert pending.status == "canceled" and pending.token != old_token
+    assert pending.history[-1]["token"] == str(old_token) and pending.history[-1]["status"] == "queued"
     assert report.status == "completed" and report.findings[0]["id"] == "old-finding"
     execute_review(flow.instance.id, "future-ai")
     pending.refresh_from_db()
     assert pending.status == "canceled"
+    flow.api.force_authenticate(flow.user)
+    retry = flow.api.post(f"/api/workflow/instances/{flow.instance.id}/ai-review-retry/", {"node_id": "future-ai"}, format="json")
+    skipped = flow.api.post(f"/api/workflow/instances/{flow.instance.id}/ai-review-skip/", {"node_id": "future-ai", "reason": "故障"}, format="json")
+    assert retry.status_code == 400 and skipped.status_code == 400
 
 
 def test_return_marks_only_actor_and_preserves_peer_approval_history(flow):

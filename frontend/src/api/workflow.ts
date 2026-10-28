@@ -33,11 +33,17 @@ export interface AiReviewFinding {
 export interface AiReviewData {
   node_id: string;
   node_name?: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
   summary: string;
   coverage: { total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[] };
   dimensions?: string[];
   findings?: AiReviewFinding[];
+  can_recover?: boolean;
+  skip_reason?: string;
+  skipped_at?: string | null;
+  skipped_by?: string | null;
+  skipped_by_name?: string;
+  history?: Array<{ token: string; status: string; summary: string; updated_at: string; coverage?: AiReviewData['coverage']; dimensions?: string[]; findings?: AiReviewFinding[] }>;
 }
 
 export const workflowApi = {
@@ -55,6 +61,8 @@ export const workflowApi = {
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
   getReviewScope: (id: string) => get<ReviewScopeData>(`/workflow/instances/${id}/review-scope/`, { silent: true }),
   getAiReview: (id: string) => get<{ reviews: AiReviewData[] }>(`/workflow/instances/${id}/ai-review/`, { silent: true }),
+  retryAiReview: (id: string, node_id: string) => post(`/workflow/instances/${id}/ai-review-retry/`, { node_id }),
+  skipAiReview: (id: string, node_id: string, reason: string) => post(`/workflow/instances/${id}/ai-review-skip/`, { node_id, reason }),
   revokeInstance: (id: string, data?: { comment?: string }) =>
     post<WorkflowInstance>(`/workflow/instances/${id}/revoke/`, data || {}),
   /** 我发起的流程实例列表，支持 status 过滤 */

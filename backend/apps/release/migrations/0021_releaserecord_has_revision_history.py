@@ -20,4 +20,9 @@ class Migration(migrations.Migration):
             name='revision_source_hash',
             field=models.CharField(blank=True, max_length=100, verbose_name='退回前提交快照'),
         ),
+        migrations.AddField(
+            model_name='releaserecord',
+            name='revision_requires_ai_review',
+            field=models.BooleanField(default=False, verbose_name='退回后须重新 AI 审查'),
+        ),
     ]

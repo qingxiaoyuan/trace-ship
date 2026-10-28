@@ -69,11 +69,11 @@ export function ApprovalTimeline({ instance }: { instance: WorkflowInstance }) {
   const stateOf = (node: GraphNode): NodeState => {
     if (node.type === 'start-node') return 'done';
     if (instance.status === 'returned' && nodeStatus[node.id] === 'returned') return 'returned';
-    if ((instance.status === 'revoked' || instance.status === 'returned') && !['approved', 'completed', 'first_release', 'no_changes'].includes(nodeStatus[node.id])) return 'revoked';
+    if ((instance.status === 'revoked' || instance.status === 'returned') && !['approved', 'completed', 'first_release', 'no_changes', 'skipped'].includes(nodeStatus[node.id])) return 'revoked';
     if (node.type === 'end-node') {
       return instance.status === 'completed' ? 'done' : 'pending';
     }
-    if (['approved', 'completed', 'first_release', 'no_changes'].includes(nodeStatus[node.id])) return 'done';
+    if (['approved', 'completed', 'first_release', 'no_changes', 'skipped'].includes(nodeStatus[node.id])) return 'done';
     if (node.id === instance.current_node_id && instance.status === 'running') return 'running';
     return 'pending';
   };
@@ -136,7 +136,7 @@ function TimelineNode({
   }[state];
 
   const badge = {
-    done: { text: nodeType === 'start-node' || nodeType === 'ai-review-node' ? (result === 'first_release' ? '首次发布跳过' : result === 'no_changes' ? '无代码变更' : '已完成') : '已通过', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    done: result === 'skipped' ? { text: '管理员跳过', cls: 'border-amber-200 bg-amber-50 text-amber-700' } : { text: nodeType === 'start-node' || nodeType === 'ai-review-node' ? (result === 'first_release' ? '首次发布跳过' : result === 'no_changes' ? '无代码变更' : '已完成') : '已通过', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
     running: { text: '进行中', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
     pending: { text: '待处理', cls: 'border-slate-200 bg-slate-50 text-slate-400' },
     revoked: { text: '已终止', cls: 'border-slate-200 bg-slate-50 text-slate-500' },

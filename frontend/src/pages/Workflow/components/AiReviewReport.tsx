@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { workflowApi } from '@/api/workflow';
 import type { AiReviewData, AiReviewFinding } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
@@ -12,7 +12,42 @@ const statusText: Record<AiReviewData['status'], string> = {
   incomplete: '审查未完成',
   first_release: '首次发布，跳过 AI 审查',
   no_changes: '无代码变更',
+  skipped: '管理员已跳过 AI 审查',
+  canceled: '本轮审查已取消',
 };
+
+function RecoveryActions({ instanceId, nodeId }: { instanceId: string; nodeId: string }) {
+  const client = useQueryClient();
+  const [showReason, setShowReason] = useState(false);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const action = useMutation({
+    mutationFn: (kind: 'retry' | 'skip') => kind === 'retry'
+      ? workflowApi.retryAiReview(instanceId, nodeId)
+      : workflowApi.skipAiReview(instanceId, nodeId, reason.trim()),
+    onSuccess: async () => {
+      setError('');
+      setReason('');
+      setShowReason(false);
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['ai-review', instanceId] }),
+        client.invalidateQueries({ queryKey: ['workflow-instance-for-detail', instanceId] }),
+      ]);
+    },
+    onError: (failure: NormalizedError) => setError(failure.friendlyMessage || failure.message || '操作失败，请重试'),
+  });
+  return <div className="space-y-2 border-t border-slate-200 pt-3">
+    <div className="flex flex-wrap gap-2">
+      <button type="button" disabled={action.isPending} onClick={() => { setError(''); action.mutate('retry'); }} className="rounded border border-indigo-300 px-3 py-1 text-indigo-700 disabled:opacity-50">重新审查</button>
+      <button type="button" disabled={action.isPending} onClick={() => { setError(''); setShowReason(!showReason); }} className="rounded border border-amber-300 px-3 py-1 text-amber-800 disabled:opacity-50">留理由跳过</button>
+    </div>
+    {showReason ? <div className="space-y-2">
+      <label className="block text-slate-700">跳过原因<textarea value={reason} maxLength={2000} onChange={(event) => setReason(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 p-2" rows={3} /></label>
+      <button type="button" disabled={action.isPending || !reason.trim()} onClick={() => { setError(''); action.mutate('skip'); }} className="rounded bg-amber-700 px-3 py-1 text-white disabled:opacity-50">确认跳过并交人工审批</button>
+    </div> : null}
+    {error ? <p role="alert" className="text-rose-700">{error}</p> : null}
+  </div>;
+}
 
 function location(finding: AiReviewFinding): string {
   if (!finding.path) return '整体意见';
@@ -56,6 +91,7 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
     {query.data.reviews.map((review) => <article key={review.node_id} className="space-y-3 rounded-lg border border-slate-200 p-4">
       <h4 className="font-semibold text-slate-800">{review.node_name ? `${review.node_name} · ` : ''}{statusText[review.status] || '审查状态未知'}</h4>
       {review.summary ? <p className="whitespace-pre-wrap break-words text-slate-700">{review.summary}</p> : null}
+      {review.status === 'skipped' && review.skip_reason ? <p className="whitespace-pre-wrap break-words text-amber-800">跳过原因：{review.skip_reason}；操作者：{review.skipped_by_name || '已删除用户'}；时间：{review.skipped_at || '未知'}</p> : null}
       <div className="text-slate-600">覆盖范围：{review.coverage?.total_files === undefined || review.coverage.reviewed_files === undefined ? '尚未统计' : `${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件`}</div>
       {review.coverage?.warnings?.length ? <ul className="list-inside list-disc text-amber-700">{review.coverage.warnings.map((warning, index) => <li key={`${index}:${warning}`} className="break-words">{warning}</li>)}</ul> : null}
       {review.coverage?.reviewed_paths ? <details className="rounded border border-slate-200 p-2">
@@ -67,6 +103,15 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
         {review.coverage.unreviewed_paths.length ? <ul className="mt-2 list-inside list-disc break-all font-mono text-xs text-amber-800">{review.coverage.unreviewed_paths.map((path) => <li key={path}>{path}</li>)}</ul> : <p className="mt-2 text-xs text-slate-500">无</p>}
       </details> : null}
       {review.dimensions?.length ? <p className="break-words text-slate-600">实际审查维度：{review.dimensions.join('、')}</p> : null}
+      {review.history?.length ? <details className="rounded border border-slate-200 p-2"><summary className="cursor-pointer font-medium text-slate-700">过往审查执行（{review.history.length}）</summary>
+        {review.history.map((item, index) => <div key={item.token} className="mt-2 rounded bg-slate-50 p-2">
+          <p>第 {index + 1} 次 · {statusText[item.status as AiReviewData['status']] || item.status} · {item.updated_at}</p>
+          <p className="whitespace-pre-wrap break-words">{item.summary}</p>
+          {item.coverage?.warnings?.map((warning, i) => <p key={i} className="break-words text-amber-800">{warning}</p>)}
+          {item.coverage?.unreviewed_paths?.map((path) => <p key={path} className="break-all font-mono text-xs">未审查：{path}</p>)}
+          {item.findings?.map((finding, i) => <p key={finding.id || i} className="whitespace-pre-wrap break-words">{finding.title}：{finding.reason}</p>)}
+        </div>)}
+      </details> : null}
       {review.findings ? <div className="space-y-3"><h5 className="font-semibold text-slate-800">审查意见</h5>
         {review.findings.length === 0 ? <p className="text-slate-500">未报告意见，仍需人工判断。</p> : review.findings.map((finding, index) => <div key={finding.id || index} className="rounded-lg bg-slate-50 p-3">
           <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">{finding.severity}</span><strong className="break-words">{finding.title}</strong></div>
@@ -75,6 +120,7 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
           {finding.suggestion ? <p className="mt-2 whitespace-pre-wrap break-words text-slate-600">建议：{finding.suggestion}</p> : null}
         </div>)}
       </div> : null}
+      {review.can_recover ? <RecoveryActions instanceId={instanceId} nodeId={review.node_id} /> : null}
     </article>)}
   </section>;
 }

@@ -367,6 +367,13 @@ def test_returned_branch_release_requires_new_commit_and_new_notes(api, user, pr
     assert changed.status_code == 200, changed.data
     assert api.post(url + "submit-audit/").status_code == 400
     assert api.post(url + "generate-doc/").status_code == 200
+    definition = old.definition
+    previous_nodes = definition.node_config
+    definition.node_config = []
+    definition.save(update_fields=["node_config"])
+    assert api.post(url + "submit-audit/").status_code == 400
+    definition.node_config = previous_nodes
+    definition.save(update_fields=["node_config"])
     submitted = api.post(url + "submit-audit/")
     assert submitted.status_code == 200, submitted.data
     release.refresh_from_db()
@@ -403,6 +410,13 @@ def test_returned_ai_release_restarts_review_with_new_settings(api, user, projec
     remote.branch_head = remote.commit_list_head = MOVED
     assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
     assert api.post(url + "generate-doc/").status_code == 200
+    definition = old.definition
+    previous_nodes = definition.node_config
+    definition.node_config = [previous_nodes[-1]]
+    definition.save(update_fields=["node_config"])
+    assert api.post(url + "submit-audit/").status_code == 400
+    definition.node_config = previous_nodes
+    definition.save(update_fields=["node_config"])
     with django_capture_on_commit_callbacks(execute=True):
         submitted = api.post(url + "submit-audit/")
     assert submitted.status_code == 200, submitted.data

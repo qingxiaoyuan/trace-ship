@@ -360,6 +360,11 @@ class AIReviewRun(models.Model):
     dimensions = models.JSONField(default=list, verbose_name="实际审查维度")
     coverage = models.JSONField(default=dict, verbose_name="覆盖范围")
     findings = models.JSONField(default=list, verbose_name="审查发现")
+    history = models.JSONField(default=list, verbose_name="过往执行记录")
+    skipped_by = models.ForeignKey("account.User", null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="skipped_ai_reviews", verbose_name="跳过操作者")
+    skipped_at = models.DateTimeField(null=True, blank=True, verbose_name="跳过时间")
+    skip_reason = models.TextField(blank=True, verbose_name="跳过原因")
     token = models.UUIDField(default=uuid.uuid4, verbose_name="当前执行标识")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")

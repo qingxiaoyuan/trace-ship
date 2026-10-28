@@ -31,6 +31,7 @@ export const changelogEntries: ChangelogEntry[] = [
     date: '2026-10-28',
     summary: '发布审查配置、草稿更新与审批历史',
     items: [
+      { category: 'feature', text: '审查失败或未完成时，项目管理员可重新审查或留理由跳过 AI；过往执行与跳过记录可追溯，发布仍须人工审批。' },
       { category: 'feature', text: '发布发起人可在草稿中预览新旧提交及代码差异，确认后更新至分支最新提交；原说明和关联变更清空，重新生成后才能提审' },
       { category: 'feature', text: '发布草稿可填写补充审查说明和仓库文档路径，方便在审批中核对审查依据' },
       { category: 'feature', text: '审批人可退回原发布申请修改；历史审批和审查保留，发起人更新提交并重新生成说明后完整提审' },

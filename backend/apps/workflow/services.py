@@ -481,17 +481,23 @@ class WorkflowEngine:
         instance.status = "returned"
         instance.completed_at = now
         instance.save(update_fields=["status", "completed_at", "returned_by", "node_status", "updated_at"])
-        # 已保存的审查报告保留；未完成执行失效，迟到结果不能写入或推进。
-        AIReviewRun.objects.filter(instance=instance, status__in=["queued", "running"]).update(
-            status="canceled", token=uuid.uuid4(), updated_at=now,
-        )
+        # 保留执行身份及已收集的覆盖证据；旧执行失效后迟到结果不能写入。
+        from apps.workflow.ai_review import _archive
+
+        for run in AIReviewRun.objects.select_for_update().filter(instance=instance, status__in=["queued", "running"]):
+            _archive(run)
+            run.status = "canceled"
+            run.token = uuid.uuid4()
+            run.summary = "本轮已退回修改，未完成的审查已取消"
+            run.save(update_fields=["history", "status", "token", "summary", "updated_at"])
         release.status = "draft"
         release.workflow_instance = None
         release.doc_needs_regeneration = True
         release.has_revision_history = True
         release.revision_source_hash = release.git_hash
+        release.revision_requires_ai_review = release.revision_requires_ai_review or instance.ai_reviews.exists()
         release.rejected_reason = "退回修改，请查看审批历史"
-        release.save(update_fields=["status", "workflow_instance", "doc_needs_regeneration", "has_revision_history", "revision_source_hash", "rejected_reason", "updated_at"])
+        release.save(update_fields=["status", "workflow_instance", "doc_needs_regeneration", "has_revision_history", "revision_source_hash", "revision_requires_ai_review", "rejected_reason", "updated_at"])
         release_claim(release)
         OperationLogService.log_workflow(user=actor, task=task, action="return_for_revision", detail={"comment": comment})
 

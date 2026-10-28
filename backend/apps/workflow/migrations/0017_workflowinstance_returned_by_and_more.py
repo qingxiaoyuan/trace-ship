@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('workflow', '0015_aireviewrun_and_more'),
+        ('workflow', '0016_aireviewrun_history_aireviewrun_skip_reason_and_more'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
