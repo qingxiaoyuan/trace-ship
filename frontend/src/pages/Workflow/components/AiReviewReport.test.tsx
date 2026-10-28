@@ -145,3 +145,10 @@ it('历史执行保留独有意见，并按稳定 ID 避免重复显示', async 
   expect(screen.getAllByText('旧意见')).toHaveLength(1);
   expect(screen.getByText('旧原因').tagName.toLowerCase()).toBe('strong');
 });
+
+
+it('已退回的旧轮明确显示未完成审查已取消', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'canceled', summary: '已取消', coverage: {} }] });
+  show();
+  expect(await screen.findByText('本轮审查已取消')).toBeTruthy();
+});

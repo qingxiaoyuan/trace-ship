@@ -33,7 +33,7 @@ export interface AiReviewFinding {
 export interface AiReviewData {
   node_id: string;
   node_name?: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
   summary: string;
   coverage: { total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[] };
   dimensions?: string[];
@@ -102,6 +102,8 @@ export const workflowApi = {
     post(`/workflow/tasks/${id}/reject/`, data || {}),
   transferTask: (id: string, data: { to_user_id: string; comment?: string }) =>
     post(`/workflow/tasks/${id}/transfer/`, data),
+  returnForRevision: (id: string, data?: { comment?: string }) =>
+    post(`/workflow/tasks/${id}/return-for-revision/`, data || {}),
   rollbackTask: (id: string, data?: { comment?: string; rollback_target?: string }) =>
     post(`/workflow/tasks/${id}/rollback/`, data || {}),
 };

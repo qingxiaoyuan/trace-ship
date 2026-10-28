@@ -374,3 +374,38 @@ def test_reselect_rc_requires_publisher_or_superuser_and_project_access(client, 
     client.force_authenticate(superuser)
     remote.tags.append(TagInfo(name=formal.source_rc.tag_name, commit_hash=formal.source_rc.git_hash))
     assert client.patch(url, {"source_rc": str(formal.source_rc_id)}, format="json").status_code == 200
+
+
+def test_returned_rc_source_requires_reselection_before_resubmission(client, formal, remote, user, monkeypatch):
+    """历史 RC 来源正式单退回后仍走来源保护，重选新 RC 才能重新提审。"""
+    from apps.workflow.models import WorkflowDefinition
+
+    remote.tags.append(TagInfo(name=formal.source_rc_tag, commit_hash=HEAD))
+    definition = WorkflowDefinition.objects.create(project=formal.project, repository=formal.repository,
+        name="正式审批", release_type="formal", node_config=[{
+            "node_id": "check", "node_name": "审批", "mode": "any",
+            "approvers": [{"type": "user", "user_id": str(user.id)}],
+        }])
+    url = f"/api/releases/{formal.id}/"
+    assert client.post(url + "generate-doc/").status_code == 200
+    submitted = client.post(url + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    formal.refresh_from_db()
+    old = formal.workflow_instance
+    task = old.tasks.get(status="pending")
+    assert client.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "修复"}, format="json").status_code == 200
+    assert client.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": "c" * 40}, format="json").status_code == 400
+    new_rc = ReleaseRecord.objects.create(project=formal.project, repository=formal.repository, publisher=user,
+        release_type="rc", status="released", version="VA.9.0.1", tag_name="VA.9.0.1-rc", branch="develop", git_hash="c" * 40)
+    remote.tags.append(TagInfo(name=new_rc.tag_name, commit_hash=new_rc.git_hash))
+    changed = client.patch(url, {"source_rc": str(new_rc.id)}, format="json")
+    assert changed.status_code == 200, changed.data
+    monkeypatch.setattr(remote, "list_release_commits", lambda identity, base, head: [CommitInfo(
+        hash=head, author="开发", author_email="", message="fix: 修复", committed_at=datetime(2026, 10, 1, tzinfo=UTC))])
+    assert client.post(url + "generate-doc/").status_code == 200
+    resubmitted = client.post(url + "submit-audit/")
+    assert resubmitted.status_code == 200, resubmitted.data
+    formal.refresh_from_db()
+    assert formal.source_rc_id == new_rc.id and formal.git_hash == "c" * 40
+    assert formal.workflow_instance_id != old.id and old.tasks.get(pk=task.id).status == "returned"
+    assert formal.workflow_instance.definition_id == definition.id

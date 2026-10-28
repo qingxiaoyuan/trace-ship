@@ -48,6 +48,10 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     can_review = serializers.SerializerMethodField()
     can_reply = serializers.SerializerMethodField()
     cleanup_history = serializers.SerializerMethodField()
+    revision_update_required = serializers.SerializerMethodField()
+
+    def get_revision_update_required(self, obj):
+        return bool(obj.status == "draft" and obj.revision_source_hash and obj.git_hash.lower() == obj.revision_source_hash.lower())
 
     def get_cleanup_history(self, obj):
         return [{"status": item.status, "message": item.message, "protected_by": item.protected_by,
@@ -63,7 +67,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "release_type", "release_type_display", "status", "status_display", "workflow_instance",
-            "release_doc", "review_context", "review_context_is_requirement", "review_document_paths", "doc_needs_regeneration", "related_changes", "updates",
+            "release_doc", "review_context", "review_context_is_requirement", "review_document_paths", "doc_needs_regeneration", "revision_update_required", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
             "self_test_passed", "retest_passed",

@@ -12,6 +12,7 @@ export const workflowStatusMap: Record<
   transferred: { status: 'info', text: '已转交' },
   rollbacked: { status: 'warning', text: '已回退' },
   revoked: { status: 'info', text: '已终止' },
+  returned: { status: 'warning', text: '已退回修改' },
 };
 
 /** 流程实例状态到展示文案/色调的映射（用于详情头徽标） */
@@ -23,6 +24,7 @@ export const instanceStatusMap: Record<
   completed: { text: '已完成', badge: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   rejected: { text: '已驳回', badge: 'border-rose-200 bg-rose-50 text-rose-600' },
   revoked: { text: '已终止', badge: 'border-slate-200 bg-slate-50 text-slate-500' },
+  returned: { text: '已退回修改', badge: 'border-amber-200 bg-amber-50 text-amber-700' },
 };
 
 /** 审批中心 Tab 标识 */

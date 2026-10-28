@@ -18,6 +18,7 @@ const statusText: Record<AiReviewData['status'], string> = {
   first_release: '首次发布，跳过 AI 审查',
   no_changes: '无代码变更',
   skipped: '管理员已跳过 AI 审查',
+  canceled: '本轮审查已取消',
 };
 
 function RecoveryActions({ instanceId, nodeId }: { instanceId: string; nodeId: string }) {

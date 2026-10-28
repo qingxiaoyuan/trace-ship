@@ -329,8 +329,13 @@ class WorkflowEngine:
             from apps.release.models import ReleaseRecord
 
             Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
-            ReleaseRecord.objects.select_for_update().only("id").get(pk=release.pk)
+            if not ReleaseRecord.objects.select_for_update().filter(pk=release.pk, repository_id=release.repository_id).exists():
+                raise serializers.ValidationError({"release": "发布申请已变化，请重新读取"})
         locked = WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
+        locked._locked_release_id = release.pk if release is not None else None
+        locked._locked_repository_id = release.repository_id if release is not None else None
+        if locked.biz_type != instance.biz_type or locked.biz_id != instance.biz_id:
+            raise serializers.ValidationError({"instance": "流程业务身份已变更，请重新读取"})
         if release is not None and locked.source_project_id is None:
             locked.source_project_id = release.project_id
             locked.source_biz_id = locked.biz_id
@@ -345,6 +350,7 @@ class WorkflowEngine:
         comment: str = "",
         to_user: User | None = None,
         rollback_target: str | None = None,
+        actor: User | None = None,
     ) -> WorkflowInstance:
         """
         处理审批任务
@@ -363,6 +369,8 @@ class WorkflowEngine:
             serializers.ValidationError: 非法操作或实例已结束时抛出
         """
         with transaction.atomic():
+            if action == "return_for_revision" and not task.instance.source_project_id:
+                raise serializers.ValidationError({"instance": "无法核验本轮发布的项目快照"})
             instance = cls._lock_instance(task.instance)
             task.refresh_from_db()
             task.instance = instance
@@ -379,6 +387,8 @@ class WorkflowEngine:
                 cls._handle_transfer(task, comment, to_user, now)
             elif action == "rollback":
                 cls._handle_rollback(task, comment, rollback_target, now)
+            elif action == "return_for_revision":
+                cls._handle_return_for_revision(task, actor, comment, now)
             else:
                 raise serializers.ValidationError({"action": "不支持的审批动作"})
 
@@ -419,6 +429,77 @@ class WorkflowEngine:
             description=f"发起人终止流程实例 {instance.biz_id}",
         )
         return instance
+
+    @classmethod
+    def _handle_return_for_revision(cls, task: WorkflowTask, actor: User | None, comment: str, now) -> None:
+        """结束当前轮次并保留历史，将原发布申请交还发起人修改。"""
+        from apps.project.models import ProjectMember
+        from apps.release.models import ReleaseRecord
+        from apps.release.versions import release_claim
+        from apps.workflow.models import AIReviewRun
+        from utils.permissions import ProjectRolePermission
+
+        instance = task.instance
+        if not actor or not User.objects.filter(pk=actor.id, is_active=True).exists() or (
+            not actor.is_superuser and task.approver_id != actor.id
+        ):
+            raise serializers.ValidationError({"task": "只有当前审批人可以退回修改"})
+        if task.node_id != instance.current_node_id:
+            raise serializers.ValidationError({"task": "该任务不属于当前审批节点"})
+        release = resolve_release(instance)
+        if not release or release.pk != getattr(instance, "_locked_release_id", None):
+            raise serializers.ValidationError({"release": "发布申请不存在或无法确认所属项目"})
+        release = ReleaseRecord.objects.select_for_update().filter(
+            pk=release.pk, repository_id=getattr(instance, "_locked_repository_id", None),
+        ).first()
+        if not release:
+            raise serializers.ValidationError({"release": "发布申请已变化，请重新读取"})
+        if (
+            release.status != "pending" or release.workflow_instance_id != instance.id
+            or instance.source_project_id != release.project_id
+            or not instance.source_biz_id or instance.source_biz_id != instance.biz_id
+            or instance.biz_id != str(release.pk)
+        ):
+            raise serializers.ValidationError({"release": "无法核验本轮发布、项目与业务身份"})
+        if not actor.is_superuser and ProjectMember.objects.filter(project=release.project, user=actor).exists():
+            role = ProjectRolePermission._effective_role(release.project, actor)
+            if role in ("maintainer", "viewer"):
+                raise serializers.ValidationError({"task": "只读成员不能退回修改"})
+        if not isinstance(comment, str):
+            raise serializers.ValidationError({"comment": "退回说明格式不正确"})
+        task.status = "returned"
+        task.comment = comment
+        task.action_time = now
+        task.save(update_fields=["status", "comment", "action_time", "updated_at"])
+        instance.tasks.filter(status="pending").exclude(pk=task.pk).update(
+            status="revoked", action_time=now, updated_at=now,
+        )
+        instance.returned_by = actor
+        node_status = instance.node_status or {}
+        node_status[task.node_id] = "returned"
+        instance.node_status = node_status
+        instance.status = "returned"
+        instance.completed_at = now
+        instance.save(update_fields=["status", "completed_at", "returned_by", "node_status", "updated_at"])
+        # 保留执行身份及已收集的覆盖证据；旧执行失效后迟到结果不能写入。
+        from apps.workflow.ai_review import _archive
+
+        for run in AIReviewRun.objects.select_for_update().filter(instance=instance, status__in=["queued", "running"]):
+            _archive(run)
+            run.status = "canceled"
+            run.token = uuid.uuid4()
+            run.summary = "本轮已退回修改，未完成的审查已取消"
+            run.save(update_fields=["history", "status", "token", "summary", "updated_at"])
+        release.status = "draft"
+        release.workflow_instance = None
+        release.doc_needs_regeneration = True
+        release.has_revision_history = True
+        release.revision_source_hash = release.git_hash
+        release.revision_requires_ai_review = release.revision_requires_ai_review or instance.ai_reviews.exists()
+        release.rejected_reason = "退回修改，请查看审批历史"
+        release.save(update_fields=["status", "workflow_instance", "doc_needs_regeneration", "has_revision_history", "revision_source_hash", "revision_requires_ai_review", "rejected_reason", "updated_at"])
+        release_claim(release)
+        OperationLogService.log_workflow(user=actor, task=task, action="return_for_revision", detail={"comment": comment})
 
     @classmethod
     def _handle_approve(cls, task: WorkflowTask, comment: str, now) -> None:
