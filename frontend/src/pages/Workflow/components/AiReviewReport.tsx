@@ -159,6 +159,13 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
     {query.data.reviews.map((review) => <article key={review.node_id} className="space-y-3 rounded-lg border border-slate-200 p-4">
       <h4 className="font-semibold text-slate-800">{review.node_name ? `${review.node_name} · ` : ''}{statusText[review.status] || '审查状态未知'}</h4>
       {review.summary ? <p className="whitespace-pre-wrap break-words text-slate-700">{review.summary}</p> : null}
+      {review.configuration ? <details className="rounded border border-slate-200 p-2 text-sm">
+        <summary className="cursor-pointer font-medium">本轮审查配置</summary>
+        <p className="mt-2 break-all">模型：{review.configuration.model}（{review.configuration.protocol}）</p>
+        <p className="break-all">配置版本：{review.configuration.version_id}</p>
+        <p className="break-all">技能：{review.configuration.skill.name} · {review.configuration.skill.revision}</p>
+        {review.configuration.skill.source ? <a href={review.configuration.skill.source} target="_blank" rel="noreferrer" className="break-all text-indigo-700 underline">查看技能来源</a> : <p>技能来源：管理员上传</p>}
+      </details> : null}
       {review.status === 'skipped' && review.skip_reason ? <p className="whitespace-pre-wrap break-words text-amber-800">跳过原因：{review.skip_reason}；操作者：{review.skipped_by_name || '已删除用户'}；时间：{review.skipped_at || '未知'}</p> : null}
       <div className="text-slate-600">覆盖范围：{review.coverage?.total_files === undefined || review.coverage.reviewed_files === undefined ? '尚未统计' : review.coverage.manifest_complete === false ? `已知 ${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件（完整清单未知）` : `${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件`}</div>
       {review.coverage?.warnings?.length ? <div className="text-amber-700"><PagedPaths paths={review.coverage.warnings} /></div> : null}

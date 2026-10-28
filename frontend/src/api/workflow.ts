@@ -37,6 +37,7 @@ export interface AiReviewData {
   summary: string;
   coverage: { manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[] }> };
   dimensions?: string[];
+  configuration?: { version_id: string; model: string; protocol: string; skill: { name: string; revision: string; source: string; license: string } };
   findings?: AiReviewFinding[];
   can_recover?: boolean;
   skip_reason?: string;

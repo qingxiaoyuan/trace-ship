@@ -321,7 +321,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
 
         node_names = {node.get("node_id"): node.get("node_name", "AI 代码审查") for node in (instance.node_config_snapshot or [])}
         reviews = []
-        for run in instance.ai_reviews.select_related("skipped_by").order_by("created_at"):
+        for run in instance.ai_reviews.select_related("skipped_by", "settings_version").order_by("created_at"):
             expired = lease_expired(run)
             if full:
                 coverage = run.coverage
@@ -343,6 +343,11 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
                     "can_recover": bool(_authorized_manager(request.user, project) and _current(instance, run.node_id)
                                         and (run.status in ("failed", "incomplete") or expired))}
             if full:
+                from apps.system.review_settings import skill_metadata
+
+                config = run.settings_version
+                data["configuration"] = {"version_id": str(config.id), "model": config.model,
+                                         "protocol": config.protocol, "skill": skill_metadata(config)}
                 data.update(dimensions=run.dimensions, findings=run.findings, history=run.history,
                             skip_reason=run.skip_reason, skipped_at=run.skipped_at,
                             skipped_by=str(run.skipped_by_id) if run.skipped_by_id else None,

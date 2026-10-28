@@ -1,5 +1,9 @@
 """AI 审查采纳、修复和人工复核的原单闭环。"""
+from __future__ import annotations
+
 import copy
+import uuid
+from typing import TYPE_CHECKING, Any
 
 from django.db import transaction
 from django.utils import timezone
@@ -11,10 +15,14 @@ from apps.workflow.models import AIReviewRemediation, AIReviewRun, WorkflowInsta
 from apps.workflow.services import WorkflowEngine, resolve_release
 from utils.permissions import ProjectRolePermission
 
+if TYPE_CHECKING:
+    from apps.account.models import User
+    from apps.release.models import ReleaseRecord
+
 OPEN_STATUSES = ("pending_fix", "pending_review")
 
 
-def assert_no_pending(release):
+def assert_no_pending(release: ReleaseRecord) -> None:
     """持有发布锁的调用方使用；所有发布入口不得绕过人工复核。"""
     if AIReviewRemediation.objects.filter(release=release, status__in=OPEN_STATUSES).exists():
         raise serializers.ValidationError({"remediation": "已采纳的审查意见尚未完成人工复核"})
@@ -89,7 +97,10 @@ def _after_original_round(item, release):
     return item.instance.status in ("returned", "revoked") and release.workflow_instance_id != item.instance_id
 
 
-def present(item, user, release, *, can_fix=None, can_review=None):
+def present(
+    item: AIReviewRemediation, user: User, release: ReleaseRecord, *,
+    can_fix: bool | None = None, can_review: bool | None = None,
+) -> dict[str, Any]:
     if can_fix is None:
         can_fix = _can_fix(user, release)
     if can_review is None:
@@ -102,7 +113,7 @@ def present(item, user, release, *, can_fix=None, can_review=None):
             "can_review": can_review and item.status in OPEN_STATUSES}
 
 
-def list_items(instance, user):
+def list_items(instance: WorkflowInstance, user: User) -> dict[str, Any]:
     release = _release(instance)
     if not _can_read(user, release):
         raise PermissionDenied("无权查看审查整改")
@@ -114,7 +125,7 @@ def list_items(instance, user):
 
 
 @transaction.atomic
-def mutate(instance_id, user, data):
+def mutate(instance_id: str | uuid.UUID, user: User, data: dict[str, Any]) -> dict[str, Any]:
     source = WorkflowInstance.objects.filter(pk=instance_id).first()
     if not source:
         raise serializers.ValidationError({"workflow": "审批实例不存在"})

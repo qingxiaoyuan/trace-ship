@@ -1,7 +1,10 @@
 """发布审批中的 AI 节点调度与固定轮次保护。"""
+from __future__ import annotations
+
 import logging
 import uuid
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 from django.db import transaction
 from django.utils import timezone
@@ -11,10 +14,13 @@ from rest_framework.exceptions import PermissionDenied
 from apps.workflow.models import AIReviewRun, WorkflowInstance
 from apps.workflow.services import WorkflowEngine, resolve_release
 
+if TYPE_CHECKING:
+    from apps.account.models import User
+
 logger = logging.getLogger(__name__)
 
 
-def queue_review(instance_id, node_id, expected_token=None):
+def queue_review(instance_id: str | uuid.UUID, node_id: str, expected_token: str | uuid.UUID | None = None) -> None:
     """仅在提交后投递；投递失败停在节点并显示失败。"""
     from apps.workflow.tasks import execute_ai_review
 
@@ -44,12 +50,12 @@ def _same_identity(before, after):
     return all(getattr(before, field) == getattr(after, field) for field in fields)
 
 
-def lease_expired(run):
+def lease_expired(run: AIReviewRun) -> bool:
     """模型请求最多十次、每次五分钟；超时执行权可由后续重试接管。"""
     return run.status == "running" and run.updated_at <= timezone.now() - timedelta(hours=1)
 
 
-def execute_review(instance_id, node_id, expected_token=None):
+def execute_review(instance_id: str | uuid.UUID, node_id: str, expected_token: str | uuid.UUID | None = None) -> None:
     """取执行权、锁外审查，再核验当前流程与执行标识后提交结果。"""
     with transaction.atomic():
         source = WorkflowInstance.objects.filter(pk=instance_id).first()
@@ -81,7 +87,7 @@ def execute_review(instance_id, node_id, expected_token=None):
             from apps.workflow.ai_review_model import review_scope
             outcome = review_scope(run, scope, checkpoint=lambda results, result: _checkpoint(
                 instance_id, node_id, token, results, result,
-            ))
+            ), is_current=lambda: _is_current_execution(instance_id, node_id, token))
             if outcome is None:
                 return
         except Exception:
@@ -127,6 +133,16 @@ def execute_review(instance_id, node_id, expected_token=None):
                 run.save(update_fields=["status", "summary", "updated_at"])
 
 
+def _is_current_execution(instance_id: str | uuid.UUID, node_id: str, token: uuid.UUID) -> bool:
+    """只读核验执行权，等待外部响应时不延长租约。"""
+    instance = WorkflowInstance.objects.filter(pk=instance_id).first()
+    if not instance or not instance.source_project_id or instance.source_biz_id != instance.biz_id:
+        return False
+    return _current(instance, node_id) and AIReviewRun.objects.filter(
+        instance=instance, node_id=node_id, status="running", token=token,
+    ).exists()
+
+
 def _checkpoint(instance_id, node_id, token, results, outcome):
     """仅当前轮、当前执行可保存批次检查点；迟到执行不能覆盖新结果。"""
     with transaction.atomic():
@@ -168,7 +184,9 @@ def _archive(run):
 
 
 @transaction.atomic
-def recover_review(instance_id, node_id, user, *, skip_reason=None):
+def recover_review(
+    instance_id: str | uuid.UUID, node_id: str, user: User, *, skip_reason: str | None = None,
+) -> AIReviewRun:
     """在当前 AI 节点重试或留理由跳过，保留轮次和过往执行。"""
     source = WorkflowInstance.objects.filter(pk=instance_id).first()
     if source is None:

@@ -1,19 +1,50 @@
 """有限只读能力驱动的分批发布代码审查。"""
+from __future__ import annotations
+
 import hashlib
 import json
+import os
 import re
+import time
 import uuid
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from threading import BoundedSemaphore, Event, Lock
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
 import requests
+from django.db import close_old_connections
 
 from apps.release.review_scope import validate_document_paths
 from apps.release.services import ReleaseService
 from utils.crypto import decrypt_credential
 from utils.provider.ai import _build_url, _extract_text, _is_anthropic
 
+if TYPE_CHECKING:
+    from apps.release.models import ReleaseReviewScope
+    from apps.workflow.models import AIReviewRun
+
 MAX_INPUT = 100_000
 MAX_TURNS = 10
+MAX_PARALLEL_BATCHES = 2
+VALIDATION_INTERVAL = 5
+# Celery 进程内各轮共享上限，包括模型、仓库读取和凭证审计。
+_BATCH_SLOTS = BoundedSemaphore(2)
+_EXECUTOR_LOCK = Lock()
+_EXECUTOR = None
+_EXECUTOR_PID = None
+
+
+def _batch_executor():
+    """各 Celery 进程复用两个线程，撤销不会遗留无限增长的线程池。"""
+    global _EXECUTOR, _EXECUTOR_PID
+    with _EXECUTOR_LOCK:
+        pid = os.getpid()
+        if _EXECUTOR is None or _EXECUTOR_PID != pid:
+            _EXECUTOR = ThreadPoolExecutor(max_workers=MAX_PARALLEL_BATCHES, thread_name_prefix="ai-review")
+            _EXECUTOR_PID = pid
+        return _EXECUTOR
 
 
 def _ask(config, messages):
@@ -146,7 +177,28 @@ def _safe_findings(items, diffs):
     return result
 
 
-def _review_batch(run, scope):
+def _limited_batch(callback, canceled, validate=None):
+    """限制同一进程的在途批次，等待名额时可响应执行失效。"""
+    next_check = time.monotonic() + VALIDATION_INTERVAL
+    while not _BATCH_SLOTS.acquire(timeout=0.2):
+        if canceled is not None and canceled.is_set():
+            raise ValueError("审查执行已失效")
+        if validate and time.monotonic() >= next_check:
+            if not validate():
+                canceled.set()
+                raise ValueError("审查执行已失效")
+            next_check = time.monotonic() + VALIDATION_INTERVAL
+    try:
+        if (canceled is not None and canceled.is_set()) or (validate and not validate()):
+            if canceled is not None:
+                canceled.set()
+            raise ValueError("审查执行已失效")
+        return callback()
+    finally:
+        _BATCH_SLOTS.release()
+
+
+def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
     """读取本轮固定证据，按模型请求限定在固定提交上只读访问。"""
     diffs = scope.diffs
     files = [item.get("new_path") or item.get("old_path") for item in diffs]
@@ -163,13 +215,22 @@ def _review_batch(run, scope):
     messages = [{"role": "user", "content": text}]
     from apps.workflow.services import resolve_release
 
-    release = resolve_release(run.instance)
+    if release is None:
+        release = resolve_release(run.instance)
     if release is None:
         raise ValueError("发布不存在")
     provider = None
     gaps = []
     for _ in range(MAX_TURNS):
+        if (canceled is not None and canceled.is_set()) or (validate and not validate()):
+            if canceled is not None:
+                canceled.set()
+            raise ValueError("审查执行已失效")
         payload, raw = _ask(run.settings_version, messages)
+        if (canceled is not None and canceled.is_set()) or (validate and not validate()):
+            if canceled is not None:
+                canceled.set()
+            raise ValueError("审查执行已失效")
         action = payload.get("action")
         if action == "finish":
             reviewed = payload.get("reviewed_files")
@@ -461,7 +522,11 @@ def _stable_findings(run, findings):
     return result
 
 
-def review_scope(run, scope, checkpoint=None):
+def review_scope(
+    run: AIReviewRun, scope: ReleaseReviewScope,
+    checkpoint: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None,
+    is_current: Callable[[], bool] | None = None,
+) -> dict[str, Any] | None:
     """分批审查并保存已完成证据，重试仅执行未完成批次。"""
     results = dict(run.batch_results or {})
     manifest = results.get("__plan__")
@@ -472,27 +537,84 @@ def review_scope(run, scope, checkpoint=None):
         names, plan, blocked = _restore_plan(scope, manifest)
     if checkpoint and not checkpoint(results, _batch_outcome(scope, names, plan, blocked, results)):
         return None
-    for entry in plan:
-        if results.get(entry["id"], {}).get("status") == "completed":
-            continue
-        batch_scope = SimpleNamespace(
-            diffs=entry["diffs"], base_git_hash=scope.base_git_hash, head_git_hash=scope.head_git_hash,
-            context=scope.context, documents=scope.documents, context_is_requirement=scope.context_is_requirement,
-            all_diffs=scope.diffs,
-        )
+    # 读取惰性关联和发布身份只在调度线程完成；工作线程持有固定的只读快照。
+    from apps.workflow.services import resolve_release
+
+    release = resolve_release(run.instance)
+    if release is None:
+        raise ValueError("发布不存在")
+    release.repository
+    run.instance.created_by
+    run.settings_version
+    remaining = [entry for entry in plan if results.get(entry["id"], {}).get("status") != "completed"]
+    pending_entries = iter(remaining)
+    canceled = Event()
+
+    def run_batch(entry, *, manage_connection=True, validate=None):
+        if manage_connection:
+            close_old_connections()
         try:
-            result = _review_batch(run, batch_scope)
-            result["findings"] = _stable_findings(run, result.get("findings", []))
+            batch_scope = SimpleNamespace(
+                diffs=entry["diffs"], base_git_hash=scope.base_git_hash, head_git_hash=scope.head_git_hash,
+                context=scope.context, documents=scope.documents, context_is_requirement=scope.context_is_requirement,
+                all_diffs=scope.diffs,
+            )
+            return _limited_batch(lambda: _review_batch(run, batch_scope, release=release, canceled=canceled, validate=validate), canceled, validate)
         except Exception as exc:
-            # 远端响应可能含敏感内容，只允许已知的固定截断文案进入报告。
+            # 外部响应可能含敏感内容，错误只保留固定文案。
             truncated = str(exc) in ("模型输出截断", "模型输出截断或未确认结束")
             warning = "该批次模型输出截断或未确认结束" if truncated else "该批次执行失败"
-            result = {"status": "failed", "coverage": {"warnings": [warning]},
-                      "dimensions": [], "findings": []}
+            return {"status": "failed", "coverage": {"warnings": [warning]},
+                    "dimensions": [], "findings": []}
+        finally:
+            if manage_connection:
+                close_old_connections()
+
+    if len(remaining) == 1:
+        entry = remaining[0]
+        result = run_batch(entry, manage_connection=False, validate=is_current)
+        result["findings"] = _stable_findings(run, result.get("findings", []))
         results[entry["id"]] = result
         outcome = _batch_outcome(scope, names, plan, blocked, results)
-        if checkpoint and not checkpoint(results, outcome):
-            return None
-        if result.get("status") != "completed":
-            break
-    return _batch_outcome(scope, names, plan, blocked, results)
+        return None if checkpoint and not checkpoint(results, outcome) else outcome
+
+    # 至多两个请求在途；主线程逐个合并并保存，不让并发结果互相覆盖。
+    pool = _batch_executor()
+    active = {}
+    stopped = False
+
+    def fill():
+        while not stopped and len(active) < MAX_PARALLEL_BATCHES:
+            entry = next(pending_entries, None)
+            if entry is None:
+                break
+            active[pool.submit(run_batch, entry)] = entry
+
+    try:
+        fill()
+        while active:
+            done, _ = wait(active, timeout=VALIDATION_INTERVAL, return_when=FIRST_COMPLETED)
+            if not done:
+                # 在等待已发出的请求时仍检查令牌，及时取消排队中的旧批次。
+                if is_current and not is_current():
+                    canceled.set()
+                    return None
+                continue
+            for future in done:
+                entry = active.pop(future)
+                result = future.result()
+                result["findings"] = _stable_findings(run, result.get("findings", []))
+                results[entry["id"]] = result
+                outcome = _batch_outcome(scope, names, plan, blocked, results)
+                if checkpoint and not checkpoint(results, outcome):
+                    canceled.set()
+                    return None
+                if result.get("status") != "completed":
+                    stopped = True
+            # 某批失败时不启动新的批次，但仍保存已有在途批次的结果。
+            fill()
+        return _batch_outcome(scope, names, plan, blocked, results)
+    finally:
+        if canceled.is_set():
+            for future in active:
+                future.cancel()

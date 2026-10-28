@@ -32,7 +32,8 @@ export const changelogEntries: ChangelogEntry[] = [
     summary: '发布审查配置、草稿更新与审批历史',
     items: [
       { category: 'feature', text: '审批人可采纳代码审查意见形成整改项；开发者提交修复说明后由审批人复核，未完成复核时不能批准发布。' },
-      { category: 'improvement', text: '大改动按批次审查，报告展示每批进度与未覆盖文件；重新审查保留已完成批次和意见。' },
+      { category: 'improvement', text: '大改动按批次并行审查，报告展示每批进度与未覆盖文件；重新审查保留已完成批次和意见。' },
+      { category: 'improvement', text: '完整审查报告可查看本轮模型与技能版本，配置更新不会改变历史轮次。' },
       { category: 'feature', text: '审查失败或未完成时，项目管理员可重新审查或留理由跳过 AI；过往执行与跳过记录可追溯，发布仍须人工审批。' },
       { category: 'feature', text: '发布发起人可在草稿中预览新旧提交及代码差异，确认后更新至分支最新提交；原说明和关联变更清空，重新生成后才能提审' },
       { category: 'feature', text: '发布草稿可填写补充审查说明和仓库文档路径，方便在审批中核对审查依据' },

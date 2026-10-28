@@ -1,7 +1,16 @@
 """固定每轮发布代码审查范围和补充上下文。"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from django.db import transaction
 from rest_framework import serializers
+
+if TYPE_CHECKING:
+    from apps.account.models import User
+    from apps.release.models import ReleaseRecord, ReleaseReviewScope
+    from apps.workflow.models import WorkflowInstance
+    from utils.provider.base import GitProvider
 
 
 def validate_document_paths(paths: list[str]) -> list[str]:
@@ -77,7 +86,9 @@ def _baseline(release, provider) -> tuple[str, str]:
 
 
 @transaction.atomic
-def capture_review_scope(release, instance, user, *, provider=None):
+def capture_review_scope(
+    release: ReleaseRecord, instance: WorkflowInstance, user: User, *, provider: GitProvider | None = None,
+) -> ReleaseReviewScope:
     """供提审事务调用；同一实例只保存一次，失败由调用方回滚提审。"""
     import re
 

@@ -201,3 +201,19 @@ it('长意见列表分页后可访问末尾', async () => {
   fireEvent.click(screen.getByRole('button', { name: '意见下一页' }));
   expect(screen.getByText('意见 21')).toBeTruthy();
 });
+
+it('完整报告展示本轮配置身份，摘要不展示配置', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [
+    { node_id: 'ai', status: 'completed', summary: '', coverage: {}, configuration: {
+      version_id: 'original-version', model: 'original-model', protocol: 'openai',
+      skill: { name: 'code-review-expert', revision: 'old-revision', source: 'https://github.com/example/skill', license: 'MIT' },
+    } },
+    { node_id: 'limited', status: 'completed', summary: '', coverage: {} },
+  ] });
+  show();
+  expect(await screen.findByText('本轮审查配置')).toBeTruthy();
+  expect(screen.getByText('模型：original-model（openai）')).toBeTruthy();
+  expect(screen.getByText('技能：code-review-expert · old-revision')).toBeTruthy();
+  expect(screen.getByRole('link', { name: '查看技能来源' }).getAttribute('href')).toBe('https://github.com/example/skill');
+  expect(screen.getAllByText('本轮审查配置')).toHaveLength(1);
+});
