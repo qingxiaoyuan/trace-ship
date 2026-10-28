@@ -207,3 +207,32 @@ def review_settings(request: Request) -> Response:
     serializer.is_valid(raise_exception=True)
     version = save_settings(serializer.validated_data)
     return success_response(settings_response(version), "保存成功")
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated, lambda: HasPermission("system.config")])
+def review_skills(request: Request) -> Response:
+    """上传不可变文档版本并展示清单；文件内容不会被执行。"""
+    from apps.system.models import ReviewSkillVersion
+    from apps.system.review_skill_upload import create_skill, skill_response
+
+    if request.method == "GET":
+        return success_response([skill_response(item) for item in ReviewSkillVersion.objects.all()])
+    upload = request.FILES.get("file")
+    if upload is None:
+        from rest_framework import serializers
+        raise serializers.ValidationError({"file": "请选择文件"})
+    return success_response(skill_response(create_skill(upload)), "上传成功", status=201)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, lambda: HasPermission("system.config")])
+def review_skill_detail(request: Request, pk) -> Response:
+    """仅配置维护者可读取上传的完整文档。"""
+    from django.shortcuts import get_object_or_404
+
+    from apps.system.models import ReviewSkillVersion
+    from apps.system.review_skill_upload import skill_response
+
+    skill = get_object_or_404(ReviewSkillVersion, pk=pk)
+    return success_response({**skill_response(skill), "documents": skill.documents})

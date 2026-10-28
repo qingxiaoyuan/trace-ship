@@ -31,7 +31,7 @@ export const changelogEntries: ChangelogEntry[] = [
     date: '2026-10-28',
     summary: '新增发布代码审查配置',
     items: [
-      { category: 'feature', text: '系统配置可单独保存发布代码审查模型和内置审查技能；密钥不回显，设置变化保留历史版本。' },
+      { category: 'feature', text: '系统配置可单独保存发布代码审查模型，选择内置技能或上传文档型技能；密钥不回显，设置变化保留历史版本。' },
     ],
   },
   {

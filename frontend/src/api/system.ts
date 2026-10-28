@@ -133,3 +133,21 @@ export const reviewSettingsApi = {
   get: () => get<ReviewSettings>('/system/review-settings/'),
   save: (data: ReviewSettingsPayload) => put<ReviewSettings>('/system/review-settings/', data),
 };
+
+
+export interface ReviewSkill {
+  id: string;
+  name: string;
+  files: string[];
+  created_at: string;
+}
+
+export const reviewSkillApi = {
+  list: () => get<ReviewSkill[]>('/system/review-skills/'),
+  detail: (id: string) => get<ReviewSkill & { documents: Record<string, string> }>(`/system/review-skills/${id}/`),
+  upload: (file: File) => {
+    const data = new FormData();
+    data.append('file', file);
+    return post<ReviewSkill>('/system/review-skills/', data, { headers: { 'Content-Type': 'multipart/form-data' }, silent: true });
+  },
+};

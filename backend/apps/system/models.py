@@ -211,3 +211,17 @@ class ReviewSettings(models.Model):
     class Meta:
         db_table = "sys_review_settings"
         verbose_name = "审查配置"
+
+
+class ReviewSkillVersion(models.Model):
+    """上传文档包的不可变版本；审查配置另存所选内容快照。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, verbose_name="技能名称")
+    documents = models.JSONField(verbose_name="技能文档")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="上传时间")
+
+    class Meta:
+        db_table = "sys_review_skill_version"
+        verbose_name = "审查技能版本"
+        ordering = ["-created_at", "-id"]
