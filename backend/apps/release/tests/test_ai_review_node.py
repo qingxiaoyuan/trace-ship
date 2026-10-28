@@ -205,8 +205,14 @@ def test_model_truncation_is_rejected_even_with_nonempty_text(monkeypatch):
 
     class Response:
         status_code = 200
-        def json(self):
-            return {"choices": [{"finish_reason": "length", "message": {"content": '{"action":"finish"}'}}]}
+        headers = {}
+        def __init__(self):
+            self.raw = self
+            self.chunks = iter([b'{"choices":[{"finish_reason":"length","message":{"content":"{}"}}]}', b''])
+        def read1(self, *args, **kwargs):
+            return next(self.chunks)
+        def close(self):
+            pass
     monkeypatch.setattr("apps.workflow.ai_review_model.requests.post", lambda *args, **kwargs: Response())
     config = SimpleNamespace(endpoint="https://model.example/v1", model="review", protocol="openai", encrypted_api_key="")
     with pytest.raises(ValueError, match="截断"):
@@ -381,6 +387,8 @@ def test_model_redirect_does_not_forward_credentials_or_source(monkeypatch):
     calls = []
     class Response:
         status_code = 307
+        def close(self):
+            pass
     def send(*args, **kwargs):
         calls.append(kwargs)
         return Response()
@@ -766,6 +774,7 @@ def test_expired_worker_is_archived_and_late_result_cannot_replace_retry(
     assert instance.tasks.filter(node_id="human", status="pending").count() == 1
 
 
+@pytest.mark.django_db(transaction=True)
 def test_large_review_resumes_only_unfinished_batches_without_losing_findings(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
@@ -776,6 +785,7 @@ def test_large_review_resumes_only_unfinished_batches_without_losing_findings(
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
 
+    monkeypatch.setattr("apps.workflow.ai_review.queue_review", lambda *args: None)
     patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
     diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-old\n+" + "x" * 7500}
              for name in ("first.py", "second.py", "third.py")]
@@ -965,6 +975,7 @@ def test_canceled_review_cannot_save_late_batch_or_advance(
     assert release.status == "draft" and release.workflow_instance_id is None
 
 
+@pytest.mark.django_db(transaction=True)
 def test_batch_can_read_another_batchs_fixed_diff_and_report_its_own_coverage(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
@@ -975,6 +986,7 @@ def test_batch_can_read_another_batchs_fixed_diff_and_report_its_own_coverage(
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
 
+    monkeypatch.setattr("apps.workflow.ai_review.queue_review", lambda *args: None)
     patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
     diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-old\n+" + marker * 7500}
              for name, marker in (("api.py", "a"), ("caller.py", "b"))]
@@ -1055,6 +1067,7 @@ def test_partial_batch_retry_preserves_identical_finding_identity(
     assert adopted.data["data"]["item"]["source_token"] == after["history"][0]["token"]
 
 
+@pytest.mark.django_db(transaction=True)
 def test_large_file_manifest_is_pageable_without_blocking_batches(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
@@ -1065,6 +1078,7 @@ def test_large_file_manifest_is_pageable_without_blocking_batches(
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
 
+    monkeypatch.setattr("apps.workflow.ai_review.queue_review", lambda *args: None)
     patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
     names = [f"dir/{index:04d}-{'x' * 180}.py" for index in range(1001)]
     diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-a\n+b"} for name in names]
@@ -1244,6 +1258,73 @@ def test_parallel_review_revoke_does_not_wait_for_or_save_late_batch(
     assert slow_finished.wait(5)
     run = instance.ai_reviews.get()
     assert run.status != "completed" and not instance.tasks.exists()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("action", ["read", "search"])
+def test_parallel_revoked_model_response_never_reads_source_or_calls_model_again(
+    action, api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    """两个模型请求均在途时撤销，迟到读取指令不能访问仓库或推进流程。"""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review, ai_review_model
+    from apps.workflow.services import WorkflowEngine
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-old\n+" + "x" * 7500}
+             for name in ("first.py", "second.py")]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": diffs, "complete": True, "warnings": []}, raising=False)
+    monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
+    monkeypatch.setattr(ai_review_model, "VALIDATION_INTERVAL", 30)
+    monkeypatch.setattr(ai_review, "queue_review", lambda *args: None)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    started = threading.Barrier(3, timeout=5)
+    resume = threading.Event()
+    finished = threading.Barrier(3, timeout=5)
+    calls = []
+    reads = []
+    monkeypatch.setattr(patched_provider, "get_file_raw", lambda *args, **kwargs: reads.append(args), raising=False)
+
+    def ask(*args):
+        calls.append(True)
+        started.wait()
+        assert resume.wait(5)
+        return {"action": action, "path": "first.py", "query": "secret"}, "{}"
+
+    original_batch = ai_review_model._review_batch
+
+    def batch(*args, **kwargs):
+        try:
+            return original_batch(*args, **kwargs)
+        finally:
+            finished.wait()
+
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    monkeypatch.setattr(ai_review_model, "_review_batch", batch)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(ai_review.execute_review, instance.id, "ai")
+        try:
+            started.wait()
+            WorkflowEngine.revoke_instance(instance, user)
+        finally:
+            resume.set()
+        finished.wait()
+        future.result(timeout=5)
+    assert len(calls) == 2 and not reads
+    release.refresh_from_db()
+    assert release.status == "draft" and release.workflow_instance_id is None
+    assert instance.ai_reviews.get().status != "completed" and not instance.tasks.exists()
 
 
 def test_process_batch_limit_survives_cancellation():

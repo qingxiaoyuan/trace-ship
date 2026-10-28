@@ -1698,6 +1698,7 @@
 - **POST** `/api/workflow/instances/{id}/ai-review-retry/`、`ai-review-skip/`：请求含 `node_id`，跳过另须非空 `reason`；仅目标项目管理员、软件管理员和超管可操作当前失败或未完成节点。重试保留原配置及历史执行；跳过保留操作者、时间、理由并转交后续人工审批。
 - **GET/POST** `/api/workflow/instances/{id}/remediations/`：按目标项目及当前人工审批分配授权读取原轮次整改证据；`adopt` 采纳本轮发现，`fix` 保存修复说明，`resolve` 由当前审批人确认处理，`dismiss` 须填写不采纳理由。整改历史保留操作人和原文；未完成复核时禁止审批通过和推 Tag。显式驳回及删除申请沿用既有终止语义，删除时关联整改记录一并删除，不视为整改完成。维保和只读成员不可读取或处理整改内容。
 - 提审固定审查模型版本、完整技能文档与范围；草稿 `review_context_is_requirement` 仅在用户明确提供真实需求依据时标记，快照的 `context_is_requirement` 随范围固定。模型输出行号必须与固定差异核对，无法定位的意见保留为文件级或整体意见。
+- 模型响应正文上限为 2 MB，读取期间检查 300 秒预算，并设置连接及读取超时；DNS、响应头和分块协议元数据的底层阻塞无法保证严格总时限。每个 Celery 进程最多保留两个在途批次；撤销后的迟到结果不得推进流程。
 
 实例状态：`running` / `completed` / `rejected` / `revoked`。
 
