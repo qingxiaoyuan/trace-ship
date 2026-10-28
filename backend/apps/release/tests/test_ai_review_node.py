@@ -213,7 +213,7 @@ def test_model_truncation_is_rejected_even_with_nonempty_text(monkeypatch):
             return next(self.chunks)
         def close(self):
             pass
-    monkeypatch.setattr("apps.workflow.ai_review_model.requests.post", lambda *args, **kwargs: Response())
+    monkeypatch.setattr("apps.workflow.ai_review_model._ModelSession.post", lambda *args, **kwargs: Response())
     config = SimpleNamespace(endpoint="https://model.example/v1", model="review", protocol="openai", encrypted_api_key="")
     with pytest.raises(ValueError, match="截断"):
         _ask(config, [{"role": "user", "content": "x"}])
@@ -392,7 +392,7 @@ def test_model_redirect_does_not_forward_credentials_or_source(monkeypatch):
     def send(*args, **kwargs):
         calls.append(kwargs)
         return Response()
-    monkeypatch.setattr("apps.workflow.ai_review_model.requests.post", send)
+    monkeypatch.setattr("apps.workflow.ai_review_model._ModelSession.post", send)
     config = SimpleNamespace(endpoint="https://model.example", model="review", protocol="anthropic", encrypted_api_key="")
     with pytest.raises(ValueError, match="模型请求失败"):
         _ask(config, [{"role": "user", "content": "私有源码"}])

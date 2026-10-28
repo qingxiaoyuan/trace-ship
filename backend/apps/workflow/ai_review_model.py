@@ -39,6 +39,13 @@ _EXECUTOR = None
 _EXECUTOR_PID = None
 
 
+class _ModelSession(requests.Session):
+    """禁止 Requests 为准备下一跳而预读重定向响应正文。"""
+
+    def resolve_redirects(self, resp, req, **kwargs):
+        return iter(())
+
+
 def _batch_executor():
     """各 Celery 进程复用两个线程，撤销不会遗留无限增长的线程池。"""
     global _EXECUTOR, _EXECUTOR_PID
@@ -107,12 +114,13 @@ def _ask(config, messages):
         body = {"model": config.model, "max_tokens": 8192, "temperature": 0, "stream": False,
                 "messages": [{"role": "system", "content": system}, *messages]}
     deadline = time.monotonic() + MODEL_TOTAL_TIMEOUT
-    response = requests.post(_build_url(config.endpoint, anthropic), json=body, headers=headers,
-                             timeout=(MODEL_IO_TIMEOUT, MODEL_IO_TIMEOUT), allow_redirects=False, stream=True)
-    try:
-        data = _read_model_response(response, deadline)
-    finally:
-        response.close()
+    with _ModelSession() as session:
+        response = session.post(_build_url(config.endpoint, anthropic), json=body, headers=headers,
+                                timeout=(MODEL_IO_TIMEOUT, MODEL_IO_TIMEOUT), allow_redirects=False, stream=True)
+        try:
+            data = _read_model_response(response, deadline)
+        finally:
+            response.close()
     reason = data.get("stop_reason") if anthropic else (data.get("choices") or [{}])[0].get("finish_reason")
     if reason != ("end_turn" if anthropic else "stop"):
         raise ValueError("模型输出截断或未确认结束")
