@@ -24,9 +24,12 @@ def cleanup_draft_releases() -> dict:
         {"deleted": int} 删除记录数
     """
     expires_at = timezone.now() - timezone.timedelta(hours=1)
+    from apps.workflow.models import AIReviewRemediation
+
+    protected = AIReviewRemediation.objects.values("release_id")
     candidates = list(ReleaseRecord.objects.filter(
         status="draft", created_at__lt=expires_at, has_revision_history=False,
-    ).values_list("id", "repository_id"))
+    ).exclude(pk__in=protected).values_list("id", "repository_id"))
     deleted = 0
     for release_id, repository_id in candidates:
         with transaction.atomic():
@@ -35,7 +38,7 @@ def cleanup_draft_releases() -> dict:
             draft = ReleaseRecord.objects.select_for_update().filter(
                 pk=release_id, repository_id=repository_id, status="draft",
                 created_at__lt=expires_at, has_revision_history=False,
-            ).first()
+            ).exclude(pk__in=protected).first()
             if draft:
                 count, _ = draft.delete()
                 deleted += count

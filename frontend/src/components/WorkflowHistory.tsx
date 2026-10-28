@@ -31,7 +31,7 @@ function WorkflowHistoryList({ releaseId, sessionVersion }: { releaseId: string;
             {data.results.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                 <Link className="text-indigo-600" to={`/workflows/${item.id}`}>
-                  {item.is_current ? '当前审批' : '历史审批'} · {dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}
+                  {item.is_current ? '当前审批' : item.status === 'returned' ? '退回修改，查看整改' : '历史审批'} · {dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}
                 </Link>
                 <span className="text-slate-500">{instanceStatusMap[item.status]?.text || item.status}</span>
               </li>

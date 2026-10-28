@@ -816,6 +816,8 @@ class ReleaseService:
         """返回可安全清理的空草稿条件。"""
         return (
             Q(release_doc="")
+            & Q(has_revision_history=False)
+            & Q(ai_remediations__isnull=True)
             & Q(redmine_url="")
             & Q(review_context="")
             & Q(review_document_paths=[])
@@ -1463,7 +1465,19 @@ class ReleaseService:
                     raise serializers.ValidationError({"workflow": "退回修改后须重新执行 AI 代码审查"})
 
             from apps.release.versions import claim_version
+            from apps.workflow.models import AIReviewRemediation
+            from apps.workflow.remediation import OPEN_STATUSES
 
+            pending_remediations = AIReviewRemediation.objects.filter(release=release, status__in=OPEN_STATUSES)
+            if pending_remediations.exists():
+                if not any(isinstance(node, dict) and node.get("node_type") == "ai_review" for node in (definition.node_config or [])):
+                    raise serializers.ValidationError({"workflow": "未完成的整改须在新轮重新执行 AI 审查"})
+                if pending_remediations.filter(source_git_hash__iexact=release.git_hash).exists():
+                    raise serializers.ValidationError({"git_hash": "未完成的整改须更新源码提交后重新提审"})
+
+            if not definition.node_config:
+                from apps.workflow.remediation import assert_no_pending
+                assert_no_pending(release)
             if release.release_type == "formal":
                 WorkflowEngine.validate_release_definition(definition, release, user)
 
@@ -1618,6 +1632,8 @@ class ReleaseService:
         """
         if release.status != "pending":
             raise serializers.ValidationError({"status": "只有待审批状态才能推 tag"})
+        from apps.workflow.remediation import assert_no_pending
+        assert_no_pending(release)
 
         if release.release_type == "formal":
             if not release.workflow_instance_id or release.workflow_instance.status != "completed":

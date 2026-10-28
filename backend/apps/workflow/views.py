@@ -372,6 +372,35 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             return error_response(40400, "本轮未固定代码差异", status_code=404)
         return success_response({"status": scope.status, "base_git_hash": scope.base_git_hash,
                                  "head_git_hash": scope.head_git_hash, "diffs": scope.diffs})
+    @action(detail=True, methods=["get", "post"], url_path="remediations")
+    def remediations(self, request: Request, pk=None) -> Response:
+        """采纳意见和读取、处理跨轮整改项。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.workflow.remediation import list_items, mutate
+
+        instance = get_object_or_404(WorkflowInstance, pk=pk)
+        if request.method == "GET":
+            return success_response(list_items(instance, request.user))
+
+        class Input(serializers.Serializer):
+            action = serializers.ChoiceField(choices=("adopt", "fix", "resolve", "dismiss"))
+            node_id = serializers.CharField(required=False, max_length=100)
+            finding_id = serializers.CharField(required=False, max_length=100)
+            id = serializers.UUIDField(required=False)
+            comment = serializers.CharField(required=False, allow_blank=True, max_length=4000, trim_whitespace=False)
+
+            def validate(self, attrs):
+                if attrs["action"] == "adopt" and not (attrs.get("node_id") and attrs.get("finding_id")):
+                    raise serializers.ValidationError("请选择审查节点与意见")
+                if attrs["action"] != "adopt" and not attrs.get("id"):
+                    raise serializers.ValidationError("请选择整改项")
+                return attrs
+
+        data = Input(data=request.data)
+        data.is_valid(raise_exception=True)
+        return success_response({"item": mutate(instance.pk, request.user, data.validated_data)})
+
     @action(detail=True, methods=["post"], url_path="ai-review-retry")
     def ai_review_retry(self, request: Request, pk=None) -> Response:
         """重试当前失败审查，保留本轮依据。"""

@@ -1,13 +1,14 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { workflowApi } from '@/api/workflow';
 import { AiReviewReport } from './AiReviewReport';
 import { useAuthStore } from '@/stores/authStore';
 
 function show() {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <AiReviewReport instanceId="round-one" />
+    <MemoryRouter><AiReviewReport instanceId="round-one" /></MemoryRouter>
   </QueryClientProvider>);
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); useAuthStore.getState().clearAuth(); });
@@ -71,7 +72,7 @@ it('第一个 AI 节点完成时即使后续 AI 仍排队也刷新流程', async
     .mockResolvedValueOnce({ reviews: [{ node_id: 'ai-1', status: 'completed', summary: '首个审查完成', coverage }, { node_id: 'ai-2', status: 'queued', summary: '', coverage }] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidate = vi.spyOn(client, 'invalidateQueries');
-  render(<QueryClientProvider client={client}><AiReviewReport instanceId="round-one" /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter><AiReviewReport instanceId="round-one" /></MemoryRouter></QueryClientProvider>);
   expect(await screen.findByText('正在审查')).toBeTruthy();
   expect(await screen.findByText('首个审查完成', {}, { timeout: 5000 })).toBeTruthy();
   expect(screen.getByText('等待审查')).toBeTruthy();
@@ -151,4 +152,25 @@ it('已退回的旧轮明确显示未完成审查已取消', async () => {
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'canceled', summary: '已取消', coverage: {} }] });
   show();
   expect(await screen.findByText('本轮审查已取消')).toBeTruthy();
+});
+
+it('完整审查报告提供当前轮整改采纳入口', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '', coverage: {}, findings: [
+    { id: 'f-1', severity: 'P1', title: '缺失边界', reason: '未校验', suggestion: '补校验' },
+  ] }] });
+  vi.spyOn(workflowApi, 'getRemediations').mockResolvedValue({ items: [], can_adopt: true });
+  show();
+  expect(await screen.findByRole('button', { name: '采纳：缺失边界' })).toBeTruthy();
+});
+
+it('当前轮没有 AI 节点时仍可查看并复核跨轮整改', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [] });
+  vi.spyOn(workflowApi, 'getRemediations').mockResolvedValue({ can_adopt: false, items: [{
+    id: 'item', instance_id: 'older', node_id: 'ai', finding_id: 'f',
+    finding: { id: 'f', severity: 'P1', title: '遗留整改', reason: '需要修复', suggestion: '检查' },
+    status: 'pending_review', fix_note: '已修复', history: [], can_fix: false, can_review: true,
+  }] });
+  show();
+  expect(await screen.findByRole('button', { name: '确认已处理' })).toBeTruthy();
+  expect(screen.getByText('遗留整改')).toBeTruthy();
 });

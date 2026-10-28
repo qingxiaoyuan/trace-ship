@@ -6,6 +6,7 @@ import { workflowApi } from '@/api/workflow';
 import type { AiReviewData, AiReviewFinding } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
 import { ReviewDiff } from './ReviewDiff';
+import { RemediationPanel } from './RemediationPanel';
 import { useAuthStore } from '@/stores/authStore';
 import { uniqueHistoryFindings } from './reviewFindings';
 
@@ -110,7 +111,7 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
   if (query.data && !Array.isArray(query.data.reviews)) return <div role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">AI 审查结果格式错误，请稍后重试。
     <button type="button" className="ml-2 underline" onClick={() => void query.refetch()}>重试</button>
   </div>;
-  if (!query.data?.reviews.length) return null;
+  if (!query.data?.reviews.length) return <RemediationPanel instanceId={instanceId} reviews={[]} />;
   return <section aria-label="AI 代码审查" className="tech-card space-y-4 rounded-xl p-5 text-sm">
     <h3 className="text-[15px] font-semibold text-slate-900">AI 代码审查</h3>
     {query.data.reviews.map((review) => <article key={review.node_id} className="space-y-3 rounded-lg border border-slate-200 p-4">
@@ -140,5 +141,6 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
       {review.can_recover ? <RecoveryActions instanceId={instanceId} nodeId={review.node_id} /> : null}
     </article>)}
     <ReviewDiff instanceId={instanceId} reviews={query.data.reviews} />
+    {query.data.reviews.some((review) => review.findings !== undefined) ? <RemediationPanel instanceId={instanceId} reviews={query.data.reviews} /> : null}
   </section>;
 }

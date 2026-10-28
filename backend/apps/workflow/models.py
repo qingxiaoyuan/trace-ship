@@ -373,3 +373,26 @@ class AIReviewRun(models.Model):
         db_table = "workflow_ai_review_run"
         verbose_name = "AI 代码审查执行"
         constraints = [models.UniqueConstraint(fields=["instance", "node_id"], name="workflow_ai_review_node_unique")]
+
+
+class AIReviewRemediation(models.Model):
+    """人工采纳的代码问题；原始发现和处置历史独立于后续模型执行。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    release = models.ForeignKey("release.ReleaseRecord", on_delete=models.CASCADE, related_name="ai_remediations", verbose_name="发布申请")
+    instance = models.ForeignKey(WorkflowInstance, on_delete=models.CASCADE, related_name="ai_remediations", verbose_name="原审查轮次")
+    run = models.ForeignKey(AIReviewRun, on_delete=models.CASCADE, related_name="remediations", verbose_name="原审查节点")
+    finding_id = models.CharField(max_length=100, verbose_name="原发现标识")
+    finding = models.JSONField(verbose_name="原发现证据")
+    source_git_hash = models.CharField(max_length=100, verbose_name="原审查提交")
+    source_token = models.CharField(max_length=100, verbose_name="原审查执行标识")
+    status = models.CharField(max_length=30, default="pending_fix", verbose_name="整改状态")
+    fix_note = models.TextField(blank=True, verbose_name="修复说明")
+    history = models.JSONField(default=list, verbose_name="处置历史")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "workflow_ai_review_remediation"
+        verbose_name = "AI 审查整改项"
+        constraints = [models.UniqueConstraint(fields=["run", "finding_id"], name="workflow_ai_remediation_finding_unique")]

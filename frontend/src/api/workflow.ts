@@ -46,6 +46,36 @@ export interface AiReviewData {
   history?: Array<{ token: string; status: string; summary: string; updated_at: string; coverage?: AiReviewData['coverage']; dimensions?: string[]; findings?: AiReviewFinding[] }>;
 }
 
+export interface RemediationHistoryEntry {
+  action: 'adopt' | 'fix' | 'resolve' | 'dismiss';
+  actor_name: string;
+  at: string;
+  comment: string;
+  instance_id?: string | null;
+  node_id?: string;
+  task_id?: string | null;
+  git_hash?: string;
+}
+
+export interface ReviewRemediation {
+  id: string;
+  instance_id: string;
+  node_id: string;
+  finding_id: string;
+  source_token?: string;
+  source_git_hash?: string;
+  finding: AiReviewFinding;
+  status: 'pending_fix' | 'pending_review' | 'resolved' | 'dismissed';
+  fix_note: string;
+  history: RemediationHistoryEntry[];
+  can_fix: boolean;
+  can_review: boolean;
+}
+
+export type RemediationAction =
+  | { action: 'adopt'; node_id: string; finding_id: string }
+  | { action: 'fix' | 'resolve' | 'dismiss'; id: string; comment: string };
+
 export interface ReviewDiffFile {
   old_path: string;
   new_path: string;
@@ -81,6 +111,8 @@ export const workflowApi = {
   getReviewScope: (id: string) => get<ReviewScopeData>(`/workflow/instances/${id}/review-scope/`, { silent: true }),
   getAiReview: (id: string) => get<{ reviews: AiReviewData[] }>(`/workflow/instances/${id}/ai-review/`, { silent: true }),
   getReviewDiff: (id: string) => get<ReviewDiffData>(`/workflow/instances/${id}/review-diff/`, { silent: true }),
+  getRemediations: (id: string) => get<{ items: ReviewRemediation[]; can_adopt: boolean }>(`/workflow/instances/${id}/remediations/`, { silent: true }),
+  actOnRemediation: (id: string, data: RemediationAction) => post<{ item: ReviewRemediation }>(`/workflow/instances/${id}/remediations/`, data, { silent: true }),
   retryAiReview: (id: string, node_id: string) => post(`/workflow/instances/${id}/ai-review-retry/`, { node_id }),
   skipAiReview: (id: string, node_id: string, reason: string) => post(`/workflow/instances/${id}/ai-review-skip/`, { node_id, reason }),
   revokeInstance: (id: string, data?: { comment?: string }) =>

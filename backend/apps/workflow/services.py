@@ -380,6 +380,19 @@ class WorkflowEngine:
                 raise serializers.ValidationError({"instance": "流程实例已结束"})
             now = timezone.now()
             if action == "approve":
+                if instance.biz_type == "release":
+                    from apps.workflow.remediation import assert_no_pending
+                    release = resolve_release(instance)
+                    if instance.ai_reviews.exists() and (
+                        release is None or instance.source_project_id != release.project_id
+                        or not instance.source_biz_id or instance.source_biz_id != instance.biz_id
+                        or instance.biz_id != str(release.pk) or release.workflow_instance_id != instance.id
+                        or release.pk != getattr(instance, "_locked_release_id", None)
+                        or release.repository_id != getattr(instance, "_locked_repository_id", None)
+                    ):
+                        raise serializers.ValidationError({"workflow": "无法核验本轮发布与审批身份"})
+                    if release is not None:
+                        assert_no_pending(release)
                 cls._handle_approve(task, comment, now)
             elif action == "reject":
                 cls._handle_reject(task, comment, now)

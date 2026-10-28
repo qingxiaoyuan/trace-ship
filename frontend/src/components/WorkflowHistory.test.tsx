@@ -45,3 +45,13 @@ it('切换发布申请后从第一页加载审批记录', async () => {
   await waitFor(() => expect(requests).toContainEqual(expect.objectContaining({ biz_id: 'second', page: 1 })));
   expect(requests).not.toContainEqual(expect.objectContaining({ biz_id: 'second', page: 2 }));
 });
+
+it('退回草稿可从审批记录进入整改原轮', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  request.defaults.adapter = async (config) => ({ config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data: {
+    total: 1, results: [{ id: 'returned-round', is_current: false, status: 'returned', created_at: '2026-10-28T10:00:00Z' }],
+  } } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><MemoryRouter><WorkflowHistory releaseId="release" /></MemoryRouter></QueryClientProvider>);
+  expect((await screen.findByRole('link', { name: /退回修改，查看整改/ })).getAttribute('href')).toBe('/workflows/returned-round');
+});
