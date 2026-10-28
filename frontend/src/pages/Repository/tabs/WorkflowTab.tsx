@@ -231,6 +231,12 @@ export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
     selectNode(next.length - 1);
   };
 
+  const addAiNode = () => {
+    const next: WorkflowNodeConfig[] = [...nodes, { node_id: genNodeId(), node_name: 'AI 代码审查', node_type: 'ai_review', mode: 'any', approvers: [] }];
+    setNodes(next);
+    selectNode(next.length - 1);
+  };
+
   /** 删除节点 */
   const delNode = () => {
     const next = [...nodes];
@@ -263,6 +269,10 @@ export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
   /** 保存：有变更才提交 */
   const handleSave = async () => {
     if (!editingDef) return;
+    if (nodes.some((node, index) => node.node_type === 'ai_review' && !nodes.slice(index + 1).some((next) => next.node_type !== 'ai_review'))) {
+      message.error('AI 审查节点后必须有人工审批节点');
+      return;
+    }
     if (JSON.stringify(nodes) === JSON.stringify(origNodes)) {
       message.info('无变更');
       selectNode(0);
@@ -391,6 +401,7 @@ export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
                   <h2 className="text-[14px] font-semibold text-slate-900">{curMeta.title}</h2>
                 </div>
                 {canManage && (
+                  <div className="flex flex-wrap gap-2">
                   <button
                     onClick={addNode}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/40 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-white hover:text-indigo-600"
@@ -398,6 +409,10 @@ export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
                     <Plus className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                     添加节点
                   </button>
+                  <button type="button" onClick={addAiNode} className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50/40 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-600">
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />添加 AI 审查节点
+                  </button>
+                  </div>
                 )}
               </div>
               <div className="px-5 py-6">
@@ -447,10 +462,10 @@ export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
                             <div>
                               <div className="text-[13px] font-semibold text-slate-900">{node.node_name || '未命名节点'}</div>
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] max-md:text-xs font-medium ${mode.chipCls}`}>
+                                {node.node_type === 'ai_review' ? <span className="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">AI 代码审查</span> : <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] max-md:text-xs font-medium ${mode.chipCls}`}>
                                   <ModeIcon className="h-2.5 w-2.5" style={{ strokeWidth: 1.5 }} />
                                   {mode.label}
-                                </span>
+                                </span>}
                                 {(node.approvers || []).map((apr, ai) => {
                                   const d = approverDisplay(apr, usersData);
                                   const AI = d.icon;
@@ -531,6 +546,7 @@ export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
                       />
                     </div>
 
+                    {curNode.node_type === 'ai_review' ? <div className="mb-5 rounded-lg bg-indigo-50 p-3 text-[12px] text-indigo-700">使用系统配置的审查模型和技能。审查意见供后续人工审批参考。</div> : <>
                     {/* 审批模式 */}
                     <div className="mb-5">
                       <label className="mb-1.5 flex items-center gap-1 text-[12.5px] font-medium text-slate-600">
@@ -640,6 +656,8 @@ export function WorkflowTab({ repository, active = true }: WorkflowTabProps) {
                         </div>
                       )}
                     </div>
+
+                    </>}
 
                     {/* 删除节点 */}
                     {canManage && (

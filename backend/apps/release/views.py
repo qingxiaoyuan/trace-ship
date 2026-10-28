@@ -334,6 +334,7 @@ class ReleaseViewSet(StandardModelViewSet):
                 retest_passed=data.get("retest_passed", False),
                 package_config_ids=data.get("package_config_ids"),
                 review_context=data.get("review_context", ""),
+                review_context_is_requirement=data.get("review_context_is_requirement", False),
                 review_document_paths=data.get("review_document_paths", []),
             )
         except Exception as exc:
@@ -360,7 +361,7 @@ class ReleaseViewSet(StandardModelViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        if {"review_context", "review_document_paths"} & data.keys():
+        if {"review_context", "review_context_is_requirement", "review_document_paths"} & data.keys():
             if not request.user.is_superuser and instance.publisher_id != request.user.id:
                 return error_response(40300, "只有发布发起人可以修改审查上下文", status_code=403)
 
@@ -389,6 +390,7 @@ class ReleaseViewSet(StandardModelViewSet):
             return _handle_service_error(exc, "更新来源提交")
         instance.redmine_url = data.get("redmine_url", instance.redmine_url)
         instance.review_context = data.get("review_context", instance.review_context)
+        instance.review_context_is_requirement = data.get("review_context_is_requirement", instance.review_context_is_requirement)
         instance.review_document_paths = data.get("review_document_paths", instance.review_document_paths)
 
         # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
@@ -435,7 +437,7 @@ class ReleaseViewSet(StandardModelViewSet):
             instance.doc_source_fixed = True
         instance.save(
             update_fields=[
-                "branch", "version", "tag_name", "redmine_url", "review_context", "review_document_paths", "git_hash", "updated_at",
+                "branch", "version", "tag_name", "redmine_url", "review_context", "review_context_is_requirement", "review_document_paths", "git_hash", "updated_at",
                 "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
                 "base_tag", "base_git_hash", "changes_initialized", "changes_warnings",
                 "release_doc", "updates", "related_changes", "doc_needs_regeneration", "doc_source_fixed",

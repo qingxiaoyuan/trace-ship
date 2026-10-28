@@ -74,12 +74,12 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
   const taskId = source.taskId;
   const canApprove = !source.readOnly && !!taskId && instance?.tasks?.some((task) => task.id === taskId && task.can_act === true);
 
-  // 回退：当前节点不是第一个审批节点时才允许
+  // 只回退到紧邻的人工节点，不能跨越已执行的 AI 节点。
   const approvalNodes = (instance?.graph_data?.nodes || []).filter(
-    (n) => n.type === 'approval-node',
+    (n) => n.type === 'approval-node' || n.type === 'ai-review-node',
   );
   const currentNodeIndex = approvalNodes.findIndex((n) => n.id === instance?.current_node_id);
-  const canRollback = currentNodeIndex > 0;
+  const canRollback = currentNodeIndex > 0 && approvalNodes[currentNodeIndex - 1].type === 'approval-node';
 
   const { data: usersData } = useQuery({
     queryKey: ['users-for-transfer'],

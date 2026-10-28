@@ -305,3 +305,25 @@ class WorkflowTask(models.Model):
     def __str__(self) -> str:
         """返回任务描述"""
         return f"{self.node_name} - {self.approver.username or self.approver.id}"
+
+
+class AIReviewRun(models.Model):
+    """固定审批轮次内的 AI 审查节点及其不可变配置引用。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instance = models.ForeignKey(WorkflowInstance, on_delete=models.CASCADE, related_name="ai_reviews", verbose_name="审批轮次")
+    node_id = models.CharField(max_length=100, verbose_name="节点标识")
+    settings_version = models.ForeignKey("system.ReviewSettingsVersion", on_delete=models.PROTECT, verbose_name="审查配置快照")
+    status = models.CharField(max_length=30, default="queued", verbose_name="审查状态")
+    summary = models.CharField(max_length=500, blank=True, verbose_name="无源码状态摘要")
+    dimensions = models.JSONField(default=list, verbose_name="实际审查维度")
+    coverage = models.JSONField(default=dict, verbose_name="覆盖范围")
+    findings = models.JSONField(default=list, verbose_name="审查发现")
+    token = models.UUIDField(default=uuid.uuid4, verbose_name="当前执行标识")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        db_table = "workflow_ai_review_run"
+        verbose_name = "AI 代码审查执行"
+        constraints = [models.UniqueConstraint(fields=["instance", "node_id"], name="workflow_ai_review_node_unique")]

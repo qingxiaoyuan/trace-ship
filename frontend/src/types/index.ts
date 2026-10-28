@@ -134,6 +134,7 @@ export interface Release {
   /** 提审时补充的审查说明及仓库内文档路径。 */
   review_context?: string;
   review_document_paths?: string[];
+  review_context_is_requirement?: boolean;
   release_type: ReleaseType;
   /** 发布类型中文展示（列表接口返回） */
   release_type_display?: string;
@@ -973,6 +974,7 @@ export interface WorkflowApproverConfig {
 export interface WorkflowNodeConfig {
   node_id: string;
   node_name: string;
+  node_type?: 'approval' | 'ai_review';
   approvers: WorkflowApproverConfig[];
   mode: 'any' | 'all';
 }

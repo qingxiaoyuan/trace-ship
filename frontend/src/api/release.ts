@@ -36,8 +36,8 @@ export const releaseApi = {
     get<PaginatedData<RcCandidate>>('/releases/rc-candidates/', { params }),
   updateSource: (id: string, sourceRc: string) =>
     patch<Release>(`/releases/${id}/`, { source_rc: sourceRc }),
-  updateReviewContext: (id: string, reviewContext: string, reviewDocumentPaths: string[]) =>
-    patch<Release>(`/releases/${id}/`, { review_context: reviewContext, review_document_paths: reviewDocumentPaths }),
+  updateReviewContext: (id: string, reviewContext: string, reviewDocumentPaths: string[], isRequirement = false) =>
+    patch<Release>(`/releases/${id}/`, { review_context: reviewContext, review_document_paths: reviewDocumentPaths, review_context_is_requirement: isRequirement }),
   getReleases: (params?: Record<string, unknown>) =>
     get<PaginatedData<Release>>('/releases/', { params }),
   getRelease: (id: string) => get<Release>(`/releases/${id}/`),

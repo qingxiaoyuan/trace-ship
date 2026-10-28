@@ -127,5 +127,6 @@ def capture_review_scope(release, instance, user, *, provider=None):
         status = "incomplete" if not result["complete"] else ("ready" if diffs else "no_changes")
     return ReleaseReviewScope.objects.create(
         instance=instance, base_tag=base_tag, base_git_hash=base, head_git_hash=head,
-        context=release.review_context, documents=documents, diffs=diffs, warnings=warnings, status=status,
+        context=release.review_context, context_is_requirement=release.review_context_is_requirement,
+        documents=documents, diffs=diffs, warnings=warnings, status=status,
     )

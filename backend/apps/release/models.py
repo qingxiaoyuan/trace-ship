@@ -108,6 +108,7 @@ class ReleaseRecord(models.Model):
     # 发布说明文档：Markdown 格式字符串（2 列表格），可手动编辑
     release_doc = models.TextField(blank=True, verbose_name="发布说明文档")
     review_context = models.TextField(blank=True, verbose_name="补充审查说明")
+    review_context_is_requirement = models.BooleanField(default=False, verbose_name="补充内容包含真实需求")
     review_document_paths = models.JSONField(default=list, blank=True, verbose_name="审查文档路径")
     doc_needs_regeneration = models.BooleanField(default=False, verbose_name="发布说明需要重新生成")
     doc_source_fixed = models.BooleanField(default=False, verbose_name="说明采用固定提交范围")
@@ -184,6 +185,7 @@ class ReleaseReviewScope(models.Model):
     base_git_hash = models.CharField(max_length=100, blank=True, verbose_name="基线提交")
     head_git_hash = models.CharField(max_length=100, verbose_name="目标提交")
     context = models.TextField(blank=True, verbose_name="补充审查说明快照")
+    context_is_requirement = models.BooleanField(default=False, verbose_name="补充内容包含真实需求快照")
     documents = models.JSONField(default=dict, verbose_name="审查文档内容快照")
     diffs = models.JSONField(default=list, verbose_name="代码差异快照")
     warnings = models.JSONField(default=list, verbose_name="覆盖缺口")

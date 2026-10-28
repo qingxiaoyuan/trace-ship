@@ -36,3 +36,9 @@ it('读取失败时给出重试，而不是伪装成没有审查范围', async (
   expect((await screen.findByRole('alert')).textContent).toContain('服务暂不可用');
   expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
 });
+
+it('仅在服务端返回时展示本轮真实需求标记', async () => {
+  vi.spyOn(workflowApi, 'getReviewScope').mockResolvedValue({ status: 'ready', base_tag: 'v1', base_git_hash: 'a', head_git_hash: 'b', warnings: [], context_is_requirement: true });
+  show();
+  expect(await screen.findByText('本轮已标记包含真实需求依据')).toBeTruthy();
+});

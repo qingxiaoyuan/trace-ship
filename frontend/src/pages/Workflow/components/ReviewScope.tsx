@@ -36,6 +36,7 @@ export function ReviewScope({ instanceId }: { instanceId: string }) {
       <div><dt className="text-slate-500">目标提交</dt><dd className="break-all font-mono">{data.head_git_hash || '未提供'}</dd></div>
     </dl>
     {data.warnings?.length ? <ul className="list-inside list-disc text-amber-700">{data.warnings.map((warning, index) => <li key={`${index}:${warning}`}>{warning}</li>)}</ul> : null}
+    {data.context_is_requirement === true ? <p className="text-slate-600">本轮已标记包含真实需求依据</p> : data.context_is_requirement === false ? <p className="text-slate-600">本轮未标记真实需求依据</p> : null}
     {data.context ? <div><h4 className="font-medium">补充审查说明</h4><p className="mt-1 whitespace-pre-wrap break-words">{data.context}</p></div> : null}
     {data.documents && Object.entries(data.documents).map(([path, content]) => <details key={path} className="rounded-lg border border-slate-200 p-3">
       <summary className="cursor-pointer break-all font-mono">{path}</summary>

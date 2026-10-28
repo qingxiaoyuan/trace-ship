@@ -57,7 +57,7 @@ export function ReviewSettingsCard() {
           <ShieldCheck className="mt-0.5 h-5 w-5 text-indigo-500" aria-hidden="true" />
           <div>
             <h2 id="review-settings-title" className="text-[14px] font-semibold text-slate-900">发布代码审查配置</h2>
-            <p className="mt-1 text-[12px] text-slate-500">与打包脚本模型独立；审查只读取代码，发布由人工决定。计划接入只读读取、搜索、差异获取和并行审查；执行能力待接入，不执行技能中的脚本或安装命令。</p>
+            <p className="mt-1 text-[12px] text-slate-500">与打包脚本模型独立；单批审查支持固定提交的只读访问，发布由人工决定。大改动分批审查待接入；不执行技能中的脚本或安装命令。</p>
           </div>
         </div>
         <button type="button" disabled={isLoading || isError || save.isPending || upload.isPending || skills.isError} onClick={() => {

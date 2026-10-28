@@ -13,6 +13,7 @@ import { ApprovalActions } from './ApprovalActions';
 import { ReleaseSummary } from './ReleaseSummary';
 import { ReleaseDocCard } from './ReleaseDocCard';
 import { ReviewScope } from './ReviewScope';
+import { AiReviewReport } from './AiReviewReport';
 import type { DetailSource } from '../types';
 import type { ReleaseType } from '@/types';
 
@@ -156,6 +157,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
           {/* 变更文档 */}
           {instance && (instance.is_current || isRunning) ? <ReleaseDocCard doc={instance.release_doc} /> : null}
           {instance?.biz_type === 'release' ? <ReviewScope key={instance.id} instanceId={instance.id} /> : null}
+          {instance?.biz_type === 'release' ? <AiReviewReport key={`ai-${instance.id}`} instanceId={instance.id} /> : null}
 
           {/* 审批意见 + 操作 */}
           <ApprovalActions source={detailSource} instance={instance ?? null} onBack={onBack} />

@@ -1,4 +1,4 @@
-import { Check, Tag, UserCheck } from 'lucide-react';
+import { Bot, Check, Tag, UserCheck } from 'lucide-react';
 import dayjs from 'dayjs';
 import type { LucideIcon } from 'lucide-react';
 import type { WorkflowInstance, WorkflowTask } from '@/types';
@@ -68,11 +68,11 @@ export function ApprovalTimeline({ instance }: { instance: WorkflowInstance }) {
   /** 判断单个节点状态 */
   const stateOf = (node: GraphNode): NodeState => {
     if (node.type === 'start-node') return 'done';
-    if (instance.status === 'revoked' && nodeStatus[node.id] !== 'approved') return 'revoked';
+    if (instance.status === 'revoked' && !['approved', 'completed', 'first_release', 'no_changes'].includes(nodeStatus[node.id])) return 'revoked';
     if (node.type === 'end-node') {
       return instance.status === 'completed' ? 'done' : 'pending';
     }
-    if (nodeStatus[node.id] === 'approved') return 'done';
+    if (['approved', 'completed', 'first_release', 'no_changes'].includes(nodeStatus[node.id])) return 'done';
     if (node.id === instance.current_node_id && instance.status === 'running') return 'running';
     return 'pending';
   };
@@ -96,6 +96,7 @@ export function ApprovalTimeline({ instance }: { instance: WorkflowInstance }) {
             node={node}
             isLast={isLast}
             nodeType={node.type}
+            result={nodeStatus[node.id]}
           />
         );
       })}
@@ -112,6 +113,7 @@ function TimelineNode({
   node,
   isLast,
   nodeType,
+  result,
 }: {
   name: string;
   state: NodeState;
@@ -120,8 +122,9 @@ function TimelineNode({
   node: GraphNode;
   isLast: boolean;
   nodeType: string;
+  result?: string;
 }) {
-  const Icon: LucideIcon = nodeType === 'start-node' ? Check : nodeType === 'end-node' ? Tag : UserCheck;
+  const Icon: LucideIcon = nodeType === 'start-node' ? Check : nodeType === 'end-node' ? Tag : nodeType === 'ai-review-node' ? Bot : UserCheck;
 
   const dotClass = {
     done: 'bg-emerald-500 text-white',
@@ -131,7 +134,7 @@ function TimelineNode({
   }[state];
 
   const badge = {
-    done: { text: nodeType === 'start-node' ? '已完成' : '已通过', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    done: { text: nodeType === 'start-node' || nodeType === 'ai-review-node' ? (result === 'first_release' ? '首次发布跳过' : result === 'no_changes' ? '无代码变更' : '已完成') : '已通过', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
     running: { text: '进行中', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
     pending: { text: '待处理', cls: 'border-slate-200 bg-slate-50 text-slate-400' },
     revoked: { text: '已终止', cls: 'border-slate-200 bg-slate-50 text-slate-500' },
@@ -176,6 +179,8 @@ function TimelineNode({
                   ]
                     .filter(Boolean)
                     .join(' · ')
+                : nodeType === 'ai-review-node'
+                  ? '审查意见由人工决定'
                 : nodeType === 'start-node'
                   ? '发起申请'
                   : '自动执行'}

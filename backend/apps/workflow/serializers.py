@@ -76,6 +76,12 @@ class WorkflowDefinitionSerializer(serializers.ModelSerializer):
             "graph_data", "is_active", "created_by", "created_at", "updated_at",
         ]
 
+    def validate_node_config(self, nodes: list) -> list:
+        from apps.workflow.services import WorkflowEngine
+
+        WorkflowEngine.validate_node_config(nodes)
+        return nodes
+
     def create(self, validated_data: dict) -> WorkflowDefinition:
         """创建流程定义时根据 node_config 自动生成 graph_data"""
         validated_data["node_config"] = self._normalize_node_config(validated_data.get("node_config", []))

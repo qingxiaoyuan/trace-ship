@@ -1004,6 +1004,7 @@ class ReleaseService:
         package_config_ids: list | None = None,
         source_rc: UUID | str | None = None,
         review_context: str = "",
+        review_context_is_requirement: bool = False,
         review_document_paths: list | None = None,
     ) -> ReleaseRecord:
         """
@@ -1133,6 +1134,7 @@ class ReleaseService:
             tag_name=tag_name,
             redmine_url=redmine_url or "",
             review_context=review_context,
+            review_context_is_requirement=review_context_is_requirement,
             review_document_paths=review_document_paths or [],
             source_rc=source,
             source_rc_version=source.version if source else "",
@@ -1463,7 +1465,23 @@ class ReleaseService:
                     biz_type="release",
                     biz_id=str(release.id),
                     user=user,
+                    allow_ai_release=True,
                 )
+                ai_nodes = [node for node in instance.node_config_snapshot if node.get("node_type") == "ai_review"]
+                if ai_nodes:
+                    from apps.release.review_scope import capture_review_scope
+                    from apps.system.review_settings import current_version
+                    from apps.workflow.models import AIReviewRun
+
+                    config = current_version()
+                    if config is None:
+                        raise serializers.ValidationError({"workflow": "请先配置审查模型和技能"})
+                    scope = capture_review_scope(release, instance, user, provider=provider)
+                    AIReviewRun.objects.bulk_create([
+                        AIReviewRun(instance=instance, node_id=node["node_id"], settings_version=config,
+                                    coverage={"total_files": len(scope.diffs), "reviewed_files": 0, "warnings": scope.warnings})
+                        for node in ai_nodes
+                    ])
                 release.workflow_instance = instance
             release.status = "pending"
             release.save(update_fields=["workflow_instance", "status", "updated_at"])

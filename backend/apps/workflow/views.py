@@ -277,8 +277,47 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             "head_git_hash": scope.head_git_hash, "warnings": scope.warnings, "created_at": scope.created_at,
         }
         if full_access:
-            data.update(context=scope.context, documents=scope.documents, diffs=scope.diffs)
+            data.update(context=scope.context, context_is_requirement=scope.context_is_requirement,
+                        documents=scope.documents, diffs=scope.diffs)
         return success_response(data)
+
+    @action(detail=True, methods=["get"], url_path="ai-review")
+    def ai_review(self, request: Request, pk=None) -> Response:
+        """摘要及完整报告按目标项目和本轮审批分配分别授权。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.project.models import ProjectMember
+        from utils.permissions import ProjectRolePermission
+
+        instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
+        project = instance.source_project
+        member = bool(project and ProjectMember.objects.filter(project=project, user=request.user).exists())
+        assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
+        if not (request.user.is_superuser or member or assigned):
+            return error_response(40400, "本轮审查不存在或不可见", status_code=404)
+        if not request.user.is_superuser and not project:
+            return error_response(40300, "无法核验所属项目", status_code=403)
+        role = ProjectRolePermission._effective_role(project, request.user) if member else None
+        full = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
+        if not member and assigned:
+            full = True
+        from apps.workflow.ai_review import lease_expired
+
+        node_names = {node.get("node_id"): node.get("node_name", "AI 代码审查") for node in (instance.node_config_snapshot or [])}
+        reviews = []
+        for run in instance.ai_reviews.all().order_by("created_at"):
+            expired = lease_expired(run)
+            coverage = run.coverage if full else {
+                key: value for key, value in run.coverage.items()
+                if key in ("total_files", "reviewed_files", "warnings")
+            }
+            data = {"node_id": run.node_id, "node_name": node_names.get(run.node_id, "AI 代码审查"),
+                    "status": "failed" if expired else run.status,
+                    "summary": "审查执行中断或超时，等待重试" if expired else run.summary, "coverage": coverage}
+            if full:
+                data.update(dimensions=run.dimensions, findings=run.findings)
+            reviews.append(data)
+        return success_response({"reviews": reviews})
 
     @action(detail=False, methods=["get"], url_path="initiated")
     def initiated(self, request: Request) -> Response:

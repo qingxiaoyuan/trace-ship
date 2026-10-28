@@ -118,3 +118,25 @@ def test_developer_cannot_update_node_config(definition):
     )
 
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_ai_review_node_requires_later_human_approval(definition, owner):
+    client = auth_client(owner)
+    url = f"/api/workflow/definitions/{definition.id}/"
+    ai = {"node_id": "ai_1", "node_name": "AI 代码审查", "node_type": "ai_review"}
+    assert client.patch(url, {"node_config": [ai]}, format="json").status_code == 400
+    result = client.patch(url, {"node_config": [ai, *_new_node_config()]}, format="json")
+    assert result.status_code == 200
+    definition.refresh_from_db()
+    assert definition.node_config[0]["node_type"] == "ai_review"
+    assert definition.graph_data["nodes"][1]["type"] == "ai-review-node"
+
+
+@pytest.mark.django_db
+def test_ai_node_cannot_share_id_with_human(definition, owner):
+    client = auth_client(owner)
+    nodes = [{"node_id": "same", "node_type": "ai_review"},
+             {"node_id": "same", "node_type": "approval", "approvers": [{"type": "leader"}]}]
+    response = client.patch(f"/api/workflow/definitions/{definition.id}/", {"node_config": nodes}, format="json")
+    assert response.status_code == 400

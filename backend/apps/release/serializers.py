@@ -63,7 +63,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "release_type", "release_type_display", "status", "status_display", "workflow_instance",
-            "release_doc", "review_context", "review_document_paths", "doc_needs_regeneration", "related_changes", "updates",
+            "release_doc", "review_context", "review_context_is_requirement", "review_document_paths", "doc_needs_regeneration", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
             "self_test_passed", "retest_passed",
@@ -92,6 +92,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             role = ProjectRolePermission._effective_role(instance.project, request.user)
             if role in ("maintainer", "viewer"):
                 data.pop("review_context", None)
+                data.pop("review_context_is_requirement", None)
                 data.pop("review_document_paths", None)
         return data
 
@@ -224,6 +225,11 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             for field in ("project", "repository", "release_type"):
                 if field in attrs and attrs[field] != getattr(self.instance, field):
                     raise serializers.ValidationError({field: "草稿不能更换项目、仓库或发布类型，请重新创建"})
+        marked = attrs.get("review_context_is_requirement", getattr(self.instance, "review_context_is_requirement", False))
+        context = attrs.get("review_context", getattr(self.instance, "review_context", ""))
+        paths = attrs.get("review_document_paths", getattr(self.instance, "review_document_paths", []))
+        if marked and not (context.strip() or paths):
+            raise serializers.ValidationError({"review_context_is_requirement": "请先填写真实需求说明或文档路径"})
         release_type = attrs.get("release_type", getattr(self.instance, "release_type", "formal"))
         branch = attrs.get("branch", getattr(self.instance, "branch", ""))
         source_rc = attrs.get("source_rc", getattr(self.instance, "source_rc_id", None))

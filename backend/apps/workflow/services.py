@@ -99,17 +99,39 @@ class WorkflowEngine:
     """
 
     APPROVAL_NODE_TYPE = "approval-node"
+    AI_NODE_TYPE = "ai-review-node"
     START_NODE_TYPE = "start-node"
     END_NODE_TYPE = "end-node"
+
+    @staticmethod
+    def validate_node_config(nodes: list[dict[str, Any]]) -> None:
+        """AI 节点后必须存在人工审批，不能独自决定发布。"""
+        if not isinstance(nodes, list) or any(not isinstance(node, dict) for node in nodes):
+            raise serializers.ValidationError({"node_config": "审批节点配置不合法"})
+        ids = [node.get("node_id") for node in nodes if "node_id" in node]
+        if any(not isinstance(value, str) or not value.strip() or value.strip() != value or value in ("start", "end")
+               for value in ids) or len(set(ids)) != len(ids):
+            raise serializers.ValidationError({"node_config": "节点标识必须非空且唯一"})
+        for index, node in enumerate(nodes):
+            node_type = node.get("node_type", "approval")
+            if node_type not in ("approval", "ai_review"):
+                raise serializers.ValidationError({"node_config": "不支持的节点类型"})
+            if node_type == "ai_review" and not any(
+                later.get("node_type", "approval") == "approval" for later in nodes[index + 1:]
+            ):
+                raise serializers.ValidationError({"node_config": "AI 代码审查后必须配置人工审批"})
 
     @classmethod
     def validate_release_definition(cls, definition, release, user) -> None:
         """正式申请提交前核验整条审批链，不把未来失效节点留到发布中途。"""
         nodes = cls._normalize_node_config(definition.node_config or [])
+        cls.validate_node_config(nodes)
         if not nodes:
             raise serializers.ValidationError({"workflow": "正式审批必须配置有效审批节点，请联系仓库管理员"})
         candidate = WorkflowInstance(definition=definition, biz_type="release", biz_id=str(release.id), created_by=user)
         for node in nodes:
+            if node.get("node_type") == "ai_review":
+                continue
             if not cls._resolve_node_approvers(node.get("approvers", []), candidate):
                 raise serializers.ValidationError({"workflow": f"审批节点 {node.get('node_name', '')} 无有效审批人，请联系仓库管理员"})
 
@@ -120,6 +142,7 @@ class WorkflowEngine:
         biz_type: str,
         biz_id: str,
         user,
+        allow_ai_release: bool = False,
     ) -> WorkflowInstance:
         """
         根据定义创建实例并生成第一个审批节点的任务
@@ -137,12 +160,18 @@ class WorkflowEngine:
             serializers.ValidationError: 审批链为空或未解析到审批人时抛出
         """
         node_config = cls._normalize_node_config(definition.node_config or [])
+        cls.validate_node_config(node_config)
+        if any(node.get("node_type") == "ai_review" for node in node_config) and not allow_ai_release:
+            raise serializers.ValidationError({"workflow": "AI 审查只能通过发布提审启动"})
         if not node_config:
             raise serializers.ValidationError({"node_config": "流程定义中未配置审批节点"})
 
         # 解析所有节点的实际审批人，防止后续成员或流程配置变化影响本轮。
         candidate = WorkflowInstance(definition=definition, biz_type=biz_type, biz_id=biz_id, created_by=user)
         for node in node_config:
+            if node.get("node_type") == "ai_review":
+                node["approvers"] = []
+                continue
             approvers = cls._resolve_node_approvers(node.get("approvers", []), candidate)
             if not approvers:
                 raise serializers.ValidationError({"node_config": f"节点 {node['node_name']} 未解析到有效审批人"})
@@ -533,6 +562,10 @@ class WorkflowEngine:
 
         target_node_id = node_ids[target_idx]
         target_node = node_config[target_idx]
+        if target_node.get("node_type") == "ai_review" or (target_idx > 0 and any(
+            node.get("node_type") == "ai_review" for node in node_config[target_idx:current_idx]
+        )):
+            raise serializers.ValidationError({"task": "不能回退到或跨越 AI 审查节点，请退回修改后重新提审"})
 
         # 标记当前任务为已回退
         task.status = "rollbacked"
@@ -638,6 +671,11 @@ class WorkflowEngine:
             创建的 WorkflowTask 列表
         """
         node_id = node["node_id"]
+        if node.get("node_type") == "ai_review":
+            from apps.workflow.ai_review import queue_review
+
+            transaction.on_commit(lambda: queue_review(instance.pk, node_id))
+            return []
         node_name = node.get("node_name", node_id)
         mode = node.get("mode", "any")
         approvers_config = node.get("approvers", [])
@@ -803,10 +841,10 @@ class WorkflowEngine:
 
             nodes.append({
                 "id": node_id,
-                "type": cls.APPROVAL_NODE_TYPE,
+                "type": cls.AI_NODE_TYPE if node.get("node_type") == "ai_review" else cls.APPROVAL_NODE_TYPE,
                 "x": x_offset,
                 "y": 200,
-                "text": f"{node_name}\n({mode_label})",
+                "text": node_name if node.get("node_type") == "ai_review" else f"{node_name}\n({mode_label})",
                 "properties": {
                     "mode": mode,
                     "_approvers": node.get("approvers", []),

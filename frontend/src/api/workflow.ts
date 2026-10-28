@@ -14,7 +14,30 @@ export interface ReviewScopeData {
   head_git_hash: string;
   warnings: string[];
   context?: string;
+  context_is_requirement?: boolean;
   documents?: Record<string, string>;
+}
+
+export interface AiReviewFinding {
+  id?: string;
+  severity: string;
+  title: string;
+  reason: string;
+  suggestion: string;
+  path?: string;
+  side?: 'old' | 'new';
+  line_start?: number;
+  line_end?: number;
+}
+
+export interface AiReviewData {
+  node_id: string;
+  node_name?: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes';
+  summary: string;
+  coverage: { total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[] };
+  dimensions?: string[];
+  findings?: AiReviewFinding[];
 }
 
 export const workflowApi = {
@@ -31,6 +54,7 @@ export const workflowApi = {
     get<PaginatedData<WorkflowInstanceListItem>>('/workflow/instances/', { params }),
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
   getReviewScope: (id: string) => get<ReviewScopeData>(`/workflow/instances/${id}/review-scope/`, { silent: true }),
+  getAiReview: (id: string) => get<{ reviews: AiReviewData[] }>(`/workflow/instances/${id}/ai-review/`, { silent: true }),
   revokeInstance: (id: string, data?: { comment?: string }) =>
     post<WorkflowInstance>(`/workflow/instances/${id}/revoke/`, data || {}),
   /** 我发起的流程实例列表，支持 status 过滤 */
