@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.10.28',
+    date: '2026-10-28',
+    summary: '新增发布代码审查配置',
+    items: [
+      { category: 'feature', text: '系统配置可单独保存发布代码审查模型和内置审查技能；密钥不回显，设置变化保留历史版本。' },
+    ],
+  },
+  {
     version: '2026.10.22',
     date: '2026-10-22',
     summary: '手动打包推 SVN、正式版按分支创建，发起人可终止审批',

@@ -19,6 +19,7 @@ import { SsoIntegrationCard } from './SsoIntegrationCard';
 import { PackageNodeCard } from './PackageNodeCard';
 import { PackageCleanupCard } from './PackageCleanupCard';
 import { AiIntegrationCard } from './AiIntegrationCard';
+import { ReviewSettingsCard } from './ReviewSettingsCard';
 import { PackageKnowledgeCard } from './PackageKnowledgeCard';
 import { ReviewKeywordCard } from './ReviewKeywordCard';
 
@@ -172,6 +173,8 @@ export default function SystemConfigPage() {
       <SsoIntegrationCard />
 
       <AiIntegrationCard />
+
+      <ReviewSettingsCard />
 
       <PackageKnowledgeCard />
 

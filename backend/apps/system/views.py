@@ -188,3 +188,22 @@ class AccessTokenViewSet(StandardModelViewSet):
             )
         except Exception:
             pass
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated, lambda: HasPermission("system.config")])
+def review_settings(request: Request) -> Response:
+    """管理独立审查模型配置；密钥只写入，不返回。"""
+    from apps.system.review_settings import (
+        ReviewSettingsInput,
+        current_version,
+        save_settings,
+        settings_response,
+    )
+
+    if request.method == "GET":
+        return success_response(settings_response(current_version()))
+    serializer = ReviewSettingsInput(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    version = save_settings(serializer.validated_data)
+    return success_response(settings_response(version), "保存成功")
