@@ -170,9 +170,9 @@ function TimelineNode({
         </div>
         {!isLast ? <div className="mt-1 w-px flex-1 bg-indigo-100" /> : null}
       </div>
-      <div className={`flex-1 ${isLast ? '' : 'pb-5'}`}>
-        <div className="flex items-center justify-between">
-          <div>
+      <div className={`min-w-0 flex-1 ${isLast ? '' : 'pb-5'}`}>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="min-w-0 break-words [overflow-wrap:anywhere]">
             <div className={`text-[13px] font-medium ${nameClass}`}>{name}</div>
             <div className="mt-0.5 text-[11px] text-slate-400">
               {nodeType === 'approval-node'
@@ -189,7 +189,7 @@ function TimelineNode({
                   : '自动执行'}
             </div>
           </div>
-          <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${badge.cls}`}>
+          <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${badge.cls}`}>
             {badge.text}
           </span>
         </div>

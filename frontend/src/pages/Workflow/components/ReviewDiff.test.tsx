@@ -49,13 +49,15 @@ it('新增、删除、整体意见和无法可靠定位的行均可见，并过�
   const { container } = render(<QueryClientProvider client={client}><ReviewDiff instanceId="round" reviews={cases} /></QueryClientProvider>);
   fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
   const added = await screen.findByRole('article', { name: 'added.py' });
-  const deleted = screen.getByRole('article', { name: 'deleted.py' });
   fireEvent.click(within(added).getByRole('button', { name: '展开代码差异' }));
+  fireEvent.click(screen.getByRole('button', { name: '查看文件 deleted.py' }));
+  const deleted = screen.getByRole('article', { name: 'deleted.py' });
   fireEvent.click(within(deleted).getByRole('button', { name: '展开代码差异' }));
   expect(within(added).getByText('新增文件')).toBeTruthy();
   expect(within(deleted).getByText('删除文件')).toBeTruthy();
   expect(within(added).getByText('新增末尾')).toBeTruthy();
   expect(within(deleted).getByText('删除内容')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '查看文件 added.py' }));
   expect(within(added).getByText('行不可定位')).toBeTruthy();
   expect(screen.getByText('整体问题')).toBeTruthy();
   expect(screen.getByText(/本轮差异未完整取得/)).toBeTruthy();

@@ -144,7 +144,7 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
   if (query.isLoading || (query.isFetching && !query.isFetchedAfterMount)) return <p className="text-sm text-slate-500">正在读取 AI 审查…</p>;
   if (query.error) {
     const error = query.error as unknown as NormalizedError;
-    if (error.status === 404) return null;
+    if (error.status === 404) return <p className="text-sm text-slate-500">当前没有可查看的 AI 审查。</p>;
     return <div role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">
       AI 审查读取失败：{error.friendlyMessage || error.message || '请稍后重试'}
       <button type="button" className="ml-2 underline" onClick={() => void query.refetch()}>重试</button>
@@ -153,10 +153,10 @@ export function AiReviewReport({ instanceId }: { instanceId: string }) {
   if (query.data && !Array.isArray(query.data.reviews)) return <div role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">AI 审查结果格式错误，请稍后重试。
     <button type="button" className="ml-2 underline" onClick={() => void query.refetch()}>重试</button>
   </div>;
-  if (!query.data?.reviews.length) return <RemediationPanel instanceId={instanceId} reviews={[]} />;
-  return <section aria-label="AI 代码审查" className="tech-card space-y-4 rounded-xl p-5 text-sm">
-    <h3 className="text-[15px] font-semibold text-slate-900">AI 代码审查</h3>
-    {query.data.reviews.map((review) => <article key={review.node_id} className="space-y-3 rounded-lg border border-slate-200 p-4">
+  if (!query.data?.reviews.length) return <div className="space-y-4"><p className="text-sm text-slate-500">当前没有可查看的 AI 审查。</p><RemediationPanel instanceId={instanceId} reviews={[]} /></div>;
+  return <section aria-label="AI 代码审查" className="min-w-0 space-y-4 text-sm">
+    <div><h3 className="text-[16px] font-semibold text-slate-900">AI 代码审查</h3><p className="mt-1 text-xs text-slate-500">结合代码差异辅助判断，审批决定由人工做出。</p></div>
+    {query.data.reviews.map((review) => <article key={review.node_id} className="space-y-4 rounded-xl border border-slate-200 p-4 sm:p-5">
       <h4 className="font-semibold text-slate-800">{review.node_name ? `${review.node_name} · ` : ''}{statusText[review.status] || '审查状态未知'}</h4>
       {review.summary ? <p className="whitespace-pre-wrap break-words text-slate-700">{review.summary}</p> : null}
       {review.configuration ? <details className="rounded border border-slate-200 p-2 text-sm">

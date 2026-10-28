@@ -171,6 +171,7 @@ function DiffFile({ file, items }: { file: ReviewDiffFile; items: ReviewFinding[
 /** 在审批实例固定差异旁呈现对应意见；读取接口每次独立检查权限。 */
 export function ReviewDiff({ instanceId, reviews }: { instanceId: string; reviews: AiReviewData[] }) {
   const [open, setOpen] = useState(false);
+  const [selection, setSelection] = useState<{ instanceId: string; index: number } | null>(null);
   const sessionVersion = useAuthStore((state) => state.sessionVersion);
   const query = useQuery({ queryKey: ['review-diff', instanceId, sessionVersion], queryFn: () => workflowApi.getReviewDiff(instanceId), enabled: open, retry: false, gcTime: 0 });
   const findings = useMemo(() => reviews.flatMap((review) => {
@@ -186,6 +187,7 @@ export function ReviewDiff({ instanceId, reviews }: { instanceId: string; review
   }), [reviews]);
   if (!reviews.some((review) => review.findings !== undefined || review.history !== undefined)) return null;
   const files = query.data?.diffs || [];
+  const selectedIndex = selection?.instanceId === instanceId && selection.index < files.length ? selection.index : 0;
   const assignments = files.map(() => [] as ReviewFinding[]);
   const unassigned: ReviewFinding[] = [];
   for (const item of findings) {
@@ -201,7 +203,19 @@ export function ReviewDiff({ instanceId, reviews }: { instanceId: string; review
     {open && query.error ? <div role="alert" className="rounded bg-rose-50 p-3 text-sm text-rose-700">代码差异读取失败：{(query.error as unknown as NormalizedError).friendlyMessage || '请稍后重试'} <button type="button" className="underline" onClick={() => void query.refetch()}>重试</button></div> : null}
     {open && !query.isFetching && !query.error && query.data ? <section aria-label="本轮代码差异" className="min-w-0 space-y-3">
       {query.data.status === 'incomplete' ? <p className="text-sm text-amber-700">本轮差异未完整取得，以下内容仅为已保存部分。</p> : null}
-      {files.length === 0 ? <p className="text-sm text-slate-500">本轮没有可展示的代码差异。</p> : files.map((file, index) => <DiffFile key={`${instanceId}:${index}:${file.old_path}:${file.new_path}`} file={file} items={assignments[index]} />)}
+      {files.length === 0 ? <p className="text-sm text-slate-500">本轮没有可展示的代码差异。</p> : <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 md:grid md:grid-cols-[190px_minmax(0,1fr)]">
+        <div className="max-h-72 overflow-y-auto border-b border-slate-100 bg-slate-50/60 p-2 md:border-b-0 md:border-r" aria-label="差异文件列表">
+          <p className="px-2 py-2 text-xs text-slate-500">变更文件 · {files.length}</p>
+          {files.map((file, index) => <button type="button" key={`${index}:${file.old_path}:${file.new_path}`} aria-label={`查看文件 ${fileName(file)}`} aria-pressed={selectedIndex === index}
+            onClick={() => setSelection({ instanceId, index })}
+            className={`mb-1 block w-full rounded-lg px-2 py-2 text-left text-xs ${selectedIndex === index ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <span className="block break-all">{fileName(file)}</span>{assignments[index].length ? <span className="mt-1 block text-slate-400">{assignments[index].length} 条意见</span> : null}
+          </button>)}
+        </div>
+        <div className="min-w-0 p-3">{files.map((file, index) => <div key={`${instanceId}:${index}:${file.old_path}:${file.new_path}`} hidden={selectedIndex !== index}>
+          <DiffFile file={file} items={assignments[index]} />
+        </div>)}</div>
+      </div>}
       {unassigned.length ? <div className="space-y-2"><h5 className="font-semibold">整体或无法可靠定位的意见</h5>{unassigned.map((item) => <FindingCard key={item.key} item={item} />)}</div> : null}
     </section> : null}
   </div>;

@@ -1,5 +1,6 @@
 import { Info } from 'lucide-react';
 import { releaseTypeText, releaseTypeBadge } from '../constants';
+import { ApprovalTimeline } from './ApprovalTimeline';
 import type { DetailSource } from '../types';
 import type { WorkflowInstance, ReleaseType } from '@/types';
 
@@ -12,7 +13,7 @@ interface ReleaseSummaryProps {
 function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-      <span className="text-[12px] text-slate-500">{label}</span>
+      <span className="shrink-0 text-[12px] text-slate-500">{label}</span>
       {children}
     </div>
   );
@@ -33,23 +34,23 @@ export function ReleaseSummary({ source, instance }: ReleaseSummaryProps) {
         <h3 className="mb-3 text-[14px] font-semibold tracking-tight text-slate-900">发布摘要</h3>
         <div className="space-y-0">
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">项目</span>
-            <span className="text-[13px] font-medium text-slate-800">
+            <span className="shrink-0 text-[12px] text-slate-500">项目</span>
+            <span className="min-w-0 break-words pl-3 text-right text-[13px] font-medium text-slate-800 [overflow-wrap:anywhere]">
               {source.projectName || '-'}
             </span>
           </div>
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">所属软件</span>
-            <span className="text-[13px] font-medium text-slate-800">
+            <span className="shrink-0 text-[12px] text-slate-500">所属软件</span>
+            <span className="min-w-0 break-words pl-3 text-right text-[13px] font-medium text-slate-800 [overflow-wrap:anywhere]">
               {source.softwareName || '-'}
             </span>
           </div>
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">版本号</span>
-            <span className="font-mono text-[13px] text-slate-800">{source.version || '-'}</span>
+            <span className="shrink-0 text-[12px] text-slate-500">版本号</span>
+            <span className="min-w-0 break-words pl-3 text-right font-mono text-[13px] text-slate-800 [overflow-wrap:anywhere]">{source.version || '-'}</span>
           </div>
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">发布类型</span>
+            <span className="shrink-0 text-[12px] text-slate-500">发布类型</span>
             {source.releaseType ? (
               <span
                 className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium max-md:text-xs ${releaseTypeBadge[source.releaseType as ReleaseType]}`}
@@ -61,26 +62,32 @@ export function ReleaseSummary({ source, instance }: ReleaseSummaryProps) {
             )}
           </div>
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">分支</span>
-            <span className="font-mono text-[12px] text-slate-800">{source.branch || '-'}</span>
+            <span className="shrink-0 text-[12px] text-slate-500">分支</span>
+            <span className="min-w-0 break-words pl-3 text-right font-mono text-[12px] text-slate-800 [overflow-wrap:anywhere]">{source.branch || '-'}</span>
           </div>
           <div className="flex items-center justify-between border-b border-indigo-50 py-1.5">
-            <span className="text-[12px] text-slate-500">Git Hash</span>
+            <span className="shrink-0 text-[12px] text-slate-500">Git Hash</span>
             <span
-              className="font-mono text-[12px] text-slate-800"
+              className="min-w-0 break-words pl-3 text-right font-mono text-[12px] text-slate-800 [overflow-wrap:anywhere]"
               title={instance?.git_hash || ''}
             >
               {instance?.git_hash ? instance.git_hash.slice(0, 12) : '-'}
             </span>
           </div>
           <div className="flex items-center justify-between py-1.5">
-            <span className="text-[12px] text-slate-500">打包状态</span>
-            <span className="font-mono text-[13px] text-slate-800">
+            <span className="shrink-0 text-[12px] text-slate-500">打包状态</span>
+            <span className="min-w-0 break-words pl-3 text-right font-mono text-[13px] text-slate-800 [overflow-wrap:anywhere]">
               {source.packageStatus || '-'}
             </span>
           </div>
         </div>
       </div>
+
+      <section aria-label="审批流程" className="tech-card rounded-xl p-5">
+        <h3 className="mb-1 text-[15px] font-semibold tracking-tight text-slate-900">审批流程</h3>
+        <p className="mb-4 text-xs text-slate-400">提审时固定流程与审批人</p>
+        {instance?.graph_data?.nodes?.length ? <ApprovalTimeline instance={instance} /> : <p className="text-sm text-slate-400">暂无流程数据</p>}
+      </section>
 
       {/* 审批规则 */}
       <div className="tech-card rounded-xl p-5">

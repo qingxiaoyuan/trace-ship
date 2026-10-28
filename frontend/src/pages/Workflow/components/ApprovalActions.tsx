@@ -133,7 +133,7 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
   };
 
   return (
-    <div className="tech-card rounded-xl p-5">
+    <section aria-label="审批意见" className="border-t border-slate-100 pt-6">
       <h3 className="mb-4 text-[15px] font-semibold tracking-tight text-slate-900">审批意见</h3>
       <ApprovalHistory tasks={instance?.tasks || []} returnedBy={instance?.returned_by_name} />
 
@@ -227,6 +227,6 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
           </div>
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }

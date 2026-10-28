@@ -53,3 +53,10 @@ it('会话切换后不展示上个账号缓存的审查上下文', async () => {
   expect(screen.queryByText('原账号私有依据')).toBeNull();
   await waitFor(() => expect(screen.queryByLabelText('本轮审查范围')).toBeNull());
 });
+
+
+it('未配置固定审查范围时展示空状态', async () => {
+  vi.spyOn(workflowApi, 'getReviewScope').mockRejectedValue({ status: 404 });
+  show();
+  expect(await screen.findByText('当前没有可查看的审查范围。')).toBeTruthy();
+});
