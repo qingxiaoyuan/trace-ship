@@ -29,8 +29,9 @@ export const changelogEntries: ChangelogEntry[] = [
   {
     version: '2026.10.28',
     date: '2026-10-28',
-    summary: '新增发布代码审查配置',
+    summary: '发布代码审查配置与草稿提交更新',
     items: [
+      { category: 'feature', text: '发布发起人可在草稿中预览新旧提交及代码差异，确认后更新至分支最新提交；原说明和关联变更清空，重新生成后才能提审' },
       { category: 'feature', text: '系统配置可单独保存发布代码审查模型，选择内置技能或上传文档型技能；密钥不回显，设置变化保留历史版本。' },
     ],
   },

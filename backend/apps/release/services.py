@@ -508,15 +508,41 @@ class ReleaseDocGenerator:
             CommitInfo 列表
         """
         repo_identity = self.release.repository.external_identity
+        head = self.release.git_hash or self.release.branch
+        if self.release.doc_source_fixed:
+            if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", head):
+                raise serializers.ValidationError({"git_hash": "发布缺少完整提交快照"})
+            if not self.release.changes_initialized:
+                tags = self.provider.list_tags(repo_identity)
+                calculator = VersionCalculator(self.release.repository.get_version_rule())
+                tag = calculator.find_latest_tag_by_type(tags, self.release.release_type)
+                source = next((item for item in tags if item.name == tag), None) if tag else None
+                sha = source.commit_hash if source else ""
+                if tag and not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", sha or ""):
+                    raise serializers.ValidationError({"base_tag": "基线 Tag 缺少完整提交快照"})
+                self.release.base_tag, self.release.base_git_hash = tag or "", sha or ""
+            base = self.release.base_git_hash
+            if base and base != head and self.provider.get_merge_base(repo_identity, [base, head]) != base:
+                raise serializers.ValidationError({"base_tag": "基线提交不在目标提交的祖先链上，请处理回滚或分叉"})
+            if base == head:
+                return []
+            commits = self.provider.list_release_commits(repo_identity, base, head)
+            if not commits:
+                raise serializers.ValidationError({"commits": "无法获取完整的发布提交区间"})
+            return commits
         last_tag = self._get_last_tag()
         if last_tag:
             try:
-                return self.provider.compare_commits(repo_identity, base=last_tag, head=self.release.branch)
+                return self.provider.compare_commits(repo_identity, base=last_tag, head=head)
             except Exception as exc:
+                if self.release.doc_needs_regeneration:
+                    raise
                 logger.warning("比较发布提交失败，将回退到分支提交列表: %s", exc)
         try:
-            return self.provider.list_commits(repo_identity, self.release.branch)
+            return self.provider.list_commits(repo_identity, head)
         except Exception as exc:
+            if self.release.doc_needs_regeneration:
+                raise
             logger.warning("拉取发布提交失败，将继续生成基础发布说明: %s", exc)
             return []
 
@@ -527,12 +553,16 @@ class ReleaseDocGenerator:
         Returns:
             MergeRequestInfo 列表
         """
+        if self.release.doc_source_fixed:
+            return self.provider.list_release_merge_requests(self.release.repository.external_identity)
         try:
             return self.provider.list_merge_requests(
                 self.release.repository.external_identity,
                 target_branch=self.release.branch,
             )
         except Exception as exc:
+            if self.release.doc_needs_regeneration:
+                raise
             logger.warning("拉取发布 MR/PR 失败，将继续生成基础发布说明: %s", exc)
             return []
 
@@ -685,10 +715,29 @@ class ReleaseDocGenerator:
             commits = self._fetch_commits()
             commits = self._filter_commits(commits, commit_ids)
             merge_requests = self._fetch_merge_requests()
-            self.release.base_tag = self._get_last_tag() or ""
+            if self.release.doc_source_fixed:
+                hashes = {commit.hash for commit in commits}
+                merge_requests = [mr for mr in merge_requests if
+                    {getattr(mr, "merge_commit_sha", ""), getattr(mr, "squash_commit_sha", "")} & hashes]
+                updates, seen = [], set()
+                for source, items in (("commit", commits), ("mr", merge_requests)):
+                    for item in items:
+                        content = item.message if source == "commit" else item.description
+                        ref = item.hash if source == "commit" else item.number
+                        for update in extract_update_lines(content):
+                            key = (update["type"], update["content"])
+                            if key not in seen:
+                                updates.append({**update, "source": source, "source_ref": ref})
+                                seen.add(key)
+                manual = [item for item in self.release.updates if not item.get("source_ref")]
+                self.release.updates = updates + manual
+                self.release.changes_initialized = True
+                self.release.save(update_fields=["updates", "changes_initialized"])
+            else:
+                self.release.base_tag = self._get_last_tag() or ""
 
         # 持久化发布时的基线 tag 快照，供详情页展示「上一 tag -> 本次 tag」提交区间
-        self.release.save(update_fields=["base_tag"])
+        self.release.save(update_fields=["base_tag", "base_git_hash"])
 
         # 持久化 ReleaseCommit 关联
         repo = self.release.repository
@@ -1139,7 +1188,8 @@ class ReleaseService:
         generator = ReleaseDocGenerator(release, provider)
         md_doc = generator.generate(commit_ids=commit_ids, merge_similar=merge_similar)
         release.release_doc = md_doc
-        release.save(update_fields=["release_doc", "updated_at"])
+        release.doc_needs_regeneration = False
+        release.save(update_fields=["release_doc", "doc_needs_regeneration", "updated_at"])
         return md_doc
 
     @staticmethod
@@ -1157,6 +1207,8 @@ class ReleaseService:
         """
         Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
         release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
+        if release.doc_needs_regeneration:
+            raise serializers.ValidationError({"release_doc": "来源提交已变更，请先重新生成发布说明"})
         # 新正式说明核验身份；未初始化快照的存量已发布说明保留原编辑方式。
         if release.release_type == "formal" and (
             release.status == "draft" or release.source_rc_id or release.changes_initialized
@@ -1357,7 +1409,7 @@ class ReleaseService:
                 return release
             if release.status != "draft":
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
-            if not release.release_doc:
+            if release.doc_needs_regeneration or not release.release_doc:
                 raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
             if release.release_type == "formal":
                 from apps.release.formal_changes import FormalChanges

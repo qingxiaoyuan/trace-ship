@@ -478,6 +478,22 @@ class GitLabProvider(GitProvider):
             for c in resp.json().get("commits", [])
         ]
 
+    def compare_diff(self, repo_identity: str, base: str, head: str) -> list[dict]:
+        """获取预览差异；远端报告截断时拒绝把不完整内容当作完整预览。"""
+        encoded = self._encode_identity(repo_identity)
+        data = self._request("GET", f"/projects/{encoded}/repository/compare",
+                             params={"from": base, "to": head, "straight": "true"}).json()
+        diffs = data.get("diffs")
+        if data.get("compare_timeout") or not isinstance(diffs, list):
+            raise ProviderError("代码差异获取不完整，请稍后重试")
+        result = []
+        for item in diffs:
+            if item.get("too_large") or item.get("collapsed") or "diff" not in item:
+                raise ProviderError("代码差异过大或被截断，无法完整预览")
+            result.append({"old_path": item.get("old_path", ""), "new_path": item.get("new_path", ""),
+                           "diff": item["diff"]})
+        return result
+
     def get_merge_base(self, repo_identity: str, refs: list[str]) -> str | None:
         """
         获取多个 ref 的 merge base（共同祖先）commit hash
