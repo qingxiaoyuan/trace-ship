@@ -1,0 +1,4 @@
+/* 已关闭的菜单不应在视口变化时沿用旧位置撑宽页面。 */
+.release-create-select-popup.ant-slide-up-leave {
+  display: none;
+}
