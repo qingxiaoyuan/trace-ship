@@ -27,3 +27,23 @@ it('按分支创建的正式草稿展示分支和提交，不引导补选 RC', (
   expect(screen.queryByText('来源 RC')).toBeNull();
   expect(screen.queryByRole('button', { name: '重选来源 RC' })).toBeNull();
 });
+
+it('发布人预览新旧提交与代码差异并确认更新草稿', async () => {
+  const oldHash = 'a'.repeat(40), newHash = 'b'.repeat(40);
+  let confirmed: unknown;
+  request.defaults.adapter = async config => {
+    if (config.method === 'post') confirmed = JSON.parse(config.data);
+    return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data: config.method === 'post'
+      ? { id: 'r', git_hash: newHash, release_doc: '' }
+      : { old_hash: oldHash, new_hash: newHash, commits: [{ hash: newHash, message: '修复问题', author: '开发' }],
+          diffs: [{ old_path: 'app.py', new_path: 'app.py', diff: '-旧代码\n+新代码' }] } } };
+  };
+  const release = { id: 'r', release_type: 'rc', status: 'draft', branch: 'develop', git_hash: oldHash } as Release;
+  const { fireEvent, waitFor } = await import('@testing-library/react');
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ReleaseSource release={release} canRefresh /></MemoryRouter></QueryClientProvider>);
+  fireEvent.click(screen.getByRole('button', { name: '更新到分支最新提交' }));
+  expect(await screen.findByText(`最新提交：${newHash}`)).toBeTruthy();
+  expect(screen.getByText('-旧代码 +新代码').textContent).toBe('-旧代码\n+新代码');
+  fireEvent.click(screen.getByRole('button', { name: '确认更新' }));
+  await waitFor(() => expect(confirmed).toEqual({ old_hash: oldHash, new_hash: newHash }));
+});

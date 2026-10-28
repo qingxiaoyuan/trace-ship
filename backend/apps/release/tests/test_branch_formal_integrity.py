@@ -48,8 +48,18 @@ def remote(monkeypatch):
             return self.list_release_merge_requests(repo_identity)
 
         def list_release_commits(self, repo_identity, base, head):
+            if base == HEAD and head == MOVED:
+                return [self.commit(HEAD)]
+            if not base and head == MOVED:
+                return [self.commit(MOVED)]
             assert base == "" and head == HEAD, "必须读取首次生成时固定的提交区间"
             return [self.commit(HEAD)]
+
+        def get_merge_base(self, repo_identity, refs):
+            return refs[0]
+
+        def compare_diff(self, repo_identity, base, head):
+            return [{"old_path": "app.py", "new_path": "app.py", "diff": "-旧代码\n+新代码"}]
 
         def list_release_merge_requests(self, repo_identity):
             return [MergeRequestInfo(number="1", description="A 固定 MR", merge_commit_sha=HEAD),
@@ -192,3 +202,96 @@ def test_incomplete_formal_changes_never_fall_back_to_branch(api, project, repos
     assert not release.release_doc and not release.changes_initialized
     assert not release.release_commits.exists() and not release.release_mrs.exists()
     assert api.post(url + "submit-audit/").status_code == 400
+
+
+def test_refresh_requires_confirmation_of_current_heads(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    doc = api.post(url + "generate-doc/").data["data"]
+    remote.branch_head = MOVED
+    preview = api.get(url + "branch-update/")
+    assert preview.status_code == 200, preview.data
+    assert preview.data["data"]["old_hash"] == HEAD
+    assert preview.data["data"]["new_hash"] == MOVED
+    assert preview.data["data"]["commits"][0]["hash"] == HEAD
+    assert preview.data["data"]["diffs"][0]["diff"] == "-旧代码\n+新代码"
+    remote.branch_head = "c" * 40
+    stale = api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json")
+    assert stale.status_code == 400, stale.data
+    assert api.get(url).data["data"]["release_doc"] == doc
+    remote.branch_head = MOVED
+    result = api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json")
+    assert result.status_code == 200, result.data
+    detail = api.get(url).data["data"]
+    assert detail["git_hash"] == MOVED and detail["release_doc"] == ""
+    assert api.post(url + "update-doc/", {"release_doc": doc}, format="json").status_code == 400
+    assert api.post(url + "submit-audit/").status_code == 400
+
+
+@pytest.mark.parametrize("release_type", ["rc", "beta"])
+def test_updated_nonformal_notes_use_confirmed_commit(api, project, repository, remote, release_type):
+    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": release_type, "branch": "develop", "version": "VA.1.0.0"}, format="json")
+    assert created.status_code == 201, created.data
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    remote.branch_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    assert api.get(url).data["data"]["release_doc"] == ""
+    assert api.post(url + "submit-audit/").status_code == 400
+    remote.branch_head = "c" * 40
+    remote.list_commits = lambda identity, ref, **kwargs: [remote.commit(ref if ref != "develop" else "c" * 40)]
+    generated = api.post(url + "generate-doc/")
+    assert generated.status_code == 200, generated.data
+    assert "后续功能" in generated.data["data"]
+    assert "后续 MR" in generated.data["data"]
+    assert "固定 MR" not in generated.data["data"]
+    commits = api.get(url + "commits/").data["data"]["results"]
+    assert [item["commit_hash"] for item in commits] == [MOVED]
+    regenerated = api.post(url + "generate-doc/")
+    assert "后续功能" in regenerated.data["data"] and "固定 MR" not in regenerated.data["data"]
+
+
+def test_branch_update_requires_publisher_and_draft(api, user, project, repository, remote):
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    other = User.objects.create_user(username="other", password="test")
+    ProjectMember.objects.create(project=project, user=other, role="developer")
+    api.force_authenticate(other)
+    assert api.get(url + "branch-update/").status_code == 403
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 403
+    api.force_authenticate(user)
+    ReleaseRecord.objects.filter(pk=created.data["data"]["id"]).update(status="pending")
+    assert api.get(url + "branch-update/").status_code == 400
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
+
+
+def test_existing_patch_cannot_silently_refresh_moved_head(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    assert api.patch(url, {"branch": "develop"}, format="json").status_code == 400
+    assert api.get(url).data["data"]["git_hash"] == HEAD
+
+
+def test_existing_draft_can_switch_branches(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    remote.branch_head = MOVED
+    changed = api.patch(url, {"branch": "feature/nested"}, format="json")
+    assert changed.status_code == 200, changed.data
+    assert changed.data["data"]["git_hash"] == MOVED and not changed.data["data"]["release_doc"]
+    assert api.post(url + "submit-audit/").status_code == 400
+
+
+def test_direct_confirmation_cannot_bypass_nonancestor_guard(api, project, repository, remote):
+    created = create(api, project, repository)
+    url = f"/api/releases/{created.data['data']['id']}/"
+    remote.branch_head = MOVED
+    remote.get_merge_base = lambda identity, refs: "c" * 40
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
+    assert api.get(url).data["data"]["git_hash"] == HEAD

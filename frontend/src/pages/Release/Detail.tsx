@@ -316,7 +316,8 @@ export default function ReleaseDetail() {
             </span>
           </div>
         </div>
-        <ReleaseSource key={release.id} release={release} />
+        <ReleaseSource key={release.id} release={release}
+          canRefresh={canDevelop && (user?.is_superuser || release.publisher === user?.id)} />
         {release.redmine_url ? (
           <a
             href={release.redmine_url}

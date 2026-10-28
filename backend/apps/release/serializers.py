@@ -59,7 +59,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "release_type", "release_type_display", "status", "status_display", "workflow_instance",
-            "release_doc", "related_changes", "updates",
+            "release_doc", "doc_needs_regeneration", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
             "self_test_passed", "retest_passed",
@@ -70,7 +70,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "git_hash", "base_tag", "status", "workflow_instance",
+            "id", "git_hash", "base_tag", "status", "workflow_instance", "doc_needs_regeneration",
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "source_rc_version", "source_rc_tag", "source_rc_git_hash",

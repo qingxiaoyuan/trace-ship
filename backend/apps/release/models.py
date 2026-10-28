@@ -107,6 +107,8 @@ class ReleaseRecord(models.Model):
     )
     # 发布说明文档：Markdown 格式字符串（2 列表格），可手动编辑
     release_doc = models.TextField(blank=True, verbose_name="发布说明文档")
+    doc_needs_regeneration = models.BooleanField(default=False, verbose_name="发布说明需要重新生成")
+    doc_source_fixed = models.BooleanField(default=False, verbose_name="说明采用固定提交范围")
     # 关联变更清单：硬件/软件版本条目列表，由发布向导收集
     related_changes = models.JSONField(default=list, blank=True, verbose_name="关联变更清单")
     # 变更条目：A 类 / F 类变更内容，元素结构 {type, content, source, source_ref}

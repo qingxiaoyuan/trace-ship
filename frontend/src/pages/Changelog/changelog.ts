@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.10.28',
+    date: '2026-10-28',
+    summary: '发布草稿支持确认更新分支提交',
+    items: [
+      { category: 'feature', text: '发布发起人可在草稿中预览新旧提交及代码差异，确认后更新至分支最新提交；原说明和关联变更清空，重新生成后才能提审' },
+    ],
+  },
+  {
     version: '2026.10.22',
     date: '2026-10-22',
     summary: '手动打包推 SVN、正式版按分支创建，发起人可终止审批',
