@@ -111,5 +111,11 @@ def test_unreliable_location_is_not_given_a_fabricated_line(case, user, project,
         response = client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
     assert response.status_code == 200, response.data
     release.refresh_from_db()
-    finding = client.get(f"/api/workflow/instances/{release.workflow_instance_id}/ai-review/").data["data"]["reviews"][0]["findings"][0]
-    assert finding["path"] == "same.py" and "line_start" not in finding and "side" not in finding
+    report = client.get(f"/api/workflow/instances/{release.workflow_instance_id}/ai-review/").data["data"]["reviews"][0]
+    if case == "ambiguous":
+        finding = report["findings"][0]
+        assert finding["path"] == "same.py" and "line_start" not in finding and "side" not in finding
+    else:
+        # 损坏的差异不能声称已审查；未经审查的文件不得生成虚构位置。
+        assert report["status"] == "incomplete" and report["findings"] == []
+        assert report["coverage"]["unreviewed_paths"] == ["same.py"]

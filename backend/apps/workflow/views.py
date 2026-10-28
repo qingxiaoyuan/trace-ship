@@ -328,6 +328,8 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
                 summary = "审查执行中断或超时，等待重试" if expired else run.summary
             else:
                 coverage = {key: run.coverage.get(key, 0) for key in ("total_files", "reviewed_files")}
+                if "manifest_complete" in run.coverage:
+                    coverage["manifest_complete"] = run.coverage["manifest_complete"]
                 coverage["warnings"] = ["审查存在提示或未覆盖内容"] if run.coverage.get("warnings") else []
                 # 摘要使用固定文案，避免模型或后续执行记录将源码混入低权限响应。
                 summary = {

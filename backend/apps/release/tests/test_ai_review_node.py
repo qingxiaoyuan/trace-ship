@@ -162,7 +162,8 @@ def test_truncated_or_failed_model_cannot_advance(api_client, project, repositor
         response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
     assert response.status_code == 200, response.data
     release.refresh_from_db()
-    assert release.workflow_instance.ai_reviews.get().status == "failed"
+    run = release.workflow_instance.ai_reviews.get()
+    assert run.status == "failed" and any("截断" in warning for warning in run.coverage["warnings"])
     assert release.workflow_instance.current_node_id == "ai"
     assert not release.workflow_instance.tasks.exists()
 
@@ -763,3 +764,322 @@ def test_expired_worker_is_archived_and_late_result_cannot_replace_retry(
     assert original.status == "completed" and original.findings[0]["title"] == "新执行意见"
     assert original.history[0]["token"] == old_token and original.history[0]["status"] == "failed"
     assert instance.tasks.filter(node_id="human", status="pending").count() == 1
+
+
+def test_large_review_resumes_only_unfinished_batches_without_losing_findings(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    import json
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-old\n+" + "x" * 7500}
+             for name in ("first.py", "second.py", "third.py")]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": diffs, "complete": True, "warnings": []}, raising=False)
+    monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    calls = []
+
+    def ask(config, messages):
+        names = [item["new_path"] for item in json.loads(messages[0]["content"])["diffs"]]
+        calls.append(names)
+        if len(calls) == 2:
+            raise ValueError("模拟批次失败")
+        return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": names,
+                 "findings": [{"severity": "P1", "title": names[0], "reason": "缺少检查", "suggestion": "补充检查", "path": names[0]}]}, "{}")
+
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    execute_review(instance.id, "ai")
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "incomplete"
+    assert report["coverage"]["reviewed_paths"] == ["first.py"]
+    assert report["coverage"]["unreviewed_paths"] == ["second.py", "third.py"]
+    original_id = report["findings"][0]["id"]
+    original_token = str(instance.ai_reviews.get().token)
+    assert not instance.tasks.exists()
+    # 后续部署改变分批容量时，仍沿用本轮已经固定的计划和完成证据。
+    monkeypatch.setattr(ai_review_model, "MAX_INPUT", 40000)
+
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/workflow/instances/{instance.id}/ai-review-retry/", {"node_id": "ai"}, format="json").status_code == 200
+    execute_review(instance.id, "ai")
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "completed"
+    assert report["coverage"]["reviewed_paths"] == ["first.py", "second.py", "third.py"]
+    assert [finding["title"] for finding in report["findings"]] == ["first.py", "second.py", "third.py"]
+    assert report["findings"][0]["id"] == original_id
+    adopted = api_client.post(f"/api/workflow/instances/{instance.id}/remediations/", {
+        "action": "adopt", "node_id": "ai", "finding_id": original_id,
+    }, format="json")
+    assert adopted.status_code == 200, adopted.data
+    assert adopted.data["data"]["item"]["source_token"] == original_token
+    assert calls == [["first.py"], ["second.py"], ["second.py"], ["third.py"]]
+    assert instance.tasks.filter(node_id="human", status="pending").count() == 1
+
+
+def test_batch_review_discloses_unreadable_file_and_keeps_workflow_waiting(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    import json
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": [{"old_path": "source.py", "new_path": "source.py", "diff": "@@ -1 +1 @@\n-a\n+b"},
+                  {"old_path": "asset.bin", "new_path": "asset.bin", "diff": "", "binary": True}],
+        "complete": False, "warnings": ["二进制差异不可读取"]}, raising=False)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    def ask(config, messages):
+        names = [item["new_path"] for item in json.loads(messages[0]["content"])["diffs"]]
+        return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": names, "findings": []}, "{}")
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    execute_review(instance.id, "ai")
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "incomplete"
+    assert report["coverage"]["reviewed_paths"] == ["source.py"]
+    assert report["coverage"]["unreviewed_paths"] == ["asset.bin"]
+    assert any("二进制" in warning for warning in report["coverage"]["warnings"])
+    assert report["coverage"]["manifest_complete"] is False
+    from rest_framework.test import APIClient
+
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+    viewer = User.objects.create_user(username="batch-viewer", password="testpass")
+    ProjectMember.objects.create(project=project, user=viewer, role="viewer")
+    client = APIClient()
+    client.force_authenticate(viewer)
+    limited = client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert limited["coverage"]["manifest_complete"] is False
+    assert "source.py" not in str(limited) and "asset.bin" not in str(limited)
+    assert not instance.tasks.exists()
+
+
+def test_malformed_or_oversized_diff_is_disclosed_and_never_approved(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": [{"old_path": "bad.py", "new_path": "bad.py", "diff": "@@ -1,2 +1,2 @@\n-a\n+b"},
+                  {"old_path": "large.py", "new_path": "large.py", "diff": "@@ -1 +1 @@\n-a\n+" + "x" * 150000},
+                  {"old_path": "overlap.py", "new_path": "overlap.py", "diff": "@@ -1 +1 @@\n-a\n+b\n@@ -1 +1 @@\n-c\n+d"}],
+        "complete": True, "warnings": []}, raising=False)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    called = []
+    monkeypatch.setattr(ai_review_model, "_ask", lambda *args: called.append(True))
+    execute_review(instance.id, "ai")
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "incomplete"
+    assert report["coverage"]["unreviewed_paths"] == ["bad.py", "large.py", "overlap.py"]
+    assert any("行数不一致" in warning for warning in report["coverage"]["warnings"])
+    assert any("超过审查容量" in warning for warning in report["coverage"]["warnings"])
+    assert not called and not instance.tasks.exists()
+
+
+def test_canceled_review_cannot_save_late_batch_or_advance(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    import json
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from apps.workflow.services import WorkflowEngine
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-a\n+" + "x" * 7500}
+             for name in ("first.py", "second.py")]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
+    monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    calls = []
+    def ask(config, messages):
+        names = [item["new_path"] for item in json.loads(messages[0]["content"])["diffs"]]
+        calls.append(names)
+        if len(calls) == 2:
+            WorkflowEngine.revoke_instance(instance, user)
+        return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": names,
+                 "findings": [{"severity": "P1", "title": names[0], "reason": "原因", "suggestion": "修复"}]}, "{}")
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    execute_review(instance.id, "ai")
+    run = instance.ai_reviews.get()
+    assert [finding["title"] for finding in run.findings] == ["first.py"]
+    assert run.coverage["unreviewed_paths"] == ["second.py"]
+    assert len(run.batch_results) == 2  # 批次计划与已完成的首批
+    assert not instance.tasks.exists()
+    release.refresh_from_db()
+    assert release.status == "draft" and release.workflow_instance_id is None
+
+
+def test_batch_can_read_another_batchs_fixed_diff_and_report_its_own_coverage(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    import json
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-old\n+" + marker * 7500}
+             for name, marker in (("api.py", "a"), ("caller.py", "b"))]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
+    monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    batches = []
+    def ask(config, messages):
+        first = json.loads(messages[0]["content"])
+        names = [item["new_path"] for item in first["diffs"]]
+        assert first["all_files"] == ["api.py", "caller.py"]
+        if names == ["api.py"] and len(messages) == 1:
+            return ({"action": "diff", "path": "caller.py"}, '{"action":"diff","path":"caller.py"}')
+        if names == ["api.py"]:
+            queried = json.loads(messages[-1]["content"])["diffs"]
+            assert queried[0]["new_path"] == "caller.py" and queried[0]["diff"] == diffs[1]["diff"]
+        batches.append(names)
+        findings = [{"severity": "P1", "title": "跨批不兼容", "reason": "调用方不兼容", "suggestion": "同步修改",
+                     "path": "caller.py", "side": "new", "line_start": 1, "line_end": 1}] if names == ["api.py"] else []
+        return ({"action": "finish", "dimensions": ["安全"] if names == ["api.py"] else ["性能"],
+                 "reviewed_files": names, "findings": findings}, "{}")
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    execute_review(instance.id, "ai")
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "completed" and batches == [["api.py"], ["caller.py"]]
+    assert report["dimensions"] == []
+    assert report["findings"][0]["path"] == "caller.py" and report["findings"][0]["line_start"] == 1
+    assert [item["dimensions"] for item in report["coverage"]["batches"]] == [["安全"], ["性能"]]
+    assert instance.tasks.filter(node_id="human", status="pending").count() == 1
+
+
+def test_partial_batch_retry_preserves_identical_finding_identity(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-old\n+new"}
+             for name in ("first.py", "second.py")]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    calls = []
+    def ask(config, messages):
+        calls.append(True)
+        return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": ["first.py"] if len(calls) == 1 else ["first.py", "second.py"],
+                 "findings": [{"severity": "P1", "title": "问题", "reason": "原因", "suggestion": "修复", "path": "first.py"}]}, "{}")
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    execute_review(instance.id, "ai")
+    before = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert before["status"] == "incomplete"
+    prior_id = before["findings"][0]["id"]
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/workflow/instances/{instance.id}/ai-review-retry/", {"node_id": "ai"}, format="json").status_code == 200
+    execute_review(instance.id, "ai")
+    after = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert after["status"] == "completed"
+    assert after["findings"][0]["id"] == prior_id == after["history"][0]["findings"][0]["id"]
+    adopted = api_client.post(f"/api/workflow/instances/{instance.id}/remediations/", {
+        "action": "adopt", "node_id": "ai", "finding_id": prior_id,
+    }, format="json")
+    assert adopted.status_code == 200, adopted.data
+    assert adopted.data["data"]["item"]["finding_id"] == prior_id
+    assert adopted.data["data"]["item"]["source_token"] == after["history"][0]["token"]
+
+
+def test_large_file_manifest_is_pageable_without_blocking_batches(
+    api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
+):
+    import json
+
+    from apps.system.review_settings import save_settings
+    from apps.workflow import ai_review_model
+    from apps.workflow.ai_review import execute_review
+    from utils.provider.base import TagInfo
+
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    names = [f"dir/{index:04d}-{'x' * 180}.py" for index in range(1001)]
+    diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-a\n+b"} for name in names]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
+    monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
+    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    def ask(config, messages):
+        initial = json.loads(messages[0]["content"])
+        assert initial["all_files_total"] == len(names)
+        offset = initial["all_files_next"]
+        assert isinstance(offset, int) and initial["all_files"] == names[:offset]
+        if len(messages) == 1:
+            return ({"action": "list_files", "offset": offset}, json.dumps({"action": "list_files", "offset": offset}))
+        page = json.loads(messages[-1]["content"])
+        if len(messages) == 3:
+            end = page["next_offset"] if page["next_offset"] is not None else len(names)
+            assert page["files"] == names[offset:end]
+            return ({"action": "search_files", "query": "1000-", "offset": 0},
+                    json.dumps({"action": "search_files", "query": "1000-", "offset": 0}))
+        assert page["files"] == [names[-1]] and page["total"] == 1
+        return ({"action": "finish", "dimensions": ["安全"],
+                 "reviewed_files": [item["new_path"] for item in initial["diffs"]], "findings": []}, "{}")
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    execute_review(instance.id, "ai")
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "completed"
+    assert report["coverage"]["reviewed_paths"] == names
+    assert len(report["coverage"]["batches"]) > 1

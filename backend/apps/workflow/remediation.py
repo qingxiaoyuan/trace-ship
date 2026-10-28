@@ -62,10 +62,13 @@ def _release(instance):
 
 
 def _snapshot(run, finding_id):
-    candidates = [(item, str(run.token)) for item in (run.findings or [])]
-    for attempt in reversed(run.history or []):
+    current = [(item, str(run.token)) for item in (run.findings or [])]
+    historical = []
+    for attempt in run.history or []:
         if isinstance(attempt, dict):
-            candidates.extend((item, str(attempt.get("token") or "")) for item in (attempt.get("findings") or []))
+            historical.extend((item, str(attempt.get("token") or "")) for item in (attempt.get("findings") or []))
+    # 已完成批次可在重试中复用；来源应是首次产生该发现的执行，而非当前聚合 token。
+    candidates = historical + current
     matches = [(item, token) for item, token in candidates
                if isinstance(item, dict) and str(item.get("id", "")) == finding_id]
     if not matches or any(item != matches[0][0] for item, _ in matches[1:]) or not matches[0][1]:
@@ -86,22 +89,28 @@ def _after_original_round(item, release):
     return item.instance.status in ("returned", "revoked") and release.workflow_instance_id != item.instance_id
 
 
-def present(item, user, release):
+def present(item, user, release, *, can_fix=None, can_review=None):
+    if can_fix is None:
+        can_fix = _can_fix(user, release)
+    if can_review is None:
+        can_review = _active_approver(user, release)
     return {"id": str(item.id), "instance_id": str(item.instance_id), "node_id": item.run.node_id,
             "finding_id": item.finding_id, "finding": item.finding, "source_token": item.source_token,
             "source_git_hash": item.source_git_hash, "status": item.status,
             "fix_note": item.fix_note, "history": item.history,
-            "can_fix": _can_fix(user, release) and _after_original_round(item, release) and item.status in OPEN_STATUSES,
-            "can_review": _active_approver(user, release) and item.status in OPEN_STATUSES}
+            "can_fix": can_fix and _after_original_round(item, release) and item.status in OPEN_STATUSES,
+            "can_review": can_review and item.status in OPEN_STATUSES}
 
 
 def list_items(instance, user):
     release = _release(instance)
     if not _can_read(user, release):
         raise PermissionDenied("无权查看审查整改")
-    items = AIReviewRemediation.objects.filter(release=release).select_related("run").order_by("created_at", "id")
-    return {"items": [present(item, user, release) for item in items],
-            "can_adopt": release.workflow_instance_id == instance.pk and _active_approver(user, release)}
+    can_fix = _can_fix(user, release)
+    can_review = _active_approver(user, release)
+    items = AIReviewRemediation.objects.filter(release=release).select_related("run", "instance").order_by("created_at", "id")
+    return {"items": [present(item, user, release, can_fix=can_fix, can_review=can_review) for item in items],
+            "can_adopt": release.workflow_instance_id == instance.pk and can_review}
 
 
 @transaction.atomic

@@ -355,3 +355,17 @@ def test_explicit_reject_and_delete_terminates_original_remediation(case):
     assert AIReviewRemediation.objects.get(pk=item_id).status == "pending_fix"
     assert client.delete(f"/api/releases/{release.id}/").status_code == 200
     assert not AIReviewRemediation.objects.filter(pk=item_id).exists()
+
+
+def test_adopt_skipped_review_uses_prior_execution_token(case):
+    client, release, instance, task, finding = case
+    run = instance.ai_reviews.get()
+    previous = str(run.token)
+    run.history = [{"token":previous, "findings":[finding]}]
+    run.token = uuid.uuid4()
+    run.status = "skipped"
+    run.save(update_fields=["history", "token", "status"])
+    url = f"/api/workflow/instances/{instance.id}/remediations/"
+    response = client.post(url, {"action":"adopt", "node_id":"ai", "finding_id":finding["id"]}, format="json")
+    assert response.status_code == 200
+    assert response.data["data"]["item"]["source_token"] == previous

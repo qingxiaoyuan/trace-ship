@@ -1419,6 +1419,8 @@ class ReleaseService:
                 return release
             if release.status != "draft":
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
+            if release.has_revision_history and not user.is_superuser and release.publisher_id != user.id:
+                raise serializers.ValidationError({"publisher": "退回修改后仅发布发起人或超管可重新提交审批"})
             if release.revision_source_hash and release.git_hash.lower() == release.revision_source_hash.lower():
                 raise serializers.ValidationError({"git_hash": "退回修改后请先更新到新的来源提交"})
             if release.doc_needs_regeneration or not release.release_doc:
@@ -1478,8 +1480,10 @@ class ReleaseService:
             if not definition.node_config:
                 from apps.workflow.remediation import assert_no_pending
                 assert_no_pending(release)
+            # 超管代提时保留原发起人，确保原发起人仍能终止新流程。
+            workflow_user = release.publisher if release.has_revision_history and release.publisher_id else user
             if release.release_type == "formal":
-                WorkflowEngine.validate_release_definition(definition, release, user)
+                WorkflowEngine.validate_release_definition(definition, release, workflow_user)
 
             provider = ReleaseService._get_provider(release.repository, user, project=release.project)
             claim_version(release, provider.list_tags(release.repository.external_identity))
@@ -1489,7 +1493,7 @@ class ReleaseService:
                     definition=definition,
                     biz_type="release",
                     biz_id=str(release.id),
-                    user=user,
+                    user=workflow_user,
                     allow_ai_release=True,
                 )
                 ai_nodes = [node for node in instance.node_config_snapshot if node.get("node_type") == "ai_review"]

@@ -35,7 +35,7 @@ export interface AiReviewData {
   node_name?: string;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
   summary: string;
-  coverage: { total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[] };
+  coverage: { manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[] }> };
   dimensions?: string[];
   findings?: AiReviewFinding[];
   can_recover?: boolean;

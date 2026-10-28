@@ -133,6 +133,23 @@ it('重试失败显示原因并允许再次操作', async () => {
   expect((screen.getByRole('button', { name: '重新审查' }) as HTMLButtonElement).disabled).toBe(false);
 });
 
+it('分批审查显示每批状态和文件覆盖', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'incomplete', summary: '审查未完成',
+    coverage: { total_files: 2, reviewed_files: 1, reviewed_paths: ['first.py'], unreviewed_paths: ['second.py'],
+      batches: [{ id: 'one', status: 'completed', paths: ['first.py'] }, { id: 'two', status: 'failed', paths: ['second.py'] }] } }] });
+  show();
+  expect(await screen.findByText('分批审查进度')).toBeTruthy();
+  expect(screen.getByText('第 1 批：已完成')).toBeTruthy();
+  expect(screen.getByText('第 2 批：失败')).toBeTruthy();
+});
+
+it('差异清单不完整时明确标注总数未知', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'incomplete', summary: '范围未完成',
+    coverage: { manifest_complete: false, total_files: 2, reviewed_files: 2, warnings: ['远端差异范围不完整'] } }] });
+  show();
+  expect(await screen.findByText('覆盖范围：已知 2 / 2 个文件（完整清单未知）')).toBeTruthy();
+});
+
 it('历史执行保留独有意见，并按稳定 ID 避免重复显示', async () => {
   const shared = { id: 'shared', severity: 'P1', title: '相同意见', reason: '当前原因', suggestion: '修复' };
   const old = { id: 'old', severity: 'P2', title: '旧意见', reason: '**旧原因**', suggestion: '检查' };
@@ -173,4 +190,14 @@ it('当前轮没有 AI 节点时仍可查看并复核跨轮整改', async () => 
   show();
   expect(await screen.findByRole('button', { name: '确认已处理' })).toBeTruthy();
   expect(screen.getByText('遗留整改')).toBeTruthy();
+});
+
+it('长意见列表分页后可访问末尾', async () => {
+  const findings = Array.from({ length: 21 }, (_, index) => ({ id: `f${index}`, severity: 'P2', title: `意见 ${index + 1}`, reason: '原因', suggestion: '修复' }));
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '完成', coverage: {}, findings }] });
+  show();
+  expect(await screen.findByText('意见 1')).toBeTruthy();
+  expect(screen.queryByText('意见 21')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '意见下一页' }));
+  expect(screen.getByText('意见 21')).toBeTruthy();
 });

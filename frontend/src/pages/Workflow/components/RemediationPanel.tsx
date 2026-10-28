@@ -63,6 +63,8 @@ export function RemediationPanel({ instanceId, reviews }: { instanceId: string; 
 function RemediationPanelContent({ instanceId, reviews, sessionVersion }: { instanceId: string; reviews: AiReviewData[]; sessionVersion: number }) {
   const client = useQueryClient();
   const [error, setError] = useState('');
+  const [itemPage, setItemPage] = useState(0);
+  const [candidatePage, setCandidatePage] = useState(0);
   const query = useQuery({ queryKey: ['review-remediations', instanceId, sessionVersion], queryFn: () => workflowApi.getRemediations(instanceId), retry: false, gcTime: 0 });
   const mutation = useMutation({
     mutationFn: (data: RemediationAction) => workflowApi.actOnRemediation(instanceId, data),
@@ -83,24 +85,32 @@ function RemediationPanelContent({ instanceId, reviews, sessionVersion }: { inst
   }
   if (!query.data) return null;
   const { items, can_adopt: canAdopt } = query.data;
+  const adopted = new Set(items.filter((item) => item.instance_id === instanceId).map((item) => `${item.node_id}:${item.finding_id}`));
   const candidates = reviews.flatMap((review) => {
     const history = uniqueHistoryFindings(review);
     const findings = [...(review.findings || []), ...(review.history || []).flatMap((attempt) => history.get(attempt.token) || [])];
-    return findings.filter((finding) => finding.id && !items.some((item) => item.instance_id === instanceId && item.node_id === review.node_id && item.finding_id === finding.id))
+    return findings.filter((finding) => finding.id && !adopted.has(`${review.node_id}:${finding.id}`))
       .map((finding) => ({ nodeId: review.node_id, finding }));
   });
   if (!items.length && (!canAdopt || !candidates.length)) return null;
   const submit = (action: RemediationAction) => { setError(''); mutation.mutate(action); };
+  const pageSize = 20;
+  const itemLastPage = Math.max(0, Math.ceil(items.length / pageSize) - 1);
+  const candidateLastPage = Math.max(0, Math.ceil(candidates.length / pageSize) - 1);
+  const safeItemPage = Math.min(itemPage, itemLastPage);
+  const safeCandidatePage = Math.min(candidatePage, candidateLastPage);
   return <section aria-label="代码审查整改" className="space-y-3 border-t border-slate-200 pt-4">
     <h4 className="font-semibold text-slate-800">代码审查整改</h4>
     <p className="text-xs text-slate-500">采纳后须提交修复说明并经审批人复核；未完成复核的整改项会阻止批准。</p>
     {error ? <p role="alert" className="rounded bg-rose-50 p-2 text-rose-700">{error}</p> : null}
-    {items.map((item) => <RemediationCard key={item.id} item={item} pending={mutation.isPending} onAction={submit} />)}
+    {items.slice(safeItemPage * pageSize, (safeItemPage + 1) * pageSize).map((item) => <RemediationCard key={item.id} item={item} pending={mutation.isPending} onAction={submit} />)}
+    {itemLastPage > 0 ? <div className="flex items-center gap-2 text-xs text-slate-600"><button type="button" disabled={safeItemPage === 0} onClick={() => setItemPage(safeItemPage - 1)} className="underline disabled:opacity-40">整改上一页</button><span>{safeItemPage + 1} / {itemLastPage + 1}</span><button type="button" disabled={safeItemPage === itemLastPage} onClick={() => setItemPage(safeItemPage + 1)} className="underline disabled:opacity-40">整改下一页</button></div> : null}
     {canAdopt && candidates.length ? <details><summary className="cursor-pointer text-indigo-700">采纳审查意见</summary><div className="mt-2 space-y-2">
-      {candidates.map(({ nodeId, finding }) => <div key={`${nodeId}:${finding.id}`} className="space-y-2 rounded border border-slate-200 p-3">
+      {candidates.slice(safeCandidatePage * pageSize, (safeCandidatePage + 1) * pageSize).map(({ nodeId, finding }) => <div key={`${nodeId}:${finding.id}`} className="space-y-2 rounded border border-slate-200 p-3">
         <FindingContent finding={finding} />
         <button type="button" aria-label={`采纳：${finding.title}`} disabled={mutation.isPending} onClick={() => submit({ action: 'adopt', node_id: nodeId, finding_id: finding.id! })} className="rounded border border-indigo-300 px-3 py-1 text-indigo-700 disabled:opacity-50">采纳并标记待修复</button>
       </div>)}
+      {candidateLastPage > 0 ? <div className="flex items-center gap-2 text-xs text-slate-600"><button type="button" disabled={safeCandidatePage === 0} onClick={() => setCandidatePage(safeCandidatePage - 1)} className="underline disabled:opacity-40">待采纳上一页</button><span>{safeCandidatePage + 1} / {candidateLastPage + 1}</span><button type="button" disabled={safeCandidatePage === candidateLastPage} onClick={() => setCandidatePage(safeCandidatePage + 1)} className="underline disabled:opacity-40">待采纳下一页</button></div> : null}
     </div></details> : null}
   </section>;
 }

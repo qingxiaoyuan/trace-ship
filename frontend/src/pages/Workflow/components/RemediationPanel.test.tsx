@@ -105,3 +105,21 @@ it('当前轮可采纳历史执行独有意见，已采纳的稳定 ID 不重复
   fireEvent.click(screen.getByRole('button', { name: '采纳：旧执行意见' }));
   await waitFor(() => expect(act).toHaveBeenCalledWith('round-1', { action: 'adopt', node_id: 'ai', finding_id: 'old-finding' }));
 });
+
+it('大量候选和整改项按页展示且可到达末尾', async () => {
+  const findings = Array.from({ length: 21 }, (_, index) => ({ ...finding, id: `f-${index}`, title: `候选 ${index + 1}` }));
+  const items = Array.from({ length: 21 }, (_, index) => ({ id: `item-${index}`, instance_id: 'old', node_id: 'ai', finding_id: `old-${index}`,
+    finding: { ...finding, id: `old-${index}`, title: `整改 ${index + 1}` }, status: 'pending_fix' as const, fix_note: '', history: [], can_fix: false, can_review: false }));
+  vi.spyOn(workflowApi, 'getRemediations').mockResolvedValue({ items, can_adopt: true });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter><RemediationPanel instanceId="round-1" reviews={[{ node_id: 'ai', status: 'completed', summary: '', coverage: {}, findings }]} /></MemoryRouter>
+  </QueryClientProvider>);
+  expect(await screen.findByText('整改 1')).toBeTruthy();
+  expect(screen.queryByText('整改 21')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '整改下一页' }));
+  expect(screen.getByText('整改 21')).toBeTruthy();
+  expect(screen.getByText('候选 1')).toBeTruthy();
+  expect(screen.queryByText('候选 21')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '待采纳下一页' }));
+  expect(screen.getByText('候选 21')).toBeTruthy();
+});

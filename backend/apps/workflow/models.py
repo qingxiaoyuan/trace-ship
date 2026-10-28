@@ -361,6 +361,7 @@ class AIReviewRun(models.Model):
     coverage = models.JSONField(default=dict, verbose_name="覆盖范围")
     findings = models.JSONField(default=list, verbose_name="审查发现")
     history = models.JSONField(default=list, verbose_name="过往执行记录")
+    batch_results = models.JSONField(default=dict, verbose_name="已审查批次检查点")
     skipped_by = models.ForeignKey("account.User", null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="skipped_ai_reviews", verbose_name="跳过操作者")
     skipped_at = models.DateTimeField(null=True, blank=True, verbose_name="跳过时间")

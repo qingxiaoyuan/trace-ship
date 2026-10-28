@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('release', '0021_releaserecord_has_revision_history'),
-        ('workflow', '0017_workflowinstance_returned_by_and_more'),
+        ('workflow', '0018_aireviewrun_batch_results'),
     ]
 
     operations = [
