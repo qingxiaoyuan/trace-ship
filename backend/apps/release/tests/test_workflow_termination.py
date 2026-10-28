@@ -172,3 +172,179 @@ def test_postgresql_final_approval_and_termination_are_serialized(flow, monkeypa
     assert flow.release.status == ("released" if first == "approve" else "draft")
     assert flow.instance.status == ("completed" if first == "approve" else "revoked")
     assert len(flow.remote.tags) == (1 if first == "approve" else 0)
+
+
+def test_submitted_workflow_keeps_approvers_and_nodes_after_definition_edit(flow):
+    """已提交的流程使用提交时审批链；后续修改仅影响下次提审。"""
+    definition = flow.instance.definition
+    definition.node_config = [{
+        "node_id": "replacement", "node_name": "新的审批", "mode": "any",
+        "approvers": [{"type": "user", "user_id": str(flow.user.id)}],
+    }]
+    definition.save(update_fields=["node_config"])
+    approve_next(flow)
+    second = flow.instance.tasks.get(status="pending")
+    assert second.node_id == "approval_2"
+    assert second.approver_id == flow.reviewer.id
+    approve_next(flow)
+    third = flow.instance.tasks.get(status="pending")
+    assert third.node_id == "approval_3"
+    approve_next(flow)
+    flow.release.refresh_from_db()
+    assert flow.release.status == "released"
+
+
+def test_release_workflow_history_distinguishes_current_and_restricts_visibility(flow):
+    """重提后同一申请的当前与历史流程可追溯，项目外人员不可查看。"""
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    assert flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/").status_code == 200
+    flow.release.refresh_from_db()
+    params = {"biz_type": "release", "biz_id": str(flow.release.id)}
+    history = flow.api.get("/api/workflow/instances/", params).data["data"]["results"]
+    by_id = {item["id"]: item for item in history}
+    assert by_id[str(flow.instance.id)]["is_current"] is False
+    assert by_id[str(flow.release.workflow_instance_id)]["is_current"] is True
+    assert by_id[str(flow.instance.id)]["status"] == "revoked"
+    outsider = User.objects.create_user(username="history_outsider")
+    flow.api.force_authenticate(outsider)
+    assert flow.api.get("/api/workflow/instances/", params).data["data"]["results"] == []
+    assert flow.api.get(f"/api/workflow/instances/{flow.instance.id}/").status_code == 404
+
+
+def test_resubmitted_workflow_uses_new_definition(flow):
+    """终止后重新提交使用届时配置，原审批历史仍保留。"""
+    definition = flow.instance.definition
+    definition.node_config = [{
+        "node_id": "new", "node_name": "新审批", "mode": "any",
+        "approvers": [{"type": "user", "user_id": str(flow.user.id)}],
+    }]
+    definition.save(update_fields=["node_config"])
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    assert flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/").status_code == 200
+    flow.release.refresh_from_db()
+    new = flow.release.workflow_instance
+    assert new.id != flow.instance.id
+    task = new.tasks.get(status="pending")
+    assert task.node_id == "new" and task.approver_id == flow.user.id
+    assert flow.instance.tasks.filter(status="revoked").exists()
+
+
+def test_submitted_workflow_keeps_resolved_role_approver_after_membership_change(flow):
+    """提审时解析角色成员，后续成员变动不会悄悄改变本轮审批人。"""
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    definition = flow.instance.definition
+    definition.node_config = [{
+        "node_id": f"role_{index}", "node_name": f"角色审批 {index}", "mode": "any",
+        "approvers": [{"type": "role", "role": "developer"}],
+    } for index in (1, 2)]
+    definition.save(update_fields=["node_config"])
+    assert flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/").status_code == 200
+    flow.release.refresh_from_db()
+    new = flow.release.workflow_instance
+    assert new.tasks.get(status="pending").approver_id == flow.reviewer.id
+    ProjectMember.objects.filter(project=flow.project, user=flow.reviewer).delete()
+    flow.api.force_authenticate(flow.reviewer)
+    first = new.tasks.get(status="pending")
+    assert flow.api.post(f"/api/workflow/tasks/{first.id}/approve/").status_code == 200
+    assert new.tasks.get(status="pending").approver_id == flow.reviewer.id
+
+
+def test_disabled_snapshot_approver_cannot_be_silently_skipped(flow):
+    """后续会签人员停用时阻止推进，不得缩减原审批人数。"""
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    second = User.objects.create_user(username="snapshot_second")
+    definition = flow.instance.definition
+    definition.node_config = [
+        {"node_id": "one", "node_name": "第一节点", "mode": "any",
+         "approvers": [{"type": "user", "user_id": str(flow.reviewer.id)}]},
+        {"node_id": "two", "node_name": "第二节点", "mode": "all",
+         "approvers": [{"type": "user", "user_id": str(flow.reviewer.id)},
+                       {"type": "user", "user_id": str(second.id)}]},
+    ]
+    definition.save(update_fields=["node_config"])
+    assert flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/").status_code == 200
+    flow.release.refresh_from_db()
+    new = flow.release.workflow_instance
+    second.is_active = False
+    second.save(update_fields=["is_active"])
+    flow.api.force_authenticate(flow.reviewer)
+    first = new.tasks.get(status="pending")
+    response = flow.api.post(f"/api/workflow/tasks/{first.id}/approve/")
+    assert response.status_code == 400, response.data
+    assert "审批人" in response.data["message"]
+    new.refresh_from_db()
+    first.refresh_from_db()
+    assert new.status == "running" and new.current_node_id == "one" and first.status == "pending"
+
+
+def test_deleted_draft_history_retains_project_visibility(flow):
+    """删除草稿后历史仍可读取，不会因共享仓库扩大到其他项目。"""
+    from apps.project.models import Project, ProjectComponent
+
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    flow.instance.definition.project = None
+    flow.instance.definition.save(update_fields=["project"])
+    assert flow.api.delete(f"/api/releases/{flow.release.id}/").status_code == 200
+    detail = flow.api.get(f"/api/workflow/instances/{flow.instance.id}/")
+    assert detail.status_code == 200
+    assert detail.data["data"]["project_name"] == flow.project.name
+    other = User.objects.create_user(username="other_project_member")
+    project = Project.objects.create(code="OTHER_HISTORY", name="其他项目", leader=other, status=1)
+    ProjectMember.objects.create(project=project, user=other, role="developer")
+    ProjectComponent.objects.create(project=project, repository=flow.release.repository, component_code="shared")
+    flow.api.force_authenticate(other)
+    assert flow.api.get(f"/api/workflow/instances/{flow.instance.id}/").status_code == 404
+    assert flow.api.get("/api/workflow/instances/").status_code == 200
+
+
+def test_release_history_filter_accepts_legacy_uuid_representation(flow):
+    """规范发布 ID 可查询旧数据中无连字符或大写的业务 ID。"""
+    WorkflowInstance.objects.filter(pk=flow.instance.pk).update(biz_id=str(flow.release.id).replace("-", "").upper())
+    response = flow.api.get("/api/workflow/instances/", {"biz_type": "release", "biz_id": str(flow.release.id)})
+    assert response.status_code == 200
+    assert str(flow.instance.id) in [item["id"] for item in response.data["data"]["results"]]
+
+
+def test_legacy_history_does_not_leak_after_release_deleted(flow):
+    """没有真实来源的旧记录不回退到共享仓库授权。"""
+    from apps.project.models import Project, ProjectComponent
+
+    WorkflowInstance.objects.filter(pk=flow.instance.pk).update(node_config_snapshot=None, source_project=None)
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    assert flow.api.delete(f"/api/releases/{flow.release.id}/").status_code == 200
+    other = User.objects.create_user(username="other_legacy_member")
+    project = Project.objects.create(code="OTHER_LEGACY", name="其他项目", leader=other, status=1)
+    ProjectMember.objects.create(project=project, user=other, role="developer")
+    ProjectComponent.objects.create(project=project, repository=flow.release.repository, component_code="shared")
+    flow.api.force_authenticate(other)
+    assert flow.api.get(f"/api/workflow/instances/{flow.instance.id}/").status_code == 404
+
+
+def test_old_nonmember_approver_cannot_read_current_release_through_history(flow):
+    """旧审批分配仅授权历史实例，不能读取后来修改的申请内容。"""
+    old_task = flow.instance.tasks.get(status="pending")
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    ProjectMember.objects.filter(project=flow.project, user=flow.reviewer).delete()
+    flow.release.release_doc = "新一轮专属发布说明"
+    flow.release.branch = "private-new-branch"
+    flow.release.save(update_fields=["release_doc", "branch"])
+    flow.api.force_authenticate(flow.reviewer)
+    detail = flow.api.get(f"/api/workflow/instances/{flow.instance.id}/")
+    assert detail.status_code == 200
+    assert detail.data["data"]["release_doc"] == ""
+    assert detail.data["data"]["branch"] == ""
+    assert detail.data["data"]["git_hash"] == ""
+    task = flow.api.get(f"/api/workflow/tasks/{old_task.id}/")
+    assert task.status_code == 200
+    assert task.data["data"]["branch"] == ""
+
+
+def test_legacy_workflow_uses_saved_graph_if_definition_changed(flow):
+    """旧实例无节点快照时，使用实际保留的实例图而非篡改后的定义。"""
+    WorkflowInstance.objects.filter(pk=flow.instance.pk).update(node_config_snapshot=None)
+    definition = flow.instance.definition
+    definition.node_config = []
+    definition.save(update_fields=["node_config"])
+    approve_next(flow)
+    second = flow.instance.tasks.get(status="pending")
+    assert second.node_id == "approval_2" and second.approver_id == flow.reviewer.id

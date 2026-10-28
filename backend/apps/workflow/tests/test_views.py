@@ -1,8 +1,8 @@
 """
 工作流接口集成测试
 
-覆盖「我发起的」实例接口、审批任务序列化器扩展字段以及驳回到初始节点时
-自动删除流程并让发布回到草稿态的行为。
+覆盖「我发起的」实例接口、审批任务序列化器扩展字段以及回退到初始节点时
+保留流程历史并让发布回到草稿态的行为。
 """
 import pytest
 from rest_framework.test import APIClient
@@ -74,6 +74,7 @@ class TestWorkflowInstanceViews:
         """「我发起的」只返回当前用户创建的实例"""
         WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000002",
             status="running",
@@ -81,6 +82,7 @@ class TestWorkflowInstanceViews:
         )
         WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000003",
             status="running",
@@ -98,6 +100,7 @@ class TestWorkflowInstanceViews:
         """status=running 只返回进行中的实例"""
         WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000004",
             status="running",
@@ -105,6 +108,7 @@ class TestWorkflowInstanceViews:
         )
         WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000005",
             status="completed",
@@ -175,6 +179,7 @@ class TestWorkflowInstanceViews:
         )
         instance = WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000006",
             status="running",
@@ -261,6 +266,7 @@ class TestRollbackToStart:
         )
         instance = WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000099",
             status="running",
@@ -288,6 +294,7 @@ class TestRollbackToStart:
         )
         instance = WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000199",
             status="running",
@@ -298,10 +305,10 @@ class TestRollbackToStart:
         )
         return definition, instance
 
-    def test_rollback_to_initial_node_deletes_instance_and_resets_release(
+    def test_rollback_to_initial_node_preserves_history_and_resets_release(
         self, api_client, project, user,
     ):
-        """回退到初始节点 → 实例被删除 + 关联发布回到草稿态"""
+        """回退到初始节点 → 实例与意见保留，关联发布回到草稿态。"""
         from apps.release.models import ReleaseRecord
         from apps.repository.models import Repository
         from apps.workflow.models import WorkflowTask
@@ -327,6 +334,8 @@ class TestRollbackToStart:
             publisher=user,
             workflow_instance=instance,
         )
+        instance.biz_id = str(release.id)
+        instance.save(update_fields=["biz_id"])
         # 第二个节点的 pending 任务
         task = WorkflowTask.objects.create(
             instance=instance,
@@ -346,9 +355,13 @@ class TestRollbackToStart:
         assert response.status_code == 200
         assert response.data["code"] == 0
 
-        # 流程实例应被自动删除，关联任务随之级联删除
-        assert not WorkflowInstance.objects.filter(id=instance.id).exists()
-        assert not WorkflowTask.objects.filter(id=task.id).exists()
+        # 流程实例与操作意见保留，旧任务失效。
+        instance.refresh_from_db()
+        task.refresh_from_db()
+        assert instance.status == "revoked"
+        assert task.status == "rollbacked"
+        assert task.comment == "需要技术负责人再看看"
+        assert api_client.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 400
 
         # 发布单回到 draft 态并解除与流程实例的关联
         release.refresh_from_db()
@@ -507,6 +520,7 @@ class TestTodoCount:
         """待办列表支持 instance 过滤，深链只取当前单的待办"""
         other_instance = WorkflowInstance.objects.create(
             definition=definition,
+            source_project=definition.project,
             biz_type="release",
             biz_id="00000000-0000-0000-0000-000000000020",
             status="running",

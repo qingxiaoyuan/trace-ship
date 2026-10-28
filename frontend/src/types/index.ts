@@ -1057,6 +1057,8 @@ export interface WorkflowDefinition {
 }
 
 export interface WorkflowInstance {
+  is_current?: boolean;
+  has_config_snapshot?: boolean;
   can_revoke?: boolean;
   id: string;
   definition: string;
@@ -1093,6 +1095,7 @@ export interface WorkflowInstance {
  * 「我发起的」接口返回，字段与审批任务列表兼容，便于在列表中统一渲染。
  */
 export interface WorkflowInstanceListItem {
+  is_current: boolean;
   id: string;
   definition: string;
   biz_type: string;

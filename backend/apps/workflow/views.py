@@ -3,7 +3,10 @@
 
 提供流程定义、流程实例、审批任务的 RESTful API。
 """
-from django.db.models import Q
+import uuid
+
+from django.db.models import Q, Value
+from django.db.models.functions import Lower, Replace
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers
 from rest_framework.decorators import action, api_view, permission_classes
@@ -129,7 +132,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
     serializer_class = WorkflowInstanceSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ["biz_type", "biz_id", "status", "created_by"]
+    filterset_fields = ["biz_type", "status", "created_by"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
     http_method_names = ["get", "post", "head", "options"]
@@ -146,11 +149,21 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             return WorkflowInstance.objects.none()
         user = self.request.user
         queryset = WorkflowInstance.objects.select_related(
-            "definition", "definition__repository", "created_by"
+            "definition", "definition__repository", "source_project", "created_by"
         ).prefetch_related("tasks")
-        if user.is_superuser:
-            return queryset.all()
-        return queryset.filter(id__in=visible_workflow_instances(user).values("id"))
+        if not user.is_superuser:
+            queryset = queryset.filter(id__in=visible_workflow_instances(user).values("id"))
+        biz_id = self.request.query_params.get("biz_id")
+        if biz_id:
+            try:
+                canonical = uuid.UUID(biz_id).hex
+            except ValueError:
+                return queryset.filter(biz_id=biz_id)
+            normalized = Lower("biz_id")
+            for fragment in ("urn:", "uuid:", "{", "}", "-"):
+                normalized = Replace(normalized, Value(fragment), Value(""))
+            queryset = queryset.annotate(history_biz_id=normalized).filter(history_biz_id=canonical)
+        return queryset
 
     def get_permissions(self):
         """创建实例需项目开发者"""
@@ -366,14 +379,8 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
         serializer = self.get_serializer(task)
 
-        # 驳回到初始节点：流程作废，自动删除该实例并让发布回到待提交态
-        if instance.status == "rejected":
-            try:
-                ReleaseService.handle_workflow_rollback_to_start(instance, comment)
-            except Exception:
-                pass
-            instance.delete()
-            return success_response(serializer.data, message="已回退到初始节点，流程已删除")
+        if instance.status == "revoked":
+            return success_response(serializer.data, message="已回退到初始节点，审批历史已保留")
 
         return success_response(serializer.data, message="回退成功")
 
