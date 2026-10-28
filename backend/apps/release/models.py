@@ -107,6 +107,8 @@ class ReleaseRecord(models.Model):
     )
     # 发布说明文档：Markdown 格式字符串（2 列表格），可手动编辑
     release_doc = models.TextField(blank=True, verbose_name="发布说明文档")
+    review_context = models.TextField(blank=True, verbose_name="补充审查说明")
+    review_document_paths = models.JSONField(default=list, blank=True, verbose_name="审查文档路径")
     doc_needs_regeneration = models.BooleanField(default=False, verbose_name="发布说明需要重新生成")
     doc_source_fixed = models.BooleanField(default=False, verbose_name="说明采用固定提交范围")
     # 关联变更清单：硬件/软件版本条目列表，由发布向导收集
@@ -170,6 +172,27 @@ class ReleaseRecord(models.Model):
     def __str__(self) -> str:
         """返回版本号描述"""
         return f"{self.project.name} - {self.version}"
+
+
+class ReleaseReviewScope(models.Model):
+    """一次提审的不可变代码范围与补充审查依据。"""
+
+    instance = models.OneToOneField(
+        "workflow.WorkflowInstance", on_delete=models.CASCADE, related_name="review_scope", verbose_name="审批轮次",
+    )
+    base_tag = models.CharField(max_length=100, blank=True, verbose_name="基线版本")
+    base_git_hash = models.CharField(max_length=100, blank=True, verbose_name="基线提交")
+    head_git_hash = models.CharField(max_length=100, verbose_name="目标提交")
+    context = models.TextField(blank=True, verbose_name="补充审查说明快照")
+    documents = models.JSONField(default=dict, verbose_name="审查文档内容快照")
+    diffs = models.JSONField(default=list, verbose_name="代码差异快照")
+    warnings = models.JSONField(default=list, verbose_name="覆盖缺口")
+    status = models.CharField(max_length=30, verbose_name="范围状态")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        db_table = "release_review_scope"
+        verbose_name = "发布审查范围"
 
 
 class ReleaseTagCleanupAttempt(models.Model):

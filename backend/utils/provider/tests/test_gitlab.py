@@ -220,3 +220,15 @@ def test_delete_tag_not_found(provider):
 
     with pytest.raises(NotFoundError):
         provider.delete_tag("group/project", "VA.1.0.0_20260814")
+
+
+@pytest.mark.parametrize("payload", [
+    {"diffs": []},
+    {"compare_timeout": False, "diffs": [{"old_path": "a.bin", "new_path": "a.bin", "diff": "Binary files a/a.bin and b/a.bin differ"}]},
+])
+@responses.activate
+def test_review_diff_discloses_unknown_or_binary_coverage(provider, payload):
+    responses.add(responses.GET, "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/compare", json=payload, status=200)
+    result = provider.review_diff("group/project", "a" * 40, "b" * 40)
+    assert result["complete"] is False
+    assert result["warnings"]

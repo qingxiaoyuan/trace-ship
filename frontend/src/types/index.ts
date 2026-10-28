@@ -131,6 +131,9 @@ export interface Release {
   tag_name: string;
   /** 关联的 Redmine 任务地址 */
   redmine_url?: string;
+  /** 提审时补充的审查说明及仓库内文档路径。 */
+  review_context?: string;
+  review_document_paths?: string[];
   release_type: ReleaseType;
   /** 发布类型中文展示（列表接口返回） */
   release_type_display?: string;

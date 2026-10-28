@@ -32,6 +32,10 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     version = serializers.CharField(required=False, allow_blank=True)
     tag_name = serializers.CharField(required=False, allow_blank=True)
     release_doc = serializers.CharField(required=False, allow_blank=True)
+    review_context = serializers.CharField(required=False, allow_blank=True, max_length=20000, trim_whitespace=False)
+    review_document_paths = serializers.ListField(
+        child=serializers.CharField(max_length=500), required=False, allow_empty=True, max_length=20,
+    )
     package_config_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -59,7 +63,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "release_type", "release_type_display", "status", "status_display", "workflow_instance",
-            "release_doc", "doc_needs_regeneration", "related_changes", "updates",
+            "release_doc", "review_context", "review_document_paths", "doc_needs_regeneration", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
             "self_test_passed", "retest_passed",
@@ -81,7 +85,20 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["source_rc"] = str(instance.source_rc_id) if instance.source_rc_id else None
+        request = self.context.get("request")
+        if request and not request.user.is_superuser:
+            from utils.permissions import ProjectRolePermission
+
+            role = ProjectRolePermission._effective_role(instance.project, request.user)
+            if role in ("maintainer", "viewer"):
+                data.pop("review_context", None)
+                data.pop("review_document_paths", None)
         return data
+
+    def validate_review_document_paths(self, paths):
+        from apps.release.review_scope import validate_document_paths
+
+        return validate_document_paths(paths)
 
     def get_package_tasks(self, obj: ReleaseRecord) -> list[dict]:
         """返回该发布关联的打包任务概要。"""

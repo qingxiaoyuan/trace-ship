@@ -32,6 +32,7 @@ export const changelogEntries: ChangelogEntry[] = [
     summary: '发布审查配置、草稿更新与审批历史',
     items: [
       { category: 'feature', text: '发布发起人可在草稿中预览新旧提交及代码差异，确认后更新至分支最新提交；原说明和关联变更清空，重新生成后才能提审' },
+      { category: 'feature', text: '发布草稿可填写补充审查说明和仓库文档路径，方便在审批中核对审查依据' },
       { category: 'feature', text: '系统配置可单独保存发布代码审查模型，选择内置技能或上传文档型技能；密钥不回显，设置变化保留历史版本。' },
       { category: 'improvement', text: '提交审批后固定本轮节点和审批人，后续流程配置修改只影响新提交的审批；历史审批记录可在发布及审批详情查看' },
       { category: 'fix', text: '回退到初始节点时保留已处理任务和审批意见，旧待办失效，发布恢复为草稿' },

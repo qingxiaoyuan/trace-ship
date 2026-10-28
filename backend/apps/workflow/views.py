@@ -37,6 +37,16 @@ from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
 
 
+def _snapshot_assigns_user(instance: WorkflowInstance, user) -> bool:
+    """仅使用本轮真实审批配置快照，不能从当前流程定义推测。"""
+    return any(
+        str(approver.get("user_id")) == str(user.id)
+        for node in (instance.node_config_snapshot or []) if isinstance(node, dict)
+        for approver in node.get("approvers", [])
+        if isinstance(approver, dict) and approver.get("type") == "user"
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def todo_count(request: Request) -> Response:
@@ -226,9 +236,49 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
 
     def retrieve(self, request: Request, *args, **kwargs) -> Response:
         """查询实例详情"""
-        instance = self.get_object()
+        try:
+            uuid.UUID(str(kwargs["pk"]))
+        except ValueError:
+            return error_response(40400, "流程实例不存在或不可见", status_code=404)
+        instance = self.get_queryset().filter(pk=kwargs["pk"]).first()
+        if instance is None:
+            instance = WorkflowInstance.objects.filter(pk=kwargs["pk"], review_scope__isnull=False).first()
+            if instance is None or not instance.source_project_id or not _snapshot_assigns_user(instance, request.user):
+                return error_response(40400, "流程实例不存在或不可见", status_code=404)
         serializer = self.get_serializer(instance)
         return success_response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="review-scope")
+    def review_scope(self, request: Request, pk=None) -> Response:
+        """按项目有效角色和本轮审批分配读取固定审查依据。"""
+        from django.shortcuts import get_object_or_404
+
+        from apps.project.models import ProjectMember
+        from apps.release.models import ReleaseReviewScope
+        from utils.permissions import ProjectRolePermission
+
+        instance = get_object_or_404(WorkflowInstance.objects.select_related("source_project"), pk=pk)
+        project = instance.source_project
+        member = project and ProjectMember.objects.filter(project=project, user=request.user).exists()
+        assigned = instance.tasks.filter(approver=request.user).exists() or _snapshot_assigns_user(instance, request.user)
+        if not (request.user.is_superuser or member or assigned):
+            return error_response(40400, "本轮审查范围不存在或不可见", status_code=404)
+        scope = ReleaseReviewScope.objects.filter(instance=instance).first()
+        if scope is None:
+            return error_response(40400, "本轮未固定审查范围", status_code=404)
+        if not request.user.is_superuser and project is None:
+            return error_response(40300, "无法核验所属项目", status_code=403)
+        role = ProjectRolePermission._effective_role(project, request.user) if member else None
+        full_access = request.user.is_superuser or role in ("manager", "software_admin", "developer", "tester", "auditor")
+        if not member and assigned:
+            full_access = True
+        data = {
+            "status": scope.status, "base_tag": scope.base_tag, "base_git_hash": scope.base_git_hash,
+            "head_git_hash": scope.head_git_hash, "warnings": scope.warnings, "created_at": scope.created_at,
+        }
+        if full_access:
+            data.update(context=scope.context, documents=scope.documents, diffs=scope.diffs)
+        return success_response(data)
 
     @action(detail=False, methods=["get"], url_path="initiated")
     def initiated(self, request: Request) -> Response:

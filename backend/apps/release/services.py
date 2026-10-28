@@ -817,6 +817,8 @@ class ReleaseService:
         return (
             Q(release_doc="")
             & Q(redmine_url="")
+            & Q(review_context="")
+            & Q(review_document_paths=[])
             & Q(related_changes=[])
             & Q(updates=[])
             & Q(has_config_changes=False)
@@ -1001,6 +1003,8 @@ class ReleaseService:
         retest_passed: bool = False,
         package_config_ids: list | None = None,
         source_rc: UUID | str | None = None,
+        review_context: str = "",
+        review_document_paths: list | None = None,
     ) -> ReleaseRecord:
         """
         创建发布申请
@@ -1128,6 +1132,8 @@ class ReleaseService:
             version=version,
             tag_name=tag_name,
             redmine_url=redmine_url or "",
+            review_context=review_context,
+            review_document_paths=review_document_paths or [],
             source_rc=source,
             source_rc_version=source.version if source else "",
             source_rc_tag=source.tag_name if source else "",

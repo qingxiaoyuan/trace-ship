@@ -7,6 +7,16 @@ import type {
   WorkflowTask,
 } from '@/types';
 
+export interface ReviewScopeData {
+  status: 'first_release' | 'no_changes' | 'incomplete' | 'ready';
+  base_tag: string;
+  base_git_hash: string;
+  head_git_hash: string;
+  warnings: string[];
+  context?: string;
+  documents?: Record<string, string>;
+}
+
 export const workflowApi = {
   getDefinitions: (params?: Record<string, unknown>) =>
     get<PaginatedData<WorkflowDefinition>>('/workflow/definitions/', { params }),
@@ -20,6 +30,7 @@ export const workflowApi = {
   getInstances: (params?: Record<string, unknown>) =>
     get<PaginatedData<WorkflowInstanceListItem>>('/workflow/instances/', { params }),
   getInstance: (id: string) => get<WorkflowInstance>(`/workflow/instances/${id}/`),
+  getReviewScope: (id: string) => get<ReviewScopeData>(`/workflow/instances/${id}/review-scope/`, { silent: true }),
   revokeInstance: (id: string, data?: { comment?: string }) =>
     post<WorkflowInstance>(`/workflow/instances/${id}/revoke/`, data || {}),
   /** 我发起的流程实例列表，支持 status 过滤 */

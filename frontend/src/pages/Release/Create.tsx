@@ -260,6 +260,8 @@ export default function ReleaseCreate() {
         branch: values.branch as string,
         tag_name: (values.tag_name as string)?.trim() || undefined,
         redmine_url: (values.redmine_url as string)?.trim() || undefined,
+        review_context: (values.review_context as string) || '',
+        review_document_paths: ((values.review_document_paths as string) || '').split('\n').map(path => path.trim()).filter(Boolean),
         related_changes: relatedChanges.filter((r) => r.key.trim()),
         updates: updates.filter((u) => u.content.trim()),
         has_config_changes: hasConfigChanges,
@@ -538,6 +540,17 @@ export default function ReleaseCreate() {
             <p className="mt-1 text-[11px] text-slate-400">
               发布后可在版本详情中直接打开关联任务
             </p>
+
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <h4 className="text-[13px] font-semibold text-slate-800">审查上下文（可选）</h4>
+              <p className="mt-1 text-[11px] text-slate-500">填写真实需求或审查重点，以及需要读取的仓库文档。包含 AI 审查节点时，提审将固定本轮内容。</p>
+              <Form.Item name="review_context" label="补充审查说明" className="mb-3 mt-3">
+                <Input.TextArea rows={3} placeholder="填写需求或其他审查重点，可留空" />
+              </Form.Item>
+              <Form.Item name="review_document_paths" label="仓库文档路径" className="mb-0">
+                <Input.TextArea rows={3} className="font-mono" placeholder="每行一个仓库内相对路径，例如 docs/requirements.md" />
+              </Form.Item>
+            </div>
 
             {/* 自动计算预览 */}
             {nextVersionData?.all_types && (
