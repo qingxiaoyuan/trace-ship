@@ -321,19 +321,19 @@ class GitLabProvider(GitProvider):
             try:
                 items = resp.json()
             except ValueError as exc:
-                raise ProviderError("GitLab 发布变更响应不是有效 JSON") from exc
+                raise ProviderError("GitLab 分页响应不是有效 JSON") from exc
             if not isinstance(items, list):
-                raise ProviderError("GitLab 发布变更响应不完整")
+                raise ProviderError("GitLab 分页响应不完整")
             for item in items:
                 identity = item.get(identity_key) if isinstance(item, dict) else None
-                if not identity or identity in seen:
-                    raise ProviderError("GitLab 发布变更分页重复或缺少标识，请重试")
+                if not isinstance(identity, (str, int)) or not identity or identity in seen:
+                    raise ProviderError("GitLab 分页重复或缺少标识，请重试")
                 seen.add(identity)
                 result.append(item)
             next_page = resp.headers.get("X-Next-Page")
             if next_page:
                 if not next_page.isdigit() or int(next_page) != page + 1 or not items:
-                    raise ProviderError("GitLab 发布变更分页异常，请重试")
+                    raise ProviderError("GitLab 分页异常，请重试")
                 page = int(next_page)
             elif next_page == "" or len(items) < 100:
                 break
@@ -384,7 +384,7 @@ class GitLabProvider(GitProvider):
         """
         列出仓库全部 tag
 
-        单页最多 100 条，按 X-Next-Page 响应头翻页拉取全部。
+        单页最多 100 条，分页头缺失时继续探测，避免静默漏掉版本。
         created_at 取 tag 指向 commit 的提交时间（committed_date），
         作为 tag 时间点的近似（GitLab REST API 不提供 tag 创建时间），
         用于发布预览的 MR/commit 时间截断；tag 打在历史 commit 上时
@@ -392,28 +392,16 @@ class GitLabProvider(GitProvider):
         应知晓这一误差。
         """
         encoded = self._encode_identity(repo_identity)
+        items = self._release_pages(f"/projects/{encoded}/repository/tags", {}, "name")
         result: list[TagInfo] = []
-        page = 1
-        while True:
-            resp = self._request(
-                "GET",
-                f"/projects/{encoded}/repository/tags",
-                params={"per_page": 100, "page": page},
-            )
-            for t in resp.json():
-                commit = t.get("commit") or {}
-                result.append(
-                    TagInfo(
-                        name=t["name"],
-                        message=t.get("message") or "",
-                        commit_hash=commit.get("id"),
-                        created_at=self._parse_datetime(commit.get("committed_date")),
-                    )
-                )
-            next_page = resp.headers.get("X-Next-Page")
-            if not next_page:
-                break
-            page = int(next_page)
+        for item in items:
+            commit = item.get("commit") or {}
+            if not isinstance(item["name"], str) or not isinstance(commit, dict):
+                raise ProviderError("GitLab Tag 响应不完整")
+            result.append(TagInfo(
+                name=item["name"], message=item.get("message") or "", commit_hash=commit.get("id"),
+                created_at=self._parse_datetime(commit.get("committed_date")),
+            ))
         return result
 
     def create_tag(self, repo_identity: str, tag_name: str, commit_hash: str, message: str = "") -> TagInfo:

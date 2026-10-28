@@ -161,6 +161,13 @@ class WorkflowInstance(models.Model):
         "project.Project", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="workflow_history", verbose_name="发布所属项目快照",
     )
+    source_biz_id = models.CharField(max_length=200, blank=True, default="", verbose_name="发布项目快照业务ID")
+    # 无法解析的旧业务仅能依据定义中的明确项目授权，保留原 ID 防止换 ID 后沿用授权。
+    legacy_project = models.ForeignKey(
+        "project.Project", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="legacy_workflow_history", verbose_name="异常历史定义项目",
+    )
+    legacy_biz_id = models.CharField(max_length=200, blank=True, default="", verbose_name="异常历史原业务ID")
     # 存量流程没有真实快照，保留 NULL 以区分历史兼容行为。
     node_config_snapshot = models.JSONField(null=True, blank=True, verbose_name="提审时审批链快照")
     node_status = models.JSONField(default=dict, verbose_name="节点状态快照")
@@ -192,19 +199,47 @@ class WorkflowInstance(models.Model):
         return f"{self.definition.name} - {self.biz_id}"
 
     def save(self, *args, **kwargs) -> None:
-        """发布业务 ID 统一保存为规范 UUID，保持查询授权与业务解析一致。"""
+        """规范化发布 ID；已有实例变更业务身份时清除原授权依据。"""
+        update_fields = kwargs.get("update_fields")
+        input_biz_id = self.biz_id
+        valid_id = False
         if self.biz_type == "release":
             try:
-                canonical_id = str(uuid.UUID(str(self.biz_id)))
+                self.biz_id = str(uuid.UUID(str(self.biz_id)))
+                valid_id = True
             except ValueError:
-                # 异常历史业务 ID 保持原值，解析服务仍按旧规则返回空值。
                 pass
-            else:
-                if self.biz_id != canonical_id:
-                    self.biz_id = canonical_id
-                    if kwargs.get("update_fields") is not None:
-                        kwargs["update_fields"] = {*kwargs["update_fields"], "biz_id"}
+            if self.biz_id != input_biz_id and update_fields is not None:
+                update_fields = {*update_fields, "biz_id"}
+                kwargs["update_fields"] = update_fields
+
+        if self._state.adding:
+            if self.biz_type == "release" and valid_id and self.source_project_id:
+                self.source_biz_id = self.biz_id
+            # 只有无仓库的历史项目级定义能提供明确的项目归属。
+            if (self.biz_type == "release" and not valid_id and not self.source_project_id
+                    and self.definition_id and self.definition.repository_id is None and self.definition.project_id):
+                self.legacy_project_id = self.definition.project_id
+                self.legacy_biz_id = str(self.biz_id)
+        elif update_fields is None or {"biz_id", "biz_type", "definition", "definition_id"} & set(update_fields):
+            database = kwargs.get("using") or self._state.db
+            previous = type(self).objects.using(database).filter(pk=self.pk).values(
+                "biz_id", "biz_type", "definition_id",
+            ).first()
+            if previous and (
+                (update_fields is None or "biz_id" in update_fields) and previous["biz_id"] != self.biz_id
+                or (update_fields is None or "biz_type" in update_fields) and previous["biz_type"] != self.biz_type
+                or (update_fields is None or {"definition", "definition_id"} & set(update_fields))
+                and previous["definition_id"] != self.definition_id
+            ):
+                self.source_project = None
+                self.source_biz_id = ""
+                self.legacy_project = None
+                self.legacy_biz_id = ""
+                if update_fields is not None:
+                    kwargs["update_fields"] = {*update_fields, "source_project", "source_biz_id", "legacy_project", "legacy_biz_id"}
         super().save(*args, **kwargs)
+
 
 
 class WorkflowTask(models.Model):

@@ -208,7 +208,7 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
     def get_project_name(self, obj: WorkflowTask) -> str:
         """返回项目名称。"""
         release = release_for_display(obj.instance, self.context.get("request"))
-        project = release.project if release else obj.instance.source_project or obj.instance.definition.project
+        project = release.project if release else obj.instance.source_project or obj.instance.legacy_project or obj.instance.definition.project
         return project.name if project else ""
 
     def get_repository_name(self, obj: WorkflowTask) -> str:
@@ -313,7 +313,7 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
     def get_project_name(self, obj: WorkflowInstance) -> str:
         """返回项目名称。"""
         release = release_for_display(obj, self.context.get("request"))
-        project = release.project if release else obj.source_project or obj.definition.project
+        project = release.project if release else obj.source_project or obj.legacy_project or obj.definition.project
         return project.name if project else ""
 
     def get_repository_name(self, obj: WorkflowInstance) -> str:
@@ -410,7 +410,7 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
     def get_project_name(self, obj: WorkflowInstance) -> str:
         """返回项目名称。"""
         release = release_for_display(obj, self.context.get("request"))
-        project = release.project if release else obj.source_project or obj.definition.project
+        project = release.project if release else obj.source_project or obj.legacy_project or obj.definition.project
         return project.name if project else ""
 
     def get_repository_name(self, obj: WorkflowInstance) -> str:

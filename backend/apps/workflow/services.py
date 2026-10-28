@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import CharField, Q, Value
+from django.db.models import CharField, F, Q, Value
 from django.db.models.functions import Cast, Lower, Replace
 from django.utils import timezone
 from rest_framework import serializers
@@ -333,7 +333,8 @@ class WorkflowEngine:
         locked = WorkflowInstance.objects.select_for_update().get(pk=instance.pk)
         if release is not None and locked.source_project_id is None:
             locked.source_project_id = release.project_id
-            locked.save(update_fields=["source_project"])
+            locked.source_biz_id = locked.biz_id
+            locked.save(update_fields=["source_project", "source_biz_id"])
         return locked
 
     @classmethod
@@ -1040,7 +1041,10 @@ def visible_workflow_instances(user):
         | Q(biz_type="release", normalized_biz_id__in=releases.filter(
             project_id__in=visible_project_ids(user),
         ).values("workflow_biz_id"))
-        | (~real_release & Q(source_project_id__in=visible_project_ids(user)))
+        | (~real_release & ~Q(source_biz_id="") & Q(source_project_id__in=visible_project_ids(user),
+                                                     source_biz_id=F("biz_id")))
+        | Q(biz_type="release", source_project__isnull=True, definition__repository__isnull=True,
+            legacy_project_id__in=visible_project_ids(user), legacy_biz_id=F("biz_id"))
         | (~Q(biz_type="release") & definition_scope)
     ).distinct()
 
