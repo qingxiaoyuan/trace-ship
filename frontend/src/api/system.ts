@@ -111,3 +111,25 @@ export const systemApi = {
     patch<AccessToken>(`/system/access-tokens/${id}/`, data),
   deleteAccessToken: (id: string) => del<null>(`/system/access-tokens/${id}/`),
 };
+
+export interface ReviewSettings {
+  version_id: string | null;
+  endpoint: string;
+  model: string;
+  protocol: 'auto' | 'openai' | 'anthropic';
+  has_api_key: boolean;
+  skill: { name: string; revision: string; source: string; license: string; files: string[] };
+}
+
+export interface ReviewSettingsPayload {
+  endpoint: string;
+  model: string;
+  protocol: ReviewSettings['protocol'];
+  api_key?: string;
+  skill: string;
+}
+
+export const reviewSettingsApi = {
+  get: () => get<ReviewSettings>('/system/review-settings/'),
+  save: (data: ReviewSettingsPayload) => put<ReviewSettings>('/system/review-settings/', data),
+};
