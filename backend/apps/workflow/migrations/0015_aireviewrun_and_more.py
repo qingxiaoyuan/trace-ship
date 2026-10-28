@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('system', '0005_reviewskillversion'),
-        ('workflow', '0013_workflowinstance_source_project'),
+        ('workflow', '0014_workflowinstance_legacy_biz_id_and_more'),
     ]
 
     operations = [
