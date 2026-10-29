@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.project.models import Project, ProjectComponent, ProjectMember
-from apps.release.models import ReleaseRecord
+from apps.release.models import ReleaseCommit, ReleaseRecord
 from apps.workflow.models import WorkflowDefinition
 from utils.provider.base import TagInfo
 
@@ -263,13 +263,14 @@ class TestReleaseViews:
         assert isinstance(response.data["data"], str)
         assert "| 项目 | 内容 |" in response.data["data"]
 
-    def test_submit_audit(self, api_client, project, repository, commit, patched_provider, user):
-        """提交审批"""
+    @pytest.mark.parametrize("release_type", ["rc", "beta"])
+    def test_submit_audit_with_illegal_commit(self, api_client, project, repository, commit, patched_provider, user, release_type):
+        """RC、Beta 纳入不合规提交后仍可进入人工审批，并保留审查结果。"""
         WorkflowDefinition.objects.create(
             project=project,
             name="发布审批",
             biz_type="release",
-            release_type="rc",
+            release_type=release_type,
             is_active=True,
             node_config=[
                 {
@@ -296,15 +297,24 @@ class TestReleaseViews:
             project=project,
             repository=repository,
             version="VA.1.0.0",
-            tag_name="VA.1.0.0-rc",
+            tag_name=f"VA.1.0.0-{'rc' if release_type == 'rc' else 'alpha'}",
             branch="main",
-            release_type="rc",
+            release_type=release_type,
             publisher=api_client.handler._force_user,
             release_doc="| 项目 | 内容 |\n|------|------|\n| 变更类型 | 无配置项改动 |",
         )
+        commit.review_status = "illegal"
+        commit.review_reason = "人工复核标记为非法"
+        commit.save(update_fields=["review_status", "review_reason"])
+        ReleaseCommit.objects.create(release=release, commit=commit, is_included=True)
         response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
-        assert response.status_code == 200
+        assert response.status_code == 200, response.data
         assert response.data["data"]["status"] == "pending"
+        assert response.data["data"]["workflow_instance_id"]
+        assert release.release_commits.filter(commit=commit, is_included=True).exists()
+        commit.refresh_from_db()
+        assert commit.review_status == "illegal"
+        assert commit.review_reason == "人工复核标记为非法"
 
     def test_submit_audit_with_empty_node_config_pushes_tag(
         self, api_client, project, repository, commit, patched_provider, user

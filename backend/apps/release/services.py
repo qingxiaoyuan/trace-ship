@@ -1401,7 +1401,7 @@ class ReleaseService:
         """
         提交审批
 
-        仅允许草稿状态提交，校验发布说明非空且无非法提交；
+        仅允许草稿状态提交，校验发布说明非空；
         为项目创建发布审批工作流实例并将 release 置为 pending。
 
         Args:
@@ -1427,13 +1427,6 @@ class ReleaseService:
                 from apps.release.formal_changes import FormalChanges
 
                 FormalChanges.validate_doc_identity(release, release.release_doc)
-
-            illegal_exists = release.release_commits.filter(
-                is_included=True,
-                commit__review_status="illegal",
-            ).exists()
-            if illegal_exists:
-                raise serializers.ValidationError({"commits": "包含非法提交，无法提交审批"})
 
             # 按发布类型查找仓库生效的审批流程；未迁移存量回退到项目级定义
             definition = WorkflowDefinition.objects.filter(
