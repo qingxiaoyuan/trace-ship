@@ -1374,7 +1374,7 @@ def test_single_batch_revoked_while_waiting_never_calls_model(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
     """单批等待进程名额时被撤销，不得在名额释放后调用模型。"""
-    import time
+    import threading
     from concurrent.futures import ThreadPoolExecutor
 
     from apps.system.tests.review_helpers import configure_review
@@ -1398,20 +1398,40 @@ def test_single_batch_revoked_while_waiting_never_calls_model(
     release.refresh_from_db()
     instance = release.workflow_instance
     slots = ai_review_model._BATCH_SLOTS
-    assert slots.acquire(timeout=2) and slots.acquire(timeout=2)
-    try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
+    waiting = threading.Event()
+    resume = threading.Event()
+    main_thread = threading.current_thread()
+    acquire = slots.acquire
+
+    def acquire_slot(*args, **kwargs):
+        acquired = acquire(*args, **kwargs)
+        if not acquired and threading.current_thread() is not main_thread:
+            # 真正等待名额后再撤销，并暂停校验读取，避免 SQLite 的读写竞争。
+            waiting.set()
+            assert resume.wait(5), "名额等待线程未恢复"
+        return acquired
+
+    monkeypatch.setattr(slots, "acquire", acquire_slot)
+    held = 0
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        try:
+            for _ in range(2):
+                assert slots.acquire(timeout=2), "未取得测试批次名额"
+                held += 1
             future = pool.submit(ai_review.execute_review, instance.id, "ai")
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline and instance.ai_reviews.get().status != "running":
-                time.sleep(0.02)
-            assert instance.ai_reviews.get().status == "running"
+            if not waiting.wait(5):
+                if future.done():
+                    future.result()
+                pytest.fail("审查线程未到达名额等待位置")
             WorkflowEngine.revoke_instance(instance, user)
+            resume.set()
             future.result(timeout=3)
             assert not called
-    finally:
-        slots.release()
-        slots.release()
+        finally:
+            # 先归还已取得的名额，再等待线程池退出；断言或超时失败也不能互相等待。
+            resume.set()
+            for _ in range(held):
+                slots.release()
 
 
 @pytest.mark.django_db(transaction=True)
