@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Forward, Undo2 as RollbackIcon, X } from 'lucide-react';
+import { Check, Forward, MessageSquareText, Undo2 as RollbackIcon, X } from 'lucide-react';
 import { Select, Button } from 'antd';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
 import { accountApi } from '@/api/account';
 import { useAppMessage } from '@/hooks/useAppMessage';
 import { workflowStatusMap } from '../constants';
-import { StatusTag } from '@/components/StatusTag';
 import type { DetailSource } from '../types';
 import type { AccountUser } from '@/api/account';
 import type { WorkflowInstance, WorkflowTask } from '@/types';
@@ -18,6 +17,21 @@ interface ApprovalActionsProps {
   onBack: () => void;
 }
 
+const historyActionIcons: Partial<Record<WorkflowTask['status'], typeof Check>> = {
+  approved: Check,
+  rejected: X,
+  transferred: Forward,
+  rollbacked: RollbackIcon,
+  revoked: X,
+  returned: RollbackIcon,
+};
+const historyActionTone = {
+  success: 'text-emerald-600',
+  danger: 'text-rose-500',
+  info: 'text-slate-400',
+  warning: 'text-amber-600',
+};
+
 /** 审批意见历史 */
 function ApprovalHistory({ tasks, returnedBy }: { tasks: WorkflowTask[]; returnedBy?: string }) {
   const getTaskTime = (t: WorkflowTask) =>
@@ -26,63 +40,69 @@ function ApprovalHistory({ tasks, returnedBy }: { tasks: WorkflowTask[]; returne
     .filter((t) => t.status !== 'pending')
     .sort((a, b) => getTaskTime(b) - getTaskTime(a));
 
-  if (!history.length) {
-    return <div className="text-[12px] text-slate-400">暂无审批意见</div>;
-  }
-
   return (
-    <div className="space-y-3">
-      {history.map((item) => {
-        const action = workflowStatusMap[item.status];
-        return (
-          <div key={item.id} className="flex items-start gap-3">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[11px] font-semibold text-indigo-600">
-              {(item.approver_name || item.approver_username || 'U').charAt(0)}
-            </div>
-            <div className="flex-1 rounded-lg border border-indigo-100 bg-white p-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium text-slate-900">
-                  {item.status === 'returned' && returnedBy ? returnedBy : item.approver_name || item.approver_username || '-'}
-                </span>
-                {action ? <StatusTag status={action.status}>{action.text}</StatusTag> : null}
-              </div>
-              {item.comment ? (
-                <div className="mt-1 text-[12px] text-slate-600">{item.comment}</div>
-              ) : null}
-              {item.action_time ? (
-                <div className="mt-1.5 text-[10px] text-slate-400 max-md:text-xs">
-                  {dayjs(item.action_time).format('MM-DD HH:mm')}
-                </div>
-              ) : null}
-            </div>
+    <>
+      <div className="mb-4 flex items-center gap-2">
+        <MessageSquareText className="h-4 w-4 text-slate-400" strokeWidth={1.5} aria-hidden="true" />
+        <h3 className="text-[15px] font-semibold tracking-tight text-slate-900">审批意见</h3>
+        {history.length ? <span className="ml-auto text-xs tabular-nums text-slate-400">{history.length} 条处理记录</span> : null}
+      </div>
+      {!history.length ? <div className="text-[12px] text-slate-400">暂无审批意见</div> : (
+        <div className="overflow-hidden rounded-lg border border-slate-200/80">
+          <div className="hidden grid-cols-[minmax(140px,1fr)_88px_minmax(0,1.5fr)_90px] gap-x-4 border-b border-slate-200/70 bg-slate-50/80 px-4 py-2.5 text-xs font-medium text-slate-500 xl:grid" aria-hidden="true">
+            <span>审批人</span><span>处理结果</span><span>审批意见</span><span className="text-right">处理时间</span>
           </div>
-        );
-      })}
-    </div>
+          <ol className="divide-y divide-slate-100">
+            {history.map((item) => {
+              const action = workflowStatusMap[item.status];
+              const ActionIcon = historyActionIcons[item.status];
+              const approver = item.status === 'returned' && returnedBy ? returnedBy : item.approver_name || item.approver_username || '-';
+              return (
+                <li key={item.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-3 xl:grid-cols-[minmax(140px,1fr)_88px_minmax(0,1.5fr)_90px] xl:gap-x-4 xl:px-4">
+                  <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2.5 xl:row-span-1">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-medium text-slate-500" aria-hidden="true">{approver.charAt(0)}</span>
+                    <span className="break-words text-[13px] font-medium leading-5 text-slate-800 [overflow-wrap:anywhere]">{approver}</span>
+                  </div>
+                  <div className="col-start-2 row-start-1">
+                    {action && ActionIcon ? (
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-600">
+                        <ActionIcon className={`h-3.5 w-3.5 ${historyActionTone[action.status]}`} strokeWidth={1.8} aria-hidden="true" />
+                        {action.text}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="col-span-2 col-start-1 row-start-3 min-w-0 max-xl:pl-[42px] xl:col-span-1 xl:col-start-3 xl:row-start-1">
+                    {item.comment ? (
+                      <p className="whitespace-pre-wrap text-[13px] leading-6 text-slate-600 [overflow-wrap:anywhere]">{item.comment}</p>
+                    ) : <span className="hidden text-slate-300 xl:inline" aria-label="未填写意见">—</span>}
+                  </div>
+                  <div className="col-start-1 row-start-2 pl-[42px] leading-none xl:col-start-4 xl:row-start-1 xl:pl-0 xl:text-right">
+                    {item.action_time ? (
+                      <time className="text-xs tabular-nums text-slate-400" dateTime={item.action_time} title={dayjs(item.action_time).format('YYYY-MM-DD HH:mm:ss')}>
+                        {dayjs(item.action_time).format('MM-DD HH:mm')}
+                      </time>
+                    ) : <span className="hidden text-xs text-slate-300 xl:inline" aria-label="处理时间未记录">—</span>}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+    </>
   );
 }
 
-/** 审批意见区：历史 + 操作（通过 / 驳回 / 转交 / 回退） */
+/** 审批意见区：历史 + 操作（通过 / 驳回 / 转交） */
 export function ApprovalActions({ source, instance, onBack }: ApprovalActionsProps) {
   const queryClient = useQueryClient();
   const { message } = useAppMessage();
   const [comment, setComment] = useState('');
   const [toUserId, setToUserId] = useState('');
   const [transferMode, setTransferMode] = useState(false);
-  const [rollbackMode, setRollbackMode] = useState(false);
-  const [returnMode, setReturnMode] = useState(false);
 
   const taskId = source.taskId;
   const canApprove = !source.readOnly && !!taskId && instance?.tasks?.some((task) => task.id === taskId && task.can_act === true);
-  const canReturn = !source.readOnly && !!taskId && instance?.tasks?.some((task) => task.id === taskId && task.can_return_for_revision === true);
-
-  // 只回退到紧邻的人工节点，不能跨越已执行的 AI 节点。
-  const approvalNodes = (instance?.graph_data?.nodes || []).filter(
-    (n) => n.type === 'approval-node' || n.type === 'ai-review-node',
-  );
-  const currentNodeIndex = approvalNodes.findIndex((n) => n.id === instance?.current_node_id);
-  const canRollback = currentNodeIndex > 0 && approvalNodes[currentNodeIndex - 1].type === 'approval-node';
-
   const { data: usersData } = useQuery({
     queryKey: ['users-for-transfer'],
     queryFn: () => accountApi.getUsers({ page_size: 1000 }),
@@ -116,28 +136,15 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
       workflowApi.transferTask(taskId!, { to_user_id: vars.toUserId, comment: vars.comment }),
     onSuccess: () => onDone('转交成功'),
   });
-  const rollbackMutation = useMutation({
-    mutationFn: (c: string) => workflowApi.rollbackTask(taskId!, { comment: c }),
-    onSuccess: () => onDone('回退成功'),
-  });
-
-  const returnMutation = useMutation({
-    mutationFn: (c: string) => workflowApi.returnForRevision(taskId!, { comment: c }),
-    onSuccess: () => onDone('已退回修改'),
-  });
-
   const resetModes = () => {
     setTransferMode(false);
-    setRollbackMode(false);
-    setReturnMode(false);
   };
 
   return (
     <section aria-label="审批意见" className="border-t border-slate-100 pt-6">
-      <h3 className="mb-4 text-[15px] font-semibold tracking-tight text-slate-900">审批意见</h3>
       <ApprovalHistory tasks={instance?.tasks || []} returnedBy={instance?.returned_by_name} />
 
-      {canApprove || canReturn ? (
+      {canApprove ? (
         <div className="mt-4 border-t border-indigo-50 pt-4">
           <textarea
             value={comment}
@@ -171,28 +178,8 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
                   确认转交
                 </Button>
               </>
-            ) : returnMode ? (
-              <>
-                <Button onClick={() => setReturnMode(false)}>取消</Button>
-                <Button disabled={returnMutation.isPending} onClick={() => returnMutation.mutate(comment)}>确认退回修改</Button>
-              </>
-            ) : rollbackMode ? (
-              <>
-                <Button onClick={() => setRollbackMode(false)}>取消</Button>
-                <Button
-                  icon={<RollbackIcon className="h-3.5 w-3.5" strokeWidth={1.5} />}
-                  style={{ color: '#F59E0B', borderColor: '#F59E0B' }}
-                  onClick={() => {
-                    rollbackMutation.mutate(comment);
-                    resetModes();
-                  }}
-                >
-                  确认回退
-                </Button>
-              </>
             ) : (
               <>
-                {canReturn ? <Button onClick={() => setReturnMode(true)}>退回修改</Button> : null}
                 {canApprove ? <Button
                   icon={<Forward className="h-3.5 w-3.5" strokeWidth={1.5} />}
                   onClick={() => setTransferMode(true)}
@@ -206,14 +193,6 @@ export function ApprovalActions({ source, instance, onBack }: ApprovalActionsPro
                 >
                   驳回
                 </Button> : null}
-                {canApprove && canRollback ? (
-                  <Button
-                    icon={<RollbackIcon className="h-3.5 w-3.5" strokeWidth={1.5} />}
-                    onClick={() => setRollbackMode(true)}
-                  >
-                    回退
-                  </Button>
-                ) : null}
                 {canApprove ? <button
                   type="button"
                   onClick={() => approveMutation.mutate(comment)}

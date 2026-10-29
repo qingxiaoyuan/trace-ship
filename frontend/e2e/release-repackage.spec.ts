@@ -118,7 +118,7 @@ test('项目管理员从桌面发布详情选择已有配置补打固定版本�
     const initial = (await (await initialResponse).json() as { data: { id: string; status: string } }).data;
     observations.initialRelease = { id: initial.id, idType: typeof initial.id, status: initial.status, statusType: typeof initial.status };
     await expect(page.getByRole('heading', { name: sample.version, exact: true })).toBeVisible();
-    await expect(page.getByText(`当前源码引用：${sample.tag_name}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`打包引用：${sample.tag_name}`, { exact: true })).toBeVisible();
     await expect(page.getByText(/源码引用核验失败/)).toHaveCount(0);
     const configResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/packages/configs/' && response.request().method() === 'GET');
     await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();

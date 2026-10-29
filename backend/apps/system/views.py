@@ -9,7 +9,7 @@ import re
 
 from django_filters import FilterSet
 from django_filters.rest_framework import DateTimeFromToRangeFilter, DjangoFilterBackend
-from rest_framework import filters
+from rest_framework import filters, serializers
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -59,6 +59,13 @@ class SystemConfigViewSet(StandardModelViewSet):
         if self.action == "public":
             return [IsAuthenticated()]
         return [IsAuthenticated(), HasPermission("system.config")]
+
+    def perform_destroy(self, instance):
+        from apps.system.ai_config import AI_CONFIG_KEYS, AI_SETTINGS_WRITE_MESSAGE
+
+        if instance.key in AI_CONFIG_KEYS:
+            raise serializers.ValidationError({"key": AI_SETTINGS_WRITE_MESSAGE})
+        instance.delete()
 
     @action(detail=False, methods=["get"])
     def public(self, request: Request) -> Response:
@@ -193,7 +200,7 @@ class AccessTokenViewSet(StandardModelViewSet):
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated, lambda: HasPermission("system.config")])
 def review_settings(request: Request) -> Response:
-    """管理独立审查模型配置；密钥只写入，不返回。"""
+    """管理审查技能并展示共享模型状态；密钥不返回。"""
     from apps.system.review_settings import (
         ReviewSettingsInput,
         current_version,
@@ -207,6 +214,18 @@ def review_settings(request: Request) -> Response:
     serializer.is_valid(raise_exception=True)
     version = save_settings(serializer.validated_data)
     return success_response(settings_response(version), "保存成功")
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated, lambda: HasPermission("system.config")])
+def ai_settings(request: Request) -> Response:
+    """一次保存共享模型及脚本额度，不返回密钥。"""
+    from apps.system.ai_config import AISettingsInput, save_ai_settings
+
+    serializer = AISettingsInput(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    save_ai_settings(serializer.validated_data)
+    return success_response(None, "AI 服务配置已保存，即时生效")
 
 
 @api_view(["GET", "POST"])

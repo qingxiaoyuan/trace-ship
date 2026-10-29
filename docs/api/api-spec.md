@@ -1483,8 +1483,6 @@
   "auto_package_on_release": true,
   "is_active": true,
   "svn_push_enabled": true,
-  "svn_push_rc": false,
-  "svn_push_beta": false,
   "svn_url": "svn://svn.example.com/releases",
   "svn_credential": "uuid",
   "svn_path_template": "{version}",
@@ -1495,7 +1493,7 @@
 说明：
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
 - 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
-- 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。`svn_push_rc` / `svn_push_beta` 默认 false。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。自动与手动打包均遵循配置：正式版和分支直打看总开关，RC / 测试版还需对应类型开关；分支默认进入 `formal/{分支名}`。
+- 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。不再提供 RC / 测试版独立开关；已有配置无需重新保存，新建任务立即统一跟随 `svn_push_enabled`。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。自动与手动打包的正式版、RC、测试版及分支直打统一遵循总开关；分支默认进入 `formal/{分支名}`。已创建任务保留原快照的最终推送决定，不重新计算类型开关，也不因当前配置启用而获得补推能力；旧版本重新补打属于新任务。
 - 打包配置仅支持 Git 仓库，且仓库必须属于当前项目。
 
 **配置收藏：**
@@ -1520,7 +1518,7 @@
 - 授权按配置所属项目的有效角色判断：`developer`、`tester`、`manager`、`software_admin` 可补打，超管放行；必须显式属于目标项目。维保请求返回 403，不创建或投递任务。分支直打 `trigger-branch` 也不授予维保；另一项目的开发角色不能用于目标维保项目。
 - 配置须启用，发布状态须为 `released`，且项目、物理仓库均与配置一致。不可见发布与不存在的发布统一返回 404；共享仓库不会扩大项目权限。
 - 请求仅接受 `release_id`，兼容旧别名 `release`；两者同时传入须为同一 UUID。缺失、无效 UUID、冲突别名或任何额外字段均返回 400，不接受临时分支、脚本、环境变量、镜像、节点及操作者覆盖。
-- 新任务关联当前发布，使用服务端版本、Tag、完整提交快照和当前已保存配置，`triggered_by` 为实际操作人。任务的 `trigger_source` 为 `manual_release`，SVN 推送遵循保存时的总开关及 RC / 测试版开关，与发布后自动打包一致。执行前仍解析有效等价引用并核验实际检出 SHA；无有效引用或提交漂移时真实失败，不退回移动分支。
+- 新任务关联当前发布，使用服务端版本、Tag、完整提交快照和当前已保存配置，`triggered_by` 为实际操作人。任务的 `trigger_source` 为 `manual_release`，所有版本的 SVN 推送统一遵循创建任务时的总开关，与发布后自动打包一致。执行前仍解析有效等价引用并核验实际检出 SHA；无有效引用或提交漂移时真实失败，不退回移动分支。
 - 任务依次取得仓库锁、配置行锁，刷新配置后按当前项目重新校验实际操作人，再创建任务；配置迁移或成员降权不能沿用请求开始时的授权。事务提交后沿既有 Celery / 本地线程回退策略投递。全部投递方式失败时，保留状态为 `failure` 的任务并返回 HTTP 503：`{code: 50300, message: "打包任务投递失败，请稍后重试", data: {task_id: "uuid", status: "failure"}}`；客户端可据此查看失败任务，不应视为创建成功。
 - 业务操作日志使用 `module=package`、`action=trigger_release`，记录实际操作人、已授权的项目/配置/发布/版本、新任务及投递结果；校验失败也记录失败，不记录未授权资源详情或客户端执行参数。
 
@@ -1626,6 +1624,8 @@
 
 ## 十、工作流接口
 
+审批实例列表及详情的 `current_node` 仅在 `status=running` 时返回本轮保存的当前节点名称；优先使用提审快照、实例流程图及当前节点待办，无法解析名称或流程已结束时返回空字符串，不回退内部节点 ID。`current_node_id` 保留原值供流程识别。审批任务列表的 `status` 表示个人任务处理结果，与实例整体状态不同。
+
 ### 10.1 流程定义列表
 
 - **GET** `/api/workflow/definitions/`
@@ -1697,7 +1697,7 @@
 - **GET** `/api/workflow/instances/{id}/review-diff/`：独立校验完整审查权限后返回本轮固定基线、目标提交和已保存的文件差异；维保和只读成员不可读取，非成员审批人只可读取其本轮分配。文件变更类型及旧、新路径随快照返回，差异不完整时状态保持 `incomplete`。
 - **POST** `/api/workflow/instances/{id}/ai-review-retry/`、`ai-review-skip/`：请求含 `node_id`，跳过另须非空 `reason`；仅目标项目管理员、软件管理员和超管可操作当前失败或未完成节点。重试保留原配置及历史执行；跳过保留操作者、时间、理由并转交后续人工审批。
 - **GET/POST** `/api/workflow/instances/{id}/remediations/`：按目标项目及当前人工审批分配授权读取原轮次整改证据；`adopt` 采纳本轮发现，`fix` 保存修复说明，`resolve` 由当前审批人确认处理，`dismiss` 须填写不采纳理由。整改历史保留操作人和原文；未完成复核时禁止审批通过和推 Tag。显式驳回及删除申请沿用既有终止语义，删除时关联整改记录一并删除，不视为整改完成。维保和只读成员不可读取或处理整改内容。
-- 提审固定审查模型版本、完整技能文档与范围；草稿 `review_context_is_requirement` 仅在用户明确提供真实需求依据时标记，快照的 `context_is_requirement` 随范围固定。模型输出行号必须与固定差异核对，无法定位的意见保留为文件级或整体意见。
+- 提审固定当时共享 AI 模型参数、完整技能文档与范围；模型与脚本生成共用系统配置 `ai_endpoint` / `ai_api_key` / `ai_model` / `ai_protocol`，后续更改不影响已有审批及重试。`PUT /api/system/ai-settings/`（需 `system.config` 权限）以一次事务保存共享模型：必填 `endpoint`、`model`、`protocol`，可选 `api_key`、`manifest_chars`、`tree_chars`、`knowledge_chars`、`exemplar_chars`、`max_tokens`；字段值为字符串。省略密钥保留原值，空值清除；其他空值恢复读取默认值。成功响应 `data: null`，不回显密钥；模型保存与提审捕获共用锁，保存中途失败全部回滚。通用 `/api/system/configs/` 接口继续支持读取，但禁止这四个模型键的逐键新增、更新、改名或删除，返回 400 并引导整组保存。`GET /api/system/review-settings/` 返回共享模型的脱敏状态及所选技能，`PUT` 仅接受 `{ "skill": "code-review-expert 或上传技能 ID" }`，不接受模型或密钥字段。共享模型缺失时新提审明确提示配置，不回退旧的独立审查模型；草稿 `review_context_is_requirement` 仅在用户明确提供真实需求依据时标记，快照的 `context_is_requirement` 随范围固定。模型输出行号必须与固定差异核对，无法定位的意见保留为文件级或整体意见。
 - 模型响应正文上限为 2 MB，读取期间检查 300 秒预算，并设置连接及读取超时；DNS、响应头和分块协议元数据的底层阻塞无法保证严格总时限。每个 Celery 进程最多保留两个在途批次；撤销后的迟到结果不得推进流程。
 
 实例状态：`running` / `completed` / `rejected` / `revoked`。
@@ -1763,11 +1763,12 @@
 }
 ```
 
-### 10.11A 退回修改
+### 10.11A 旧退回接口（兼容驳回）
 
-`POST /api/workflow/tasks/{task_id}/return-for-revision/`，请求体可传 `comment`。当前人工审批任务的实际审批人或超管可操作；目标项目的维保及只读成员不能操作。接口在仓库 → 发布 → 实例锁内重新核验任务、项目、业务身份和当前轮。
+- **POST** `/api/workflow/tasks/{id}/return-for-revision/`
+- 请求体：`{ "comment": "审批意见" }`。
 
-成功后当前任务和实例均为 `returned`，其他待办失效，保留原审批任务、报告及操作人；未完成的 AI 执行标记取消，迟到结果不能推进。原申请恢复草稿并释放未消费版本占用；退回前提交被固定，须更新至不同提交并重新生成说明后，由原发布人或超管重新提审；超管代提时新流程仍属于原发布人。新流程须保留人工审批，原轮含 AI 审查时新流程须重新执行 AI 审查。原申请不参与自动过期草稿清理。`can_return_for_revision` 表示当前任务对请求用户的操作能力。
+此入口保留旧客户端兼容，授权校验保持。成功后任务、实例与关联发布均为 `rejected`，保留原流程关联及意见，释放未消费版本占用；未完成 AI 执行取消，已完成报告和历史证据保留。响应任务的 `status=rejected`，消息为「审批驳回」，不再生成 `returned` 或将发布恢复为草稿。旧能力字段 `can_return_for_revision` 固定为 false，现行页面仅提供通过、驳回及转交。驳回后不可重提原申请，修改代码后新建发布。历史 `has_revision_history=true` 的返修草稿仍可查询，但提交审批返回400并提示新建发布；详情该字段只读。历史数据不批量重写，实例历史查询继续用于审计，页面不提供审批轮次选择。
 
 ### 10.12 回退
 

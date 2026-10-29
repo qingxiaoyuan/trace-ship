@@ -78,8 +78,6 @@ class TaskLifecycleMixin:
             "cleanup_workspace": config.cleanup_workspace,
             "env_vars": config.env_vars or {},
             "svn_push_enabled": config.svn_push_enabled,
-            "svn_push_rc": bool(config.svn_push_rc),
-            "svn_push_beta": bool(config.svn_push_beta),
             "svn_url": config.svn_url or "",
             "svn_credential_id": str(config.svn_credential_id) if config.svn_credential_id else None,
             "svn_path_template": config.svn_path_template or "{version}",
@@ -100,8 +98,8 @@ class TaskLifecycleMixin:
     ) -> PackageTask:
         """为已发布版本创建打包任务。
 
-        auto_triggered=True 表示发布推 tag 后的自动打包。自动与手动打包均按发布类型
-        决定是否推 SVN：正式版看总开关，RC / 测试版还要各自打开。
+        auto_triggered=True 表示发布推 tag 后的自动打包。自动与手动打包的
+        正式版、RC / 测试版均按 SVN 总开关决定是否推送，并固定在本次任务快照中。
         """
         from apps.repository.models import Repository
         from utils.permissions import IsProjectReleasePackager

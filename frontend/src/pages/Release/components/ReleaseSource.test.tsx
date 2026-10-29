@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import request from '@/api/request';
@@ -13,17 +13,32 @@ it.each([true, false])('正式版详情保留来源 RC 与源码引用可用性�
   request.defaults.adapter = async config => ({config, status:200, statusText:'OK', headers:{},
     data:{code:0,data:{available,reference:available?'VA.1.0.0':'',reason:available?'':'没有有效的关联正式引用'}}});
   const release = {id:'formal', project:'p', repository:'r', release_type:'formal', status:'released',
-    source_rc:'rc', source_rc_version:'VA.1.0.0-rc', source_rc_tag:'VA.1.0.0-rc_20261021'} as Release;
+    source_rc:'rc', source_rc_version:'VA.1.0.0-rc', source_rc_tag:'VA.1.0.0-rc_20261021',
+    git_hash:'a'.repeat(40), source_rc_git_hash:'b'.repeat(40)} as Release;
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><ReleaseSource release={release} /></MemoryRouter></QueryClientProvider>);
-  expect(await screen.findByText(available?'当前源码引用：VA.1.0.0':'没有有效的关联正式引用')).toBeTruthy();
+  expect(await screen.findByText(available?'打包引用：VA.1.0.0':'没有有效的关联正式引用')).toBeTruthy();
   expect(screen.getByRole('link', {name:'VA.1.0.0-rc · VA.1.0.0-rc_20261021'}).getAttribute('href')).toBe('/releases/rc');
+  fireEvent.click(screen.getByRole('button', { name: '查看完整提交号' }));
+  expect(screen.getByText('a'.repeat(40))).toBeTruthy();
+  expect(screen.getByText('b'.repeat(40))).toBeTruthy();
 });
 
-it('按分支创建的正式草稿展示分支和提交，不引导补选 RC', () => {
-  const release = { id: 'formal', release_type: 'formal', status: 'draft', branch: 'develop', git_hash: 'a'.repeat(40) } as Release;
+it('按分支创建的草稿集中展示发布代码，完整提交号按需展开', () => {
+  const release = { id: 'formal', release_type: 'formal', status: 'draft', branch: 'develop',
+    tag_name: 'VA.1.0.0_20261029', git_hash: 'a'.repeat(40) } as Release;
   render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ReleaseSource release={release} /></MemoryRouter></QueryClientProvider>);
-  expect(screen.getByText('分支：develop')).toBeTruthy();
+  expect(screen.getByRole('region', { name: '发布代码' })).toBeTruthy();
+  expect(screen.getByText('develop')).toBeTruthy();
+  expect(screen.getByText('VA.1.0.0_20261029')).toBeTruthy();
+  expect(screen.getByText('a'.repeat(12))).toBeTruthy();
+  expect(screen.queryByText('a'.repeat(40))).toBeNull();
+  const expand = screen.getByRole('button', { name: '查看完整提交号' });
+  expect(expand.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(expand);
   expect(screen.getByText('a'.repeat(40))).toBeTruthy();
+  expect(screen.getByRole('button', { name: '收起完整提交号' }).getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '收起完整提交号' }));
+  expect(screen.queryByText('a'.repeat(40))).toBeNull();
   expect(screen.queryByText('来源 RC')).toBeNull();
   expect(screen.queryByRole('button', { name: '重选来源 RC' })).toBeNull();
 });

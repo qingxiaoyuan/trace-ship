@@ -47,8 +47,8 @@ def test_submit_without_review_configuration_does_not_start(api_client, project,
 
 def test_first_release_skips_ai_but_still_requires_human(api_client, project, repository, user,
                                                          patched_provider, django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    from apps.system.tests.review_helpers import configure_review
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -67,14 +67,14 @@ def test_ai_review_api_separates_summary_from_full_findings(api_client, project,
 
     from apps.account.models import User
     from apps.project.models import ProjectMember
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.models import WorkflowInstance
 
     definition = _definition(project, repository, user)
     release = _draft(project, repository, user)
     instance = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id=str(release.id),
         source_project=project, created_by=user, node_config_snapshot=definition.node_config)
-    config = save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    config = configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     AIReviewRun.objects.create(instance=instance, node_id="ai", settings_version=config, status="completed",
         summary="审查完成", dimensions=["安全"], coverage={"total_files": 1, "reviewed_files": 1, "warnings": []},
         findings=[{"reason": "私有源码", "severity": "P1"}])
@@ -104,7 +104,7 @@ def test_ai_review_api_separates_summary_from_full_findings(api_client, project,
 def test_completed_review_waits_for_human_and_validates_lines(api_client, project, repository, user,
                                                              patched_provider, monkeypatch,
                                                              django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -121,7 +121,7 @@ def test_completed_review_waits_for_human_and_validates_lines(api_client, projec
                               {"severity": "P2", "title": "第二行", "reason": "错误", "suggestion": "修复",
                                "path": "app.py", "side": "new", "line_start": 2, "line_end": 2}]}, "{}")
     monkeypatch.setattr(ai_review_model, "_ask", ask)
-    config = save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    config = configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -144,7 +144,7 @@ def test_completed_review_waits_for_human_and_validates_lines(api_client, projec
 def test_truncated_or_failed_model_cannot_advance(api_client, project, repository, user,
                                                    patched_provider, monkeypatch,
                                                    django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -155,7 +155,7 @@ def test_truncated_or_failed_model_cannot_advance(api_client, project, repositor
     def fail(*args):
         raise ValueError("模型输出截断")
     monkeypatch.setattr(ai_review_model, "_ask", fail)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -171,7 +171,7 @@ def test_truncated_or_failed_model_cannot_advance(api_client, project, repositor
 def test_stale_result_after_termination_does_not_advance(api_client, project, repository, user,
                                                           patched_provider, monkeypatch,
                                                           django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.services import WorkflowEngine
     from utils.provider.base import TagInfo
@@ -185,7 +185,7 @@ def test_stale_result_after_termination_does_not_advance(api_client, project, re
         WorkflowEngine.revoke_instance(run.instance, user)
         return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []}, "{}")
     monkeypatch.setattr(ai_review_model, "_ask", late)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -222,7 +222,7 @@ def test_model_truncation_is_rejected_even_with_nonempty_text(monkeypatch):
 def test_unavailable_human_after_ai_is_recorded_as_recoverable_failure(api_client, project, repository, user,
                                                                         patched_provider, monkeypatch,
                                                                         django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -235,7 +235,7 @@ def test_unavailable_human_after_ai_is_recorded_as_recoverable_failure(api_clien
         user.save(update_fields=["is_active"])
         return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []}, "{}")
     monkeypatch.setattr(ai_review_model, "_ask", finish)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -266,10 +266,10 @@ def test_expired_execution_reclaims_token_and_creates_one_human_task(api_client,
 
     from django.utils import timezone
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.ai_review import execute_review
 
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -293,7 +293,7 @@ def test_expired_execution_reclaims_token_and_creates_one_human_task(api_client,
 def test_requirement_mark_requires_real_input_and_is_snapshotted(api_client, project, repository, user,
                                                                  patched_provider, monkeypatch,
                                                                  django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -309,7 +309,7 @@ def test_requirement_mark_requires_real_input_and_is_snapshotted(api_client, pro
         "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "_ask", lambda *args: ({"action": "finish",
         "dimensions": ["安全", "需求符合性"], "reviewed_files": ["a.py"], "findings": []}, "{}"))
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     with django_capture_on_commit_callbacks(execute=True):
         result = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
     assert result.status_code == 200, result.data
@@ -320,9 +320,9 @@ def test_requirement_mark_requires_real_input_and_is_snapshotted(api_client, pro
 
 def test_rollback_cannot_reenter_completed_ai_node(api_client, project, repository, user,
                                                   patched_provider, django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
 
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     definition = _definition(project, repository, user)
     definition.node_config = [
         {"node_id": "a", "node_name": "审批 A", "approvers": [{"type": "leader"}]},
@@ -350,7 +350,7 @@ def test_rollback_cannot_reenter_completed_ai_node(api_client, project, reposito
 def test_model_read_and_search_only_use_fixed_head(api_client, project, repository, user,
                                                   patched_provider, monkeypatch,
                                                   django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -368,7 +368,7 @@ def test_model_read_and_search_only_use_fixed_head(api_client, project, reposito
         {"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []},
     ])
     monkeypatch.setattr(ai_review_model, "_ask", lambda *args: (next(actions), "{}"))
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -402,7 +402,7 @@ def test_model_redirect_does_not_forward_credentials_or_source(monkeypatch):
 def test_settings_change_after_submit_does_not_change_review_snapshot(api_client, project, repository, user,
                                                                         patched_provider, monkeypatch,
                                                                         django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -416,12 +416,12 @@ def test_settings_change_after_submit_does_not_change_review_snapshot(api_client
         models.append(config.model)
         return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []}, "{}")
     monkeypatch.setattr(ai_review_model, "_ask", finish)
-    save_settings({"endpoint": "https://model.example/v1", "model": "first", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "first", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
         assert api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json").status_code == 200
-    save_settings({"endpoint": "https://model.example/v1", "model": "second", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "second", "protocol": "openai", "skill": "code-review-expert"})
     release.refresh_from_db()
     execute_review(release.workflow_instance_id, "ai")
     assert models == ["first"]
@@ -431,7 +431,7 @@ def test_settings_change_after_submit_does_not_change_review_snapshot(api_client
 def test_partial_review_keeps_coverage_paths_and_does_not_advance(api_client, project, repository, user,
                                                                   patched_provider, monkeypatch,
                                                                   django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -441,7 +441,7 @@ def test_partial_review_keeps_coverage_paths_and_does_not_advance(api_client, pr
         "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "_ask", lambda *args: ({"action": "finish",
         "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []}, "{}"))
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -461,7 +461,7 @@ def test_model_controlled_missing_path_never_leaks_in_readonly_summary(api_clien
 
     from apps.account.models import User
     from apps.project.models import ProjectMember
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -476,7 +476,7 @@ def test_model_controlled_missing_path_never_leaks_in_readonly_summary(api_clien
         {"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []},
     ])
     monkeypatch.setattr(ai_review_model, "_ask", lambda *args: (next(actions), "{}"))
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=True):
@@ -506,7 +506,7 @@ def test_model_controlled_missing_path_never_leaks_in_readonly_summary(api_clien
 def test_failed_review_can_be_retried_with_original_configuration_and_history(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -515,7 +515,7 @@ def test_failed_review_can_be_retried_with_original_configuration_and_history(
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
         "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
         "complete": True, "warnings": []}, raising=False)
-    original = save_settings({"endpoint": "https://model.example/v1", "model": "first", "protocol": "openai", "skill": "code-review-expert"})
+    original = configure_review({"endpoint": "https://model.example/v1", "model": "first", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -527,7 +527,7 @@ def test_failed_review_can_be_retried_with_original_configuration_and_history(
     run.coverage = {"total_files": 1, "reviewed_files": 0, "warnings": ["缺口"]}
     run.save(update_fields=["status", "summary", "coverage", "updated_at"])
     old_token = str(run.token)
-    save_settings({"endpoint": "https://model.example/v1", "model": "second", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "second", "protocol": "openai", "skill": "code-review-expert"})
     seen = []
     monkeypatch.setattr(ai_review_model, "_ask", lambda config, messages: (seen.append(config.model) or {
         "action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []}, "{}"))
@@ -553,10 +553,10 @@ def test_skip_requires_manager_reason_and_preserves_human_approval(
 
     from apps.account.models import User
     from apps.project.models import ProjectMember
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.ai_review import execute_review
 
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -595,7 +595,7 @@ def test_skip_requires_manager_reason_and_preserves_human_approval(
 
 def test_stale_queued_delivery_cannot_execute_new_retry(api_client, project, repository, user, patched_provider,
                                                         monkeypatch, django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from apps.workflow.tasks import execute_ai_review
@@ -605,7 +605,7 @@ def test_stale_queued_delivery_cannot_execute_new_retry(api_client, project, rep
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
         "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
         "complete": True, "warnings": []}, raising=False)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -633,10 +633,10 @@ def test_recovery_checks_current_project_role_and_revoked_round(api_client, proj
 
     from apps.account.models import User
     from apps.project.models import ProjectMember
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.services import WorkflowEngine
 
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -671,9 +671,9 @@ def test_recovery_checks_current_project_role_and_revoked_round(api_client, proj
 
 def test_skip_refuses_corrupt_flow_without_later_human(api_client, project, repository, user, patched_provider,
                                                       django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
 
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -694,12 +694,12 @@ def test_skip_refuses_corrupt_flow_without_later_human(api_client, project, repo
 
 def test_recovery_and_worker_reject_changed_business_identity(api_client, project, repository, user, patched_provider,
                                                               monkeypatch, django_capture_on_commit_callbacks):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.ai_review import execute_review
     from apps.workflow.models import WorkflowInstance
     from apps.workflow.services import WorkflowEngine
 
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -737,7 +737,7 @@ def test_expired_worker_is_archived_and_late_result_cannot_replace_retry(
 
     from django.utils import timezone
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -746,7 +746,7 @@ def test_expired_worker_is_archived_and_late_result_cannot_replace_retry(
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
         "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
         "complete": True, "warnings": []}, raising=False)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -780,7 +780,7 @@ def test_large_review_resumes_only_unfinished_batches_without_losing_findings(
 ):
     import json
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -792,7 +792,7 @@ def test_large_review_resumes_only_unfinished_batches_without_losing_findings(
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
         "diffs": diffs, "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -846,7 +846,7 @@ def test_batch_review_discloses_unreadable_file_and_keeps_workflow_waiting(
 ):
     import json
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -856,7 +856,7 @@ def test_batch_review_discloses_unreadable_file_and_keeps_workflow_waiting(
         "diffs": [{"old_path": "source.py", "new_path": "source.py", "diff": "@@ -1 +1 @@\n-a\n+b"},
                   {"old_path": "asset.bin", "new_path": "asset.bin", "diff": "", "binary": True}],
         "complete": False, "warnings": ["二进制差异不可读取"]}, raising=False)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -891,7 +891,7 @@ def test_batch_review_discloses_unreadable_file_and_keeps_workflow_waiting(
 def test_malformed_or_oversized_diff_is_disclosed_and_never_approved(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -902,7 +902,7 @@ def test_malformed_or_oversized_diff_is_disclosed_and_never_approved(
                   {"old_path": "large.py", "new_path": "large.py", "diff": "@@ -1 +1 @@\n-a\n+" + "x" * 150000},
                   {"old_path": "overlap.py", "new_path": "overlap.py", "diff": "@@ -1 +1 @@\n-a\n+b\n@@ -1 +1 @@\n-c\n+d"}],
         "complete": True, "warnings": []}, raising=False)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -927,7 +927,7 @@ def test_canceled_review_cannot_save_late_batch_or_advance(
     import json
     import threading
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review, ai_review_model
     from apps.workflow.ai_review import execute_review
     from apps.workflow.services import WorkflowEngine
@@ -939,7 +939,7 @@ def test_canceled_review_cannot_save_late_batch_or_advance(
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
     monkeypatch.setattr(ai_review, "queue_review", lambda *args: None)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -981,7 +981,7 @@ def test_batch_can_read_another_batchs_fixed_diff_and_report_its_own_coverage(
 ):
     import json
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -992,7 +992,7 @@ def test_batch_can_read_another_batchs_fixed_diff_and_report_its_own_coverage(
              for name, marker in (("api.py", "a"), ("caller.py", "b"))]
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1027,7 +1027,7 @@ def test_batch_can_read_another_batchs_fixed_diff_and_report_its_own_coverage(
 def test_partial_batch_retry_preserves_identical_finding_identity(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -1036,7 +1036,7 @@ def test_partial_batch_retry_preserves_identical_finding_identity(
     diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-old\n+new"}
              for name in ("first.py", "second.py")]
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1073,7 +1073,7 @@ def test_large_file_manifest_is_pageable_without_blocking_batches(
 ):
     import json
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -1084,7 +1084,7 @@ def test_large_file_manifest_is_pageable_without_blocking_batches(
     diffs = [{"old_path": name, "new_path": name, "diff": "@@ -1 +1 @@\n-a\n+b"} for name in names]
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {"diffs": diffs, "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1121,17 +1121,17 @@ def test_report_exposes_original_configuration_only_to_full_access(api_client, p
 
     from apps.account.models import User
     from apps.project.models import ProjectMember
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.models import WorkflowInstance
 
-    original = save_settings({"endpoint": "https://model.example/v1", "model": "first-model", "protocol": "openai",
+    original = configure_review({"endpoint": "https://model.example/v1", "model": "first-model", "protocol": "openai",
                               "api_key": "private-key", "skill": "code-review-expert"})
     definition = _definition(project, repository, user)
     release = _draft(project, repository, user)
     instance = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id=str(release.id),
         source_project=project, created_by=user, node_config_snapshot=definition.node_config)
     AIReviewRun.objects.create(instance=instance, node_id="ai", settings_version=original, status="completed")
-    save_settings({"endpoint": "https://other.example/v1", "model": "new-model", "protocol": "anthropic",
+    configure_review({"endpoint": "https://other.example/v1", "model": "new-model", "protocol": "anthropic",
                    "api_key": "new-secret", "skill": "code-review-expert"})
     url = f"/api/workflow/instances/{instance.id}/ai-review/"
     response = api_client.get(url)
@@ -1159,7 +1159,7 @@ def test_review_batches_execute_concurrently_and_keep_fixed_results(
     import json
     import threading
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from apps.workflow.ai_review import execute_review
     from utils.provider.base import TagInfo
@@ -1171,7 +1171,7 @@ def test_review_batches_execute_concurrently_and_keep_fixed_results(
         "diffs": diffs, "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
     monkeypatch.setattr("apps.workflow.ai_review.queue_review", lambda *args: None)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1206,7 +1206,7 @@ def test_parallel_review_revoke_does_not_wait_for_or_save_late_batch(
     import json
     import threading
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review, ai_review_model
     from apps.workflow.services import WorkflowEngine
     from utils.provider.base import TagInfo
@@ -1218,7 +1218,7 @@ def test_parallel_review_revoke_does_not_wait_for_or_save_late_batch(
         "diffs": diffs, "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
     monkeypatch.setattr(ai_review, "queue_review", lambda *args: None)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1269,7 +1269,7 @@ def test_parallel_revoked_model_response_never_reads_source_or_calls_model_again
     import threading
     from concurrent.futures import ThreadPoolExecutor
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review, ai_review_model
     from apps.workflow.services import WorkflowEngine
     from utils.provider.base import TagInfo
@@ -1282,7 +1282,7 @@ def test_parallel_revoked_model_response_never_reads_source_or_calls_model_again
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
     monkeypatch.setattr(ai_review_model, "VALIDATION_INTERVAL", 30)
     monkeypatch.setattr(ai_review, "queue_review", lambda *args: None)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1377,7 +1377,7 @@ def test_single_batch_revoked_while_waiting_never_calls_model(
     import time
     from concurrent.futures import ThreadPoolExecutor
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review, ai_review_model
     from apps.workflow.services import WorkflowEngine
     from utils.provider.base import TagInfo
@@ -1390,7 +1390,7 @@ def test_single_batch_revoked_while_waiting_never_calls_model(
     monkeypatch.setattr(ai_review_model, "VALIDATION_INTERVAL", 0.05)
     called = []
     monkeypatch.setattr(ai_review_model, "_ask", lambda *args: called.append(True))
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1422,7 +1422,7 @@ def test_single_batch_revoked_during_model_call_stops_before_source_read(
     import threading
     from concurrent.futures import ThreadPoolExecutor
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review, ai_review_model
     from apps.workflow.services import WorkflowEngine
     from utils.provider.base import TagInfo
@@ -1432,7 +1432,7 @@ def test_single_batch_revoked_during_model_call_stops_before_source_read(
         "diffs": [{"old_path": "one.py", "new_path": "one.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
         "complete": True, "warnings": []}, raising=False)
     monkeypatch.setattr(ai_review, "queue_review", lambda *args: None)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):
@@ -1477,7 +1477,7 @@ def test_waiting_parallel_batches_do_not_extend_expired_lease(
 
     from django.utils import timezone
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review, ai_review_model
     from utils.provider.base import TagInfo
 
@@ -1489,7 +1489,7 @@ def test_waiting_parallel_batches_do_not_extend_expired_lease(
     monkeypatch.setattr(ai_review_model, "MAX_INPUT", 50000)
     monkeypatch.setattr(ai_review_model, "VALIDATION_INTERVAL", 0.05)
     monkeypatch.setattr(ai_review, "queue_review", lambda *args: None)
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
     with django_capture_on_commit_callbacks(execute=False):

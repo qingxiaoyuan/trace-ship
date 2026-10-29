@@ -34,7 +34,7 @@ def test_upload_select_and_preserve_skill_versions():
     skill = response.data['data']
     assert set(skill['files']) == {'SKILL.md', 'references/check.md'}
     saved = client.put('/api/system/review-settings/', {
-        'endpoint': 'https://model.example/v1', 'model': 'review', 'protocol': 'openai', 'skill': skill['id'],
+        'skill': skill['id'],
     }, format='json')
     assert saved.status_code == 200
     assert saved.data['data']['skill']['revision'] == skill['id']
@@ -80,7 +80,7 @@ def test_reject_encoded_traversal_and_invalid_skill_selection():
     result = upload(client, 'bad.zip', archive({'SKILL.md': '[清单][rule]\n\n[rule]: missing.md'}))
     assert result.status_code == 400
     result = client.put('/api/system/review-settings/', {
-        'endpoint': 'https://model.example/v1', 'model': 'review', 'protocol': 'openai', 'skill': 'bad-id',
+        'skill': 'bad-id',
     }, format='json')
     assert result.status_code == 400
     assert client.get('/api/system/review-skills/').data['data'] == []

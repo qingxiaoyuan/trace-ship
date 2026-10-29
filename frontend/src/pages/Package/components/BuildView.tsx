@@ -6,7 +6,7 @@ import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal } from '
 import dayjs from 'dayjs';
 import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
-import { ArtifactPanel, ArtifactActionsDropdown } from './Artifacts';
+import { ArtifactPanel, ArtifactActions } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
 import { formatDuration, getSvnPushWarning, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText, isBranchTask } from './utils';
 import { StatusBadge, SvnPushWarning, TaskSourceBadge } from './Shared';
@@ -157,14 +157,12 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
         </div>
 
         <div className="lg:col-span-2 tech-card rounded-xl overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between border-b border-indigo-50 px-4 py-3">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-50 px-4 py-3">
+            <div className="flex shrink-0 items-center gap-2">
               <PackageIcon className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">打包产物</h3>
             </div>
-           <div className="flex items-center gap-2">
-              <ArtifactActionsDropdown task={task} pushing={pushing} onPushSvn={handlePushSvn} />
-            </div>
+            <ArtifactActions task={task} pushing={pushing} onPushSvn={handlePushSvn} />
           </div>
           <ArtifactPanel artifacts={artifacts} taskId={task.id} projectRole={task.my_role} />
         </div>

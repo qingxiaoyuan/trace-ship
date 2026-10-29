@@ -212,7 +212,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "cpu_cores", "cpu_priority", "mem_limit_mb",
             "build_path", "output_path", "auto_collect_output", "auto_compress", "env_vars",
             "auto_package_on_release", "cleanup_workspace", "is_active",
-            "svn_push_enabled", "svn_push_rc", "svn_push_beta",
+            "svn_push_enabled",
             "svn_url", "svn_credential", "svn_credential_id", "svn_credential_name",
             "svn_path_template", "svn_commit_mode", "svn_commit_mode_display",
             "clone_submodules", "inject_git_credential",

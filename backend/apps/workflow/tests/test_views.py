@@ -148,11 +148,11 @@ class TestWorkflowInstanceViews:
         assert response.status_code == 404
 
     def test_initiated_current_node_fallback(self, api_client, instance):
-        """无进行中任务时，current_node 回退到 current_node_id"""
+        """缺少本轮节点名称时，current_node 不展示内部 ID"""
         response = api_client.get("/api/workflow/instances/initiated/")
         results = response.data["data"]["results"]
         target = next(item for item in results if item["biz_id"] == instance.biz_id)
-        assert target["current_node"] == instance.current_node_id
+        assert target["current_node"] == ""
 
     def test_instance_detail_returns_release_fields(self, api_client, project, user, definition):
         """流程详情返回发布摘要字段，供审批详情页兜底展示"""

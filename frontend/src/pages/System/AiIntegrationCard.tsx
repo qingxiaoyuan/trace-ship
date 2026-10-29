@@ -16,19 +16,6 @@ interface AiFormState {
   max_tokens: string;
 }
 
-/** sys_config 中 AI 服务配置键与表单项的映射 */
-const AI_KEY_MAP: { key: string; field: keyof AiFormState; description: string }[] = [
-  { key: 'ai_endpoint', field: 'endpoint', description: 'AI 服务地址（如 http://127.0.0.1:11434/v1 或 https://api.deepseek.com）' },
-  { key: 'ai_api_key', field: 'api_key', description: 'AI API 密钥（可选，本地服务可不填）' },
-  { key: 'ai_model', field: 'model', description: 'AI 模型名称（默认 deepseek-v4-flash）' },
-  { key: 'ai_protocol', field: 'protocol', description: 'AI 协议：auto 按地址自动识别 / openai / anthropic' },
-  { key: 'ai_manifest_chars', field: 'manifest_chars', description: '仓库清单文件进入 prompt 的字符上限（默认 32768）' },
-  { key: 'ai_tree_chars', field: 'tree_chars', description: '仓库文件树进入 prompt 的字符上限（默认 15000）' },
-  { key: 'ai_knowledge_chars', field: 'knowledge_chars', description: '知识库注入 prompt 的字符上限（默认 12000）' },
-  { key: 'ai_exemplar_chars', field: 'exemplar_chars', description: '历史成功脚本注入 prompt 的字符上限（默认 12000）' },
-  { key: 'ai_max_tokens', field: 'max_tokens', description: 'AI 输出 token 上限（默认 16384，推理模型会消耗大量输出 token，过低会截断）' },
-];
-
 const protocolOptions = [
   { value: 'auto', label: 'auto（按地址自动识别）' },
   { value: 'openai', label: 'openai（/v1/chat/completions）' },
@@ -46,8 +33,6 @@ export function AiIntegrationCard() {
     queryKey: ['system-configs', 'ai-integration'],
     queryFn: () => systemApi.getConfigs({ keyword: 'ai_', page_size: 100 }),
   });
-
-  const existingKeys = new Set((data?.results || []).map((c) => c.key));
 
   const valueMap = useMemo(
     () => new Map((data?.results || []).map((c) => [c.key, c.value])),
@@ -73,33 +58,18 @@ export function AiIntegrationCard() {
 
   const saveMutation = useMutation({
     mutationFn: async (values: AiFormState) => {
-      // 按键逐个 upsert：已存在则更新，不存在则创建；留空表示删除该键（回退默认值）
-      for (const item of AI_KEY_MAP) {
-        // 密钥未编辑（仍是脱敏展示值）时跳过，保留原值，避免把掩码写回
-        if (item.key === 'ai_api_key' && edited.api_key === undefined) {
-          continue;
-        }
-        const value = values[item.field].trim();
-        if (!value) {
-          if (existingKeys.has(item.key)) {
-            await systemApi.deleteConfig(item.key);
-          }
-        } else if (existingKeys.has(item.key)) {
-          await systemApi.patchConfig(item.key, { value });
-        } else {
-          await systemApi.createConfig({
-            key: item.key,
-            value,
-            description: item.description,
-            is_public: false,
-          });
-        }
-      }
+      const { api_key, ...settings } = values;
+      // 模型四字段必须一起提交；未编辑密钥时不发送掩码。
+      await systemApi.saveAiSettings({
+        ...settings,
+        ...(edited.api_key === undefined ? {} : { api_key }),
+      });
     },
     onSuccess: () => {
       message.success('AI 服务配置已保存，即时生效');
       setEdited({});
       queryClient.invalidateQueries({ queryKey: ['system-configs'] });
+      queryClient.invalidateQueries({ queryKey: ['review-settings'] });
     },
   });
 
@@ -108,24 +78,24 @@ export function AiIntegrationCard() {
       setEdited((prev) => ({ ...prev, [field]: e.target.value }));
 
   return (
-    <div className="tech-card rounded-xl px-5 py-4">
+    <section id="ai-model-service" aria-label="AI 模型服务" className="tech-card scroll-mt-20 rounded-xl px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg icon-amber">
             <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
           </div>
           <div>
-            <div className="text-[14px] font-semibold text-slate-900">AI 打包脚本服务</div>
+            <div className="text-[14px] font-semibold text-slate-900">AI 模型服务</div>
             <div className="text-[11px] text-slate-400">
-              供「打包配置 · AI 生成脚本」调用，兼容 OpenAI / Anthropic 协议，保存后立即生效
+              供 AI 生成打包脚本与发布代码审查共用，兼容 OpenAI / Anthropic 协议；新审查在提审时固定模型
             </div>
           </div>
         </div>
         <button
           type="button"
-          disabled={saveMutation.isPending}
+          disabled={isLoading || !data || saveMutation.isPending}
           onClick={() => saveMutation.mutate(form)}
-          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-60"
+          className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-60 max-md:min-h-9"
         >
           <Save className="h-3.5 w-3.5" strokeWidth={1.5} />
           保存
@@ -134,10 +104,11 @@ export function AiIntegrationCard() {
 
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label className="mb-1 block text-[12px] font-medium text-slate-600">
+          <label htmlFor="shared-ai-endpoint" className="mb-1 block text-[12px] font-medium text-slate-600">
             服务地址 <span className="text-rose-500">*</span>
           </label>
           <input
+            id="shared-ai-endpoint"
             type="text"
             value={form.endpoint}
             onChange={setText('endpoint')}
@@ -147,8 +118,9 @@ export function AiIntegrationCard() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[12px] font-medium text-slate-600">API 密钥</label>
+          <label htmlFor="shared-ai-key" className="mb-1 block text-[12px] font-medium text-slate-600">API 密钥</label>
           <input
+            id="shared-ai-key"
             type="password"
             value={form.api_key}
             onChange={setText('api_key')}
@@ -158,8 +130,9 @@ export function AiIntegrationCard() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[12px] font-medium text-slate-600">模型名称</label>
+          <label htmlFor="shared-ai-model" className="mb-1 block text-[12px] font-medium text-slate-600">模型名称</label>
           <input
+            id="shared-ai-model"
             type="text"
             value={form.model}
             onChange={setText('model')}
@@ -169,8 +142,8 @@ export function AiIntegrationCard() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-[12px] font-medium text-slate-600">协议</label>
-          <select
+          <label htmlFor="shared-ai-protocol" className="mb-1 block text-[12px] font-medium text-slate-600">协议</label>
+          <select id="shared-ai-protocol"
             value={form.protocol}
             onChange={setText('protocol')}
             disabled={isLoading}
@@ -187,7 +160,7 @@ export function AiIntegrationCard() {
 
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 px-3.5 py-2.5">
         <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400">
-          上下文体积上限（字符，留空使用默认值）
+          脚本生成额度（仅用于 AI 写脚本，留空使用默认值）
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <div>
@@ -252,6 +225,6 @@ export function AiIntegrationCard() {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

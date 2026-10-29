@@ -212,7 +212,7 @@ def main() -> None:
         project_component=component, name="已发布版本补打配置", is_active=True,
         custom_script="exit 27", env_vars={"FIXED_SAMPLE": "configured"},
         svn_push_enabled=True, svn_url="https://example.invalid/smoke/artifacts",
-        svn_push_rc=True, svn_push_beta=True, svn_credential=svn_credential,
+        svn_credential=svn_credential,
     )
     PackageConfig.objects.create(project_component=component, name="已停用配置不得选择", is_active=False)
     other_project = Project.objects.create(name="隔离的共享仓库项目", code="SMOKE-OTHER", leader=owner, status=1)
@@ -249,7 +249,13 @@ def main() -> None:
         ("expired", "success", "过期产物任务"),
         ("nolog", "failure", "终态日志缺失任务"),
     ]:
-        config = PackageConfig.objects.create(project_component=component, name=name + "配置", is_active=True)
+        # 成功样本允许显示 SVN 操作，浏览器仅检查入口与布局，不执行外部推送。
+        config = PackageConfig.objects.create(
+            project_component=component, name=name + "配置", is_active=True,
+            svn_push_enabled=key == "success",
+            svn_url="https://example.invalid/smoke/artifacts" if key == "success" else "",
+            svn_credential=svn_credential if key == "success" else None,
+        )
         workspace = runtime / "workspaces" / key
         artifacts = workspace / "artifacts"
         artifacts.mkdir(parents=True)
@@ -294,6 +300,7 @@ def main() -> None:
             log_path=str(log),
             artifact_info=artifact_info,
             config_snapshot={
+                **PackageService._snapshot(config),
                 "id": str(config.id),
                 "name": config.name,
                 "trigger_source": "auto_release",
@@ -310,6 +317,22 @@ def main() -> None:
             "artifacts": artifact_info,
             "sha256": hashlib.sha256(log.read_bytes()).hexdigest() if log.exists() else None,
         }
+    from browser_review_sample import create_review_sample
+
+    review_owner = User.objects.create_user(username="smoke_reviewer", password=password, nickname="冒烟审批人")
+    ProjectMember.objects.create(project=project, user=review_owner, role="manager")
+    manifest["ai_review"] = {
+        **create_review_sample(project, repository, review_owner), "username": review_owner.username,
+    }
+    settings_admin = User.objects.create_superuser(username="smoke_settings", password=password, nickname="冒烟配置管理员")
+    manifest["settings"] = {"username": settings_admin.username}
+    from browser_workflow_sample import create_workflow_status_samples
+
+    status_owner = User.objects.create_user(username="smoke_workflow", password=password, nickname="冒烟审批状态用户")
+    ProjectMember.objects.create(project=project, user=status_owner, role="manager")
+    manifest["workflow_status"] = {
+        "username": status_owner.username, "samples": create_workflow_status_samples(project, repository, status_owner),
+    }
     manifest_path = runtime / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     if os.name != "nt":

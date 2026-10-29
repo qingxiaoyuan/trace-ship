@@ -274,6 +274,8 @@ class TestPackageConfigSVNValidation:
         assert data["svn_push_enabled"] is True
         assert data["svn_url"] == "svn://host/releases"
         assert data["svn_credential_id"] == str(svn_credential.id)
+        assert "svn_push_rc" not in data
+        assert "svn_push_beta" not in data
 
 
 # ---------------------------------------------------------------------------
@@ -543,9 +545,15 @@ class TestPushArtifactsToSVN:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("auto_triggered", [False, True], ids=["manual", "auto"])
-def test_run_task_with_svn_push_success(project, repository, release, svn_credential, user, settings, tmp_path, monkeypatch, auto_triggered):
-    """启用 SVN 推送时，打包成功后产物推送到 SVN，任务状态为 success。"""
+@pytest.mark.parametrize("release_type", ["formal", "rc", "beta"])
+def test_run_task_with_svn_push_success(
+    project, repository, release, svn_credential, user, settings, tmp_path, monkeypatch,
+    auto_triggered, release_type,
+):
+    """三类版本只开总开关即可在自动或手动打包成功后推送到类型目录。"""
     settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
+    release.release_type = release_type
+    release.save(update_fields=["release_type"])
     config = PackageConfig.objects.create(
         project_component=project.project_components.get(repository=repository),
         name="SVN 打包配置",
@@ -579,7 +587,7 @@ def test_run_task_with_svn_push_success(project, repository, release, svn_creden
     assert task.stage_info["stage"] == "done"
     assert task.stage_info.get("svn_push") is not None
     assert task.stage_info["svn_push"]["status"] == "success"
-    assert task.stage_info["svn_push"]["remote_url"] == "svn://host/releases/formal/V1.0.0"
+    assert task.stage_info["svn_push"]["remote_url"] == f"svn://host/releases/{release_type}/V1.0.0"
     mock_provider.import_path.assert_called_once()
 
 
@@ -824,14 +832,12 @@ class TestManualPushSvn:
 def test_manual_push_svn_allows_release_tasks(
     project, repository, release, svn_credential, user, tmp_path, monkeypatch, auto_triggered, release_type
 ):
-    """自动与手动版本打包开启对应开关后，成功任务可补推到类型目录。"""
+    """自动与手动版本打包开启总开关后，成功任务可补推到类型目录。"""
     monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
     config = PackageConfig.objects.create(
         project_component=project.project_components.get(repository=repository),
         name="SVN 配置",
         svn_push_enabled=True,
-        svn_push_rc=True,
-        svn_push_beta=True,
         svn_url="svn://host/releases",
         svn_credential=svn_credential,
     )
@@ -1069,28 +1075,18 @@ def test_run_task_with_svn_push_for_branch_task(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("auto_triggered", [False, True], ids=["manual", "auto"])
-@pytest.mark.parametrize("release_type,enabled,rc_enabled,beta_enabled,expected", [
-    ("formal", True, False, False, True),
-    ("rc", True, False, True, False),
-    ("beta", True, True, False, False),
-    ("rc", True, True, False, True),
-    ("beta", True, False, True, True),
-    ("formal", False, True, True, False),
-    ("rc", False, True, True, False),
-    ("beta", False, True, True, False),
-])
+@pytest.mark.parametrize("release_type", ["formal", "rc", "beta"])
+@pytest.mark.parametrize("enabled", [False, True])
 def test_create_task_svn_policy_by_release_type(
     project, repository, release, svn_credential, user, monkeypatch,
-    auto_triggered, release_type, enabled, rc_enabled, beta_enabled, expected,
+    auto_triggered, release_type, enabled,
 ):
-    """已发布版本的自动与手动打包遵循相同的 SVN 配置。"""
+    """三类版本的自动与手动打包统一跟随总开关，不保存已移除的子开关。"""
     monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
     config = PackageConfig.objects.create(
         project_component=project.project_components.get(repository=repository),
         name="SVN 配置",
         svn_push_enabled=enabled,
-        svn_push_rc=rc_enabled,
-        svn_push_beta=beta_enabled,
         svn_url="svn://host/releases",
         svn_credential=svn_credential,
     )
@@ -1100,17 +1096,20 @@ def test_create_task_svn_policy_by_release_type(
     task = PackageService.create_task_for_release(
         config, release, request_user=user, auto_triggered=auto_triggered,
     )
-    assert task.config_snapshot["svn_push_enabled"] is expected
-    assert task.config_snapshot["svn_push_rc"] is rc_enabled
-    assert task.config_snapshot["svn_push_beta"] is beta_enabled
+    assert task.config_snapshot["svn_push_enabled"] is enabled
+    assert "svn_push_rc" not in task.config_snapshot
+    assert "svn_push_beta" not in task.config_snapshot
     assert task.config_snapshot["trigger_source"] == ("auto_release" if auto_triggered else "manual_release")
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("release_type", ["rc", "beta"])
+@pytest.mark.parametrize("trigger_source", ["auto_release", "manual_release"])
 def test_manual_push_svn_preserves_disabled_historical_snapshot(
-    project, repository, release, svn_credential, user, tmp_path, monkeypatch
+    project, repository, release, svn_credential, user, tmp_path, monkeypatch,
+    release_type, trigger_source,
 ):
-    """旧手动任务的关闭快照不因当前配置已打开而允许补推。"""
+    """旧 RC / 测试版关闭快照不因移除子开关而允许补推。"""
     monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: None))
     config = PackageConfig.objects.create(
         project_component=project.project_components.get(repository=repository),
@@ -1121,8 +1120,13 @@ def test_manual_push_svn_preserves_disabled_historical_snapshot(
     )
     workspace = tmp_path / "workspace"
     (workspace / "artifacts").mkdir(parents=True)
+    release.release_type = release_type
+    release.save(update_fields=["release_type"])
     task = PackageService.create_task_for_release(config, release, request_user=user)
-    task.config_snapshot["svn_push_enabled"] = False
+    task.config_snapshot.update({
+        "svn_push_enabled": False, "svn_push_rc": False, "svn_push_beta": False,
+        "trigger_source": trigger_source,
+    })
     task.status = "success"
     task.workspace_path = str(workspace)
     task.artifact_info = [{"id": "a1", "name": "app.tar.gz", "path": "app.tar.gz", "size": 100}]
@@ -1130,6 +1134,54 @@ def test_manual_push_svn_preserves_disabled_historical_snapshot(
 
     with pytest.raises(RuntimeError, match="仅创建时已启用 SVN 推送的打包任务可以推送"):
         PackageService.manual_push_svn(task)
+    assert PackageTaskSerializer(task).data["can_push_svn"] is False
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("release_type", ["rc", "beta"])
+@pytest.mark.parametrize("snapshot_enabled", [False, True])
+@pytest.mark.parametrize("status", ["queued", "running"])
+def test_existing_task_runs_with_saved_svn_decision(
+    project, repository, release, svn_credential, user, settings, tmp_path, monkeypatch,
+    release_type, snapshot_enabled, status,
+):
+    """已创建任务执行时沿用最终推送决定，不按现行配置或旧子开关重算。"""
+    settings.PACKAGE_WORKSPACE_ROOT = str(tmp_path)
+    config = PackageConfig.objects.create(
+        project_component=project.project_components.get(repository=repository),
+        name="已有配置", custom_script="echo build", svn_push_enabled=not snapshot_enabled,
+        svn_url="svn://host/releases", svn_credential=svn_credential,
+    )
+    snapshot = {
+        **PackageService._snapshot(config),
+        "svn_push_enabled": snapshot_enabled,
+        "svn_push_rc": snapshot_enabled,
+        "svn_push_beta": snapshot_enabled,
+        "trigger_source": "auto_release",
+    }
+    task = PackageTask.objects.create(
+        config=config, release=release, project=project, repository=repository,
+        name="已有任务", version=release.version, tag_name=release.tag_name,
+        release_type=release_type, status=status, config_snapshot=snapshot,
+    )
+    monkeypatch.setattr(PackageService, "_checkout_source", lambda task, workspace: None)
+    monkeypatch.setattr(PackageService, "_run_container", lambda task, workspace: None)
+    provider = MagicMock()
+    provider.remote_exists.return_value = False
+    monkeypatch.setattr("apps.package.services.svn.get_provider", lambda *args: provider)
+
+    PackageService.run_task(task)
+    task.refresh_from_db()
+
+    assert task.status == "success"
+    assert task.config_snapshot == snapshot
+    if snapshot_enabled:
+        assert task.stage_info["svn_push"]["status"] == "success"
+        assert task.stage_info["svn_push"]["remote_url"] == f"svn://host/releases/{release_type}/V1.0.0"
+        provider.import_path.assert_called_once()
+    else:
+        assert "svn_push" not in task.stage_info
+        provider.import_path.assert_not_called()
 
 
 @pytest.mark.django_db

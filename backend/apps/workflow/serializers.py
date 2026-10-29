@@ -57,6 +57,35 @@ def release_fields(release) -> dict:
     }
 
 
+def current_node_name(instance: WorkflowInstance) -> str:
+    """当前节点仅属于运行中流程，名称沿用本轮保存的依据。"""
+    node_id = instance.current_node_id
+    if instance.status != "running" or not node_id:
+        return ""
+    saved_nodes = instance.node_config_snapshot
+    for node in saved_nodes if isinstance(saved_nodes, list) else []:
+        if isinstance(node, dict) and node.get("node_id") == node_id:
+            name = node.get("node_name")
+            if isinstance(name, str) and name.strip() and name.strip() != node_id:
+                return name.strip()
+    graph = instance.graph_data if isinstance(instance.graph_data, dict) else {}
+    graph_nodes = graph.get("nodes")
+    for node in graph_nodes if isinstance(graph_nodes, list) else []:
+        if not isinstance(node, dict) or node.get("id") != node_id:
+            continue
+        text = node.get("text")
+        name = text.get("value", "") if isinstance(text, dict) else text
+        if isinstance(name, str) and name.strip():
+            label = name.strip().split("\n", 1)[0]
+            if label != node_id:
+                return label
+    # 列表已预取任务，使用缓存并限定当前节点，避免取到其他节点的遗留待办。
+    for task in instance.tasks.all():
+        if task.node_id == node_id and task.status == "pending" and task.node_name.strip() and task.node_name.strip() != node_id:
+            return task.node_name.strip()
+    return ""
+
+
 class WorkflowDefinitionSerializer(serializers.ModelSerializer):
     """
     工作流定义序列化器
@@ -223,26 +252,8 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
                     and permission.has_permission(request, None) and permission.has_object_permission(request, None, obj))
 
     def get_can_return_for_revision(self, obj: WorkflowTask) -> bool:
-        """退回能力以当前审批分配与目标项目有效角色为准。"""
-        from apps.project.models import ProjectMember
-        from utils.permissions import ProjectRolePermission
-
-        request = self.context.get("request")
-        if not request or not request.user.is_active or obj.status != "pending" or obj.instance.status != "running":
-            return False
-        if not request.user.is_superuser and obj.approver_id != request.user.id:
-            return False
-        release = resolve_release(obj.instance)
-        if (not release or release.status != "pending" or release.workflow_instance_id != obj.instance_id
-                or obj.instance.source_project_id != release.project_id or not obj.instance.source_biz_id
-                or obj.instance.source_biz_id != obj.instance.biz_id or obj.instance.biz_id != str(release.pk)):
-            return False
-        if obj.node_id != obj.instance.current_node_id:
-            return False
-        if not request.user.is_superuser and ProjectMember.objects.filter(project=release.project, user=request.user).exists():
-            if ProjectRolePermission._effective_role(release.project, request.user) in ("maintainer", "viewer"):
-                return False
-        return True
+        """旧字段保留兼容，不再提供独立退回修改入口。"""
+        return False
 
     def get_title(self, obj: WorkflowTask) -> str:
         """返回审批标题。"""
@@ -377,11 +388,8 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
         return ""
 
     def get_current_node(self, obj: WorkflowInstance) -> str:
-        """返回当前节点名称。"""
-        pending = obj.tasks.filter(status="pending").first()
-        if pending and pending.node_name:
-            return pending.node_name
-        return obj.current_node_id
+        """返回本轮实际当前节点名称，终态为空。"""
+        return current_node_name(obj)
 
     def get_version(self, obj: WorkflowInstance) -> str:
         """返回发布版本号。"""
@@ -474,11 +482,8 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
         return ""
 
     def get_current_node(self, obj: WorkflowInstance) -> str:
-        """返回当前节点名称：优先取进行中任务的节点名，回退到节点 ID。"""
-        pending = obj.tasks.filter(status="pending").first()
-        if pending and pending.node_name:
-            return pending.node_name
-        return obj.current_node_id
+        """与详情保持相同的当前节点语义。"""
+        return current_node_name(obj)
 
     def get_version(self, obj: WorkflowInstance) -> str:
         """返回发布版本号。"""

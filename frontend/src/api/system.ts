@@ -1,6 +1,8 @@
 import { get, post, put, patch, del } from './request';
 import type { PaginatedData } from '@/types';
 
+export const sharedAiConfigKeys = new Set(['ai_endpoint', 'ai_api_key', 'ai_model', 'ai_protocol']);
+
 export interface SystemConfig {
   id: string;
   key: string;
@@ -88,7 +90,21 @@ export interface LogListParams {
   page_size?: number;
 }
 
+export interface AiSettingsPayload {
+  endpoint: string;
+  model: string;
+  protocol: string;
+  /** 未编辑时省略，空字符串表示清除。 */
+  api_key?: string;
+  manifest_chars?: string;
+  tree_chars?: string;
+  knowledge_chars?: string;
+  exemplar_chars?: string;
+  max_tokens?: string;
+}
+
 export const systemApi = {
+  saveAiSettings: (data: AiSettingsPayload) => put<null>('/system/ai-settings/', data),
   getConfigs: (params?: ConfigListParams) =>
     get<PaginatedData<SystemConfig>>('/system/configs/', { params }),
   getConfig: (key: string) => get<SystemConfig>(`/system/configs/${key}/`),
@@ -122,10 +138,6 @@ export interface ReviewSettings {
 }
 
 export interface ReviewSettingsPayload {
-  endpoint: string;
-  model: string;
-  protocol: ReviewSettings['protocol'];
-  api_key?: string;
   skill: string;
 }
 

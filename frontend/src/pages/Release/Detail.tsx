@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Empty, Button, Grid, Input, Modal, Typography } from 'antd';
-import { AlertTriangle, ChevronRight, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Rocket, Tag, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronRight, ExternalLink, RefreshCw, Rocket, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
-import { WorkflowHistory } from '@/components/WorkflowHistory';
 import { releaseApi } from '@/api/release';
 import { projectApi } from '@/api/project';
 import { workflowApi } from '@/api/workflow';
@@ -202,7 +201,6 @@ export default function ReleaseDetail() {
         ) : null}
       </div>
 
-      {!maintainer ? <WorkflowHistory releaseId={release.id} /> : null}
 
       {/* 详情头 */}
       <div className="tech-card rounded-xl p-5">
@@ -268,7 +266,7 @@ export default function ReleaseDetail() {
           ) : null}
           {status === 'draft' || status === 'rejected' ? (
             <div className="flex shrink-0 items-center gap-2">
-              {status === 'draft' && canDevelop ? <Button type="primary" loading={submit.isPending}
+              {status === 'draft' && canDevelop && !release.has_revision_history ? <Button type="primary" loading={submit.isPending}
                 disabled={!release.release_doc?.trim() || reviewContextDirty} onClick={() => submit.mutate()}>提交审批</Button> : null}
               {/* 推 tag 失败的发布（驳回原因以「推 tag 失败」开头）提供重试入口 */}
               {canDevelop && status === 'rejected' && (release.rejected_reason || '').startsWith('推 tag 失败') ? (
@@ -291,42 +289,15 @@ export default function ReleaseDetail() {
             </div>
           ) : null}
         </div>
+        {canDevelop && (status === 'rejected' && !(release.rejected_reason || '').startsWith('推 tag 失败') || status === 'draft' && release.has_revision_history) ? <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
+          <p className="min-w-0 flex-1">审批已结束，修改代码后请新建发布。</p>
+          <Button onClick={() => navigate(`/releases/create?project_id=${release.project}`)}>新建发布</Button>
+        </div> : null}
         {submit.error ? <div className="mt-3"><PermissionAlert error={submit.error} errorTitle="提交审批失败" /></div> : null}
-        {/* 小信息栏 */}
-        <div className="mt-5 grid grid-cols-2 gap-3 border-t border-indigo-50 pt-4 md:grid-cols-4">
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
-            <span className="text-[12px] text-slate-500">分支</span>
-            <span className="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900">
-              {release.branch || '-'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <GitCommitHorizontal className="h-4 w-4 text-violet-500" strokeWidth={1.5} />
-            <span className="text-[12px] text-slate-500">Tag</span>
-            <span className="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900">
-              {release.tag_name || '-'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Tag className="h-4 w-4 text-emerald-500" strokeWidth={1.5} />
-            <span className="text-[12px] text-slate-500">类型</span>
-            <span className="text-[13px] font-semibold text-slate-900">
-              {type ? releaseTypeText[type] : '-'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <GitMerge className="h-4 w-4 text-cyan-500" strokeWidth={1.5} />
-            <span className="text-[12px] text-slate-500">Git Hash</span>
-            <span className="min-w-0 truncate font-mono text-[13px] font-semibold text-slate-900">
-              {release.git_hash ? release.git_hash.slice(0, 12) : '-'}
-            </span>
-          </div>
-        </div>
-        <ReleaseSource key={release.id} release={release}
-          canRefresh={canDevelop && (user?.is_superuser || release.publisher === user?.id)} />
+        <ReleaseSource key={`release-source:${release.id}`} release={release}
+          canRefresh={!release.has_revision_history && canDevelop && (user?.is_superuser || release.publisher === user?.id)} />
         {(role === 'developer' || role === 'tester' || role === 'auditor' || role === 'manager' || role === 'software_admin') && (
-          <ReviewContext key={release.id} release={release}
+          <ReviewContext key={`review-context:${release.id}`} release={release}
             canEdit={canDevelop && (user?.is_superuser || release.publisher === user?.id)} onDirtyChange={dirty => setDirtyContextId(dirty ? release.id : null)} />
         )}
         {reviewContextDirty ? <p className="mt-2 text-xs text-amber-700">请先保存审查上下文，再提交审批。</p> : null}

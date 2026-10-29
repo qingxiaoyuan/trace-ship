@@ -164,6 +164,7 @@ export function ReleaseList() {
             return (
               <div
                 key={release.id}
+                data-release-id={release.id}
                 onClick={() => navigate(`/releases/${release.id}`)}
                 className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
               >
@@ -315,15 +316,14 @@ export function ReleaseBoardPage() {
               </button>
             ))}
           </div>
-          {!maintainer && <><button type="button" className="min-h-9 rounded border px-3 text-sm" onClick={() => navigate('/releases/cleanup')}>RC Tag 清理</button>
-          <button
+          {!maintainer && <button
             type="button"
             onClick={() => navigate('/releases/create')}
             className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
             新建发布
-          </button></>}
+          </button>}
         </div>
       </div>
       {view === 'board' ? <ReleaseBoard /> : <ReleaseList />}

@@ -1,5 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { workflowApi } from '@/api/workflow';
@@ -11,6 +11,7 @@ function show() {
     <MemoryRouter><AiReviewReport instanceId="round-one" /></MemoryRouter>
   </QueryClientProvider>);
 }
+beforeEach(() => { vi.spyOn(workflowApi, 'getReviewDiff').mockRejectedValue({ status: 500, friendlyMessage: '固定差异暂不可用' }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); useAuthStore.getState().clearAuth(); });
 
 it('展示完整报告、覆盖和意见并安全呈现模型文本', async () => {
@@ -20,7 +21,7 @@ it('展示完整报告、覆盖和意见并安全呈现模型文本', async () =
   const { container } = show();
   expect(await screen.findByText('已完成审查')).toBeTruthy();
   expect(screen.getByText('覆盖范围：2 / 2 个文件')).toBeTruthy();
-  expect(screen.getByText('P1')).toBeTruthy();
+  expect(await screen.findByText('P1')).toBeTruthy();
   expect(screen.getByText(/尾部/).textContent).toContain('<script>alert(1)</script>尾部');
   expect(container.querySelector('script')).toBeNull();
   expect(screen.getByText('src/a.ts · 新侧 2–3 行')).toBeTruthy();
@@ -55,7 +56,7 @@ it('审查运行时自动刷新并展示新结果', async () => {
   show();
   expect(await screen.findByText('正在审查')).toBeTruthy();
   expect(await screen.findByText('审查已更新', {}, { timeout: 5000 })).toBeTruthy();
-  expect(screen.getByText('未报告意见，仍需人工判断。')).toBeTruthy();
+  expect(await screen.findByText('未报告意见，仍需人工判断。')).toBeTruthy();
 });
 
 it('排队时尚无覆盖统计也能显示状态', async () => {
@@ -160,6 +161,7 @@ it('历史执行保留独有意见，并按稳定 ID 避免重复显示', async 
   ] }] });
   show();
   expect(await screen.findByText('过往审查执行（2）')).toBeTruthy();
+  await screen.findByText('相同意见');
   expect(screen.getAllByText('相同意见')).toHaveLength(1);
   expect(screen.getAllByText('旧意见')).toHaveLength(1);
   expect(screen.getByText('旧原因').tagName.toLowerCase()).toBe('strong');
@@ -330,4 +332,40 @@ it('执行详情集中展示覆盖、批次、配置和历史，操作沿用项�
   expect(screen.getByText('过往审查执行（1）')).toBeTruthy();
   fireEvent.click(screen.getByText('查看本批文件'));
   expect(screen.getByText('src/a.ts')).toBeTruthy();
+});
+
+
+it('打开审查直接读差异行内评论，并从评论采纳为整改项', async () => {
+  const finding = { id: 'inline', severity: 'P1', title: '缺失权限校验', reason: '**操作前校验**', suggestion: '先判断用户权限', path: 'src/action.ts', side: 'new' as const, line_start: 2, line_end: 2 };
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '发现权限问题', coverage: {}, findings: [finding] }] });
+  vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'ready', base_git_hash: 'a'.repeat(40), head_git_hash: 'b'.repeat(40), diffs: [
+    { old_path: 'src/action.ts', new_path: 'src/action.ts', diff: '@@ -1 +1,2 @@\n keep();\n+removeUser();' },
+  ] });
+  const item = { id: 'remediation', instance_id: 'round-one', node_id: 'ai', finding_id: finding.id, finding, status: 'pending_fix' as const, fix_note: '', history: [], can_fix: false, can_review: true };
+  vi.spyOn(workflowApi, 'getRemediations').mockResolvedValueOnce({ items: [], can_adopt: true }).mockResolvedValue({ items: [item], can_adopt: true });
+  const adopt = vi.spyOn(workflowApi, 'actOnRemediation').mockResolvedValue({ item });
+  show();
+  const diff = await screen.findByRole('region', { name: '本轮代码差异' });
+  expect(await within(diff).findByText('removeUser();')).toBeTruthy();
+  const comment = within(diff).getByRole('article', { name: '审查意见：缺失权限校验' });
+  expect(comment.closest('[data-line-side="new"]')).toBeTruthy();
+  expect(screen.getAllByText('缺失权限校验')).toHaveLength(1);
+  fireEvent.click(await within(comment).findByRole('button', { name: '采纳：缺失权限校验' }));
+  await waitFor(() => expect(adopt).toHaveBeenCalledWith('round-one', { action: 'adopt', node_id: 'ai', finding_id: 'inline' }));
+  expect(await within(comment).findByRole('link', { name: /已采纳，待修复/ })).toBeTruthy();
+  expect(within(comment).queryByRole('button', { name: '采纳：缺失权限校验' })).toBeNull();
+});
+
+it('差异请求失败仍完整阅读意见，重试后恢复行内评论且不重复正文', async () => {
+  const finding = { id: 'fallback', severity: 'P2', title: '错误返回值未处理', reason: '**需要处理失败**', suggestion: '添加错误提示', path: 'action.ts', side: 'new' as const, line_start: 1, line_end: 1 };
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '', coverage: {}, findings: [finding] }] });
+  vi.spyOn(workflowApi, 'getReviewDiff').mockRejectedValueOnce({ friendlyMessage: '暂不可读' }).mockResolvedValue({ status: 'ready', base_git_hash: 'a', head_git_hash: 'b', diffs: [{ old_path: 'action.ts', new_path: 'action.ts', diff: '@@ -0,0 +1 @@\n+save();' }] });
+  vi.spyOn(workflowApi, 'getRemediations').mockResolvedValue({ items: [], can_adopt: false });
+  show();
+  expect((await screen.findByRole('alert')).textContent).toContain('暂不可读');
+  expect(screen.getByText('需要处理失败').tagName.toLowerCase()).toBe('strong');
+  fireEvent.click(screen.getByRole('button', { name: '重新读取代码差异' }));
+  expect(await screen.findByText('save();')).toBeTruthy();
+  expect(screen.getAllByText('错误返回值未处理')).toHaveLength(1);
+  expect(screen.getByText('错误返回值未处理').closest('[data-line-side="new"]')).toBeTruthy();
 });

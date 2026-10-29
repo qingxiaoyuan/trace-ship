@@ -237,7 +237,7 @@ class NotificationService:
         )
 
     @staticmethod
-    def notify_task_rejected(task, comment: str = "") -> None:
+    def notify_task_rejected(task, comment: str = "", actor=None) -> None:
         """
         审批驳回时通知发起人
 
@@ -248,11 +248,15 @@ class NotificationService:
         instance = task.instance
         if not instance.created_by:
             return
+        # 通知长期留存，AI 审批的完整意见只在按当前权限授权的详情中读取。
+        if instance.ai_reviews.exists():
+            comment = "审批意见请在有权限时进入详情查看。"
+        operator = actor or task.approver
         NotificationService.create(
             user=instance.created_by,
             notification_type="audit",
             title="审批被驳回",
-            content=f"您的 {instance.biz_type} 申请（{instance.biz_id}）已被 {task.approver.nickname or task.approver.username} 驳回。{comment}",
+            content=f"您的 {instance.biz_type} 申请（{instance.biz_id}）已被 {operator.nickname or operator.username} 驳回。{comment}",
             related_type="workflow_instance",
             related_id=str(instance.id),
         )

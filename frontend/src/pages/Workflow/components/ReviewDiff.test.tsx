@@ -20,9 +20,7 @@ it('展示固定重命名差异、旧新行号和相邻意见，保留源码字�
   }] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { container } = render(<QueryClientProvider client={client}><ReviewDiff instanceId="round-one" reviews={reviews} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
   const file = await screen.findByRole('article', { name: 'old.py → new.py' });
-  fireEvent.click(within(file).getByRole('button', { name: '展开代码差异' }));
   expect(within(file).getByText('重命名')).toBeTruthy();
   expect(within(file).getByText('<script>alert(1)</script>')).toBeTruthy();
   expect(container.querySelector('script')).toBeNull();
@@ -47,17 +45,15 @@ it('新增、删除、整体意见和无法可靠定位的行均可见，并过�
   ] }];
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { container } = render(<QueryClientProvider client={client}><ReviewDiff instanceId="round" reviews={cases} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
-  const added = await screen.findByRole('article', { name: 'added.py' });
-  fireEvent.click(within(added).getByRole('button', { name: '展开代码差异' }));
+  await screen.findByRole('article', { name: 'added.py' });
   fireEvent.click(screen.getByRole('button', { name: '查看文件 deleted.py' }));
   const deleted = screen.getByRole('article', { name: 'deleted.py' });
-  fireEvent.click(within(deleted).getByRole('button', { name: '展开代码差异' }));
-  expect(within(added).getByText('新增文件')).toBeTruthy();
   expect(within(deleted).getByText('删除文件')).toBeTruthy();
-  expect(within(added).getByText('新增末尾')).toBeTruthy();
   expect(within(deleted).getByText('删除内容')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '查看文件 added.py' }));
+  const added = screen.getByRole('article', { name: 'added.py' });
+  expect(within(added).getByText('新增文件')).toBeTruthy();
+  expect(within(added).getByText('新增末尾')).toBeTruthy();
   expect(within(added).getByText('行不可定位')).toBeTruthy();
   expect(screen.getByText('整体问题')).toBeTruthy();
   expect(screen.getByText(/本轮差异未完整取得/)).toBeTruthy();
@@ -75,12 +71,11 @@ it('摘要角色不请求代码差异，切换轮次时不复用旧轮文件', a
   expect(screen.queryByRole('button', { name: '查看代码差异' })).toBeNull();
   expect(api).not.toHaveBeenCalled();
   rerender(wrapper({ id: 'round-one', full: true }));
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
-  fireEvent.click(within(await screen.findByRole('article', { name: 'same.py' })).getByRole('button', { name: '展开代码差异' }));
-  expect(await screen.findByText('round-one')).toBeTruthy();
+  await screen.findByRole('article', { name: 'same.py' });
+  expect(await within(screen.getByRole('article', { name: 'same.py' })).findByText('round-one')).toBeTruthy();
   rerender(wrapper({ id: 'round-two', full: true }));
-  fireEvent.click(within(await screen.findByRole('article', { name: 'same.py' })).getByRole('button', { name: '展开代码差异' }));
-  expect(await screen.findByText('round-two')).toBeTruthy();
+  await screen.findByRole('article', { name: 'same.py' });
+  expect(await within(screen.getByRole('article', { name: 'same.py' })).findByText('round-two')).toBeTruthy();
   expect(screen.queryByText('round-one')).toBeNull();
 });
 
@@ -90,8 +85,7 @@ it('权限收回后重新读取失败时隐藏已缓存的差异', async () => {
     .mockRejectedValue({ status: 404, friendlyMessage: '无权读取' });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><ReviewDiff instanceId="round-private" reviews={reviews} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
-  fireEvent.click(within(await screen.findByRole('article', { name: 'private.py' })).getByRole('button', { name: '展开代码差异' }));
+  await screen.findByRole('article', { name: 'private.py' });
   expect(await screen.findByText('私有代码')).toBeTruthy();
   await client.invalidateQueries({ queryKey: ['review-diff', 'round-private'] });
   expect((await screen.findByRole('alert')).textContent).toContain('无权读取');
@@ -105,8 +99,7 @@ it('账号令牌切换后不会展示上个会话缓存的代码', async () => {
     .mockRejectedValue({ status: 404, friendlyMessage: '无权读取' });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><ReviewDiff instanceId="same-round" reviews={reviews} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
-  fireEvent.click(within(await screen.findByRole('article', { name: 'private.py' })).getByRole('button', { name: '展开代码差异' }));
+  await screen.findByRole('article', { name: 'private.py' });
   expect(await screen.findByText('私有代码')).toBeTruthy();
   act(() => useAuthStore.getState().setTokens('new-account-token'));
   expect(screen.queryByText('私有代码')).toBeNull();
@@ -124,9 +117,7 @@ it('差异块计数不匹配时保留原文并把行意见降级', async () => {
   ] }];
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><ReviewDiff instanceId="bad-hunk" reviews={cases} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
   const file = await screen.findByRole('article', { name: 'broken.py' });
-  fireEvent.click(within(file).getByRole('button', { name: '展开代码差异' }));
   expect(within(file).getByText('不能定位')).toBeTruthy();
   expect(within(file).getByText('文件级意见（未能可靠定位到行）')).toBeTruthy();
   expect(within(file).getByText('extra')).toBeTruthy();
@@ -135,7 +126,7 @@ it('差异块计数不匹配时保留原文并把行意见降级', async () => {
   expect(within(file).getByText(/差异块不完整/)).toBeTruthy();
 });
 
-it('长差异分页后可读到末尾，未打开文件不会构建所有代码行', async () => {
+it('长差异按页构建代码行并能跳转到末尾意见', async () => {
   const lines = Array.from({ length: 401 }, (_, index) => `+line-${index + 1}`);
   vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'ready', base_git_hash: 'a', head_git_hash: 'b', diffs: [
     { old_path: 'long.py', new_path: 'long.py', new_file: true, diff: `@@ -0,0 +1,401 @@\n${lines.join('\n')}` },
@@ -145,10 +136,10 @@ it('长差异分页后可读到末尾，未打开文件不会构建所有代码�
     { severity: 'P1', title: '末尾问题', reason: '原因', suggestion: '检查', path: 'long.py', side: 'new' as const, line_start: 401, line_end: 401 },
   ] }];
   render(<QueryClientProvider client={client}><ReviewDiff instanceId="long" reviews={cases} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
   const file = await screen.findByRole('article', { name: 'long.py' });
-  expect(within(file).queryByText('line-1')).toBeNull();
-  fireEvent.click(within(file).getByRole('button', { name: '查看意见：末尾问题' }));
+  expect(within(file).getByText('line-1')).toBeTruthy();
+  expect(within(file).queryByText('line-401')).toBeNull();
+  fireEvent.change(within(file).getByRole('combobox', { name: '跳转到审查意见' }), { target: { value: 'ai:current:0' } });
   expect(within(file).getByText('line-401')).toBeTruthy();
   expect(within(file).getByText('末尾问题').closest('[data-line-side="new"]')).toBeTruthy();
 });
@@ -165,9 +156,7 @@ it('历史执行意见留在原差异旁，跨当前与历史按稳定 ID 去重
   ] }];
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { container } = render(<QueryClientProvider client={client}><ReviewDiff instanceId="history" reviews={cases} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
-  const file = await screen.findByRole('article', { name: 'a.py' });
-  fireEvent.click(within(file).getByRole('button', { name: '展开代码差异' }));
+  await screen.findByRole('article', { name: 'a.py' });
   const cards = container.querySelectorAll('[data-line-side]');
   expect(cards).toHaveLength(2);
   expect(within(cards[0] as HTMLElement).getByText('重复问题')).toBeTruthy();
@@ -184,9 +173,7 @@ it('多个完整差异块的行号重叠时不展示具有歧义的位置', asyn
   ] }];
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><ReviewDiff instanceId="overlap" reviews={cases} /></QueryClientProvider>);
-  fireEvent.click(screen.getByRole('button', { name: '查看代码差异' }));
   const file = await screen.findByRole('article', { name: 'a.py' });
-  fireEvent.click(within(file).getByRole('button', { name: '展开代码差异' }));
   expect(within(file).getByText('歧义意见')).toBeTruthy();
   expect(within(file).getByText('文件级意见（未能可靠定位到行）')).toBeTruthy();
   expect(within(file).queryByLabelText('新侧第 1 行')).toBeNull();

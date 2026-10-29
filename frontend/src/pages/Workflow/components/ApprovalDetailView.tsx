@@ -5,7 +5,6 @@ import { ChevronRight, FileText, GitCompareArrows, Sparkles } from 'lucide-react
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
 import { WorkflowTerminateButton } from '@/components/WorkflowTerminateButton';
-import { WorkflowHistory } from '@/components/WorkflowHistory';
 import { usePageMetaStore } from '@/stores/pageMetaStore';
 import { useAuthStore } from '@/stores/authStore';
 import { recordVisit } from '@/hooks/useRecentVisits';
@@ -116,7 +115,6 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
       </div>
       <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_285px]">
         <div className="min-w-0 space-y-5">
-          {instance?.biz_type === 'release' ? <WorkflowHistory releaseId={instance.biz_id} /> : null}
           {instance && !instance.has_config_snapshot ? (
             <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">历史流程没有保存提审时的配置快照，不能还原当时配置。</div>
           ) : null}
@@ -125,7 +123,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
           ) : null}
 
           <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/30">
-            <div role="tablist" aria-label="审批详情" className="flex overflow-x-auto whitespace-nowrap border-b border-slate-100 px-3 sm:px-6">
+            <div role="tablist" aria-label="审批详情" className="flex items-stretch gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-100 px-3 sm:gap-2 sm:px-6">
               {([
                 { key: 'document' as const, label: '变更文档与审批', icon: FileText },
                 ...(instance.biz_type === 'release' ? [
@@ -148,8 +146,8 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
                     setActiveTab(tabs[next].key);
                     document.getElementById(`${tabId}-${tabs[next].key}`)?.focus();
                   }}
-                  className={`inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-4 text-sm focus-visible:outline-2 focus-visible:outline-indigo-500 ${activeTab === key ? 'border-indigo-600 font-medium text-indigo-700' : 'border-transparent text-slate-500 hover:text-indigo-600'}`}
-                ><Icon className="h-4 w-4" strokeWidth={1.5} />{label}</button>
+                  className={`inline-flex h-12 shrink-0 items-center justify-center gap-1.5 border-b-2 px-2 text-[13px] font-medium leading-5 transition-colors focus-visible:outline-2 focus-visible:outline-indigo-500 sm:h-13 sm:gap-2 sm:px-4 sm:text-[14px] ${activeTab === key ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-indigo-600'}`}
+                ><span aria-hidden="true" className="flex h-4 w-4 shrink-0 items-center justify-center sm:h-5 sm:w-5"><Icon className="h-4 w-4" strokeWidth={1.5} /></span><span className="inline-block leading-5">{label}</span></button>
               ))}
             </div>
             <div id={`${tabId}-document-panel`} role="tabpanel" aria-labelledby={`${tabId}-document`} hidden={activeTab !== 'document'} className="space-y-6 p-5 sm:p-6">
@@ -157,7 +155,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
               <ApprovalActions key={instance.id} source={detailSource} instance={instance} onBack={onBack} />
             </div>
             {instance.biz_type === 'release' ? <>
-              <div id={`${tabId}-review-panel`} role="tabpanel" aria-labelledby={`${tabId}-review`} hidden={activeTab !== 'review'} className="min-w-0 p-5 sm:p-6"><AiReviewReport key={`ai-${instance.id}`} instanceId={instance.id} active={activeTab === 'review'} /></div>
+              <div id={`${tabId}-review-panel`} role="tabpanel" aria-labelledby={`${tabId}-review`} hidden={activeTab !== 'review'} className="min-w-0 p-3 sm:p-5"><AiReviewReport key={`ai-${instance.id}`} instanceId={instance.id} active={activeTab === 'review'} /></div>
               <div id={`${tabId}-scope-panel`} role="tabpanel" aria-labelledby={`${tabId}-scope`} hidden={activeTab !== 'scope'} className="min-w-0 p-5 sm:p-6">{activeTab === 'scope' ? <ReviewScope key={instance.id} instanceId={instance.id} /> : null}</div>
             </> : null}
           </section>

@@ -40,8 +40,9 @@ it('开发者提交修复说明后可重新读取，审批人复核前保持待�
   fireEvent.click(button);
   await waitFor(() => expect(act).toHaveBeenCalledWith('round-1', { action: 'fix', id: 'item-1', comment: '  保留缩进\n修复尾部  ' }));
   expect(await screen.findByText('已提交修复说明，待复核')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'round-old' }).getAttribute('href')).toBe('/workflows/round-old');
-  expect(screen.getByText(/修复说明：/).textContent).toBe('修复说明：  保留缩进\n修复尾部  ');
+  fireEvent.click(screen.getByText('来源与处置记录'));
+  expect(screen.getByRole('link', { name: '查看原审批记录' }).getAttribute('href')).toBe('/workflows/round-old');
+  expect(screen.getByText(/保留缩进/, { selector: 'p' }).textContent).toBe('  保留缩进\n修复尾部  ');
   expect(screen.queryByRole('button', { name: '确认已处理' })).toBeNull();
 });
 
@@ -122,4 +123,42 @@ it('大量候选和整改项按页展示且可到达末尾', async () => {
   expect(screen.queryByText('候选 21')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '待采纳下一页' }));
   expect(screen.getByText('候选 21')).toBeTruthy();
+});
+
+it('整改卡片默认收起技术标识，展开后保留完整来源与时间线证据', async () => {
+  vi.spyOn(workflowApi, 'getRemediations').mockResolvedValue({ items: [{ id: 'source-item', instance_id: 'original-round', node_id: 'internal-node', finding_id: finding.id, finding,
+    source_git_hash: 'e'.repeat(40), source_token: 'source-execution', status: 'resolved', fix_note: '补充权限校验', can_fix: false, can_review: false,
+    history: [{ action: 'resolve', actor_name: '复核人', at: '2026-10-29T02:28:04.520433+00:00', comment: '已核对新提交', instance_id: 'next-round', node_id: 'reviewer-node', git_hash: 'f'.repeat(40) }],
+  }], can_adopt: false });
+  show();
+  const card = await screen.findByRole('article', { name: '整改项：缺少校验' });
+  const details = card.querySelector('details')!;
+  expect(details.open).toBe(false);
+  expect(screen.getByText('已处理')).toBeTruthy();
+  expect(screen.getByText('补充权限校验')).toBeTruthy();
+  expect(screen.getByText('original-round').closest('details')).toBe(details);
+  fireEvent.click(screen.getByText('来源与处置记录'));
+  expect(details.open).toBe(true);
+  expect(screen.getByRole('link', { name: '查看原审批记录' }).getAttribute('href')).toBe('/workflows/original-round');
+  expect(screen.getByText('e'.repeat(40))).toBeTruthy();
+  expect(screen.getByText('source-execution')).toBeTruthy();
+  expect(card.querySelector('ol li time')?.getAttribute('datetime')).toBe('2026-10-29T02:28:04.520433+00:00');
+  expect(screen.getByText('已核对新提交')).toBeTruthy();
+  expect(screen.getByText(/轮次：next-round/).textContent).toContain('f'.repeat(40));
+});
+
+it('评论的查看整改入口先切换到目标所在分页', async () => {
+  const { ReviewRemediations, FindingRemediationAction } = await import('./ReviewRemediations');
+  const items = Array.from({ length: 21 }, (_, index) => ({ id: `item-${index}`, instance_id: 'round-1', node_id: 'ai', finding_id: `finding-${index}`,
+    finding: { ...finding, id: `finding-${index}`, title: `分页整改 ${index + 1}` }, status: 'pending_fix' as const, fix_note: '', history: [], can_fix: false, can_review: false }));
+  vi.spyOn(workflowApi, 'getRemediations').mockResolvedValue({ items, can_adopt: false });
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter>
+    <ReviewRemediations instanceId="round-1"><FindingRemediationAction nodeId="ai" finding={items[20].finding} /><RemediationPanel instanceId="round-1" reviews={[]} showCandidates={false} /></ReviewRemediations>
+  </MemoryRouter></QueryClientProvider>);
+  await screen.findByRole('article', { name: '整改项：分页整改 1' });
+  expect(screen.queryByRole('article', { name: '整改项：分页整改 21' })).toBeNull();
+  fireEvent.click(screen.getByRole('link', { name: /查看整改/ }));
+  expect(screen.getByRole('article', { name: '整改项：分页整改 21' })).toBeTruthy();
+  expect(screen.queryByRole('article', { name: '整改项：分页整改 1' })).toBeNull();
 });

@@ -27,6 +27,26 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.10.29',
+    date: '2026-10-29',
+    summary: 'AI 审查支持差异行内评论，整理发布与打包界面',
+    items: [
+      { category: 'fix', text: 'AI 模型配置一次保存完整地址、密钥、模型与协议，保存失败整体回滚，避免提审固定保存中途的混合配置' },
+      { category: 'fix', text: '退回修改统一按驳回结束申请；审批界面移除退回修改、回退和轮次选择，修改代码后新建发布；发布看板隐藏 RC Tag 清理按钮，工作台移除草稿列、计数和卡片' },
+      { category: 'fix', text: '审批中心按真实流程状态展示「我发起的」，已完成、驳回和终止记录不再误显示为进行中；已办列表显示本人的处理结果，当前节点使用本轮保存的名称' },
+      { category: 'improvement', text: '审批详情页签统一图标槽、文字行高、字重与间距，切换选中项时保持对齐' },
+      { category: 'improvement', text: '发布代码审查复用 AI 写脚本的模型配置，统一在「AI 模型服务」维护；审查技能独立选择，已有审批及重试继续使用原模型快照' },
+      { category: 'improvement', text: '审批意见按审批人、处理结果、意见与时间对齐展示，结果使用小图标和普通文字；手机分行阅读，去掉胶囊标签及空白卡片' },
+      { category: 'improvement', text: '代码审查整改卡片突出问题与处理状态，修复说明和复核操作分区展示；来源标识默认收起，处置历史以时间线呈现' },
+      { category: 'improvement', text: '审批详情的 AI 审查默认展示文件差异，意见以评论形式放在对应旧/新代码行下方，支持切换文件、定位意见和直接采纳为整改项；执行详情与历史记录收起展示' },
+      { category: 'improvement', text: '发布详情将分支、固定提交和 Tag 合并到「发布代码」区域，说明其用途；完整提交号按需展开，草稿更新代码与来源 RC 信息集中展示' },
+      { category: 'fix', text: '修复发布详情刷新数据后来源代码区块重复叠加的问题' },
+      { category: 'improvement', text: '打包产物区直接显示「推送 SVN」主按钮，与「下载全部」并排，推送时显示进度并阻止重复点击' },
+      { category: 'improvement', text: '取消打包配置中的 RC、测试版独立 SVN 开关；正式版、RC、测试版和分支新任务统一跟随总开关，已有配置无需重新保存' },
+      { category: 'improvement', text: '已创建任务继续沿用原推送决定；需要按新规则推送旧版本时可重新打包，默认类型目录、自定义模板及覆盖设置继续生效' },
+    ],
+  },
+  {
     version: '2026.10.28',
     date: '2026-10-28',
     summary: '发布审查配置、草稿更新与审批历史',
