@@ -6,6 +6,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.release.models import ReleaseRecord
+from apps.workflow.models import WorkflowDefinition
 from utils.provider.base import CommitInfo, TagInfo
 
 pytestmark = pytest.mark.django_db
@@ -225,14 +226,44 @@ def test_formal_cannot_bypass_range_validation_with_manual_doc(client, formal):
     assert "生成" in result.data["message"]
 
 
-def test_formal_includes_illegal_commit_and_preserves_submit_gate(client, formal, remote, commit):
+@pytest.mark.parametrize("has_source_rc", [True, False])
+def test_formal_with_illegal_commit_can_submit_for_approval(client, formal, remote, commit, has_source_rc):
+    """正式版保留不合规提交及审查原因，仍可进入人工审批。"""
+    if not has_source_rc:
+        formal.source_rc = None
+        formal.source_rc_version = ""
+        formal.source_rc_tag = ""
+        formal.source_rc_git_hash = ""
+        formal.save()
+    WorkflowDefinition.objects.create(
+        project=formal.project,
+        repository=formal.repository,
+        name="正式发布审批",
+        biz_type="release",
+        release_type="formal",
+        is_active=True,
+        node_config=[{
+            "node_id": "approval", "node_name": "审批",
+            "approvers": [{"type": "repo_owner"}], "mode": "any",
+        }],
+        created_by=formal.publisher,
+    )
     commit.commit_hash = HEAD
     commit.review_status = "illegal"
+    commit.review_reason = "人工复核标记为非法"
     commit.save()
-    client.post(f"/api/releases/{formal.id}/generate-doc/", {"commit_ids": ["nonexistent"]}, format="json")
+    generated = client.post(f"/api/releases/{formal.id}/generate-doc/", {"commit_ids": ["nonexistent"]}, format="json")
+    assert generated.status_code == 200, generated.data
+    assert formal.release_commits.filter(commit=commit, is_included=True).exists()
     result = client.post(f"/api/releases/{formal.id}/submit-audit/", {}, format="json")
-    assert result.status_code == 400
-    assert "非法提交" in result.data["message"]
+    assert result.status_code == 200, result.data
+    assert result.data["data"]["status"] == "pending"
+    formal.refresh_from_db()
+    assert formal.workflow_instance_id
+    assert formal.release_commits.filter(commit=commit, is_included=True).exists()
+    commit.refresh_from_db()
+    assert commit.review_status == "illegal"
+    assert commit.review_reason == "人工复核标记为非法"
 
 
 @pytest.mark.parametrize("failure", [None, "second_page", "repeat_page", "jump_page", "mr_failure"])
