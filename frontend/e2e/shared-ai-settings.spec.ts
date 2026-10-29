@@ -1,0 +1,58 @@
+import { test, expect } from '@playwright/test';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as { password: string; settings: { username: string } };
+const reportDir = process.env.SMOKE_REPORT_DIR!;
+
+test('模型设置只有一份，审查复用新模型并单独保存和上传技能', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '本地账号', exact: true }).click();
+  await page.getByPlaceholder('请输入本地账号').fill(fixture.settings.username);
+  await page.getByPlaceholder('请输入密码', { exact: true }).fill(fixture.password);
+  await page.getByRole('button', { name: '登 录', exact: true }).click();
+  await expect(page).not.toHaveURL(/\/login/);
+  await page.goto('/system/configs');
+  const model = page.getByRole('region', { name: 'AI 模型服务', exact: true });
+  const review = page.getByRole('region', { name: '发布代码审查配置', exact: true });
+  await expect(review.getByText('isolated-review-sample', { exact: true })).toBeVisible();
+  await expect(review.getByText('技能列表加载失败', { exact: false })).toHaveCount(0);
+  await expect(review.getByLabel('模型名称', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('模型名称', { exact: true })).toHaveCount(1);
+  const modelWrites: string[] = [];
+  page.on('request', request => {
+    if (['PUT', 'PATCH', 'POST', 'DELETE'].includes(request.method()) && /\/system\/(ai-settings|configs)\//.test(request.url())) modelWrites.push(request.url());
+  });
+  await model.getByLabel('服务地址', { exact: false }).fill('https://shared-updated.example/v1');
+  await model.getByLabel('模型名称', { exact: true }).fill('shared-model-updated');
+  await model.getByLabel('API 密钥', { exact: true }).fill('isolated-shared-model-key');
+  await model.getByLabel('协议', { exact: true }).selectOption('anthropic');
+  const modelResponse = page.waitForResponse(response => response.url().endsWith('/ai-settings/') && response.request().method() === 'PUT');
+  await model.getByRole('button', { name: '保存', exact: true }).click();
+  expect((await modelResponse).status()).toBe(200);
+  expect(modelWrites).toHaveLength(1);
+  expect(modelWrites[0]).toMatch(/\/ai-settings\/$/);
+  await expect(review.getByText('shared-model-updated', { exact: true })).toBeVisible();
+  await expect(model.getByLabel('协议', { exact: true })).toHaveValue('anthropic');
+  const savedResponse = page.waitForResponse(response => response.url().endsWith('/review-settings/') && response.request().method() === 'PUT');
+  await review.getByRole('button', { name: '保存审查配置', exact: true }).click();
+  const saved = await savedResponse;
+  expect(saved.status()).toBe(200);
+  expect(saved.request().postDataJSON()).toEqual({ skill: 'code-review-expert' });
+  await page.reload();
+  await expect(model.getByLabel('模型名称', { exact: true })).toHaveValue('shared-model-updated');
+  await expect(review.getByText('shared-model-updated', { exact: true })).toBeVisible();
+  const uploadResponse = page.waitForResponse(response => response.url().endsWith('/review-skills/') && response.request().method() === 'POST');
+  await review.getByLabel('上传审查技能', { exact: true }).setInputFiles({ name: 'SKILL.md', mimeType: 'text/markdown', buffer: Buffer.from('# 浏览器审查规则\n\n只读检查变更，保留人工审批。') });
+  expect((await uploadResponse).status()).toBe(201);
+  await expect(review.getByText('文件清单：SKILL.md', { exact: false })).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 1440, height: 1000 });
+  await review.screenshot({ path: path.join(reportDir, 'shared-review-settings-desktop.png') });
+  await model.screenshot({ path: path.join(reportDir, 'shared-model-desktop.png') });
+  await page.setViewportSize({ width: 375, height: 812 });
+  expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 375, height: 812 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await review.screenshot({ path: path.join(reportDir, 'shared-review-settings-mobile.png') });
+  writeFileSync(path.join(reportDir, 'shared-model.json'), JSON.stringify({ oneModelEditor: true, sharedValueAfterSave: true, skillsList: 'loaded', skillUpload: 201, skillPayload: { skill: 'code-review-expert' }, widths: [1440, 375] }, null, 2));
+});

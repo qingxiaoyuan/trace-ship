@@ -7,30 +7,22 @@ import { ReviewSettingsCard } from './ReviewSettingsCard';
 
 afterEach(cleanup);
 
-it('审查配置保存后可重新读取，未修改的密钥不会被覆盖', async () => {
+it('复用共享模型且仅保存技能，不再提供重复模型和密钥编辑项', async () => {
   const saves: Record<string, string>[] = [];
-  let current = { version_id: 'v1', endpoint: 'https://review.example/v1', model: 'old', protocol: 'openai', has_api_key: true, skill: { name: 'code-review-expert', revision: 'abc', source: 'https://example.com', license: 'MIT', files: [] } };
+  const current = { version_id: 'v1', endpoint: 'https://shared.example/v1', model: 'shared-model', protocol: 'openai', has_api_key: true, skill: { name: 'code-review-expert', revision: 'abc', source: 'https://example.com', license: 'MIT', files: [] } };
   request.defaults.adapter = async config => {
-    if (config.method === 'put') {
-      const payload = JSON.parse(config.data);
-      saves.push(payload);
-      current = { ...current, ...payload, version_id: 'v2' };
-    }
-    return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data: current } };
+    if (config.method === 'put') saves.push(JSON.parse(config.data));
+    const data = config.url === '/system/review-skills/' ? [] : current;
+    return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data } };
   };
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={queryClient}><App><ReviewSettingsCard /></App></QueryClientProvider>);
-  await screen.findByDisplayValue('old');
-  fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'new' } });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><App><ReviewSettingsCard /></App></QueryClientProvider>);
+  await screen.findByText('shared-model');
+  expect(screen.queryByLabelText('模型名称')).toBeNull();
+  expect(screen.queryByLabelText('服务地址')).toBeNull();
+  expect(screen.queryByLabelText('API 密钥')).toBeNull();
+  expect(screen.getByRole('link', { name: '前往模型设置' }).getAttribute('href')).toBe('#ai-model-service');
   fireEvent.click(screen.getByRole('button', { name: '保存审查配置' }));
-  await waitFor(() => expect(saves).toHaveLength(1));
-  expect(saves[0]).toMatchObject({ model: 'new', skill: 'code-review-expert' });
-  expect(saves[0]).not.toHaveProperty('api_key');
-  await screen.findByDisplayValue('new');
-  fireEvent.click(screen.getByRole('button', { name: '清除已保存密钥' }));
-  fireEvent.click(screen.getByRole('button', { name: '保存审查配置' }));
-  await waitFor(() => expect(saves).toHaveLength(2));
-  expect(saves[1].api_key).toBe('');
+  await waitFor(() => expect(saves).toEqual([{ skill: 'code-review-expert' }]));
 });
 
 it('上传技能后可查看文件清单并选择保存', async () => {
@@ -47,7 +39,7 @@ it('上传技能后可查看文件清单并选择保存', async () => {
   };
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={queryClient}><App><ReviewSettingsCard /></App></QueryClientProvider>);
-  await screen.findByDisplayValue('model');
+  await screen.findByText('model');
   fireEvent.change(screen.getByLabelText('上传审查技能'), { target: { files: [new File(['# 安全'], 'SKILL.md', { type: 'text/markdown' })] } });
   await screen.findByText(/references\/check.md/);
   fireEvent.click(screen.getByRole('button', { name: '保存审查配置' }));

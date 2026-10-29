@@ -6,6 +6,7 @@
 
 from rest_framework import serializers
 
+from apps.system.ai_config import AI_CONFIG_KEYS, AI_SETTINGS_WRITE_MESSAGE
 from apps.system.models import OPEN_API_SCOPES, AccessToken, OperationLog, SystemConfig
 
 
@@ -18,6 +19,12 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         model = SystemConfig
         fields = ["id", "key", "value", "description", "is_public", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        # 旧键、新键都核验，禁止借修改 key 或元数据绕过整组保存。
+        if any(key in AI_CONFIG_KEYS for key in (attrs.get("key"), getattr(self.instance, "key", None))):
+            raise serializers.ValidationError(AI_SETTINGS_WRITE_MESSAGE)
+        return attrs
 
 
 class OperationLogSerializer(serializers.ModelSerializer):

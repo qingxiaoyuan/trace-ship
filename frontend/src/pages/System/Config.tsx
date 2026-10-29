@@ -11,7 +11,7 @@ import {
   Check,
   FileText,
 } from 'lucide-react';
-import { systemApi } from '@/api/system';
+import { sharedAiConfigKeys, systemApi } from '@/api/system';
 import type { SystemConfig } from '@/api/system';
 import { NexusIntegrationCard } from './NexusIntegrationCard';
 import { LdapIntegrationCard } from './LdapIntegrationCard';
@@ -123,6 +123,10 @@ export default function SystemConfigPage() {
   };
 
   const openEdit = (cfg: SystemConfig) => {
+    if (sharedAiConfigKeys.has(cfg.key)) {
+      document.getElementById('ai-model-service')?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
     setForm({
       key: cfg.key,
       value: cfg.value,
@@ -134,6 +138,10 @@ export default function SystemConfigPage() {
   };
 
   const handleSave = () => {
+    if (sharedAiConfigKeys.has(form.key.trim())) {
+      message.warning('共享模型参数请在「AI 模型服务」中整组保存');
+      return;
+    }
     if (!form.key.trim()) {
       message.warning('请输入配置键');
       return;
@@ -217,6 +225,7 @@ export default function SystemConfigPage() {
             filtered.map((cfg) => (
               <div
                 key={cfg.id || cfg.key}
+                data-config-key={cfg.key}
                 onClick={() => openEdit(cfg)}
                 className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
               >
@@ -238,6 +247,7 @@ export default function SystemConfigPage() {
                   </div>
                   <div className="col-span-6 text-[11px] text-slate-400 md:col-span-1">{formatDate(cfg.updated_at)}</div>
                   <div className="col-span-3 flex items-center justify-end gap-1 md:col-span-1">
+                    {sharedAiConfigKeys.has(cfg.key) ? <a href="#ai-model-service" className="text-xs text-indigo-600">模型设置</a> : <>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); openEdit(cfg); }}
@@ -263,6 +273,7 @@ export default function SystemConfigPage() {
                         <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>
                     </Popconfirm>
+                    </>}
                   </div>
                 </div>
 
@@ -288,6 +299,7 @@ export default function SystemConfigPage() {
                   <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
                     <span className="text-[11px] text-slate-400">{formatDate(cfg.updated_at)}</span>
                     <div className="flex shrink-0 items-center gap-1">
+                      {sharedAiConfigKeys.has(cfg.key) ? <a href="#ai-model-service" className="inline-flex min-h-9 items-center text-xs text-indigo-600">前往模型设置</a> : <>
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); openEdit(cfg); }}
@@ -313,6 +325,7 @@ export default function SystemConfigPage() {
                           <Trash2 className="h-4 w-4" strokeWidth={1.5} />
                         </button>
                       </Popconfirm>
+                      </>}
                     </div>
                   </div>
                 </div>

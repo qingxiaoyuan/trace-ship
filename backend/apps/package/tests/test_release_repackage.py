@@ -39,8 +39,8 @@ def context(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     image = PackageImage.objects.create(name="补打镜像", image="demo/package:1")
     config = PackageConfig.objects.create(
         project_component=component, image=image, name="正式打包配置", custom_script="echo saved-script",
-        env_vars={"BUILD_FLAG": "saved-value"}, svn_push_enabled=True, svn_push_rc=True,
-        svn_push_beta=True, svn_url="https://svn.example.com/releases", clone_submodules=True,
+        env_vars={"BUILD_FLAG": "saved-value"}, svn_push_enabled=True,
+        svn_url="https://svn.example.com/releases", clone_submodules=True,
     )
     release = ReleaseRecord.objects.create(
         project=project, repository=repository, publisher=users["developer"], status="released",

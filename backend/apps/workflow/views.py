@@ -535,9 +535,7 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
         task = self.get_object()
         comment = request.data.get("comment", "")
         try:
-            instance = WorkflowEngine.process_task(task, "reject", comment)
-            if instance.status == "rejected":
-                ReleaseService.handle_workflow_rejected(instance, comment)
+            WorkflowEngine.process_task(task, "reject", comment, actor=request.user)
         except serializers.ValidationError as exc:
             message = self._extract_validation_message(exc)
             return error_response(40001, message)
@@ -569,14 +567,14 @@ class WorkflowTaskViewSet(StandardReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="return-for-revision")
     def return_for_revision(self, request: Request, pk=None) -> Response:
-        """审批人退回修改，保留本轮审批及审查记录。"""
+        """兼容旧退回接口，按驳回结束申请并保留审批记录。"""
         task = self.get_object()
         try:
             WorkflowEngine.process_task(task, "return_for_revision", request.data.get("comment", ""), actor=request.user)
         except serializers.ValidationError as exc:
             return error_response(40001, self._extract_validation_message(exc))
         task.refresh_from_db()
-        return success_response(self.get_serializer(task).data, message="已退回修改")
+        return success_response(self.get_serializer(task).data, message="审批驳回")
 
     @action(detail=True, methods=["post"], url_path="rollback")
     def rollback(self, request: Request, pk=None) -> Response:

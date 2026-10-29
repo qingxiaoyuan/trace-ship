@@ -163,16 +163,6 @@ function GeneralDashboard() {
 
   const pipelineColumns: PipelineColumn[] = [
     {
-      key: 'draft',
-      label: '草稿',
-      count: rangeReleases.filter((r) => normalizeStatus(r) === 'draft').length,
-      tone: 'border-slate-200/70 bg-slate-50/50 text-slate-500',
-      dot: 'bg-slate-400',
-      cardBorder: 'border-slate-200 hover:border-slate-400',
-      to: '/releases',
-      releases: rangeReleases.filter((r) => normalizeStatus(r) === 'draft').slice(0, 2),
-    },
-    {
       key: 'building',
       label: '打包中',
       count: runningBuilds.length,

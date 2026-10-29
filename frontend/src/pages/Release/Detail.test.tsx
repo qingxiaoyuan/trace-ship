@@ -12,6 +12,7 @@ let releaseStatus = 'released';
 let releaseDoc = '发布说明正文';
 let formalRelease = false;
 let formalRcSource = true;
+let revisionHistory = false;
 let sourceReferenceRequests = 0;
 let submitRequests = 0;
 
@@ -21,6 +22,7 @@ beforeEach(() => {
   releaseDoc = '发布说明正文';
   formalRelease = false;
   formalRcSource = true;
+  revisionHistory = false;
   sourceReferenceRequests = 0;
   submitRequests = 0;
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
@@ -43,7 +45,7 @@ beforeEach(() => {
       id: 'release', project: 'project', version: 'V1.0.0', status: releaseStatus,
       release_type: formalRelease ? 'formal' : 'rc', source_rc: formalRelease && formalRcSource ? 'source-rc' : undefined,
       rejected_reason: '推 tag 失败',
-      release_doc: releaseDoc, can_review: false, can_reply: false, package_tasks: [],
+      release_doc: releaseDoc, has_revision_history: revisionHistory, can_review: false, can_reply: false, package_tasks: [],
     };
     return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data } };
   };
@@ -52,6 +54,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
 
 describe('维保发布详情', () => {
+  it('同一发布的数据多次更新后只保留一份代码来源信息', async () => {
+    projectRole = 'manager'; releaseStatus = 'pending'; formalRelease = true; formalRcSource = false;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    await screen.findByText('发布说明正文');
+    await waitFor(() => expect(client.getQueryData<{ my_role: string }>(['project', 'project'])?.my_role).toBe('manager'));
+    expect(screen.getAllByRole('region', { name: '发布代码' })).toHaveLength(1);
+    for (let index = 1; index <= 3; index += 1) {
+      client.setQueryData(['release', 'release'], (previous: Record<string, unknown>) => ({
+        ...previous, release_doc: `刷新后的说明 ${index}`,
+      }));
+      await screen.findByText(`刷新后的说明 ${index}`);
+      expect(screen.getAllByRole('region', { name: '发布代码' })).toHaveLength(1);
+    }
+  });
+
   it('发起人终止后恢复的草稿可从详情重新提交，成功后刷新待审批状态', async () => {
     projectRole = 'developer';
     releaseStatus = 'draft';
@@ -63,6 +83,26 @@ describe('维保发布详情', () => {
     await waitFor(() => expect(submitRequests).toBe(1));
     await waitFor(() => expect(client.getQueryData(['release', 'release'])).toMatchObject({ status: 'pending' }));
     expect(screen.queryByRole('button', { name: '提交审批' })).toBeNull();
+  });
+
+  it('历史返修草稿只引导新建发布，不再提供重新提审或轮次选择', async () => {
+    projectRole = 'developer'; releaseStatus = 'draft'; revisionHistory = true;
+    render(<QueryClientProvider client={new QueryClient()}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    expect(await screen.findByText('审批已结束，修改代码后请新建发布。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '新建发布' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '提交审批' })).toBeNull();
+    expect(screen.queryByRole('region', { name: '审批轮次' })).toBeNull();
+  });
+
+  it('已有返修历史但仍在审批的申请不误提示已经结束', async () => {
+    projectRole = 'developer'; releaseStatus = 'pending'; revisionHistory = true;
+    render(<QueryClientProvider client={new QueryClient()}><App><MemoryRouter initialEntries={['/releases/release']}>
+      <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
+    </MemoryRouter></App></QueryClientProvider>);
+    await screen.findByText('发布说明正文');
+    expect(screen.queryByText('审批已结束，修改代码后请新建发布。')).toBeNull();
   });
 
   it('草稿缺少发布说明时不能提交审批', async () => {

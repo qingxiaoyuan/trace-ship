@@ -81,7 +81,7 @@ def test_review_diff_requires_current_full_access_and_uses_round_snapshot(user, 
 def test_unreliable_location_is_not_given_a_fabricated_line(case, user, project, repository, mock_git_provider,
                                                            monkeypatch, django_capture_on_commit_callbacks):
     from apps.release.services import ReleaseService
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
@@ -98,7 +98,7 @@ def test_unreliable_location_is_not_given_a_fabricated_line(case, user, project,
     monkeypatch.setattr(ai_review_model, "_ask", lambda *args: ({"action": "finish", "dimensions": ["安全"],
         "reviewed_files": [item["new_path"] for item in diffs], "findings": [{"severity": "P1", "title": "问题",
             "reason": "错误", "suggestion": "修复", "path": "same.py", "side": side, "line_start": line, "line_end": line}]}, "{}"))
-    save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     WorkflowDefinition.objects.create(project=project, repository=repository, name="AI 审批", biz_type="release",
         release_type="rc", is_active=True, created_by=user,
         node_config=[{"node_id": "ai", "node_type": "ai_review"}, {"node_id": "human", "approvers": [{"type": "leader"}]}])

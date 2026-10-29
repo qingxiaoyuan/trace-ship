@@ -1,13 +1,13 @@
-import { memo, useCallback, useMemo, useState } from 'react';
-import { App, Button, Dropdown } from 'antd';
-import { ChevronDown, Download, FileArchive, Upload } from 'lucide-react';
+import { memo, useCallback, useState } from 'react';
+import { App, Button } from 'antd';
+import { Download, FileArchive, Upload } from 'lucide-react';
 import type { PackageArtifact, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
 import { useHideFileDownload } from '@/hooks/useHideFileDownload';
 import { canPushSvn, formatSize, saveBlob } from '../utils';
 
 
-export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
+export const ArtifactActions = memo(function ArtifactActions({
   task,
   pushing,
   onPushSvn,
@@ -21,19 +21,7 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
   const [downloading, setDownloading] = useState(false);
 
   const hasArtifacts = (task.artifact_info || []).length > 0;
-  const svnOnly = hideDownload && canPushSvn(task);
-
-  const items = useMemo(() => {
-    if (!canPushSvn(task)) return [];
-    return [
-      {
-        key: 'push-svn',
-        label: pushing ? '推送 SVN 中…' : '推送 SVN',
-        icon: <Upload className="h-3 w-3" strokeWidth={1.5} />,
-        disabled: pushing,
-      },
-    ];
-  }, [task, pushing]);
+  const showPush = canPushSvn(task);
 
   const handleDownload = useCallback(async () => {
     if (!hasArtifacts) {
@@ -52,47 +40,33 @@ export const ArtifactActionsDropdown = memo(function ArtifactActionsDropdown({
     }
   }, [task, hasArtifacts, message]);
 
-  const handleMenuClick = useCallback(
-    ({ key }: { key: string }) => {
-      if (key === 'push-svn') {
-        onPushSvn?.();
-      }
-    },
-    [onPushSvn]
-  );
-
-  if (hideDownload && !svnOnly) return null;
-  if (!hasArtifacts && items.length === 0) return null;
-
-  if (svnOnly) {
-    return (
-      <Button
-        size="small"
-        type="default"
-        loading={pushing}
-        icon={<Upload className="h-3 w-3" strokeWidth={1.5} />}
-        onClick={() => onPushSvn?.()}
-      >
-        推送 SVN
-      </Button>
-    );
-  }
+  if (hideDownload && !showPush) return null;
+  if (!hasArtifacts && !showPush) return null;
 
   return (
-    <Dropdown.Button
-      size="small"
-      type="default"
-      loading={downloading}
-      disabled={!hasArtifacts}
-      icon={<ChevronDown className="h-3 w-3" strokeWidth={1.5} />}
-      menu={{ items, onClick: handleMenuClick }}
-      onClick={handleDownload}
-    >
-      <span className="flex items-center gap-1">
-        <Download className="h-3 w-3" strokeWidth={1.5} />
-        下载全部
-      </span>
-    </Dropdown.Button>
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+      {!hideDownload && hasArtifacts && (
+        <Button
+          loading={downloading}
+          icon={<Download className="h-3.5 w-3.5" strokeWidth={1.5} />}
+          onClick={handleDownload}
+          className="shrink-0 max-md:min-h-9"
+        >
+          下载全部
+        </Button>
+      )}
+      {showPush && (
+        <Button
+          type="primary"
+          loading={pushing}
+          icon={<Upload className="h-3.5 w-3.5" strokeWidth={1.75} />}
+          onClick={() => onPushSvn?.()}
+          className="shrink-0 font-medium max-md:min-h-9"
+        >
+          {pushing ? '推送中…' : '推送 SVN'}
+        </Button>
+      )}
+    </div>
   );
 });
 

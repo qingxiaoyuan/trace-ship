@@ -134,7 +134,6 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         project: fixedProjectId, executor_type: 'local_docker', build_path: '.', output_path: 'dist',
         auto_collect_output: false, auto_compress: false, env_vars: {}, cpu_cores: 0, cpu_priority: '', mem_limit_mb: 0,
         auto_package_on_release: true, cleanup_workspace: true, is_active: true, svn_push_enabled: false,
-        svn_push_rc: false, svn_push_beta: false,
         svn_path_template: '{version}', svn_commit_mode: 'new_dir', clone_submodules: false, inject_git_credential: false,
       });
   const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -438,7 +437,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         disabled={readOnly}
         onFinish={(values) => {
           // SVN 子项在总开关关闭时会卸载。preserve 仍留着值，但 onFinish 只带当前挂载字段，
-          // 这里并上全部字段，避免 RC / 测试版 / 覆盖开关在收起后被漏掉。
+          // 这里并上全部字段，避免地址、凭证、目录模板和覆盖设置在收起后被漏掉。
           saveMutation.mutate({ ...form.getFieldsValue(true), ...values });
         }}
       >
@@ -665,7 +664,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
               <FolderTree className="h-4 w-4 text-slate-400" strokeWidth={1.5} />
               <div>
                 <div className="text-[12px] font-medium text-slate-700">SVN 产物推送</div>
-                <div className="text-[10px] text-slate-400">自动与手动打包后均可上传；RC 与测试版需另开开关</div>
+                <div className="text-[10px] text-slate-400">正式版、RC、测试版及分支打包统一按此开关推送</div>
               </div>
             </div>
             <Form.Item name="svn_push_enabled" valuePropName="checked" noStyle>
@@ -707,26 +706,6 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                   <Typography.Text type="secondary" className="text-[11px]">
                     默认目录为 formal、rc、beta 下的版本号。自定义模板按原文渲染，占位符：{'{version}'}、{'{tag_name}'}、{'{project_code}'}、{'{release_type}'}
                   </Typography.Text>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <div>
-                    <div className="text-[12px] font-medium text-slate-700">RC 提交 SVN</div>
-                    <div className="text-[10px] text-slate-400">打包后提交到 rc/版本号</div>
-                  </div>
-                  <Form.Item name="svn_push_rc" valuePropName="checked" noStyle>
-                    <Switch size="small" />
-                  </Form.Item>
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <div>
-                    <div className="text-[12px] font-medium text-slate-700">测试版提交 SVN</div>
-                    <div className="text-[10px] text-slate-400">打包后提交到 beta/版本号</div>
-                  </div>
-                  <Form.Item name="svn_push_beta" valuePropName="checked" noStyle>
-                    <Switch size="small" />
-                  </Form.Item>
                 </div>
               </div>
               <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">

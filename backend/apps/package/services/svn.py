@@ -33,20 +33,10 @@ DEFAULT_SVN_PATH_TEMPLATE = "{version}"
 
 
 def release_type_allows_svn(snapshot: dict[str, Any], release_type: str) -> bool:
-    """总开关打开后，正式版直接允许；RC / 测试版还要看各自开关。
-
-    历史快照没有 svn_push_rc / svn_push_beta 时按关闭处理。
-    """
-    if not snapshot.get("svn_push_enabled"):
-        return False
-    kind = release_type or "formal"
-    if kind == "formal":
-        return True
-    if kind == "rc":
-        return bool(snapshot.get("svn_push_rc"))
-    if kind == "beta":
-        return bool(snapshot.get("svn_push_beta"))
-    return False
+    """新任务的正式版、RC / 测试版统一跟随 SVN 总开关。"""
+    return bool(snapshot.get("svn_push_enabled")) and (release_type or "formal") in {
+        "formal", "rc", "beta",
+    }
 
 
 def apply_svn_push_policy(
@@ -57,8 +47,8 @@ def apply_svn_push_policy(
 ) -> dict[str, Any]:
     """按触发来源与发布类型写入快照。
 
-    自动发布、手动选择版本与分支直打均可推 SVN。正式版和分支直打看总开关；
-    RC、测试版还要打开对应开关。结果写回 svn_push_enabled，执行时沿用该生效值。
+    自动发布、手动选择版本与分支直打均跟随 SVN 总开关。
+    结果写回 svn_push_enabled，执行和补推时沿用该生效值，不重算历史任务。
     """
     snapshot = dict(snapshot)
     snapshot["trigger_source"] = trigger_source

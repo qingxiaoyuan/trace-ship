@@ -18,6 +18,7 @@ from apps.package.serializers import validate_safe_rel_path
 from apps.project.models import Project, ProjectComponent
 from apps.repository.models import Repository
 from apps.repository.services import RepositoryService
+from apps.system.ai_config import model_config
 from apps.system.services import OperationLogService, SystemConfigService
 from utils.provider.ai import AIClientError, call_ai_chat, call_ai_chat_stream
 from utils.provider.credential_resolver import resolve_credential
@@ -26,7 +27,6 @@ from utils.provider.factory import get_provider
 
 logger = logging.getLogger(__name__)
 
-AI_CONFIG_KEYS = ["ai_endpoint", "ai_api_key", "ai_model", "ai_protocol"]
 AI_OUTPUT_TOKEN_KEY = "ai_max_tokens"
 # AI prompt 体积上限配置键（系统配置页 AI 服务卡片维护，默认值见 _prompt_limits）
 AI_PROMPT_CONFIG_KEYS = [
@@ -35,8 +35,6 @@ AI_PROMPT_CONFIG_KEYS = [
     "ai_knowledge_chars",
     "ai_exemplar_chars",
 ]
-DEFAULT_AI_MODEL = "deepseek-v4-flash"
-DEFAULT_AI_PROTOCOL = "auto"
 # 输出上限默认值：deepseek-v4-flash 为推理模型，推理会消耗大量输出 token，
 # 8192 在复杂打包任务下容易被推理耗尽导致 content 为空；默认提高到 16384
 DEFAULT_AI_MAX_TOKENS = 16384
@@ -128,13 +126,6 @@ class PackageScriptAIService:
     @staticmethod
     def _ai_config() -> dict:
         """读取系统配置中的 AI 服务参数（ai_* 键）。"""
-        values = SystemConfigService.get_many(AI_CONFIG_KEYS)
-        endpoint = (values.get("ai_endpoint") or "").strip()
-        api_key = (values.get("ai_api_key") or "").strip()
-        model = (values.get("ai_model") or "").strip() or DEFAULT_AI_MODEL
-        protocol = (values.get("ai_protocol") or "").strip() or DEFAULT_AI_PROTOCOL
-        if protocol not in ("auto", "openai", "anthropic"):
-            protocol = DEFAULT_AI_PROTOCOL
         try:
             max_tokens = int(
                 SystemConfigService.get(AI_OUTPUT_TOKEN_KEY, DEFAULT_AI_MAX_TOKENS)
@@ -142,13 +133,7 @@ class PackageScriptAIService:
         except (TypeError, ValueError):
             max_tokens = DEFAULT_AI_MAX_TOKENS
         max_tokens = max(512, min(32768, max_tokens))
-        return {
-            "endpoint": endpoint,
-            "api_key": api_key,
-            "model": model,
-            "protocol": protocol,
-            "max_tokens": max_tokens,
-        }
+        return {**model_config(), "max_tokens": max_tokens}
 
     @staticmethod
     def _normalize_payload(payload: dict) -> dict:

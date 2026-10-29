@@ -67,7 +67,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "release_type", "release_type_display", "status", "status_display", "workflow_instance",
-            "release_doc", "review_context", "review_context_is_requirement", "review_document_paths", "doc_needs_regeneration", "revision_update_required", "related_changes", "updates",
+            "release_doc", "review_context", "review_context_is_requirement", "review_document_paths", "doc_needs_regeneration", "revision_update_required", "has_revision_history", "related_changes", "updates",
             "has_config_changes", "config_change_doc",
             "impact_other", "impact_desc",
             "self_test_passed", "retest_passed",
@@ -78,7 +78,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             "rejected_reason", "released_at", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "git_hash", "base_tag", "status", "workflow_instance", "doc_needs_regeneration",
+            "id", "git_hash", "base_tag", "status", "workflow_instance", "doc_needs_regeneration", "has_revision_history",
             "base_git_hash", "changes_initialized", "changes_warnings",
             "tag_cleanup_status", "tag_cleaned_at", "tag_cleaned_by", "tag_cleanup_reference", "cleanup_history",
             "source_rc_version", "source_rc_tag", "source_rc_git_hash",
@@ -98,6 +98,9 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
                 data.pop("review_context", None)
                 data.pop("review_context_is_requirement", None)
                 data.pop("review_document_paths", None)
+                if instance.workflow_instance_id and instance.workflow_instance.ai_reviews.exists():
+                    # AI 审批驳回意见可能含源码，沿用审批意见的只读角色脱敏范围。
+                    data["rejected_reason"] = "审批已驳回" if instance.status == "rejected" else ""
         return data
 
     def validate_review_document_paths(self, paths):

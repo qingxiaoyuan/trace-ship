@@ -395,7 +395,7 @@ class WorkflowEngine:
                         assert_no_pending(release)
                 cls._handle_approve(task, comment, now)
             elif action == "reject":
-                cls._handle_reject(task, comment, now)
+                cls._handle_reject(task, comment, now, actor=actor)
             elif action == "transfer":
                 cls._handle_transfer(task, comment, to_user, now)
             elif action == "rollback":
@@ -445,11 +445,9 @@ class WorkflowEngine:
 
     @classmethod
     def _handle_return_for_revision(cls, task: WorkflowTask, actor: User | None, comment: str, now) -> None:
-        """结束当前轮次并保留历史，将原发布申请交还发起人修改。"""
+        """兼容旧退回入口的授权校验，处理结果统一为驳回。"""
         from apps.project.models import ProjectMember
         from apps.release.models import ReleaseRecord
-        from apps.release.versions import release_claim
-        from apps.workflow.models import AIReviewRun
         from utils.permissions import ProjectRolePermission
 
         instance = task.instance
@@ -480,39 +478,8 @@ class WorkflowEngine:
                 raise serializers.ValidationError({"task": "只读成员不能退回修改"})
         if not isinstance(comment, str):
             raise serializers.ValidationError({"comment": "退回说明格式不正确"})
-        task.status = "returned"
-        task.comment = comment
-        task.action_time = now
-        task.save(update_fields=["status", "comment", "action_time", "updated_at"])
-        instance.tasks.filter(status="pending").exclude(pk=task.pk).update(
-            status="revoked", action_time=now, updated_at=now,
-        )
-        instance.returned_by = actor
-        node_status = instance.node_status or {}
-        node_status[task.node_id] = "returned"
-        instance.node_status = node_status
-        instance.status = "returned"
-        instance.completed_at = now
-        instance.save(update_fields=["status", "completed_at", "returned_by", "node_status", "updated_at"])
-        # 保留执行身份及已收集的覆盖证据；旧执行失效后迟到结果不能写入。
-        from apps.workflow.ai_review import _archive
-
-        for run in AIReviewRun.objects.select_for_update().filter(instance=instance, status__in=["queued", "running"]):
-            _archive(run)
-            run.status = "canceled"
-            run.token = uuid.uuid4()
-            run.summary = "本轮已退回修改，未完成的审查已取消"
-            run.save(update_fields=["history", "status", "token", "summary", "updated_at"])
-        release.status = "draft"
-        release.workflow_instance = None
-        release.doc_needs_regeneration = True
-        release.has_revision_history = True
-        release.revision_source_hash = release.git_hash
-        release.revision_requires_ai_review = release.revision_requires_ai_review or instance.ai_reviews.exists()
-        release.rejected_reason = "退回修改，请查看审批历史"
-        release.save(update_fields=["status", "workflow_instance", "doc_needs_regeneration", "has_revision_history", "revision_source_hash", "revision_requires_ai_review", "rejected_reason", "updated_at"])
-        release_claim(release)
-        OperationLogService.log_workflow(user=actor, task=task, action="return_for_revision", detail={"comment": comment})
+        # 兼容旧客户端入口，统一以驳回结束当前申请，不再恢复返修草稿。
+        cls._handle_reject(task, comment, now, actor=actor)
 
     @classmethod
     def _handle_approve(cls, task: WorkflowTask, comment: str, now) -> None:
@@ -561,7 +528,7 @@ class WorkflowEngine:
         )
 
     @classmethod
-    def _handle_reject(cls, task: WorkflowTask, comment: str, now) -> None:
+    def _handle_reject(cls, task: WorkflowTask, comment: str, now, actor: User | None = None) -> None:
         """处理驳回动作"""
         instance = task.instance
         task.status = "rejected"
@@ -579,10 +546,24 @@ class WorkflowEngine:
             action_time=now,
         )
 
+        # 结束流程时取消未完成审查，保留已完成报告及执行历史。
+        from apps.workflow.ai_review import _archive
+
+        for run in instance.ai_reviews.select_for_update().filter(status__in=["queued", "running"]):
+            _archive(run)
+            run.status = "canceled"
+            run.token = uuid.uuid4()
+            run.summary = "审批已驳回，未完成的审查已取消"
+            run.save(update_fields=["history", "status", "token", "summary", "updated_at"])
+        instance.tasks.filter(status="pending").update(status="revoked", action_time=now, updated_at=now)
         cls._finish_instance(instance, "rejected")
-        NotificationService.notify_task_rejected(task, comment)
+        if instance.biz_type == "release":
+            from apps.release.services import ReleaseService
+
+            ReleaseService.handle_workflow_rejected(instance, comment)
+        NotificationService.notify_task_rejected(task, comment, actor=actor)
         OperationLogService.log_workflow(
-            user=task.approver,
+            user=actor or task.approver,
             task=task,
             action="reject",
             detail={"comment": comment},

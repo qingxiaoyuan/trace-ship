@@ -1419,10 +1419,8 @@ class ReleaseService:
                 return release
             if release.status != "draft":
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
-            if release.has_revision_history and not user.is_superuser and release.publisher_id != user.id:
-                raise serializers.ValidationError({"publisher": "退回修改后仅发布发起人或超管可重新提交审批"})
-            if release.revision_source_hash and release.git_hash.lower() == release.revision_source_hash.lower():
-                raise serializers.ValidationError({"git_hash": "退回修改后请先更新到新的来源提交"})
+            if release.has_revision_history:
+                raise serializers.ValidationError({"workflow": "原申请的审批已结束，请修改代码后新建发布"})
             if release.doc_needs_regeneration or not release.release_doc:
                 raise serializers.ValidationError({"release_doc": "发布说明为空，请先生成发布说明"})
             if release.release_type == "formal":
@@ -1457,15 +1455,6 @@ class ReleaseService:
                     {"workflow": f"仓库未配置 {release.release_type} 发布审批流程"}
                 )
 
-            if release.has_revision_history:
-                nodes = definition.node_config or []
-                if not any(isinstance(node, dict) and node.get("node_type") != "ai_review" for node in nodes):
-                    raise serializers.ValidationError({"workflow": "退回修改后须重新完成人工审批"})
-                if release.revision_requires_ai_review and not any(
-                    isinstance(node, dict) and node.get("node_type") == "ai_review" for node in nodes
-                ):
-                    raise serializers.ValidationError({"workflow": "退回修改后须重新执行 AI 代码审查"})
-
             from apps.release.versions import claim_version
             from apps.workflow.models import AIReviewRemediation
             from apps.workflow.remediation import OPEN_STATUSES
@@ -1480,8 +1469,7 @@ class ReleaseService:
             if not definition.node_config:
                 from apps.workflow.remediation import assert_no_pending
                 assert_no_pending(release)
-            # 超管代提时保留原发起人，确保原发起人仍能终止新流程。
-            workflow_user = release.publisher if release.has_revision_history and release.publisher_id else user
+            workflow_user = user
             if release.release_type == "formal":
                 WorkflowEngine.validate_release_definition(definition, release, workflow_user)
 
@@ -1499,12 +1487,10 @@ class ReleaseService:
                 ai_nodes = [node for node in instance.node_config_snapshot if node.get("node_type") == "ai_review"]
                 if ai_nodes:
                     from apps.release.review_scope import capture_review_scope
-                    from apps.system.review_settings import current_version
+                    from apps.system.review_settings import capture_review_settings
                     from apps.workflow.models import AIReviewRun
 
-                    config = current_version()
-                    if config is None:
-                        raise serializers.ValidationError({"workflow": "请先配置审查模型和技能"})
+                    config = capture_review_settings()
                     scope = capture_review_scope(release, instance, user, provider=provider)
                     AIReviewRun.objects.bulk_create([
                         AIReviewRun(instance=instance, node_id=node["node_id"], settings_version=config,
@@ -1513,8 +1499,6 @@ class ReleaseService:
                     ])
                 release.workflow_instance = instance
             release.status = "pending"
-            if release.has_revision_history:
-                release.rejected_reason = ""
             release.save(update_fields=["workflow_instance", "status", "rejected_reason", "updated_at"])
             if definition.node_config:
                 OperationLogService.log_release(user=user, release=release, action="submit_audit")

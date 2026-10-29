@@ -10,6 +10,7 @@ from apps.system.views import (
     AccessTokenViewSet,
     OperationLogViewSet,
     SystemConfigViewSet,
+    ai_settings,
     review_settings,
     review_skill_detail,
     review_skills,
@@ -21,6 +22,7 @@ router.register(r"logs", OperationLogViewSet, basename="log")
 router.register(r"access-tokens", AccessTokenViewSet, basename="access-token")
 
 urlpatterns = [
+    path("ai-settings/", ai_settings),
     path("review-settings/", review_settings),
     path("review-skills/", review_skills),
     path("review-skills/<uuid:pk>/", review_skill_detail),

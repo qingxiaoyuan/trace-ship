@@ -7,6 +7,7 @@ export const workflowStatusMap: Record<
   string,
   { status: 'success' | 'danger' | 'info' | 'warning'; text: string }
 > = {
+  pending: { status: 'warning', text: '待审批' },
   approved: { status: 'success', text: '已通过' },
   rejected: { status: 'danger', text: '已驳回' },
   transferred: { status: 'info', text: '已转交' },

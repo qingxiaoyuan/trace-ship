@@ -1,16 +1,16 @@
+import { ReviewMarkdown } from './ReviewMarkdown';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Clock3, LoaderCircle, RefreshCw, SkipForward, Sparkles } from 'lucide-react';
 import { Button } from 'antd';
 import dayjs from 'dayjs';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { workflowApi } from '@/api/workflow';
 import type { AiReviewData, AiReviewFinding } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
 import { ReviewDiff } from './ReviewDiff';
 import { ReviewFileDirectory, UnreviewedFileDirectory } from './ReviewFileDirectory';
 import { RemediationPanel } from './RemediationPanel';
+import { ReviewRemediations } from './ReviewRemediations';
 import { useAuthStore } from '@/stores/authStore';
 import { uniqueHistoryFindings } from './reviewFindings';
 
@@ -106,14 +106,14 @@ function PagedFindings({ findings, historical = false }: { findings: AiReviewFin
     {findings.slice(current * pageSize, (current + 1) * pageSize).map((finding, index) => <div key={finding.id || index} className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">{finding.severity}</span><strong className="break-words">{finding.title}</strong></div>
       <p className="mt-1 break-all font-mono text-xs text-slate-500">{location(finding)}</p>
-      <div className="mt-2 whitespace-pre-wrap break-words [&_pre]:overflow-x-auto"><Markdown remarkPlugins={[remarkGfm]}>{finding.reason}</Markdown></div>
-      {finding.suggestion ? <div className="mt-2 whitespace-pre-wrap break-words text-slate-600 [&_pre]:overflow-x-auto">建议：<Markdown remarkPlugins={[remarkGfm]}>{finding.suggestion}</Markdown></div> : null}
+      <div className="mt-2 whitespace-pre-wrap break-words [&_pre]:overflow-x-auto"><ReviewMarkdown>{finding.reason}</ReviewMarkdown></div>
+      {finding.suggestion ? <div className="mt-2 whitespace-pre-wrap break-words text-slate-600 [&_pre]:overflow-x-auto">建议：<ReviewMarkdown>{finding.suggestion}</ReviewMarkdown></div> : null}
     </div>)}
     {pages > 1 ? <div className="flex items-center gap-2 text-xs"><button type="button" aria-label="意见上一页" disabled={current === 0} onClick={() => setPage(current - 1)}>上一页</button><span>{current + 1} / {pages}</span><button type="button" aria-label="意见下一页" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)}>下一页</button></div> : null}
   </>;
 }
 
-function ReviewHistory({ review }: { review: AiReviewData }) {
+function ReviewHistory({ review, showFindings = false }: { review: AiReviewData; showFindings?: boolean }) {
   const findings = uniqueHistoryFindings(review, review.status !== 'queued' && review.status !== 'running');
   if (!review.history?.length) return null;
   return <section className="border-t border-slate-100 pt-4"><h5 className="text-[13px] font-medium text-slate-800">过往审查执行（{review.history.length}）</h5>
@@ -122,7 +122,7 @@ function ReviewHistory({ review }: { review: AiReviewData }) {
       {item.summary ? <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">{item.summary}</p> : null}
       {item.coverage?.warnings?.length ? <div className="mt-2 text-xs text-amber-700"><PagedPaths paths={item.coverage.warnings} /></div> : null}
       {item.coverage?.unreviewed_paths?.length ? <details className="mt-2"><summary className="cursor-pointer text-xs text-indigo-600">未审查文件（{item.coverage.unreviewed_paths.length}）</summary><PagedPaths paths={item.coverage.unreviewed_paths} /></details> : null}
-      {(findings.get(item.token) || []).length ? <div className="mt-3 space-y-2"><PagedFindings findings={findings.get(item.token) || []} historical /></div> : null}
+      {showFindings && (findings.get(item.token) || []).length ? <div className="mt-3 space-y-2"><PagedFindings findings={findings.get(item.token) || []} historical /></div> : null}
     </li>)}</ol>
   </section>;
 }
@@ -158,8 +158,9 @@ export function AiReviewReport({ instanceId, active = true }: { instanceId: stri
     <button type="button" className="ml-2 underline" onClick={() => void query.refetch()}>重试</button>
   </div>;
   if (!query.data?.reviews.length) return <div className="space-y-4"><p className="text-sm text-slate-500">当前没有可查看的 AI 审查。</p><RemediationPanel instanceId={instanceId} reviews={[]} /></div>;
-  const hasResults = query.data.reviews.some((review) => !['queued', 'running'].includes(review.status));
-  return <section aria-label="AI 代码审查" className="min-w-0 space-y-5 text-sm">
+  const resultReviews = query.data.reviews.filter((review) => !['queued', 'running'].includes(review.status));
+  const canViewFullReport = query.data.reviews.some((review) => review.findings !== undefined || review.history !== undefined);
+  const content = <section aria-label="AI 代码审查" className="min-w-0 space-y-5 text-sm">
     <div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Sparkles className="h-5 w-5" strokeWidth={1.5} /></span><div><h3 className="text-[16px] font-semibold text-slate-900">AI 代码审查</h3><p className="mt-1 text-xs text-slate-500">审查结果供参考，发布仍由人工决定</p></div></div>
     {query.data.reviews.map((review) => {
       const isQueued = review.status === 'queued';
@@ -177,12 +178,11 @@ export function AiReviewReport({ instanceId, active = true }: { instanceId: stri
         {isQueued ? <ReviewFileDirectory instanceId={instanceId} canViewFiles={canViewFiles} active={active} /> : null}
         {isRunning ? <div className="rounded-lg bg-slate-50 px-4 py-3"><p className="text-sm font-medium text-slate-700">审查进行中</p><p className="mt-1 text-xs text-slate-500">{review.coverage?.total_files === undefined || review.coverage.reviewed_files === undefined ? '正在准备审查范围…' : `已审查 ${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件${review.coverage.manifest_complete === false ? '（完整清单未知）' : ''}`}</p></div> : null}
         {showResults && review.summary ? <div className="rounded-lg bg-slate-50 px-4 py-3"><p className="text-xs font-medium text-slate-500">审查摘要</p><p className="mt-2 whitespace-pre-wrap break-words leading-6 text-slate-700">{review.summary}</p></div> : null}
-        {showResults && review.findings && (isCompleted || review.findings.length > 0) ? <div className="space-y-3"><div className="flex items-center justify-between gap-2"><h5 className="font-semibold text-slate-800">审查意见</h5><span className="text-xs text-slate-400">{review.findings.length} 条</span></div><PagedFindings findings={review.findings} /></div> : null}
         {review.status === 'skipped' && review.skip_reason ? <p className="whitespace-pre-wrap break-words text-amber-800">跳过原因：{review.skip_reason}；操作者：{review.skipped_by_name || '已删除用户'}；时间：{review.skipped_at || '未知'}</p> : null}
         {isProblem && review.coverage?.warnings?.length ? <div className="rounded-lg bg-amber-50/70 p-3 text-amber-800"><PagedPaths paths={review.coverage.warnings} /></div> : null}
         {isProblem && review.coverage?.unreviewed_paths ? <UnreviewedFileDirectory paths={review.coverage.unreviewed_paths} incomplete={review.coverage.manifest_complete === false} /> : null}
         {review.can_recover ? <RecoveryActions instanceId={instanceId} nodeId={review.node_id} /> : null}
-        {!showResults && review.history?.length ? <details className="group border-t border-slate-100 pt-4"><summary className="flex cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-slate-600 hover:text-indigo-600 [&::-webkit-details-marker]:hidden"><ClipboardList className="h-4 w-4 text-slate-400" strokeWidth={1.5} />过往审查记录<ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" strokeWidth={1.5} /></summary><ReviewHistory review={review} /></details> : null}
+        {!showResults && review.history?.length ? <details className="group border-t border-slate-100 pt-4"><summary className="flex cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-slate-600 hover:text-indigo-600 [&::-webkit-details-marker]:hidden"><ClipboardList className="h-4 w-4 text-slate-400" strokeWidth={1.5} />过往审查记录<ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" strokeWidth={1.5} /></summary><ReviewHistory review={review} showFindings /></details> : null}
         {showResults ? <details className="group border-t border-slate-100 pt-4"><summary className="flex cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-slate-600 hover:text-indigo-600 [&::-webkit-details-marker]:hidden"><ClipboardList className="h-4 w-4 text-slate-400" strokeWidth={1.5} />执行详情<ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" strokeWidth={1.5} /></summary><div className="mt-4 space-y-4">
           <section><h5 className="text-[13px] font-medium text-slate-800">覆盖情况</h5><div className="mt-2 rounded-lg bg-slate-50 px-3 py-3"><p className="text-[13px] text-slate-700">覆盖范围：{review.coverage?.total_files === undefined || review.coverage.reviewed_files === undefined ? '尚未统计' : review.coverage.manifest_complete === false ? `已知 ${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件（完整清单未知）` : `${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件`}</p>{review.dimensions?.length ? <p className="mt-1 break-words text-xs text-slate-500">已完成批次共同维度：{review.dimensions.join('、')}</p> : null}</div>
           {!isProblem && review.coverage?.warnings?.length ? <div className="mt-2 text-xs text-amber-700"><PagedPaths paths={review.coverage.warnings} /></div> : null}
@@ -194,7 +194,8 @@ export function AiReviewReport({ instanceId, active = true }: { instanceId: stri
         </div></details> : null}
       </article>;
     })}
-    {hasResults ? <ReviewDiff instanceId={instanceId} reviews={query.data.reviews} /> : null}
-    {query.data.reviews.some((review) => review.findings !== undefined) ? <RemediationPanel instanceId={instanceId} reviews={query.data.reviews} /> : null}
+    {resultReviews.length ? <ReviewDiff instanceId={instanceId} reviews={resultReviews} active={active} /> : null}
+    {canViewFullReport ? <RemediationPanel instanceId={instanceId} reviews={query.data.reviews} showCandidates={false} /> : null}
   </section>;
+  return canViewFullReport ? <ReviewRemediations instanceId={instanceId}>{content}</ReviewRemediations> : content;
 }

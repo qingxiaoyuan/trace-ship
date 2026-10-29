@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
 import { getAvatarColor } from '@/utils/avatar';
 import { PermissionAlert } from '@/components/PermissionAlert';
-import { tabItems, releaseTypeText, releaseTypeBadge } from '../constants';
+import { tabItems, releaseTypeText, releaseTypeBadge, instanceStatusMap, workflowStatusMap } from '../constants';
 import type { TabKey } from '../constants';
 import type { DetailSource } from '../types';
 import type { WorkflowTask, WorkflowInstanceListItem, ReleaseType } from '@/types';
@@ -40,6 +40,36 @@ function toDetail(
     mode: (row as WorkflowTask).mode,
     readOnly: tab !== 'todo',
   };
+}
+
+const taskBadgeTone = {
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  danger: 'border-rose-200 bg-rose-50 text-rose-600',
+  warning: 'border-amber-200 bg-amber-50 text-amber-700',
+  info: 'border-slate-200 bg-slate-50 text-slate-500',
+};
+
+/** 流程状态与个人处理结果分开解释，结束流程没有当前节点。 */
+function rowProgress(row: WorkflowTask | WorkflowInstanceListItem, tab: TabKey) {
+  const isInstance = tab === 'initiated';
+  const instanceState = isInstance ? instanceStatusMap[row.status] : undefined;
+  const taskState = !isInstance ? workflowStatusMap[row.status] : undefined;
+  const running = isInstance ? row.status === 'running' : row.status === 'pending';
+  return {
+    text: instanceState?.text || taskState?.text || '状态未知',
+    badge: instanceState?.badge || (taskState ? taskBadgeTone[taskState.status] : taskBadgeTone.info),
+    node: isInstance ? (running ? row.current_node || '当前节点未记录' : '') : row.current_node || '',
+    running,
+  };
+}
+
+function RowProgress({ value }: { value: ReturnType<typeof rowProgress> }) {
+  return <div className="min-w-0 space-y-1">
+    <span className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-medium max-md:text-xs ${value.badge}`}>
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full bg-current ${value.running ? 'pulse-dot' : ''}`} />{value.text}
+    </span>
+    {value.node ? <p className="truncate text-[12px] leading-5 text-slate-500" title={value.node}>{value.node}</p> : null}
+  </div>;
 }
 
 /** 审批中心列表视图：标题区 + Tab + 列表 */
@@ -114,7 +144,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
           <div className="col-span-2">项目</div>
           <div className="col-span-2">软件</div>
           <div className="col-span-1">申请人</div>
-          <div className="col-span-2">当前节点</div>
+          <div className="col-span-2">{activeTab === 'initiated' ? '流程状态 / 当前节点' : activeTab === 'todo' ? '任务状态 / 审批节点' : '处理结果 / 审批节点'}</div>
           <div className="col-span-1">提交时间</div>
           <div className="col-span-1 text-right">操作</div>
         </div>
@@ -127,11 +157,12 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
             <div className="px-5 py-10 text-center text-[13px] text-slate-400">暂无数据</div>
           ) : (
             results.map((row) => {
-              const active = activeTab !== 'done';
+              const progress = rowProgress(row, activeTab);
               const applicantLabel = row.applicant || '-';
               return (
                 <div
                   key={row.id}
+                  data-workflow-id={row.id}
                   onClick={() => onOpenDetail(toDetail(row, activeTab))}
                   className="cursor-pointer transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4"
                 >
@@ -165,18 +196,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                       </span>
                       <span className="text-[12px] text-slate-600">{row.applicant || '-'}</span>
                     </div>
-                    <div className="col-span-6 md:col-span-2">
-                      <span
-                        className={
-                          active
-                            ? 'inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700'
-                            : 'inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500'
-                        }
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-amber-500 pulse-dot' : 'bg-slate-400'}`} />
-                        {row.current_node || '-'}
-                      </span>
-                    </div>
+                    <div className="col-span-6 min-w-0 md:col-span-2"><RowProgress value={progress} /></div>
                     <div className="col-span-6 text-[12px] text-slate-500 md:col-span-1">
                       {row.submit_time ? dayjs(row.submit_time).format('MM-DD HH:mm') : '-'}
                     </div>
@@ -187,30 +207,21 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
 
                   {/* 移动端卡片（参考 docs/ui/mobile/mobile-release.html） */}
                   <div className="md:hidden">
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={
-                          active
-                            ? 'inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-600'
-                            : 'inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500'
-                        }
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-amber-500 pulse-dot' : 'bg-slate-400'}`} />
-                        {row.current_node || '-'}
-                      </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <RowProgress value={progress} />
                       {row.release_type ? (
                         <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${releaseTypeBadge[row.release_type as ReleaseType]}`}>
                           {releaseTypeText[row.release_type as ReleaseType]}
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-2 flex items-baseline gap-2">
-                      <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">
+                    <div className="mt-2 min-w-0 space-y-1">
+                      <p className="truncate text-[15px] font-semibold tracking-tight text-slate-900">
                         {row.title}
-                      </span>
-                      <span className="shrink-0 truncate text-[12px] text-slate-400">
+                      </p>
+                      <p className="truncate text-[12px] text-slate-400">
                         {[row.project_name, row.repository_name].filter(Boolean).join(' · ') || '-'}
-                      </span>
+                      </p>
                     </div>
                     {row.branch ? (
                       <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">

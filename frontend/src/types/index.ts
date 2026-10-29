@@ -146,6 +146,8 @@ export interface Release {
   source_rc?: string | null;
   workflow_instance?: string | null;
   revision_update_required?: boolean;
+  /** 历史返修申请仅保留查询，须新建发布。 */
+  has_revision_history?: boolean;
   source_rc_version?: string;
   source_rc_tag?: string;
   source_rc_git_hash?: string;
@@ -648,10 +650,6 @@ export interface PackageConfig {
   /** 打包后清理远程工作区 */
   cleanup_workspace?: boolean;
   svn_push_enabled?: boolean;
-  /** RC 版发布后自动打包是否提交 SVN，默认关闭 */
-  svn_push_rc?: boolean;
-  /** 测试版发布后自动打包是否提交 SVN，默认关闭 */
-  svn_push_beta?: boolean;
   svn_url?: string;
   svn_credential?: string | null;
   svn_credential_id?: string | null;

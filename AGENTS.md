@@ -205,7 +205,7 @@ npm run preview
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：仓库级审批流程定义、实例和审批任务；仓库创建时补齐 formal/rc/beta 内置流程，仅仓库创建者可编辑节点。正式发布默认仓库拥有者审批，RC / Beta 默认空审批链（提交后直接推 Tag）。审批人类型为仓库拥有者与指定人员（可搜索选择）；存量配置中的项目负责人/角色/发起人仍可解析展示。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
-- `PackageConfig`：项目组件级打包配置，归属以 `project_component` 为唯一事实源（`project` / `repository` 冗余字段已删除，API 响应的 project_id / project_name / repository_id / repository_name 字段由组件推导）；包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（正式版总开关，RC / 测试版各自开关，默认目录 formal|rc|beta/版本号；提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
+- `PackageConfig`：项目组件级打包配置，归属以 `project_component` 为唯一事实源（`project` / `repository` 冗余字段已删除，API 响应的 project_id / project_name / repository_id / repository_name 字段由组件推导）；包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（所有版本统一跟随总开关，默认目录 formal|rc|beta/版本号；提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
 - `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），`arch` 记录芯片架构（`x86_64` / `x86_32` / `arm64` / `arm32`，默认 `x86_64`，选择节点时随节点名展示），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
 - `PackageTask`：打包任务记录，可关联仓库级 `ReleaseRecord`；状态为 `queued` / `running` / `success` / `failure` / `canceled`。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一），「打包配置」列表默认收藏优先排序，并驱动工作台「打包速览」面板的常用配置区；接口为 `POST /api/packages/configs/{id}/favorite/`（toggle）、`GET /api/packages/configs/favorites/`（附最近任务摘要）。任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（口径：我发起的、近 N 天、仅终态），工作台打包成功率 KPI 与速览面板统一使用。
@@ -227,10 +227,10 @@ npm run preview
 2. 预览变更：按分支创建的正式版、RC/Beta 均使用分支预览；正式草稿由 `FormalChanges` 在上一正式提交至已保存 `git_hash` 的固定 SHA 区间完整分页拉取提交，有来源 RC 时同时核验 RC 快照，仅关联合并或 squash SHA 位于区间内的 MR，无证据 MR 显示缺口。首次正式版取全部可达历史，同 SHA 明示无新增代码，非祖先基线拒绝普通晋升，外部失败不得回退移动分支。
 3. 生成发布说明：`ReleaseService.generate_doc` 保存 Markdown。所有正式版（含按分支创建）首次生成按同物理仓库中低于目标正式版本的最高正式版本固定 `base_tag` / `base_git_hash`（平台已发布历史快照优先于同名远端 Tag），以 `changes_initialized` 区分首次发布与未生成。重新生成沿用基线；来源或目标版本改变后清空基线、说明及提交/MR 关联。身份字段由系统维护，人工可编辑其余内容；提交审批前必须已生成有效正式说明，并保留非法提交拦截。
 4. 提交审批：`ReleaseService.submit_audit` 要求草稿说明非空；正式版必须有启用的非空流程且所有节点有有效审批人，不再强制 RC 来源。以物理仓库、发布类型、规范化主次修订号原子占用版本，日期与项目不分隔占用；同版本冲突提示“已有同版本在发布”，重复提交复用流程。仓库锁先于发布行锁；仓库锁使用 `no_key=True` 避免外键引用产生锁升级死锁。 若流程含 AI 代码审查节点，提审固定本轮模型、技能、范围和上下文；AI 到达节点后异步只读审查，首发、无变更和覆盖不完整均单独记录，后续必须人工审批。明确标记的真实需求才计入需求符合性维度；大改动按固定差异分批审查，每轮最多并行两个批次，保存每批覆盖和发现，重试仅恢复未完成批次；不可完整读取的文件保持未覆盖。模型失败或审查不完整时停留当前节点；项目管理员、软件管理员或超管可沿用本轮配置重试，或填写理由跳过 AI 并交由人工审批，保留先前执行与操作者记录。
-5. 审批流转：`WorkflowEngine` 根据 `node_config` 生成任务，支持通过、驳回、转交、回退、撤销。 审批人可采纳 AI 意见形成整改项，开发者提交修复说明后由当前人工审批人复核或填写理由不采纳；未完成复核不得批准或推 Tag，重提、AI 跳过及重试不会自动关闭；显式驳回/删除沿用原终止语义，删除申请会移除整改记录，不视为完成整改。
+5. 审批流转：`WorkflowEngine` 根据 `node_config` 生成任务，支持通过、驳回、转交、回退、撤销。 审批人可采纳 AI 意见形成整改项，开发者提交修复说明后由当前人工审批人复核或填写理由不采纳；未完成复核不得批准或推 Tag，AI 跳过及重试不会自动关闭；显式驳回/删除沿用原终止语义，删除申请会移除整改记录，不视为完成整改。
 6. 审批完成：`ReleaseService.handle_workflow_completed` 按固定 SHA 推轻量 Tag 并核验远端提交，创建时不传 `message`，兼容内网 GitLab 的注释 Tag 故障（#57）。正式版所有入口必须有已完成工作流；按分支创建时使用草稿保存的提交，有 RC 来源时仍校验来源提交与快照一致。远端结果不明时保留版本占用，原申请可重试；历史 Tag 仅在提交与本申请注释标记均匹配时允许对账，同名轻量 Tag 需管理员核对归属，不凭同 SHA 接管。失败操作日志保存脱敏的 GitLab 响应和请求编号。成功后占用永久消费，失败状态为 `rejected`。
-7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送对自动与手动打包均按配置启用：正式版看总开关，默认目录为 formal/版本号；RC、测试版需另开对应开关，分别进入 rc/版本号、beta/版本号。分支直打看总开关，默认进入 formal/分支名。默认同版本号不覆盖，开启覆盖后镜像提交。
-8. 审批驳回释放未消费占用；发起人可在运行中的任意审批节点终止流程；终止、退回修改与回退到起点恢复 `draft`、解除流程实例并释放占用；退回修改保留原审批及审查历史，原申请不被定时草稿清理，须更新到新提交并重新生成说明后完整提审；原轮含 AI 审查时新流程须重新执行 AI，且必须保留人工审批。每次提审固定流程节点、模式和实际审批人；存量无快照实例按保存的流程图边恢复审批顺序和配置；图缺失、分叉或节点配置不明时拒绝推进，不能以现行定义替代历史依据。终止和回退到起点保留实例与已处理历史，剩余任务失效；审批、退回、回退与终止共用仓库 → 发布 → 实例锁顺序，在锁内刷新状态，已结束流程不可终止。推 Tag 失败保留占用供重试；按既有权限删除失败申请表示显式终止。
+7. 自动打包：推 tag 成功后 `ReleaseService` 调用 `PackageService.trigger_auto_packages_for_release`，为开启 `auto_package_on_release` 的 `PackageConfig` 创建 `PackageTask`；触发异常仅记录操作日志，不影响发布状态。产物 SVN 推送对自动与手动打包的所有版本统一看总开关：正式版、RC、测试版分别默认进入 formal/版本号、rc/版本号、beta/版本号，分支直打默认进入 formal/分支名。已有配置的新任务立即生效；已创建任务沿用快照的最终推送决定，原来关闭的历史任务不因新规则获得补推能力。默认同版本号不覆盖，开启覆盖后镜像提交。
+8. 审批驳回释放未消费占用；发起人可在运行中的任意审批节点终止流程；退回修改统一按驳回结束原申请（实例、任务和发布为 `rejected`），保留原流程关联和报告，释放未消费版本占用；修改代码后新建发布，不在原申请上多轮提审。旧退回 API 兼容驳回，旧返修草稿保留查询但禁止再次提审；审批界面移除退回修改、回退和轮次选择，工作台不展示草稿列。发起人主动终止与兼容的回退到起点仍恢复 `draft`、解除流程实例并释放占用。每次提审固定流程节点、模式和实际审批人；存量无快照实例按保存的流程图边恢复审批顺序和配置；图缺失、分叉或节点配置不明时拒绝推进，不能以现行定义替代历史依据。终止和回退到起点保留实例与已处理历史，剩余任务失效；审批、退回、回退与终止共用仓库 → 发布 → 实例锁顺序，在锁内刷新状态，已结束流程不可终止。推 Tag 失败保留占用供重试；按既有权限删除失败申请表示显式终止。
 
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
 
@@ -252,7 +252,7 @@ RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan
    - 若配置 `custom_script`，则以 `sh -ec`（遇错即停）执行该脚本；
    - 否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）；
    - 打包产物写入 `/workspace/artifacts`；
-   - 扫描 `workspace/artifacts`，自动与手动打包均按配置推 SVN：正式版看总开关，默认路径 `{svn_url}/formal/{version}`；RC、测试版还要打开 `svn_push_rc` / `svn_push_beta`，路径为 `rc/{version}`、`beta/{version}`。自定义目录模板按原文渲染。`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步。分支直打看 SVN 总开关，默认进入 formal/分支名。
+   - 扫描 `workspace/artifacts`，自动与手动打包的所有版本统一按 SVN 总开关推送：正式版、RC、测试版分别默认进入 `{svn_url}/formal/{version}`、`{svn_url}/rc/{version}`、`{svn_url}/beta/{version}`。自定义目录模板按原文渲染。`svn_commit_mode`：`new_dir` 目录已存在即报错、`svn import` 新建提交；`overwrite` 目录已存在时 checkout 后镜像覆盖提交，新增/修改/删除同步。分支直打看 SVN 总开关，默认进入 formal/分支名。
 4. 镜像必须满足目录、环境变量、入口脚本约定（详见「镜像接入规范」或 `docker/package/web/README.md`）。
 
 ### 镜像接入规范

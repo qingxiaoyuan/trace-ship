@@ -21,6 +21,8 @@ let logResponse: (params: Record<string, number>) => TaskLogChunk;
 let taskResponse: PackageTask;
 let delayedTask: Promise<PackageTask> | null;
 let downloadFailureMessage: string | null;
+let pendingSvnPush: Promise<void> | null;
+const pushRequests: string[] = [];
 const logQueries: Record<string, number>[] = [];
 const downloadFiles: { blob: Blob; filename: string }[] = [];
 let pendingBlob: Blob;
@@ -35,6 +37,8 @@ beforeEach(() => {
   logFailure = false;
   logQueries.length = 0;
   downloadFiles.length = 0;
+  pushRequests.length = 0;
+  pendingSvnPush = null;
   logResponse = () => ({ size: 0, offset: 0, content: '' });
   taskResponse = { ...task };
   delayedTask = null;
@@ -88,6 +92,10 @@ beforeEach(() => {
       data = logResponse(config.params);
     } else if (config.url === '/packages/tasks/task/artifacts/installer/download/') {
       return { config, status: 200, statusText: 'OK', headers: {}, data: new Blob(['真实安装包内容'], { type: 'application/octet-stream' }) };
+    } else if (config.url === '/packages/tasks/task/push-svn/') {
+      pushRequests.push(config.url);
+      if (pendingSvnPush) await pendingSvnPush;
+      data = { remote_url: 'svn://example.invalid/releases/formal/V1.2.3' };
     } else if (config.url === '/packages/tasks/task/download-all/') {
       return { config, status: 200, statusText: 'OK', headers: {}, data: new Blob(['ZIP文件内容'], { type: 'application/zip' }) };
     }
@@ -111,6 +119,25 @@ function renderTask(entry = '/packages/task') {
 }
 
 describe('打包任务读取', () => {
+  it('允许推送的任务直接提供 SVN 按钮，推送中反馈进度并阻止重复触发', async () => {
+    taskResponse = { ...task, my_role: 'developer', can_push_svn: true,
+      artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha' }],
+    };
+    let completePush!: () => void;
+    pendingSvnPush = new Promise<void>((resolve) => { completePush = resolve; });
+    renderTask();
+
+    fireEvent.click(await screen.findByRole('button', { name: '推送 SVN' }));
+    const pushing = await screen.findByRole('button', { name: /推送中…/ });
+    fireEvent.click(pushing);
+    expect(pushRequests).toEqual(['/packages/tasks/task/push-svn/']);
+    expect(screen.getByRole('button', { name: '下载全部' })).toBeTruthy();
+
+    await act(async () => { completePush(); });
+    expect(await screen.findByText('已推送到 SVN')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '推送 SVN' })).toBeTruthy();
+  });
+
   it('任务详情读取失败显示具体原因并可重试', async () => {
     detailFailure = true;
     renderTask();

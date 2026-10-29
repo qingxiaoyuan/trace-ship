@@ -376,8 +376,8 @@ def test_reselect_rc_requires_publisher_or_superuser_and_project_access(client, 
     assert client.patch(url, {"source_rc": str(formal.source_rc_id)}, format="json").status_code == 200
 
 
-def test_returned_rc_source_requires_reselection_before_resubmission(client, formal, remote, user, monkeypatch):
-    """历史 RC 来源正式单退回后仍走来源保护，重选新 RC 才能重新提审。"""
+def test_rejected_rc_source_cannot_be_reselected_or_resubmitted(client, formal, remote, user):
+    """历史 RC 来源正式单驳回后保持来源快照，不能在原单再次提审。"""
     from apps.workflow.models import WorkflowDefinition
 
     remote.tags.append(TagInfo(name=formal.source_rc_tag, commit_hash=HEAD))
@@ -399,13 +399,10 @@ def test_returned_rc_source_requires_reselection_before_resubmission(client, for
         release_type="rc", status="released", version="VA.9.0.1", tag_name="VA.9.0.1-rc", branch="develop", git_hash="c" * 40)
     remote.tags.append(TagInfo(name=new_rc.tag_name, commit_hash=new_rc.git_hash))
     changed = client.patch(url, {"source_rc": str(new_rc.id)}, format="json")
-    assert changed.status_code == 200, changed.data
-    monkeypatch.setattr(remote, "list_release_commits", lambda identity, base, head: [CommitInfo(
-        hash=head, author="开发", author_email="", message="fix: 修复", committed_at=datetime(2026, 10, 1, tzinfo=UTC))])
-    assert client.post(url + "generate-doc/").status_code == 200
-    resubmitted = client.post(url + "submit-audit/")
-    assert resubmitted.status_code == 200, resubmitted.data
+    assert changed.status_code == 400, changed.data
+    assert client.post(url + "submit-audit/").status_code == 400
     formal.refresh_from_db()
-    assert formal.source_rc_id == new_rc.id and formal.git_hash == "c" * 40
-    assert formal.workflow_instance_id != old.id and old.tasks.get(pk=task.id).status == "returned"
+    assert formal.source_rc_id != new_rc.id and formal.git_hash == HEAD
+    assert formal.status == "rejected" and formal.workflow_instance_id == old.id
+    assert old.tasks.get(pk=task.id).status == "rejected"
     assert formal.workflow_instance.definition_id == definition.id

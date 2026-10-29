@@ -5,7 +5,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.release.models import ReleaseRecord
-from apps.system.review_settings import save_settings
+from apps.system.tests.review_helpers import configure_review
 from apps.workflow.models import AIReviewRun, WorkflowDefinition, WorkflowInstance, WorkflowTask
 
 pytestmark = pytest.mark.django_db
@@ -21,7 +21,7 @@ def case(project, repository, user):
     from apps.release.models import ReleaseReviewScope
     ReleaseReviewScope.objects.create(instance=instance, head_git_hash=release.git_hash, status="ready")
     task = WorkflowTask.objects.create(instance=instance, node_id="human", node_name="审批", approver=user, status="pending")
-    config = save_settings({"endpoint":"https://model.example/v1", "model":"test", "protocol":"openai", "skill":"code-review-expert"})
+    config = configure_review({"endpoint":"https://model.example/v1", "model":"test", "protocol":"openai", "skill":"code-review-expert"})
     finding = {"id":str(uuid.uuid4()), "severity":"P1", "title":"缺少校验", "reason":"参数未校验", "suggestion":"添加校验", "path":"app.py", "side":"new", "line_start":1, "line_end":1}
     AIReviewRun.objects.create(instance=instance, node_id="ai", settings_version=config, status="completed", findings=[finding])
     client = APIClient()
@@ -221,8 +221,8 @@ def test_ai_approval_rejects_tampered_workflow_identity(case):
     assert task.status == "pending"
 
 
-def test_return_fix_new_round_and_human_review_through_release_apis(user, project, repository, monkeypatch, mock_git_provider, django_capture_on_commit_callbacks):
-    """原单退回、修复、重新审查和人工复核形成完整往返。"""
+def test_rejection_requires_new_application_and_keeps_old_remediation_history(user, project, repository, monkeypatch, mock_git_provider, django_capture_on_commit_callbacks):
+    """驳回后新建申请重新审查，旧报告和整改保留且不混入新申请。"""
     from types import SimpleNamespace
 
     from apps.release.services import ReleaseService
@@ -238,7 +238,7 @@ def test_return_fix_new_round_and_human_review_through_release_apis(user, projec
         {"action":"finish", "dimensions":["安全"], "reviewed_files":["app.py"], "findings":[]},
     ])
     monkeypatch.setattr(ai_review_model, "_ask", lambda *args: (next(responses), "{}"))
-    save_settings({"endpoint":"https://model.example/v1", "model":"test", "protocol":"openai", "skill":"code-review-expert"})
+    configure_review({"endpoint":"https://model.example/v1", "model":"test", "protocol":"openai", "skill":"code-review-expert"})
     WorkflowDefinition.objects.create(project=project, repository=repository, name="审查", biz_type="release", release_type="rc", created_by=user, is_active=True,
         node_config=[{"node_id":"ai", "node_name":"AI", "node_type":"ai_review"}, {"node_id":"human", "node_name":"审批", "approvers":[{"type":"user", "user_id":str(user.id)}]}])
     release = ReleaseRecord.objects.create(project=project, repository=repository, publisher=user, release_type="rc", status="draft", version="VA.1.0.2-rc", tag_name="VA.1.0.2-rc", branch="develop", git_hash="b" * 40, release_doc="说明")
@@ -255,28 +255,26 @@ def test_return_fix_new_round_and_human_review_through_release_apis(user, projec
     assert adopted.status_code == 200, adopted.data
     item_id = adopted.data["data"]["item"]["id"]
     assert client.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment":"修复"}, format="json").status_code == 200
-    assert client.post(old_url, {"action":"fix", "id":item_id, "comment":"已添加校验"}, format="json").status_code == 200
+    assert client.post(old_url, {"action":"fix", "id":item_id, "comment":"已添加校验"}, format="json").status_code == 403
+    assert client.post(f"/api/releases/{release.id}/submit-audit/").status_code == 400
     monkeypatch.setattr(provider, "get_branch", lambda *args: SimpleNamespace(name="develop", last_commit_hash="c" * 40))
-    monkeypatch.setattr(provider, "compare_diff", lambda *args: [], raising=False)
-    update = client.post(f"/api/releases/{release.id}/branch-update/", {"old_hash":"b" * 40, "new_hash":"c" * 40}, format="json")
-    assert update.status_code == 200, update.data
-    generated = client.post(f"/api/releases/{release.id}/generate-doc/")
-    assert generated.status_code == 200, generated.data
+    created = client.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+        "release_type": "rc", "version": release.version, "branch": "develop", "package_config_ids": []}, format="json")
+    assert created.status_code == 201, created.data
+    new_id = created.data["data"]["id"]
+    assert str(new_id) != str(release.id)
+    assert client.post(f"/api/releases/{new_id}/generate-doc/").status_code == 200
     with django_capture_on_commit_callbacks(execute=True):
-        submitted = client.post(f"/api/releases/{release.id}/submit-audit/")
+        submitted = client.post(f"/api/releases/{new_id}/submit-audit/")
     assert submitted.status_code == 200, submitted.data
-    release.refresh_from_db()
-    new = release.workflow_instance
+    fresh = ReleaseRecord.objects.get(pk=new_id)
+    new = fresh.workflow_instance
     assert new.id != original.id and new.ai_reviews.get().findings == []
-    next_task = new.tasks.get(status="pending")
-    assert client.post(f"/api/workflow/tasks/{next_task.id}/approve/", {}, format="json").status_code == 400
-    new_url = f"/api/workflow/instances/{new.id}/remediations/"
-    assert client.post(new_url, {"action":"resolve", "id":item_id}, format="json").status_code == 200
-    assert client.post(f"/api/workflow/tasks/{next_task.id}/approve/", {}, format="json").status_code == 200
+    assert client.get(f"/api/workflow/instances/{new.id}/remediations/").data["data"]["items"] == []
+    assert client.post(f"/api/workflow/tasks/{new.tasks.get(status='pending').id}/approve/", {}, format="json").status_code == 200
     release.refresh_from_db()
-    assert release.status == "released" and release.git_hash == "c" * 40
-    item = client.get(new_url).data["data"]["items"][0]
-    assert item["instance_id"] == str(original.id) and item["status"] == "resolved"
+    assert release.status == "rejected" and release.workflow_instance_id == original.id
+    assert client.get(old_url).data["data"]["items"][0]["status"] == "pending_fix"
 
 
 def test_creating_same_version_does_not_clean_returned_remediation(case, monkeypatch, mock_git_provider):

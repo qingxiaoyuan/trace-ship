@@ -8,7 +8,7 @@ import { packageApi } from '@/api/package';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import { BuildHistory, ArtifactListPanel } from './BuildHistory';
 import { TerminalLog } from './TerminalLog';
-import { ArtifactActionsDropdown } from './Artifacts';
+import { ArtifactActions } from './Artifacts';
 import { downloadTaskLog, isRunning } from './utils';
 import { StatusBadge, SvnPushWarning } from './Shared';
 
@@ -158,7 +158,7 @@ export const DetailView = memo(function DetailView({
         <BuildHistory builds={builds} activeBuildId={activeBuild.id} onSelect={handleSelectBuild} onCancel={onCancel} />
 
         <div className="lg:col-span-4 tech-card rounded-xl overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between border-b border-indigo-50 px-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-indigo-50 px-4 py-2">
             <div className="flex items-center gap-1">
               <button
                 className={`lt-tab whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-medium ${activeTab === 'log' ? 'on' : 'text-slate-500 border-transparent hover:text-indigo-600'}`}
@@ -174,9 +174,9 @@ export const DetailView = memo(function DetailView({
                 {artifacts.length > 0 && <span className="ml-1 rounded bg-slate-100 px-1 py-0 text-[10px] font-medium text-slate-500">{artifacts.length}</span>}
               </button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               {activeTab === 'artifacts' && artifacts.length > 0 && (
-                <ArtifactActionsDropdown task={activeBuild} pushing={pushing} onPushSvn={handlePushSvn} />
+                <ArtifactActions task={activeBuild} pushing={pushing} onPushSvn={handlePushSvn} />
               )}
               <span className="font-mono text-[12px] text-slate-500">{activeBuild.version}</span>
               <StatusBadge status={activeBuild.status} />

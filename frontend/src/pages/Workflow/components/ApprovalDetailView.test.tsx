@@ -65,7 +65,7 @@ it('我发起的详情没有审批待办时仍能终止后续节点流程，保�
   expect(screen.getByText('首轮确认')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '终止流程' })).toBeNull();
   expect(client.getQueryData(['workflow-instance-for-detail', 'instance', useAuthStore.getState().sessionVersion])).toMatchObject({ status: 'revoked', can_revoke: false });
-  await waitFor(() => expect(historyRequests).toBeGreaterThanOrEqual(2));
+  expect(historyRequests).toBe(0);
 });
 
 it('权限收回及账号切换时隐藏缓存和来源中的旧详情', async () => {
@@ -130,6 +130,7 @@ it('切换真实页签保留审批意见，按需读取范围并支持键盘导�
   const reviewTab = screen.getByRole('tab', { name: 'AI 审查' });
   expect(documentTab.getAttribute('aria-selected')).toBe('true');
   expect(screen.getByText('测试发布说明')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: '审批轮次' })).toBeNull();
   expect(screen.getByLabelText('审批流程')).toBeTruthy();
   await waitFor(() => expect(review).toHaveBeenCalled());
   expect(scope).not.toHaveBeenCalled();
@@ -137,6 +138,7 @@ it('切换真实页签保留审批意见，按需读取范围并支持键盘导�
   fireEvent.click(reviewTab);
   expect(await screen.findByText('当前没有可查看的 AI 审查。')).toBeTruthy();
   expect(reviewTab.getAttribute('aria-selected')).toBe('true');
+  expect(screen.queryByRole('region', { name: '审批轮次' })).toBeNull();
   expect(screen.getByText('测试发布说明').closest('[role=tabpanel]')?.hasAttribute('hidden')).toBe(true);
   fireEvent.keyDown(reviewTab, { key: 'ArrowRight' });
   expect(await screen.findByText('固定范围已就绪')).toBeTruthy();

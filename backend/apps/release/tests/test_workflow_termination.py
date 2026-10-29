@@ -439,8 +439,8 @@ def test_ambiguous_legacy_graph_cannot_advance(flow, damage):
     assert task.status == "pending" and flow.release.status == "pending" and not flow.remote.tags
 
 
-def test_first_approver_returns_release_for_revision(flow):
-    """首节点可退回原申请，已处理记录保留且旧待办失效。"""
+def test_return_for_revision_ends_as_rejection_without_another_round(flow):
+    """旧退回入口按驳回结束申请，不能再在原申请中提审。"""
     task = flow.instance.tasks.get(status="pending")
     flow.api.force_authenticate(flow.reviewer)
     result = flow.api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "请修复"}, format="json")
@@ -448,17 +448,19 @@ def test_first_approver_returns_release_for_revision(flow):
     task.refresh_from_db()
     flow.instance.refresh_from_db()
     flow.release.refresh_from_db()
-    assert task.status == "returned" and task.comment == "请修复"
-    assert flow.instance.status == "returned" and flow.instance.returned_by_id == flow.reviewer.id
-    assert flow.release.status == "draft" and flow.release.workflow_instance_id is None
-    assert flow.release.doc_needs_regeneration and flow.release.has_revision_history
+    assert task.status == "rejected" and task.comment == "请修复"
+    assert flow.instance.status == "rejected"
+    assert flow.release.status == "rejected" and flow.release.workflow_instance_id == flow.instance.id
+    assert flow.release.rejected_reason == "请修复"
+    assert not flow.release.has_revision_history
     assert not flow.release.version_claims.exists()
-    assert flow.api.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 400
+    flow.api.force_authenticate(flow.user)
+    assert flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/").status_code == 400
     assert not flow.remote.tags
 
 
-def test_return_preserves_approved_history_and_protects_expired_draft(flow, monkeypatch):
-    """退回后旧申请与审批历史不被定时清理；重提须先重新生成说明。"""
+def test_rejection_preserves_approved_history_and_cannot_reopen(flow):
+    """驳回结束申请，先前审批记录保留，原单无法更新来源或再提审。"""
     from django.utils import timezone
 
     from apps.release.tasks import cleanup_draft_releases
@@ -472,28 +474,13 @@ def test_return_preserves_approved_history_and_protects_expired_draft(flow, monk
     assert ReleaseRecord.objects.filter(pk=flow.release.pk).exists()
     assert flow.instance.tasks.filter(status="approved").count() == 1
     flow.api.force_authenticate(flow.user)
-    rejected = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
-    assert rejected.status_code == 400
-    assert flow.api.post(f"/api/releases/{flow.release.id}/generate-doc/").status_code == 200
     assert flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/").status_code == 400
-    commits = flow.remote.list_commits(flow.release.repository.external_identity, flow.release.branch)
-    commits[0].hash = "b" * 40
-    monkeypatch.setattr(flow.remote, "list_commits", lambda *args, **kwargs: commits)
-    monkeypatch.setattr(flow.remote, "compare_diff", lambda *args: [], raising=False)
-    preview = flow.api.get(f"/api/releases/{flow.release.id}/branch-update/")
-    assert preview.status_code == 200, preview.data
-    changed = flow.api.post(f"/api/releases/{flow.release.id}/branch-update/", {
+    assert flow.api.post(f"/api/releases/{flow.release.id}/branch-update/", {
         "old_hash": "a" * 40, "new_hash": "b" * 40,
-    }, format="json")
-    assert changed.status_code == 200, changed.data
-    assert flow.api.post(f"/api/releases/{flow.release.id}/generate-doc/").status_code == 200
-    submitted = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
-    assert submitted.status_code == 200, submitted.data
+    }, format="json").status_code == 400
     flow.release.refresh_from_db()
-    assert flow.release.workflow_instance_id != flow.instance.id
-    assert flow.release.workflow_instance.tasks.get(status="pending").node_id == "approval_1"
-    flow.instance.refresh_from_db()
-    assert flow.instance.status == "returned"
+    assert flow.release.status == "rejected" and flow.release.workflow_instance_id == flow.instance.id
+    assert WorkflowInstance.objects.filter(biz_type="release", biz_id=str(flow.release.id)).count() == 1
 
 
 def test_return_requires_active_current_approver_and_respects_project_role(flow):
@@ -520,11 +507,11 @@ def test_return_cancels_unfinished_ai_and_keeps_completed_report(flow):
     """失效执行不能推进新流程，旧轮已完成报告仍可追溯。"""
     import uuid
 
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.ai_review import execute_review
     from apps.workflow.models import AIReviewRun
 
-    config = save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    config = configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     report = AIReviewRun.objects.create(instance=flow.instance, node_id="done-ai", settings_version=config,
         status="completed", summary="已完成", findings=[{"id": "old-finding", "reason": "证据"}])
     old_token = uuid.uuid4()
@@ -547,15 +534,15 @@ def test_return_cancels_unfinished_ai_and_keeps_completed_report(flow):
     assert retry.status_code == 400 and skipped.status_code == 400
 
 
-def test_return_marks_only_actor_and_preserves_peer_approval_history(flow):
-    """会签退回只记录真实操作人，其他待办作废而不伪装成审批。"""
+def test_legacy_return_uses_existing_countersign_rejection_semantics(flow):
+    """旧入口与驳回一致，会签的其余待办按驳回结束。"""
     peer = User.objects.create_user(username="return_peer")
     WorkflowTask.objects.create(instance=flow.instance, node_id="approval_1", node_name="第一节点", approver=peer, mode="all")
     task = flow.instance.tasks.get(approver=flow.reviewer, status="pending")
     flow.api.force_authenticate(flow.reviewer)
     assert flow.api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "修复"}, format="json").status_code == 200
-    assert flow.instance.tasks.get(approver=peer).status == "revoked"
-    assert flow.instance.tasks.get(approver=flow.reviewer).status == "returned"
+    assert flow.instance.tasks.get(approver=peer).status == "rejected"
+    assert flow.instance.tasks.get(approver=flow.reviewer).status == "rejected"
 
 
 @pytest.mark.parametrize("first", ["approve", "return"])
@@ -609,8 +596,8 @@ def test_postgresql_final_approval_and_return_are_serialized(flow, monkeypatch, 
         assert later.result(timeout=15).status_code == 400
     flow.release.refresh_from_db()
     flow.instance.refresh_from_db()
-    assert flow.release.status == ("released" if first == "approve" else "draft")
-    assert flow.instance.status == ("completed" if first == "approve" else "returned")
+    assert flow.release.status == ("released" if first == "approve" else "rejected")
+    assert flow.instance.status == ("completed" if first == "approve" else "rejected")
     assert len(flow.remote.tags) == (1 if first == "approve" else 0)
 
 
@@ -641,14 +628,18 @@ def test_return_rejects_rebound_cross_project_instance(flow):
 
 def test_return_comment_in_ai_history_not_exposed_to_readonly_member(flow):
     """审查轮的退回说明可能包含源码，维保和只读成员只看安全摘要。"""
-    from apps.system.review_settings import save_settings
+    from apps.system.tests.review_helpers import configure_review
     from apps.workflow.models import AIReviewRun
 
-    config = save_settings({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    config = configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     AIReviewRun.objects.create(instance=flow.instance, node_id="past-ai", settings_version=config, status="completed")
     task = flow.instance.tasks.get(status="pending")
     flow.api.force_authenticate(flow.reviewer)
     assert flow.api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "私有源码 secret"}, format="json").status_code == 200
+    from apps.notification.models import Notification
+
+    notification = Notification.objects.filter(user=flow.user, related_id=str(flow.instance.id), title="审批被驳回").get()
+    assert "私有源码 secret" not in notification.content
     viewer = User.objects.create_user(username="readonly_return_history")
     member = ProjectMember.objects.create(project=flow.project, user=viewer, role="viewer")
     flow.api.force_authenticate(viewer)
@@ -662,69 +653,52 @@ def test_return_comment_in_ai_history_not_exposed_to_readonly_member(flow):
         assert "私有源码 secret" not in str(release.data)
 
 
-def test_superuser_return_records_actual_operator(flow):
-    """超管代处理时历史展示真实操作者，不冒用原任务审批人。"""
+def test_superuser_legacy_return_records_actual_rejection_operator(flow):
+    """超管通过兼容入口驳回，审计保存真实操作者，原任务归属保留。"""
     admin = User.objects.create_superuser(username="return_admin", password="testpass")
     task = flow.instance.tasks.get(status="pending")
     flow.api.force_authenticate(admin)
     result = flow.api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "请修复"}, format="json")
     assert result.status_code == 200, result.data
     detail = flow.api.get(f"/api/workflow/instances/{flow.instance.id}/")
-    assert str(detail.data["data"]["returned_by"]) == str(admin.id)
-    assert detail.data["data"]["returned_by_name"] == "return_admin"
+    assert detail.data["data"]["status"] == "rejected"
     assert detail.data["data"]["tasks"][0]["approver"] == flow.reviewer.id
+    assert OperationLog.objects.filter(action="reject", user=admin, resource_id=str(task.id)).exists()
 
 
-def _prepare_returned_release_for_resubmission(flow, monkeypatch):
-    """经实际退回、更新来源和重新生成说明，准备下一轮审批。"""
+
+
+
+def test_rejected_release_cannot_be_resubmitted_by_publisher_or_other_developer(flow):
+    """驳回后原发起人和其他开发者都不能重新提审原单。"""
     task = flow.instance.tasks.get(status="pending")
     flow.api.force_authenticate(flow.reviewer)
-    response = flow.api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/", {"comment": "请修复"}, format="json")
-    assert response.status_code == 200, response.data
-    commits = flow.remote.list_commits(flow.release.repository.external_identity, flow.release.branch)
-    commits[0].hash = "b" * 40
-    monkeypatch.setattr(flow.remote, "list_commits", lambda *args, **kwargs: commits)
-    monkeypatch.setattr(flow.remote, "compare_diff", lambda *args: [], raising=False)
-    flow.api.force_authenticate(flow.user)
-    response = flow.api.post(f"/api/releases/{flow.release.id}/branch-update/", {
-        "old_hash": "a" * 40, "new_hash": "b" * 40,
-    }, format="json")
-    assert response.status_code == 200, response.data
-    response = flow.api.post(f"/api/releases/{flow.release.id}/generate-doc/")
-    assert response.status_code == 200, response.data
-
-
-def test_returned_release_only_publisher_can_resubmit_and_revoke(flow, monkeypatch):
-    """同项目其他开发者不可代重提，原发起人重提后仍可终止。"""
-    _prepare_returned_release_for_resubmission(flow, monkeypatch)
-    flow.api.force_authenticate(flow.reviewer)
-    response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
-    assert response.status_code in (400, 403), response.data
+    assert flow.api.post(f"/api/workflow/tasks/{task.id}/return-for-revision/").status_code == 200
+    for user in (flow.user, flow.reviewer):
+        flow.api.force_authenticate(user)
+        assert flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/").status_code == 400
     flow.release.refresh_from_db()
-    assert flow.release.status == "draft" and flow.release.workflow_instance_id is None
+    assert flow.release.status == "rejected"
     assert not flow.release.version_claims.exists()
-    flow.api.force_authenticate(flow.user)
-    response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
-    assert response.status_code == 200, response.data
-    flow.release.refresh_from_db()
-    assert flow.release.workflow_instance.created_by_id == flow.user.id
-    response = flow.api.post(f"/api/workflow/instances/{flow.release.workflow_instance_id}/revoke/")
-    assert response.status_code == 200, response.data
 
 
-def test_superuser_can_resubmit_returned_release_for_publisher(flow, monkeypatch):
-    """超管可代提，流程仍属于原发起人，审计记录实际操作者。"""
-    _prepare_returned_release_for_resubmission(flow, monkeypatch)
+def test_legacy_revision_draft_is_readonly_for_resubmission_even_for_superuser(flow):
+    """历史返修草稿保留数据，但不再创建新轮次，超管也须新建发布。"""
+    assert flow.api.post(f"/api/workflow/instances/{flow.instance.id}/revoke/").status_code == 200
+    ReleaseRecord.objects.filter(pk=flow.release.id).update(has_revision_history=True)
+    detail = flow.api.patch(f"/api/releases/{flow.release.id}/", {"has_revision_history": False}, format="json")
+    assert detail.status_code == 200, detail.data
+    assert detail.data["data"]["has_revision_history"] is True
     admin = User.objects.create_superuser(username="resubmit_admin", password="testpass")
-    flow.api.force_authenticate(admin)
-    response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
-    assert response.status_code == 200, response.data
+    for user in (flow.user, admin):
+        flow.api.force_authenticate(user)
+        response = flow.api.post(f"/api/releases/{flow.release.id}/submit-audit/")
+        assert response.status_code == 400, response.data
+        assert "新建发布" in str(response.data)
+        detail = flow.api.get(f"/api/releases/{flow.release.id}/")
+        assert detail.data["data"]["has_revision_history"] is True
     flow.release.refresh_from_db()
-    assert flow.release.workflow_instance.created_by_id == flow.user.id
-    assert OperationLog.objects.filter(action="submit_audit", resource_id=str(flow.release.id), user=admin).exists()
-    flow.api.force_authenticate(flow.user)
-    response = flow.api.post(f"/api/workflow/instances/{flow.release.workflow_instance_id}/revoke/")
-    assert response.status_code == 200, response.data
+    assert flow.release.status == "draft" and flow.release.has_revision_history
 
 
 def test_other_developer_can_submit_unreturned_draft(flow):
