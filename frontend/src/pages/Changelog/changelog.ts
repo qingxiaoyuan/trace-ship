@@ -27,6 +27,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.02',
+    date: '2026-11-02',
+    summary: '修复维护分支正式发布与删除后重发的问题',
+    items: [
+      { category: 'fix', text: '手工填写正式 Tag 时，发布版本号以该 Tag 为准，避免残留的自动建议版本导致维护分支选错基线；旧正式草稿在重新生成说明时同步修正。祖先链校验失败时显示实际基线、来源提交和分支。' },
+      { category: 'fix', text: '删除发布记录和 Tag 后可重新发布同一版本，兼容旧版删除后遗留的占用；重新发布仍需审批，并检查现存版本与远端 Tag 冲突；修改版本前缀或类型后缀后仍核验旧 Tag，日期变化不能绕过冲突。仅清理 Tag 时继续保留版本占用。' },
+    ],
+  },
+  {
     version: '2026.10.29',
     date: '2026-10-29',
     summary: 'AI 审查支持差异行内评论，整理发布与打包界面',
