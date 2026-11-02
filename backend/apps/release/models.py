@@ -214,14 +214,16 @@ class ReleaseTagCleanupAttempt(models.Model):
 
 
 class ReleaseVersionClaim(models.Model):
-    """进入流程后的仓库级占用；成功编号保留，删除历史也不复用。"""
+    """进入流程后的仓库级占用；成功保留，明确删除发布和 Tag 后可释放。"""
 
     repository = models.ForeignKey("repository.Repository", on_delete=models.CASCADE, verbose_name="仓库")
     release_type = models.CharField(max_length=20, verbose_name="发布类型")
     base_version = models.CharField(max_length=100, verbose_name="规范化基础版本")
+    # 占用的原始 Tag 身份；旧孤立占用复用时保留，供推送前核验旧规则引用。
     tag_name = models.CharField(max_length=100, verbose_name="发布 Tag")
     release = models.ForeignKey(ReleaseRecord, null=True, on_delete=models.SET_NULL, related_name="version_claims", verbose_name="发布申请")
     consumed = models.BooleanField(default=False, verbose_name="已成功发布")
+    reused = models.BooleanField(default=False, verbose_name="复用历史占用")
 
     class Meta:
         db_table = "release_version_claim"

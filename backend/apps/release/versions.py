@@ -1,5 +1,7 @@
 """仓库级版本序列与流程占用，调用方在仓库行锁内改变占用。"""
 
+import re
+
 from rest_framework import serializers
 
 from apps.release.models import ReleaseRecord, ReleaseVersionClaim
@@ -12,7 +14,7 @@ def version_tags(repository, tags: list[TagInfo]) -> list[TagInfo]:
         repository=repository,
         status="released",
     ).values_list("tag_name", flat=True)
-    consumed = ReleaseVersionClaim.objects.filter(repository=repository, consumed=True).values_list(
+    consumed = ReleaseVersionClaim.objects.filter(repository=repository, consumed=True, release__isnull=False).values_list(
         "tag_name", flat=True
     )
     return [*tags, *[TagInfo(name=name) for name in {*history, *consumed}]]
@@ -26,6 +28,22 @@ def version_key(repository, release_type: str, tag: str) -> str:
     if not match:
         raise serializers.ValidationError({"version": "版本号不符合仓库当前规则，请修改草稿后重试"})
     return ".".join(str(int(match.group(part))) for part in ("major", "minor", "patch"))
+
+
+def _claimed_tag_pattern(claim: ReleaseVersionClaim) -> re.Pattern:
+    """从占用快照还原旧 Tag 的边界，编号按整数比较，不依赖现行仓库规则。"""
+    old_tag = re.sub(r"_\d{8}$", "", claim.tag_name)
+    version = r"\.".join(f"0*{int(part)}" for part in claim.base_version.split("."))
+    identity = re.fullmatch(rf"(?P<prefix>.*\.)?{version}(?P<suffix>-.*)?", old_tag)
+    if identity:
+        old_tag = (
+            re.escape(identity.group("prefix") or "")
+            + version
+            + re.escape(identity.group("suffix") or "")
+        )
+    else:
+        old_tag = re.escape(old_tag)
+    return re.compile(rf"{old_tag}(?:_\d{{8}})?")
 
 
 def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
@@ -60,6 +78,18 @@ def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
         base_version=key,
         defaults={"release": release, "tag_name": release.tag_name},
     )
+    if not created:
+        # 提审、推送与重试均核验原占用身份，不能因当前规则变化忽略旧 Tag。
+        old_tag_pattern = _claimed_tag_pattern(claim)
+        if any(old_tag_pattern.fullmatch(tag.name) for tag in tags):
+            raise serializers.ValidationError({"version": "该版本已发布，不能覆盖"})
+    if not created and claim.consumed and claim.release_id is None:
+        # 转移使用权但保留旧 Tag 依据，审批期间外部恢复引用仍须阻止推送。
+        claim.release = release
+        claim.consumed = False
+        claim.reused = True
+        claim.save(update_fields=["release", "consumed", "reused"])
+        return
     if not created and (claim.consumed or claim.release_id != release.id):
         raise serializers.ValidationError(
             {"version": "该版本已发布，不能覆盖" if claim.consumed else "已有同版本在发布"}
@@ -67,18 +97,8 @@ def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
 
 
 def release_claim(release: ReleaseRecord) -> None:
-    release.version_claims.filter(consumed=False).delete()
-
-
-def preserve_consumed_version(release: ReleaseRecord) -> None:
-    """删除升级前成功记录时也保存编号依据；不可识别的历史 Tag 不参与序列。"""
-    try:
-        key = version_key(release.repository, release.release_type, release.tag_name)
-    except serializers.ValidationError:
-        return
-    ReleaseVersionClaim.objects.update_or_create(
-        repository=release.repository,
-        release_type=release.release_type,
-        base_version=key,
-        defaults={"release": release, "tag_name": release.tag_name, "consumed": True},
+    # 终止复用申请时恢复旧孤立占用，保留下一次申请检查旧身份的依据。
+    release.version_claims.filter(consumed=False, reused=True).update(
+        release=None, consumed=True, reused=False,
     )
+    release.version_claims.filter(consumed=False).delete()

@@ -1045,8 +1045,8 @@ class ReleaseService:
         provider = cls._get_provider(repository, publisher, project=project)
         tags: list[TagInfo] | None = None
 
-        # 若未传 version 但传了 tag_name，从 tag_name 去后缀反推 version
-        if not version and tag_name:
+        # 与草稿编辑保持一致：手工 Tag 是最终发布身份，不能保留自动建议的旧版本。
+        if tag_name:
             version = ReleaseValidator.strip_suffix(tag_name, version_rule)
 
         if not version:
@@ -1195,11 +1195,21 @@ class ReleaseService:
         provider = cls._get_provider(
             release.repository, request_user, project=release.project,
         )
+        if release.release_type == "formal" and release.status == "draft":
+            version = ReleaseValidator.strip_suffix(release.tag_name, release.repository.get_version_rule())
+            if release.version != version:
+                from apps.release.formal_changes import FormalChanges
+
+                # 兼容旧版保存了不同 version/Tag 的草稿；在本事务内重建其派生内容。
+                release.version = version
+                FormalChanges.reset(release)
+                release.release_commits.all().delete()
+                release.release_mrs.all().delete()
         generator = ReleaseDocGenerator(release, provider)
         md_doc = generator.generate(commit_ids=commit_ids, merge_similar=merge_similar)
         release.release_doc = md_doc
         release.doc_needs_regeneration = False
-        release.save(update_fields=["release_doc", "doc_needs_regeneration", "updated_at"])
+        release.save(update_fields=["version", "related_changes", "release_doc", "doc_needs_regeneration", "updated_at"])
         return md_doc
 
     @staticmethod
@@ -1908,9 +1918,8 @@ class ReleaseService:
         except Exception:
             pass
 
-        from apps.release.versions import preserve_consumed_version
-
-        preserve_consumed_version(release)
+        # 明确删除发布记录和 Tag 后释放编号；仅清理 Tag 的入口仍保留占用。
+        release.version_claims.all().delete()
         release.delete()
         OperationLogService.log_release(
             user=user,

@@ -130,7 +130,8 @@ def test_foreign_same_sha_tag_is_not_adopted(api, repository, project, user, rem
 
 
 @pytest.mark.django_db(transaction=True)
-def test_postgresql_serializes_same_version_submissions(repository, project, user, remote):
+@pytest.mark.parametrize("legacy_orphan", [False, True])
+def test_postgresql_serializes_same_version_submissions(repository, project, user, remote, legacy_orphan):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
@@ -138,6 +139,13 @@ def test_postgresql_serializes_same_version_submissions(repository, project, use
 
     if connection.vendor != "postgresql":
         pytest.skip("需要 PostgreSQL 仓库行锁")
+    if legacy_orphan:
+        from apps.release.models import ReleaseVersionClaim
+
+        ReleaseVersionClaim.objects.create(
+            repository=repository, release_type="rc", base_version="1.0.1",
+            tag_name="VA.1.0.1-rc_20261008", consumed=True,
+        )
     WorkflowDefinition.objects.create(
         repository=repository,
         project=project,
@@ -258,7 +266,7 @@ def test_old_failed_request_cannot_retry_over_another_claim(api, repository, pro
     assert not remote.tags
 
 
-def test_deleting_legacy_success_keeps_number_consumed(api, repository, project, user, remote):
+def test_deleting_legacy_success_releases_number(api, repository, project, user, remote):
     old = ReleaseRecord.objects.create(
         repository=repository,
         project=project,
@@ -272,7 +280,7 @@ def test_deleting_legacy_success_keeps_number_consumed(api, repository, project,
     deleted = api.post(f"/api/releases/{old.id}/delete-released/", {"tag_name": old.tag_name})
     assert deleted.status_code == 200, deleted.data
     next_version = api.get(f"/api/repositories/{repository.id}/next-version/?release_type=rc")
-    assert next_version.data["data"]["next_version"] == "VA.1.0.10"
+    assert next_version.data["data"]["next_version"] == "VA.1.0.0"
 
 
 @pytest.mark.django_db(transaction=True)

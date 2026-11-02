@@ -45,7 +45,7 @@ TEST_NODES = (
     "apps/system/tests/test_ai_settings.py::test_postgresql_review_snapshot_waits_for_complete_model_save",
     "apps/package/tests/test_release_repackage_postgresql.py",
 )
-EXPECTED_TESTS = 14
+EXPECTED_TESTS = 15
 
 
 def validate_junit(path: Path) -> dict[str, int]:

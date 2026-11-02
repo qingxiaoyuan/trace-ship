@@ -58,11 +58,16 @@ class FormalChanges:
 
     @staticmethod
     def baseline(release: ReleaseRecord, provider: GitProvider) -> tuple[str, str]:
-        from apps.release.services import VersionCalculator
+        from apps.release.services import ReleaseValidator, VersionCalculator
 
-        if release.changes_initialized:
+        rule = release.repository.get_version_rule()
+        identity_changed = (
+            release.status == "draft"
+            and release.version != ReleaseValidator.strip_suffix(release.tag_name, rule)
+        )
+        if release.changes_initialized and not identity_changed:
             return release.base_tag, release.base_git_hash
-        pattern = VersionCalculator(release.repository.get_version_rule()).build_scan_regex()
+        pattern = VersionCalculator(rule).build_scan_regex()
 
         def version_key(name: str) -> tuple[int, int, int] | None:
             match = pattern.fullmatch(name)
@@ -70,7 +75,8 @@ class FormalChanges:
                 return None
             return tuple(int(match.group(part)) for part in ("major", "minor", "patch"))
 
-        target = version_key(release.version)
+        # 预览与生成均以最终 Tag 对应的版本为上界，兼容旧草稿遗留的自动建议版本。
+        target = version_key(release.tag_name if release.status == "draft" else release.version)
         if target is None:
             raise serializers.ValidationError({"version": "正式版本号不符合仓库规则，无法确定累计变更基线"})
         tags = {tag.name: tag.commit_hash or "" for tag in provider.list_tags(release.repository.external_identity)}
@@ -107,7 +113,12 @@ class FormalChanges:
             and provider.get_merge_base(release.repository.external_identity, [base, head]) != base
         ):
             raise serializers.ValidationError(
-                {"base_tag": "上一正式提交不在来源提交的祖先链上，请单独处理回滚或分叉发布"}
+                {"base_tag": (
+                    "上一正式提交不在来源提交的祖先链上，"
+                    f"基线为 {base_tag}（{base[:12]}），"
+                    f"本次为 {release.tag_name}（{head[:12]}，分支 {release.branch}）。"
+                    "请核对分支和发布记录；真实回滚或分叉需单独处理"
+                )}
             )
         commits = (
             [] if base == head else provider.list_release_commits(release.repository.external_identity, base, head)
