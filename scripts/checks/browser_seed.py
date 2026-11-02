@@ -168,7 +168,10 @@ def main() -> None:
         def list_tags(self, repo_identity: str) -> list[TagInfo]:
             if repo_identity != repository.external_identity:
                 raise RuntimeError("冒烟样本禁止查询其他仓库")
-            return [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in reading_releases]
+            return [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in reading_releases] + [
+                TagInfo(name="V.5.2.39", commit_hash="2" * 40),
+                TagInfo(name="V.5.2.38", commit_hash="1" * 40),
+            ]
 
         def get_branch(self, repo_identity: str, branch_name: str):
             from utils.provider.base import BranchInfo
@@ -200,7 +203,8 @@ def main() -> None:
             return []
 
         def get_merge_base(self, repo_identity: str, refs: list[str]) -> str:
-            return refs[0]
+            # 5.2.39 属于另一条分支；5.2.38 可作为本次说明的固定基线。
+            return "3" * 40 if refs[0] == "2" * 40 else refs[0]
 
     ReleaseService._get_provider = staticmethod(lambda *_args, **_kwargs: SampleRepository())
     svn_credential = Credential.objects.create(

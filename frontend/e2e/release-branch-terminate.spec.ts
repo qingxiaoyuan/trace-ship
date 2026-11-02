@@ -24,6 +24,7 @@ test('正式版按分支创建、生成说明并进入后续审批节点后，�
   await page.getByLabel('分支', { exact: true }).click();
   await page.locator('.ant-select-item-option-content').filter({ hasText: /^main$/ }).click();
   await page.waitForLoadState('networkidle');
+  await page.getByLabel('Tag 名', { exact: true }).fill('V.5.2.40');
   await expect(page.getByText('来源 RC', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(reportDir, 'desktop-formal-branch.png'), fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
@@ -41,7 +42,11 @@ test('正式版按分支创建、生成说明并进入后续审批节点后，�
   expect(created.request().postDataJSON().source_rc).toBeUndefined();
   const release = (await created.json()).data as { id: string; source_rc: string | null; git_hash: string };
   expect(release).toMatchObject({ source_rc: null, git_hash: sample.git_hash });
-  expect((await generatedResponse).status()).toBe(200);
+  const generated = await generatedResponse;
+  expect(generated.status()).toBe(200);
+  const markdown = (await generated.json()).data as string;
+  expect(markdown).toContain('基线回退：已跳过非祖先 Tag V.5.2.39');
+  expect(markdown).toContain('实际基线为 V.5.2.38');
   const submittedResponse = page.waitForResponse(response => response.url().endsWith('/submit-audit/'));
   await page.getByRole('button', { name: '提交审批', exact: true }).click();
   const submitted = await submittedResponse;
@@ -57,6 +62,12 @@ test('正式版按分支创建、生成说明并进入后续审批节点后，�
   const scopeTab = page.getByRole('tab', { name: '审查范围' });
   await expect(documentTab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('region', { name: '变更文档' })).toBeVisible();
+  const fallbackCell = page.getByRole('region', { name: '变更文档' }).getByRole('cell', { name: /基线回退：/ });
+  await expect(fallbackCell).toContainText('实际基线为 V.5.2.38');
+  await expect(fallbackCell).toContainText('V.5.2.39');
+  expect(await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))).toEqual({ width: 1440, height: 1000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+  await page.screenshot({ path: path.join(reportDir, 'formal-fallback-desktop.png'), fullPage: true });
   const history = page.getByRole('region', { name: '审批轮次', exact: true });
   await expect(history).toHaveCount(0);
   await expect(page.getByRole('region', { name: '审批流程' })).toBeVisible();
@@ -88,6 +99,8 @@ test('正式版按分支创建、生成说明并进入后续审批节点后，�
   await expect(documentTab).toBeVisible();
   expect(await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))).toEqual({ width: 375, height: 812 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await expect(fallbackCell).toBeVisible();
+  await page.screenshot({ path: path.join(reportDir, 'formal-fallback-mobile.png'), fullPage: true });
   const mobileTabMetrics = await tabs.getByRole('tab').evaluateAll(elements => elements.map(element => {
     const rect = element.querySelector('span:last-child')!.getBoundingClientRect();
     return { top: rect.top, height: rect.height };

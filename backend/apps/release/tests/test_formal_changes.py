@@ -144,8 +144,11 @@ def test_formal_preview_includes_all_commits_and_only_proven_mrs(client, formal,
 def test_formal_boundaries_are_explicit(client, formal, remote, monkeypatch, mode):
     from utils.provider.exceptions import ConnectionError
 
-    if mode == "first":
-        remote.tags = []
+    if mode in ("first", "fork"):
+        if mode == "first":
+            remote.tags = []
+        else:
+            remote.ancestry = "c" * 40
 
         def first_history(identity, base, head):
             assert base == "" and head == HEAD
@@ -162,8 +165,6 @@ def test_formal_boundaries_are_explicit(client, formal, remote, monkeypatch, mod
         monkeypatch.setattr(remote, "list_release_commits", first_history)
     elif mode == "same":
         remote.tags = [TagInfo(name="VA.1.0.1", commit_hash=HEAD)]
-    elif mode == "fork":
-        remote.ancestry = "c" * 40
     else:
 
         def fail(*args):
@@ -172,13 +173,78 @@ def test_formal_boundaries_are_explicit(client, formal, remote, monkeypatch, mod
         monkeypatch.setattr(remote, "list_release_commits", fail)
     preview = client.get(f"/api/releases/{formal.id}/changes-preview/")
     result = client.post(f"/api/releases/{formal.id}/generate-doc/", {}, format="json")
-    if mode in ("first", "same"):
+    if mode in ("first", "same", "fork"):
         assert preview.status_code == result.status_code == 200
-        assert ("首次正式发布" if mode == "first" else "无新增代码") in result.data["data"]
+        expected = {"first": "首次正式发布", "same": "无新增代码", "fork": "基线回退"}[mode]
+        assert expected in result.data["data"]
     else:
-        assert preview.status_code == result.status_code == (400 if mode == "fork" else 502)
+        assert preview.status_code == result.status_code == 502
         formal.refresh_from_db()
         assert not formal.changes_initialized and not formal.release_doc
+
+
+@pytest.mark.parametrize("both_reachable", [False, True])
+@pytest.mark.parametrize("history", [False, True])
+def test_same_version_checks_only_reachable_candidates(client, formal, remote, monkeypatch, both_reachable, history):
+    if history:
+        for sha in (BASE, "c" * 40):
+            ReleaseRecord.objects.create(
+                project=formal.project, repository=formal.repository, publisher=formal.publisher,
+                release_type="formal", status="released", version="VA.1.0.1", tag_name="VA.1.0.1", git_hash=sha,
+            )
+    else:
+        remote.tags.append(TagInfo(name="VA.1.0.1_20261102", commit_hash="c" * 40))
+    if both_reachable:
+        monkeypatch.setattr(remote, "get_merge_base", lambda identity, refs: refs[0])
+    result = client.post(f"/api/releases/{formal.id}/generate-doc/")
+    assert result.status_code == (400 if both_reachable else 200), result.data
+    formal.refresh_from_db()
+    if both_reachable:
+        assert "不同可达提交" in result.data["message"]
+        assert not formal.changes_initialized
+    else:
+        assert formal.base_tag == "VA.1.0.1" and formal.base_git_hash == BASE
+        assert ("VA.1.0.1" if history else "VA.1.0.1_20261102") in result.data["data"]
+
+
+@pytest.mark.parametrize("failure", ["ancestry", "commits", None, "", "1234567", "z" * 40])
+def test_fallback_provider_failure_preserves_saved_draft(client, formal, remote, monkeypatch, failure):
+    from utils.provider.exceptions import ConnectionError
+
+    formal.changes_initialized = True
+    formal.base_tag, formal.base_git_hash = "VA.1.0.1", BASE
+    formal.release_doc = "原说明"
+    formal.changes_warnings = ["原提示"]
+    formal.save()
+    remote.ancestry = "c" * 40
+
+    def fail(*args):
+        raise ConnectionError("无法读取远端")
+
+    if failure in ("ancestry", "commits"):
+        monkeypatch.setattr(remote, "get_merge_base" if failure == "ancestry" else "list_release_commits", fail)
+    else:
+        remote.ancestry = failure
+    preview = client.get(f"/api/releases/{formal.id}/changes-preview/")
+    assert preview.status_code == 502, preview.data
+    generated = client.post(f"/api/releases/{formal.id}/generate-doc/")
+    assert generated.status_code == 502, generated.data
+    formal.refresh_from_db()
+    assert (formal.base_tag, formal.base_git_hash, formal.release_doc) == ("VA.1.0.1", BASE, "原说明")
+    assert formal.changes_initialized and formal.changes_warnings == ["原提示"]
+
+
+@pytest.mark.parametrize("status", ["pending", "released"])
+def test_fallback_does_not_rewrite_non_draft_baseline(client, formal, remote, status):
+    formal.status = status
+    formal.changes_initialized = True
+    formal.base_tag, formal.base_git_hash = "VA.1.0.1", BASE
+    formal.save()
+    remote.ancestry = "c" * 40
+    preview = client.get(f"/api/releases/{formal.id}/changes-preview/")
+    assert preview.status_code == 400, preview.data
+    formal.refresh_from_db()
+    assert formal.base_git_hash == BASE and formal.status == status
 
 
 def test_formal_identity_is_readonly_but_notes_are_editable(client, formal, remote):
@@ -325,8 +391,12 @@ def test_gitlab_http_pagination_is_complete_or_fails(client, formal, failure):
         assert data["total"] == 101
 
 
-def test_first_baseline_stays_empty_after_new_formal_tag(client, formal, remote, monkeypatch):
+@pytest.mark.parametrize("initialized", [False, True])
+def test_first_baseline_stays_empty_after_new_formal_tag(client, formal, remote, monkeypatch, initialized):
     remote.tags = []
+    formal.source_rc = None
+    formal.changes_initialized = initialized
+    formal.save()
     calls = []
 
     def history(identity, base, head):
@@ -342,9 +412,13 @@ def test_first_baseline_stays_empty_after_new_formal_tag(client, formal, remote,
         ]
 
     monkeypatch.setattr(remote, "list_release_commits", history)
-    assert client.post(f"/api/releases/{formal.id}/generate-doc/", {}, format="json").status_code == 200
+    result = client.post(f"/api/releases/{formal.id}/generate-doc/", {}, format="json")
+    assert result.status_code == 200
+    assert "未找到可用的较低正式 Tag，按来源固定提交的全部可达历史生成" in result.data["data"]
     remote.tags = [TagInfo(name="VA.1.0.1", commit_hash=BASE)]
-    assert client.post(f"/api/releases/{formal.id}/generate-doc/", {}, format="json").status_code == 200
+    regenerated = client.post(f"/api/releases/{formal.id}/generate-doc/", {}, format="json")
+    assert regenerated.status_code == 200
+    assert regenerated.data["data"] == result.data["data"]
     assert calls == [("", HEAD), ("", HEAD)]
 
 
