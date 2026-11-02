@@ -32,7 +32,7 @@ def branch_history(tmp_path, monkeypatch):
         git("commit", "--allow-empty", "-m", message)
         return git("rev-parse", "HEAD")
 
-    commit("A 公共历史")
+    common = commit("A 公共历史")
     git("branch", "a")
     for index in range(10):
         commit(f"A 主线功能{index}")
@@ -71,7 +71,7 @@ def branch_history(tmp_path, monkeypatch):
     provider = GitLabProvider("https://gitlab.example.invalid", {"token": "test-only"})
     monkeypatch.setattr(provider, "_request", request)
     monkeypatch.setattr("apps.release.services.get_provider", lambda *args: provider)
-    return {"base": base, "head": head, "master": master, "provider": provider}
+    return {"base": base, "head": head, "master": master, "common": common, "provider": provider, "git": git}
 
 
 @pytest.fixture
@@ -139,19 +139,67 @@ def test_generate_5240_on_a_uses_5239_when_master_is_ten_releases_ahead(
     assert submitted.status_code == 200, submitted.data
 
 
-def test_real_divergence_still_reports_actual_baseline_and_source(api, project, repository, branch_history):
+@pytest.mark.parametrize("mode", ["nearest", "multiple", "none", "same", "snapshot", "initialized"])
+def test_diverged_formal_tags_fall_back_to_reachable_history(api, project, repository, user, branch_history, mode):
+    git = branch_history["git"]
+    git("tag", "-f", "5.2.39", branch_history["master"])
+    expected_tag = "5.2.37" if mode == "multiple" else "5.2.38"
+    expected_base = branch_history["head"] if mode == "same" else branch_history["base"]
+    if mode != "none":
+        git("tag", expected_tag, expected_base)
+    else:
+        expected_tag = expected_base = ""
+    if mode == "multiple":
+        git("tag", "5.2.38", branch_history["master"])
+    if mode == "snapshot":
+        # 远端同名 Tag 被改写后，平台历史快照仍优先参与祖先筛选。
+        ReleaseRecord.objects.create(
+            project=project, repository=repository, publisher=user, release_type="formal", status="released",
+            version="5.2.39", tag_name="5.2.39", branch="master", git_hash=branch_history["master"],
+        )
+        git("tag", "-f", "5.2.39", branch_history["base"])
     created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "branch": "master",
+        "project": str(project.id), "repository": str(repository.id), "branch": "a",
         "release_type": "formal", "tag_name": "5.2.40", "package_config_ids": [],
     }, format="json")
     assert created.status_code == 201, created.data
     identity = created.data["data"]["id"]
+    if mode == "initialized":
+        ReleaseRecord.objects.filter(pk=identity).update(
+            base_tag="5.2.39", base_git_hash=branch_history["master"], changes_initialized=True,
+            release_doc="原来固定到了其他分支的说明",
+        )
+    preview = api.get(f"/api/releases/{identity}/changes-preview/")
+    assert preview.status_code == 200, preview.data
+    assert preview.data["data"]["base_tag"] == expected_tag
+    if mode == "initialized":
+        assert ReleaseRecord.objects.get(pk=identity).base_tag == "5.2.39", "预览不得修改已保存草稿"
     generated = api.post(f"/api/releases/{identity}/generate-doc/")
-    assert generated.status_code == 400, generated.data
-    for detail in ("5.2.39", "5.2.40", "master", branch_history["base"][:12], branch_history["master"][:12]):
-        assert detail in generated.data["message"]
+    assert generated.status_code == 200, generated.data
     release = ReleaseRecord.objects.get(pk=identity)
-    assert not release.changes_initialized and not release.release_doc
+    assert (release.base_tag, release.base_git_hash) == (expected_tag, expected_base)
+    assert release.git_hash == branch_history["head"]
+    assert "5.2.39" in generated.data["data"] and "基线回退" in generated.data["data"]
+    assert "主线功能" not in generated.data["data"]
+    if mode == "none":
+        assert "全部可达历史" in generated.data["data"] and "公共历史" in generated.data["data"]
+    else:
+        assert expected_tag in generated.data["data"]
+        assert "公共历史" not in generated.data["data"]
+    assert list(release.release_commits.filter(is_included=True).values_list("commit__commit_hash", flat=True)) == (
+        [] if mode == "same" else
+        [branch_history["head"], branch_history["base"], branch_history["common"]] if mode == "none" else
+        [branch_history["head"]]
+    )
+    # 新增更近的可达 Tag 不改变已生成的固定区间，也不丢失原回退提示。
+    git("tag", "-f", "5.2.39", branch_history["head"])
+    regenerated = api.post(f"/api/releases/{identity}/generate-doc/")
+    assert regenerated.status_code == 200, regenerated.data
+    release.refresh_from_db()
+    assert (release.base_tag, release.base_git_hash) == (expected_tag, expected_base)
+    assert "基线回退" in regenerated.data["data"]
+    submitted = api.post(f"/api/releases/{identity}/submit-audit/")
+    assert submitted.status_code == 200, submitted.data
 
 
 def test_failed_legacy_regeneration_rolls_back_identity_and_old_associations(

@@ -2,16 +2,20 @@
 
 import re
 from dataclasses import asdict
+from itertools import groupby
 
 from rest_framework import serializers
 
 from apps.release.models import ReleaseRecord
 from utils.commit_parser import extract_update_lines
 from utils.provider.base import GitProvider
+from utils.provider.exceptions import ProviderError
 
 
 class FormalChanges:
     """共享预览与说明生成的正式发布区间，失败时不回退移动分支。"""
+
+    BASELINE_WARNING_PREFIX = "基线回退："
 
     @staticmethod
     def reset(release: ReleaseRecord) -> None:
@@ -57,7 +61,7 @@ class FormalChanges:
                 raise serializers.ValidationError({"release_doc": f"{label}由系统维护，请重新生成说明后编辑人工内容"})
 
     @staticmethod
-    def baseline(release: ReleaseRecord, provider: GitProvider) -> tuple[str, str]:
+    def baseline(release: ReleaseRecord, provider: GitProvider) -> tuple[str, str, list[str]]:
         from apps.release.services import ReleaseValidator, VersionCalculator
 
         rule = release.repository.get_version_rule()
@@ -65,8 +69,43 @@ class FormalChanges:
             release.status == "draft"
             and release.version != ReleaseValidator.strip_suffix(release.tag_name, rule)
         )
+        ancestry = {}
+
+        def reachable(sha: str) -> bool:
+            if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", sha):
+                raise serializers.ValidationError({"base_tag": "上一正式版缺少完整提交，无法生成累计说明"})
+            if sha not in ancestry:
+                if sha == release.git_hash:
+                    ancestry[sha] = True
+                else:
+                    merge_base = provider.get_merge_base(release.repository.external_identity, [sha, release.git_hash])
+                    if not isinstance(merge_base, str) or not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", merge_base):
+                        raise ProviderError("远端未返回完整共同祖先提交，无法核验正式基线，请重试")
+                    ancestry[sha] = merge_base == sha
+            return ancestry[sha]
+
+        skipped = []
+
+        def warnings_for(name: str, sha: str) -> list[str]:
+            if name and not skipped:
+                return []
+            outcome = (
+                f"实际基线为 {name}（{sha[:12]}）"
+                if name else "未找到可用的较低正式 Tag，按来源固定提交的全部可达历史生成"
+            )
+            reason = f"已跳过非祖先 Tag {'、'.join(dict.fromkeys(skipped))}；" if skipped else ""
+            return [f"{FormalChanges.BASELINE_WARNING_PREFIX}{reason}{outcome}。"]
+
         if release.changes_initialized and not identity_changed:
-            return release.base_tag, release.base_git_hash
+            if not release.base_git_hash or reachable(release.base_git_hash):
+                # 原选择理由随固定基线保留，MR 缺口由本次收集重新核验。
+                warnings = [item for item in release.changes_warnings if item.startswith(FormalChanges.BASELINE_WARNING_PREFIX)]
+                if not release.base_git_hash and not warnings:
+                    warnings = warnings_for("", "")
+                return release.base_tag, release.base_git_hash, warnings
+            if release.status != "draft":
+                raise serializers.ValidationError({"base_tag": "已进入流程的正式基线不在来源提交的祖先链上，不能自动更改历史区间"})
+            skipped.append(release.base_tag)
         pattern = VersionCalculator(rule).build_scan_regex()
 
         def version_key(name: str) -> tuple[int, int, int] | None:
@@ -81,23 +120,32 @@ class FormalChanges:
             raise serializers.ValidationError({"version": "正式版本号不符合仓库规则，无法确定累计变更基线"})
         tags = {tag.name: tag.commit_hash or "" for tag in provider.list_tags(release.repository.external_identity)}
         # 历史正式发布的提交快照优先于可能被改写的远端同名 Tag。
+        history = {}
         for previous in ReleaseRecord.objects.filter(
             repository=release.repository, release_type="formal", status="released"
         ):
             if previous.git_hash:
-                tags[previous.tag_name] = previous.git_hash
-        candidates = [(version_key(name), name, sha) for name, sha in tags.items()]
+                history.setdefault(previous.tag_name, set()).add(previous.git_hash)
+        for name in history:
+            tags.pop(name, None)
+        pairs = list(tags.items()) + [(name, sha) for name, hashes in history.items() for sha in hashes]
+        candidates = [(version_key(name), name, sha) for name, sha in pairs]
         candidates = [item for item in candidates if item[0] is not None and item[0] < target]
-        if not candidates:
-            return "", ""
-        highest = max(item[0] for item in candidates)
-        latest = [item for item in candidates if item[0] == highest]
-        if len({item[2] for item in latest}) > 1:
-            raise serializers.ValidationError({"base_tag": "上一正式版本存在不同提交，请先核对发布历史"})
-        _, name, sha = max(latest, key=lambda item: item[1])
-        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", sha):
-            raise serializers.ValidationError({"base_tag": "上一正式版缺少完整提交，无法生成累计说明"})
-        return name, sha
+
+        for _, group in groupby(sorted(candidates, reverse=True), key=lambda item: item[0]):
+            usable = []
+            for item in group:
+                if reachable(item[2]):
+                    usable.append(item)
+                else:
+                    skipped.append(item[1])
+            if not usable:
+                continue
+            if len({item[2] for item in usable}) > 1:
+                raise serializers.ValidationError({"base_tag": "上一正式版本存在不同可达提交，请先核对发布历史"})
+            _, name, sha = max(usable, key=lambda item: item[1])
+            return name, sha, warnings_for(name, sha)
+        return "", "", warnings_for("", "")
 
     @classmethod
     def collect(cls, release: ReleaseRecord, provider: GitProvider) -> dict:
@@ -106,27 +154,14 @@ class FormalChanges:
             raise serializers.ValidationError({"git_hash": "正式发布缺少有效的完整提交快照，请重新选择来源"})
         if release.source_rc_id and release.source_rc_git_hash != head:
             raise serializers.ValidationError({"source_rc": "正式来源提交与 RC 快照不一致，请重新选择来源"})
-        base_tag, base = cls.baseline(release, provider)
-        if (
-            base
-            and base != head
-            and provider.get_merge_base(release.repository.external_identity, [base, head]) != base
-        ):
-            raise serializers.ValidationError(
-                {"base_tag": (
-                    "上一正式提交不在来源提交的祖先链上，"
-                    f"基线为 {base_tag}（{base[:12]}），"
-                    f"本次为 {release.tag_name}（{head[:12]}，分支 {release.branch}）。"
-                    "请核对分支和发布记录；真实回滚或分叉需单独处理"
-                )}
-            )
+        base_tag, base, warnings = cls.baseline(release, provider)
         commits = (
             [] if base == head else provider.list_release_commits(release.repository.external_identity, base, head)
         )
         if base != head and not commits:
             raise serializers.ValidationError({"commits": "无法获取完整正式变更区间，请核对来源提交"})
         hashes = {commit.hash for commit in commits}
-        included_mrs, warnings = [], []
+        included_mrs = []
         for mr in provider.list_release_merge_requests(release.repository.external_identity):
             evidence = {getattr(mr, "merge_commit_sha", ""), getattr(mr, "squash_commit_sha", "")} - {"", None}
             if evidence & hashes:
