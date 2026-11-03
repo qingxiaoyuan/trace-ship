@@ -294,3 +294,104 @@ def test_reused_claim_keeps_old_identity_until_explicit_deletion(api, repository
         assert generated.status_code == 200, generated.data
         submitted = api.post(f"/api/releases/{next_id}/submit-audit/")
         assert submitted.status_code == 400, submitted.data
+
+
+@pytest.mark.parametrize("release_type,suffix", [("formal", ""), ("rc", "-rc"), ("beta", "-alpha")])
+@pytest.mark.parametrize("remaining", ["released", "pending", "push_failed", "draft", "rejected", "other_version", "other_type"])
+def test_old_rule_release_history_controls_orphan_reuse(
+    api, repository, project, user, remote, release_type, suffix, remaining,
+):
+    from apps.project.models import Project
+    from apps.workflow.models import WorkflowInstance
+
+    # 旧版同编号的另一条记录在共享项目中保留，远端 Tag 已删除。
+    other_project = Project.objects.create(code="LEGACY", name="旧发布所属项目", leader=user)
+    workflow = WorkflowDefinition.objects.get(repository=repository, release_type="formal")
+    if release_type != "formal":
+        workflow = WorkflowDefinition.objects.create(
+            repository=repository, project=project, name="确认", release_type=release_type,
+            node_config=workflow.node_config,
+        )
+    old_tag = f"VA.5.9.3{suffix}_20261029"
+    claim = ReleaseVersionClaim.objects.create(
+        repository=repository, release_type=release_type, base_version="5.9.3", tag_name=old_tag, consumed=True,
+    )
+    previous_type = ("beta" if release_type != "beta" else "rc") if remaining == "other_type" else release_type
+    previous_suffix = {"formal": "", "rc": "-rc", "beta": "-alpha"}[previous_type]
+    previous = ReleaseRecord.objects.create(
+        repository=repository, project=other_project, publisher=user,
+        release_type=previous_type,
+        version="VA.5.9.2" if remaining == "other_version" else "VA.5.9.3",
+        tag_name=f"VA.05.09.00{2 if remaining == 'other_version' else 3}{previous_suffix}_20261028",
+        git_hash=OTHER,
+        status="rejected" if remaining == "push_failed" else (
+            "released" if remaining in ("other_version", "other_type") else remaining
+        ),
+    )
+    if remaining in ("push_failed", "rejected"):
+        previous.workflow_instance = WorkflowInstance.objects.create(
+            definition=workflow, biz_type="release", biz_id=str(previous.id), created_by=user,
+            status="completed" if remaining == "push_failed" else "rejected",
+        )
+        previous.save(update_fields=["workflow_instance"])
+    updated = api.patch(f"/api/repositories/{repository.id}/", {
+        "version_rule": {**repository.version_rule, "prefix": "VB",
+                         "suffixes": {"rc": "candidate", "beta": "preview"}},
+    }, format="json")
+    assert updated.status_code == 200, updated.data
+    created = api.post("/api/releases/", {
+        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
+        "branch": "develop", "version": "VB.5.9.3", "package_config_ids": [],
+    }, format="json")
+    assert created.status_code == 201, created.data
+    identity = created.data["data"]["id"]
+    assert api.post(f"/api/releases/{identity}/generate-doc/").status_code == 200
+    submitted = api.post(f"/api/releases/{identity}/submit-audit/")
+    release = ReleaseRecord.objects.get(pk=identity)
+    claim.refresh_from_db()
+    if remaining in ("released", "pending", "push_failed"):
+        assert submitted.status_code == 400, submitted.data
+        expected_message = "不能覆盖" if remaining == "released" else "已有同版本在发布"
+        assert expected_message in submitted.data["message"]
+        assert release.status == "draft" and release.workflow_instance_id is None
+        assert claim.release_id is None and claim.consumed and not claim.reused
+        assert claim.tag_name == old_tag and not remote.tags
+    else:
+        assert submitted.status_code == 200, submitted.data
+        task = release.workflow_instance.tasks.get(status="pending")
+        assert api.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 200
+        release.refresh_from_db()
+        assert release.status == "released" and remote.tags[-1].name == release.tag_name
+
+
+def test_old_rule_history_is_rechecked_at_approval_and_retry(api, repository, project, user, remote):
+    claim = ReleaseVersionClaim.objects.create(
+        repository=repository, release_type="formal", base_version="5.9.3",
+        tag_name="VA.5.9.3_20261029", consumed=True,
+    )
+    changed = api.patch(f"/api/repositories/{repository.id}/", {
+        "version_rule": {**repository.version_rule, "prefix": "VB"},
+    }, format="json")
+    assert changed.status_code == 200, changed.data
+    identity = create_formal(api, project, repository, "VB.5.9.3")
+    release = generate_and_submit(api, identity)
+    # 提审后恢复的旧记录也参与推送和重试核验，不能只在首次复用时检查。
+    previous = ReleaseRecord.objects.create(
+        repository=repository, project=project, publisher=user, release_type="formal",
+        version="VA.5.9.3", tag_name="VA.05.09.003_20261028", git_hash=OTHER, status="released",
+    )
+    task = release.workflow_instance.tasks.get(status="pending")
+    assert api.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 200
+    release.refresh_from_db()
+    assert release.status == "rejected" and "不能覆盖" in release.rejected_reason
+    claim.refresh_from_db()
+    assert claim.release_id == release.id and claim.reused and not claim.consumed
+    assert not remote.tags
+    retried = api.post(f"/api/releases/{identity}/retry-push-tag/")
+    assert retried.status_code == 400 and not remote.tags
+    deleted = api.post(f"/api/releases/{previous.id}/delete-released/", {"tag_name": previous.tag_name})
+    assert deleted.status_code == 200, deleted.data
+    retried = api.post(f"/api/releases/{identity}/retry-push-tag/")
+    assert retried.status_code == 200, retried.data
+    release.refresh_from_db()
+    assert release.status == "released" and remote.tags[-1].name == release.tag_name

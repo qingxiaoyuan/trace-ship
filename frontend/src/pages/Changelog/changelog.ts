@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.03',
+    date: '2026-11-03',
+    summary: '修复修改 Tag 规则后旧版本冲突可能被绕过的问题',
+    items: [
+      { category: 'fix', text: '修改版本前缀或类型后缀后，重发仍会检查旧规则下已发布、在审及审批完成但推送失败的同版本记录；日期、数字前导零和所属项目不同均不能绕过冲突。' },
+    ],
+  },
+  {
     version: '2026.11.02',
     date: '2026-11-02',
     summary: '修复维护分支正式发布与删除后重发的问题',
