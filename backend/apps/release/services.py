@@ -378,11 +378,18 @@ class ReleaseValidator:
         Returns:
             去除后缀与日期段后的版本号，如 VA.1.0.3
         """
+        # 完整规则固定数字与后缀边界，避免重叠后缀或日期形态后缀被截断。
+        calculator = VersionCalculator(version_rule)
+        for release_type in ("formal", "rc", "beta"):
+            match = calculator._build_regex(release_type).fullmatch(tag_name)
+            if match:
+                return tag_name[:match.end("patch")]
+        # 保留未符合完整规则的旧草稿输入兼容，后续提审仍须通过版本校验。
         suffixes = (version_rule or {}).get("suffixes") or ReleaseValidator.get_default_suffixes()
         all_suffixes = set((s or "").strip("-") for s in suffixes.values() if (s or "").strip("-"))
         # 先去掉末尾 _YYYYMMDD 日期段
         version = re.sub(r"_\d{8}$", "", tag_name)
-        for s in all_suffixes:
+        for s in sorted(all_suffixes, key=lambda value: (-len(value), value)):
             if s and version.endswith(f"-{s}"):
                 version = version[: -(len(s) + 1)]
                 break
@@ -1089,6 +1096,7 @@ class ReleaseService:
             tag_name = auto_tag_name
 
         ReleaseValidator.validate_tag_suffix(release_type, tag_name, version_rule)
+        version = ReleaseValidator.strip_suffix(tag_name, version_rule)
         ReleaseValidator.validate_release_cycle(project, release_type, release_rule)
         if tags is None:
             cls._validate_tag_not_exists(provider, repository, tag_name)
