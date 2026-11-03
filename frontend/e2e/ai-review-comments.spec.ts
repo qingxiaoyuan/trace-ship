@@ -9,7 +9,7 @@ const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as
 const sample = fixture.ai_review;
 const reportDir = process.env.SMOKE_REPORT_DIR!;
 
-test('AI 审查直接展示固定差异与行内评论，并在评论内采纳整改', async ({ page }) => {
+test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采纳整改', async ({ page, browser }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/login');
@@ -21,6 +21,23 @@ test('AI 审查直接展示固定差异与行内评论，并在评论内采纳�
   await page.getByRole('dialog', { name: /事项提醒/ }).getByRole('button', { name: '知道了', exact: true }).click();
   await page.goto(`/workflows/${sample.instance_id}`);
   await page.getByRole('tab', { name: 'AI 审查', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /部分完成，已交人工审批/ })).toBeVisible();
+  await expect(page.getByText('远端比较超时，完整清单未知', { exact: true })).toBeVisible();
+  const uncovered = page.getByRole('region', { name: '未覆盖片段', exact: true });
+  await expect(uncovered.getByRole('listitem')).toHaveText('src/review-samples/renamed.ts · 新侧 1–1 行 · 批次执行失败');
+  await expect(page.getByRole('button', { name: '重新审查', exact: true })).toHaveCount(0);
+  const viewports = [];
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    await uncovered.scrollIntoViewIfNeeded();
+    const actual = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight, scrollWidth: document.documentElement.scrollWidth }));
+    expect({ width: actual.width, height: actual.height }).toEqual(viewport);
+    expect(actual.scrollWidth).toBeLessThanOrEqual(viewport.width);
+    await expect(uncovered.getByRole('listitem')).toBeVisible();
+    await page.screenshot({ path: path.join(reportDir, `ai-partial-${viewport.width}.png`) });
+    viewports.push(actual);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const diff = page.getByRole('region', { name: '本轮代码差异', exact: true });
   await expect(diff.getByText('固定审查范围', { exact: true })).toBeVisible();
   const comment = diff.getByRole('article', { name: `审查意见：${sample.finding.title}`, exact: true });
@@ -87,6 +104,7 @@ test('AI 审查直接展示固定差异与行内评论，并在评论内采纳�
   expect(errors).toEqual([]);
   writeFileSync(path.join(reportDir, 'ai-comments.json'), JSON.stringify({
     backend: '隔离 SQLite + 生产 REST、授权与整改实现', source: '固定虚构差异与报告；未调用外部模型',
+    browser: browser.version(), partialReview: true, uncoveredRange: true, viewports,
     instanceId: sample.instance_id, inline: true, adopted: true, reload: true, widths: [1440, 375], tableScroll, remediationPage: 2, pageErrors: errors,
   }, null, 2));
 });

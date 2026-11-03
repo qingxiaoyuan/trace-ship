@@ -26,6 +26,7 @@
 | 领域术语 | [GLOSSARY.md](../GLOSSARY.md) |
 | 架构决策 | [ADR 目录](adr/)，RC 晋升决策仍为 proposed |
 | 后端架构参考 | [后台设计](design/后台设计.md) |
+| AI 审查上下文管理 | [OpenCode 官方实现参考与本仓库取舍](design/ai-review-context-reference.md) |
 | 业务流程参考 | [业务流程分析](design/business-process-analysis.md)，历史说明需结合当前代码与 ADR 使用 |
 | 节点接入 | [Windows 打包节点](design/package-windows-node.md) |
 | 接口 | [接口文档](api/api-spec.md)、[开放接口接入](api/open-api-access.md)、[Postman Collection](api/postman/trace-ship-v1.postman_collection.json) |

@@ -219,16 +219,17 @@ def test_model_truncation_is_rejected_even_with_nonempty_text(monkeypatch):
         _ask(config, [{"role": "user", "content": "x"}])
 
 
+@pytest.mark.parametrize("partial", [False, True])
 def test_unavailable_human_after_ai_is_recorded_as_recoverable_failure(api_client, project, repository, user,
                                                                         patched_provider, monkeypatch,
-                                                                        django_capture_on_commit_callbacks):
+                                                                        django_capture_on_commit_callbacks, partial):
     from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
 
     patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
     monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
-        "diffs": [{"old_path": "a.py", "new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}],
+        "diffs": [{"old_path": p, "new_path": p, "diff": "@@ -1 +1 @@\n-a\n+b"} for p in (["a.py", "b.py"] if partial else ["a.py"])],
         "complete": True, "warnings": []}, raising=False)
     def finish(*args):
         user.is_active = False
@@ -428,7 +429,7 @@ def test_settings_change_after_submit_does_not_change_review_snapshot(api_client
     assert release.workflow_instance.ai_reviews.get().settings_version.model == "first"
 
 
-def test_partial_review_keeps_coverage_paths_and_does_not_advance(api_client, project, repository, user,
+def test_partial_review_keeps_coverage_paths_and_advances_to_human(api_client, project, repository, user,
                                                                   patched_provider, monkeypatch,
                                                                   django_capture_on_commit_callbacks):
     from apps.system.tests.review_helpers import configure_review
@@ -449,9 +450,15 @@ def test_partial_review_keeps_coverage_paths_and_does_not_advance(api_client, pr
     assert response.status_code == 200
     release.refresh_from_db()
     run = release.workflow_instance.ai_reviews.get()
-    assert run.status == "incomplete" and run.coverage["reviewed_paths"] == ["a.py"]
+    assert run.status == "partial" and run.coverage["reviewed_paths"] == ["a.py"]
     assert run.coverage["unreviewed_paths"] == ["b.py"]
-    assert release.workflow_instance.current_node_id == "ai" and not release.workflow_instance.tasks.exists()
+    assert release.workflow_instance.current_node_id == "human"
+    assert release.workflow_instance.tasks.filter(node_id="human", status="pending").count() == 1
+    from apps.workflow.ai_review import execute_review
+    execute_review(release.workflow_instance_id, "ai")
+    assert release.workflow_instance.tasks.count() == 1
+    release.refresh_from_db()
+    assert release.status == "pending"
 
 
 def test_model_controlled_missing_path_never_leaks_in_readonly_summary(api_client, project, repository, user,
@@ -810,9 +817,14 @@ def test_large_review_resumes_only_unfinished_batches_without_losing_findings(
                  "findings": [{"severity": "P1", "title": names[0], "reason": "缺少检查", "suggestion": "补充检查", "path": names[0]}]}, "{}")
 
     monkeypatch.setattr(ai_review_model, "_ask", ask)
+    # 部分完成应交人工；模拟后继暂不可用，验证重试保留检查点。
+    from apps.workflow.services import WorkflowEngine
+    advance = WorkflowEngine._advance
+    monkeypatch.setattr(WorkflowEngine, "_advance", lambda *args: (_ for _ in ()).throw(ValueError("人工节点暂不可用")))
     execute_review(instance.id, "ai")
+    monkeypatch.setattr(WorkflowEngine, "_advance", advance)
     report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
-    assert report["status"] == "incomplete"
+    assert report["status"] == "failed"
     assert "first.py" in report["coverage"]["reviewed_paths"]
     assert "second.py" in report["coverage"]["unreviewed_paths"]
     before_reviewed = set(report["coverage"]["reviewed_paths"])
@@ -841,7 +853,7 @@ def test_large_review_resumes_only_unfinished_batches_without_losing_findings(
     assert instance.tasks.filter(node_id="human", status="pending").count() == 1
 
 
-def test_batch_review_discloses_unreadable_file_and_keeps_workflow_waiting(
+def test_batch_review_discloses_unreadable_file_and_advances_to_human(
     api_client, project, repository, user, patched_provider, monkeypatch, django_capture_on_commit_callbacks,
 ):
     import json
@@ -869,7 +881,7 @@ def test_batch_review_discloses_unreadable_file_and_keeps_workflow_waiting(
     monkeypatch.setattr(ai_review_model, "_ask", ask)
     execute_review(instance.id, "ai")
     report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
-    assert report["status"] == "incomplete"
+    assert report["status"] == "partial"
     assert report["coverage"]["reviewed_paths"] == ["source.py"]
     assert report["coverage"]["unreviewed_paths"] == ["asset.bin"]
     assert any("二进制" in warning for warning in report["coverage"]["warnings"])
@@ -885,7 +897,8 @@ def test_batch_review_discloses_unreadable_file_and_keeps_workflow_waiting(
     limited = client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
     assert limited["coverage"]["manifest_complete"] is False
     assert "source.py" not in str(limited) and "asset.bin" not in str(limited)
-    assert not instance.tasks.exists()
+    assert instance.tasks.filter(node_id="human", status="pending").count() == 1
+    assert limited["status"] == "partial" and limited["summary"] != "审查状态未知"
 
 
 def test_malformed_or_oversized_diff_is_disclosed_and_never_approved(
@@ -910,14 +923,15 @@ def test_malformed_or_oversized_diff_is_disclosed_and_never_approved(
     release.refresh_from_db()
     instance = release.workflow_instance
     called = []
-    monkeypatch.setattr(ai_review_model, "_ask", lambda *args: called.append(True))
+    monkeypatch.setattr(ai_review_model, "_ask", lambda *args: called.append(True) or ({"action": "finish",
+        "dimensions": ["安全"], "reviewed_files": ["large.py"], "findings": []}, "{}"))
     execute_review(instance.id, "ai")
     report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
-    assert report["status"] == "incomplete"
+    assert report["status"] == "partial"
     assert report["coverage"]["unreviewed_paths"] == ["bad.py", "large.py", "overlap.py"]
     assert any("行数不一致" in warning for warning in report["coverage"]["warnings"])
     assert any("超过审查容量" in warning for warning in report["coverage"]["warnings"])
-    assert not called and not instance.tasks.exists()
+    assert called and instance.tasks.filter(node_id="human", status="pending").count() == 1
 
 
 @pytest.mark.django_db(transaction=True)
@@ -1049,9 +1063,14 @@ def test_partial_batch_retry_preserves_identical_finding_identity(
         return ({"action": "finish", "dimensions": ["安全"], "reviewed_files": ["first.py"] if len(calls) == 1 else ["first.py", "second.py"],
                  "findings": [{"severity": "P1", "title": "问题", "reason": "原因", "suggestion": "修复", "path": "first.py"}]}, "{}")
     monkeypatch.setattr(ai_review_model, "_ask", ask)
+    # 部分完成应交人工；模拟后继暂不可用，验证重试保留检查点。
+    from apps.workflow.services import WorkflowEngine
+    advance = WorkflowEngine._advance
+    monkeypatch.setattr(WorkflowEngine, "_advance", lambda *args: (_ for _ in ()).throw(ValueError("人工节点暂不可用")))
     execute_review(instance.id, "ai")
+    monkeypatch.setattr(WorkflowEngine, "_advance", advance)
     before = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
-    assert before["status"] == "incomplete"
+    assert before["status"] == "failed"
     prior_id = before["findings"][0]["id"]
     with django_capture_on_commit_callbacks(execute=False):
         assert api_client.post(f"/api/workflow/instances/{instance.id}/ai-review-retry/", {"node_id": "ai"}, format="json").status_code == 200
