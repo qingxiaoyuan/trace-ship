@@ -18,12 +18,13 @@ it('部分报告直接展示未覆盖片段与未知范围，保留意见且不�
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'partial',
     summary: '部分审查完成，未覆盖范围请由人工核查', can_recover: false,
     coverage: { total_files: 1, reviewed_files: 0, total_fragments: 3, reviewed_fragments: 2,
-      manifest_complete: false, warnings: ['远端比较超时'], unreviewed_paths: ['src/runner.ts'],
+      manifest_complete: false, warnings: ['远端比较超时', '上下文未完整读取：critical_dependency.py（源码行 1–100）'], unreviewed_paths: ['src/runner.ts'],
       unreviewed_fragments: [{ path: 'src/runner.ts', new_start: 120, new_end: 180, reason: '批次失败' }] },
     findings: [{ severity: 'P1', title: '保留的有效意见', reason: '**检查结果**尾部', suggestion: '补充检查' }] }] });
   show();
   expect(await screen.findByText('部分完成，已交人工审批')).toBeTruthy();
   expect(screen.getByText(/完整范围尚未取得/)).toBeTruthy();
+  expect(screen.getByText('上下文未完整读取：critical_dependency.py（源码行 1–100）').tagName).toBe('LI');
   const uncovered = screen.getByRole('region', { name: '未覆盖片段' });
   expect(within(uncovered).getByRole('listitem').textContent).toBe('src/runner.ts · 新侧 120–180 行 · 批次失败');
   expect(screen.getByText(/已审查片段：2 \/ 3/)).toBeTruthy();

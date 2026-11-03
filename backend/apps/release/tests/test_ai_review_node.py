@@ -429,9 +429,12 @@ def test_settings_change_after_submit_does_not_change_review_snapshot(api_client
     assert release.workflow_instance.ai_reviews.get().settings_version.model == "first"
 
 
+@pytest.mark.parametrize("context_overflow", [False, True])
 def test_partial_review_keeps_coverage_paths_and_advances_to_human(api_client, project, repository, user,
                                                                   patched_provider, monkeypatch,
-                                                                  django_capture_on_commit_callbacks):
+                                                                  django_capture_on_commit_callbacks, context_overflow):
+    import json
+
     from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
@@ -445,13 +448,32 @@ def test_partial_review_keeps_coverage_paths_and_advances_to_human(api_client, p
     configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
+    if context_overflow:
+        release.review_document_paths = ["design.md", "guide.md"]
+        release.save(update_fields=["review_document_paths"])
+        monkeypatch.setattr(patched_provider, "get_file_raw", lambda repo, path, **kwargs:
+                            "x" * 36000 if path.endswith(".md") else ("x" * 94 + "\n") * 100, raising=False)
+
+        def ask(_, messages):
+            if "现在必须输出 action=finish" in messages[-1]["content"]:
+                return {"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py", "b.py"], "findings": []}, "{}"
+            request = {"action": "read", "path": "critical_dependency.py"}
+            return request, json.dumps(request)
+
+        monkeypatch.setattr(ai_review_model, "_ask", ask)
     with django_capture_on_commit_callbacks(execute=True):
         response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
     assert response.status_code == 200
     release.refresh_from_db()
     run = release.workflow_instance.ai_reviews.get()
-    assert run.status == "partial" and run.coverage["reviewed_paths"] == ["a.py"]
-    assert run.coverage["unreviewed_paths"] == ["b.py"]
+    assert run.status == "partial" and run.coverage["reviewed_paths"] == (["a.py", "b.py"] if context_overflow else ["a.py"])
+    assert run.coverage["unreviewed_paths"] == ([] if context_overflow else ["b.py"])
+    if context_overflow:
+        expected = [{"path": "critical_dependency.py", "kind": "read", "start": 1, "end": 100}]
+        assert run.coverage["unread_context"] == expected
+        detail = api_client.get(f"/api/workflow/instances/{release.workflow_instance_id}/ai-review/").data["data"]["reviews"][0]
+        assert detail["coverage"]["unread_context"] == expected
+        assert "上下文未完整读取：critical_dependency.py（源码行 1–100）" in detail["coverage"]["warnings"]
     assert release.workflow_instance.current_node_id == "human"
     assert release.workflow_instance.tasks.filter(node_id="human", status="pending").count() == 1
     from apps.workflow.ai_review import execute_review

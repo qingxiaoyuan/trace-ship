@@ -94,7 +94,8 @@ def create_review_sample(project, repository, owner) -> dict:
         summary="发现 5 条意见，包含 HTML 渲染、状态更新和操作权限问题，请结合代码逐项复核。",
         coverage={"total_files": 3, "reviewed_files": 2, "manifest_complete": False, "reviewed_paths": paths[:2],
                   "unreviewed_paths": [paths[2]], "total_fragments": 4, "reviewed_fragments": 3,
-                  "warnings": ["远端比较超时，完整清单未知"],
+                  "warnings": ["远端比较超时，完整清单未知", "上下文未完整读取：critical_dependency.py（源码行 1–100）"],
+                  "unread_context": [{"path": "critical_dependency.py", "kind": "read", "start": 1, "end": 100}],
                   "unreviewed_fragments": [{"path": paths[2], "new_start": 1, "new_end": 1, "reason": "批次执行失败"}]},
     )
     # 已关闭的跨轮整改把本次新采纳项放到第二页，验证行内入口能正确跨页定位。

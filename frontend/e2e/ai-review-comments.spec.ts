@@ -23,6 +23,8 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
   await page.getByRole('tab', { name: 'AI 审查', exact: true }).click();
   await expect(page.getByRole('heading', { name: /部分完成，已交人工审批/ })).toBeVisible();
   await expect(page.getByText('远端比较超时，完整清单未知', { exact: true })).toBeVisible();
+  const unreadContext = page.getByText('上下文未完整读取：critical_dependency.py（源码行 1–100）', { exact: true });
+  await expect(unreadContext).toBeVisible();
   const uncovered = page.getByRole('region', { name: '未覆盖片段', exact: true });
   await expect(uncovered.getByRole('listitem')).toHaveText('src/review-samples/renamed.ts · 新侧 1–1 行 · 批次执行失败');
   await expect(page.getByRole('button', { name: '重新审查', exact: true })).toHaveCount(0);
@@ -34,6 +36,7 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
     expect({ width: actual.width, height: actual.height }).toEqual(viewport);
     expect(actual.scrollWidth).toBeLessThanOrEqual(viewport.width);
     await expect(uncovered.getByRole('listitem')).toBeVisible();
+    await expect(unreadContext).toBeVisible();
     await page.screenshot({ path: path.join(reportDir, `ai-partial-${viewport.width}.png`) });
     viewports.push(actual);
   }
@@ -104,7 +107,7 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
   expect(errors).toEqual([]);
   writeFileSync(path.join(reportDir, 'ai-comments.json'), JSON.stringify({
     backend: '隔离 SQLite + 生产 REST、授权与整改实现', source: '固定虚构差异与报告；未调用外部模型',
-    browser: browser.version(), partialReview: true, uncoveredRange: true, viewports,
+    browser: browser.version(), partialReview: true, uncoveredRange: true, unreadContextRange: true, viewports,
     instanceId: sample.instance_id, inline: true, adopted: true, reload: true, widths: [1440, 375], tableScroll, remediationPage: 2, pageErrors: errors,
   }, null, 2));
 });
