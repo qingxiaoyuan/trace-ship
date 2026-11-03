@@ -327,13 +327,14 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
                 coverage = run.coverage
                 summary = "审查执行中断或超时，等待重试" if expired else run.summary
             else:
-                coverage = {key: run.coverage.get(key, 0) for key in ("total_files", "reviewed_files")}
+                coverage = {key: run.coverage.get(key, 0) for key in ("total_files", "reviewed_files", "total_fragments", "reviewed_fragments")}
                 if "manifest_complete" in run.coverage:
                     coverage["manifest_complete"] = run.coverage["manifest_complete"]
                 coverage["warnings"] = ["审查存在提示或未覆盖内容"] if run.coverage.get("warnings") else []
                 # 摘要使用固定文案，避免模型或后续执行记录将源码混入低权限响应。
                 summary = {
                     "queued": "等待审查", "running": "审查进行中", "completed": "审查完成，等待人工决定",
+                    "partial": "部分审查完成，未覆盖范围请由人工核查",
                     "failed": "审查未完成", "incomplete": "审查未完成", "first_release": "首次发布，已跳过 AI 审查",
                     "no_changes": "无代码变更", "skipped": "管理员已留理由跳过 AI 审查",
                     "canceled": "本轮已退回修改，未完成的审查已取消",

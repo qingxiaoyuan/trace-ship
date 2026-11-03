@@ -30,12 +30,22 @@ export interface AiReviewFinding {
   line_end?: number;
 }
 
+export interface ReviewFragment {
+  path: string;
+  fragment?: { start: number; end: number; total: number };
+  old_start?: number;
+  old_end?: number;
+  new_start?: number;
+  new_end?: number;
+  reason?: string;
+}
+
 export interface AiReviewData {
   node_id: string;
   node_name?: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
+  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
   summary: string;
-  coverage: { manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[] }> };
+  coverage: { manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; total_fragments?: number; reviewed_fragments?: number; unreviewed_fragments?: ReviewFragment[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[]; fragments?: ReviewFragment[] }> };
   dimensions?: string[];
   configuration?: { version_id: string; model: string; protocol: string; skill: { name: string; revision: string; source: string; license: string } };
   findings?: AiReviewFinding[];

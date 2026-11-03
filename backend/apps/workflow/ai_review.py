@@ -117,10 +117,14 @@ def execute_review(instance_id: str | uuid.UUID, node_id: str, expected_token: s
             run.dimensions = outcome["dimensions"]
             run.findings = outcome["findings"]
         run.save(update_fields=["status", "summary", "coverage", "dimensions", "findings", "updated_at"])
-        if run.status in ("completed", "first_release", "no_changes"):
+        if run.status in ("completed", "partial", "first_release", "no_changes"):
             try:
                 # 后续人工节点不可用时回滚推进与新建任务，保留可恢复的失败状态。
                 with transaction.atomic():
+                    nodes = WorkflowEngine._instance_node_config(instance)
+                    current_index = next((index for index, node in enumerate(nodes) if node.get("node_id") == node_id), None)
+                    if current_index is None or not any(node.get("node_type") != "ai_review" for node in nodes[current_index + 1:]):
+                        raise ValueError("审查后缺少人工审批节点")
                     WorkflowEngine._advance(instance, node_id)
                     state = instance.node_status or {}
                     state[node_id] = run.status

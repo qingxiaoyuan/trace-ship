@@ -14,6 +14,24 @@ function show() {
 beforeEach(() => { vi.spyOn(workflowApi, 'getReviewDiff').mockRejectedValue({ status: 500, friendlyMessage: '固定差异暂不可用' }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); useAuthStore.getState().clearAuth(); });
 
+it('部分报告直接展示未覆盖片段与未知范围，保留意见且不提供原节点重试', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'partial',
+    summary: '部分审查完成，未覆盖范围请由人工核查', can_recover: false,
+    coverage: { total_files: 1, reviewed_files: 0, total_fragments: 3, reviewed_fragments: 2,
+      manifest_complete: false, warnings: ['远端比较超时'], unreviewed_paths: ['src/runner.ts'],
+      unreviewed_fragments: [{ path: 'src/runner.ts', new_start: 120, new_end: 180, reason: '批次失败' }] },
+    findings: [{ severity: 'P1', title: '保留的有效意见', reason: '**检查结果**尾部', suggestion: '补充检查' }] }] });
+  show();
+  expect(await screen.findByText('部分完成，已交人工审批')).toBeTruthy();
+  expect(screen.getByText(/完整范围尚未取得/)).toBeTruthy();
+  const uncovered = screen.getByRole('region', { name: '未覆盖片段' });
+  expect(within(uncovered).getByRole('listitem').textContent).toBe('src/runner.ts · 新侧 120–180 行 · 批次失败');
+  expect(screen.getByText(/已审查片段：2 \/ 3/)).toBeTruthy();
+  expect(await screen.findByText('保留的有效意见')).toBeTruthy();
+  expect(screen.getByText('检查结果').tagName).toBe('STRONG');
+  expect(screen.queryByRole('button', { name: '重新审查' })).toBeNull();
+});
+
 it('展示完整报告、覆盖和意见并安全呈现模型文本', async () => {
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai-1', status: 'completed',
     summary: '已完成审查', dimensions: ['安全'], coverage: { total_files: 2, reviewed_files: 2, warnings: [] },

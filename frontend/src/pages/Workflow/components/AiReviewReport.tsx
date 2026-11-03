@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardList, Clock3, Loader
 import { Button } from 'antd';
 import dayjs from 'dayjs';
 import { workflowApi } from '@/api/workflow';
-import type { AiReviewData, AiReviewFinding } from '@/api/workflow';
+import type { AiReviewData, AiReviewFinding, ReviewFragment } from '@/api/workflow';
 import type { NormalizedError } from '@/api/request';
 import { ReviewDiff } from './ReviewDiff';
 import { ReviewFileDirectory, UnreviewedFileDirectory } from './ReviewFileDirectory';
@@ -18,6 +18,7 @@ const statusText: Record<AiReviewData['status'], string> = {
   queued: '等待审查',
   running: '正在审查',
   completed: '审查完成，等待人工决定',
+  partial: '部分完成，已交人工审批',
   failed: '审查失败',
   incomplete: '审查未完成',
   first_release: '首次发布，跳过 AI 审查',
@@ -71,6 +72,11 @@ function PagedPaths({ paths, emptyText = '无' }: { paths: string[]; emptyText?:
   </>;
 }
 
+function fragmentLabel(part: ReviewFragment): string {
+  const ranges = [part.old_start && `旧侧 ${part.old_start}–${part.old_end} 行`, part.new_start && `新侧 ${part.new_start}–${part.new_end} 行`].filter(Boolean);
+  return `${part.path} · ${ranges.length ? ranges.join('，') : '文件范围'}${part.reason ? ` · ${part.reason}` : ''}`;
+}
+
 function BatchProgress({ batches }: { batches: NonNullable<AiReviewData['coverage']['batches']> }) {
   const [page, setPage] = useState(0);
   const pageSize = 20;
@@ -83,6 +89,7 @@ function BatchProgress({ batches }: { batches: NonNullable<AiReviewData['coverag
       <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[13px] font-medium text-slate-700">{`第 ${current * pageSize + index + 1} 批：${status[batch.status] || '未完成'}`}</p><span className="text-xs text-slate-400">{batch.paths.length} 个文件</span></div>
       {batch.dimensions?.length ? <p className="mt-1 break-words text-xs text-slate-500">实际维度：{batch.dimensions.join('、')}</p> : null}
       {batch.paths.length ? <details className="mt-2"><summary className="cursor-pointer text-xs text-indigo-600 hover:text-indigo-800">查看本批文件</summary><PagedPaths paths={batch.paths} /></details> : null}
+      {batch.fragments?.some((part) => part.fragment) ? <details className="mt-2"><summary className="cursor-pointer text-xs text-indigo-600">查看本批片段</summary><PagedPaths paths={batch.fragments.map(fragmentLabel)} /></details> : null}
     </li>)}</ol>
     {pages > 1 ? <div className="mt-3 flex items-center gap-2 text-xs"><button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="text-indigo-600 disabled:text-slate-300">上一页</button><span className="text-slate-400">{current + 1} / {pages}</span><button type="button" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)} className="text-indigo-600 disabled:text-slate-300">下一页</button></div> : null}
   </section>;
@@ -122,6 +129,7 @@ function ReviewHistory({ review, showFindings = false }: { review: AiReviewData;
       {item.summary ? <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">{item.summary}</p> : null}
       {item.coverage?.warnings?.length ? <div className="mt-2 text-xs text-amber-700"><PagedPaths paths={item.coverage.warnings} /></div> : null}
       {item.coverage?.unreviewed_paths?.length ? <details className="mt-2"><summary className="cursor-pointer text-xs text-indigo-600">未审查文件（{item.coverage.unreviewed_paths.length}）</summary><PagedPaths paths={item.coverage.unreviewed_paths} /></details> : null}
+      {item.coverage?.unreviewed_fragments?.length ? <details className="mt-2"><summary className="cursor-pointer text-xs text-amber-700">未覆盖片段</summary><PagedPaths paths={item.coverage.unreviewed_fragments.map(fragmentLabel)} /></details> : null}
       {showFindings && (findings.get(item.token) || []).length ? <div className="mt-3 space-y-2"><PagedFindings findings={findings.get(item.token) || []} historical /></div> : null}
     </li>)}</ol>
   </section>;
@@ -166,7 +174,8 @@ export function AiReviewReport({ instanceId, active = true }: { instanceId: stri
       const isQueued = review.status === 'queued';
       const isRunning = review.status === 'running';
       const isCompleted = review.status === 'completed';
-      const isProblem = review.status === 'failed' || review.status === 'incomplete';
+      const isPartial = review.status === 'partial';
+      const isProblem = review.status === 'failed' || review.status === 'incomplete' || isPartial;
       const showResults = !isQueued && !isRunning;
       const Icon = isRunning ? LoaderCircle : isQueued ? Clock3 : isCompleted ? CheckCircle2 : AlertTriangle;
       const tone = isCompleted ? 'bg-emerald-50 text-emerald-700' : isProblem ? 'bg-amber-50 text-amber-800' : 'bg-indigo-50 text-indigo-700';
@@ -178,9 +187,12 @@ export function AiReviewReport({ instanceId, active = true }: { instanceId: stri
         {isQueued ? <ReviewFileDirectory instanceId={instanceId} canViewFiles={canViewFiles} active={active} /> : null}
         {isRunning ? <div className="rounded-lg bg-slate-50 px-4 py-3"><p className="text-sm font-medium text-slate-700">审查进行中</p><p className="mt-1 text-xs text-slate-500">{review.coverage?.total_files === undefined || review.coverage.reviewed_files === undefined ? '正在准备审查范围…' : `已审查 ${review.coverage.reviewed_files} / ${review.coverage.total_files} 个文件${review.coverage.manifest_complete === false ? '（完整清单未知）' : ''}`}</p></div> : null}
         {showResults && review.summary ? <div className="rounded-lg bg-slate-50 px-4 py-3"><p className="text-xs font-medium text-slate-500">审查摘要</p><p className="mt-2 whitespace-pre-wrap break-words leading-6 text-slate-700">{review.summary}</p></div> : null}
+        {isPartial ? <p className="text-sm text-amber-800">已有审查意见已保留。请人工核查以下未覆盖范围后决定是否批准发布。</p> : null}
         {review.status === 'skipped' && review.skip_reason ? <p className="whitespace-pre-wrap break-words text-amber-800">跳过原因：{review.skip_reason}；操作者：{review.skipped_by_name || '已删除用户'}；时间：{review.skipped_at || '未知'}</p> : null}
         {isProblem && review.coverage?.warnings?.length ? <div className="rounded-lg bg-amber-50/70 p-3 text-amber-800"><PagedPaths paths={review.coverage.warnings} /></div> : null}
         {isProblem && review.coverage?.unreviewed_paths ? <UnreviewedFileDirectory paths={review.coverage.unreviewed_paths} incomplete={review.coverage.manifest_complete === false} /> : null}
+        {showResults && review.coverage?.unreviewed_fragments?.length ? <section aria-label="未覆盖片段" className="min-w-0 rounded-lg bg-amber-50/70 p-3 text-amber-800"><h5 className="text-[13px] font-medium">未覆盖片段</h5><PagedPaths paths={review.coverage.unreviewed_fragments.map(fragmentLabel)} /></section> : null}
+        {review.coverage?.total_fragments !== undefined ? <p className="text-xs text-slate-500">已审查片段：{review.coverage.reviewed_fragments ?? 0} / {review.coverage.total_fragments}；文件全部片段完成后才计入已审查文件。</p> : null}
         {review.can_recover ? <RecoveryActions instanceId={instanceId} nodeId={review.node_id} /> : null}
         {!showResults && review.history?.length ? <details className="group border-t border-slate-100 pt-4"><summary className="flex cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-slate-600 hover:text-indigo-600 [&::-webkit-details-marker]:hidden"><ClipboardList className="h-4 w-4 text-slate-400" strokeWidth={1.5} />过往审查记录<ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" strokeWidth={1.5} /></summary><ReviewHistory review={review} showFindings /></details> : null}
         {showResults ? <details className="group border-t border-slate-100 pt-4"><summary className="flex cursor-pointer list-none items-center gap-2 text-[13px] font-medium text-slate-600 hover:text-indigo-600 [&::-webkit-details-marker]:hidden"><ClipboardList className="h-4 w-4 text-slate-400" strokeWidth={1.5} />执行详情<ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" strokeWidth={1.5} /></summary><div className="mt-4 space-y-4">

@@ -33,3 +33,14 @@ it('管理员跳过在流程图上保持独立状态', () => {
   expect(screen.getByText('管理员跳过')).toBeTruthy();
   expect(screen.queryByText('已完成')).toBeNull();
 });
+
+it('部分完成已流转但保留覆盖缺口状态', () => {
+  const instance = {
+    status: 'running', current_node_id: 'human', node_status: { ai: 'partial' }, tasks: [],
+    graph_data: { nodes: [{ id: 'ai', type: 'ai-review-node', text: 'AI 代码审查' }], edges: [] },
+  } as unknown as WorkflowInstance;
+  render(<ApprovalTimeline instance={instance} />);
+  expect(screen.getByText('部分完成')).toBeTruthy();
+  expect(screen.queryByText('已完成')).toBeNull();
+  expect(screen.queryByText('已通过')).toBeNull();
+});
