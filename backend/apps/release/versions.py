@@ -47,21 +47,20 @@ def _claimed_tag_pattern(claim: ReleaseVersionClaim) -> re.Pattern:
 
 
 def _history_matches_version(release: ReleaseRecord, key: str) -> bool:
-    """从记录自身的 Tag 取编号，保存的纯版本号仅用于辨认前缀边界。"""
-    tag = release.tag_name
-    version_core = r"\d+\.\d+\.\d+"
-    # 类型后缀自身也可能是 _YYYYMMDD，保留完整 Tag，避免把合法后缀当日期删空。
-    suffix = r"-.+" if release.release_type in ("rc", "beta") else r"(?:_\d{8})?"
-    # 前后缀都可能包含数字、点和连字符，不能直接取 Tag 中第一段或最后一段数字。
-    candidates = list(re.finditer(rf"(?:^|(?<=\.))(?=(?P<version>{version_core}){suffix}$)", tag))
-    bounded = [
-        match for match in candidates
-        if re.fullmatch(re.escape(tag[:match.start()]) + version_core, release.version)
-    ]
+    """占用保存提审时的编号；无占用的旧 Tag 只在编号唯一时确定身份。"""
     versions = {
-        ".".join(str(int(part)) for part in match.group("version").split("."))
-        for match in (bounded or candidates)
+        claim.base_version for claim in release.version_claims.all()
+        if claim.repository_id == release.repository_id and claim.release_type == release.release_type
     }
+    if not versions:
+        # version 可能含部分后缀或旧前缀，现行规则也不代表历史规则，均不能排除候选。
+        version_core = r"\d+\.\d+\.\d+"
+        # 保留完整 Tag：_YYYYMMDD 也可能是合法类型后缀的一部分。
+        suffix = r"-.+" if release.release_type in ("rc", "beta") else r"(?:_\d{8})?"
+        versions = {
+            ".".join(str(int(part)) for part in match.group("version").split("."))
+            for match in re.finditer(rf"(?:^|(?<=\.))(?=(?P<version>{version_core}){suffix}$)", release.tag_name)
+        }
     if key not in versions:
         return False
     if len(versions) > 1:
@@ -95,7 +94,7 @@ def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
     previous = ReleaseRecord.objects.filter(repository=release.repository, release_type=release.release_type).exclude(
         pk=release.pk
     )
-    for other in previous.select_related("workflow_instance"):
+    for other in previous.select_related("workflow_instance").prefetch_related("version_claims"):
         occupied = other.status in ("pending", "released") or (
             other.status == "rejected" and other.workflow_instance_id and other.workflow_instance.status == "completed"
         )

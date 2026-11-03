@@ -353,9 +353,11 @@ def test_old_rule_release_history_controls_orphan_reuse(
     submitted = api.post(f"/api/releases/{identity}/submit-audit/")
     release = ReleaseRecord.objects.get(pk=identity)
     claim.refresh_from_db()
-    if remaining in ("released", "pending", "push_failed"):
+    ambiguous = history_rule == "numeric" and remaining == "other_version" and release_type != "formal"
+    if remaining in ("released", "pending", "push_failed") or ambiguous:
         assert submitted.status_code == 400, submitted.data
-        expected_message = "不能覆盖" if remaining == "released" else "已有同版本在发布"
+        expected_message = ("版本身份存在歧义" if ambiguous
+                            else "不能覆盖" if remaining == "released" else "已有同版本在发布")
         assert expected_message in submitted.data["message"]
         assert release.status == "draft" and release.workflow_instance_id is None
         assert claim.release_id is None and claim.consumed and not claim.reused
@@ -425,11 +427,11 @@ def test_old_rule_history_is_rechecked_at_approval_and_retry(
     ("rc", "LEGACY.5.9.2", "LEGACY.05.09.003-old", "不能覆盖"),
     ("rc", "LEGACY.5.9.3", "LEGACY.5.9.2-old", ""),
     ("rc", "LEGACY.5.9.3-old", "LEGACY.5.9.3-old_20261028", "不能覆盖"),
-    ("rc", "LEGACY.1.2.3", "LEGACY.1.2.3-rc.5.9.3-tail", ""),
-    ("rc", "LEGACY.1.2.3-rc.5.9.3", "LEGACY.1.2.3-rc.5.9.3-tail", "不能覆盖"),
+    ("rc", "LEGACY.1.2.3", "LEGACY.1.2.3-rc.5.9.3-tail", "版本身份存在歧义"),
+    ("rc", "LEGACY.1.2.3-rc.5.9.3", "LEGACY.1.2.3-rc.5.9.3-tail", "版本身份存在歧义"),
     ("rc", "LEGACY.1.2.3-rc.5.9.3-tail", "LEGACY.1.2.3-rc.5.9.3-tail", "版本身份存在歧义"),
 ])
-def test_history_identity_without_claim_uses_tag_number_and_saved_version_boundary(
+def test_history_identity_without_claim_keeps_all_tag_candidates(
     api, repository, project, user, remote, release_type, old_version, old_tag, expected_error,
 ):
     # 旧记录可能没有占用行，也可能保留手工 Tag 修改前的版本号或含后缀版本号。
