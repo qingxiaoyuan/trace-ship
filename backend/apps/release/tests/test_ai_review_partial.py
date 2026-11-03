@@ -246,3 +246,62 @@ def test_old_and_new_paths_share_context_coverage_for_renamed_file(monkeypatch):
     monkeypatch.setattr(model, "_ask", lambda *args: (next(actions), "{}"))
     report = model._review_batch(run, scope, release=object())
     assert report["status"] == "completed" and not report["coverage"]["unread_context"]
+
+
+@pytest.mark.parametrize("action", ["read", "diff"])
+@pytest.mark.parametrize("evidence", ["none", "page", "initial"])
+def test_discarded_context_keeps_unread_ranges_and_valid_findings(monkeypatch, action, evidence):
+    """生产预算下，累计超限的工具结果不能让待补查对象从部分报告中消失。"""
+    run, scope = sample([{"new_path": "a.py", "diff": "@@ -1 +1 @@\n-a\n+b"}])
+    content = ("x" * 94 + "\n") * 100
+    dependency = {"old_path": "legacy_dependency.py", "new_path": "critical_dependency.py",
+                  "diff": "@@ -0,0 +1,100 @@\n" + ("+" + "x" * 94 + "\n") * 100}
+    scope.all_diffs = [*scope.diffs, dependency]
+    scope.documents = {"design.md": "x" * 45000, "guide.md": "y" * 45000}
+    if evidence == "initial":
+        scope.documents = {"design.md": "x" * 40000, "guide.md": "y" * 40000}
+        if action == "read":
+            scope.documents["critical_dependency.py"] = content
+        else:
+            scope.documents = {"design.md": "x" * 31000, "guide.md": "y" * 31000}
+            scope.diffs.append(dependency)
+    provider = SimpleNamespace(get_file_raw=lambda *args, **kwargs: content)
+    monkeypatch.setattr(model.ReleaseService, "_get_provider", lambda *args, **kwargs: provider)
+    release = SimpleNamespace(repository=SimpleNamespace(external_identity="repo"), project=object())
+    calls = []
+    paths = [item["new_path"] for item in scope.diffs]
+    finding = {"severity": "P2", "title": "保留有效发现", "reason": "新代码缺少边界检查", "suggestion": "补充边界处理"}
+
+    def ask(_, messages):
+        assert len(json.dumps(messages, ensure_ascii=False).encode()) <= 100000
+        calls.append(messages.copy())
+        if len(calls) == 1:
+            request = {"action": action, "path": "legacy_dependency.py" if action == "diff" else "critical_dependency.py"}
+            if evidence == "page":
+                request.update(offset=1, limit=20)
+            return request, json.dumps(request)
+        if evidence == "page" and len(calls) == 2:
+            page = json.loads(messages[-1]["content"])
+            assert page["next_offset"] == 21
+            request = {"action": action, "path": "critical_dependency.py", "offset": 21, "limit": 100}
+            return request, json.dumps(request)
+        if evidence == "initial" and action == "diff" and len(calls) < 4:
+            request = {"action": action, "path": "critical_dependency.py"}
+            return request, json.dumps(request)
+        assert "现在必须输出 action=finish" in messages[-1]["content"]
+        answer = {**finish(paths)[0], "findings": [finding]}
+        return answer, json.dumps(answer)
+
+    monkeypatch.setattr(model, "_ask", ask)
+    names, plan, blocked = model._batch_plan(run, scope)
+    assert len(plan) == 1 and not blocked
+    result = model._review_batch(run, scope, release=release)
+    report = model._batch_outcome(scope, names, plan, blocked, {plan[0]["id"]: result})
+    assert report["status"] == "partial"
+    assert report["findings"][0]["title"] == finding["title"]
+    expected = [] if evidence == "initial" else [{"path": "critical_dependency.py", "kind": action,
+                                                  "start": 21 if evidence == "page" else 1, "end": 100}]
+    assert report["coverage"]["unread_context"] == expected
+    if expected:
+        assert any("critical_dependency.py" in warning and "100）" in warning for warning in report["coverage"]["warnings"])
+    assert len(calls) == (4 if evidence == "initial" and action == "diff" else 3 if evidence == "page" else 2)

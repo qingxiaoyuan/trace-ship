@@ -51,6 +51,18 @@ def fragment(item: dict[str, Any], lines: list[DiffLine], start: int, end: int) 
     return {**item, "diff": "".join(parts), "fragment": {"start": start, "end": end, "total": len(lines)}}
 
 
+def fitting_end(start: int, stop: int, fits: Callable[[int], bool]) -> int:
+    """二分寻找可容纳的最大结束位置；非空范围均放不下时返回起点。"""
+    low, high = start, stop
+    while low < high:
+        middle = (low + high + 1) // 2
+        if fits(middle):
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
 def split_diff(
     item: dict[str, Any], fits: Callable[[dict[str, Any]], bool],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -59,13 +71,7 @@ def split_diff(
     accepted, blocked = [], []
     start = 0
     while start < len(lines):
-        low, high = start, len(lines)
-        while low < high:
-            middle = (low + high + 1) // 2
-            if fits(fragment(item, lines, start, middle)):
-                low = middle
-            else:
-                high = middle - 1
+        low = fitting_end(start, len(lines), lambda end: fits(fragment(item, lines, start, end)))
         end = low if low > start else start + 1
         part = fragment(item, lines, start, end)
         (accepted if low > start else blocked).append(part)

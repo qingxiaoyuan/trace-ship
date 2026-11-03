@@ -20,7 +20,7 @@ from django.db import close_old_connections, connections
 
 from apps.release.review_scope import validate_document_paths
 from apps.release.services import ReleaseService
-from apps.workflow.ai_review_fragments import diff_lines, fragment, fragment_location, split_diff
+from apps.workflow.ai_review_fragments import diff_lines, fitting_end, fragment, fragment_location, split_diff
 from utils.crypto import decrypt_credential
 from utils.provider.ai import _build_url, _extract_text, _is_anthropic
 
@@ -378,11 +378,6 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
                 tool_result = _context_page(payload, selected[0])
                 if tool_result.get("error"):
                     gaps.append(f"请求的差异片段超过容量：{path}")
-            candidate = [*messages, {"role": "assistant", "content": raw},
-                         {"role": "user", "content": json.dumps(tool_result, ensure_ascii=False)}]
-            if len(json.dumps(candidate, ensure_ascii=False).encode()) > MAX_INPUT:
-                gaps.append("请求的固定差异超过上下文容量")
-                tool_result = {"error": "请求的固定差异超过上下文容量"}
         elif action in ("read", "search"):
             path = payload.get("path")
             if not isinstance(path, str):
@@ -413,15 +408,18 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
         else:
             raise ValueError("不支持的审查操作")
         additions = [{"role": "assistant", "content": raw}, {"role": "user", "content": json.dumps(tool_result, ensure_ascii=False)}]
-        if len(json.dumps([*messages, *additions, finish_message], ensure_ascii=False).encode()) > MAX_INPUT:
-            gaps.append("工具结果超过上下文容量，已跳过该次读取并收尾")
+        delivered = len(json.dumps([*messages, *additions, finish_message], ensure_ascii=False).encode()) <= MAX_INPUT
+        if not delivered:
+            requested_path = payload.get("path")
+            suffix = f"：{requested_path}" if isinstance(requested_path, str) else ""
+            gaps.append(f"工具结果超过上下文容量，已跳过该次读取并收尾{suffix}")
             finalizing = True
             messages.append(finish_message)
         else:
             messages.extend(additions)
-            if action == "read" or (action == "diff" and path is not None and selected):
-                context_path = (selected[0].get("new_path") or selected[0].get("old_path")) if action == "diff" else path
-                _record_context_page(context_pages, action, context_path, tool_result)
+        if action == "read" or (action == "diff" and path is not None and selected):
+            context_path = (selected[0].get("new_path") or selected[0].get("old_path")) if action == "diff" else path
+            _record_context_page(context_pages, action, context_path, tool_result, delivered=delivered)
     record_context_gaps()
     coverage["warnings"] = [*gaps, "审查交互超出单批限制"]
     return {"status": "incomplete", "summary": "单批容量不足，审查未完成", "coverage": coverage,
@@ -430,15 +428,16 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
 
 def _record_context_page(
     pages: dict[tuple[str, str], dict[str, Any]], kind: str, path: str, result: dict[str, Any],
+    *, delivered: bool,
 ) -> None:
-    """只记录实际交给模型的页；完整返回可清除先前同文件的分页缺口。"""
+    """登记已请求文件的范围，仅实际交给模型的内容计入已读页。"""
     total = result.get("total_lines")
     if total is None:
         if "error" in result:
             return
         total = len(result["content"].splitlines()) if kind == "read" else len(diff_lines(result["diffs"][0]["diff"]))
     item = pages.setdefault((kind, path), {"total": total, "ranges": []})
-    if "error" not in result:
+    if delivered and "error" not in result:
         start = result.get("offset", 1)
         end = result["next_offset"] - 1 if result.get("next_offset") else total
         if start <= end:
@@ -480,7 +479,7 @@ def _context_page(request: dict[str, Any], item: dict[str, Any]) -> dict[str, An
     full = {"diffs": [item]} if is_diff else item
     budget = min(12000, MAX_INPUT // 4)
 
-    def fits(value):
+    def fits(value: dict[str, Any]) -> bool:
         return len(json.dumps(value, ensure_ascii=False).encode()) <= budget
 
     if "offset" not in request and "limit" not in request and fits(full):
@@ -490,17 +489,11 @@ def _context_page(request: dict[str, Any], item: dict[str, Any]) -> dict[str, An
         raise ValueError("上下文页码无效")
     start = offset - 1
 
-    def page(end):
+    def page(end: int) -> dict[str, Any]:
         value = {"diffs": [fragment(item, lines, start, end)]} if is_diff else {"path": item["path"], "content": "".join(lines[start:end])}
         return {**value, "offset": offset, "next_offset": end + 1 if end < len(lines) else None, "total_lines": len(lines)}
 
-    low, high = start, min(start + limit, len(lines))
-    while low < high:
-        middle = (low + high + 1) // 2
-        if fits(page(middle)):
-            low = middle
-        else:
-            high = middle - 1
+    low = fitting_end(start, min(start + limit, len(lines)), lambda end: fits(page(end)))
     if low == start and start < len(lines):
         return {"error": "单行上下文超过容量，未返回该行", "offset": offset,
                 "next_offset": offset + 1 if offset < len(lines) else None, "total_lines": len(lines)}
@@ -687,7 +680,7 @@ def _scope_digest(scope):
 def _save_plan(scope, names, plan, blocked):
     indexes = {name: index for index, name in enumerate(names)}
 
-    def reference(item, path):
+    def reference(item: dict[str, Any], path: str) -> dict[str, Any]:
         return {"index": indexes[path], **({"fragment": item["fragment"]} if "fragment" in item else {})}
 
     return {"version": 2, "digest": _scope_digest(scope),
@@ -701,7 +694,7 @@ def _restore_fragment_plan(
     """切片引用必须构成每个固定文件的完整、不重叠分区。"""
     plan, blocked, partitions, parsed = [], [], {}, {}
 
-    def restore(ref):
+    def restore(ref: dict[str, Any]) -> dict[str, Any]:
         index = ref.get("index")
         if type(index) is not int or not 0 <= index < len(names):
             raise ValueError("批次计划无效")
