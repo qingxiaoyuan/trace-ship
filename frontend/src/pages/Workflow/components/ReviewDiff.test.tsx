@@ -137,6 +137,10 @@ it('长差异按页构建代码行并能跳转到末尾意见', async () => {
   ] }];
   render(<QueryClientProvider client={client}><ReviewDiff instanceId="long" reviews={cases} /></QueryClientProvider>);
   const file = await screen.findByRole('article', { name: 'long.py' });
+  expect(within(file).getByText('line-401')).toBeTruthy();
+  expect(within(file).getByText('末尾问题')).toBeTruthy();
+  fireEvent.click(within(file).getByRole('button', { name: '上一页' }));
+  fireEvent.click(within(file).getByRole('button', { name: '上一页' }));
   expect(within(file).getByText('line-1')).toBeTruthy();
   expect(within(file).queryByText('line-401')).toBeNull();
   fireEvent.change(within(file).getByRole('combobox', { name: '跳转到审查意见' }), { target: { value: 'ai:current:0' } });
