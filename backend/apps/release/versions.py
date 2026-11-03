@@ -49,12 +49,22 @@ def _claimed_tag_pattern(claim: ReleaseVersionClaim) -> re.Pattern:
 def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
     """调用方持有仓库行锁；唯一约束兜底，不按项目或日期分隔。"""
     key = version_key(release.repository, release.release_type, release.tag_name)
-    for tag in tags:
+    claim = ReleaseVersionClaim.objects.filter(
+        repository=release.repository, release_type=release.release_type, base_version=key,
+    ).first()
+    old_tag_pattern = _claimed_tag_pattern(claim) if claim else None
+
+    def same_version(tag: str) -> bool:
+        # 已有占用的旧身份同时约束远端 Tag 和平台历史，规则变化不能使历史占号失效。
+        if old_tag_pattern and old_tag_pattern.fullmatch(tag):
+            return True
         try:
-            other = version_key(release.repository, release.release_type, tag.name)
+            return version_key(release.repository, release.release_type, tag) == key
         except serializers.ValidationError:
-            continue
-        if other == key:
+            return False
+
+    for tag in tags:
+        if same_version(tag.name):
             raise serializers.ValidationError({"version": "该版本已发布，不能覆盖"})
     # 升级前已在审批的记录没有占用行，仍必须参与冲突检查。
     previous = ReleaseRecord.objects.filter(repository=release.repository, release_type=release.release_type).exclude(
@@ -64,11 +74,7 @@ def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
         occupied = other.status in ("pending", "released") or (
             other.status == "rejected" and other.workflow_instance_id and other.workflow_instance.status == "completed"
         )
-        try:
-            other_key = version_key(release.repository, other.release_type, other.tag_name)
-        except serializers.ValidationError:
-            continue
-        if occupied and other_key == key:
+        if occupied and same_version(other.tag_name):
             raise serializers.ValidationError(
                 {"version": "该版本已发布，不能覆盖" if other.status == "released" else "已有同版本在发布"}
             )
@@ -78,11 +84,6 @@ def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
         base_version=key,
         defaults={"release": release, "tag_name": release.tag_name},
     )
-    if not created:
-        # 提审、推送与重试均核验原占用身份，不能因当前规则变化忽略旧 Tag。
-        old_tag_pattern = _claimed_tag_pattern(claim)
-        if any(old_tag_pattern.fullmatch(tag.name) for tag in tags):
-            raise serializers.ValidationError({"version": "该版本已发布，不能覆盖"})
     if not created and claim.consumed and claim.release_id is None:
         # 转移使用权但保留旧 Tag 依据，审批期间外部恢复引用仍须阻止推送。
         claim.release = release
