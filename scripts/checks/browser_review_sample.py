@@ -50,7 +50,8 @@ def create_review_sample(project, repository, owner) -> dict:
     after.insert(7, '    setUsers(users);')
     after[12] = '      <p dangerouslySetInnerHTML={{ __html: user.bio }} />'
     after[13] = '      <button onClick={removeUser(user.id)}>删除</button>'
-    diff = '\n'.join(list(difflib.unified_diff(before, after, n=20, lineterm=''))[2:])
+    prefix = [f'// 固定上下文 {index}' for index in range(240)]
+    diff = '\n'.join(list(difflib.unified_diff(prefix + before, prefix + after, n=300, lineterm=''))[2:])
     paths = ['src/review-samples/UserDirectory.jsx', 'src/review-samples/permissions.ts', 'src/review-samples/renamed.ts']
     findings = [
         {"id": str(uuid.uuid4()), "severity": "P0", "title": "用户简介直接渲染 HTML，存在存储型 XSS",
@@ -77,8 +78,16 @@ def create_review_sample(project, repository, owner) -> dict:
         "\n\n| " + " | ".join(headings) + " |\n| " + " | ".join(["---"] * 20)
         + " |\n| " + " | ".join(values) + " |"
     )
+    for finding in findings:
+        if finding.get("path") == paths[0]:
+            finding["line_start"] += len(prefix)
+            finding["line_end"] += len(prefix)
+    # 有意见的文件排在大目录末尾，验证默认定位和目录分页。
+    extra_diffs = [{"old_path": f"src/generated-{index}.ts", "new_path": f"src/generated-{index}.ts",
+                    "diff": "@@ -0,0 +1 @@\n+export const valid = true;"} for index in range(125)]
     ReleaseReviewScope.objects.create(
         instance=instance, base_git_hash="a" * 40, head_git_hash=release.git_hash, status="ready", diffs=[
+            *extra_diffs,
             {"old_path": paths[0], "new_path": paths[0], "diff": diff},
             {"old_path": paths[1], "new_path": paths[1], "new_file": True,
              "diff": '@@ -0,0 +1,1 @@\n+export const canRemove = () => true;'},
@@ -92,9 +101,11 @@ def create_review_sample(project, repository, owner) -> dict:
     AIReviewRun.objects.create(
         instance=instance, node_id="ai", settings_version=config, status="partial", findings=findings,
         summary="发现 5 条意见，包含 HTML 渲染、状态更新和操作权限问题，请结合代码逐项复核。",
-        coverage={"total_files": 3, "reviewed_files": 2, "manifest_complete": False, "reviewed_paths": paths[:2],
-                  "unreviewed_paths": [paths[2]], "total_fragments": 4, "reviewed_fragments": 3,
-                  "warnings": ["远端比较超时，完整清单未知", "上下文未完整读取：critical_dependency.py（源码行 1–100）"],
+        coverage={"total_files": 128, "reviewed_files": 127, "manifest_complete": False,
+                  "reviewed_paths": [item["new_path"] for item in extra_diffs] + paths[:2],
+                  "unreviewed_paths": [paths[2]], "total_fragments": 129, "reviewed_fragments": 128,
+                  "warnings": ["远端比较超时，完整清单未知", "上下文未完整读取：critical_dependency.py（源码行 1–100）",
+                               *[f"补充上下文未完整读取：dependency-{index}.py" for index in range(80)]],
                   "unread_context": [{"path": "critical_dependency.py", "kind": "read", "start": 1, "end": 100}],
                   "unreviewed_fragments": [{"path": paths[2], "new_start": 1, "new_end": 1, "reason": "批次执行失败"}]},
     )

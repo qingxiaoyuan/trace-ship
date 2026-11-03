@@ -112,6 +112,8 @@ def _ask(config, messages):
               "read 的 offset 是文件行号，diff 的 offset 是差异内容行序号，均从1开始；响应 next_offset 非空可继续分页，不能假设后续内容已读取。"
               "完整文件清单可用 {\"action\":\"list_files\",\"offset\":0} 分页查询，"
               "也可用 {\"action\":\"search_files\",\"query\":\"文件名关键词\",\"offset\":0} 定位。"
+              "本批待审查内容已完整放在 diffs；优先据此审查，只有核实具体关联时才补读。"
+              "all_files 是跨批检索索引，不是本批任务，不要逐页遍历目录或重复读取已提供的内容。"
               "每批交互次数和上下文有限，不应宣称穷举全部跨文件关联。完成时输出 {\"action\":\"finish\","
               "\"dimensions\":[\"实际维度\"],\"reviewed_files\":[\"路径\"],"
               "\"findings\":[{\"severity\":\"P0|P1|P2|P3\",\"title\":\"问题\","
@@ -301,6 +303,8 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
     if release is None:
         raise ValueError("发布不存在")
     provider = None
+    # 固定提交下本批只读内容可复用；批次结束即释放，不跨用户或执行缓存。
+    source_contents = dict(scope.documents)
     gaps = []
     context_pages = {}
 
@@ -383,13 +387,15 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
             if not isinstance(path, str):
                 raise ValueError("读取路径无效")
             validate_document_paths([path])
-            if provider is None:
+            if path not in source_contents:
+                if provider is None:
+                    ensure_current()
+                    provider = ReleaseService._get_provider(release.repository, run.instance.created_by, project=release.project)
+                    ensure_current()
                 ensure_current()
-                provider = ReleaseService._get_provider(release.repository, run.instance.created_by, project=release.project)
+                source_contents[path] = provider.get_file_raw(release.repository.external_identity, path, ref=scope.head_git_hash)
                 ensure_current()
-            ensure_current()
-            content = provider.get_file_raw(release.repository.external_identity, path, ref=scope.head_git_hash)
-            ensure_current()
+            content = source_contents[path]
             if content is None:
                 gaps.append(f"文件不可读或超过限制：{path}")
                 tool_result = {"error": "文件不可读或超过限制"}
@@ -581,17 +587,22 @@ def _batch_plan(run, scope):
         context_is_requirement=scope.context_is_requirement,
     )
 
-    def size(items):
-        return len(json.dumps(_initial_payload(run, full_scope, items), ensure_ascii=False).encode())
+    # 固定目录、技能和上下文只编码一次；JSON 数组按元素和分隔符精确累加。
+    base_size = len(json.dumps(_initial_payload(run, full_scope, []), ensure_ascii=False).encode())
+    pending_size = base_size
+
+    def encoded_size(item: dict[str, Any]) -> int:
+        return len(json.dumps(item, ensure_ascii=False).encode())
 
     def finish():
+        nonlocal pending_size
         if pending:
             raw = json.dumps(pending, ensure_ascii=False, sort_keys=True).encode()
             plan.append({"id": hashlib.sha256(raw).hexdigest(), "diffs": list(pending),
                          "paths": [item.get("new_path") or item.get("old_path") for item in pending]})
             pending.clear()
+            pending_size = base_size
 
-    base_size = size([])
     batch_limit = base_size + max(0, (MAX_INPUT - base_size) // 3)
     for item, name in zip(diffs, names, strict=True):
         if any(item.get(key) for key in ("binary", "too_large", "collapsed")) or not item.get("diff"):
@@ -602,19 +613,21 @@ def _batch_plan(run, scope):
             finish()
             blocked.append({"path": name, "reason": "差异块行数不一致"})
             continue
-        if size([item]) > batch_limit:
+        item_size = encoded_size(item)
+        if base_size + item_size > batch_limit:
             finish()
             if base_size >= MAX_INPUT:
                 blocked.append({"path": name, "reason": "固定技能和审查上下文超过容量"})
                 continue
-            fragments, oversized = split_diff(item, lambda part: size([part]) <= batch_limit)
+            fragments, oversized = split_diff(item, lambda part: base_size + encoded_size(part) <= batch_limit)
             for part in fragments:
                 pending.append(part)
                 finish()
             blocked.extend({**fragment_location(part), "reason": "单行差异超过审查容量"} for part in oversized)
             continue
-        if pending and size([*pending, item]) > batch_limit:
+        if pending and pending_size + 2 + item_size > batch_limit:
             finish()
+        pending_size += item_size + (2 if pending else 0)
         pending.append(item)
     finish()
     return names, plan, blocked

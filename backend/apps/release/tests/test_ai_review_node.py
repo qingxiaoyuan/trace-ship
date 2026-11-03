@@ -351,6 +351,8 @@ def test_rollback_cannot_reenter_completed_ai_node(api_client, project, reposito
 def test_model_read_and_search_only_use_fixed_head(api_client, project, repository, user,
                                                   patched_provider, monkeypatch,
                                                   django_capture_on_commit_callbacks):
+    import json
+
     from apps.system.tests.review_helpers import configure_review
     from apps.workflow import ai_review_model
     from utils.provider.base import TagInfo
@@ -368,7 +370,12 @@ def test_model_read_and_search_only_use_fixed_head(api_client, project, reposito
         {"action": "read", "path": "a.py"}, {"action": "search", "path": "a.py", "query": "value"},
         {"action": "finish", "dimensions": ["安全"], "reviewed_files": ["a.py"], "findings": []},
     ])
-    monkeypatch.setattr(ai_review_model, "_ask", lambda *args: (next(actions), "{}"))
+    replies = []
+    def ask(_config, messages):
+        if len(messages) > 1:
+            replies.append(json.loads(messages[-1]["content"]))
+        return next(actions), "{}"
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
     configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
     _definition(project, repository, user)
     release = _draft(project, repository, user)
@@ -376,7 +383,9 @@ def test_model_read_and_search_only_use_fixed_head(api_client, project, reposito
         result = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
     assert result.status_code == 200
     release.refresh_from_db()
-    assert reads == [("a.py", "b" * 40), ("a.py", "b" * 40)]
+    assert reads == [("a.py", "b" * 40)]
+    assert replies[0]["content"] == "secret = 1\nvalue = 2"
+    assert replies[1]["matches"] == [{"line": 2, "text": "value = 2"}]
     assert release.workflow_instance.ai_reviews.get().status == "completed"
 
 

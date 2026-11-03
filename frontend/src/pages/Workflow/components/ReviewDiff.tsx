@@ -87,6 +87,35 @@ function fileName(file: ReviewDiffFile): string {
     ? `${file.old_path} → ${file.new_path}` : file.new_path || file.old_path;
 }
 
+/** 大目录只挂载当前页；有意见文件优先，仍可搜索和翻页查看完整清单。 */
+function FileNavigation({ files, assignments, selectedIndex, onSelect }: {
+  files: ReviewDiffFile[]; assignments: ReviewFinding[][]; selectedIndex: number; onSelect: (index: number) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const indexes = files.map((_, index) => index).filter((index) => fileName(files[index]).toLowerCase().includes(search.toLowerCase()))
+    .sort((left, right) => Number(assignments[right].length > 0) - Number(assignments[left].length > 0));
+  const pages = Math.max(1, Math.ceil(indexes.length / 100));
+  const current = Math.min(page, pages - 1);
+  return <nav className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/60 p-2 xl:sticky xl:top-4" aria-label="差异文件列表">
+    <input aria-label="搜索变更文件" value={search} placeholder="搜索变更文件" onChange={(event) => { setSearch(event.target.value); setPage(0); }} className="mb-2 min-h-9 w-full min-w-0 rounded border border-slate-200 bg-white px-2 text-xs" />
+    <div className="max-h-48 overflow-y-auto xl:max-h-[55vh]">
+      {indexes.slice(current * 100, (current + 1) * 100).map((index) => {
+        const file = files[index];
+        return <button type="button" key={`${index}:${file.old_path}:${file.new_path}`} aria-label={`查看文件 ${fileName(file)}`} aria-pressed={selectedIndex === index}
+          onClick={() => onSelect(index)} className={`mb-1 flex min-h-9 w-full items-start gap-2 rounded-md px-2 py-2.5 text-left text-xs transition-colors ${selectedIndex === index ? 'bg-indigo-100/70 font-medium text-indigo-800' : 'text-slate-600 hover:bg-slate-100'}`}>
+          <FileCode2 className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" strokeWidth={1.5} /><span className="min-w-0 flex-1" title={fileName(file)}><span className="block truncate font-mono leading-5">{(file.new_path || file.old_path).split('/').pop()}</span><span className="mt-0.5 block truncate text-[10px] font-normal text-slate-400">{(file.new_path || file.old_path).split('/').slice(0, -1).join('/') || '根目录'}</span></span>
+          {assignments[index].length ? <span aria-label={`${assignments[index].length} 条意见`} className="mt-0.5 shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">{assignments[index].length}</span> : null}
+        </button>;
+      })}
+      {!indexes.length ? <p className="p-2 text-xs text-slate-500">没有匹配的文件。</p> : null}
+    </div>
+    {pages > 1 ? <div className="flex items-center justify-between gap-1 border-t border-slate-200 pt-1 text-xs text-slate-500">
+      <button type="button" aria-label="文件上一页" disabled={current === 0} onClick={() => setPage(current - 1)} className="min-h-9 px-1 disabled:opacity-40">上一页</button><span>{current + 1} / {pages}</span><button type="button" aria-label="文件下一页" disabled={current + 1 === pages} onClick={() => setPage(current + 1)} className="min-h-9 px-1 disabled:opacity-40">下一页</button>
+    </div> : null}
+  </nav>;
+}
+
 function FindingCard({ item }: { item: ReviewFinding }) {
   const { finding } = item;
   const severityTone = finding.severity === 'P0' || finding.severity === 'P1' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-800 ring-amber-200';
@@ -121,7 +150,7 @@ function FindingList({ items }: { items: ReviewFinding[] }) {
 }
 
 function DiffFile({ file, items }: { file: ReviewDiffFile; items: ReviewFinding[] }) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState<number | null>(null);
   const [targetKey, setTargetKey] = useState<string | null>(null);
   const lines = useMemo(() => parseLines(file.diff), [file.diff]);
   const counts = useMemo(() => {
@@ -150,10 +179,10 @@ function DiffFile({ file, items }: { file: ReviewDiffFile; items: ReviewFinding[
     byLine.set(key, [...(byLine.get(key) || []), item]);
   }
   const located = items.filter(({ finding }) => canLocate(finding));
-  const target = located.find((item) => item.key === targetKey);
+  const target = located.find((item) => item.key === targetKey) || (page === null ? located[0] : undefined);
   const targetIndex = target ? lines.findIndex((line) =>
     (target.finding.side === 'old' ? line.oldLine : line.newLine) === target.finding.line_start) : -1;
-  const currentPage = targetIndex >= 0 ? Math.floor(targetIndex / PAGE_SIZE) : page;
+  const currentPage = targetIndex >= 0 ? Math.floor(targetIndex / PAGE_SIZE) : (page ?? 0);
   const jumpTo = (key: string) => {
     setTargetKey(key);
     requestAnimationFrame(() => document.getElementById(`review-finding-${key}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
@@ -212,16 +241,27 @@ export function ReviewDiff({ instanceId, reviews, active = true }: { instanceId:
   }), [reviews]);
   if (!canRead) return null;
   const files = query.error || !query.isFetchedAfterMount ? [] : query.data?.diffs || [];
-  const selectedIndex = selection?.instanceId === instanceId && selection.index < files.length ? selection.index : 0;
   const assignments = files.map(() => [] as ReviewFinding[]);
+  const fileIndexes = new Map<string, number[]>();
+  for (const [index, file] of files.entries()) {
+    for (const [side, path] of [['old', file.old_path], ['new', file.new_path]] as const) {
+      const key = `${side}:${path}`;
+      const indexes = fileIndexes.get(key) || [];
+      indexes.push(index);
+      fileIndexes.set(key, indexes);
+    }
+  }
   const unassigned: ReviewFinding[] = [];
   for (const item of findings) {
     const { path, side } = item.finding;
-    const matches = files.map((file, index) => ({ file, index })).filter(({ file }) => path &&
-      (side === 'old' ? file.old_path === path : side === 'new' ? file.new_path === path : file.old_path === path || file.new_path === path));
-    if (matches.length === 1) assignments[matches[0].index].push(item);
+    const matches = !path ? [] : side ? fileIndexes.get(`${side}:${path}`) || []
+      : [...new Set([...(fileIndexes.get(`old:${path}`) || []), ...(fileIndexes.get(`new:${path}`) || [])])];
+    if (matches.length === 1) assignments[matches[0]].push(item);
     else unassigned.push(item);
   }
+  const firstWithFindings = assignments.findIndex((items) => items.length > 0);
+  const selectedIndex = selection?.instanceId === instanceId && selection.index < files.length
+    ? selection.index : Math.max(0, firstWithFindings);
   const loading = query.isLoading || !query.isFetchedAfterMount;
   return <section aria-label="本轮代码差异" className="min-w-0 space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -230,23 +270,15 @@ export function ReviewDiff({ instanceId, reviews, active = true }: { instanceId:
     </div>
     {loading ? <p className="text-sm text-slate-500">正在读取本轮固定差异…</p> : null}
     {query.error ? <div role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">代码差异读取失败：{(query.error as unknown as NormalizedError).friendlyMessage || '请稍后重试'}；审查意见保留在下方。<Button size="small" aria-label="重新读取代码差异" className="ml-2 max-md:min-h-9" onClick={() => void query.refetch()}>重试</Button></div> : null}
+    {unassigned.length ? <div className="space-y-3"><h5 className="text-xs font-medium text-slate-500">{files.length ? '整体或无法可靠定位的意见' : '审查意见'}</h5><FindingList items={unassigned} /></div> : null}
     {!loading && !query.error && query.data ? <>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-500"><span>固定审查范围</span><code className="break-all text-slate-700" title={query.data.base_git_hash}>{query.data.base_git_hash?.slice(0, 12) || '首次发布'}</code><span aria-hidden="true">→</span><code className="break-all text-slate-700" title={query.data.head_git_hash}>{query.data.head_git_hash?.slice(0, 12) || '未取得'}</code></div>
       {query.data.status === 'incomplete' ? <p className="text-sm text-amber-700">本轮差异未完整取得，以下内容仅为已保存部分。</p> : null}
       {files.length === 0 ? <p className="text-sm text-slate-500">本轮没有可展示的代码差异。</p> : <div className="grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-[180px_minmax(0,1fr)]">
-        <nav className="max-h-64 min-w-0 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 p-2 xl:sticky xl:top-4 xl:max-h-[65vh]" aria-label="差异文件列表">
-          <p className="px-2 py-2 text-[11px] font-medium text-slate-400">变更文件</p>
-          {files.map((file, index) => <button type="button" key={`${index}:${file.old_path}:${file.new_path}`} aria-label={`查看文件 ${fileName(file)}`} aria-pressed={selectedIndex === index}
-            onClick={() => setSelection({ instanceId, index })}
-            className={`mb-1 flex min-h-9 w-full items-start gap-2 rounded-md px-2 py-2.5 text-left text-xs transition-colors ${selectedIndex === index ? 'bg-indigo-100/70 font-medium text-indigo-800' : 'text-slate-600 hover:bg-slate-100'}`}>
-            <FileCode2 className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" strokeWidth={1.5} /><span className="min-w-0 flex-1" title={fileName(file)}><span className="block truncate font-mono leading-5">{(file.new_path || file.old_path).split('/').pop()}</span><span className="mt-0.5 block truncate text-[10px] font-normal text-slate-400">{(file.new_path || file.old_path).split('/').slice(0, -1).join('/') || '根目录'}</span></span>
-            {assignments[index].length ? <span aria-label={`${assignments[index].length} 条意见`} className="mt-0.5 shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">{assignments[index].length}</span> : null}
-          </button>)}
-        </nav>
+        <FileNavigation key={`${instanceId}:${sessionVersion}`} files={files} assignments={assignments} selectedIndex={selectedIndex} onSelect={(index) => setSelection({ instanceId, index })} />
         <DiffFile key={`${instanceId}:${sessionVersion}:${selectedIndex}`} file={files[selectedIndex]} items={assignments[selectedIndex]} />
       </div>}
     </> : null}
-    {!loading && unassigned.length ? <div className="space-y-3"><h5 className="text-xs font-medium text-slate-500">{files.length ? '整体或无法可靠定位的意见' : '审查意见'}</h5><FindingList items={unassigned} /></div> : null}
     {!loading && !findings.length ? <p className="text-sm text-slate-500">未报告意见，仍需人工判断。</p> : null}
   </section>;
 }

@@ -22,6 +22,25 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
   await page.goto(`/workflows/${sample.instance_id}`);
   await page.getByRole('tab', { name: 'AI 审查', exact: true }).click();
   await expect(page.getByRole('heading', { name: /部分完成，已交人工审批/ })).toBeVisible();
+  const details = page.getByText('执行详情', { exact: true });
+  await expect(page.getByText('远端比较超时，完整清单未知', { exact: true })).toBeHidden();
+  const compactViewports = [];
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    const review = page.getByRole('region', { name: 'AI 代码审查', exact: true });
+    await review.getByRole('heading', { name: 'AI 代码审查', exact: true }).scrollIntoViewIfNeeded();
+    const metrics = await review.evaluate(element => ({
+      width: window.innerWidth, height: window.innerHeight, scrollWidth: document.documentElement.scrollWidth,
+      statusHeight: element.querySelector(':scope > article')!.getBoundingClientRect().height,
+    }));
+    expect({ width: metrics.width, height: metrics.height }).toEqual(viewport);
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(viewport.width);
+    expect(metrics.statusHeight).toBeLessThan(150);
+    await expect(page.getByText('· 82 条提示', { exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(reportDir, `ai-compact-${viewport.width}.png`) });
+    compactViewports.push(metrics);
+  }
+  await details.click();
   await expect(page.getByText('远端比较超时，完整清单未知', { exact: true })).toBeVisible();
   const unreadContext = page.getByText('上下文未完整读取：critical_dependency.py（源码行 1–100）', { exact: true });
   await expect(unreadContext).toBeVisible();
@@ -41,11 +60,20 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
     viewports.push(actual);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await details.click();
   const diff = page.getByRole('region', { name: '本轮代码差异', exact: true });
   await expect(diff.getByText('固定审查范围', { exact: true })).toBeVisible();
   const comment = diff.getByRole('article', { name: `审查意见：${sample.finding.title}`, exact: true });
   await expect(comment).toBeVisible();
   await expect(comment.locator('xpath=..')).toHaveAttribute('data-line-side', 'new');
+  await expect(diff.getByRole('button', { name: `查看文件 ${sample.file}`, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const files = diff.getByRole('navigation', { name: '差异文件列表' });
+  await expect(files.getByRole('button', { name: /^查看文件 / })).toHaveCount(100);
+  await files.getByRole('button', { name: '文件下一页', exact: true }).click();
+  await expect(files.getByRole('button', { name: /^查看文件 / })).toHaveCount(28);
+  await files.getByRole('textbox', { name: '搜索变更文件', exact: true }).fill('generated-124.ts');
+  await expect(files.getByRole('button', { name: '查看文件 src/generated-124.ts', exact: true })).toBeVisible();
+  await files.getByRole('textbox', { name: '搜索变更文件', exact: true }).fill('');
   await expect(diff.getByText('<p dangerouslySetInnerHTML={{ __html: user.bio }} />', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '查看代码差异', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '展开代码差异', exact: true })).toHaveCount(0);
@@ -107,7 +135,8 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
   expect(errors).toEqual([]);
   writeFileSync(path.join(reportDir, 'ai-comments.json'), JSON.stringify({
     backend: '隔离 SQLite + 生产 REST、授权与整改实现', source: '固定虚构差异与报告；未调用外部模型',
-    browser: browser.version(), partialReview: true, uncoveredRange: true, unreadContextRange: true, viewports,
+    browser: browser.version(), partialReview: true, uncoveredRange: true, unreadContextRange: true, viewports, compactViewports,
+    largeDirectory: 128, warningCount: 82, defaultFindingInLaterFileAndPage: true, fileSearchAndPagination: true,
     instanceId: sample.instance_id, inline: true, adopted: true, reload: true, widths: [1440, 375], tableScroll, remediationPage: 2, pageErrors: errors,
   }, null, 2));
 });

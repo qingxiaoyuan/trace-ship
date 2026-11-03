@@ -14,6 +14,46 @@ function show() {
 beforeEach(() => { vi.spyOn(workflowApi, 'getReviewDiff').mockRejectedValue({ status: 500, friendlyMessage: '固定差异暂不可用' }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); useAuthStore.getState().clearAuth(); });
 
+it('差异仍在读取时立即展示已经保存的意见', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '', coverage: {},
+    findings: [{ id: 'ready', severity: 'P1', title: '已保存的权限问题', reason: '**原因完整**', suggestion: '校验权限', path: 'last.ts' }] }] });
+  vi.spyOn(workflowApi, 'getReviewDiff').mockImplementation(() => new Promise(() => {}));
+  show();
+  expect(await screen.findByText('正在读取本轮固定差异…')).toBeTruthy();
+  expect(screen.getByRole('article', { name: '审查意见：已保存的权限问题' })).toBeTruthy();
+});
+
+it('大目录默认定位有意见的文件及长差异后部的首条意见', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '', coverage: {},
+    findings: [{ id: 'tail', severity: 'P1', title: '尾部权限问题', reason: '遗漏校验', suggestion: '校验权限', path: 'last.ts', side: 'new', line_start: 250, line_end: 250 }] }] });
+  vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'ready', base_git_hash: 'a', head_git_hash: 'b', diffs: [
+    ...Array.from({ length: 150 }, (_, i) => ({ old_path: `${i}.ts`, new_path: `${i}.ts`, diff: '@@ -0,0 +1 @@\n+ok' })),
+    { old_path: 'last.ts', new_path: 'last.ts', diff: '@@ -0,0 +1,300 @@\n' + Array.from({ length: 300 }, (_, i) => `+line${i}`).join('\n') },
+  ] });
+  show();
+  await waitFor(() => expect(screen.getByRole('article', { name: '审查意见：尾部权限问题' }).closest('[data-line-side="new"]')).toBeTruthy());
+  expect(screen.getByRole('button', { name: '查看文件 last.ts' }).getAttribute('aria-pressed')).toBe('true');
+  const navigation = screen.getByRole('navigation', { name: '差异文件列表' });
+  expect(within(navigation).getAllByRole('button', { name: /^查看文件 / })).toHaveLength(100);
+  fireEvent.click(within(navigation).getByRole('button', { name: '文件下一页' }));
+  expect(within(navigation).getAllByRole('button', { name: /^查看文件 / })).toHaveLength(51);
+  fireEvent.change(within(navigation).getByRole('textbox', { name: '搜索变更文件' }), { target: { value: '149.ts' } });
+  fireEvent.click(within(navigation).getByRole('button', { name: '查看文件 149.ts' }));
+  expect(screen.getByRole('article', { name: '149.ts' })).toBeTruthy();
+});
+
+it('失败与大量警告默认收起，仅展开执行详情后显示证据', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'failed', summary: '失败原因',
+    coverage: { total_files: 100, reviewed_files: 0, warnings: Array.from({ length: 100 }, (_, i) => `未读取文件${i}`), unreviewed_paths: ['src/a.ts'] }, findings: [], can_recover: true }] });
+  show();
+  expect(await screen.findByRole('heading', { name: '审查失败' })).toBeTruthy();
+  const warning = screen.getByText('未读取文件0');
+  const details = warning.closest('details');
+  expect(details).not.toBeNull();
+  expect(details?.open).toBe(false);
+  expect(screen.getByRole('button', { name: '重新审查' })).toBeTruthy();
+});
+
 it('部分报告直接展示未覆盖片段与未知范围，保留意见且不提供原节点重试', async () => {
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'partial',
     summary: '部分审查完成，未覆盖范围请由人工核查', can_recover: false,

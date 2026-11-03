@@ -66,12 +66,19 @@ def fitting_end(start: int, stop: int, fits: Callable[[int], bool]) -> int:
 def split_diff(
     item: dict[str, Any], fits: Callable[[dict[str, Any]], bool],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """二分查找可容纳的连续行；单行仍超限时仅跳过该行。"""
+    """先倍增局部窗口再二分，避免每个片段都重建剩余全文。"""
     lines = diff_lines(item["diff"])
     accepted, blocked = [], []
     start = 0
     while start < len(lines):
-        low = fitting_end(start, len(lines), lambda end: fits(fragment(item, lines, start, end)))
+        low, high = start, start + 1
+        while fits(fragment(item, lines, start, high)):
+            low = high
+            if high == len(lines):
+                break
+            high = min(len(lines), start + (high - start) * 2)
+        if low < high:
+            low = fitting_end(low, high - 1, lambda end: fits(fragment(item, lines, start, end)))
         end = low if low > start else start + 1
         part = fragment(item, lines, start, end)
         (accepted if low > start else blocked).append(part)
