@@ -46,6 +46,31 @@ def _claimed_tag_pattern(claim: ReleaseVersionClaim) -> re.Pattern:
     return re.compile(rf"{old_tag}(?:_\d{{8}})?")
 
 
+def _history_matches_version(release: ReleaseRecord, key: str) -> bool:
+    """从记录自身的 Tag 取编号，保存的纯版本号仅用于辨认前缀边界。"""
+    tag = release.tag_name
+    version_core = r"\d+\.\d+\.\d+"
+    # 类型后缀自身也可能是 _YYYYMMDD，保留完整 Tag，避免把合法后缀当日期删空。
+    suffix = r"-.+" if release.release_type in ("rc", "beta") else r"(?:_\d{8})?"
+    # 前后缀都可能包含数字、点和连字符，不能直接取 Tag 中第一段或最后一段数字。
+    candidates = list(re.finditer(rf"(?:^|(?<=\.))(?=(?P<version>{version_core}){suffix}$)", tag))
+    bounded = [
+        match for match in candidates
+        if re.fullmatch(re.escape(tag[:match.start()]) + version_core, release.version)
+    ]
+    versions = {
+        ".".join(str(int(part)) for part in match.group("version").split("."))
+        for match in (bounded or candidates)
+    }
+    if key not in versions:
+        return False
+    if len(versions) > 1:
+        raise serializers.ValidationError({
+            "version": f"历史发布 {release.tag_name} 的版本身份存在歧义，请核对该记录的版本号与 Tag 后重试",
+        })
+    return True
+
+
 def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
     """调用方持有仓库行锁；唯一约束兜底，不按项目或日期分隔。"""
     key = version_key(release.repository, release.release_type, release.tag_name)
@@ -55,7 +80,7 @@ def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
     old_tag_pattern = _claimed_tag_pattern(claim) if claim else None
 
     def same_version(tag: str) -> bool:
-        # 已有占用的旧身份同时约束远端 Tag 和平台历史，规则变化不能使历史占号失效。
+        # 远端 Tag 没有发布记录，继续使用当前规则和占用保存的原身份核验。
         if old_tag_pattern and old_tag_pattern.fullmatch(tag):
             return True
         try:
@@ -74,7 +99,7 @@ def claim_version(release: ReleaseRecord, tags: list[TagInfo]) -> None:
         occupied = other.status in ("pending", "released") or (
             other.status == "rejected" and other.workflow_instance_id and other.workflow_instance.status == "completed"
         )
-        if occupied and same_version(other.tag_name):
+        if occupied and _history_matches_version(other, key):
             raise serializers.ValidationError(
                 {"version": "该版本已发布，不能覆盖" if other.status == "released" else "已有同版本在发布"}
             )

@@ -298,8 +298,9 @@ def test_reused_claim_keeps_old_identity_until_explicit_deletion(api, repository
 
 @pytest.mark.parametrize("release_type,suffix", [("formal", ""), ("rc", "-rc"), ("beta", "-alpha")])
 @pytest.mark.parametrize("remaining", ["released", "pending", "push_failed", "draft", "rejected", "other_version", "other_type"])
+@pytest.mark.parametrize("history_rule", ["claim", "earlier", "numeric"])
 def test_old_rule_release_history_controls_orphan_reuse(
-    api, repository, project, user, remote, release_type, suffix, remaining,
+    api, repository, project, user, remote, release_type, suffix, remaining, history_rule,
 ):
     from apps.project.models import Project
     from apps.workflow.models import WorkflowInstance
@@ -318,11 +319,14 @@ def test_old_rule_release_history_controls_orphan_reuse(
     )
     previous_type = ("beta" if release_type != "beta" else "rc") if remaining == "other_type" else release_type
     previous_suffix = {"formal": "", "rc": "-rc", "beta": "-alpha"}[previous_type]
+    previous_prefix = {"claim": "VA", "earlier": "LEGACY", "numeric": "SDK.5.9.3-train"}[history_rule]
+    if previous_type != "formal" and history_rule != "claim":
+        previous_suffix = "-legacy" if history_rule == "earlier" else "-candidate.5.9.3-preview"
     previous = ReleaseRecord.objects.create(
         repository=repository, project=other_project, publisher=user,
         release_type=previous_type,
-        version="VA.5.9.2" if remaining == "other_version" else "VA.5.9.3",
-        tag_name=f"VA.05.09.00{2 if remaining == 'other_version' else 3}{previous_suffix}_20261028",
+        version=f"{previous_prefix}.5.9.{2 if remaining == 'other_version' else 3}",
+        tag_name=f"{previous_prefix}.05.09.00{2 if remaining == 'other_version' else 3}{previous_suffix}_20261028",
         git_hash=OTHER,
         status="rejected" if remaining == "push_failed" else (
             "released" if remaining in ("other_version", "other_type") else remaining
@@ -364,21 +368,38 @@ def test_old_rule_release_history_controls_orphan_reuse(
         assert release.status == "released" and remote.tags[-1].name == release.tag_name
 
 
-def test_old_rule_history_is_rechecked_at_approval_and_retry(api, repository, project, user, remote):
+@pytest.mark.parametrize("previous_prefix", ["VA", "LEGACY"])
+@pytest.mark.parametrize("release_type,suffix", [("formal", ""), ("rc", "-rc"), ("beta", "-alpha")])
+def test_old_rule_history_is_rechecked_at_approval_and_retry(
+    api, repository, project, user, remote, previous_prefix, release_type, suffix,
+):
+    if release_type != "formal":
+        workflow = WorkflowDefinition.objects.get(repository=repository, release_type="formal")
+        WorkflowDefinition.objects.create(
+            repository=repository, project=project, name="确认", release_type=release_type,
+            node_config=workflow.node_config,
+        )
     claim = ReleaseVersionClaim.objects.create(
-        repository=repository, release_type="formal", base_version="5.9.3",
-        tag_name="VA.5.9.3_20261029", consumed=True,
+        repository=repository, release_type=release_type, base_version="5.9.3",
+        tag_name=f"VA.5.9.3{suffix}_20261029", consumed=True,
     )
     changed = api.patch(f"/api/repositories/{repository.id}/", {
-        "version_rule": {**repository.version_rule, "prefix": "VB"},
+        "version_rule": {**repository.version_rule, "prefix": "VB",
+                         "suffixes": {"rc": "candidate", "beta": "preview"}},
     }, format="json")
     assert changed.status_code == 200, changed.data
-    identity = create_formal(api, project, repository, "VB.5.9.3")
+    created = api.post("/api/releases/", {
+        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
+        "branch": "develop", "version": "VB.5.9.3", "package_config_ids": [],
+    }, format="json")
+    assert created.status_code == 201, created.data
+    identity = created.data["data"]["id"]
     release = generate_and_submit(api, identity)
     # 提审后恢复的旧记录也参与推送和重试核验，不能只在首次复用时检查。
     previous = ReleaseRecord.objects.create(
-        repository=repository, project=project, publisher=user, release_type="formal",
-        version="VA.5.9.3", tag_name="VA.05.09.003_20261028", git_hash=OTHER, status="released",
+        repository=repository, project=project, publisher=user, release_type=release_type,
+        version=f"{previous_prefix}.5.9.3", tag_name=f"{previous_prefix}.05.09.003{suffix}_20261028",
+        git_hash=OTHER, status="released",
     )
     task = release.workflow_instance.tasks.get(status="pending")
     assert api.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 200
@@ -395,3 +416,97 @@ def test_old_rule_history_is_rechecked_at_approval_and_retry(api, repository, pr
     assert retried.status_code == 200, retried.data
     release.refresh_from_db()
     assert release.status == "released" and remote.tags[-1].name == release.tag_name
+
+
+@pytest.mark.parametrize("release_type,old_version,old_tag,expected_error", [
+    ("formal", "LEGACY.5.9.2", "LEGACY.05.09.003_20261028", "不能覆盖"),
+    ("formal", "LEGACY.5.9.3", "LEGACY.5.9.2", ""),
+    ("formal", "5.9.3.1.2.3", "5.9.3.1.2.3", ""),
+    ("rc", "LEGACY.5.9.2", "LEGACY.05.09.003-old", "不能覆盖"),
+    ("rc", "LEGACY.5.9.3", "LEGACY.5.9.2-old", ""),
+    ("rc", "LEGACY.5.9.3-old", "LEGACY.5.9.3-old_20261028", "不能覆盖"),
+    ("rc", "LEGACY.1.2.3", "LEGACY.1.2.3-rc.5.9.3-tail", ""),
+    ("rc", "LEGACY.1.2.3-rc.5.9.3", "LEGACY.1.2.3-rc.5.9.3-tail", "不能覆盖"),
+    ("rc", "LEGACY.1.2.3-rc.5.9.3-tail", "LEGACY.1.2.3-rc.5.9.3-tail", "版本身份存在歧义"),
+])
+def test_history_identity_without_claim_uses_tag_number_and_saved_version_boundary(
+    api, repository, project, user, remote, release_type, old_version, old_tag, expected_error,
+):
+    # 旧记录可能没有占用行，也可能保留手工 Tag 修改前的版本号或含后缀版本号。
+    previous = ReleaseRecord.objects.create(
+        repository=repository, project=project, publisher=user, release_type=release_type,
+        version=old_version, tag_name=old_tag, git_hash=OTHER, status="released",
+    )
+    if release_type != "formal":
+        workflow = WorkflowDefinition.objects.get(repository=repository, release_type="formal")
+        WorkflowDefinition.objects.create(
+            repository=repository, project=project, name="确认", release_type=release_type,
+            node_config=workflow.node_config,
+        )
+    created = api.post("/api/releases/", {
+        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
+        "branch": "develop", "version": "VA.5.9.3", "package_config_ids": [],
+    }, format="json")
+    assert created.status_code == 201, created.data
+    identity = created.data["data"]["id"]
+    assert api.post(f"/api/releases/{identity}/generate-doc/").status_code == 200
+    submitted = api.post(f"/api/releases/{identity}/submit-audit/")
+    release = ReleaseRecord.objects.get(pk=identity)
+    if expected_error:
+        assert submitted.status_code == 400 and expected_error in submitted.data["message"], submitted.data
+        assert release.status == "draft" and release.workflow_instance_id is None
+        assert not ReleaseVersionClaim.objects.exists() and not remote.tags
+    else:
+        assert submitted.status_code == 200, submitted.data
+        task = release.workflow_instance.tasks.get(status="pending")
+        assert api.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 200
+        release.refresh_from_db()
+        assert release.status == "released" and remote.tags[-1].name == release.tag_name
+    previous.refresh_from_db()
+    assert previous.version == old_version and previous.tag_name == old_tag
+
+
+@pytest.mark.parametrize("release_type", ["rc", "beta"])
+@pytest.mark.parametrize("rule_changed", [False, True])
+def test_date_shaped_suffix_keeps_history_occupied(api, repository, project, remote, release_type, rule_changed):
+    workflow = WorkflowDefinition.objects.get(repository=repository, release_type="formal")
+    WorkflowDefinition.objects.create(
+        repository=repository, project=project, name="确认", release_type=release_type,
+        node_config=workflow.node_config,
+    )
+    changed = api.patch(f"/api/repositories/{repository.id}/", {
+        "version_rule": {**repository.version_rule, "with_date": False,
+                         "suffixes": {"rc": "_20261028", "beta": "_20261028"}},
+    }, format="json")
+    assert changed.status_code == 200, changed.data
+    repository.refresh_from_db()
+
+    def create(version):
+        created = api.post("/api/releases/", {
+            "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
+            "branch": "develop", "version": version, "package_config_ids": [],
+        }, format="json")
+        assert created.status_code == 201, created.data
+        return created.data["data"]["id"]
+
+    previous = generate_and_submit(api, create("VA.5.9.3"))
+    task = previous.workflow_instance.tasks.get(status="pending")
+    assert api.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 200
+    previous.refresh_from_db()
+    assert previous.status == "released" and previous.tag_name == "VA.5.9.3-_20261028"
+    # 模拟旧迁移不回填占用、远端 Tag 已清理的有效发布；编号继续由历史记录保留。
+    previous.version_claims.all().delete()
+    remote.tags = []
+    if rule_changed:
+        changed = api.patch(f"/api/repositories/{repository.id}/", {
+            "version_rule": {**repository.version_rule, "prefix": "VB",
+                             "suffixes": {"rc": "candidate", "beta": "preview"}},
+        }, format="json")
+        assert changed.status_code == 200, changed.data
+    identity = create("VB.5.9.3" if rule_changed else "VA.5.9.3")
+    assert api.post(f"/api/releases/{identity}/generate-doc/").status_code == 200
+    submitted = api.post(f"/api/releases/{identity}/submit-audit/")
+    assert submitted.status_code == 400 and "不能覆盖" in submitted.data["message"], submitted.data
+    release = ReleaseRecord.objects.get(pk=identity)
+    assert release.status == "draft" and release.workflow_instance_id is None
+    assert not ReleaseVersionClaim.objects.exists() and not remote.tags
