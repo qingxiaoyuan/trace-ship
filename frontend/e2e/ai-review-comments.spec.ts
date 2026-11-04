@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
   operator: { username: string }; password: string;
-  ai_review: { username: string; instance_id: string; file: string; other_file: string; finding: { id: string; title: string } };
+  ai_review: { username: string; instance_id: string; filtered_instance_id: string; queued_instance_id: string; file: string; other_file: string; finding: { id: string; title: string } };
 };
 const sample = fixture.ai_review;
 const reportDir = process.env.SMOKE_REPORT_DIR!;
@@ -44,6 +44,9 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
   await expect(page.getByText('远端比较超时，完整清单未知', { exact: true })).toBeVisible();
   const unreadContext = page.getByText('上下文未完整读取：critical_dependency.py（源码行 1–100）', { exact: true });
   await expect(unreadContext).toBeVisible();
+  await expect(page.getByText(/vendor\/sample\/library\.py|config\/application\.yaml/)).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '按策略跳过的文件', exact: true })).toHaveCount(0);
+  await expect(page.getByText(/125 \/ 128 个文件已审查 · 2 个按策略跳过/)).toBeVisible();
   const uncovered = page.getByRole('region', { name: '未覆盖片段', exact: true });
   await expect(uncovered.getByRole('listitem')).toHaveText('src/review-samples/renamed.ts · 新侧 1–1 行 · 批次执行失败');
   await expect(page.getByRole('button', { name: '重新审查', exact: true })).toHaveCount(0);
@@ -70,7 +73,7 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
   const files = diff.getByRole('navigation', { name: '差异文件列表' });
   await expect(files.getByRole('button', { name: /^查看文件 / })).toHaveCount(100);
   await files.getByRole('button', { name: '文件下一页', exact: true }).click();
-  await expect(files.getByRole('button', { name: /^查看文件 / })).toHaveCount(28);
+  await expect(files.getByRole('button', { name: /^查看文件 / })).toHaveCount(26);
   await files.getByRole('textbox', { name: '搜索变更文件', exact: true }).fill('generated-124.ts');
   await expect(files.getByRole('button', { name: '查看文件 src/generated-124.ts', exact: true })).toBeVisible();
   await files.getByRole('textbox', { name: '搜索变更文件', exact: true }).fill('');
@@ -132,11 +135,53 @@ test('AI 部分审查展示未覆盖范围与行内评论，并在评论内采�
   await expect(comment.getByRole('link', { name: /已采纳，待修复/ })).toBeVisible();
   await expect(adoptButton).toHaveCount(0);
   await comment.screenshot({ path: path.join(reportDir, 'ai-comment-adopted.png') });
+  await page.goto(`/workflows/${sample.filtered_instance_id}`);
+  await expect(page.getByText('按策略跳过', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'AI 审查', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /全部按策略跳过，已交人工审批/ })).toBeVisible();
+  await expect(page.getByText(/0 \/ 2 个文件已审查 · 2 个按策略跳过/)).toBeVisible();
+  await page.getByText('执行详情', { exact: true }).click();
+  const filteredViewports = [];
+  const filtered = page.getByText('已取得的文件全部按策略跳过，不展示代码差异，仍需人工审批。', { exact: true });
+  await expect(page.getByRole('navigation', { name: '差异文件列表' })).toHaveCount(0);
+  await expect(page.getByText(/vendor\/sample\/library\.py|config\/application\.yaml/)).toHaveCount(0);
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    await filtered.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await expect(filtered).toBeVisible();
+    await expect.poll(async () => {
+      const bounds = (await filtered.boundingBox())!;
+      return bounds.y + bounds.height;
+    }).toBeLessThanOrEqual(viewport.height - 90);
+    const actual = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight, scrollWidth: document.documentElement.scrollWidth }));
+    expect({ width: actual.width, height: actual.height }).toEqual(viewport);
+    expect(actual.scrollWidth).toBeLessThanOrEqual(viewport.width);
+    filteredViewports.push(actual);
+    await page.screenshot({ path: path.join(reportDir, `ai-filtered-${viewport.width}.png`) });
+  }
+  await page.goto(`/workflows/${sample.queued_instance_id}`);
+  await page.getByRole('tab', { name: 'AI 审查', exact: true }).click();
+  const directory = page.getByRole('region', { name: 'AI 代码审查', exact: true });
+  await expect(directory.getByText('待审查文件', { exact: true })).toBeVisible();
+  await expect(directory.getByText('1 个按策略跳过', { exact: true })).toBeVisible();
+  await expect(directory.getByText('1 个文件', { exact: true })).toBeVisible();
+  await expect(directory.getByTitle('src/unreadable.py', { exact: true })).toBeVisible();
+  await expect(directory.getByText(/清单不完整|完整范围尚未取得|logo\.png/)).toHaveCount(0);
+  const queuedViewports = [];
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    await directory.scrollIntoViewIfNeeded();
+    const actual = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight, scrollWidth: document.documentElement.scrollWidth }));
+    expect({ width: actual.width, height: actual.height }).toEqual(viewport);
+    expect(actual.scrollWidth).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: path.join(reportDir, `ai-complete-directory-${viewport.width}.png`) });
+    queuedViewports.push(actual);
+  }
   expect(errors).toEqual([]);
   writeFileSync(path.join(reportDir, 'ai-comments.json'), JSON.stringify({
     backend: '隔离 SQLite + 生产 REST、授权与整改实现', source: '固定虚构差异与报告；未调用外部模型',
-    browser: browser.version(), partialReview: true, uncoveredRange: true, unreadContextRange: true, viewports, compactViewports,
-    largeDirectory: 128, warningCount: 82, defaultFindingInLaterFileAndPage: true, fileSearchAndPagination: true,
+    browser: browser.version(), queuedInstanceId: sample.queued_instance_id, queuedViewports, independentManifest: true, filteredReview: true, filteredInstanceId: sample.filtered_instance_id, filteredViewports, policyExclusion: true, partialReview: true, uncoveredRange: true, unreadContextRange: true, viewports, compactViewports,
+    largeDirectory: 126, hiddenPolicyFiles: 2, warningCount: 82, defaultFindingInLaterFileAndPage: true, fileSearchAndPagination: true,
     instanceId: sample.instance_id, inline: true, adopted: true, reload: true, widths: [1440, 375], tableScroll, remediationPage: 2, pageErrors: errors,
   }, null, 2));
 });

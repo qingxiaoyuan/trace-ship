@@ -66,7 +66,10 @@ export function ReviewFileDirectory({ instanceId, canViewFiles, active }: { inst
   if (!query.data) return <p className="text-xs text-slate-500">尚未取得待审查文件目录。</p>;
   if (query.data.status === 'first_release') return <p className="rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-600">首次发布没有基线，本轮将跳过 AI 代码审查，仍需人工审批。</p>;
   if (query.data.status === 'no_changes') return <p className="rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-600">本轮没有代码变更，仍需人工审批。</p>;
-  return <FileDirectory files={query.data.diffs} title="待审查文件" incomplete={query.data.status === 'incomplete'} />;
+  return <div className="space-y-2">
+    {query.data.excluded_files ? <p className="text-xs text-slate-500">{query.data.excluded_files} 个按策略跳过</p> : null}
+    <FileDirectory files={query.data.diffs} title="待审查文件" incomplete={query.data.manifest_complete === false || (query.data.manifest_complete == null && query.data.status === 'incomplete')} />
+  </div>;
 }
 
 /** 已知未覆盖路径仅来自授权后的报告。 */
@@ -83,7 +86,7 @@ function FileDirectory({ files, title, incomplete }: { files: ReviewDiffFile[]; 
     <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-3"><h5 className="font-medium text-slate-800">{title}</h5><span className="text-xs text-slate-400">{files.length} 个文件{incomplete ? '（清单不完整）' : ''}</span></div>
     {incomplete ? <p className="border-b border-amber-100 bg-amber-50/60 px-4 py-2 text-xs text-amber-800">以下仅为已取得的文件，完整范围尚未取得。</p> : null}
     {files.length ? <div className="max-h-80 overflow-auto px-3 py-3 font-mono text-xs"><DirectoryEntries node={makeTree(files.slice(current * pageSize, (current + 1) * pageSize))} /></div>
-      : <p className="px-4 py-5 text-xs text-slate-500">{incomplete ? '尚未取得文件目录。' : '没有未审查的文件。'}</p>}
+      : <p className="px-4 py-5 text-xs text-slate-500">{incomplete ? '没有可展示的文件，完整范围尚未取得。' : title === '待审查文件' ? '没有需要 AI 审查的文件，仍需人工审批。' : '没有未审查的文件。'}</p>}
     {pages > 1 ? <div className="flex items-center gap-3 border-t border-slate-100 px-4 py-3 text-xs"><button type="button" disabled={current === 0} onClick={() => setPage(current - 1)} className="text-indigo-700 disabled:text-slate-300">上一页</button><span className="text-slate-500">{current + 1} / {pages}</span><button type="button" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)} className="text-indigo-700 disabled:text-slate-300">下一页</button></div> : null}
   </div>;
 }

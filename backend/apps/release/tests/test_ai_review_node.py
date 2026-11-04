@@ -62,6 +62,89 @@ def test_first_release_skips_ai_but_still_requires_human(api_client, project, re
     assert instance.tasks.filter(node_id="human", status="pending").count() == 1
 
 
+@pytest.mark.parametrize("manifest_complete", [True, False])
+def test_filtered_files_advance_only_when_manifest_is_known(api_client, project, repository, user,
+                                                            patched_provider, monkeypatch,
+                                                            django_capture_on_commit_callbacks, manifest_complete):
+    from unittest.mock import Mock
+
+    from apps.system.tests.review_helpers import configure_review
+    from apps.workflow import ai_review_model
+    from utils.provider.base import TagInfo
+
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    monkeypatch.setattr(patched_provider, "review_diff", lambda *args: {
+        "diffs": [{"old_path": "vendor/image.bin", "new_path": "vendor/image.bin", "diff": "", "binary": True}],
+        "complete": False, "manifest_complete": manifest_complete, "warnings": ["文件差异不可完整读取"]}, raising=False)
+    ask = Mock(side_effect=AssertionError("全部过滤时不应调用模型"))
+    monkeypatch.setattr(ai_review_model, "_ask", ask)
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=False):
+        response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
+    assert response.status_code == 200, response.data
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    assert instance.ai_reviews.get().coverage["total_files"] == 1
+    for endpoint in ("review-diff", "review-scope"):
+        queued = api_client.get(f"/api/workflow/instances/{instance.id}/{endpoint}/").data["data"]
+        assert queued["diffs"] == [] and queued["excluded_files"] == 1
+    from apps.workflow.ai_review import execute_review
+
+    execute_review(instance.id, "ai")
+    instance.refresh_from_db()
+    assert instance.review_scope.manifest_complete is manifest_complete
+    assert instance.ai_reviews.get().status == ("filtered" if manifest_complete else "incomplete")
+    assert instance.current_node_id == ("human" if manifest_complete else "ai")
+    assert instance.tasks.filter(node_id="human", status="pending").count() == int(manifest_complete)
+    assert release.status == "pending"
+    ask.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["timeout", "disconnect"])
+def test_interrupted_diff_body_is_saved_for_manual_recovery(
+    api_client, project, repository, user, patched_provider, monkeypatch,
+    django_capture_on_commit_callbacks, failure,
+):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from urllib3.exceptions import ProtocolError, ReadTimeoutError
+
+    from apps.system.tests.review_helpers import configure_review
+    from utils.provider.base import TagInfo
+    from utils.provider.gitlab import GitLabProvider
+
+    configure_review({"endpoint": "https://model.example/v1", "model": "review", "protocol": "openai", "skill": "code-review-expert"})
+    patched_provider.tags = [TagInfo(name="VA.1.0.1-rc", commit_hash="a" * 40)]
+    real_provider = GitLabProvider("https://gitlab.example.com", {"token": "synthetic"})
+    monkeypatch.setattr(patched_provider, "review_diff", real_provider.review_diff, raising=False)
+    error = ReadTimeoutError(None, "/compare", "私有响应") if failure == "timeout" else ProtocolError("私有响应")
+    remote = SimpleNamespace(status_code=200, headers={}, raw=SimpleNamespace(read1=Mock(side_effect=error)), close=Mock())
+    monkeypatch.setattr("utils.provider.gitlab._ReviewSession.get", lambda *args, **kwargs: remote)
+    _definition(project, repository, user)
+    release = _draft(project, repository, user)
+    with django_capture_on_commit_callbacks(execute=True):
+        response = api_client.post(f"/api/releases/{release.id}/submit-audit/", format="json")
+    assert response.status_code == 200, response.data
+    release.refresh_from_db()
+    instance = release.workflow_instance
+    assert release.status == "pending" and instance.current_node_id == "ai"
+    assert instance.review_scope.manifest_complete is False and instance.review_scope.diffs == []
+    report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
+    assert report["status"] == "incomplete" and report["can_recover"]
+    assert report["coverage"]["manifest_complete"] is False and "私有响应" not in str(report)
+    assert not instance.tasks.filter(node_id="human", status="pending").exists()
+    remote.close.assert_called_once()
+    # 未知范围不能自动放行，管理员留理由后才可进入人工节点，固定缺口仍保留。
+    skipped = api_client.post(f"/api/workflow/instances/{instance.id}/ai-review-skip/",
+                             {"node_id": "ai", "reason": "远端读取故障，人工线下核查"}, format="json")
+    assert skipped.status_code == 200, skipped.data
+    instance.refresh_from_db()
+    assert instance.current_node_id == "human" and instance.review_scope.manifest_complete is False
+
+
 def test_ai_review_api_separates_summary_from_full_findings(api_client, project, repository, user):
     from rest_framework.test import APIClient
 
@@ -914,7 +997,10 @@ def test_batch_review_discloses_unreadable_file_and_advances_to_human(
     report = api_client.get(f"/api/workflow/instances/{instance.id}/ai-review/").data["data"]["reviews"][0]
     assert report["status"] == "partial"
     assert report["coverage"]["reviewed_paths"] == ["source.py"]
-    assert report["coverage"]["unreviewed_paths"] == ["asset.bin"]
+    assert report["coverage"]["unreviewed_paths"] == []
+    assert report["coverage"]["excluded_files"] == 1
+    assert "excluded_paths" not in report["coverage"]
+    assert instance.ai_reviews.get(node_id="ai").coverage["excluded_paths"][0]["path"] == "asset.bin"
     assert any("二进制" in warning for warning in report["coverage"]["warnings"])
     assert report["coverage"]["manifest_complete"] is False
     from rest_framework.test import APIClient

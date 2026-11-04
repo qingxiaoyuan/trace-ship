@@ -9,6 +9,7 @@ def create_review_sample(project, repository, owner) -> dict:
     from apps.release.models import ReleaseRecord, ReleaseReviewScope
     from apps.system.models import SystemConfig
     from apps.system.review_settings import save_settings
+    from apps.workflow.ai_review_policy import diff_exclusion
     from apps.workflow.models import (
         AIReviewRemediation,
         AIReviewRun,
@@ -18,7 +19,7 @@ def create_review_sample(project, repository, owner) -> dict:
     )
 
     nodes = [
-        {"node_id": "ai", "node_name": "代码质量审查", "node_type": "ai-review"},
+        {"node_id": "ai", "node_name": "代码质量审查", "node_type": "ai_review"},
         {"node_id": "human", "node_name": "人工复核", "mode": "any",
          "approvers": [{"type": "user", "user_id": str(owner.id)}]},
     ]
@@ -85,6 +86,9 @@ def create_review_sample(project, repository, owner) -> dict:
     # 有意见的文件排在大目录末尾，验证默认定位和目录分页。
     extra_diffs = [{"old_path": f"src/generated-{index}.ts", "new_path": f"src/generated-{index}.ts",
                     "diff": "@@ -0,0 +1 @@\n+export const valid = true;"} for index in range(125)]
+    extra_diffs[0].update(old_path="vendor/sample/library.py", new_path="vendor/sample/library.py")
+    extra_diffs[1].update(old_path="config/application.yaml", new_path="config/application.yaml")
+    excluded = [{"path": item["new_path"], "reason": diff_exclusion(item)} for item in extra_diffs[:2]]
     ReleaseReviewScope.objects.create(
         instance=instance, base_git_hash="a" * 40, head_git_hash=release.git_hash, status="ready", diffs=[
             *extra_diffs,
@@ -101,9 +105,9 @@ def create_review_sample(project, repository, owner) -> dict:
     AIReviewRun.objects.create(
         instance=instance, node_id="ai", settings_version=config, status="partial", findings=findings,
         summary="发现 5 条意见，包含 HTML 渲染、状态更新和操作权限问题，请结合代码逐项复核。",
-        coverage={"total_files": 128, "reviewed_files": 127, "manifest_complete": False,
-                  "reviewed_paths": [item["new_path"] for item in extra_diffs] + paths[:2],
-                  "unreviewed_paths": [paths[2]], "total_fragments": 129, "reviewed_fragments": 128,
+        coverage={"total_files": 128, "reviewed_files": 125, "eligible_files": 126, "excluded_files": 2, "excluded_paths": excluded, "manifest_complete": False,
+                  "reviewed_paths": [item["new_path"] for item in extra_diffs[2:]] + paths[:2],
+                  "unreviewed_paths": [paths[2]], "total_fragments": 127, "reviewed_fragments": 126,
                   "warnings": ["远端比较超时，完整清单未知", "上下文未完整读取：critical_dependency.py（源码行 1–100）",
                                *[f"补充上下文未完整读取：dependency-{index}.py" for index in range(80)]],
                   "unread_context": [{"path": "critical_dependency.py", "kind": "read", "start": 1, "end": 100}],
@@ -124,5 +128,70 @@ def create_review_sample(project, repository, owner) -> dict:
                             finding=item, status="resolved", source_git_hash="a" * 40,
                             source_token=str(old_run.token)) for item in old_findings
     ])
-    return {"instance_id": str(instance.id), "release_id": str(release.id), "file": paths[0],
+    filtered_id = create_filtered_sample(project, repository, owner, definition, nodes, config, extra_diffs[:2])
+    queued_id = create_complete_directory_sample(project, repository, owner, definition, nodes, config)
+    return {"filtered_instance_id": filtered_id, "queued_instance_id": queued_id, "instance_id": str(instance.id), "release_id": str(release.id), "file": paths[0],
             "other_file": paths[1], "finding": findings[0], "source": "虚构固定差异与报告；HTTP、权限、采纳及整改使用生产实现"}
+
+
+
+def create_filtered_sample(project, repository, owner, definition, nodes, config, diffs) -> str:
+    """使用生产规划与报告函数保存全部过滤的样本，核对流程图和报告状态一致。"""
+    from types import SimpleNamespace
+
+    from apps.release.models import ReleaseRecord, ReleaseReviewScope
+    from apps.workflow.ai_review_model import _batch_outcome, _batch_plan
+    from apps.workflow.models import AIReviewRun, WorkflowInstance, WorkflowTask
+    from apps.workflow.services import WorkflowEngine
+
+    release = ReleaseRecord.objects.create(
+        project=project, repository=repository, publisher=owner, release_type="rc", status="pending",
+        version="VA.99.0.1-rc", tag_name="VA.99.0.1-rc_smoke", branch="main", git_hash="b" * 40,
+        release_doc="# 全部过滤验收\n\n虚构依赖与配置变更。",
+    )
+    instance = WorkflowInstance.objects.create(
+        definition=definition, biz_type="release", biz_id=str(release.id), source_project=project,
+        created_by=owner, status="running", current_node_id="human", node_config_snapshot=nodes,
+        node_status={"ai": "filtered"}, graph_data=WorkflowEngine._build_graph_data(nodes),
+    )
+    release.workflow_instance = instance
+    release.save(update_fields=["workflow_instance"])
+    WorkflowTask.objects.create(instance=instance, node_id="human", node_name="人工复核", approver=owner)
+    scope = ReleaseReviewScope.objects.create(instance=instance, base_git_hash="a" * 40, head_git_hash="b" * 40,
+                                             status="ready", manifest_complete=True, diffs=diffs)
+    names, plan, blocked = _batch_plan(SimpleNamespace(settings_version=config), scope)
+    outcome = _batch_outcome(scope, names, plan, blocked, {})
+    assert outcome["status"] == "filtered"
+    AIReviewRun.objects.create(instance=instance, node_id="ai", settings_version=config, **outcome)
+    return str(instance.id)
+
+
+def create_complete_directory_sample(project, repository, owner, definition, nodes, config) -> str:
+    """生产 provider 区分完整清单与不可读正文，排队目录使用实际接口展示。"""
+    from unittest.mock import patch
+
+    from apps.release.models import ReleaseRecord, ReleaseReviewScope
+    from apps.workflow.models import AIReviewRun, WorkflowInstance
+    from apps.workflow.services import WorkflowEngine
+    from utils.provider.gitlab import GitLabProvider
+
+    provider = GitLabProvider("https://gitlab.example.invalid", {"token": "synthetic"})
+    with patch.object(provider, "_review_comparison", return_value={"compare_timeout": False, "diffs": [
+        {"old_path": "logo.png", "new_path": "logo.png", "diff": "", "binary": True},
+        {"old_path": "src/unreadable.py", "new_path": "src/unreadable.py", "diff": "", "too_large": True},
+    ]}):
+        result = provider.review_diff("sample/repo", "a" * 40, "b" * 40)
+    assert result["manifest_complete"] and not result["complete"]
+    release = ReleaseRecord.objects.create(project=project, repository=repository, publisher=owner,
+        release_type="rc", status="pending", version="VA.99.0.2-rc", tag_name="VA.99.0.2-rc_smoke",
+        branch="main", git_hash="b" * 40, release_doc="# 完整清单验收\n\n虚构不可读正文。")
+    instance = WorkflowInstance.objects.create(definition=definition, biz_type="release", biz_id=str(release.id),
+        source_project=project, created_by=owner, status="running", current_node_id="ai", node_config_snapshot=nodes,
+        node_status={"ai": "running"}, graph_data=WorkflowEngine._build_graph_data(nodes))
+    release.workflow_instance = instance
+    release.save(update_fields=["workflow_instance"])
+    ReleaseReviewScope.objects.create(instance=instance, base_git_hash="a" * 40, head_git_hash="b" * 40,
+        status="incomplete", manifest_complete=result["manifest_complete"], diffs=result["diffs"], warnings=result["warnings"])
+    AIReviewRun.objects.create(instance=instance, node_id="ai", settings_version=config, status="queued",
+        coverage={"total_files": len(result["diffs"]), "reviewed_files": 0, "warnings": result["warnings"]})
+    return str(instance.id)

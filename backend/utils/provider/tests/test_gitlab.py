@@ -232,6 +232,76 @@ def test_review_diff_discloses_unknown_or_binary_coverage(provider, payload):
     result = provider.review_diff("group/project", "a" * 40, "b" * 40)
     assert result["complete"] is False
     assert result["warnings"]
+    assert result["manifest_complete"] is (payload.get("compare_timeout") is False)
+
+
+@responses.activate
+def test_review_response_limit_preserves_unknown_scope_without_leaking_content(provider, monkeypatch):
+    from utils.provider import gitlab
+
+    monkeypatch.setattr(gitlab, "REVIEW_RESPONSE_BYTES", 100)
+    responses.add(responses.GET, "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/compare",
+                  body='{"diffs": [' + "私有源码" * 100, status=200)
+    result = provider.review_diff("group/project", "a" * 40, "b" * 40)
+    assert result["diffs"] == [] and result["manifest_complete"] is False
+    assert "私有源码" not in str(result)
+    assert "容量" in result["warnings"][0]
+
+
+@responses.activate
+def test_review_comparison_does_not_follow_redirects(provider):
+    responses.add(responses.GET, "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/compare",
+                  headers={"Location": "https://unexpected.example/"}, status=302)
+    with pytest.raises(ProviderError, match="代码差异请求失败"):
+        provider.review_diff("group/project", "a" * 40, "b" * 40)
+    assert len(responses.calls) == 1
+
+
+def test_slow_review_response_closes_and_reports_unknown_manifest(provider, monkeypatch):
+    from apps.release.tests.test_ai_review_model_limits import FakeResponse
+    from utils.provider import gitlab
+
+    response = FakeResponse([b"{}"])
+    times = iter([0, 1, 61])
+    monkeypatch.setattr(gitlab.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(gitlab._ReviewSession, "get", lambda *args, **kwargs: response)
+    result = provider.review_diff("group/project", "a" * 40, "b" * 40)
+    assert result["manifest_complete"] is False and response.closed
+
+
+@pytest.mark.parametrize("reader", ["read1", "read"])
+@pytest.mark.parametrize("failure", ["timeout", "disconnect"])
+def test_interrupted_review_body_preserves_unknown_scope(provider, monkeypatch, reader, failure):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from urllib3.exceptions import ProtocolError, ReadTimeoutError
+
+    from utils.provider import gitlab
+
+    marker = "不可回显的响应片段"
+    error = ReadTimeoutError(None, "/compare", marker) if failure == "timeout" else ProtocolError(marker)
+    raw = SimpleNamespace(**{reader: Mock(side_effect=[b"{", error])})
+    response = SimpleNamespace(status_code=200, headers={}, raw=raw, close=Mock())
+    monkeypatch.setattr(gitlab._ReviewSession, "get", lambda *args, **kwargs: response)
+    result = provider.review_diff("group/project", "a" * 40, "b" * 40)
+    assert result["diffs"] == [] and result["complete"] is False and result["manifest_complete"] is False
+    assert "读取中断" in result["warnings"][0] and marker not in str(result)
+    response.close.assert_called_once()
+
+
+@pytest.mark.parametrize("fields", [{}, {"diff": None}, {"diff": 123}])
+@responses.activate
+def test_missing_rename_body_is_not_proof_of_pure_rename(provider, fields):
+    from apps.workflow.ai_review_policy import diff_exclusion
+
+    responses.add(responses.GET, "https://gitlab.example.com/api/v4/projects/group%2Fproject/repository/compare",
+                  json={"compare_timeout": False, "diffs": [
+                      {"old_path": "a.py", "new_path": "b.py", "renamed_file": True, **fields},
+                  ]}, status=200)
+    result = provider.review_diff("group/project", "a" * 40, "b" * 40)
+    assert result["diffs"][0]["diff_missing"] is True
+    assert diff_exclusion(result["diffs"][0]) is None
 
 
 @responses.activate

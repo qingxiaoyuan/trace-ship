@@ -14,6 +14,26 @@ function show() {
 beforeEach(() => { vi.spyOn(workflowApi, 'getReviewDiff').mockRejectedValue({ status: 500, friendlyMessage: '固定差异暂不可用' }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); useAuthStore.getState().clearAuth(); });
 
+it('当前和历史跳过文件只显示数量，不显示路径、原因或差异正文', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'filtered',
+    summary: '全部文件按策略跳过，未执行 AI 审查，请由人工核查', coverage: {
+      total_files: 51, eligible_files: 0, reviewed_files: 0, excluded_files: 51, unreviewed_paths: [],
+      excluded_paths: Array.from({ length: 51 }, (_, i) => ({ path: `vendor/pkg/file-${i}.py`, reason: '第三方依赖目录' })),
+    }, findings: [], history: [{ token: 'old', status: 'filtered', summary: '', updated_at: '2026-11-04',
+      coverage: { excluded_files: 1, excluded_paths: [{ path: 'config/old.yaml', reason: '配置文件' }] } }] }] });
+  vi.mocked(workflowApi.getReviewDiff).mockResolvedValue({ status: 'ready', base_git_hash: 'a', head_git_hash: 'b', diffs: [], excluded_files: 51 });
+  show();
+  expect(await screen.findByRole('heading', { name: '全部按策略跳过，已交人工审批' })).toBeTruthy();
+  expect(screen.getByText(/0 \/ 51 个文件已审查 · 51 个按策略跳过/)).toBeTruthy();
+  expect(await screen.findByText('已取得的文件全部按策略跳过，不展示代码差异，仍需人工审批。')).toBeTruthy();
+  fireEvent.click(screen.getByText('执行详情'));
+  expect(screen.getByText('1 个按策略跳过')).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/vendor\/pkg|config\/old|第三方依赖目录|配置文件/);
+  expect(screen.queryByRole('navigation', { name: '差异文件列表' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: '审查完成，等待人工决定' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '重新审查' })).toBeNull();
+});
+
 it('差异仍在读取时立即展示已经保存的意见', async () => {
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'completed', summary: '', coverage: {},
     findings: [{ id: 'ready', severity: 'P1', title: '已保存的权限问题', reason: '**原因完整**', suggestion: '校验权限', path: 'last.ts' }] }] });
@@ -300,6 +320,27 @@ it('等待审查时按固定差异展示文件目录，并保留重命名和末�
   expect(diff).toHaveBeenCalledWith('round-one');
 });
 
+it('等待审查时全部过滤只保留数量和人工审批提示', async () => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {}, findings: [] }] });
+  vi.mocked(workflowApi.getReviewDiff).mockResolvedValue({ status: 'incomplete', manifest_complete: true, base_git_hash: 'a', head_git_hash: 'b', diffs: [], excluded_files: 2000 });
+  show();
+  expect(await screen.findByText('2000 个按策略跳过')).toBeTruthy();
+  expect(screen.getByText('没有需要 AI 审查的文件，仍需人工审批。')).toBeTruthy();
+  expect(screen.getByText('0 个文件')).toBeTruthy();
+  expect(screen.queryByText('没有未审查的文件。')).toBeNull();
+  expect(screen.queryByText(/清单不完整|完整范围尚未取得/)).toBeNull();
+});
+
+it.each([true, false, null, undefined])('待审目录按独立完整性 %s 展示，旧记录保持原提示', async (complete) => {
+  vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {}, findings: [] }] });
+  vi.mocked(workflowApi.getReviewDiff).mockResolvedValue({ status: 'incomplete', manifest_complete: complete, base_git_hash: 'a', head_git_hash: 'b',
+    diffs: [{ old_path: 'src/large.ts', new_path: 'src/large.ts', diff: '', too_large: true }] });
+  show();
+  expect(await screen.findByTitle('src/large.ts')).toBeTruthy();
+  if (complete === true) expect(screen.queryByText(/清单不完整|完整范围尚未取得/)).toBeNull();
+  else expect(screen.getByText('以下仅为已取得的文件，完整范围尚未取得。')).toBeTruthy();
+});
+
 it('等待审查的摘要角色不请求文件目录，隐藏页签也不请求目录', async () => {
   const getDiff = vi.spyOn(workflowApi, 'getReviewDiff');
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {} }] });
@@ -338,7 +379,7 @@ it('文件清单未完整取得时不把空目录当作无代码变更', async (
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'queued', summary: '', coverage: {}, findings: [] }] });
   vi.spyOn(workflowApi, 'getReviewDiff').mockResolvedValue({ status: 'incomplete', base_git_hash: 'a', head_git_hash: 'b', diffs: [] });
   show();
-  expect(await screen.findByText('尚未取得文件目录。')).toBeTruthy();
+  expect(await screen.findByText('没有可展示的文件，完整范围尚未取得。')).toBeTruthy();
   expect(screen.getByText('以下仅为已取得的文件，完整范围尚未取得。')).toBeTruthy();
 });
 
@@ -357,7 +398,7 @@ it('审查失败且清单不完整时，空目录不代表没有未审查文件'
   vi.spyOn(workflowApi, 'getAiReview').mockResolvedValue({ reviews: [{ node_id: 'ai', status: 'failed', summary: '审查失败',
     coverage: { total_files: 0, reviewed_files: 0, unreviewed_paths: [], manifest_complete: false }, findings: [] }] });
   show();
-  expect(await screen.findByText('尚未取得文件目录。')).toBeTruthy();
+  expect(await screen.findByText('没有可展示的文件，完整范围尚未取得。')).toBeTruthy();
   expect(screen.getByText('以下仅为已取得的文件，完整范围尚未取得。')).toBeTruthy();
   expect(screen.queryByText('没有未审查的文件。')).toBeNull();
 });

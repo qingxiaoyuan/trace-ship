@@ -128,6 +128,7 @@ def capture_review_scope(
             raise serializers.ValidationError({"review_document_paths": f"审查文档不存在、不可读或超过限制：{path}"})
         documents[path] = content
     diffs, warnings = [], []
+    manifest_complete = True
     if not base:
         status = "first_release"
     elif base == head:
@@ -135,9 +136,10 @@ def capture_review_scope(
     else:
         result = provider.review_diff(identity, base, head)
         diffs, warnings = result["diffs"], result["warnings"]
+        manifest_complete = result.get("manifest_complete", result["complete"])
         status = "incomplete" if not result["complete"] else ("ready" if diffs else "no_changes")
     return ReleaseReviewScope.objects.create(
         instance=instance, base_tag=base_tag, base_git_hash=base, head_git_hash=head,
         context=release.review_context, context_is_requirement=release.review_context_is_requirement,
-        documents=documents, diffs=diffs, warnings=warnings, status=status,
+        documents=documents, diffs=diffs, warnings=warnings, status=status, manifest_complete=manifest_complete,
     )
