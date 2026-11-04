@@ -117,7 +117,7 @@ def execute_review(instance_id: str | uuid.UUID, node_id: str, expected_token: s
             run.dimensions = outcome["dimensions"]
             run.findings = outcome["findings"]
         run.save(update_fields=["status", "summary", "coverage", "dimensions", "findings", "updated_at"])
-        if run.status in ("completed", "partial", "first_release", "no_changes"):
+        if run.status in ("completed", "partial", "filtered", "first_release", "no_changes"):
             try:
                 # 后续人工节点不可用时回滚推进与新建任务，保留可恢复的失败状态。
                 with transaction.atomic():

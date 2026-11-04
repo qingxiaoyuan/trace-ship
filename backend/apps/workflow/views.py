@@ -293,8 +293,10 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
             "created_at": scope.created_at,
         }
         if full_access:
+            from apps.workflow.ai_review_presentation import review_diff_payload
+
             data.update(context=scope.context, context_is_requirement=scope.context_is_requirement,
-                        documents=scope.documents, diffs=scope.diffs)
+                        documents=scope.documents, **review_diff_payload(scope, instance.ai_reviews.all()))
         return success_response(data)
 
     @action(detail=True, methods=["get"], url_path="ai-review")
@@ -318,16 +320,18 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         if not member and assigned:
             full = True
         from apps.workflow.ai_review import _authorized_manager, _current, lease_expired
+        from apps.workflow.ai_review_presentation import present_coverage
 
         node_names = {node.get("node_id"): node.get("node_name", "AI 代码审查") for node in (instance.node_config_snapshot or [])}
         reviews = []
         for run in instance.ai_reviews.select_related("skipped_by", "settings_version").order_by("created_at"):
             expired = lease_expired(run)
             if full:
-                coverage = run.coverage
+                policy_version = (run.batch_results.get("__plan__") or {}).get("policy_version", 0)
+                coverage = present_coverage(run.coverage, policy_version)
                 summary = "审查执行中断或超时，等待重试" if expired else run.summary
             else:
-                coverage = {key: run.coverage.get(key, 0) for key in ("total_files", "reviewed_files", "total_fragments", "reviewed_fragments")}
+                coverage = {key: run.coverage.get(key, 0) for key in ("total_files", "reviewed_files", "total_fragments", "reviewed_fragments", "eligible_files", "excluded_files")}
                 if "manifest_complete" in run.coverage:
                     coverage["manifest_complete"] = run.coverage["manifest_complete"]
                 coverage["warnings"] = ["审查存在提示或未覆盖内容"] if run.coverage.get("warnings") else []
@@ -336,6 +340,7 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
                     "queued": "等待审查", "running": "审查进行中", "completed": "审查完成，等待人工决定",
                     "partial": "部分审查完成，未覆盖范围请由人工核查",
                     "failed": "审查未完成", "incomplete": "审查未完成", "first_release": "首次发布，已跳过 AI 审查",
+                    "filtered": "全部文件按策略跳过，未执行 AI 审查，请人工核查",
                     "no_changes": "无代码变更", "skipped": "管理员已留理由跳过 AI 审查",
                     "canceled": "本轮已退回修改，未完成的审查已取消",
                 }.get("failed" if expired else run.status, "审查状态未知")
@@ -349,7 +354,8 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
                 config = run.settings_version
                 data["configuration"] = {"version_id": str(config.id), "model": config.model,
                                          "protocol": config.protocol, "skill": skill_metadata(config)}
-                data.update(dimensions=run.dimensions, findings=run.findings, history=run.history,
+                history = [{**item, "coverage": present_coverage(item.get("coverage") or {}, policy_version)} for item in run.history]
+                data.update(dimensions=run.dimensions, findings=run.findings, history=history,
                             skip_reason=run.skip_reason, skipped_at=run.skipped_at,
                             skipped_by=str(run.skipped_by_id) if run.skipped_by_id else None,
                             skipped_by_name=(run.skipped_by.nickname or run.skipped_by.username) if run.skipped_by else "")
@@ -378,8 +384,11 @@ class WorkflowInstanceViewSet(StandardModelViewSet):
         scope = ReleaseReviewScope.objects.filter(instance=instance).first()
         if scope is None:
             return error_response(40400, "本轮未固定代码差异", status_code=404)
+        from apps.workflow.ai_review_presentation import review_diff_payload
+
         return success_response({"status": scope.status, "base_git_hash": scope.base_git_hash,
-                                 "head_git_hash": scope.head_git_hash, "diffs": scope.diffs})
+                                 "head_git_hash": scope.head_git_hash,
+                                 **review_diff_payload(scope, instance.ai_reviews.all())})
     @action(detail=True, methods=["get", "post"], url_path="remediations")
     def remediations(self, request: Request, pk=None) -> Response:
         """采纳意见和读取、处理跨轮整改项。"""

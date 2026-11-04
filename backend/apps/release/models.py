@@ -191,6 +191,7 @@ class ReleaseReviewScope(models.Model):
     context_is_requirement = models.BooleanField(default=False, verbose_name="补充内容包含真实需求快照")
     documents = models.JSONField(default=dict, verbose_name="审查文档内容快照")
     diffs = models.JSONField(default=list, verbose_name="代码差异快照")
+    manifest_complete = models.BooleanField(null=True, default=None, verbose_name="远端文件清单完整")
     warnings = models.JSONField(default=list, verbose_name="覆盖缺口")
     status = models.CharField(max_length=30, verbose_name="范围状态")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")

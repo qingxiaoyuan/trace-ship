@@ -9,6 +9,7 @@ import type {
 
 export interface ReviewScopeData {
   status: 'first_release' | 'no_changes' | 'incomplete' | 'ready';
+  manifest_complete?: boolean | null;
   base_tag: string;
   base_git_hash: string;
   head_git_hash: string;
@@ -43,9 +44,9 @@ export interface ReviewFragment {
 export interface AiReviewData {
   node_id: string;
   node_name?: string;
-  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'skipped' | 'canceled';
+  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'incomplete' | 'first_release' | 'no_changes' | 'filtered' | 'skipped' | 'canceled';
   summary: string;
-  coverage: { manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; total_fragments?: number; reviewed_fragments?: number; unreviewed_fragments?: ReviewFragment[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[]; fragments?: ReviewFragment[] }> };
+  coverage: { eligible_files?: number; excluded_files?: number; excluded_paths?: ReviewFragment[]; manifest_complete?: boolean; total_files?: number; reviewed_files?: number; warnings?: string[]; reviewed_paths?: string[]; unreviewed_paths?: string[]; total_fragments?: number; reviewed_fragments?: number; unreviewed_fragments?: ReviewFragment[]; batches?: Array<{ id: string; paths: string[]; status: string; dimensions?: string[]; fragments?: ReviewFragment[] }> };
   dimensions?: string[];
   configuration?: { version_id: string; model: string; protocol: string; skill: { name: string; revision: string; source: string; license: string } };
   findings?: AiReviewFinding[];
@@ -101,9 +102,11 @@ export interface ReviewDiffFile {
 
 export interface ReviewDiffData {
   status: ReviewScopeData['status'];
+  manifest_complete?: boolean | null;
   base_git_hash: string;
   head_git_hash: string;
   diffs: ReviewDiffFile[];
+  excluded_files?: number;
 }
 
 export const workflowApi = {

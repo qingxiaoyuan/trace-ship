@@ -21,6 +21,7 @@ from django.db import close_old_connections, connections
 from apps.release.review_scope import validate_document_paths
 from apps.release.services import ReleaseService
 from apps.workflow.ai_review_fragments import diff_lines, fitting_end, fragment, fragment_location, split_diff
+from apps.workflow.ai_review_policy import POLICY_VERSION, diff_exclusion, path_exclusion
 from utils.crypto import decrypt_credential
 from utils.provider.ai import _build_url, _extract_text, _is_anthropic
 
@@ -41,6 +42,15 @@ MODEL_IO_TIMEOUT = 60
 # 一小时租约内为最后一次阻塞请求、代码读取和调度预留余量。
 MAX_BATCH_TIMEOUT = 2700
 MAX_PARALLEL_BATCHES = 2
+# 限制单轮的准备、模型工作量与最坏等待；超额部分保留人工核查清单。
+MAX_REVIEW_FILES = 2000
+MAX_FILE_DIFF_BYTES = 500_000
+MAX_REVIEW_DIFF_BYTES = 2_000_000
+MAX_FILE_DIFF_LINES = 10_000
+MAX_REVIEW_BATCHES = 64
+MAX_BATCH_FILES = 50
+MAX_REVIEW_SECONDS = 900
+MAX_CONSECUTIVE_FAILURES = 3
 VALIDATION_INTERVAL = 5
 # Celery 进程内各轮共享上限，包括模型、仓库读取和凭证审计。
 _BATCH_SLOTS = BoundedSemaphore(2)
@@ -258,10 +268,12 @@ def _safe_findings(items, diffs):
     return result
 
 
-def _limited_batch(callback, canceled, validate=None):
+def _limited_batch(callback, canceled, validate=None, *, deadline: float = float("inf")):
     """限制同一进程的在途批次，等待名额时可响应执行失效。"""
     next_check = time.monotonic() + VALIDATION_INTERVAL
     while not _BATCH_SLOTS.acquire(timeout=0.2):
+        if time.monotonic() >= deadline:
+            raise ValueError("审查批次超时")
         if canceled is not None and canceled.is_set():
             raise ValueError("审查执行已失效")
         if validate and time.monotonic() >= next_check:
@@ -270,6 +282,8 @@ def _limited_batch(callback, canceled, validate=None):
                 raise ValueError("审查执行已失效")
             next_check = time.monotonic() + VALIDATION_INTERVAL
     try:
+        if time.monotonic() >= deadline:
+            raise ValueError("审查批次超时")
         if (canceled is not None and canceled.is_set()) or (validate and not validate()):
             if canceled is not None:
                 canceled.set()
@@ -281,7 +295,7 @@ def _limited_batch(callback, canceled, validate=None):
 
 def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
     """读取本轮固定证据，按模型请求限定在固定提交上只读访问。"""
-    batch_deadline = time.monotonic() + MAX_BATCH_TIMEOUT
+    batch_deadline = min(time.monotonic() + MAX_BATCH_TIMEOUT, getattr(scope, "execution_deadline", float("inf")))
     diffs = scope.diffs
     files = [item.get("new_path") or item.get("old_path") for item in diffs]
     if not files or any(not isinstance(path, str) or not path for path in files) or len(set(files)) != len(files):
@@ -305,7 +319,7 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
     provider = None
     # 固定提交下本批只读内容可复用；批次结束即释放，不跨用户或执行缓存。
     source_contents = dict(scope.documents)
-    gaps = []
+    gaps = [f"补充文档按策略跳过：{path}" for path in scope.documents if _tool_exclusion(scope, path)]
     context_pages = {}
 
     def record_context_gaps() -> None:
@@ -315,8 +329,8 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
             kind = "源码行" if item["kind"] == "read" else "差异内容行"
             gaps.append(f"上下文未完整读取：{item['path']}（{kind} {item['start']}–{item['end']}）")
 
-    def ensure_current():
-        if time.monotonic() >= batch_deadline:
+    def ensure_current(*, check_time: bool = True):
+        if check_time and time.monotonic() >= batch_deadline:
             raise ValueError("审查批次超时")
         if (canceled is not None and canceled.is_set()) or (validate and not validate()):
             if canceled is not None:
@@ -330,7 +344,8 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
             finalizing = True
             messages.append(finish_message)
         payload, raw = _ask(run.settings_version, messages)
-        ensure_current()
+        # 已返回的有效报告仍可保存；超时后不再读取工具或发起下一次请求。
+        ensure_current(check_time=False)
         action = payload.get("action")
         if action == "finish":
             record_context_gaps()
@@ -359,7 +374,12 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
                     "report_valid": bool(dimensions and matched)}
         if finalizing:
             break
-        if action in ("list_files", "search_files"):
+        ensure_current()
+        excluded_reason = _tool_exclusion(scope, payload.get("path")) if action in ("read", "search", "diff") else None
+        if excluded_reason:
+            gaps.append(f"请求的上下文未读取：{payload['path']}（{excluded_reason}）")
+            tool_result = {"error": f"审查策略未读取该文件：{excluded_reason}"}
+        elif action in ("list_files", "search_files"):
             offset = payload.get("offset", 0)
             query = payload.get("query", "") if action == "search_files" else ""
             if type(offset) is not int or offset < 0 or not isinstance(query, str) or (action == "search_files" and (not query or len(query) > 200)):
@@ -423,7 +443,7 @@ def _review_batch(run, scope, *, release=None, canceled=None, validate=None):
             messages.append(finish_message)
         else:
             messages.extend(additions)
-        if action == "read" or (action == "diff" and path is not None and selected):
+        if not excluded_reason and (action == "read" or (action == "diff" and path is not None and selected)):
             context_path = (selected[0].get("new_path") or selected[0].get("old_path")) if action == "diff" else path
             _record_context_page(context_pages, action, context_path, tool_result, delivered=delivered)
     record_context_gaps()
@@ -530,10 +550,21 @@ def _file_page(scope, offset, *, query=""):
     return {"files": page, "next_offset": index if index < len(names) else None, "total": len(names)}
 
 
+def _tool_exclusion(scope: Any, path: Any) -> str | None:
+    if not isinstance(path, str):
+        return None
+    if path in getattr(scope, "omitted_paths", {}):
+        return scope.omitted_paths[path]
+    if path in getattr(scope, "allowed_paths", set()):
+        return None
+    return path_exclusion(path, getattr(scope, "policy_version", 0))
+
+
 def _initial_payload(run, scope, diffs):
     page = _file_page(scope, 0)
     return {"skill_documents": run.settings_version.skill_documents, "base": scope.base_git_hash,
-            "head": scope.head_git_hash, "context": scope.context, "documents": scope.documents,
+            "head": scope.head_git_hash, "context": scope.context,
+            "documents": {path: content for path, content in scope.documents.items() if not _tool_exclusion(scope, path)},
             "context_is_requirement": scope.context_is_requirement, "diffs": diffs,
             "all_files": page["files"], "all_files_next": page["next_offset"], "all_files_total": page["total"]}
 
@@ -581,8 +612,12 @@ def _batch_plan(run, scope):
     if any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(names):
         raise ValueError("固定差异清单无效")
     plan, pending, blocked = [], [], []
+    exclusions = {name: diff_exclusion(item) for item, name in zip(diffs, names, strict=True)}
+    eligible_diffs = [item for item, name in zip(diffs, names, strict=True) if not exclusions[name]]
     full_scope = SimpleNamespace(
-        diffs=scope.diffs, all_diffs=scope.diffs, base_git_hash=scope.base_git_hash,
+        diffs=scope.diffs, all_diffs=eligible_diffs,
+        allowed_paths={path for item in eligible_diffs for path in (item.get("new_path"), item.get("old_path")) if path},
+        policy_version=POLICY_VERSION, base_git_hash=scope.base_git_hash,
         head_git_hash=scope.head_git_hash, context=scope.context, documents=scope.documents,
         context_is_requirement=scope.context_is_requirement,
     )
@@ -597,14 +632,35 @@ def _batch_plan(run, scope):
     def finish():
         nonlocal pending_size
         if pending:
-            raw = json.dumps(pending, ensure_ascii=False, sort_keys=True).encode()
-            plan.append({"id": hashlib.sha256(raw).hexdigest(), "diffs": list(pending),
-                         "paths": [item.get("new_path") or item.get("old_path") for item in pending]})
+            if len(plan) >= MAX_REVIEW_BATCHES:
+                blocked.extend({**fragment_location(item), "reason": "超过单轮批次容量"} for item in pending)
+            else:
+                raw = json.dumps(pending, ensure_ascii=False, sort_keys=True).encode()
+                plan.append({"id": hashlib.sha256(raw).hexdigest(), "diffs": list(pending),
+                             "paths": [item.get("new_path") or item.get("old_path") for item in pending]})
             pending.clear()
             pending_size = base_size
 
     batch_limit = base_size + max(0, (MAX_INPUT - base_size) // 3)
+    admitted_files = admitted_bytes = 0
     for item, name in zip(diffs, names, strict=True):
+        if exclusions[name]:
+            blocked.append({"path": name, "reason": exclusions[name], "category": "excluded"})
+            continue
+        if len(pending) >= MAX_BATCH_FILES:
+            finish()
+        if len(plan) >= MAX_REVIEW_BATCHES or admitted_files >= MAX_REVIEW_FILES:
+            blocked.append({"path": name, "reason": "超过单轮文件或批次容量"})
+            continue
+        diff = item.get("diff") or ""
+        # 字符数预判避免为明显超限文件再分配一份巨大的 UTF-8 副本。
+        size = len(diff) if len(diff) > MAX_FILE_DIFF_BYTES else len(diff.encode())
+        if size > MAX_FILE_DIFF_BYTES or diff.count("\n") > MAX_FILE_DIFF_LINES:
+            blocked.append({"path": name, "reason": "超过单文件差异容量"})
+            continue
+        if admitted_bytes + size > MAX_REVIEW_DIFF_BYTES:
+            blocked.append({"path": name, "reason": "超过单轮差异容量"})
+            continue
         if any(item.get(key) for key in ("binary", "too_large", "collapsed")) or not item.get("diff"):
             finish()
             blocked.append({"path": name, "reason": "文件差异不可完整读取"})
@@ -613,6 +669,8 @@ def _batch_plan(run, scope):
             finish()
             blocked.append({"path": name, "reason": "差异块行数不一致"})
             continue
+        admitted_files += 1
+        admitted_bytes += size
         item_size = encoded_size(item)
         if base_size + item_size > batch_limit:
             finish()
@@ -634,12 +692,22 @@ def _batch_plan(run, scope):
 
 
 def _batch_outcome(scope, names, plan, blocked, results):
-    reviewed, findings, uncovered = set(names), [], list(blocked)
+    excluded = [item for item in blocked if item.get("category") == "excluded"]
+    blocked = [item for item in blocked if item.get("category") != "excluded"]
+    excluded_names = {item["path"] for item in excluded}
+    eligible = [name for name in names if name not in excluded_names]
+    reviewed, findings, uncovered = set(eligible), [], list(blocked)
+    manifest_complete = getattr(scope, "manifest_complete", None)
+    if manifest_complete is None:
+        manifest_complete = scope.status == "ready"
+    stop_reason = results.get("__execution__", {}).get("stop_reason", "")
     unread_context = []
     reviewed_fragments = 0
     valid_report = False
     dimensions = None
     warnings = list(scope.warnings or []) if scope.status != "ready" else []
+    if stop_reason:
+        warnings.append(stop_reason)
     if len(plan) > 1:
         warnings.append("跨批关联按需检索，受模型交互次数和上下文容量限制，未保证穷举")
     batches = []
@@ -655,7 +723,7 @@ def _batch_outcome(scope, names, plan, blocked, results):
         reviewed_fragments += len(confirmed)
         for item, path in zip(entry["diffs"], paths, strict=True):
             if path not in confirmed:
-                uncovered.append({**fragment_location(item), "reason": "批次" + {"failed": "失败", "pending": "尚未执行"}.get(result.get("status", "pending"), "未完整审查")})
+                uncovered.append({**fragment_location(item), "reason": stop_reason if stop_reason and not result else "批次" + {"failed": "失败", "pending": "尚未执行"}.get(result.get("status", "pending"), "未完整审查")})
                 reviewed.discard(path)
         findings.extend(result.get("findings", []))
         warnings.extend(result.get("coverage", {}).get("warnings", []))
@@ -665,24 +733,25 @@ def _batch_outcome(scope, names, plan, blocked, results):
     for item in blocked:
         warnings.append(f"{item['reason']}：{item['path']}")
         reviewed.discard(item["path"])
-    if scope.status != "ready" and not warnings:
+    if not manifest_complete and not warnings:
         warnings.append("远端差异范围不完整")
     if not names:
         warnings.append("未取得可核实的差异文件清单")
-    incomplete = bool(not names or blocked or scope.status != "ready" or len(reviewed) != len(names)
+    incomplete = bool(not names or blocked or not manifest_complete or len(reviewed) != len(eligible)
                       or any(item["status"] != "completed" for item in batches))
-    coverage = {"manifest_complete": scope.status == "ready", "total_files": len(names), "reviewed_files": len(reviewed),
+    coverage = {"manifest_complete": manifest_complete, "total_files": len(names), "reviewed_files": len(reviewed),
+                "eligible_files": len(eligible), "excluded_files": len(excluded), "excluded_paths": excluded,
                 "reviewed_paths": [path for path in names if path in reviewed],
-                "unreviewed_paths": [path for path in names if path not in reviewed],
+                "unreviewed_paths": [path for path in eligible if path not in reviewed],
                 "total_fragments": sum(len(entry["paths"]) for entry in plan) + len(blocked),
                 "reviewed_fragments": reviewed_fragments, "unreviewed_fragments": uncovered,
                 "unread_context": unread_context,
                 "warnings": list(dict.fromkeys(warnings)), "batches": batches}
     failed = not valid_report and any(item["status"] == "failed" for item in batches)
     unique_findings = list({item["id"]: item for item in findings}.values())
-    status = "partial" if incomplete and valid_report else "failed" if failed else "incomplete" if incomplete else "completed"
+    status = "filtered" if names and not eligible and manifest_complete else "partial" if incomplete and valid_report else "failed" if failed else "incomplete" if incomplete else "completed"
     return {"status": status,
-            "summary": "部分审查完成，未覆盖范围请由人工核查" if status == "partial" else "审查未完成" if incomplete else "代码审查完成，等待人工决策",
+            "summary": "全部文件按策略跳过，未执行 AI 审查，请由人工核查" if status == "filtered" else "部分审查完成，未覆盖范围请由人工核查" if status == "partial" else "审查未完成" if incomplete else "代码审查完成，等待人工决策",
             "coverage": coverage, "dimensions": sorted(dimensions or []), "findings": unique_findings}
 
 
@@ -696,9 +765,10 @@ def _save_plan(scope, names, plan, blocked):
     def reference(item: dict[str, Any], path: str) -> dict[str, Any]:
         return {"index": indexes[path], **({"fragment": item["fragment"]} if "fragment" in item else {})}
 
-    return {"version": 2, "digest": _scope_digest(scope),
+    return {"version": 3, "policy_version": POLICY_VERSION, "digest": _scope_digest(scope),
             "batches": [{"id": entry["id"], "items": [reference(item, path) for item, path in zip(entry["diffs"], entry["paths"], strict=True)]} for entry in plan],
-            "blocked": [{**reference(item, item["path"]), "reason": item["reason"]} for item in blocked]}
+            "blocked": [{**reference(item, item["path"]), "reason": item["reason"],
+                         **({"category": "excluded"} if item.get("category") == "excluded" else {})} for item in blocked]}
 
 
 def _restore_fragment_plan(
@@ -742,7 +812,10 @@ def _restore_fragment_plan(
         item = restore(ref)
         if not isinstance(ref.get("reason"), str):
             raise ValueError("批次计划无效")
-        blocked.append({**fragment_location(item), "reason": ref["reason"]})
+        category = ref.get("category")
+        if category is not None and (manifest.get("version") != 3 or category != "excluded" or "fragment" in ref):
+            raise ValueError("批次过滤分类无效")
+        blocked.append({**fragment_location(item), "reason": ref["reason"], **({"category": category} if category else {})})
     if set(partitions) != set(range(len(names))):
         raise ValueError("批次计划不完整")
     for index, spans in partitions.items():
@@ -767,7 +840,9 @@ def _restore_plan(scope, manifest):
     names = [item.get("new_path") or item.get("old_path") for item in scope.diffs]
     if any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(names):
         raise ValueError("固定差异清单无效")
-    if manifest.get("version") == 2:
+    if manifest.get("version") == 3 and manifest.get("policy_version") != POLICY_VERSION:
+        raise ValueError("未知审查过滤策略")
+    if manifest.get("version") in (2, 3):
         return _restore_fragment_plan(scope, manifest, names)
     if "version" in manifest:
         raise ValueError("未知批次计划版本")
@@ -827,15 +902,25 @@ def review_scope(
         with validation_lock:
             return checkpoint is None or checkpoint(results, outcome)
 
+    deadline = time.monotonic() + MAX_REVIEW_SECONDS
     results = dict(run.batch_results or {})
+    # 执行预算属于一次尝试；恢复仍沿用固定计划和已完成结果。
+    results.pop("__execution__", None)
     manifest = results.get("__plan__")
     if manifest is None:
         names, plan, blocked = _batch_plan(run, scope)
-        results["__plan__"] = _save_plan(scope, names, plan, blocked)
+        results["__plan__"] = manifest = _save_plan(scope, names, plan, blocked)
     else:
         names, plan, blocked = _restore_plan(scope, manifest)
-    if not guarded_checkpoint(results, _batch_outcome(scope, names, plan, blocked, results)):
+    initial_outcome = _batch_outcome(scope, names, plan, blocked, results)
+    if not guarded_checkpoint(results, initial_outcome):
         return None
+    if not plan:
+        return initial_outcome
+    policy_version = manifest.get("policy_version", 0)
+    omitted_paths = {item["path"]: item["reason"] for item in blocked if "fragment" not in item}
+    allowed_names = {path for entry in plan for path in entry["paths"]}
+    allowed_diffs = [item for item in scope.diffs if (item.get("new_path") or item.get("old_path")) in allowed_names]
     # 读取惰性关联和发布身份只在调度线程完成；工作线程持有固定的只读快照。
     from apps.workflow.services import resolve_release
 
@@ -846,7 +931,6 @@ def review_scope(
     run.instance.created_by
     run.settings_version
     remaining = [entry for entry in plan if results.get(entry["id"], {}).get("status") != "completed"]
-    pending_entries = iter(remaining)
     canceled = Event()
 
     def run_batch(entry, *, manage_connection=True, validate=None):
@@ -856,9 +940,12 @@ def review_scope(
             batch_scope = SimpleNamespace(
                 diffs=entry["diffs"], base_git_hash=scope.base_git_hash, head_git_hash=scope.head_git_hash,
                 context=scope.context, documents=scope.documents, context_is_requirement=scope.context_is_requirement,
-                all_diffs=scope.diffs,
+                all_diffs=allowed_diffs if policy_version else scope.diffs,
+                policy_version=policy_version, omitted_paths=omitted_paths if policy_version else {},
+                allowed_paths={path for item in allowed_diffs for path in (item.get("new_path"), item.get("old_path")) if path},
+                execution_deadline=deadline,
             )
-            return _limited_batch(lambda: _review_batch(run, batch_scope, release=release, canceled=canceled, validate=validate), canceled, validate)
+            return _limited_batch(lambda: _review_batch(run, batch_scope, release=release, canceled=canceled, validate=validate), canceled, validate, deadline=deadline)
         except Exception as exc:
             # 外部响应可能含敏感内容，错误只保留固定文案。
             truncated = str(exc) in ("模型输出截断", "模型输出截断或未确认结束")
@@ -871,7 +958,7 @@ def review_scope(
                 # 工作线程有独立的数据库连接，批次结束后及时释放。
                 connections.close_all()
 
-    if len(remaining) == 1:
+    if len(remaining) == 1 and time.monotonic() < deadline:
         entry = remaining[0]
         result = run_batch(entry, manage_connection=False, validate=guarded_current)
         result["findings"] = _stable_findings(run, result.get("findings", []))
@@ -882,12 +969,29 @@ def review_scope(
     # 至多两个请求在途；主线程逐个合并并保存，不让并发结果互相覆盖。
     pool = _batch_executor()
     active = {}
+    dispatched = consecutive_failures = 0
+
+    def stop_reason() -> str:
+        if results.get("__execution__", {}).get("stop_reason"):
+            return results["__execution__"]["stop_reason"]
+        if time.monotonic() >= deadline:
+            return "单轮审查时间预算已耗尽，剩余范围请人工核查或重试"
+        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            return "模型连续批次失败，已停止后续请求，剩余范围请人工核查或重试"
+        if dispatched >= MAX_REVIEW_BATCHES:
+            return "单次执行批次容量已耗尽，剩余范围请人工核查或重试"
+        return ""
+
     def fill():
-        while len(active) < MAX_PARALLEL_BATCHES:
-            entry = next(pending_entries, None)
-            if entry is None:
+        nonlocal dispatched
+        while len(active) < MAX_PARALLEL_BATCHES and dispatched < len(remaining):
+            reason = stop_reason()
+            if reason:
+                results["__execution__"] = {"stop_reason": reason}
                 break
+            entry = remaining[dispatched]
             active[pool.submit(run_batch, entry, validate=guarded_current)] = entry
+            dispatched += 1
 
     try:
         fill()
@@ -898,10 +1002,19 @@ def review_scope(
                 if not guarded_current():
                     canceled.set()
                     return None
+                if time.monotonic() >= deadline:
+                    results["__execution__"] = {"stop_reason": stop_reason()}
+                    for future in list(active):
+                        if future.cancel():
+                            active.pop(future)
                 continue
             for future in done:
                 entry = active.pop(future)
                 result = future.result()
+                has_result = result.get("status") == "completed" or result.get("report_valid")
+                consecutive_failures = 0 if has_result else consecutive_failures + 1
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES and dispatched < len(remaining):
+                    results["__execution__"] = {"stop_reason": stop_reason()}
                 result["findings"] = _stable_findings(run, result.get("findings", []))
                 results[entry["id"]] = result
                 outcome = _batch_outcome(scope, names, plan, blocked, results)
@@ -910,7 +1023,8 @@ def review_scope(
                     return None
             # 局部失败不阻止其他固定片段；执行失效仍由令牌校验终止。
             fill()
-        return _batch_outcome(scope, names, plan, blocked, results)
+        outcome = _batch_outcome(scope, names, plan, blocked, results)
+        return None if not guarded_checkpoint(results, outcome) else outcome
     finally:
         if canceled.is_set():
             for future in active:

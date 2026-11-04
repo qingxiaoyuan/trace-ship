@@ -7,16 +7,31 @@ import json
 import logging
 import re
 import threading
+import time
 from datetime import datetime
 from urllib.parse import quote
 
 import requests
 from django.utils.dateparse import parse_datetime
+from urllib3.exceptions import HTTPError as RawHTTPError
 
 from .base import BranchInfo, CommitInfo, GitProvider, MergeRequestInfo, TagInfo
 from .exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 
 logger = logging.getLogger(__name__)
+REVIEW_RESPONSE_BYTES = 16_000_000
+REVIEW_RESPONSE_SECONDS = 60
+
+
+class _ReviewResponseIncomplete(ProviderError):
+    """审查正文超限或读取中断，范围保持未知；只携带固定脱敏提示。"""
+
+
+class _ReviewSession(requests.Session):
+    """审查请求不跟随跳转，也不为准备跳转而无界预读正文。"""
+
+    def resolve_redirects(self, resp, req, **kwargs):
+        return iter(())
 
 
 class GitLabProvider(GitProvider):
@@ -485,16 +500,20 @@ class GitLabProvider(GitProvider):
     def review_diff(self, repo_identity: str, base: str, head: str) -> dict:
         """固定 SHA 差异与服务端覆盖声明，缺口不能标为完整审查。"""
         encoded = self._encode_identity(repo_identity)
-        data = self._request(
-            "GET", f"/projects/{encoded}/repository/compare",
-            params={"from": base, "to": head, "straight": "true"},
-        ).json()
+        try:
+            data = self._review_comparison(encoded, base, head)
+        except _ReviewResponseIncomplete as exc:
+            return {"diffs": [], "complete": False, "manifest_complete": False,
+                    "warnings": [str(exc)]}
+        if not isinstance(data, dict):
+            raise ProviderError("代码差异响应无效，请重试")
         diffs = data.get("diffs")
         if not isinstance(diffs, list):
             raise ProviderError("代码差异响应无效，请重试")
         warnings = []
         if data.get("compare_timeout") is not False or data.get("overflow"):
             warnings.append("远端报告比较超时或差异超限，覆盖不完整")
+        manifest_complete = not warnings
         result = []
         for item in diffs:
             if not isinstance(item, dict):
@@ -508,11 +527,52 @@ class GitLabProvider(GitProvider):
                 warnings.append(f"文件 {new_path or old_path} 的差异不可完整读取")
             result.append({
                 "old_path": old_path, "new_path": new_path, "diff": diff if isinstance(diff, str) else "",
+                "diff_missing": not isinstance(diff, str),
                 "new_file": bool(item.get("new_file")), "deleted_file": bool(item.get("deleted_file")),
                 "renamed_file": bool(item.get("renamed_file")), "binary": binary,
                 "too_large": bool(item.get("too_large")), "collapsed": bool(item.get("collapsed")),
             })
-        return {"diffs": result, "complete": not warnings, "warnings": warnings}
+        return {"diffs": result, "complete": not warnings, "manifest_complete": manifest_complete, "warnings": warnings}
+
+    def _review_comparison(self, encoded: str, base: str, head: str) -> dict:
+        """只对审查比较限制下载和解码规模，避免巨大响应先撑满提审进程。"""
+        deadline = time.monotonic() + REVIEW_RESPONSE_SECONDS
+        with _ReviewSession() as session:
+            try:
+                response = session.get(
+                    f"{self.base_api}/projects/{encoded}/repository/compare",
+                    params={"from": base, "to": head, "straight": "true"},
+                    headers={"PRIVATE-TOKEN": self.token, "Accept": "application/json", "Accept-Encoding": "identity"},
+                    timeout=(10, 30), stream=True, allow_redirects=False,
+                )
+                try:
+                    if response.status_code != 200:
+                        raise ProviderError("代码差异请求失败，请检查仓库连接后重试")
+                    if response.headers.get("Content-Encoding", "identity").lower() not in ("", "identity"):
+                        raise ProviderError("代码差异响应编码不受支持")
+                    content = bytearray()
+                    read1 = getattr(response.raw, "read1", None)
+                    while True:
+                        if time.monotonic() >= deadline:
+                            raise _ReviewResponseIncomplete("远端差异响应超过时间预算，未取得完整文件清单")
+                        try:
+                            chunk = (read1(min(8192, REVIEW_RESPONSE_BYTES + 1 - len(content)), decode_content=False)
+                                     if callable(read1) else response.raw.read(1, decode_content=False))
+                        except (RawHTTPError, requests.RequestException, OSError):
+                            # raw 读取绕过 requests 的异常包装；残缺 JSON 不能作为审查依据。
+                            raise _ReviewResponseIncomplete("远端差异正文读取中断，未取得完整文件清单，请人工核查") from None
+                        if time.monotonic() >= deadline:
+                            raise _ReviewResponseIncomplete("远端差异响应超过时间预算，未取得完整文件清单")
+                        if not chunk:
+                            break
+                        content.extend(chunk)
+                        if len(content) > REVIEW_RESPONSE_BYTES:
+                            raise _ReviewResponseIncomplete("远端差异响应超过容量，未取得完整文件清单")
+                    return json.loads(content)
+                finally:
+                    response.close()
+            except (requests.RequestException, ValueError, UnicodeError):
+                raise ProviderError("代码差异读取失败，请检查仓库连接后重试") from None
 
     def get_merge_base(self, repo_identity: str, refs: list[str]) -> str | None:
         """

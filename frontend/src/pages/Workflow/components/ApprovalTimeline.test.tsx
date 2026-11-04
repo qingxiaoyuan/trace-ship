@@ -44,3 +44,16 @@ it('部分完成已流转但保留覆盖缺口状态', () => {
   expect(screen.queryByText('已完成')).toBeNull();
   expect(screen.queryByText('已通过')).toBeNull();
 });
+
+
+it.each(['running', 'revoked'])('按策略跳过在%s流程中保持原有终态', (status) => {
+  const instance = {
+    status, current_node_id: 'human', node_status: { ai: 'filtered' }, tasks: [],
+    graph_data: { nodes: [{ id: 'ai', type: 'ai-review-node', text: 'AI 代码审查' }], edges: [] },
+  } as unknown as WorkflowInstance;
+  render(<ApprovalTimeline instance={instance} />);
+  expect(screen.getByText('按策略跳过')).toBeTruthy();
+  expect(screen.queryByText('待处理')).toBeNull();
+  expect(screen.queryByText('已终止')).toBeNull();
+  expect(screen.queryByText('已完成')).toBeNull();
+});

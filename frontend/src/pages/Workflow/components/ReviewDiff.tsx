@@ -274,7 +274,7 @@ export function ReviewDiff({ instanceId, reviews, active = true }: { instanceId:
     {!loading && !query.error && query.data ? <>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-500"><span>固定审查范围</span><code className="break-all text-slate-700" title={query.data.base_git_hash}>{query.data.base_git_hash?.slice(0, 12) || '首次发布'}</code><span aria-hidden="true">→</span><code className="break-all text-slate-700" title={query.data.head_git_hash}>{query.data.head_git_hash?.slice(0, 12) || '未取得'}</code></div>
       {query.data.status === 'incomplete' ? <p className="text-sm text-amber-700">本轮差异未完整取得，以下内容仅为已保存部分。</p> : null}
-      {files.length === 0 ? <p className="text-sm text-slate-500">本轮没有可展示的代码差异。</p> : <div className="grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-[180px_minmax(0,1fr)]">
+      {files.length === 0 ? <p className="text-sm text-slate-500">{query.data.excluded_files ? '已取得的文件全部按策略跳过，不展示代码差异，仍需人工审批。' : '本轮没有可展示的代码差异。'}</p> : <div className="grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-[180px_minmax(0,1fr)]">
         <FileNavigation key={`${instanceId}:${sessionVersion}`} files={files} assignments={assignments} selectedIndex={selectedIndex} onSelect={(index) => setSelection({ instanceId, index })} />
         <DiffFile key={`${instanceId}:${sessionVersion}:${selectedIndex}`} file={files[selectedIndex]} items={assignments[selectedIndex]} />
       </div>}
