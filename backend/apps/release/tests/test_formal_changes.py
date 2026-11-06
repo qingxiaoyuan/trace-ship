@@ -105,6 +105,22 @@ def test_generate_formal_notes_uses_highest_lower_version_and_fixed_sha(client, 
     assert len(commits) == 1
 
 
+def test_generate_formal_notes_preserves_first_step_update_edits(client, formal, remote):
+    formal.updates = [{
+        "type": "A",
+        "content": "第一步里编辑后的功能说明",
+        "source": "commit",
+        "source_ref": HEAD[:8],
+    }]
+    formal.save(update_fields=["updates"])
+
+    response = client.post(f"/api/releases/{formal.id}/generate-doc/", {}, format="json")
+
+    assert response.status_code == 200, response.data
+    assert "A 第一步里编辑后的功能说明" in response.data["data"]
+    assert "A 累计功能" not in response.data["data"]
+
+
 def test_formal_preview_includes_all_commits_and_only_proven_mrs(client, formal, remote, monkeypatch):
     from utils.provider.base import MergeRequestInfo
 

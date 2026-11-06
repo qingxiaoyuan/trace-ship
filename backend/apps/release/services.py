@@ -488,6 +488,30 @@ class ReleaseDocGenerator:
         self.release = release
         self.provider = provider
 
+    @staticmethod
+    def _preserve_update_edits(parsed_updates: list[dict], saved_updates: list[dict]) -> list[dict]:
+        """把表单编辑应用到固定区间内匹配的解析条目。"""
+        remaining = list(saved_updates)
+        updates = []
+        for parsed in parsed_updates:
+            source = parsed.get("source")
+            source_ref = str(parsed.get("source_ref") or "")
+            match_index = next((
+                index for index, saved in enumerate(remaining)
+                if saved.get("source") == source
+                and (
+                    str(saved.get("source_ref") or "") == source_ref
+                    or (source == "commit" and source_ref and str(saved.get("source_ref") or "").startswith(source_ref))
+                    or (source == "commit" and str(saved.get("source_ref") or "") and source_ref.startswith(str(saved.get("source_ref"))))
+                )
+            ), None)
+            if match_index is not None:
+                saved = remaining.pop(match_index)
+                parsed = {**parsed, "type": saved.get("type", parsed.get("type", "")), "content": saved.get("content", parsed.get("content", ""))}
+            updates.append(parsed)
+        updates.extend(item for item in remaining if not item.get("source_ref"))
+        return updates
+
     def _get_last_tag(self) -> str | None:
         """
         获取仓库中匹配 version_rule 的最新 tag 名称
@@ -715,8 +739,9 @@ class ReleaseDocGenerator:
             self.release.base_git_hash = changes["base_git_hash"]
             self.release.changes_initialized = True
             self.release.changes_warnings = changes["warnings"]
-            manual = [item for item in self.release.updates if not item.get("source_ref")]
-            self.release.updates = changes["parsed_updates"] + manual
+            self.release.updates = self._preserve_update_edits(
+                changes["parsed_updates"], self.release.updates or [],
+            )
             self.release.save(update_fields=["base_tag", "base_git_hash", "changes_initialized", "changes_warnings", "updates"])
         else:
             commits = self._fetch_commits()
