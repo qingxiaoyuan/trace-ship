@@ -6,26 +6,38 @@
 from typing import Any
 
 from django.conf import settings
+from django.db import transaction
 
 from apps.system.models import OperationLog, SystemConfig
 
 DOWNLOAD_CIDRS_KEY = "download_allowed_cidrs"
+DOWNLOAD_PROXIES_KEY = "download_trusted_proxy_cidrs"
+DOWNLOAD_POLICY_KEYS = (DOWNLOAD_CIDRS_KEY, DOWNLOAD_PROXIES_KEY)
 
 
 class DownloadPolicyConfig:
     """保存并读取下载白名单，显式空名单优先于环境默认值。"""
 
     @staticmethod
-    def get() -> str | None:
-        saved = SystemConfig.objects.filter(key=DOWNLOAD_CIDRS_KEY).values_list("value", flat=True).first()
-        return settings.DOWNLOAD_ALLOWED_CIDRS if saved is None else saved
+    def get() -> tuple[str | None, str]:
+        saved = dict(SystemConfig.objects.filter(key__in=DOWNLOAD_POLICY_KEYS).values_list("key", "value"))
+        return (
+            saved.get(DOWNLOAD_CIDRS_KEY, settings.DOWNLOAD_ALLOWED_CIDRS),
+            saved.get(DOWNLOAD_PROXIES_KEY, settings.DOWNLOAD_TRUSTED_PROXY_CIDRS),
+        )
 
     @staticmethod
-    def save(allowed_cidrs: str) -> None:
-        SystemConfig.objects.update_or_create(
-            key=DOWNLOAD_CIDRS_KEY,
-            defaults={"value": allowed_cidrs, "description": "允许文件下载的网段", "is_public": False},
-        )
+    def save(allowed_cidrs: str, trusted_proxies: str | None) -> None:
+        with transaction.atomic():
+            SystemConfig.objects.update_or_create(
+                key=DOWNLOAD_CIDRS_KEY,
+                defaults={"value": allowed_cidrs, "description": "允许文件下载的网段", "is_public": False},
+            )
+            if trusted_proxies is not None:
+                SystemConfig.objects.update_or_create(
+                    key=DOWNLOAD_PROXIES_KEY,
+                    defaults={"value": trusted_proxies, "description": "下载策略信任的上游代理", "is_public": False},
+                )
 
 
 class SystemConfigService:

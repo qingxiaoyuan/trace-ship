@@ -243,7 +243,7 @@ cd trace-ship-release
 
 增量更新（复用已有 `.env.prod`）：外网侧 `scripts/build.sh --backend` / `--frontend` / `--app`，内网侧解压后 `./deploy.sh` 选对应模式。菜单 1/2/3 与原来相同；**第 4 项**会先备份业务库并做一致性检查，通过后再更新前后端（等价 `./deploy.sh --upgrade`）。
 
-首次引入下载限制时，请按[外网文件下载限制的升级步骤](#配置外网文件下载限制)先停整组应用，再用同版本前后端更新包启动。
+首次引入下载限制时，使用同版本前后端更新包，启动后按[文件下载限制](#配置外网文件下载限制)维护白名单。
 
 也可单独用 `./db.sh`（与 `deploy.sh` 同级）只做备份 / 恢复 / 检查，不动应用容器。`db.sh` 只动 Trace Ship 业务库，不含 GitLab / Redis / 打包工作区。
 
@@ -277,23 +277,17 @@ scripts/dev.sh deps --test
 
 ## 配置外网文件下载限制
 
-生产环境默认禁止下载，OA 登录、业务操作与在线查看仍按原有权限工作。首次升级时使用包含同版本前端和后端的应用更新包，按以下顺序操作：
+使用同版本前后端更新包执行 `./deploy.sh --upgrade`，沿用现有 `.env.prod` 和原有生产 Compose 网络。后端通过原有 Docker socket 核验同一 Compose 项目、同一网络上运行的前端 nginx 地址，容器重建后会重新识别。无法核验代理地址时，文件下载会被拒绝。 [Docker 容器网络信息](https://docs.docker.com/reference/cli/docker/inspect/#get-an-instances-ip-address)
 
-1. 在部署目录配置 `.env.prod`，核对办公网、管理网段和代理地址。
-2. 先停止整组应用服务，包括前端、后端、Celery Worker 和 Celery Beat。数据库等依赖层保持运行。
+已运行使用固定下载代理网络的版本时，部署脚本会要求同时更新前后端，避免只更新一侧导致服务失联。
 
-   ```bash
-   docker compose --env-file .env.prod -f docker-compose.prod.yml stop frontend backend celery-worker celery-beat
-   ```
+启动后，由具备系统配置权限的管理员进入「系统配置 → 文件下载限制」，填写允许下载的办公网或 VPN 客户端 IP 和网段。生产环境默认关闭下载，保存空白名单也会关闭下载。OA 登录、业务操作和在线查看沿用原有权限。
 
-3. 确认应用组已停止后执行 `./deploy.sh --app`，由同一个更新包启动同版本前后端并接入代理网络。
+如果有 OA 网关等上游代理，在同一页面填写会保留真实客户端 IP 的代理固定地址。下载名单应使用真实客户端网段，避免包含代理或容器网关地址。
 
-- `DOWNLOAD_ALLOWED_CIDRS` 填写初始允许下载的办公网或 VPN 客户端网段。系统配置 → 文件下载限制中的白名单保存后立即生效，优先于环境变量。保存空白名单会关闭所有下载。
-- `DOWNLOAD_POLICY_ADMIN_CIDRS` 填写能够编辑白名单的管理终端网段。省略时沿用环境变量中的初始允许下载网段。修改白名单同时要求系统配置权限。
-- 生产编排自动在专用 Docker 桥接网络上固定并信任前端 nginx 的地址，容器重建沿用同一地址。默认子网为 `172.30.254.0/29`，前端和后端分别使用 `.2`、`.3`。如与现有网络冲突，在首次升级前修改 `DOWNLOAD_PROXY_PREFIX`（子网的前三段）。OA 网关通过已发布的前端端口接入。 [Compose 固定地址](https://docs.docker.com/reference/compose-file/services/#ipv4_address-ipv6_address)
-- `DOWNLOAD_TRUSTED_PROXY_CIDRS` 只填写 OA 网关等实际转发请求的上游代理稳定地址，例如 IPv4 使用 `/32`，IPv6 使用 `/128`。避免信任整个 Docker 共享网络或办公网。下载和管理网段中避免包含 OA 网关、NAT 出口或容器网关地址。
+已有部署设置过的下载名单和上游代理环境变量继续作为页面未保存时的初始值。已有管理网段限制继续生效。
 
-代理接收公网请求时须重写来自客户端的 `X-Forwarded-For`，后续可信代理追加真实对端 IP。仓库前端 nginx 使用 `$proxy_add_x_forwarded_for` 追加对端。后端从实际连接地址向上核对可信代理链，使用第一个非代理地址。OA 网关如果只转发共享地址，需在 OA 入口保留真实客户端地址，或将该入口的代理地址排除在下载与管理网段之外。生产网关应仅通过受控入口访问后端，且禁止缓存用户信息和下载响应。 [Nginx 代理头说明](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#var_proxy_add_x_forwarded_for)
+代理接收公网请求时须重写来自客户端的 `X-Forwarded-For`，后续可信代理追加真实对端 IP。仓库前端 nginx 使用 `$proxy_add_x_forwarded_for` 追加对端。后端从实际连接地址向上核对可信代理链，移除可信代理后只接受剩余的单个客户端地址，发现额外未经验证的地址则拒绝下载。OA 网关如果只转发共享地址，需在 OA 入口保留真实客户端地址，并将该入口的代理地址排除在下载与管理网段之外。生产网关应仅通过受控入口访问后端，且禁止缓存用户信息和下载响应。 [Nginx 代理头说明](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#var_proxy_add_x_forwarded_for)
 
 用同一有下载权限的账号分别从办公网和外网 OA 验收。两边均应能打开发布详情和在线日志。外网直接请求产物、完整日志、发布单和周报导出接口应得到 `403`，内网下载应成功。重建前端容器后复核同样结果。单独提供下载能力的 SVN、GitLab 或其他文件服务应在其入口执行自己的访问控制。
 

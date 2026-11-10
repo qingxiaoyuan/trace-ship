@@ -311,6 +311,7 @@ test('项目管理员可恢复任务深链，读取长日志与真实下载，�
       await expect(admin).not.toHaveURL(/\/login/);
       await admin.goto(new URL('/system/configs', process.env.SMOKE_BASE_URL).href);
       const whitelist = admin.getByLabel('允许下载的 IP 地址或网段');
+      const trustedProxies = admin.getByLabel('可信上游代理 IP（直连可留空）');
       const save = admin.getByRole('button', { name: '保存下载白名单' });
       const saveWhitelist = async () => {
         const saved = admin.waitForResponse((response) =>
@@ -330,8 +331,18 @@ test('项目管理员可恢复任务深链，读取长日志与真实下载，�
         await saveWhitelist();
         await expect(whitelist).toHaveValue(normalized);
 
+        await trustedProxies.fill('192.0.2.0/24');
+        const invalidProxy = admin.waitForResponse((response) =>
+          response.url().endsWith('/configs/download-policy/') && response.request().method() === 'PUT',
+        );
+        await save.click();
+        expect((await invalidProxy).status()).toBe(400);
+        await expect(admin.getByText('请逐个填写上游代理的固定 IP 地址', { exact: true })).toBeVisible();
+        await trustedProxies.fill('192.0.2.10');
         await whitelist.fill('10.20.30.0/24');
         await saveWhitelist();
+        await admin.reload();
+        await expect(trustedProxies).toHaveValue('192.0.2.10');
         await expect(whitelist).toBeEnabled();
         const settingsDesktop = await capturePageEvidence(admin, 'download-policy-config-desktop.png', 1440, 1000);
         await admin.setViewportSize({ width: 375, height: 812 });

@@ -44,8 +44,6 @@ services:
       # CORS：生产强制关闭全放行
       CORS_ALLOW_ALL_ORIGINS: "False"
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
-      # 自动信任专用桥接网络上前端 nginx 的固定地址，其余代理由部署端配置。
-      DOWNLOAD_TRUSTED_PROXY_CIDRS: "${DOWNLOAD_PROXY_PREFIX:-172.30.254}.2,${DOWNLOAD_TRUSTED_PROXY_CIDRS:-}"
       # 打包工作区根目录：宿主机与容器内必须路径一致，DooD 下构建容器才能正确挂载源码
       PACKAGE_WORKSPACE_ROOT: ${PACKAGE_WORKSPACE_ROOT:?PACKAGE_WORKSPACE_ROOT must be set}
       # 发布预览单分支最大提交扫描数（可选，默认 100）
@@ -65,9 +63,7 @@ services:
       # 打包工作区：bind mount 到与宿主机一致的路径，保证构建容器 -v 挂载路径有效（DooD 硬性要求）
       - ${PACKAGE_WORKSPACE_ROOT}:${PACKAGE_WORKSPACE_ROOT}
     networks:
-      trace_ship_net: {}
-      trace_ship_proxy:
-        ipv4_address: ${DOWNLOAD_PROXY_PREFIX:-172.30.254}.3
+      - trace_ship_net
     # 注意：依赖服务在独立的 compose 项目中，无法使用 depends_on；
     # 启动顺序与依赖健康等待由 start-prod.sh / deploy.sh 保证
 
@@ -84,8 +80,7 @@ services:
     ports:
       - "${FRONTEND_PORT:-80}:80"
     networks:
-      trace_ship_proxy:
-        ipv4_address: ${DOWNLOAD_PROXY_PREFIX:-172.30.254}.2
+      - trace_ship_net
     depends_on:
       - backend
 
@@ -165,8 +160,3 @@ networks:
   trace_ship_net:
     external: true
     name: trace-ship-net
-  trace_ship_proxy:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: ${DOWNLOAD_PROXY_PREFIX:-172.30.254}.0/29

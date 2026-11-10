@@ -26,7 +26,7 @@ from apps.system.serializers import (
     OperationLogSerializer,
     SystemConfigSerializer,
 )
-from apps.system.services import DOWNLOAD_CIDRS_KEY, DownloadPolicyConfig, OperationLogService
+from apps.system.services import DOWNLOAD_POLICY_KEYS, DownloadPolicyConfig, OperationLogService
 from utils.download_access import can_manage_download_policy
 from utils.permissions import HasPermission, IsSuperUser
 from utils.response import error_response, success_response
@@ -57,7 +57,7 @@ class SystemConfigViewSet(StandardModelViewSet):
     使用 key 作为 lookup 字段，需要 system.config 权限（超管自动放行）。
     """
 
-    queryset = SystemConfig.objects.exclude(key=DOWNLOAD_CIDRS_KEY)
+    queryset = SystemConfig.objects.exclude(key__in=DOWNLOAD_POLICY_KEYS)
     serializer_class = SystemConfigSerializer
     lookup_field = "key"
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -97,17 +97,26 @@ class SystemConfigViewSet(StandardModelViewSet):
     @action(detail=False, methods=["get", "put"], url_path="download-policy")
     @method_decorator(never_cache)
     def download_policy(self, request: Request) -> Response:
-        """读取下载白名单，仅允许从管理网段修改。"""
-        can_edit = can_manage_download_policy(request)
+        """维护下载白名单和上游代理，兼容已配置的管理网段限制。"""
+        allowed_cidrs, trusted_proxies = DownloadPolicyConfig.get()
+        can_edit = can_manage_download_policy(request, trusted_proxies)
         if request.method != "PUT":
-            return success_response({"allowed_cidrs": DownloadPolicyConfig.get() or "", "can_edit": can_edit})
+            return success_response({
+                "allowed_cidrs": allowed_cidrs or "", "trusted_proxy_cidrs": trusted_proxies, "can_edit": can_edit,
+            })
         if not can_edit:
             raise PermissionDenied("请连接下载策略管理网段后修改白名单")
         serializer = DownloadPolicySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        allowed_cidrs = serializer.validated_data["allowed_cidrs"]
-        DownloadPolicyConfig.save(allowed_cidrs)
-        return success_response({"allowed_cidrs": allowed_cidrs, "can_edit": True}, "下载白名单已保存")
+        DownloadPolicyConfig.save(
+            serializer.validated_data["allowed_cidrs"], serializer.validated_data.get("trusted_proxy_cidrs"),
+        )
+        allowed_cidrs, saved_proxies = DownloadPolicyConfig.get()
+        return success_response({
+            "allowed_cidrs": allowed_cidrs or "",
+            "trusted_proxy_cidrs": saved_proxies,
+            "can_edit": can_edit if saved_proxies == trusted_proxies else can_manage_download_policy(request, saved_proxies),
+        }, "下载白名单已保存")
 
     @action(detail=False, methods=["post"], url_path="ldap-test")
     def ldap_test(self, request: Request) -> Response:

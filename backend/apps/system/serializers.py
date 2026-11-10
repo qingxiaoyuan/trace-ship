@@ -8,7 +8,7 @@ from rest_framework import serializers
 
 from apps.system.ai_config import AI_CONFIG_KEYS, AI_SETTINGS_WRITE_MESSAGE
 from apps.system.models import OPEN_API_SCOPES, AccessToken, OperationLog, SystemConfig
-from apps.system.services import DOWNLOAD_CIDRS_KEY
+from apps.system.services import DOWNLOAD_POLICY_KEYS
 from utils.download_access import parse_cidrs
 
 DOWNLOAD_CIDRS_MAX_LENGTH = 24 * 1024
@@ -25,7 +25,7 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs):
-        if attrs.get("key") == DOWNLOAD_CIDRS_KEY:
+        if attrs.get("key") in DOWNLOAD_POLICY_KEYS:
             raise serializers.ValidationError("请在「文件下载限制」中保存下载白名单")
         # 旧键、新键都核验，禁止借修改 key 或元数据绕过整组保存。
         if any(key in AI_CONFIG_KEYS for key in (attrs.get("key"), getattr(self.instance, "key", None))):
@@ -35,6 +35,9 @@ class SystemConfigSerializer(serializers.ModelSerializer):
 
 class DownloadPolicySerializer(serializers.Serializer):
     allowed_cidrs = serializers.CharField(allow_blank=True, max_length=DOWNLOAD_CIDRS_MAX_LENGTH)
+    trusted_proxy_cidrs = serializers.CharField(
+        allow_blank=True, required=False, max_length=DOWNLOAD_CIDRS_MAX_LENGTH,
+    )
 
     def validate_allowed_cidrs(self, value: str) -> str:
         try:
@@ -46,6 +49,15 @@ class DownloadPolicySerializer(serializers.Serializer):
                 f"规范化后的白名单不能超过 {DOWNLOAD_CIDRS_MAX_LENGTH} 个字符", code="max_length",
             )
         return normalized
+
+    def validate_trusted_proxy_cidrs(self, value: str) -> str:
+        try:
+            proxies = parse_cidrs(value)
+        except ValueError as exc:
+            raise serializers.ValidationError("请输入有效的上游代理 IP 地址") from exc
+        if any(proxy.prefixlen != proxy.max_prefixlen for proxy in proxies):
+            raise serializers.ValidationError("请逐个填写上游代理的固定 IP 地址")
+        return "\n".join(str(proxy.network_address) for proxy in proxies)
 
 
 class OperationLogSerializer(serializers.ModelSerializer):
