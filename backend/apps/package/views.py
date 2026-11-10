@@ -15,12 +15,16 @@ import django_filters
 from django.core.cache import cache
 from django.db.models import Exists, OuterRef, Prefetch
 from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException, NotFound
 from rest_framework.mixins import DestroyModelMixin
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
 
 from apps.credential.models import Credential
 from apps.package.ai import PackageScriptAIError, PackageScriptAIService
@@ -51,6 +55,7 @@ from apps.release.models import ReleaseRecord
 from apps.system.services import OperationLogService
 from utils.permissions import (
     HasPermission,
+    IsFromDownloadNetwork,
     IsNotOnlyProjectMaintainer,
     IsNotProjectMaintainer,
     IsProjectDeveloper,
@@ -708,7 +713,7 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             and "offset" not in self.request.query_params
         ):
             # 在线日志 JSON 可读，完整日志与产物文件另行授权，不能按 GET 全部放行。
-            return [IsAuthenticated(), IsProjectMember(), IsNotProjectMaintainer()]
+            return [IsAuthenticated(), IsFromDownloadNetwork(), IsProjectMember(), IsNotProjectMaintainer()]
         return [IsAuthenticated(), IsProjectMember()]
 
     def destroy(self, request, *args, **kwargs):
@@ -760,7 +765,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         return success_response(data, f"已推送到 {result['remote_url']}")
 
     @action(detail=True, methods=["get"], url_path="logs")
-    def logs(self, request, pk=None):
+    @method_decorator(never_cache)
+    def logs(self, request: Request, pk: str | None = None) -> FileResponse | HttpResponse | Response:
         """读取任务日志。
 
         默认返回完整文本（兼容旧调用）。
@@ -826,7 +832,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         })
 
     @action(detail=True, methods=["get"], url_path=r"artifacts/(?P<artifact_id>[^/.]+)/download")
-    def download_artifact(self, request, pk=None, artifact_id=None):
+    @method_decorator(never_cache)
+    def download_artifact(self, request: Request, pk: str | None = None, artifact_id: str | None = None) -> FileResponse:
         """下载任务产物。"""
         task = self.get_object()
         artifact = next((item for item in task.artifact_info if item.get("id") == artifact_id), None)
@@ -847,7 +854,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         return FileResponse(open(file_path, "rb"), as_attachment=True, filename=artifact.get("name") or file_path.name)
 
     @action(detail=True, methods=["get"], url_path="download-all")
-    def download_all(self, request, pk=None):
+    @method_decorator(never_cache)
+    def download_all(self, request: Request, pk: str | None = None) -> FileResponse:
         """将任务全部产物打包为 zip 一键下载。"""
         task = self.get_object()
         workspace = Path(task.workspace_path).resolve() if task.workspace_path else None

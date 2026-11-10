@@ -35,6 +35,7 @@ export interface UserInfo {
   roles: string[];
   permissions: string[];
   is_superuser: boolean;
+  can_download_files?: boolean;
 }
 
 export interface MenuItem {

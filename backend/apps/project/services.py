@@ -5,11 +5,13 @@
 """
 import re
 
+from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
-from django.db.models import Count, IntegerField, OuterRef, Q, Subquery
+from django.db.models import Count, IntegerField, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from apps.account.models import User
 from apps.project.models import Project, ProjectComponent, ProjectMember
 
 
@@ -259,16 +261,19 @@ def get_grantable_roles(project, user) -> list[str]:
     return MEMBER_GRANTABLE_ROLES
 
 
-def has_only_maintainer_projects(user) -> bool:
+def effective_maintainer_memberships(user: User) -> QuerySet[ProjectMember]:
+    """返回该用户有效角色为维保的成员记录，负责人和超管不计入。"""
+    memberships = ProjectMember.objects.filter(user=user, role="maintainer")
+    return memberships.none() if user.is_superuser else memberships.exclude(project__leader=user)
+
+
+def has_only_maintainer_projects(user: User | AnonymousUser | None) -> bool:
     """是否仅在项目中担任维保；负责人有效角色和超管仍按原规则处理。"""
     if not user or not user.is_authenticated or user.is_superuser:
         return False
+    maintainer = effective_maintainer_memberships(user)
     memberships = ProjectMember.objects.filter(user=user)
-    return (
-        memberships.exists()
-        and not memberships.exclude(role="maintainer").exists()
-        and not memberships.filter(project__leader=user).exists()
-    )
+    return maintainer.exists() and not memberships.exclude(pk__in=maintainer.values("pk")).exists()
 
 
 def visible_project_ids(user):

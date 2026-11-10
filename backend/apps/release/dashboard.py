@@ -1,9 +1,11 @@
-"""维保工作台只读摘要，所有聚合限定在显式可见项目内。"""
+"""工作台摘要和导出，查询限定在显式可见项目内。"""
 
+import csv
 import re
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
 from html import unescape
+from io import StringIO
 from typing import Any
 
 from django.db.models import Count, Q
@@ -13,9 +15,39 @@ from django.utils.html import strip_tags
 from apps.account.models import User
 from apps.package.models import PackageTask
 from apps.project.models import Project, ProjectComponent
-from apps.project.services import visible_project_ids
+from apps.project.services import effective_maintainer_memberships, visible_project_ids
 from apps.release.models import ReleaseRecord
 from utils.markdown_table import table_newlines_to_br
+
+
+def weekly_release_report(user: User, now: datetime) -> str:
+    """导出近七天可下载的发布记录，最多一百条。"""
+    releases = ReleaseRecord.objects.filter(
+        project_id__in=visible_project_ids(user), created_at__range=(now - timedelta(days=7), now),
+    )
+    releases = releases.exclude(project_id__in=effective_maintainer_memberships(user).values("project_id"))
+    rows = list(releases.select_related("project", "repository", "publisher").order_by("-created_at", "-id")[:100])
+    if not rows:
+        return ""
+
+    def safe_cell(value: str) -> str:
+        # CSV 引号不能阻止电子表格执行公式，危险前缀前再补单引号。
+        if value.startswith(("\t", "\r", "\n")) or value.lstrip().startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
+
+    output = StringIO(newline="")
+    writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+    writer.writerow(["版本", "项目", "仓库", "类型", "状态", "发布人", "创建时间"])
+    for release in rows:
+        publisher = release.publisher
+        writer.writerow(map(safe_cell, (
+            release.version, release.project.name, release.repository.name,
+            release.get_release_type_display(), release.get_status_display(),
+            (publisher.nickname or publisher.username) if publisher else "",
+            timezone.localtime(release.created_at).strftime("%Y-%m-%d %H:%M"),
+        )))
+    return "\ufeff" + output.getvalue()
 
 
 def release_update_summary(release: ReleaseRecord) -> str:

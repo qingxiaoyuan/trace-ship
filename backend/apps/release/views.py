@@ -10,7 +10,10 @@ from typing import Any
 from django.db import transaction
 from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery, Value
 from django.db.models.functions import Coalesce, NullIf
+from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters as drf_filters
@@ -23,6 +26,7 @@ from rest_framework.response import Response
 
 from apps.project.models import ProjectComponent
 from apps.project.services import has_only_maintainer_projects, visible_project_ids
+from apps.release.dashboard import weekly_release_report
 from apps.release.exporters import ReleaseDocExporter
 from apps.release.models import ReleaseRecord, ReleaseReviewIssue
 from apps.release.serializers import (
@@ -39,7 +43,14 @@ from apps.release.services import (
     ReleaseValidator,
 )
 from apps.repository.models import Repository
-from utils.permissions import IsNotProjectMaintainer, IsProjectDeveloper, IsProjectManager, IsProjectMember
+from utils.permissions import (
+    IsFromDownloadNetwork,
+    IsNotOnlyProjectMaintainer,
+    IsNotProjectMaintainer,
+    IsProjectDeveloper,
+    IsProjectManager,
+    IsProjectMember,
+)
 from utils.provider.exceptions import ProviderError
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet
@@ -167,6 +178,20 @@ class ReleaseViewSet(StandardModelViewSet):
             "visible_project_count": visible_project_ids(request.user).count(),
         })
 
+    @action(
+        detail=False, methods=["get"], url_path="dashboard/weekly-report",
+        permission_classes=[IsAuthenticated, IsFromDownloadNetwork, IsNotOnlyProjectMaintainer],
+    )
+    @method_decorator(never_cache)
+    def weekly_report(self, request: Request) -> HttpResponse:
+        """下载近七天的发布周报。"""
+        now = timezone.localtime()
+        content = weekly_release_report(request.user, now)
+        response = HttpResponse(content, content_type="text/csv; charset=utf-8")
+        if content:
+            response["Content-Disposition"] = f'attachment; filename="trace-ship-weekly-{now:%Y%m%d}.csv"'
+        return response
+
     @action(detail=False, methods=["get"], url_path="dashboard/maintainer-summary")
     def maintainer_summary(self, request: Request) -> Response:
         """所属项目的范围树、近三十天指标和最近打包；不接受列表筛选改变口径。"""
@@ -237,7 +262,7 @@ class ReleaseViewSet(StandardModelViewSet):
         if self.action in ("delete_released", "cleanup_tag"):
             return [IsAuthenticated(), IsProjectManager()]
         if self.action in ("export_md", "export_pdf", "export_word"):
-            return [IsAuthenticated(), IsProjectMember(), IsNotProjectMaintainer()]
+            return [IsAuthenticated(), IsFromDownloadNetwork(), IsProjectMember(), IsNotProjectMaintainer()]
         if self.action in ("review_issues", "review_issue_reply", "review_issue_resolve", "review_issue_reject") and self.request.method == "POST":
             return [IsAuthenticated(), IsNotProjectMaintainer()]
         return super().get_permissions()
@@ -692,7 +717,8 @@ class ReleaseViewSet(StandardModelViewSet):
         return success_response(data, message="保存成功")
 
     @action(detail=True, methods=["get"], url_path="export-md")
-    def export_md(self, request: Request, pk=None):
+    @method_decorator(never_cache)
+    def export_md(self, request: Request, pk: str | None = None) -> HttpResponse:
         """
         导出 Markdown 发布单
 
@@ -703,8 +729,6 @@ class ReleaseViewSet(StandardModelViewSet):
         Returns:
             Markdown 文件响应（纯文本，不经 DRF 渲染器）
         """
-        from django.http import HttpResponse
-
         from utils.markdown_table import table_newlines_to_br
 
         release = self.get_object()
@@ -815,7 +839,8 @@ class ReleaseViewSet(StandardModelViewSet):
         return success_response(result, message="删除成功")
 
     @action(detail=True, methods=["get"], url_path="export-pdf")
-    def export_pdf(self, request: Request, pk=None) -> Response:
+    @method_decorator(never_cache)
+    def export_pdf(self, request: Request, pk: str | None = None) -> HttpResponse | Response:
         """
         导出 PDF 发布单
 
@@ -831,12 +856,13 @@ class ReleaseViewSet(StandardModelViewSet):
             pdf_bytes = ReleaseDocExporter.export_pdf(release)
         except Exception as exc:
             return _handle_service_error(exc, "导出 PDF")
-        response = Response(pdf_bytes, content_type="application/pdf")
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="release-{release.version}.pdf"'
         return response
 
     @action(detail=True, methods=["get"], url_path="export-word")
-    def export_word(self, request: Request, pk=None) -> Response:
+    @method_decorator(never_cache)
+    def export_word(self, request: Request, pk: str | None = None) -> HttpResponse | Response:
         """
         导出 Word 发布单
 
@@ -852,7 +878,7 @@ class ReleaseViewSet(StandardModelViewSet):
             word_bytes = ReleaseDocExporter.export_word(release)
         except Exception as exc:
             return _handle_service_error(exc, "导出 Word")
-        response = Response(
+        response = HttpResponse(
             word_bytes,
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )

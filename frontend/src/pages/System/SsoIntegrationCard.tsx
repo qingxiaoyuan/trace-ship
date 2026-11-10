@@ -157,7 +157,7 @@ export function SsoIntegrationCard() {
             {entryUrl}
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
-            从 OA 手机端进入时会隐藏产物/日志/发布单等下载入口，避免文件落到外网终端；电脑浏览器不受影响
+            外网可通过 OA 正常访问，文件下载还须满足「文件下载限制」中的网段要求。OA 手机端隐藏下载入口。
           </div>
         </div>
       </div>

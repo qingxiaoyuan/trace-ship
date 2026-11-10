@@ -22,6 +22,11 @@ DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 # 允许访问的域名列表，逗号分隔
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
+# 开发环境未配置时沿用原下载权限，生产环境默认仅放行明确配置的网段。
+DOWNLOAD_ALLOWED_CIDRS = os.getenv("DOWNLOAD_ALLOWED_CIDRS")
+DOWNLOAD_TRUSTED_PROXY_CIDRS = os.getenv("DOWNLOAD_TRUSTED_PROXY_CIDRS", "")
+DOWNLOAD_POLICY_ADMIN_CIDRS = os.getenv("DOWNLOAD_POLICY_ADMIN_CIDRS", DOWNLOAD_ALLOWED_CIDRS or "")
+
 # Django 应用定义
 INSTALLED_APPS = [
     # Django 内置应用

@@ -16,6 +16,7 @@ import type { SystemConfig } from '@/api/system';
 import { NexusIntegrationCard } from './NexusIntegrationCard';
 import { LdapIntegrationCard } from './LdapIntegrationCard';
 import { SsoIntegrationCard } from './SsoIntegrationCard';
+import { DownloadPolicyCard } from './DownloadPolicyCard';
 import { PackageNodeCard } from './PackageNodeCard';
 import { PackageCleanupCard } from './PackageCleanupCard';
 import { AiIntegrationCard } from './AiIntegrationCard';
@@ -179,6 +180,8 @@ export default function SystemConfigPage() {
       <LdapIntegrationCard />
 
       <SsoIntegrationCard />
+
+      <DownloadPolicyCard />
 
       <AiIntegrationCard />
 

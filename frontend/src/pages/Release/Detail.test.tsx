@@ -4,9 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { App, ConfigProvider } from 'antd';
 import request from '@/api/request';
+import { useAuthStore } from '@/stores/authStore';
 import ReleaseDetail from './Detail';
 
 const originalAdapter = request.defaults.adapter;
+const originalUser = useAuthStore.getState().user;
 let projectRole = 'maintainer';
 let releaseStatus = 'released';
 let releaseDoc = '发布说明正文';
@@ -51,7 +53,12 @@ beforeEach(() => {
   };
 });
 
-afterEach(() => { cleanup(); request.defaults.adapter = originalAdapter; vi.unstubAllGlobals(); });
+afterEach(() => {
+  cleanup();
+  request.defaults.adapter = originalAdapter;
+  useAuthStore.setState({ user: originalUser });
+  vi.unstubAllGlobals();
+});
 
 describe('维保发布详情', () => {
   it('同一发布的数据多次更新后只保留一份代码来源信息', async () => {
@@ -115,8 +122,20 @@ describe('维保发布详情', () => {
     expect(submitRequests).toBe(0);
   });
 
-  it.each(['maintainer', 'developer'])('目标项目 %s 仅在获准时提供导出，完整说明仍可阅读', async (role) => {
+  it.each([
+    { role: 'maintainer', networkAllowed: true, exportCount: 0 },
+    { role: 'developer', networkAllowed: true, exportCount: 3 },
+    { role: 'developer', networkAllowed: false, exportCount: 0 },
+  ])('目标项目 $role 的网络下载权限为 $networkAllowed 时，显示 $exportCount 个导出入口，说明仍可阅读', async ({
+    role, networkAllowed, exportCount,
+  }) => {
     projectRole = role;
+    useAuthStore.setState({
+      user: {
+        id: 'reader', username: 'reader', nickname: '读者', email: '', department: '',
+        source: 'local', roles: [], permissions: [], is_superuser: false, can_download_files: networkAllowed,
+      },
+    });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
       <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
@@ -126,8 +145,7 @@ describe('维保发布详情', () => {
     expect(screen.queryByText('RC 标签与源码')).toBeNull();
     expect(screen.queryByRole('link', { name: '预览并清理 RC Tag' })).toBeNull();
     expect(sourceReferenceRequests).toBe(0);
-    if (role === 'maintainer') expect(screen.queryAllByRole('button', { name: /导出/ })).toHaveLength(0);
-    else expect(await screen.findAllByRole('button', { name: /导出/ })).toHaveLength(3);
+    await waitFor(() => expect(screen.queryAllByRole('button', { name: /导出/ })).toHaveLength(exportCount));
   });
 
   it('标准生成说明的转义管道和续行保持在同一字段，保存后不重复转义', async () => {

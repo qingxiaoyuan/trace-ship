@@ -27,6 +27,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.10',
+    date: '2026-11-10',
+    summary: '按访问网段限制文件下载',
+    items: [
+      { category: 'feature', text: '「系统配置」新增文件下载白名单。白名单外可通过 OA 正常使用系统及在线查看，后端会拒绝打包产物、完整日志、发布单和周报的文件请求。' },
+      { category: 'fix', text: '修复包含大量单个 IP 的下载白名单保存后无法原样再次保存的问题。' },
+    ],
+  },
+  {
     version: '2026.11.04',
     date: '2026-11-04',
     summary: 'AI 审查过滤非业务差异并限制大变更工作量',

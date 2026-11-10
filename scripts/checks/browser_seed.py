@@ -28,6 +28,9 @@ def main() -> None:
     settings.DATABASES["default"]["NAME"] = str(runtime / "browser.sqlite3")
     settings.SECRET_KEY = secrets.token_urlsafe(48)
     settings.ALLOWED_HOSTS = ["127.0.0.1"]
+    settings.DOWNLOAD_ALLOWED_CIDRS = "127.0.0.1/32"
+    settings.DOWNLOAD_POLICY_ADMIN_CIDRS = "127.0.0.1/32"
+    settings.DOWNLOAD_TRUSTED_PROXY_CIDRS = ""
     settings.PACKAGE_WORKSPACE_ROOT = str(runtime / "workspaces")
     settings.MEDIA_ROOT = str(runtime / "media")
     settings.ROOT_URLCONF = __name__
@@ -288,7 +291,12 @@ def main() -> None:
                     {"id": str(uuid.uuid4()), "name": target.name, "path": filename, "size": target.stat().st_size}
                 )
         elif key == "expired":
-            artifact_info = [{"id": str(uuid.uuid4()), "name": "过期交付包.zip", "path": "expired.zip", "size": 1024}]
+            available = artifacts / "available.txt"
+            available.write_bytes("未过期产物的原始字节\r\n".encode())
+            artifact_info = [
+                {"id": str(uuid.uuid4()), "name": "过期交付包.zip", "path": "expired.zip", "size": 1024},
+                {"id": str(uuid.uuid4()), "name": "仍可用的产物.txt", "path": available.name, "size": available.stat().st_size},
+            ]
         task = PackageTask.objects.create(
             project=project,
             repository=repository,

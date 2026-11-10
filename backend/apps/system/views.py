@@ -7,18 +7,27 @@
 """
 import re
 
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 from django_filters import FilterSet
 from django_filters.rest_framework import DateTimeFromToRangeFilter, DjangoFilterBackend
 from rest_framework import filters, serializers
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.system.models import AccessToken, OperationLog, SystemConfig
 from apps.system.search import GlobalSearchService
-from apps.system.serializers import AccessTokenSerializer, OperationLogSerializer, SystemConfigSerializer
-from apps.system.services import OperationLogService
+from apps.system.serializers import (
+    AccessTokenSerializer,
+    DownloadPolicySerializer,
+    OperationLogSerializer,
+    SystemConfigSerializer,
+)
+from apps.system.services import DOWNLOAD_CIDRS_KEY, DownloadPolicyConfig, OperationLogService
+from utils.download_access import can_manage_download_policy
 from utils.permissions import HasPermission, IsSuperUser
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet, StandardReadOnlyModelViewSet
@@ -48,7 +57,7 @@ class SystemConfigViewSet(StandardModelViewSet):
     使用 key 作为 lookup 字段，需要 system.config 权限（超管自动放行）。
     """
 
-    queryset = SystemConfig.objects.all()
+    queryset = SystemConfig.objects.exclude(key=DOWNLOAD_CIDRS_KEY)
     serializer_class = SystemConfigSerializer
     lookup_field = "key"
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -79,11 +88,26 @@ class SystemConfigViewSet(StandardModelViewSet):
             {key: value} 字典（敏感键即使被误标为公开也不会返回）
         """
         configs = (
-            SystemConfig.objects.filter(is_public=True)
+            self.queryset.filter(is_public=True)
             .exclude(key__iregex=SENSITIVE_KEY_RE.pattern)
             .values_list("key", "value")
         )
         return success_response(dict(configs))
+
+    @action(detail=False, methods=["get", "put"], url_path="download-policy")
+    @method_decorator(never_cache)
+    def download_policy(self, request: Request) -> Response:
+        """读取下载白名单，仅允许从管理网段修改。"""
+        can_edit = can_manage_download_policy(request)
+        if request.method != "PUT":
+            return success_response({"allowed_cidrs": DownloadPolicyConfig.get() or "", "can_edit": can_edit})
+        if not can_edit:
+            raise PermissionDenied("请连接下载策略管理网段后修改白名单")
+        serializer = DownloadPolicySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        allowed_cidrs = serializer.validated_data["allowed_cidrs"]
+        DownloadPolicyConfig.save(allowed_cidrs)
+        return success_response({"allowed_cidrs": allowed_cidrs, "can_edit": True}, "下载白名单已保存")
 
     @action(detail=False, methods=["post"], url_path="ldap-test")
     def ldap_test(self, request: Request) -> Response:

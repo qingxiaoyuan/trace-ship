@@ -44,6 +44,7 @@ beforeEach(() => {
   delayedTask = null;
   downloadFailureMessage = null;
   useAuthStore.setState({ user: { id: 'maintainer', username: 'maintainer', is_superuser: false,
+    can_download_files: true,
     permissions: ['package.task.delete', 'package.config.manage', 'package.trigger'] } as UserInfo });
   // jsdom 不计算布局；同时提供元素外框与可滚动视口尺寸，让真实虚拟列表计算可见行。
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(420);

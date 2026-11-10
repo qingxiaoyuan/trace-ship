@@ -4,6 +4,7 @@ from datetime import timedelta
 
 import pytest
 from django.utils import timezone
+from pytest_django.fixtures import Settings
 from rest_framework.test import APIClient
 
 from apps.account.models import User
@@ -116,6 +117,31 @@ def test_detail_returns_saved_document_verbatim_and_read_only_metadata(user, pro
     assert data["released_at"] is not None
     assert data["can_review"] is False
     assert data["can_reply"] is False
+
+
+def test_external_admin_can_view_release_but_cannot_export(
+    user: User, project: Project, repository: Repository, settings: Settings,
+) -> None:
+    """限制覆盖所有发布单格式，外网超管也可在线查看。"""
+    settings.DOWNLOAD_ALLOWED_CIDRS = "10.20.30.0/24"
+    release = ReleaseRecord.objects.create(
+        project=project, repository=repository, publisher=user, version="VA.25.1.0",
+        status="released", release_doc="已保存说明全文",
+    )
+    user.is_superuser = True
+    client = APIClient()
+    client.force_authenticate(user)
+    url = f"/api/releases/{release.id}/"
+    for extension in ("md", "pdf", "word"):
+        denied = client.get(f"{url}export-{extension}/", REMOTE_ADDR="203.0.113.12")
+        assert denied.status_code == 403
+        assert "Content-Disposition" not in denied
+
+    assert client.get(url, REMOTE_ADDR="203.0.113.12").data["data"]["release_doc"] == "已保存说明全文"
+    allowed = client.get(f"{url}export-md/", REMOTE_ADDR="10.20.30.4")
+    assert allowed.status_code == 200
+    assert "已保存说明全文".encode() in allowed.content
+    assert "no-store" in allowed["Cache-Control"]
 
 
 def test_reader_can_page_through_complete_saved_commit_messages(user, project, repository, reader):
