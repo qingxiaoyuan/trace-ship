@@ -8,6 +8,8 @@
 from django.contrib.auth import authenticate
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -27,6 +29,7 @@ from apps.account.serializers import (
     UserInfoSerializer,
     UserSerializer,
 )
+from utils.download_access import can_download_files
 from utils.permissions import HasPermission
 from utils.response import error_response, success_response
 from utils.viewsets import StandardModelViewSet
@@ -398,6 +401,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         return success_response(None, "登出成功")
 
     @action(detail=False, methods=["get"], url_path="user-info", permission_classes=[IsAuthenticated])
+    @method_decorator(never_cache)
     def user_info(self, request: Request) -> Response:
         """
         获取当前登录用户信息
@@ -409,7 +413,7 @@ class AuthViewSet(viewsets.GenericViewSet):
             当前用户详情
         """
         serializer = UserInfoSerializer(request.user)
-        return success_response(serializer.data)
+        return success_response({**serializer.data, "can_download_files": can_download_files(request)})
 
     @action(detail=False, methods=["get"], url_path="menus", permission_classes=[IsAuthenticated])
     def menus(self, request: Request) -> Response:

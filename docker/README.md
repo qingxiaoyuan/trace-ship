@@ -163,7 +163,7 @@ OpenLDAP / SVN 等模拟服务不纳入生产编排，如需 LDAP 或 SVN 产物
 |----|---------------------------|--------------------------------|
 | 后端代码 | 挂载源码卷 `../backend:/app` | 镜像内打包（`COPY . .`） |
 | 第三方依赖 | PostgreSQL/Redis/GitLab（+ test profile 模拟服务） | PostgreSQL/Redis/GitLab（独立 compose 项目 trace-ship-deps） |
-| 端口暴露 | 各服务端口均映射到宿主机，便于调试 | 仅前端 80 与 GitLab 对外，DB/Redis 内部网络 |
+| 端口暴露 | 各服务端口均映射到宿主机，便于调试 | 前端、GitLab、后端和 PostgreSQL 均有宿主机端口映射。后端和 PostgreSQL 端口仅向受控网络开放，Redis 使用内部网络 |
 | 配置文件 | `.env`（弱密码可接受） | `.env.prod`（强制强密钥） |
 | Django settings | `config.settings.dev`（本地开发） | `config.settings.prod` |
 
@@ -243,6 +243,8 @@ cd trace-ship-release
 
 增量更新（复用已有 `.env.prod`）：外网侧 `scripts/build.sh --backend` / `--frontend` / `--app`，内网侧解压后 `./deploy.sh` 选对应模式。菜单 1/2/3 与原来相同；**第 4 项**会先备份业务库并做一致性检查，通过后再更新前后端（等价 `./deploy.sh --upgrade`）。
 
+首次引入下载限制时，请按[外网文件下载限制的升级步骤](#配置外网文件下载限制)先停整组应用，再用同版本前后端更新包启动。
+
 也可单独用 `./db.sh`（与 `deploy.sh` 同级）只做备份 / 恢复 / 检查，不动应用容器。`db.sh` 只动 Trace Ship 业务库，不含 GitLab / Redis / 打包工作区。
 
 ## 常见问题
@@ -273,9 +275,31 @@ docker volume rm trace-ship-postgres-data trace-ship-redis-data \
 scripts/dev.sh deps --test
 ```
 
+## 配置外网文件下载限制
+
+生产环境默认禁止下载，OA 登录、业务操作与在线查看仍按原有权限工作。首次升级时使用包含同版本前端和后端的应用更新包，按以下顺序操作：
+
+1. 在部署目录配置 `.env.prod`，核对办公网、管理网段和代理地址。
+2. 先停止整组应用服务，包括前端、后端、Celery Worker 和 Celery Beat。数据库等依赖层保持运行。
+
+   ```bash
+   docker compose --env-file .env.prod -f docker-compose.prod.yml stop frontend backend celery-worker celery-beat
+   ```
+
+3. 确认应用组已停止后执行 `./deploy.sh --app`，由同一个更新包启动同版本前后端并接入代理网络。
+
+- `DOWNLOAD_ALLOWED_CIDRS` 填写初始允许下载的办公网或 VPN 客户端网段。系统配置 → 文件下载限制中的白名单保存后立即生效，优先于环境变量。保存空白名单会关闭所有下载。
+- `DOWNLOAD_POLICY_ADMIN_CIDRS` 填写能够编辑白名单的管理终端网段。省略时沿用环境变量中的初始允许下载网段。修改白名单同时要求系统配置权限。
+- 生产编排自动在专用 Docker 桥接网络上固定并信任前端 nginx 的地址，容器重建沿用同一地址。默认子网为 `172.30.254.0/29`，前端和后端分别使用 `.2`、`.3`。如与现有网络冲突，在首次升级前修改 `DOWNLOAD_PROXY_PREFIX`（子网的前三段）。OA 网关通过已发布的前端端口接入。 [Compose 固定地址](https://docs.docker.com/reference/compose-file/services/#ipv4_address-ipv6_address)
+- `DOWNLOAD_TRUSTED_PROXY_CIDRS` 只填写 OA 网关等实际转发请求的上游代理稳定地址，例如 IPv4 使用 `/32`，IPv6 使用 `/128`。避免信任整个 Docker 共享网络或办公网。下载和管理网段中避免包含 OA 网关、NAT 出口或容器网关地址。
+
+代理接收公网请求时须重写来自客户端的 `X-Forwarded-For`，后续可信代理追加真实对端 IP。仓库前端 nginx 使用 `$proxy_add_x_forwarded_for` 追加对端。后端从实际连接地址向上核对可信代理链，使用第一个非代理地址。OA 网关如果只转发共享地址，需在 OA 入口保留真实客户端地址，或将该入口的代理地址排除在下载与管理网段之外。生产网关应仅通过受控入口访问后端，且禁止缓存用户信息和下载响应。 [Nginx 代理头说明](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#var_proxy_add_x_forwarded_for)
+
+用同一有下载权限的账号分别从办公网和外网 OA 验收。两边均应能打开发布详情和在线日志。外网直接请求产物、完整日志、发布单和周报导出接口应得到 `403`，内网下载应成功。重建前端容器后复核同样结果。单独提供下载能力的 SVN、GitLab 或其他文件服务应在其入口执行自己的访问控制。
+
 ## 安全注意事项
 
 - 本目录 `.env` 仅用于开发/测试，**不要直接用于生产**；生产必须使用 `.env.prod` 并修改全部默认密码。
 - `.env.prod` 含敏感密钥，已被 `.gitignore` 忽略，切勿提交。
-- 生产环境 backend / postgres / redis 仅在内部网络通信，不对外暴露端口；所有外部请求经前端 nginx 反代 `/api/` 访问后端。
+- 外部系统 API 请求经前端 nginx 反代 `/api/` 访问后端。生产编排映射了后端和 PostgreSQL 端口，部署时须将这两个端口的访问范围限制在受控网络内。
 - `prod.py` 强制 `DEBUG=False`、`CORS_ALLOW_ALL_ORIGINS=False`，建议生产部署在 HTTPS 反向代理之后。

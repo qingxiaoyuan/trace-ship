@@ -104,6 +104,9 @@ export interface AiSettingsPayload {
 }
 
 export const systemApi = {
+  getDownloadPolicy: () => get<{ allowed_cidrs: string; can_edit: boolean }>('/system/configs/download-policy/'),
+  saveDownloadPolicy: (allowedCidrs: string) =>
+    put<{ allowed_cidrs: string; can_edit: boolean }>('/system/configs/download-policy/', { allowed_cidrs: allowedCidrs }),
   saveAiSettings: (data: AiSettingsPayload) => put<null>('/system/ai-settings/', data),
   getConfigs: (params?: ConfigListParams) =>
     get<PaginatedData<SystemConfig>>('/system/configs/', { params }),

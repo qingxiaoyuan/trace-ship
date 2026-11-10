@@ -1,13 +1,18 @@
 """通过 REST API 验证工作台布局、可见范围与发布阅读契约。"""
 
+import csv
 from datetime import timedelta
+from io import StringIO
 
 import pytest
 from django.utils import timezone
+from pytest_django.fixtures import Settings
 from rest_framework.test import APIClient
 
+from apps.account.models import User
 from apps.project.models import Project, ProjectComponent, ProjectMember
 from apps.release.models import ReleaseRecord
+from apps.repository.models import Repository
 
 pytestmark = pytest.mark.django_db
 
@@ -67,6 +72,48 @@ def test_context_refreshes_after_membership_changes(user):
 
 def test_context_requires_authentication():
     assert APIClient().get("/api/releases/dashboard/context/").status_code == 401
+
+
+def test_weekly_report_checks_network_and_project_roles(
+    user: User, project: Project, repository: Repository, settings: Settings,
+) -> None:
+    """白名单只放行文件下载；兼任时周报排除维保项目与不可见项目。"""
+    settings.DOWNLOAD_ALLOWED_CIDRS = "10.20.30.0/24"
+    internal = {"REMOTE_ADDR": "10.20.30.7"}
+    external = {"REMOTE_ADDR": "203.0.113.8"}
+    maintainer = Project.objects.create(code="WEEKLY-MNT", name="维保项目")
+    hidden = Project.objects.create(code="WEEKLY-HIDDEN", name="非成员项目")
+    leader = Project.objects.create(code="WEEKLY-LEADER", name="负责人项目", leader=user)
+    ProjectMember.objects.create(project=maintainer, user=user, role="maintainer")
+    ProjectMember.objects.create(project=leader, user=user, role="maintainer")
+    recent = ReleaseRecord.objects.create(project=project, repository=repository, publisher=user, version="=1+1")
+    ReleaseRecord.objects.create(project=leader, repository=repository, publisher=user, version="负责人版本")
+    ReleaseRecord.objects.create(project=maintainer, repository=repository, publisher=user, version="维保版本")
+    ReleaseRecord.objects.create(project=hidden, repository=repository, publisher=user, version="不可见版本")
+    old = ReleaseRecord.objects.create(project=project, repository=repository, publisher=user, version="已过七天")
+    ReleaseRecord.objects.filter(id=old.id).update(created_at=timezone.now() - timedelta(days=8))
+    client = APIClient()
+    client.force_authenticate(user)
+    url = "/api/releases/dashboard/weekly-report/"
+
+    assert client.get(url, **external).status_code == 403
+    assert client.get("/api/releases/", **external).status_code == 200
+    allowed = client.get(url, **internal)
+    assert allowed.status_code == 200
+    assert "no-store" in allowed["Cache-Control"]
+    assert "attachment;" in allowed["Content-Disposition"]
+    rows = list(csv.DictReader(StringIO(allowed.content.decode("utf-8-sig"))))
+    assert {row["版本"] for row in rows} == {"'=1+1", "负责人版本"}
+    assert rows[0]["发布人"] == user.nickname
+
+    ReleaseRecord.objects.filter(id=recent.id).delete()
+    ReleaseRecord.objects.filter(project=leader).delete()
+    empty = client.get(url, **internal)
+    assert empty.status_code == 200 and empty.content == b""
+    assert "Content-Disposition" not in empty
+
+    ProjectMember.objects.filter(user=user).exclude(project=maintainer).delete()
+    assert client.get(url, **internal).status_code == 403
 
 
 def test_released_list_is_paginated_by_actual_time_and_project(user, project, repository):

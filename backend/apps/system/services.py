@@ -5,7 +5,27 @@
 """
 from typing import Any
 
+from django.conf import settings
+
 from apps.system.models import OperationLog, SystemConfig
+
+DOWNLOAD_CIDRS_KEY = "download_allowed_cidrs"
+
+
+class DownloadPolicyConfig:
+    """保存并读取下载白名单，显式空名单优先于环境默认值。"""
+
+    @staticmethod
+    def get() -> str | None:
+        saved = SystemConfig.objects.filter(key=DOWNLOAD_CIDRS_KEY).values_list("value", flat=True).first()
+        return settings.DOWNLOAD_ALLOWED_CIDRS if saved is None else saved
+
+    @staticmethod
+    def save(allowed_cidrs: str) -> None:
+        SystemConfig.objects.update_or_create(
+            key=DOWNLOAD_CIDRS_KEY,
+            defaults={"value": allowed_cidrs, "description": "允许文件下载的网段", "is_public": False},
+        )
 
 
 class SystemConfigService:

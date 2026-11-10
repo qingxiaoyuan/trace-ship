@@ -211,6 +211,36 @@ def test_maintainer_file_requests_are_denied_before_any_file_access(
     assert detail["artifact_info"][0]["size"] == 7
 
 
+def test_external_project_member_can_read_online_but_cannot_download(
+    download_context: SimpleNamespace, settings: Settings,
+) -> None:
+    """外网登录态可读在线日志，直调三种文件接口均被拒绝。"""
+    settings.DOWNLOAD_ALLOWED_CIDRS = "10.20.30.0/24"
+    settings.DOWNLOAD_TRUSTED_PROXY_CIDRS = "172.20.0.2,10.40.50.6"
+    context = download_context
+    (context.artifacts / "installer.zip").write_bytes(b"package")
+    (context.workspace / "build.log").write_bytes(b"online log")
+    task_url = f"/api/packages/tasks/{context.task.id}/"
+    external = {"REMOTE_ADDR": "172.20.0.2", "HTTP_X_FORWARDED_FOR": "10.20.30.5,203.0.113.10,10.40.50.6"}
+    internal = {"REMOTE_ADDR": "172.20.0.2", "HTTP_X_FORWARDED_FOR": "10.20.30.5"}
+
+    for suffix in ("logs/", "artifacts/installer/download/", "download-all/"):
+        denied = context.client.get(task_url + suffix, **external)
+        assert denied.status_code == 403
+        assert "Content-Disposition" not in denied
+        allowed = context.client.get(task_url + suffix, **internal)
+        try:
+            assert allowed.status_code == 200
+            assert "no-store" in allowed["Cache-Control"]
+        finally:
+            allowed.close()
+
+    online = context.client.get(task_url + "logs/?offset=0", **external)
+    assert online.status_code == 200
+    assert online.data["data"]["content"] == "online log"
+    assert context.client.get(task_url, **external).status_code == 200
+
+
 @pytest.mark.parametrize("role", ["developer", "tester", "manager", "software_admin", "viewer", "auditor", "leader", "superuser"])
 def test_file_authorization_follows_current_target_role(
     reading_context: SimpleNamespace, role: str,

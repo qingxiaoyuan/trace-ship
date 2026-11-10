@@ -43,6 +43,7 @@ export interface MaintainerSummary {
 
 export const dashboardApi = {
   getContext: (signal?: AbortSignal) => get<DashboardContext>('/releases/dashboard/context/', { signal }),
+  downloadWeeklyReport: () => get<Blob>('/releases/dashboard/weekly-report/', { responseType: 'blob' }),
   getMaintainerSummary: () => get<MaintainerSummary>('/releases/dashboard/maintainer-summary/'),
   getOverview: () => get<DashboardOverview>('/releases/dashboard/overview/'),
   getTrend: (days = 30) =>

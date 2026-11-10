@@ -20,9 +20,9 @@ import { packageApi } from '@/api/package';
 import { workflowApi } from '@/api/workflow';
 import { useAuthStore } from '@/stores/authStore';
 import { useAppMessage } from '@/hooks/useAppMessage';
-import { isOaMobileClient } from '@/utils/oaClient';
+import { useHideFileDownload } from '@/hooks/useHideFileDownload';
 import type { KpiCard, PipelineColumn, PipelineRange, TodoFilter, TodoItem } from './types';
-import { releaseStatusText, releaseTypeText } from './constants';
+import { releaseTypeText } from './constants';
 import {
   formatDurationSeconds,
   formatRelative,
@@ -62,6 +62,7 @@ function GeneralDashboard() {
   const navigate = useNavigate();
   const { message } = useAppMessage();
   const user = useAuthStore((state) => state.user);
+  const hideDownload = useHideFileDownload();
   const [pipelineRange, setPipelineRange] = useState<PipelineRange>('week');
   const [todoFilter, setTodoFilter] = useState<TodoFilter>('all');
   // 打包速览 / 常用配置卡片的触发打包目标（共享触发弹窗）
@@ -376,47 +377,24 @@ function GeneralDashboard() {
     />
   );
 
-  /** 导出周报：独立拉取近 7 天发布记录生成 CSV 下载（分页上限 100 条） */
   const handleExportWeekly = async () => {
-    if (isOaMobileClient()) return;
-    const since = Date.now() - 7 * 86400000;
-    const data = await releaseApi.getReleases({ page_size: 100 });
-    const rows = (data?.results || []).filter(
-      (r) => r.created_at && new Date(r.created_at).getTime() >= since,
-    );
-    if (!rows.length) {
-      message.warning('近 7 天暂无发布记录');
-      return;
+    if (hideDownload) return;
+    try {
+      const blob = await dashboardApi.downloadWeeklyReport();
+      if (!blob.size) {
+        message.warning('近 7 天暂无发布记录');
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `trace-ship-weekly-${dayjs().format('YYYYMMDD')}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      message.success('已导出近 7 天发布周报');
+    } catch {
+      // 下载失败由统一请求拦截器提示。
     }
-    // 防 CSV 公式注入：以 = + - @ 开头的单元格前缀单引号
-    const safeCell = (value: unknown) => {
-      const text = String(value ?? '');
-      const prefixed = /^[=+\-@]/.test(text) ? `'${text}` : text;
-      return `"${prefixed.replace(/"/g, '""')}"`;
-    };
-    const header = ['版本', '项目', '仓库', '类型', '状态', '发布人', '创建时间'];
-    const csv = [
-      header,
-      ...rows.map((r) => [
-        r.version,
-        r.project_name || '',
-        r.repository_name || '',
-        releaseTypeText[r.release_type] || r.release_type,
-        releaseStatusText[r.status as string] || r.status,
-        r.publisher || '',
-        dayjs(r.created_at).format('YYYY-MM-DD HH:mm'),
-      ]),
-    ]
-      .map((cols) => cols.map(safeCell).join(','))
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `trace-ship-weekly-${dayjs().format('YYYYMMDD')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    message.success(`已导出近 7 天 ${rows.length} 条发布记录`);
   };
 
   const pageHeader = (
@@ -458,14 +436,16 @@ function GeneralDashboard() {
       </div>
       {!isMobile ? (
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleExportWeekly}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
-          >
-            <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span>导出周报</span>
-          </button>
+          {!hideDownload && (
+            <button
+              type="button"
+              onClick={handleExportWeekly}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
+              <span>导出周报</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate('/releases/create')}

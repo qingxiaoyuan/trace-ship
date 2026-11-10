@@ -4,6 +4,18 @@
 提供超管、功能权限、项目角色等多维度权限控制。
 """
 from rest_framework import permissions
+from rest_framework.request import Request
+
+from utils.download_access import DOWNLOAD_DENIED_MESSAGE, can_download_files
+
+
+class IsFromDownloadNetwork(permissions.BasePermission):
+    """下载来源校验，适用于所有角色。"""
+
+    message = DOWNLOAD_DENIED_MESSAGE
+
+    def has_permission(self, request: Request, view: object) -> bool:
+        return can_download_files(request)
 
 
 class IsSuperUser(permissions.BasePermission):
