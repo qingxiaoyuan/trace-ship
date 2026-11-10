@@ -29,7 +29,7 @@ def main() -> None:
     settings.SECRET_KEY = secrets.token_urlsafe(48)
     settings.ALLOWED_HOSTS = ["127.0.0.1"]
     settings.DOWNLOAD_ALLOWED_CIDRS = "127.0.0.1/32"
-    settings.DOWNLOAD_POLICY_ADMIN_CIDRS = "127.0.0.1/32"
+    settings.DOWNLOAD_POLICY_ADMIN_CIDRS = None
     settings.DOWNLOAD_TRUSTED_PROXY_CIDRS = ""
     settings.PACKAGE_WORKSPACE_ROOT = str(runtime / "workspaces")
     settings.MEDIA_ROOT = str(runtime / "media")

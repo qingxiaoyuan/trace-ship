@@ -103,10 +103,16 @@ export interface AiSettingsPayload {
   max_tokens?: string;
 }
 
+interface DownloadPolicy {
+  allowed_cidrs: string;
+  trusted_proxy_cidrs: string;
+  can_edit: boolean;
+}
+
 export const systemApi = {
-  getDownloadPolicy: () => get<{ allowed_cidrs: string; can_edit: boolean }>('/system/configs/download-policy/'),
-  saveDownloadPolicy: (allowedCidrs: string) =>
-    put<{ allowed_cidrs: string; can_edit: boolean }>('/system/configs/download-policy/', { allowed_cidrs: allowedCidrs }),
+  getDownloadPolicy: () => get<DownloadPolicy>('/system/configs/download-policy/'),
+  saveDownloadPolicy: (policy: { allowed_cidrs: string; trusted_proxy_cidrs?: string }) =>
+    put<DownloadPolicy>('/system/configs/download-policy/', policy),
   saveAiSettings: (data: AiSettingsPayload) => put<null>('/system/ai-settings/', data),
   getConfigs: (params?: ConfigListParams) =>
     get<PaginatedData<SystemConfig>>('/system/configs/', { params }),

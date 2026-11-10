@@ -271,6 +271,16 @@ source "${ENV_FILE}"
 set +a
 mkdir -p "${PACKAGE_WORKSPACE_ROOT:-/data/trace-ship/package_workspaces}"
 
+# 固定代理网络版本的前端只接该网络，切回共享网络时必须同时更新前后端。
+if [ "${MODE}" = "--backend" ] || [ "${MODE}" = "--frontend" ]; then
+    app_project="${COMPOSE_PROJECT_NAME:-trace-ship}"
+    legacy_containers="$(docker ps -a --filter "network=${app_project}_trace_ship_proxy" --format '{{.Names}}')"
+    if grep -Fxq -e "${app_project}-frontend" -e "${app_project}-backend" <<< "${legacy_containers}"; then
+        echo "❌ 当前应用仍接入旧版下载代理网络，请使用同版本前后端更新包执行 ./deploy.sh --upgrade。"
+        exit 1
+    fi
+fi
+
 # ---------- 3.5 仅 --upgrade（菜单第 4 项）：备份 + 检查，通过后再更新 ----------
 pre_update_guard() {
     local db_sh="${SCRIPT_DIR}/db.sh"

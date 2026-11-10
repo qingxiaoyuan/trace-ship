@@ -12,6 +12,7 @@ from .base import *
 # 生产环境关闭调试模式
 DEBUG = False
 DOWNLOAD_ALLOWED_CIDRS = DOWNLOAD_ALLOWED_CIDRS or ""
+DOWNLOAD_DISCOVER_FRONTEND_PROXY = True
 
 # 默认弱密钥（仅用于检查，生产环境必须替换）
 DEFAULT_SECRET_KEY = "django-insecure-change-me-in-production"

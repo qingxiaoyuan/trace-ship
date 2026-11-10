@@ -1,5 +1,8 @@
 """验证下载白名单的配置权限及请求来源边界。"""
 
+import json
+import subprocess
+
 import pytest
 from pytest_django.fixtures import Settings
 from rest_framework.test import APIClient
@@ -7,7 +10,8 @@ from rest_framework.test import APIClient
 from apps.account.models import User
 from apps.system.models import SystemConfig
 from apps.system.serializers import DOWNLOAD_CIDRS_MAX_LENGTH
-from apps.system.services import DOWNLOAD_CIDRS_KEY
+from apps.system.services import DOWNLOAD_CIDRS_KEY, DOWNLOAD_PROXIES_KEY
+from utils import download_access
 
 pytestmark = pytest.mark.django_db
 POLICY_URL = "/api/system/configs/download-policy/"
@@ -40,7 +44,9 @@ def test_policy_can_only_be_changed_through_managed_network(client: APIClient, s
     assert not SystemConfig.objects.filter(key=DOWNLOAD_CIDRS_KEY).exists()
 
     saved = client.put(POLICY_URL, payload, format="json", **admin_network)
-    assert saved.data["data"] == {"allowed_cidrs": "10.20.30.0/24\n2001:db8:abcd::/48", "can_edit": True}
+    assert saved.data["data"] == {
+        "allowed_cidrs": "10.20.30.0/24\n2001:db8:abcd::/48", "trusted_proxy_cidrs": "172.20.0.2", "can_edit": True,
+    }
     assert client.patch(f"/api/system/configs/{DOWNLOAD_CIDRS_KEY}/", {"value": ""}, format="json").status_code == 404
     assert client.delete(f"/api/system/configs/{DOWNLOAD_CIDRS_KEY}/").status_code == 404
     assert client.get(USER_INFO_URL, **internal).data["data"]["can_download_files"] is True
@@ -73,6 +79,83 @@ def test_long_download_policy_can_be_read_and_resaved(client: APIClient, setting
     assert len(long_input) < DOWNLOAD_CIDRS_MAX_LENGTH < len(long_input.replace("::", "::/128"))
     assert client.put(POLICY_URL, {"allowed_cidrs": long_input}, format="json").status_code == 400
     assert client.get(POLICY_URL).data["data"]["allowed_cidrs"] == saved
+
+
+def test_admin_configures_download_policy_without_deployment_settings(client: APIClient, settings: Settings) -> None:
+    settings.DOWNLOAD_ALLOWED_CIDRS = ""
+    settings.DOWNLOAD_POLICY_ADMIN_CIDRS = None
+    settings.DOWNLOAD_TRUSTED_PROXY_CIDRS = ""
+    settings.DOWNLOAD_DISCOVER_FRONTEND_PROXY = True
+
+    assert client.get(POLICY_URL).data["data"] == {
+        "allowed_cidrs": "", "trusted_proxy_cidrs": "", "can_edit": True,
+    }
+    invalid = client.put(POLICY_URL, {
+        "allowed_cidrs": "10.20.30.0/24", "trusted_proxy_cidrs": "10.50.60.0/24",
+    }, format="json")
+    assert invalid.status_code == 400
+    assert not SystemConfig.objects.filter(key=DOWNLOAD_CIDRS_KEY).exists()
+
+    assert client.put(POLICY_URL, {
+        "allowed_cidrs": "10.20.30.0/24", "trusted_proxy_cidrs": "10.50.60.7",
+    }, format="json").status_code == 200
+    assert client.get(POLICY_URL).data["data"]["trusted_proxy_cidrs"] == "10.50.60.7"
+    assert client.put(POLICY_URL, {"allowed_cidrs": "10.20.31.0/24"}, format="json").status_code == 200
+    assert client.get(POLICY_URL).data["data"]["trusted_proxy_cidrs"] == "10.50.60.7"
+    assert client.patch(f"/api/system/configs/{DOWNLOAD_PROXIES_KEY}/", {"value": ""}, format="json").status_code == 404
+
+    client.force_authenticate(User.objects.create_user(username="download-unprivileged"))
+    assert client.put(POLICY_URL, {"allowed_cidrs": "0.0.0.0/0"}, format="json").status_code == 403
+
+
+def test_saving_proxies_refreshes_edit_access_for_legacy_management_network(client: APIClient, settings: Settings) -> None:
+    settings.DOWNLOAD_POLICY_ADMIN_CIDRS = "10.20.30.0/24"
+    settings.DOWNLOAD_TRUSTED_PROXY_CIDRS = "172.20.0.2,10.50.60.7"
+    through_oa = {"REMOTE_ADDR": "172.20.0.2", "HTTP_X_FORWARDED_FOR": "10.20.30.9,10.50.60.7"}
+    payload = {"allowed_cidrs": "10.20.30.0/24", "trusted_proxy_cidrs": "172.20.0.2"}
+
+    assert client.get(POLICY_URL, **through_oa).data["data"]["can_edit"] is True
+    saved = client.put(POLICY_URL, payload, format="json", **through_oa)
+    assert saved.status_code == 200
+    assert saved.data["data"]["can_edit"] is False
+    assert client.put(POLICY_URL, payload, format="json", **through_oa).status_code == 403
+
+
+def test_download_trust_follows_current_frontend_container(client: APIClient, settings: Settings, monkeypatch) -> None:
+    settings.DOWNLOAD_ALLOWED_CIDRS = ""
+    settings.DOWNLOAD_POLICY_ADMIN_CIDRS = None
+    settings.DOWNLOAD_TRUSTED_PROXY_CIDRS = ""
+    settings.DOWNLOAD_DISCOVER_FRONTEND_PROXY = True
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", "company-ship")
+    monkeypatch.setattr(download_access.socket, "gethostname", lambda: "backend-id")
+    backend = [True, "company-ship", "backend", {"shared": {"NetworkID": "shared-id"}}]
+    frontend_endpoint = {"NetworkID": "shared-id", "IPAddress": "172.20.0.2"}
+    frontend = [True, "company-ship", "frontend", {"shared": frontend_endpoint}]
+
+    def inspect(command, **options):
+        assert command[-2:] == ["backend-id", "company-ship-frontend"]
+        return subprocess.CompletedProcess(command, 0, "\n".join(map(json.dumps, (backend, frontend))))
+
+    monkeypatch.setattr(download_access.subprocess, "run", inspect)
+    assert client.put(POLICY_URL, {
+        "allowed_cidrs": "10.20.30.0/24,172.20.0.3",
+        "trusted_proxy_cidrs": "10.50.60.7",
+    }, format="json").status_code == 200
+
+    def can_download(peer: str, forwarded: str) -> bool:
+        response = client.get(USER_INFO_URL, REMOTE_ADDR=peer, HTTP_X_FORWARDED_FOR=forwarded)
+        assert response.status_code == 200
+        return response.data["data"]["can_download_files"]
+
+    assert can_download("172.20.0.2", "10.20.30.9,10.50.60.7")
+    assert not can_download("172.20.0.2", "10.20.30.9,203.0.113.8,10.50.60.7")
+    assert not can_download("172.20.0.2", "203.0.113.8,10.20.30.99")
+    frontend_endpoint["IPAddress"] = "172.20.0.3"
+    assert can_download("172.20.0.3", "10.20.30.9")
+    assert not can_download("172.20.0.2", "10.20.30.9")
+    assert not can_download("172.20.0.3", "203.0.113.8")
+    frontend_endpoint["NetworkID"] = "unrelated-id"
+    assert not can_download("172.20.0.3", "10.20.30.9")
 
 
 @pytest.mark.parametrize(("peer", "forwarded", "expected"), [

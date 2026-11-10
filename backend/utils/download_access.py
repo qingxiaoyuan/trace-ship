@@ -1,6 +1,10 @@
 """下载网段与可信代理链路校验。"""
 
+import json
+import os
 import re
+import socket
+import subprocess
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_address, ip_network
 
 from django.conf import settings
@@ -11,6 +15,12 @@ from apps.system.services import DownloadPolicyConfig
 DOWNLOAD_DENIED_MESSAGE = "当前网络不允许下载，请连接允许下载的内网后重试"
 Address = IPv4Address | IPv6Address
 Network = IPv4Network | IPv6Network
+_CONTAINER_NETWORK_FORMAT = (
+    '[{{json .State.Running}},'
+    '{{json (index .Config.Labels "com.docker.compose.project")}},'
+    '{{json (index .Config.Labels "com.docker.compose.service")}},'
+    '{{json .NetworkSettings.Networks}}]'
+)
 
 
 def parse_cidrs(value: str) -> tuple[Network, ...]:
@@ -37,30 +47,71 @@ def _parse_ip(value: str) -> Address:
     return address
 
 
-def _client_ip(request: Request) -> Address | None:
-    trusted = parse_cidrs(settings.DOWNLOAD_TRUSTED_PROXY_CIDRS)
+def _frontend_proxy_addresses() -> set[Address]:
+    """从已有 Docker socket 核验同一 Compose 应用内前端的当前地址。"""
+    project = os.getenv("COMPOSE_PROJECT_NAME") or "trace-ship"
+    try:
+        output = subprocess.run(
+            ["docker", "--host", "unix:///var/run/docker.sock", "inspect", "--type", "container",
+             "--format", _CONTAINER_NETWORK_FORMAT, "--", socket.gethostname(), f"{project}-frontend"],
+            capture_output=True, text=True, timeout=2, check=True,
+        ).stdout
+        backend, frontend = (json.loads(line) for line in output.splitlines())
+        backend_running, backend_project, backend_service, backend_networks = backend
+        frontend_running, frontend_project, frontend_service, frontend_networks = frontend
+        if (
+            not backend_running or not frontend_running or not backend_project
+            or frontend_project != backend_project or backend_service != "backend" or frontend_service != "frontend"
+        ):
+            return set()
+        shared_ids = {network["NetworkID"] for network in backend_networks.values() if network["NetworkID"]}
+        return {
+            _parse_ip(network[field])
+            for network in frontend_networks.values()
+            if network["NetworkID"] in shared_ids
+            for field in ("IPAddress", "GlobalIPv6Address")
+            if network.get(field)
+        }
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
+        return set()
+
+
+def _client_ip(request: Request, trusted_proxies: str) -> Address | None:
+    trusted = parse_cidrs(trusted_proxies)
+    frontend = _frontend_proxy_addresses() if settings.DOWNLOAD_DISCOVER_FRONTEND_PROXY else set()
+    if settings.DOWNLOAD_DISCOVER_FRONTEND_PROXY and not frontend:
+        # 无法确认前端身份时，不把可能是代理的对端地址当成客户端地址。
+        return None
+
+    def is_trusted(address: Address) -> bool:
+        return address in frontend or any(address in network for network in trusted)
+
     address = _parse_ip(request.META.get("REMOTE_ADDR", ""))
-    # 仅剥离从服务端向客户端连续出现的可信代理，忽略客户端自行附加的前缀。
+    if not is_trusted(address):
+        return address
+
+    # 可信代理链应只留下一个客户端地址。还有前置地址时，可能存在未登记的代理。
     for hop in reversed(request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")):
-        if not any(address in network for network in trusted):
-            return address
+        if not is_trusted(address):
+            return None
         address = _parse_ip(hop)
-    return address if not any(address in network for network in trusted) else None
+    return None if is_trusted(address) else address
 
 
-def _matches_network(request: Request, value: str) -> bool:
+def _matches_network(request: Request, value: str, trusted_proxies: str) -> bool:
     try:
         networks = parse_cidrs(value)
-        address = _client_ip(request) if networks else None
+        address = _client_ip(request, trusted_proxies) if networks else None
         return address is not None and any(address in network for network in networks)
     except ValueError:
         return False
 
 
 def can_download_files(request: Request) -> bool:
-    value = DownloadPolicyConfig.get()
-    return value is None or _matches_network(request, value)
+    value, trusted_proxies = DownloadPolicyConfig.get()
+    return value is None or _matches_network(request, value, trusted_proxies)
 
 
-def can_manage_download_policy(request: Request) -> bool:
-    return _matches_network(request, settings.DOWNLOAD_POLICY_ADMIN_CIDRS)
+def can_manage_download_policy(request: Request, trusted_proxies: str) -> bool:
+    value = settings.DOWNLOAD_POLICY_ADMIN_CIDRS
+    return value is None or _matches_network(request, value, trusted_proxies)

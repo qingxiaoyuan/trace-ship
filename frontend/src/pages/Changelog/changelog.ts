@@ -33,6 +33,7 @@ export const changelogEntries: ChangelogEntry[] = [
     items: [
       { category: 'feature', text: '「系统配置」新增文件下载白名单。白名单外可通过 OA 正常使用系统及在线查看，后端会拒绝打包产物、完整日志、发布单和周报的文件请求。' },
       { category: 'fix', text: '修复包含大量单个 IP 的下载白名单保存后无法原样再次保存的问题。' },
+      { category: 'fix', text: '升级沿用原有部署配置。管理员可在系统启动后配置下载白名单和可信上游代理，前端容器换 IP 后自动识别。' },
     ],
   },
   {
