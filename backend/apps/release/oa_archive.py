@@ -1,11 +1,13 @@
 """已发布正式版的软件归档准备；此模块不向 OA 发送请求。"""
 import re
 from pathlib import Path, PurePosixPath
+from typing import NoReturn
 from urllib.parse import quote
 
 from rest_framework import serializers
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
+from apps.account.models import User
 from apps.package.models import PackageTask
 from apps.package.services import PackageService
 from apps.package.services.artifacts import (
@@ -16,6 +18,7 @@ from apps.package.services.artifacts import (
     verify_task_svn_artifact,
 )
 from apps.project.models import ProjectComponent
+from apps.release.models import ReleaseRecord
 from apps.system.oa_archive import OaArchiveConfig
 from utils.permissions import IsProjectManager, ProjectRolePermission
 
@@ -34,7 +37,7 @@ class ArchiveFormInput(serializers.Serializer):
     other_description = serializers.CharField(allow_blank=True, required=False, default="", trim_whitespace=False)
     soft_number = serializers.CharField(allow_blank=True, required=False, default="")
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict) -> dict:
         return {**attrs, "applyCount": 1}
 
 
@@ -45,13 +48,13 @@ class ArchiveSelectionInput(serializers.Serializer):
     source_kind = serializers.ChoiceField(choices=["local", "svn"], required=False)
     form = ArchiveFormInput(required=False)
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict) -> dict:
         if not attrs.get("artifact_id") and not attrs.get("path"):
             raise ValidationError({"detail": "请选择一个任务产物或 SVN 文件"})
         return attrs
 
 
-def archive_file_error(error):
+def archive_file_error(error: ArtifactQueryError) -> NoReturn:
     """保留文件缺失、认证与网络错误的分类及状态。"""
     failure = APIException({"detail": str(error), "state": error.state})
     failure.status_code = error.status_code
@@ -76,23 +79,23 @@ class ArchivePublisherPermission(ProjectRolePermission):
 
 class OaArchivePreparation:
     @staticmethod
-    def can_prepare(release, user) -> bool:
+    def can_prepare(release: ReleaseRecord, user: User) -> bool:
         return IsProjectManager()._check(release.project, user) or (
             release.publisher_id == user.id and ArchivePublisherPermission()._check(release.project, user)
         )
 
     @classmethod
-    def require_permission(cls, release, user) -> None:
+    def require_permission(cls, release: ReleaseRecord, user: User) -> None:
         if not cls.can_prepare(release, user):
             raise PermissionDenied("仅发布人、目标项目管理员或软件管理员可准备归档，且须保持项目业务写入权限")
 
     @staticmethod
-    def require_release(release) -> None:
+    def require_release(release: ReleaseRecord) -> None:
         if release.release_type != "formal" or release.status != "released":
             raise ValidationError({"detail": "仅已发布的正式版可准备 OA 软件归档"})
 
     @staticmethod
-    def require_task(release, task) -> None:
+    def require_task(release: ReleaseRecord, task: PackageTask) -> None:
         if (task.release_id != release.id or task.project_id != release.project_id
                 or task.repository_id != release.repository_id):
             raise ValidationError({"detail": "打包任务不属于当前发布及目标项目"})
@@ -102,23 +105,23 @@ class OaArchivePreparation:
             raise ValidationError({"detail": "该任务快照启用了 SVN 推送，须推送成功后准备归档"})
 
     @staticmethod
-    def local_artifact(task, artifact_id: str) -> dict:
+    def local_artifact(task: PackageTask, artifact_id: str) -> dict:
         artifact = next((item for item in task.artifact_info if item.get("id") == artifact_id), None)
         if not artifact:
             raise NotFound("产物不在该任务清单中")
         workspace = Path(task.workspace_path).resolve() if task.workspace_path else None
         workspace_root = PackageService.workspace_root().resolve()
-        if workspace is None or not workspace.is_relative_to(workspace_root):
+        if workspace is None or workspace_root not in workspace.parents:
             raise ValidationError({"detail": "任务工作区不可用"})
         root = (workspace / "artifacts").resolve()
         path = artifact.get("path") or ""
         file_path = (root / path).resolve()
-        if not root.is_relative_to(workspace) or not file_path.is_relative_to(root) or not file_path.is_file():
+        if not local_artifact_available(task, artifact):
             raise ValidationError({"detail": "产物文件已不存在或路径不在任务目录内"})
         return {**artifact, "path": file_path.relative_to(root).as_posix()}
 
     @staticmethod
-    def selection_path(task, selection):
+    def selection_path(task: PackageTask, selection: dict) -> str:
         """任务与规范相对路径是共同身份；产物 ID 只用于该任务内定位。"""
         _, manifest = task_artifact_manifest(task)
         artifact_id = selection.get("artifact_id")
@@ -135,7 +138,7 @@ class OaArchivePreparation:
         return path
 
     @classmethod
-    def selected_artifact(cls, task, selection):
+    def selected_artifact(cls, task: PackageTask, selection: dict) -> dict:
         path = cls.selection_path(task, selection)
         original = next((item for item in task.artifact_info or [] if PurePosixPath(item.get("path") or "").as_posix() == path), None)
         if selection.get("source_kind") != "svn" and original and local_artifact_available(task, original):
@@ -153,7 +156,7 @@ class OaArchivePreparation:
         return {**artifact, "kind": "svn", "supplemented": artifact["source"] == "svn_supplement"}
 
     @classmethod
-    def options(cls, release, user) -> dict:
+    def options(cls, release: ReleaseRecord, user: User) -> dict:
         cls.require_permission(release, user)
         cls.require_release(release)
         artifacts = []
@@ -179,7 +182,7 @@ class OaArchivePreparation:
         return {"artifacts": artifacts, "svn_tasks": svn_tasks}
 
     @classmethod
-    def prepare(cls, release, user, selection: dict) -> dict:
+    def prepare(cls, release: ReleaseRecord, user: User, selection: dict) -> dict:
         cls.require_permission(release, user)
         cls.require_release(release)
         task = PackageTask.objects.filter(pk=selection["task_id"]).first()

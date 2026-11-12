@@ -39,6 +39,9 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
   const [formOpen, setFormOpen] = useState(false);
   const [form] = Form.useForm<ArchiveForm>();
   const [viewing, setViewing] = useState<ArchiveApplication>();
+  const [confirmingFailure, setConfirmingFailure] = useState<ArchiveApplication>();
+  const [noOrderChecked, setNoOrderChecked] = useState(false);
+  const [confirmationEvidence, setConfirmationEvidence] = useState<Record<string, string>>({});
   const inFlight = useRef(false);
   const [checking, setChecking] = useState(false);
   const [confirmation, setConfirmation] = useState<{ previous: ArchiveApplication; values: ArchiveForm; count: number }>();
@@ -48,6 +51,14 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
 
   const records = useQuery({ queryKey: ['oa-archive-records', release.id], queryFn: () => oaArchiveApi.records(release.id), enabled: active,
     refetchInterval: query => query.state.data?.some(item => item.status === 'sending') ? 2000 : false });
+  const confirmFailure = useMutation({
+    mutationFn: () => oaArchiveApi.confirmNoOrder(release.id, confirmingFailure!.id, confirmationEvidence[confirmingFailure!.id] || ''),
+    onSuccess: result => {
+      setConfirmationEvidence(current => { const remaining = { ...current }; delete remaining[result.id]; return remaining; });
+      setConfirmingFailure(undefined);
+      void records.refetch();
+    },
+  });
   const existing = records.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path) || [];
   const latest = existing[0];
   const uncertainKey = uncertain[identity] && !existing.some(item => item.submission_id === uncertain[identity]);
@@ -110,7 +121,7 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
       <h3 className="text-[13px] font-medium">OA 软件归档</h3>
       {allowed && <Button className="min-h-11" disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>准备 OA 归档</Button>}
     </div>
-    <p className="text-[12px] text-slate-500">选择一个本地产物或 SVN 当前文件，核对后手动提交 OA。已发起归档表示流程创建成功，不表示 OA 审批通过。</p>
+    <p className="text-[12px] text-slate-500">{allowed ? '选择一个本地产物或 SVN 当前文件，核对后手动提交 OA。' : '查看本项目的归档申请资料、实际操作者与结果。'}已发起归档表示流程创建成功，不表示 OA 审批通过。</p>
     {records.error && <><PermissionAlert error={records.error} errorTitle="归档记录加载失败" /><Button onClick={() => void records.refetch()}>重新读取归档记录</Button></>}
     <div className="space-y-2" aria-label="归档申请历史">{records.data?.map(item => <article key={item.id} className="rounded border border-slate-200 p-3 text-[12px]">
       <p className="break-words font-medium">{statusText[item.status]} · {item.source.path}</p>
@@ -119,12 +130,16 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
       <p>实际操作者：{item.operator.username} · {new Date(item.created_at).toLocaleString()}</p>
       {item.soft_number && <p>软件编号：{item.soft_number}</p>}
       <p className="whitespace-pre-wrap break-words">{item.message}</p>
-      <Button onClick={() => setViewing(item)}>查看申请资料</Button>
+      {item.no_order_confirmation && <p className="whitespace-pre-wrap break-words">已核对未建单 · {item.no_order_confirmation.operator.username} · {new Date(item.no_order_confirmation.confirmed_at).toLocaleString()}<br />核对依据：{item.no_order_confirmation.evidence}</p>}
+      {item.status === 'failure' && !item.no_order_confirmation && <p>尚未核对未建单，来源仍受删除保护。</p>}
+      <div className="flex flex-wrap gap-2"><Button onClick={() => setViewing(item)}>查看申请资料</Button>
+        {allowed && item.status === 'failure' && !item.no_order_confirmation && <Button onClick={() => { confirmFailure.reset(); setNoOrderChecked(false); setConfirmingFailure(item); }}>确认未建单</Button>}
+      </div>
     </article>)}</div>
     <OaArchiveArtifactPicker releaseId={release.id} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={artifact => prepare.mutate(artifact)} pending={prepare.isPending} error={prepare.error} />
     <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => { if (!submit.isPending && !checking) setFormOpen(false); }} width={800}
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
-      footer={<div className="flex flex-wrap justify-end gap-2"><Button className="min-h-11" disabled={submit.isPending || checking} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="min-h-11" loading={validate.isPending} disabled={submit.isPending || checking} onClick={() => form.submit()}>校验资料</Button><Button className="min-h-11" type="primary" loading={submit.isPending || checking} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey} onClick={() => void send()}>提交 OA 归档</Button></div>}>
+      footer={<div className="flex flex-wrap justify-end gap-2"><Button className="min-h-11" disabled={submit.isPending || checking} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="min-h-11" loading={validate.isPending} disabled={submit.isPending || checking} onClick={() => form.submit()}>校验资料</Button><Button aria-label="提交 OA 归档" aria-busy={submit.isPending || checking} className="min-h-11" type="primary" loading={submit.isPending || checking} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey} onClick={() => void send()}>提交 OA 归档</Button></div>}>
       {prepared && <Form form={form} disabled={submit.isPending || checking} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
         onFinishFailed={({ errorFields }) => { if (errorFields[0]) form.scrollToField(errorFields[0].name, { focus: true, block: 'center' }); }}>
         <div className="mb-3 space-y-2">
@@ -171,10 +186,26 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
           : confirmation.previous.status === 'failure' ? <Alert type="warning" title="OA 返回失败不保证没有外部副作用，请核对后主动重试。" /> : <Alert type="warning" title="该产物已有已发起归档的记录，请确认仍需再次办理。" />}
       </div>}
     </Modal>
+    <Modal title="核对失败申请" open={!!confirmingFailure && active}
+      onCancel={() => { if (!confirmFailure.isPending) setConfirmingFailure(undefined); }}
+      onOk={() => confirmFailure.mutate()} okText="保存核对结果" cancelText="取消"
+      confirmLoading={confirmFailure.isPending} cancelButtonProps={{ disabled: confirmFailure.isPending }}
+      okButtonProps={{ disabled: !noOrderChecked || !confirmationEvidence[confirmingFailure?.id || '']?.trim() }}>
+      {confirmingFailure && <div className="space-y-3">
+        <Alert type="warning" showIcon title="请先在 OA 核对这条失败申请是否建单。系统不会查询或重试。只解除本条失败申请的保护，其他归档记录仍独立保护来源。" />
+        <p className="break-words">{confirmingFailure.source.path} · {confirmingFailure.operator.username} · {new Date(confirmingFailure.created_at).toLocaleString()}</p>
+        <label htmlFor="oa-no-order-evidence">核对依据</label>
+        <Input.TextArea id="oa-no-order-evidence" maxLength={2000} value={confirmationEvidence[confirmingFailure.id] || ''} disabled={confirmFailure.isPending}
+          onChange={event => setConfirmationEvidence(current => ({ ...current, [confirmingFailure.id]: event.target.value }))} />
+        <Checkbox checked={noOrderChecked} disabled={confirmFailure.isPending} onChange={event => setNoOrderChecked(event.target.checked)}>我已核对 OA，确认这条失败申请未建单</Checkbox>
+        {confirmFailure.error && <PermissionAlert error={confirmFailure.error} errorTitle="核对结果保存失败" />}
+      </div>}
+    </Modal>
     <Modal title="归档申请记录" open={!!viewing && active} onCancel={() => setViewing(undefined)} footer={null} width={800} styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}>
       {viewing && <div className="space-y-3 text-[13px]">
         <p>{statusText[viewing.status]} · 实际操作者：{viewing.operator.username}</p>
         <p>{confirmationText[viewing.confirmation || '']}{viewing.previous_id && ` · 前次申请：${viewing.previous_id}`}</p>
+        {viewing.no_order_confirmation && <p className="whitespace-pre-wrap break-words">已核对未建单 · {viewing.no_order_confirmation.operator.username} · {new Date(viewing.no_order_confirmation.confirmed_at).toLocaleString()}<br />核对依据：{viewing.no_order_confirmation.evidence}</p>}
         <p>发送时间：{new Date(viewing.created_at).toLocaleString()}</p>
         <table aria-label="已提交归档资料" className="w-full table-fixed border-collapse"><tbody>{fields.map(field => <tr key={field.key} className="border-b border-slate-200"><th scope="row" className="w-24 bg-slate-50 p-2 text-left align-top">{field.label}</th><td className="whitespace-pre-wrap break-words p-2">{viewing.form[field.key] || '—'}</td></tr>)}</tbody></table>
         {viewing.source.kind === 'svn' && <p>{viewing.source.supplemented ? '从 SVN 补录' : 'SVN 当前文件'} · {viewing.source.path}</p>}

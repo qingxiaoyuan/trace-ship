@@ -11,6 +11,28 @@
       "description": "准备不会发送；提交接口会向配置的 OA 发起一次实际申请。submission_id 为本次操作固定 UUID，重放必须沿用相同资料及确认。再次办理须新 UUID，并提交最新 previous_id 和 confirmation：success=reapply、failure=retry、unknown=checked_no_order（仅用户核对 OA 未建单后）。sending 不能再次发送。",
       "item": [
         {
+          "name": "确认失败申请未建单",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "当前有归档权限的操作者独立核对明确失败申请，保存确认人、时间与依据，仅解除本条保护，不查询或重试。重复确认保留首次结果。",
+            "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/confirm-no-order/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"application_id\": \"{{oa_application_id}}\",\n  \"confirmation\": \"checked_no_order\",\n  \"evidence\": \"已在 OA 按申请人及提交时间核对，确认未建单\"\n}"
+            }
+          }
+        },
+        {
           "name": "提交单产物归档（实际发送）",
           "request": {
             "method": "POST",

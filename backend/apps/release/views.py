@@ -268,14 +268,14 @@ class ReleaseViewSet(StandardModelViewSet):
         return super().get_permissions()
 
     @action(detail=True, methods=["get"], url_path="oa-archive/options")
-    def oa_archive_options(self, request: Request, pk=None) -> Response:
+    def oa_archive_options(self, request: Request, pk: str | None = None) -> Response:
         """列出当前发布可准备归档的现存产物。"""
         from apps.release.oa_archive import OaArchivePreparation
 
         return success_response(OaArchivePreparation.options(self.get_object(), request.user))
 
     @action(detail=True, methods=["post"], url_path="oa-archive/prepare")
-    def oa_archive_prepare(self, request: Request, pk=None) -> Response:
+    def oa_archive_prepare(self, request: Request, pk: str | None = None) -> Response:
         """准备单产物归档表单，只有本页草稿，不创建 OA 流程。"""
         from apps.release.oa_archive import ArchiveSelectionInput, OaArchivePreparation
 
@@ -285,7 +285,7 @@ class ReleaseViewSet(StandardModelViewSet):
         return success_response(OaArchivePreparation.prepare(release, request.user, serializer.validated_data))
 
     @action(detail=True, methods=["post"], url_path="oa-archive/submit")
-    def oa_archive_submit(self, request: Request, pk=None) -> Response:
+    def oa_archive_submit(self, request: Request, pk: str | None = None) -> Response:
         """提交单产物归档；同一提交标识重放只返回已保存结果。"""
         from apps.release.oa_submission import ArchiveSubmitInput, OaArchiveSubmission, application_data
 
@@ -294,8 +294,18 @@ class ReleaseViewSet(StandardModelViewSet):
         record, created = OaArchiveSubmission.submit(self.get_object(), request.user, serializer.validated_data)
         return success_response(application_data(record), status=201 if created else 200)
 
+    @action(detail=True, methods=["post"], url_path="oa-archive/confirm-no-order")
+    def oa_archive_confirm_no_order(self, request: Request, pk: str | None = None) -> Response:
+        """授权操作者核对失败未建单；不重试也可解除本条来源保护。"""
+        from apps.release.oa_submission import ArchiveNoOrderInput, OaArchiveSubmission, application_data
+
+        serializer = ArchiveNoOrderInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        record = OaArchiveSubmission.confirm_no_order(self.get_object(), request.user, serializer.validated_data)
+        return success_response(application_data(record))
+
     @action(detail=True, methods=["get"], url_path="oa-archive/records")
-    def oa_archive_records(self, request: Request, pk=None) -> Response:
+    def oa_archive_records(self, request: Request, pk: str | None = None) -> Response:
         """当前项目可见成员可回读完整资料、操作者与 OA 原始返回对象。"""
         from apps.release.oa_submission import application_data
 

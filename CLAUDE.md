@@ -223,7 +223,7 @@ RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan
 - 发布任务创建与清理共用仓库锁，事务提交后投递。执行前重新解析有效 Tag 到 `source_ref`；本地 Docker、远程 Windows/麒麟在用户脚本执行前以 `git rev-parse HEAD` 核验完整 SHA，不一致立即失败。原版本、显示 Tag 与说明保留发布身份。
 - 执行流程：`PackageService.create_task_for_release` 创建任务 → `dispatch_task` 提交 Celery `run_package_task` → 准备 `workspace/{source,artifacts,tmp}` → `git clone` 源码 → 以 `--entrypoint /bin/sh` 启动容器（只挂载 source / artifacts / tmp，容器内工作目录 `/workspace/source`）→ 有 `custom_script` 则以 `sh -ec`（遇错即停）执行，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）→ 扫描 `workspace/artifacts` 产物 → 自动与手动打包的所有版本统一按 SVN 总开关推送（正式版、RC、测试版分别默认进入 formal/版本号、rc/版本号、beta/版本号；分支直打默认 formal/分支名；默认同版本不覆盖；已创建任务沿用原快照的最终推送决定）→ 更新状态与耗时。
 - 手动能力：`PackageConfigViewSet.trigger` 手动触发某个已发布版本的打包；`PackageTaskViewSet.cancel` 取消任务、`push_svn` 手动推送产物、`logs` 读取日志、`download_artifact` 下载产物；任务列表 `status` 过滤支持逗号分隔多值（如 `?status=queued,running`）。
-- 工作区清理（`apps/package/services/cleanup.py`）：任务结束（成功/失败/取消）即删本地工作区 `source` 与 `tmp`（产物、日志保留）；远程任务失败/取消时按 `cleanup_workspace` 快照兜底回收节点目录；每天 0:00 清理各节点 `work_root` 下残留任务目录（跳过运行中任务）；每天 8:00 删除超期产物（仅 artifacts，`artifact_info` 同步清空），保留天数由「系统配置」`package_artifact_retention_days` 维护（默认 30，环境变量 `PACKAGE_ARTIFACT_RETENTION_DAYS` 兜底）。
+- 工作区清理（`apps/package/services/cleanup.py`）：任务结束（成功/失败/取消）即删本地工作区 `source` 与 `tmp`（产物、日志保留）；远程任务失败/取消时按 `cleanup_workspace` 快照兜底回收节点目录；每天 0:00 清理各节点 `work_root` 下残留任务目录（跳过运行中任务）；每天 8:00 删除超期产物（仅 artifacts，保留 `artifact_info` 与已知元数据），保留天数由「系统配置」`package_artifact_retention_days` 维护（默认 30，环境变量 `PACKAGE_ARTIFACT_RETENTION_DAYS` 兜底）。
 - Jenkins 模块已整体下线（模型、服务、API、`python-jenkins` 依赖均已移除），打包统一走 `apps.package`；不要在新代码中恢复 Jenkins 相关逻辑。
 
 ### Celery
@@ -258,7 +258,7 @@ RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan
 
 ## Important Notes
 
-- OA 软件归档：已发布正式版的本地产物、历史 SVN 当前文件或任务目录内补录单文件办理使用 `OaArchiveApplication`，资料/实际操作者/来源与不透明结果各自保存；身份为任务 + 规范相对路径。仓库→发布→任务锁内逐次授权，先持久化 sending 再单次无认证 JSON，不自动重发。成功、发送中、未知保护来源记录及父级级联，删除保护先于远端 Tag/工作区副作用；明确失败历史独立保留，到期清文件正常。再次申请与未知核对重试须确认锁内最新 previous_id 及对应 confirmation，重新核验当前权限及文件并保留新旧记录；新申请不继承自动生成编号，后续失败不解除旧保护。历史 SVN 文件逐次核验，原始与当前元数据分别保存；见 [API 8.14](docs/api/api-spec.md#814-oa-软件归档资料准备与提交) 和 ADR-0028。
+- OA 软件归档：已发布正式版的本地产物、历史 SVN 当前文件或任务目录内补录单文件办理使用 `OaArchiveApplication`，资料/实际操作者/来源与不透明结果各自保存；身份为任务 + 规范相对路径。仓库→发布→任务锁内逐次授权，先持久化 sending 再单次无认证 JSON，不自动重发。成功、发送中、未知及尚未核对的失败保护来源记录及父级级联，删除保护先于远端 Tag/工作区副作用；明确失败须由当前有归档权限的操作者独立确认未建单并保存确认人、时间、依据，原子且幂等解除本条保护；不查询或重试，其他历史保护不变。失败历史独立保留，到期清文件正常。再次申请与未知核对重试须确认锁内最新 previous_id 及对应 confirmation，重新核验当前权限及文件并保留新旧记录；新申请不继承自动生成编号，后续失败不解除旧保护。历史 SVN 文件逐次核验，原始与当前元数据分别保存；见 [API 8.14](docs/api/api-spec.md#814-oa-软件归档资料准备与提交) 和 ADR-0028。
 
 - 后端使用 ruff 做 lint/format（配置在 `backend/pyproject.toml`，`pip install -r requirements-dev.txt` 后 `ruff check .`）；规则集渐进启用，存量代码已清零告警。
 - `docs/design/business-process-analysis.md` 原为阶段规划文档，2026-07 已按代码核对修订（文中标注「规划中，未实现」的除外）；实现需求时仍以代码为准。

@@ -1,6 +1,9 @@
 """单产物归档派发：先提交不可重放的在途记录，再调用无防重能力的 OA。"""
 import json
+from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
+from uuid import UUID
 
 import requests
 from django.db import IntegrityError, transaction
@@ -8,7 +11,9 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import NotFound, ValidationError
 
+from apps.account.models import User
 from apps.package.models import PackageTask
+from apps.project.models import Project
 from apps.release.models import OaArchiveApplication, ReleaseRecord
 from apps.release.oa_archive import ArchiveFormInput, ArchiveSelectionInput, OaArchivePreparation
 from apps.repository.models import Repository
@@ -22,13 +27,19 @@ class ArchiveSubmitInput(ArchiveSelectionInput):
     confirmation = serializers.ChoiceField(choices=["", "reapply", "retry", "checked_no_order"], required=False, default="")
 
 
-def lock_repository(repository_id):
+class ArchiveNoOrderInput(serializers.Serializer):
+    application_id = serializers.UUIDField()
+    confirmation = serializers.ChoiceField(choices=["checked_no_order"])
+    evidence = serializers.CharField(max_length=2000)
+
+
+def lock_repository(repository_id: UUID) -> None:
     """删除先完成时返回资源已失效，不把竞争误报为服务器错误。"""
     if Repository.objects.select_for_update(no_key=True).filter(pk=repository_id).first() is None:
         raise NotFound("来源仓库已删除")
 
 
-def create_application(**values):
+def create_application(**values: Any) -> OaArchiveApplication:
     """数据库唯一键兜底跨仓库碰撞；失败插入绝不获得派发机会。"""
     try:
         with transaction.atomic():
@@ -37,7 +48,7 @@ def create_application(**values):
         raise ValidationError({"detail": "提交标识已使用或产物正在发送，请重新读取归档记录"}) from exc
 
 
-def has_creation_result(data, *, specified_number):
+def has_creation_result(data: Any, *, specified_number: bool) -> bool:
     """校验契约的外层类型，不猜测 software_archive_id 对象内部字段。"""
     if (not isinstance(data, dict) or not isinstance(data.get("soft_number"), str)
             or not data["soft_number"].strip() or not isinstance(data.get("software_archive_id"), dict)
@@ -49,7 +60,7 @@ def has_creation_result(data, *, specified_number):
     return number_id is None and specified_number
 
 
-def application_data(record):
+def application_data(record: OaArchiveApplication) -> dict:
     """只暴露项目内可见的业务资料，不提供未约定的 OA 跳转链接。"""
     return {
         "id": str(record.id), "submission_id": str(record.submission_id), "status": record.status,
@@ -60,10 +71,11 @@ def application_data(record):
         "finished_at": record.finished_at.isoformat() if record.finished_at else None,
         "previous_id": str(record.previous_id) if record.previous_id else None,
         "confirmation": record.confirmation,
+        "no_order_confirmation": record.no_order_confirmation,
     }
 
 
-def guard_archive_delete(*, release=None, task=None):
+def guard_archive_delete(*, release: ReleaseRecord | None = None, task: PackageTask | None = None) -> None:
     """调用方先持来源仓库锁，确保检查在任何文件或远端 Tag 副作用之前。"""
     query = OaArchiveApplication.objects.all()
     if release is not None:
@@ -73,11 +85,11 @@ def guard_archive_delete(*, release=None, task=None):
     else:
         raise ValueError("必须指定归档来源")
     if query.exists():
-        raise ValidationError({"detail": "已有 OA 归档申请正在发送、已发起或结果未确认，不能删除来源记录"})
+        raise ValidationError({"detail": "已有 OA 归档申请正在发送、已发起、结果未确认或失败尚未核对，不能删除来源记录"})
 
 
 @contextmanager
-def locked_archive_task(task):
+def locked_archive_task(task: PackageTask) -> Iterator[PackageTask]:
     """任务删除与申请遵守仓库→发布→任务锁顺序。"""
     with transaction.atomic():
         lock_repository(task.repository_id)
@@ -91,7 +103,7 @@ def locked_archive_task(task):
 
 
 @contextmanager
-def locked_archive_parent(instance):
+def locked_archive_parent(instance: Repository | Project) -> Iterator[None]:
     """父级删除同样先锁仓库，不能通过级联绕过归档来源保护。"""
     with transaction.atomic():
         if isinstance(instance, Repository):
@@ -103,7 +115,7 @@ def locked_archive_parent(instance):
         ids = list(repositories.values_list("pk", flat=True))
         list(Repository.objects.filter(pk__in=ids).order_by("pk").select_for_update(no_key=True))
         if protected.exists():
-            raise ValidationError({"detail": "已有 OA 归档申请正在发送、已发起或结果未确认，不能级联删除来源记录"})
+            raise ValidationError({"detail": "已有 OA 归档申请正在发送、已发起、结果未确认或失败尚未核对，不能级联删除来源记录"})
         yield
 
 
@@ -111,7 +123,7 @@ class OaArchiveSubmission:
     timeout = (5, 30)
 
     @classmethod
-    def submit(cls, release, user, values):
+    def submit(cls, release: ReleaseRecord, user: User, values: dict) -> tuple[OaArchiveApplication, bool]:
         with transaction.atomic():
             lock_repository(release.repository_id)
             release = ReleaseRecord.objects.select_for_update().filter(pk=release.pk).first()
@@ -166,7 +178,35 @@ class OaArchiveSubmission:
         return record, True
 
     @classmethod
-    def dispatch(cls, record):
+    def confirm_no_order(cls, release: ReleaseRecord, user: User, values: dict) -> OaArchiveApplication:
+        """只解除本条失败申请的保护；不发送、不查单，保留核对依据。"""
+        with transaction.atomic():
+            lock_repository(release.repository_id)
+            release = ReleaseRecord.objects.select_for_update().filter(pk=release.pk).first()
+            if release is None:
+                raise NotFound("发布记录已删除")
+            OaArchivePreparation.require_permission(release, user)
+            record = OaArchiveApplication.objects.filter(pk=values["application_id"], release=release).first()
+            if record is None:
+                raise NotFound("归档申请不属于当前发布")
+            if record.task_id:
+                PackageTask.objects.select_for_update().filter(pk=record.task_id).first()
+            record = OaArchiveApplication.objects.select_for_update().get(pk=record.pk)
+            if record.status != "failure":
+                raise ValidationError({"detail": "仅 OA 明确返回失败的申请可确认未建单；其他结果须继续保留来源"})
+            if record.no_order_confirmation:
+                return record
+            record.no_order_confirmation = {
+                "operator": {"id": str(user.id), "username": user.username, "nickname": user.nickname},
+                "confirmed_at": timezone.now().isoformat(), "evidence": values["evidence"],
+            }
+            record.protected_release = None
+            record.protected_task = None
+            record.save(update_fields=["no_order_confirmation", "protected_release", "protected_task"])
+            return record
+
+    @classmethod
+    def dispatch(cls, record: OaArchiveApplication) -> None:
         record.status = "unknown"
         record.message = "无法可靠取得 OA 创建结果，请核对 OA；系统不会自动重发"
         try:
@@ -190,9 +230,7 @@ class OaArchiveSubmission:
                     elif body["code"] == -1 and isinstance(body.get("msg"), str):
                         record.status = "failure"
                         record.message = body["msg"]
-                        record.protected_release = None
-                        record.protected_task = None
         except (requests.RequestException, ValueError):
             pass
         record.finished_at = timezone.now()
-        record.save(update_fields=["status", "message", "response", "soft_number", "software_archive_id", "number_apply_id", "protected_release", "protected_task", "finished_at"])
+        record.save(update_fields=["status", "message", "response", "soft_number", "software_archive_id", "number_apply_id", "finished_at"])

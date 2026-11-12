@@ -20,6 +20,8 @@ def create_oa_sample(runtime, password):
     owner = User.objects.create_superuser(username="smoke_oa", password=password, nickname="归档实际操作人")
     project = Project.objects.create(name="OA 隔离归档项目", code="OA-SMOKE", leader=owner, status=1)
     ProjectMember.objects.create(project=project, user=owner, role="manager")
+    maintainer = User.objects.create_user(username="smoke_oa_maintainer", password=password, nickname="归档只读维保")
+    ProjectMember.objects.create(project=project, user=maintainer, role="maintainer")
     repository = Repository.objects.create(
         name="归档物理仓库", repo_type="git", vendor="gitlab",
         url="https://example.invalid/oa/software.git", external_identity="oa/software", created_by=owner,
@@ -84,7 +86,7 @@ def create_oa_sample(runtime, password):
         tasks[key] = {"id": str(task.id), "name": task.name, "artifacts": manifest,
                       "root_url": f"{external['svn']['url']}/{key}"}
     return {
-        "username": owner.username, "actor_id": str(owner.id), "actor_name": owner.nickname,
+        "username": owner.username, "maintainer_username": maintainer.username, "actor_id": str(owner.id), "actor_name": owner.nickname,
         "release_id": str(release.id), "version": release.version, "git_hash": release.git_hash,
         "software_name": component.display_name, "changes": changes, "release_doc": release.release_doc,
         "document_source": "ReleaseDocGenerator._build_markdown_doc 原始两列表格；人工编辑后保存完整变更内容，保留旧 updates 对照",

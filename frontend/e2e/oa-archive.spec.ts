@@ -5,7 +5,7 @@ import path from 'node:path';
 
 interface Artifact { id: string; name: string; path: string }
 interface OaSample {
-  username: string; actor_id: string; actor_name: string; release_id: string; version: string;
+  username: string; maintainer_username: string; actor_id: string; actor_name: string; release_id: string; version: string;
   git_hash: string; software_name: string; changes: string; release_doc: string; document_source: string;
   oa_url: string; control_url: string;
   tasks: Record<string, { id: string; name: string; artifacts: Artifact[]; root_url: string }>;
@@ -28,10 +28,10 @@ async function control(body?: object) {
   expect(response.ok).toBeTruthy();
   return await response.json() as { count: number; requests: Receipt[] };
 }
-async function login(page: Page) {
+async function login(page: Page, username = sample.username) {
   await page.goto('/login');
   await page.getByRole('button', { name: '本地账号', exact: true }).click();
-  await page.getByPlaceholder('请输入本地账号').fill(sample.username);
+  await page.getByPlaceholder('请输入本地账号').fill(username);
   await page.getByPlaceholder('请输入密码', { exact: true }).fill(fixture.password);
   await page.getByRole('button', { name: '登 录', exact: true }).click();
   await expect(page).not.toHaveURL(/\/login/);
@@ -270,3 +270,61 @@ for (const mode of ['failure', 'timeout'] as const) {
     expect(pageErrors).toEqual([]);
   });
 }
+
+
+test('失败独立核对保留依据且不重试，375px维保详情只读展示申请历史', async ({ page, browser }) => {
+  await releasePage(page);
+  const selected = artifact('confirm.zip');
+  await openForm(page, selected);
+  await control({ mode: 'failure' });
+  const before = (await control()).count;
+  const result = await send(page);
+  expect(result.status).toBe('failure');
+  await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+  const article = page.getByRole('article').filter({ hasText: selected.path });
+  await expect(article).toContainText('尚未核对未建单');
+  await article.getByRole('button', { name: '确认未建单', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '核对失败申请', exact: true });
+  await expect(dialog.getByRole('button', { name: '保存核对结果' })).toBeDisabled();
+  await dialog.getByLabel('核对依据', { exact: true }).fill('已按申请人及提交时间在隔离 OA 核对，确认未建单');
+  await dialog.getByRole('checkbox', { name: '我已核对 OA，确认这条失败申请未建单' }).check();
+  await screenshot(page, 'failure-confirmation');
+  const confirmed = page.waitForResponse(response => response.url().endsWith('/oa-archive/confirm-no-order/') && response.request().method() === 'POST');
+  await dialog.getByRole('button', { name: '保存核对结果' }).click();
+  const response = await confirmed;
+  expect(response.status()).toBe(200);
+  const checked = (await response.json()).data;
+  expect(checked.status).toBe('failure');
+  expect(checked.form).toEqual(result.form);
+  expect(checked.no_order_confirmation.operator.username).toBe(sample.username);
+  expect(checked.no_order_confirmation.evidence).toContain('确认未建单');
+  await expect(article).toContainText('已核对未建单');
+  await expect(article.getByRole('button', { name: '确认未建单', exact: true })).toHaveCount(0);
+  expect((await control()).count).toBe(before + 1);
+  evidence.confirmation = checked.no_order_confirmation;
+
+  const readonly = await browser.newContext({ baseURL: process.env.SMOKE_BASE_URL, viewport: { width: 375, height: 812 } });
+  try {
+    const mobile = await readonly.newPage();
+    await login(mobile, sample.maintainer_username);
+    await mobile.goto(`/releases/${sample.release_id}`);
+    await mobile.getByRole('tab', { name: '打包任务', exact: true }).click();
+    const item = mobile.getByRole('article').filter({ hasText: selected.path });
+    await expect(item).toContainText('实际操作者：smoke_oa');
+    await expect(item).toContainText('已核对未建单');
+    await expect(mobile.getByRole('button', { name: /准备 OA 归档|确认未建单|提交 OA 归档|确认重试|下载/ })).toHaveCount(0);
+    await screenshot(mobile, 'maintainer-mobile-history');
+    await item.getByRole('button', { name: '查看申请资料' }).click();
+    const table = mobile.getByRole('table', { name: '已提交归档资料' });
+    await expect(table).toContainText('人工保存长文末尾：不能截断到列表摘要。');
+    await expect(mobile.getByRole('dialog', { name: '归档申请记录' })).toContainText('核对依据：已按申请人及提交时间');
+    await screenshot(mobile, 'maintainer-mobile-record', table);
+    await table.getByRole('row').filter({ hasText: '变更内容' }).evaluate(element => element.scrollIntoView({ block: 'end' }));
+    await mobile.screenshot({ path: path.join(reportDir, 'oa-maintainer-mobile-tail.png'), animations: 'disabled' });
+    await table.getByRole('row').first().scrollIntoViewIfNeeded();
+    await expect(mobile.getByRole('dialog', { name: '归档申请记录' })).toHaveCSS('opacity', '1');
+    await screenshot(mobile, 'maintainer-mobile-record-top', table);
+    evidence.maintainer = { role: 'maintainer', width: 375, fullContent: true, historyOnly: true };
+  } finally { await readonly.close(); }
+  expect((await control()).count).toBe(before + 1);
+});

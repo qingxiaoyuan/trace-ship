@@ -153,9 +153,9 @@ def test_成功申请阻止直接删除任务且工作区保留(archive_case, oa
     assert (tmp_path / "build/artifacts/软件.zip").is_file()
 
 
-@pytest.mark.parametrize("mode", ["success", "missing"])
+@pytest.mark.parametrize("mode", ["success", "missing", "failure"])
 @pytest.mark.parametrize("source", ["release", "project", "repository"])
-def test_成功和未知保护发布及父级级联且远端无删除副作用(archive_case, oa_http, mode, source, monkeypatch):
+def test_成功未知及未核对失败保护发布及父级级联且远端无删除副作用(archive_case, oa_http, mode, source, monkeypatch):
     from apps.release.services import ReleaseService
 
     client, release, task = archive_case
@@ -181,7 +181,7 @@ def test_成功和未知保护发布及父级级联且远端无删除副作用(a
     assert len(client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"]) == 1
 
 
-def test_明确失败允许删除任务且保留发布中可读的原申请资料(archive_case, oa_http):
+def test_明确失败须人工确认未建单才允许删除且保留原资料(archive_case, oa_http):
     client, release, task = archive_case
     oa_http.mode = "failure"
     form = prepare(client, release, task).data["data"]["form"]
@@ -189,8 +189,23 @@ def test_明确失败允许删除任务且保留发布中可读的原申请资�
     release.publisher.is_superuser = True
     release.publisher.save()
     client.force_authenticate(release.publisher)
+    assert client.delete(f"/api/packages/tasks/{task.id}/").status_code == 400
+    url = f"/api/releases/{release.id}/oa-archive/confirm-no-order/"
+    confirmation = {"application_id": record["id"], "confirmation": "checked_no_order", "evidence": "已在 OA 按申请人及提交时间核对，未生成归档单"}
+    assert client.post(url, {**confirmation, "evidence": " "}, format="json").status_code == 400
+    confirmed = client.post(url, confirmation, format="json")
+    assert confirmed.status_code == 200, confirmed.data
+    checked = confirmed.data["data"]
+    assert checked["status"] == "failure"
+    assert checked["form"] == record["form"]
+    assert checked["response"] == record["response"]
+    assert checked["no_order_confirmation"]["operator"]["username"] == "releaseuser"
+    assert checked["no_order_confirmation"]["evidence"] == confirmation["evidence"]
+    assert checked["no_order_confirmation"]["confirmed_at"]
+    assert client.post(url, confirmation, format="json").data["data"] == checked
+    assert len(oa_http.requests) == 1
     assert client.delete(f"/api/packages/tasks/{task.id}/").status_code == 200
-    assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == [record]
+    assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == [checked]
 
 
 @pytest.mark.parametrize("role,allowed", [("developer", False), ("manager", True), ("software_admin", True), ("maintainer", False), ("viewer", False), (None, False)])
@@ -345,6 +360,10 @@ def test_后续失败不解除早前成功或未知来源保护(archive_case, oa
     second = submit(client, release, task, form, previous_id=first["id"], confirmation="reapply" if mode == "success" else "checked_no_order")
     assert second.status_code == 201
     assert second.data["data"]["status"] == "failure"
+    confirmation = client.post(f"/api/releases/{release.id}/oa-archive/confirm-no-order/", {
+        "application_id": second.data["data"]["id"], "confirmation": "checked_no_order", "evidence": "已人工核对第二次失败未建单",
+    }, format="json")
+    assert confirmation.status_code == 200
     release.publisher.is_superuser = True
     release.publisher.save()
     client.force_authenticate(release.publisher)
@@ -372,4 +391,44 @@ def test_再次申请逐次检查现行成员与文件资格(archive_case, oa_ht
         task.save()
     result = submit(client, release, task, form, previous_id=first["id"], confirmation="reapply")
     assert result.status_code in (400, 403, 404)
+    assert len(oa_http.requests) == 1
+
+
+@pytest.mark.parametrize("mode", ["success", "missing", "sending"])
+def test_非明确失败结果不能通过人工确认解除保护(archive_case, oa_http, mode):
+    from apps.release.models import OaArchiveApplication
+
+    client, release, task = archive_case
+    oa_http.mode = "missing" if mode == "sending" else mode
+    form = prepare(client, release, task).data["data"]["form"]
+    record = submit(client, release, task, form).data["data"]
+    if mode == "sending":
+        OaArchiveApplication.objects.filter(pk=record["id"]).update(status="sending")
+    result = client.post(f"/api/releases/{release.id}/oa-archive/confirm-no-order/", {
+        "application_id": record["id"], "confirmation": "checked_no_order", "evidence": "人工核对",
+    }, format="json")
+    assert result.status_code == 400
+    release.publisher.is_superuser = True
+    release.publisher.save()
+    assert client.delete(f"/api/packages/tasks/{task.id}/").status_code == 400
+    assert len(oa_http.requests) == 1
+
+
+@pytest.mark.parametrize("role,expected", [("manager", 200), ("software_admin", 200), ("developer", 403), ("maintainer", 403), ("viewer", 403), (None, 404)])
+def test_失败核对重新授权且不依赖过期文件(archive_case, oa_http, role, expected, tmp_path):
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    client, release, task = archive_case
+    oa_http.mode = "failure"
+    record = submit(client, release, task, prepare(client, release, task).data["data"]["form"]).data["data"]
+    (tmp_path / "build/artifacts/软件.zip").unlink()
+    actor = User.objects.create_user(username="confirming-user")
+    if role:
+        ProjectMember.objects.create(project=release.project, user=actor, role=role)
+    client.force_authenticate(actor)
+    result = client.post(f"/api/releases/{release.id}/oa-archive/confirm-no-order/", {
+        "application_id": record["id"], "confirmation": "checked_no_order", "evidence": "人工核对未建单",
+    }, format="json")
+    assert result.status_code == expected
     assert len(oa_http.requests) == 1

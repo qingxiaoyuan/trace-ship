@@ -40,12 +40,15 @@ export interface ArchiveApplication {
   finished_at: string | null;
   previous_id: string | null;
   confirmation: ArchiveConfirmation;
+  no_order_confirmation?: { operator: { id: string; username: string; nickname: string }; confirmed_at: string; evidence: string } | null;
 }
 export const oaArchiveApi = {
   options: (releaseId: string) => get<{ artifacts: ArchiveArtifact[]; svn_tasks?: { task_id: string; task_name: string }[] }>(`/releases/${releaseId}/oa-archive/options/`),
   prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchiveForm) =>
     post<ArchivePreparation>(`/releases/${releaseId}/oa-archive/prepare/`, { ...selection, ...(form ? { form } : {}) }),
   records: (releaseId: string) => get<ArchiveApplication[]>(`/releases/${releaseId}/oa-archive/records/`),
+  confirmNoOrder: (releaseId: string, applicationId: string, evidence: string) =>
+    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/confirm-no-order/`, { application_id: applicationId, confirmation: 'checked_no_order', evidence }),
   submit: (releaseId: string, selection: ArchiveSelection, form: ArchiveForm, submissionId: string, confirmation?: { previous_id: string; confirmation: ArchiveConfirmation }) =>
     post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/submit/`, { ...selection, form, submission_id: submissionId, ...confirmation }, { timeout: 45000, silent: true }),
 };

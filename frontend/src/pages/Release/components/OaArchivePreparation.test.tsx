@@ -8,6 +8,7 @@ import request from '@/api/request';
 import { useAuthStore } from '@/stores/authStore';
 import type { Release, UserInfo } from '@/types';
 import { ReleasePackages } from './ReleasePackages';
+import { MaintainerReleaseDetail } from './MaintainerReleaseDetail';
 
 const adapter = request.defaults.adapter;
 const user = useAuthStore.getState().user;
@@ -46,6 +47,7 @@ beforeEach(() => {
     else if (config.url?.endsWith('/oa-archive/prepare/')) data = { selection: { task_id: payload.task_id, artifact_id: payload.artifact_id, path: payload.path }, source: historyMode ? { kind: 'svn', supplemented: true, path: '目录/补录.zip', original: { size: null }, current: { kind: 'file', size: 7, revision: '2' } } : undefined,
       form: payload.form || initialForm, configuration: { configured, reason: '尚未配置 OA 软件归档接口地址，请联系系统配置维护者' }, content_source: 'release_doc_changes' };
     else if (config.url?.endsWith('/oa-archive/records/')) data = savedRecords;
+    else if (config.url?.endsWith('/oa-archive/confirm-no-order/')) data = savedRecords[0];
     else if (config.url?.endsWith('/oa-archive/submit/')) {
       data = { id: `application-${savedRecords.length + 1}`, previous_id: payload.previous_id || null, confirmation: payload.confirmation || '', submission_id: payload.submission_id, status: 'success', form: payload.form,
         operator: { username: 'operator' }, source: { task_id: 'task', path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z',
@@ -66,8 +68,8 @@ function mount() {
 }
 async function selectArtifact(id = 'one') {
   fireEvent.click(await screen.findByRole('button', { name: '准备 OA 归档' }));
-  const select = await screen.findByRole('combobox', { name: '归档产物' });
-  await screen.findByRole('option', { name: '正式安装包 / 软件一.zip' });
+  const select = await screen.findByLabelText('归档产物');
+  await within(select).findByText('正式安装包 / 软件一.zip');
   fireEvent.change(select, { target: { value: `task:${id}` } });
   fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
   await screen.findByRole('table', { name: '软件归档申请资料' });
@@ -96,7 +98,7 @@ it('实际发送修改后的资料并重新读取历史，成功后展示完整�
   configured = true;
   mount();
   await selectArtifact();
-  fireEvent.change(screen.getByRole('combobox', { name: /申请人/ }), { target: { value: 'oa.manual' } });
+  fireEvent.change(screen.getByLabelText(/申请人/), { target: { value: 'oa.manual' } });
   const submitButton = screen.getByRole('button', { name: '提交 OA 归档' });
   fireEvent.click(submitButton);
   fireEvent.click(submitButton);
@@ -113,38 +115,38 @@ it('实际发送修改后的资料并重新读取历史，成功后展示完整�
 it('关闭重开和切换产物保留各自草稿，离开页面后丢弃', async () => {
   const view = mount();
   await selectArtifact();
-  fireEvent.change(screen.getByRole('textbox', { name: /软件名称/ }), { target: { value: '第一份草稿' } });
+  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '第一份草稿' } });
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   await selectArtifact('two');
-  await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('项目内软件'));
-  fireEvent.change(screen.getByRole('textbox', { name: /软件名称/ }), { target: { value: '第二份草稿' } });
+  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('项目内软件'));
+  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '第二份草稿' } });
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   await selectArtifact();
-  await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('第一份草稿'));
+  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('第一份草稿'));
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   await selectArtifact('two');
-  await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('第二份草稿'));
+  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('第二份草稿'));
   view.unmount();
   mount();
   await selectArtifact('two');
-  await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('项目内软件'));
+  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('项目内软件'));
 });
 
 it('四项必填有字段提示和焦点定位，可选资料留空仍能校验', async () => {
   mount();
   await selectArtifact();
-  await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('项目内软件'));
-  for (const label of ['申请人', '接收人']) fireEvent.change(screen.getByRole('combobox', { name: new RegExp(label) }), { target: { value: ' ' } });
-  for (const label of ['软件名称', '软件版本']) fireEvent.change(screen.getByRole('textbox', { name: new RegExp(label) }), { target: { value: ' ' } });
+  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('项目内软件'));
+  for (const label of ['申请人', '接收人']) fireEvent.change(screen.getByLabelText(new RegExp(label)), { target: { value: ' ' } });
+  for (const label of ['软件名称', '软件版本']) fireEvent.change(screen.getByLabelText(new RegExp(label)), { target: { value: ' ' } });
   const count = requests.filter(entry => entry.url?.endsWith('/prepare/')).length;
   fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
   for (const label of ['申请人', '接收人', '软件名称', '软件版本']) await screen.findByText(`请填写${label}`);
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('combobox', { name: /申请人/ })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(/申请人/)));
   expect(requests.filter(entry => entry.url?.endsWith('/prepare/'))).toHaveLength(count);
-  fireEvent.change(screen.getByRole('combobox', { name: /申请人/ }), { target: { value: 'creator.manual' } });
-  fireEvent.change(screen.getByRole('combobox', { name: /接收人/ }), { target: { value: 'receiver.manual' } });
-  fireEvent.change(screen.getByRole('textbox', { name: /软件名称/ }), { target: { value: '软件' } });
-  fireEvent.change(screen.getByRole('textbox', { name: /软件版本/ }), { target: { value: 'V2' } });
+  fireEvent.change(screen.getByLabelText(/申请人/), { target: { value: 'creator.manual' } });
+  fireEvent.change(screen.getByLabelText(/接收人/), { target: { value: 'receiver.manual' } });
+  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '软件' } });
+  fireEvent.change(screen.getByLabelText(/软件版本/), { target: { value: 'V2' } });
   fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
   await screen.findByText('资料校验通过，尚未向 OA 发送。');
 });
@@ -152,13 +154,13 @@ it('四项必填有字段提示和焦点定位，可选资料留空仍能校验'
 it('人员选项使用系统登录名且仍可手填，来源提供内部自制和外购', async () => {
   mount();
   await selectArtifact();
-  const creator = screen.getByRole('combobox', { name: /申请人/ });
+  const creator = screen.getByLabelText(/申请人/);
   fireEvent.mouseDown(creator);
   fireEvent.change(creator, { target: { value: 'account' } });
   fireEvent.click(await screen.findByText('人员显示名（account.login）'));
   expect((creator as HTMLInputElement).value).toBe('account.login');
-  fireEvent.change(screen.getByRole('combobox', { name: /接收人/ }), { target: { value: 'oa.manual.receiver' } });
-  const source = screen.getByRole('combobox', { name: '软件来源' });
+  fireEvent.change(screen.getByLabelText(/接收人/), { target: { value: 'oa.manual.receiver' } });
+  const source = screen.getByLabelText('软件来源');
   expect(within(source).getByRole('option', { name: '内部自制' })).toBeTruthy();
   expect(within(source).getByRole('option', { name: '外购' })).toBeTruthy();
   fireEvent.change(source, { target: { value: '外购' } });
@@ -175,12 +177,12 @@ it('详情切换发布说明标签再返回打包区仍恢复当前产物草稿'
   </App></ConfigProvider></QueryClientProvider>);
   fireEvent.click(await screen.findByRole('button', { name: '打包任务' }));
   await selectArtifact();
-  fireEvent.change(screen.getByRole('textbox', { name: /软件名称/ }), { target: { value: '切标签也保留' } });
+  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '切标签也保留' } });
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   fireEvent.click(screen.getByRole('button', { name: '发布说明' }));
   fireEvent.click(screen.getByRole('button', { name: '打包任务' }));
   await selectArtifact();
-  await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('切标签也保留'));
+  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('切标签也保留'));
 });
 
 
@@ -192,7 +194,7 @@ it('成功后再次申请先提醒，取消不派发，确认生成新申请且�
   await screen.findByText('软件编号：SOFT-001');
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   await selectArtifact();
-  await waitFor(() => expect((screen.getByRole('textbox', { name: '软件编号' }) as HTMLInputElement).value).toBe(''));
+  await waitFor(() => expect((screen.getByLabelText('软件编号') as HTMLInputElement).value).toBe(''));
   fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
   const confirmation = (await screen.findByText('该产物已有已发起归档的记录，请确认仍需再次办理。')).closest('[role="dialog"]') as HTMLElement;
   fireEvent.click(within(confirmation).getByRole('button', { name: /取\s*消/ }));
@@ -216,8 +218,8 @@ it('刷新后的未知申请恢复已发送资料，核对未建单后才能主�
     created_at: '2026-11-12T00:00:00Z', message: '结果未确认', soft_number: '' }];
   mount();
   await selectArtifact();
-  await waitFor(() => expect((screen.getByRole('textbox', { name: '其他说明' }) as HTMLTextAreaElement).value).toBe('已经发送的完整资料\n末行'));
-  fireEvent.change(screen.getByRole('textbox', { name: '变更原因' }), { target: { value: '人工核对后的修改' } });
+  await waitFor(() => expect((screen.getByLabelText('其他说明') as HTMLTextAreaElement).value).toBe('已经发送的完整资料\n末行'));
+  fireEvent.change(screen.getByLabelText('变更原因'), { target: { value: '人工核对后的修改' } });
   fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
   const check = await screen.findByRole('checkbox', { name: '我已核对 OA，确认此前申请未建单' });
   const dialog = check.closest('[role="dialog"]') as HTMLElement;
@@ -245,4 +247,33 @@ it('无清单任务在原 SVN 目录选择单文件，表单明确补录和当�
   await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
   expect(screen.getByText('从 SVN 补录 · 目录/补录.zip')).toBeTruthy();
   expect(requests.find(item => item.url?.endsWith('/prepare/'))?.data).toMatchObject({ task_id: 'history', path: '目录/补录.zip', source_kind: 'svn' });
+});
+
+
+it('维保手机实际详情展示只读归档资料且不提供确认或发送操作', async () => {
+  role = 'maintainer';
+  savedRecords = [{ id: 'failed-record', status: 'failure', form: initialForm, operator: { username: '归档操作者' }, source: { path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z', message: 'OA 返回失败', software_archive_id: { opaque: '返回对象' } }];
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><ConfigProvider theme={{ token: { motion: false } }}><App><MemoryRouter><MaintainerReleaseDetail release={release} /></MemoryRouter></App></ConfigProvider></QueryClientProvider>);
+  fireEvent.click(screen.getByRole('tab', { name: '打包任务' }));
+  fireEvent.click(await screen.findByRole('button', { name: '查看申请资料' }));
+  expect((await screen.findByRole('table', { name: '已提交归档资料' })).textContent).toContain('末尾完整');
+  expect(screen.getAllByText(/实际操作者：归档操作者/).length).toBeGreaterThan(0);
+  expect(screen.queryByRole('button', { name: '准备 OA 归档' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '确认未建单' })).toBeNull();
+  expect(requests.filter(item => item.method === 'post')).toEqual([]);
+});
+
+it('失败历史可独立核对未建单并保存依据而不重试', async () => {
+  savedRecords = [{ id: 'failed-record', status: 'failure', form: initialForm, operator: { username: 'operator' }, source: { path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z', message: '资料错误' }];
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: '确认未建单' }));
+  const dialog = screen.getByRole('dialog', { name: '核对失败申请' });
+  expect((within(dialog).getByRole('button', { name: '保存核对结果' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(within(dialog).getByLabelText('核对依据'), { target: { value: '已按提交时间核对 OA，未建单' } });
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: '我已核对 OA，确认这条失败申请未建单' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: '保存核对结果' }));
+  await waitFor(() => expect(requests.some(item => item.url?.endsWith('/confirm-no-order/'))).toBe(true));
+  expect(requests.find(item => item.url?.endsWith('/confirm-no-order/'))?.data).toMatchObject({ application_id: 'failed-record', confirmation: 'checked_no_order', evidence: '已按提交时间核对 OA，未建单' });
+  expect(requests.filter(item => item.url?.endsWith('/submit/'))).toEqual([]);
 });

@@ -114,7 +114,8 @@ export function ReleasePackages({ release, maintainerMobile = false, active = tr
   const screens = Grid.useBreakpoint();
   const tasks = release.package_tasks || [];
 
-  if (maintainerMobile) return <div>
+  if (maintainerMobile) return <div className="space-y-3">
+    {release.status === 'released' && release.release_type === 'formal' && <OaArchivePreparationPanel key={`oa-${release.id}`} release={release} active={active} />}
     <div className="mb-[14px] flex min-h-[30px] items-center justify-between px-2 text-[#76869f]">
       <h2 className="text-[13px] font-normal">关联打包任务</h2><span className="text-[12px]">{tasks.length} 项</span>
     </div>

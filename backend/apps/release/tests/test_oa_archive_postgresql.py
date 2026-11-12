@@ -162,3 +162,51 @@ def test_同一前次确认的并发新申请仅发送一次且保留全部历�
     assert "最新" in str(stale.data)
     history = client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"]
     assert history == [result.data["data"], prior]
+
+
+@pytest.mark.parametrize("following", ["delete", "confirm"])
+def test_失败核对与删除或重复核对竞争原子且保留首次依据(archive_case, oa_http, following):
+    client, release, task = archive_case
+    actor = release.publisher
+    actor.is_superuser = True
+    actor.save()
+    oa_http.mode = "failure"
+    record = submit(client, release, task, prepare(client, release, task).data["data"]["form"]).data["data"]
+    url = f"/api/releases/{release.id}/oa-archive/confirm-no-order/"
+    body = {"application_id": record["id"], "confirmation": "checked_no_order", "evidence": "第一次核对已确认未建单"}
+    confirmed, resume, starting, finished = Event(), Event(), Event(), Event()
+
+    def confirming(api):
+        with transaction.atomic():
+            result = api.post(url, body, format="json")
+            assert result.status_code == 200
+            confirmed.set()
+            assert resume.wait(10)
+        return result
+
+    def following_request(api):
+        starting.set()
+        try:
+            if following == "delete":
+                return api.delete(f"/api/packages/tasks/{task.id}/")
+            return api.post(url, {**body, "evidence": "不得覆盖首次核对"}, format="json")
+        finally:
+            finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(request_as, actor, confirming)
+        try:
+            assert confirmed.wait(10)
+            second = pool.submit(request_as, actor, following_request)
+            assert starting.wait(10)
+            assert not finished.wait(0.5), "后续操作未等待核对结果提交"
+        finally:
+            resume.set()
+        saved = first.result(timeout=10).data["data"]
+        result = second.result(timeout=10)
+    assert result.status_code == 200
+    if following == "confirm":
+        assert result.data["data"] == saved
+    assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == [saved]
+    assert saved["no_order_confirmation"]["evidence"] == body["evidence"]
+    assert len(oa_http.requests) == 1
