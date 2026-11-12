@@ -284,6 +284,23 @@ class ReleaseViewSet(StandardModelViewSet):
         serializer.is_valid(raise_exception=True)
         return success_response(OaArchivePreparation.prepare(release, request.user, serializer.validated_data))
 
+    @action(detail=True, methods=["post"], url_path="oa-archive/submit")
+    def oa_archive_submit(self, request: Request, pk=None) -> Response:
+        """提交单产物归档；同一提交标识重放只返回已保存结果。"""
+        from apps.release.oa_submission import ArchiveSubmitInput, OaArchiveSubmission, application_data
+
+        serializer = ArchiveSubmitInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        record, created = OaArchiveSubmission.submit(self.get_object(), request.user, serializer.validated_data)
+        return success_response(application_data(record), status=201 if created else 200)
+
+    @action(detail=True, methods=["get"], url_path="oa-archive/records")
+    def oa_archive_records(self, request: Request, pk=None) -> Response:
+        """当前项目可见成员可回读完整资料、操作者与 OA 原始返回对象。"""
+        from apps.release.oa_submission import application_data
+
+        return success_response([application_data(item) for item in self.get_object().oa_applications.all()])
+
     def _serialize_release(self, release: ReleaseRecord) -> dict[str, Any]:
         """
         序列化单条发布记录

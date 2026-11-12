@@ -25,7 +25,7 @@ export function OaArchiveCard() {
       <h2 className="text-[14px] font-semibold text-slate-900">OA 软件归档</h2>
       <Button onClick={() => save.mutate()} loading={save.isPending} disabled={config.isPending || !!config.error}>保存归档配置</Button>
     </div>
-    <p className="text-[12px] text-slate-500">填写完整归档接口地址。当前支持配置与申请资料准备，OA 发送尚未接入。</p>
+    <p className="text-[12px] text-slate-500">填写完整归档接口地址，供已发布正式版的单产物手动申请使用；与 OA 单点登录分别配置。</p>
     {config.error ? <><PermissionAlert error={config.error} /><Button onClick={() => void config.refetch()}>重新加载归档配置</Button></> : <>
       <label htmlFor="oa-archive-url" className="block text-[12px] text-slate-600">归档接口完整地址</label>
       <Input id="oa-archive-url" value={url} onChange={event => setEdited(event.target.value)} disabled={config.isPending}

@@ -94,7 +94,7 @@ class OaArchivePreparation:
         file_path = (root / path).resolve()
         if not root.is_relative_to(workspace) or not file_path.is_relative_to(root) or not file_path.is_file():
             raise ValidationError({"detail": "产物文件已不存在或路径不在任务目录内"})
-        return artifact
+        return {**artifact, "path": file_path.relative_to(root).as_posix()}
 
     @classmethod
     def options(cls, release, user) -> dict:

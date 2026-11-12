@@ -9,6 +9,37 @@ from django.conf import settings
 from django.db import models
 
 
+class OaArchiveApplication(models.Model):
+    """每次实际发送的独立资料；来源删除后失败历史仍保留快照。"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    submission_id = models.UUIDField(unique=True)
+    release = models.ForeignKey("ReleaseRecord", null=True, on_delete=models.SET_NULL, related_name="oa_applications")
+    task = models.ForeignKey("package.PackageTask", null=True, on_delete=models.SET_NULL, related_name="oa_applications")
+    # 仅有外部建单可能性的记录持有保护引用，失败历史使用普通可空引用。
+    protected_release = models.ForeignKey("ReleaseRecord", null=True, on_delete=models.PROTECT, related_name="oa_protections")
+    protected_task = models.ForeignKey("package.PackageTask", null=True, on_delete=models.PROTECT, related_name="oa_protections")
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="oa_applications")
+    operator_snapshot = models.JSONField(default=dict)
+    source = models.JSONField(default=dict)
+    artifact_path = models.TextField()
+    form = models.JSONField(default=dict)
+    endpoint = models.URLField(max_length=2000)
+    status = models.CharField(max_length=16, choices=[("sending", "发送中"), ("success", "已发起归档"), ("failure", "OA 返回失败"), ("unknown", "结果未确认")], default="sending")
+    message = models.TextField(blank=True)
+    response = models.JSONField(null=True)
+    soft_number = models.TextField(blank=True)
+    software_archive_id = models.JSONField(null=True)
+    number_apply_id = models.JSONField(null=True)
+    previous = models.ForeignKey("self", null=True, on_delete=models.PROTECT, related_name="following")
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True)
+
+    class Meta:
+        db_table = "oa_archive_application"
+        ordering = ["-created_at", "-id"]
+        constraints = [models.UniqueConstraint(fields=["task", "artifact_path"], condition=models.Q(status="sending"), name="oa_one_sending_per_file")]
+
+
 class ReleaseRecord(models.Model):
     """
     发布记录模型

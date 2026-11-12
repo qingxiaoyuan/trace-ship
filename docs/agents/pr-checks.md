@@ -12,7 +12,7 @@
 | 后端 / lint | `scripts/checks/backend-linux.py lint`，执行已有 Ruff 规则 | 本地与 CI 共用 `docker/checks/Dockerfile` 的 Linux/Python 3.11 镜像 |
 | 后端 / test | `scripts/checks/backend-linux.py test`，执行全量 pytest 与覆盖率门槛 | 同上 |
 | 浏览器 / 冒烟验收 | `test:browser`，真实 Chromium、完整前端及隔离 REST 服务 | Ubuntu 24.04、Node 24.x、Python 3.11 |
-| 后端 / PostgreSQL 并发锁 | `scripts/checks/backend-postgresql.py`，现有仓库锁与补打配置行锁的真实竞争 | 独立临时 PostgreSQL、同一 Linux/Python 3.11 检查镜像 |
+| 后端 / PostgreSQL 并发锁 | `scripts/checks/backend-postgresql.py`，仓库锁、补打配置行锁及 OA 提交/删除的真实竞争 | 独立临时 PostgreSQL、同一 Linux/Python 3.11 检查镜像 |
 | 打包 / 真实执行 | `scripts/checks/package-real.py`，生产 API 与本地 Docker 执行器实际构建隔离样本 | Linux、宿主 Docker、同一 Python 3.11 基础检查镜像 |
 
 检查独立运行；矩阵关闭提前终止，一项失败不会取消其他检查。每项保留命令真实退出状态，日志管道使用 `pipefail`。已知失败不跳过、不标记预期失败，也不使用 `continue-on-error` 将检查转为绿色。
@@ -114,7 +114,7 @@ Windows 受限环境中若 Vitest 临时文件重命名出现 `EPERM`，可只�
 python scripts/checks/backend-postgresql.py --report-dir tmp/pr-checks/postgresql
 ```
 
-入口使用独立临时 PostgreSQL 与内部 Docker 网络，数据放本次临时存储，不连接业务数据库，也不开放宿主数据库端口。测试实际创建独立连接与竞争事务，覆盖既有来源重选/提交、版本占用、清理/任务创建、终止/重试，以及补打配置迁移、停用和快照读取时的配置行锁；另覆盖最后一名审批人与发起人终止、退回修改或采纳审查意见同时操作时各自的两个加锁顺序，以及共享模型保存中途提审快照等待整组配置提交。只替换外部任务投递与同步暂停点，SQL、授权、任务创建和审计使用生产实现。
+入口使用独立临时 PostgreSQL 与内部 Docker 网络，数据放本次临时存储，不连接业务数据库，也不开放宿主数据库端口。测试实际创建独立连接与竞争事务，覆盖既有来源重选/提交、版本占用、清理/任务创建、终止/重试，以及补打配置迁移、停用和快照读取时的配置行锁；另覆盖最后一名审批人与发起人终止、退回修改或采纳审查意见同时操作时各自的两个加锁顺序，以及共享模型保存中途提审快照等待整组配置提交。OA 归档另用临时 loopback HTTP 服务验证同一标识重放、不同操作者并发仅一次派发、发送中任务/发布/项目删除保护，以及任务先删除时提交等待后重新拒绝；门禁共 21 项，禁止跳过。只隔离外部边界与同步暂停点，SQL、授权、任务创建和审计使用生产实现。
 
 该任务要求所选 PostgreSQL 用例全部执行、零失败、零跳过；缺失报告、用例或数据库环境均失败。原 SQLite 全量及覆盖率门槛继续独立执行，其 PostgreSQL 跳过项不得用作并发通过的证据。报告记录实际数据库/镜像/提交与清理结果；仅清理本次入口创建的资源。
 

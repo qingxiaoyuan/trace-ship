@@ -13,6 +13,8 @@ const adapter = request.defaults.adapter;
 const user = useAuthStore.getState().user;
 const requests: { url?: string; method?: string; data: unknown }[] = [];
 let role = 'manager';
+let configured = false;
+let savedRecords: unknown[] = [];
 const release = { id: 'release', project: 'project', repository: 'repo', publisher: 'publisher', version: 'V1.2.3',
   release_type: 'formal', status: 'released', package_tasks: [] } as unknown as Release;
 const initialForm = { docCreator: 'operator', applyCount: 1, soft_name: '项目内软件', soft_version: 'V1.2.3', developer: 'publisher',
@@ -23,6 +25,8 @@ beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   role = 'manager';
+  configured = false;
+  savedRecords = [];
   requests.length = 0;
   useAuthStore.setState({ user: { id: 'operator', username: 'operator', is_superuser: false, permissions: [] } as unknown as UserInfo });
   request.defaults.adapter = async config => {
@@ -37,7 +41,14 @@ beforeEach(() => {
       { task_id: 'task', task_name: '正式安装包', artifact_id: 'two', name: '软件二.zip', path: '软件二.zip' },
     ] };
     else if (config.url?.endsWith('/oa-archive/prepare/')) data = { selection: { task_id: 'task', artifact_id: payload.artifact_id },
-      form: payload.form || initialForm, configuration: { configured: false, reason: '尚未配置 OA 软件归档接口地址，请联系系统配置维护者' }, content_source: 'release_doc_changes' };
+      form: payload.form || initialForm, configuration: { configured, reason: '尚未配置 OA 软件归档接口地址，请联系系统配置维护者' }, content_source: 'release_doc_changes' };
+    else if (config.url?.endsWith('/oa-archive/records/')) data = savedRecords;
+    else if (config.url?.endsWith('/oa-archive/submit/')) {
+      data = { id: 'application', submission_id: payload.submission_id, status: 'success', form: payload.form,
+        operator: { username: 'operator' }, source: { task_id: 'task', path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z',
+        software_archive_id: { opaque: ['单据', 7] }, soft_number: 'SOFT-001', number_apply_id: null, message: '已发起归档' };
+      savedRecords = [data];
+    }
     else if (config.url === '/releases/release/') data = { ...release, git_hash: initialForm.sn_code, release_doc: '已保存的发布说明', tag_name: 'V1.2.3', branch: 'main', created_at: '' };
     else if (config.url?.endsWith('/source-reference/')) data = { available: true, reference: 'V1.2.3', reason: '' };
     else if (config.url?.endsWith('/review-issues/')) data = [];
@@ -73,9 +84,26 @@ it('从发布打包区选择单个产物并在真实字段表格编辑完整资�
   await screen.findByText('资料校验通过，尚未向 OA 发送。');
   const prepared = requests.filter(entry => entry.url?.endsWith('/prepare/'));
   expect(prepared.at(-1)?.data).toMatchObject({ task_id: 'task', artifact_id: 'one', form: { soft_name: '修改后的软件', edit_content: '手填 | 资料\n完整第二行', applyCount: 1 } });
-  expect(screen.queryByRole('button', { name: /发送|发起归档/ })).toBeNull();
+  expect((screen.getByRole('button', { name: '提交 OA 归档' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByLabelText(/项目编号|项目负责人|项目主管/)).toBeNull();
   expect(requests.every(entry => !entry.url?.includes('ticketscript'))).toBe(true);
+});
+
+it('实际发送修改后的资料并重新读取历史，成功后展示完整对象且禁止静默再次发送', async () => {
+  configured = true;
+  mount();
+  await selectArtifact();
+  fireEvent.change(screen.getByRole('combobox', { name: /申请人/ }), { target: { value: 'oa.manual' } });
+  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  await screen.findByText('软件编号：SOFT-001');
+  expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1);
+  expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ form: { docCreator: 'oa.manual', applyCount: 1 } });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '查看申请资料' }));
+  const history = (await screen.findByRole('table', { name: '已提交归档资料' })).closest('[role="dialog"]') as HTMLElement;
+  expect(within(history).getByText('oa.manual')).toBeTruthy();
+  expect(within(history).getByText(/"opaque"/)).toBeTruthy();
 });
 
 it('关闭重开和切换产物保留各自草稿，离开页面后丢弃', async () => {

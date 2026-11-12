@@ -718,7 +718,14 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """删除已结束的打包任务，同时清理工作区文件。"""
-        task = self.get_object()
+        from apps.release.oa_submission import locked_archive_task
+
+        with locked_archive_task(self.get_object()) as task:
+            return self._delete_finished_task(task)
+
+    @staticmethod
+    def _delete_finished_task(task):
+        """来源锁及归档保护检查已通过后，才清理工作区。"""
         if not task.is_finished:
             return error_response(
                 40000, "仅可删除已结束的任务（成功/失败/已取消）", status_code=status.HTTP_400_BAD_REQUEST
