@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends build-essential libldap2-dev libsasl2-dev git \
+    && apt-get install -y --no-install-recommends build-essential libldap2-dev libsasl2-dev git subversion \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt backend/requirements-dev.txt /opt/checks/

@@ -750,6 +750,29 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         data = PackageTaskSerializer(task, context={"request": request}).data
         return success_response(data, "任务已取消")
 
+    @action(detail=True, methods=["get"], url_path="svn-artifacts")
+    @method_decorator(never_cache)
+    def svn_artifacts(self, request, pk=None):
+        """只读查看任务保存的 SVN 目录，沿用项目可见范围，不授予下载权限。"""
+        from apps.package.services.artifacts import (
+            ArtifactQueryError,
+            query_task_svn_artifacts,
+            verify_task_svn_artifact,
+        )
+
+        task = self.get_object()
+        try:
+            if "file" in request.query_params:
+                data = verify_task_svn_artifact(task, request.query_params["file"])
+            else:
+                data = query_task_svn_artifacts(
+                    task, request.query_params.get("path", ""),
+                    page=request.query_params.get("page", 1), page_size=request.query_params.get("page_size", 50),
+                )
+        except ArtifactQueryError as exc:
+            return error_response(40000, str(exc), data={"state": exc.state}, status_code=exc.status_code)
+        return success_response(data)
+
     @action(detail=True, methods=["post"], url_path="push-svn")
     def push_svn(self, request, pk=None):
         """手动推送打包产物到 SVN。"""
@@ -836,6 +859,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
     def download_artifact(self, request: Request, pk: str | None = None, artifact_id: str | None = None) -> FileResponse:
         """下载任务产物。"""
         task = self.get_object()
+        if (task.stage_info or {}).get("artifacts_cleaned_at"):
+            raise Http404("本地产物已到期清理，仅保留原产物信息")
         artifact = next((item for item in task.artifact_info if item.get("id") == artifact_id), None)
         if not artifact:
             raise Http404("产物不存在")
@@ -858,6 +883,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
     def download_all(self, request: Request, pk: str | None = None) -> FileResponse:
         """将任务全部产物打包为 zip 一键下载。"""
         task = self.get_object()
+        if (task.stage_info or {}).get("artifacts_cleaned_at"):
+            raise Http404("本地产物已到期清理，仅保留原产物信息")
         workspace = Path(task.workspace_path).resolve() if task.workspace_path else None
         workspace_root = PackageService.workspace_root().resolve()
         if not workspace or (workspace != workspace_root and workspace_root not in workspace.parents):

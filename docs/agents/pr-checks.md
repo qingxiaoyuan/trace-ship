@@ -100,6 +100,12 @@ Linux 首次安装浏览器还需 `npx playwright install --with-deps chromium`�
 
 Windows 受限环境中若 Vitest 临时文件重命名出现 `EPERM`，可只为本次子进程设置指向仓库内可写临时目录的 `TEMP` / `TMP`，并在报告中注明。不同平台结果分别记录，不将 Windows 基线套用到 Linux。
 
+### 任务 SVN 当前文件专项
+
+`backend/apps/package/tests/test_svn_artifacts.py` 通过公开 REST 接口和临时原生 `svnadmin` / `svnserve` 验证清单恢复、补录、中文嵌套路径、覆盖、删除、错误分类及清理下载边界。Linux 检查镜像安装 `subversion`，服务只监听回环地址，结束时停止进程；不读取业务凭证或连接业务 SVN。
+
+本机已有工具时可运行 `backend/.venv/bin/python -m pytest backend/apps/package/tests/test_svn_artifacts.py --no-cov`。没有服务端工具时，可显式设置 `TRACE_SHIP_TEST_SVN_DOCKER=1` 使用本机已准备的 `trace-ship-dev-svn:latest` 临时容器；只开放回环端口，数据位于容器临时存储，结束删除容器。两种条件均不满足时会跳过专项，跳过不能作为本事项的验收通过证据。完整后端检查仍使用上述共享 Linux 入口。
+
 ### PostgreSQL 并发锁
 
 在仓库根目录执行：

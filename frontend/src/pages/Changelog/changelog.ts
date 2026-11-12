@@ -27,6 +27,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.12',
+    date: '2026-11-12',
+    summary: '保留产物依据并查看 SVN 当前文件',
+    items: [
+      { category: 'feature', text: '发布详情的打包任务可只读查看对应 SVN 当前文件，分别展示原构建依据与当前文件类型、大小和 revision；历史缺少清单时可浏览任务保存的目录和子目录，并标明“从 SVN 补录”。' },
+      { category: 'fix', text: '本地产物到期后仍删除文件，但保留原清单及已知元数据；过期文件不再显示下载入口。SVN 文件不存在、凭证失效、无权访问和网络故障分别反馈。' },
+    ],
+  },
+  {
     version: '2026.11.10',
     date: '2026-11-10',
     summary: '按访问网段限制文件下载',

@@ -62,7 +62,7 @@ def cleanup_task_source(task: PackageTask, workspace: Path) -> None:
 def cleanup_expired_artifacts() -> dict[str, Any]:
     """删除超过保留天数的打包产物（仅 artifacts 目录，构建日志保留）。
 
-    删除后清空任务 artifact_info：下载列表与手动推 SVN 入口随之不可用，
+    删除后保留任务 artifact_info 作为原产物依据；本地可用性另行核验，
     stage_info.artifacts_cleaned_at 记录清理时间供追溯。
 
     Returns:
@@ -76,7 +76,8 @@ def cleanup_expired_artifacts() -> dict[str, Any]:
             finished_at__lt=cutoff,
         )
         .exclude(workspace_path="")
-        # 已清理过的任务 artifact_info 为空，不再重复处理
+        # 已清理任务保留清单，按清理标记避免反复处理
+        .exclude(stage_info__has_key="artifacts_cleaned_at")
         .exclude(artifact_info=[])
         .only("id", "name", "workspace_path", "artifact_info", "stage_info")
     )
@@ -88,13 +89,12 @@ def cleanup_expired_artifacts() -> dict[str, Any]:
         try:
             if artifacts.exists():
                 shutil.rmtree(artifacts)
-            # 产物已删：清空产物索引，避免前端继续展示可下载/可推送的假象
+            # 只删除文件，原始清单与已知元数据继续保留
             if task.artifact_info:
                 stage_info = dict(task.stage_info or {})
                 stage_info["artifacts_cleaned_at"] = timezone.now().isoformat()
-                task.artifact_info = []
                 task.stage_info = stage_info
-                task.save(update_fields=["artifact_info", "stage_info", "updated_at"])
+                task.save(update_fields=["stage_info", "updated_at"])
             cleaned += 1
         except Exception as exc:  # noqa: BLE001 - 单任务失败不阻塞整体清理
             errors.append(f"{task.name}: {exc}")

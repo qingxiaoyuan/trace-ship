@@ -148,7 +148,7 @@ class TestCleanupExpiredArtifacts:
         return task
 
     def test_expired_artifacts_removed(self, project, repository, tmp_path):
-        """超期任务产物目录删除、artifact_info 清空；未超期任务不受影响。"""
+        """超期任务产物目录删除、artifact_info 保留；未超期任务不受影响。"""
         old_task = self._finished_task(project, repository, tmp_path, days_ago=40)
         new_task = self._finished_task(project, repository, tmp_path, days_ago=2)
 
@@ -162,7 +162,7 @@ class TestCleanupExpiredArtifacts:
         assert not (Path(old_task.workspace_path) / "artifacts").exists()
         # 日志目录保留
         assert (Path(old_task.workspace_path) / "logs").exists()
-        assert old_task.artifact_info == []
+        assert old_task.artifact_info[0]["path"] == "a.zip"
         assert "artifacts_cleaned_at" in (old_task.stage_info or {})
 
         new_task.refresh_from_db()

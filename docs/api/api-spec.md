@@ -1594,7 +1594,7 @@
   "can_cancel": false,
   "can_delete": false,
   "can_push_svn": true,
-  "artifact_info": [{"id": "uuid", "name": "app.tar.gz", "path": "app.tar.gz"}],
+  "artifact_info": [{"id": "uuid", "name": "app.tar.gz", "path": "app.tar.gz", "local_available": true}],
   "duration": 300000,
   "error_message": "",
   "started_at": "2026-06-22T10:00:00+08:00",
@@ -1603,6 +1603,19 @@
   "updated_at": "2026-06-22T10:05:00+08:00"
 }
 ```
+
+本地文件到期清理后保留 `artifact_info` 中的原路径、大小、SHA-256 等已知依据；`local_available` 按实际本地文件逐次计算。为 false 时页面隐藏下载入口，直接请求仍按原下载权限及实际文件状态校验，不产生空文件。`stage_info.artifacts_cleaned_at` 记录清理时间。
+
+**任务 SVN 当前文件查询（只读）：**
+
+- **GET** `/api/packages/tasks/{id}/svn-artifacts/`：有原清单时返回 `mode=manifest`，逐项核验当前文件；原清单缺失时从保存的上传清单恢复，只排除能证明为系统生成的额外说明。
+- 没有两种清单时返回 `mode=browse`，`?path=目录/子目录` 浏览保存的任务目录内直接子项。相对路径参数由 HTTP 客户端编码，不接受绝对路径、越界或其他任务目录；文件不能当目录浏览。
+- **GET** 同入口加 `?file=目录/文件名`：重新核验单个当前文件。已有清单时只能选择清单内路径；缺清单时返回 `source=svn_supplement`。文件已删除或变成目录返回 409，无法可靠核验时返回分类原因。
+- 权限沿用任务所属项目的可见范围，包括维保只读；不新增文件下载权限。任务没有保存目录或凭证依据时返回 `unverifiable`，不使用当前配置猜测目录，不回传凭证明文。
+
+列表支持 `page` / `page_size`（默认 50，最多 100）；按页核验清单，浏览目录时分页显示直接子项。列表返回 `{task_id, root_url, mode, path, entries, total, page, page_size}`；每项包含 `artifact_id`（历史上传清单及补录可为空）、`path`、`name`、编码后的完整 `url`、`source`、`state`、`message`、`local_available`、`original` 和 `current`。来源为 `artifact_manifest` / `upload_manifest` / `svn_supplement`。`original` 保存已知 `size` / `sha256` / `revision`，未知为 null；`current` 保存当前 `kind` / `size` / `revision` / `date`，无法核验为 null，不能将当前值当作原构建快照。
+
+`state` 区分 `available`（当前文件存在）、`directory`（可浏览目录）、`missing`（不存在）、`not_file`（清单文件已变成目录）、`credential_invalid`、`forbidden`、`network_error`、`unverifiable`。失败响应的 `data.state` 复用分类，另有输入错误 `invalid_path` / `not_directory` / `invalid_page`。当前文件可能被覆盖，查询不证明原构建内容未变化；选中或后续提交时应重新核验。
 
 ### 9.11 取消打包任务
 
