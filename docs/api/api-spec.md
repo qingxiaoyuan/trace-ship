@@ -1391,19 +1391,21 @@
 
 仅已发布正式版适用；操作者须为现行项目成员中的发布人（开发或测试等业务写入身份）、项目管理员、软件管理员，超管放行。维保、只读、已移除成员和其他项目身份均不扩权。
 
-- `GET /api/releases/{id}/oa-archive/options/`：返回 `{artifacts: [{task_id, task_name, artifact_id, name, path}]}`，只包含当前发布、项目及仓库内成功任务的现存本地产物。任务快照启用 SVN 时须推送成功。
-- `POST /api/releases/{id}/oa-archive/prepare/`：请求 `{task_id, artifact_id}`，逐次校验归属与文件仍存在，返回 `selection`、`configuration: {configured, reason}`、`content_source` 与 `form`。可追加 `form` 校验人工修改的资料，响应为独立副本，不回写项目、发布和打包记录。
+- `GET /api/releases/{id}/oa-archive/options/`：返回 `{artifacts: [{task_id, task_name, artifact_id, name, path, source_kind}], svn_tasks: [{task_id, task_name}]}`；artifacts 是现存本地产物，svn_tasks 为当前发布的可核验历史任务入口。任务快照启用 SVN 时须推送成功。
+- `POST /api/releases/{id}/oa-archive/prepare/`：请求 `{task_id, artifact_id}` 或 `{task_id, path, source_kind:"svn"}`。产物 ID 仅任务内有效；路径为该任务 SVN 目录内相对路径，已有清单时只能选择清单项，无清单时允许目录内补录。逐次校验归属与当前文件，返回含规范 path/source_kind 的 `selection`、文件依据 `source`、`configuration: {configured, reason}`、`content_source` 与 `form`。可追加 `form` 校验人工修改的资料，响应为独立副本，不回写项目、发布和打包记录。
 
 `form` 的四个必填字段为 `docCreator`、`soft_name`、`soft_version`、`developer`；分别预填操作者登录名、项目内软件名（回退仓库名）、发布版本号、发布人登录名。`soft_source` 可为空、内部自制或外购；`git_svn` 取成功推送目录内所选文件地址，无则留空；`sn_code` 只预填发布保存的完整 SHA，旧数据不完整则留空。`edit_content` 来自已保存说明的完整更新内容，保留换行、缩进与管道符；无法可靠识别时返回完整原文且 `content_source=release_doc_original`（正常为 `release_doc_changes`）。原因 `edit_reason`、其他说明 `other_description`、软件编号 `soft_number` 初始为空。所有预填可修改，`applyCount` 始终为 1；三个项目字段不进入资料副本。
 
 未配置地址时 `configuration.configured=false` 并返回原因；仍允许准备与校验。非法发布或任务资格返回 400，不可见资源返回 404，无操作权限返回 403。表单错误按 `data.form.<字段>` 返回。页内草稿由前端按发布/任务/产物区分保留，刷新或离开页面后消失。
 
-- `POST /api/releases/{id}/oa-archive/submit/`：请求 `{task_id, artifact_id, submission_id, form}`，`submission_id` 为客户端本次操作生成并保留的 UUID。服务器在仓库→发布→任务锁内重新授权、检查任务与文件，再持久化独立 `sending` 申请并提交事务，最后仅发送一次 POST JSON。返回 201 和申请记录；同一操作者同一标识及相同资料重放返回 200 和原记录，不重新发送。标识被用于不同资料返回 400；已有该任务及规范相对路径的申请时当前首次办理入口返回 400，后续显式再次申请不受永久唯一约束限制。
+- `POST /api/releases/{id}/oa-archive/submit/`：请求 `{task_id, artifact_id?, path?, source_kind?, submission_id, form}`，选择参数与 prepare 一致，`submission_id` 为客户端本次操作生成并保留的 UUID。服务器在仓库→发布→任务锁内重新授权、检查任务与文件，再持久化独立 `sending` 申请并提交事务，最后仅发送一次 POST JSON。返回 201 和申请记录；同一操作者同一标识及相同资料重放返回 200 和原记录，不重新发送。标识被用于不同资料返回 400；已有该任务及规范相对路径的申请时当前首次办理入口返回 400，后续显式再次申请不受永久唯一约束限制。
 - `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/created_at/finished_at/previous_id`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source` 保留发布/项目/仓库/任务 ID、原版本、Tag、源码 SHA、任务内规范相对路径、原产物及 SVN 阶段快照，手改 `git_svn` 不改变来源。
+
+历史 SVN 选择和提交均重新核验当前文件；400 表示路径越界或历史依据缺失，409 表示文件已删除/变目录，502 表示网络、凭证或远端结果无法核验，`data.state` 区分原因。手填 `git_svn` 只属于申请资料，不改变核验目录。`source.kind=svn`、`source.supplemented` 标明来源；`source.artifact.original` 保留原始大小/哈希/revision（缺失为 null），`source.artifact.current` 保存发送前取得的当前元数据。当前内容可能已被覆盖，与发布固定的 git_hash/SN 分开表达。所有入口共享任务+规范路径身份、防抖、结果留痕及删除保护。
 
 状态为 `sending`（发送中）、`success`（已发起归档）、`failure`（OA 返回 code=-1）、`unknown`（结果未确认）。`code=0` 且存在可靠返回资料时保存非空字符串软件编号与不透明归档对象（JSON 对象，内部字段不作假设），编号申请单 ID 为字符串，手填已有软件编号时允许 null 或空字符串；不提供无契约的 OA 链接。超时、断连、非法 JSON、缺失或类型不符的结果及非成功 HTTP 状态均保存 unknown，不重发。发送记录在 HTTP 前提交，浏览器中断或进程中断留下的 sending 也不得自动派发。请求连接/读取超时为 5/30 秒，禁用环境认证与跳转，不传用户 JWT/SSO token 或文件。
 
-成功、发送中与未知记录通过保护引用禁止来源任务、发布及父级级联删除；远端删 Tag 和清工作区前即检查。明确失败的普通来源关联可置空，完整历史快照不级联删除。到期文件清理保持原规则，不删除申请。首次办理已开放；显式再次申请、核对后重试与历史 SVN 选择分别由后续事项提供。
+成功、发送中与未知记录通过保护引用禁止来源任务、发布及父级级联删除；远端删 Tag 和清工作区前即检查。明确失败的普通来源关联可置空，完整历史快照不级联删除。到期文件清理保持原规则，不删除申请。首次本地、历史 SVN 与补录办理已开放；显式再次申请及核对后重试由后续事项提供。
 
 ## 九、打包接口（apps/package）
 

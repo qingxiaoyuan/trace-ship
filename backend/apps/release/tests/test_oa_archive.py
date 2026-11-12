@@ -48,7 +48,7 @@ def test_发布人选择现存单产物并取得真实发布资料(archive_case)
     response = prepare(client, release, task)
     assert response.status_code == 200
     data = response.data["data"]
-    assert data["selection"] == {"task_id": str(task.id), "artifact_id": "artifact-1"}
+    assert data["selection"] == {"task_id": str(task.id), "artifact_id": "artifact-1", "path": "软件.zip", "source_kind": "local"}
     assert data["form"] == {
         "docCreator": "releaseuser", "applyCount": 1, "soft_name": "项目内软件", "soft_version": "V1.2.3",
         "developer": "releaseuser", "soft_source": "", "git_svn": "",
@@ -178,7 +178,7 @@ def test_候选只含现存合格文件且列表之后删除文件也不能继�
     response = client.get(f"/api/releases/{release.id}/oa-archive/options/")
     assert response.status_code == 200
     assert response.data["data"]["artifacts"] == [{
-        "task_id": str(task.id), "task_name": "正式安装包", "artifact_id": "artifact-1", "name": "软件.zip", "path": "软件.zip",
+        "task_id": str(task.id), "task_name": "正式安装包", "artifact_id": "artifact-1", "name": "软件.zip", "path": "软件.zip", "source_kind": "local",
     }]
     (tmp_path / "build/artifacts/软件.zip").unlink()
     assert prepare(client, release, task).status_code == 400

@@ -8,6 +8,7 @@ import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAuthStore } from '@/stores/authStore';
 import { useModalDraft } from '@/hooks/useModalDraft';
 import type { Release } from '@/types';
+import { OaArchiveArtifactPicker } from './OaArchiveArtifactPicker';
 
 const fields: { key: Exclude<keyof ArchiveForm, 'applyCount'>; label: string; required?: boolean; multiline?: boolean; note?: string }[] = [
   { key: 'docCreator', label: '申请人', required: true, note: '选择系统用户或填写 OA 登录名' },
@@ -33,7 +34,6 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
   const allowed = user?.is_superuser || ['manager', 'software_admin'].includes(role)
     || (release.publisher === user?.id && ['developer', 'tester'].includes(role));
   const [selectOpen, setSelectOpen] = useState(false);
-  const [selected, setSelected] = useState('');
   const [prepared, setPrepared] = useState<ArchivePreparation>();
   const [formOpen, setFormOpen] = useState(false);
   const [form] = Form.useForm<ArchiveForm>();
@@ -49,11 +49,10 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
   const existing = records.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path) || [];
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
-  const options = useQuery({ queryKey: ['oa-archive-options', release.id], queryFn: () => oaArchiveApi.options(release.id), enabled: active && selectOpen && !!allowed, retry: false });
   const users = useQuery({ queryKey: ['oa-archive-users', deferredSearch], queryFn: () => accountApi.getUsers({ keyword: deferredSearch || undefined, is_active: true, page_size: 50 }), enabled: active && formOpen, retry: false });
   const prepare = useMutation({
     mutationFn: (artifact: ArchiveArtifact) => oaArchiveApi.prepare(release.id, artifact),
-    onSuccess: (data, artifact) => { setPrepared({ ...data, selection: { ...data.selection, path: artifact.path } }); setSelectOpen(false); setFormOpen(true); },
+    onSuccess: (data, artifact) => { setPrepared({ ...data, selection: { ...data.selection, path: data.selection.path || artifact.path } }); setSelectOpen(false); setFormOpen(true); },
   });
   const validate = useMutation({
     mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1 }),
@@ -80,42 +79,31 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
   useEffect(() => {
     if (formOpen && draft.value) { form.resetFields(); form.setFieldsValue(draft.value); }
   }, [formOpen, draft.value, form]);
-  const artifact = options.data?.artifacts.find(item => `${item.task_id}:${item.artifact_id}` === selected);
   const userOptions = (users.data?.results || []).map(item => ({ value: item.username, label: `${item.nickname || item.username}（${item.username}）` }));
   return <section aria-label="OA 软件归档准备" className="space-y-2 rounded-lg border border-indigo-100 bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-[13px] font-medium">OA 软件归档</h3>
       {allowed && <Button className="min-h-11" disabled={submit.isPending} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>准备 OA 归档</Button>}
     </div>
-    <p className="text-[12px] text-slate-500">选择一个现存产物，核对后手动提交 OA。已发起归档表示流程创建成功，不表示 OA 审批通过。</p>
+    <p className="text-[12px] text-slate-500">选择一个本地产物或 SVN 当前文件，核对后手动提交 OA。已发起归档表示流程创建成功，不表示 OA 审批通过。</p>
     {records.error && <><PermissionAlert error={records.error} errorTitle="归档记录加载失败" /><Button onClick={() => void records.refetch()}>重新读取归档记录</Button></>}
     <div className="space-y-2" aria-label="归档申请历史">{records.data?.map(item => <article key={item.id} className="rounded border border-slate-200 p-3 text-[12px]">
       <p className="break-words font-medium">{statusText[item.status]} · {item.source.path}</p>
+      {item.source.kind === 'svn' && <p>{item.source.supplemented ? '从 SVN 补录' : 'SVN 当前文件'} · {item.source.task_name}</p>}
       <p>实际操作者：{item.operator.username} · {new Date(item.created_at).toLocaleString()}</p>
       {item.soft_number && <p>软件编号：{item.soft_number}</p>}
       <p className="whitespace-pre-wrap break-words">{item.message}</p>
       <Button onClick={() => setViewing(item)}>查看申请资料</Button>
     </article>)}</div>
-    <Modal title="选择归档产物" open={selectOpen && active} onCancel={() => setSelectOpen(false)} footer={null} width={600}>
-      <div className="space-y-3">
-        <label htmlFor="archive-artifact" className="block">归档产物</label>
-        <select id="archive-artifact" value={selected} onChange={event => setSelected(event.target.value)}
-          className="min-h-11 w-full min-w-0 rounded border border-slate-300 bg-white p-2" disabled={options.isPending || prepare.isPending}>
-          <option value="">选择一个产物</option>
-          {(options.data?.artifacts || []).map(item => <option key={`${item.task_id}:${item.artifact_id}`} value={`${item.task_id}:${item.artifact_id}`}>{item.task_name} / {item.name}</option>)}
-        </select>
-        {!options.isPending && !options.error && !options.data?.artifacts.length && <Alert type="info" title="没有可准备归档的现存产物，请确认任务成功及 SVN 推送结果。" />}
-        {options.error && <><PermissionAlert error={options.error} /><Button onClick={() => void options.refetch()}>重新加载产物</Button></>}
-        {prepare.error && <PermissionAlert error={prepare.error} errorTitle="无法准备该产物" />}
-        <div className="flex justify-end"><Button className="min-h-11" type="primary" loading={prepare.isPending} disabled={!artifact} onClick={() => artifact && prepare.mutate(artifact)}>填写申请资料</Button></div>
-      </div>
-    </Modal>
+    <OaArchiveArtifactPicker releaseId={release.id} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={artifact => prepare.mutate(artifact)} pending={prepare.isPending} error={prepare.error} />
     <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => setFormOpen(false)} width={800}
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
       footer={<div className="flex flex-wrap justify-end gap-2"><Button className="min-h-11" onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="min-h-11" loading={validate.isPending} disabled={submit.isPending} onClick={() => form.submit()}>校验资料</Button><Button className="min-h-11" type="primary" loading={submit.isPending} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || existing.length > 0 || uncertainKey === identity} onClick={() => void send()}>提交 OA 归档</Button></div>}>
       {prepared && <Form form={form} disabled={submit.isPending} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
         onFinishFailed={({ errorFields }) => { if (errorFields[0]) form.scrollToField(errorFields[0].name, { focus: true, block: 'center' }); }}>
         <div className="mb-3 space-y-2">
+          {prepared.source?.kind === 'svn' && <Alert type="info" title={`${prepared.source.supplemented ? '从 SVN 补录' : 'SVN 当前文件'} · ${prepared.selection.path}`}
+            description={`提交时重新核验任务目录中的文件；手改产物地址不改变核验位置。原大小：${prepared.source.original?.size ?? '未知'}；当前大小：${prepared.source.current?.size ?? '未知'}；当前 revision：${prepared.source.current?.revision ?? '未知'}。当前文件元数据不代表原构建内容。`} />}
           {!prepared.configuration.configured && <Alert showIcon type="warning" title={prepared.configuration.reason} />}
           {existing.length > 0 && <Alert type="info" title="该产物已有申请记录，请查看结果；当前入口不会再次发送。" />}
           {uncertainKey === identity && <Alert type="warning" title="浏览器未可靠取得提交结果，请重新读取归档记录并核对 OA，系统不会自动重发。" />}
@@ -149,6 +137,7 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
       {viewing && <div className="space-y-3 text-[13px]">
         <p>{statusText[viewing.status]} · 实际操作者：{viewing.operator.username}</p>
         <table aria-label="已提交归档资料" className="w-full table-fixed border-collapse"><tbody>{fields.map(field => <tr key={field.key} className="border-b border-slate-200"><th scope="row" className="w-24 bg-slate-50 p-2 text-left align-top">{field.label}</th><td className="whitespace-pre-wrap break-words p-2">{viewing.form[field.key] || '—'}</td></tr>)}</tbody></table>
+        {viewing.source.kind === 'svn' && <p>{viewing.source.supplemented ? '从 SVN 补录' : 'SVN 当前文件'} · {viewing.source.path}</p>}
         <h4>原发布与产物依据</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.source, null, 2)}</pre>
         <h4>软件归档返回对象</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.software_archive_id, null, 2)}</pre>
         <h4>编号申请单 ID</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.number_apply_id, null, 2)}</pre>

@@ -14,6 +14,7 @@ const user = useAuthStore.getState().user;
 const requests: { url?: string; method?: string; data: unknown }[] = [];
 let role = 'manager';
 let configured = false;
+let historyMode = false;
 let savedRecords: unknown[] = [];
 const release = { id: 'release', project: 'project', repository: 'repo', publisher: 'publisher', version: 'V1.2.3',
   release_type: 'formal', status: 'released', package_tasks: [] } as unknown as Release;
@@ -26,6 +27,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   role = 'manager';
   configured = false;
+  historyMode = false;
   savedRecords = [];
   requests.length = 0;
   useAuthStore.setState({ user: { id: 'operator', username: 'operator', is_superuser: false, permissions: [] } as unknown as UserInfo });
@@ -39,8 +41,9 @@ beforeEach(() => {
     else if (config.url?.endsWith('/oa-archive/options/')) data = { artifacts: [
       { task_id: 'task', task_name: '正式安装包', artifact_id: 'one', name: '软件一.zip', path: '软件一.zip' },
       { task_id: 'task', task_name: '正式安装包', artifact_id: 'two', name: '软件二.zip', path: '软件二.zip' },
-    ] };
-    else if (config.url?.endsWith('/oa-archive/prepare/')) data = { selection: { task_id: 'task', artifact_id: payload.artifact_id },
+    ], svn_tasks: historyMode ? [{ task_id: 'history', task_name: '无清单历史任务' }] : [] };
+    else if (config.url === '/packages/tasks/history/svn-artifacts/') data = { mode: 'browse', root_url: 'svn://example/task', entries: [{ path: '目录/补录.zip', name: '补录.zip', source: 'svn_supplement', state: 'available', original: { size: null }, current: { kind: 'file', size: 7, revision: '2' } }], total: 1, page: 1, page_size: 50 };
+    else if (config.url?.endsWith('/oa-archive/prepare/')) data = { selection: { task_id: payload.task_id, artifact_id: payload.artifact_id, path: payload.path }, source: historyMode ? { kind: 'svn', supplemented: true, path: '目录/补录.zip', original: { size: null }, current: { kind: 'file', size: 7, revision: '2' } } : undefined,
       form: payload.form || initialForm, configuration: { configured, reason: '尚未配置 OA 软件归档接口地址，请联系系统配置维护者' }, content_source: 'release_doc_changes' };
     else if (config.url?.endsWith('/oa-archive/records/')) data = savedRecords;
     else if (config.url?.endsWith('/oa-archive/submit/')) {
@@ -177,4 +180,20 @@ it('详情切换发布说明标签再返回打包区仍恢复当前产物草稿'
   fireEvent.click(screen.getByRole('button', { name: '打包任务' }));
   await selectArtifact();
   await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('切标签也保留'));
+});
+
+
+it('无清单任务在原 SVN 目录选择单文件，表单明确补录和当前文件依据', async () => {
+  historyMode = true;
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: '准备 OA 归档' }));
+  const tasks = await screen.findByRole('combobox', { name: 'SVN 历史任务' });
+  await screen.findByRole('option', { name: '无清单历史任务' });
+  fireEvent.change(tasks, { target: { value: 'history' } });
+  fireEvent.click(await screen.findByRole('radio', { name: /目录\/补录.zip/ }));
+  fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
+  await screen.findByRole('table', { name: '软件归档申请资料' });
+  await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
+  expect(screen.getByText('从 SVN 补录 · 目录/补录.zip')).toBeTruthy();
+  expect(requests.find(item => item.url?.endsWith('/prepare/'))?.data).toMatchObject({ task_id: 'history', path: '目录/补录.zip', source_kind: 'svn' });
 });

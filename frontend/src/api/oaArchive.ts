@@ -1,4 +1,5 @@
 import { get, post } from './request';
+import type { TaskSvnArtifact } from './package';
 
 export interface ArchiveForm {
   docCreator: string;
@@ -14,10 +15,11 @@ export interface ArchiveForm {
   other_description: string;
   soft_number: string;
 }
-export interface ArchiveSelection { task_id: string; artifact_id: string; path?: string }
+export interface ArchiveSelection { task_id: string; artifact_id?: string | null; path?: string; source_kind?: 'local' | 'svn' }
 export interface ArchiveArtifact extends ArchiveSelection { task_name: string; name: string; path: string }
 export interface ArchivePreparation {
   selection: ArchiveSelection;
+  source?: Partial<TaskSvnArtifact> & { kind: 'local' | 'svn'; supplemented: boolean };
   configuration: { configured: boolean; reason: string };
   content_source: 'release_doc_changes' | 'release_doc_original';
   form: ArchiveForm;
@@ -38,7 +40,7 @@ export interface ArchiveApplication {
   previous_id: string | null;
 }
 export const oaArchiveApi = {
-  options: (releaseId: string) => get<{ artifacts: ArchiveArtifact[] }>(`/releases/${releaseId}/oa-archive/options/`),
+  options: (releaseId: string) => get<{ artifacts: ArchiveArtifact[]; svn_tasks?: { task_id: string; task_name: string }[] }>(`/releases/${releaseId}/oa-archive/options/`),
   prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchiveForm) =>
     post<ArchivePreparation>(`/releases/${releaseId}/oa-archive/prepare/`, { ...selection, ...(form ? { form } : {}) }),
   records: (releaseId: string) => get<ArchiveApplication[]>(`/releases/${releaseId}/oa-archive/records/`),
