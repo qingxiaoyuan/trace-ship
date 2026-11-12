@@ -30,6 +30,7 @@ class OaArchiveApplication(models.Model):
     soft_number = models.TextField(blank=True)
     software_archive_id = models.JSONField(null=True)
     number_apply_id = models.JSONField(null=True)
+    confirmation = models.CharField(max_length=24, blank=True, default="", choices=[("", "首次申请"), ("reapply", "显式再次申请"), ("retry", "失败后主动重试"), ("checked_no_order", "已核对 OA 未建单后重试")])
     previous = models.ForeignKey("self", null=True, on_delete=models.PROTECT, related_name="following")
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True)

@@ -75,9 +75,9 @@ def oa_http():
     thread.join()
 
 
-def submit(client, release, task, form, submission_id=None):
+def submit(client, release, task, form, submission_id=None, **confirmation):
     return client.post(f"/api/releases/{release.id}/oa-archive/submit/", {
-        "task_id": str(task.id), "artifact_id": "artifact-1", "submission_id": str(submission_id or uuid4()), "form": form,
+        "task_id": str(task.id), "artifact_id": "artifact-1", "submission_id": str(submission_id or uuid4()), "form": form, **confirmation,
     }, format="json")
 
 
@@ -275,3 +275,101 @@ def test_文件身份使用任务与规范相对路径而非跨任务产物ID(ar
     )
     assert submit(client, release, other, form).status_code == 201
     assert len(oa_http.requests) == 2
+
+
+def test_成功后确认最新记录可显式再次办理且不继承生成编号(archive_case, oa_http):
+    client, release, task = archive_case
+    form = prepare(client, release, task).data["data"]["form"]
+    first = submit(client, release, task, form).data["data"]
+    second = submit(client, release, task, {**form, "edit_reason": "再次办理"},
+                    previous_id=first["id"], confirmation="reapply")
+    assert second.status_code == 201, second.data
+    record = second.data["data"]
+    assert record["previous_id"] == first["id"]
+    assert record["confirmation"] == "reapply"
+    assert record["form"]["soft_number"] == ""
+    assert len(oa_http.requests) == 2
+    history = client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"]
+    assert history == [record, first]
+
+
+@pytest.mark.parametrize("mode,confirmation", [("failure", "retry"), ("missing", "checked_no_order")])
+def test_失败或未知结果需对应显式确认且重试保留原资料(archive_case, oa_http, mode, confirmation):
+    client, release, task = archive_case
+    oa_http.mode = mode
+    form = prepare(client, release, task).data["data"]["form"]
+    first = submit(client, release, task, form).data["data"]
+    for invalid in ("", "reapply"):
+        assert submit(client, release, task, form, previous_id=first["id"], confirmation=invalid).status_code == 400
+    oa_http.mode = "success"
+    identity = uuid4()
+    amended = {**form, "edit_reason": "核对后补充", "soft_number": "MANUAL-001"}
+    second = submit(client, release, task, amended, identity, previous_id=first["id"], confirmation=confirmation)
+    assert second.status_code == 201, second.data
+    replay = submit(client, release, task, amended, identity, previous_id=first["id"], confirmation=confirmation)
+    assert replay.data["data"] == second.data["data"]
+    assert len(oa_http.requests) == 2
+    history = client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"]
+    assert history == [second.data["data"], first]
+    assert history[0]["confirmation"] == confirmation
+    assert history[0]["number_apply_id"] is None
+
+
+def test_换操作人和旧窗口确认不能绕过最新历史(archive_case, oa_http):
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    client, release, task = archive_case
+    form = prepare(client, release, task).data["data"]["form"]
+    first = submit(client, release, task, form).data["data"]
+    actor = User.objects.create_user(username="another-manager")
+    ProjectMember.objects.create(project=release.project, user=actor, role="manager")
+    client.force_authenticate(actor)
+    assert submit(client, release, task, form).status_code == 400
+    second = submit(client, release, task, form, previous_id=first["id"], confirmation="reapply")
+    assert second.status_code == 201
+    assert second.data["data"]["operator"]["username"] == "another-manager"
+    stale = submit(client, release, task, form, previous_id=first["id"], confirmation="reapply")
+    assert stale.status_code == 400
+    assert "最新" in str(stale.data)
+    assert len(oa_http.requests) == 2
+
+
+@pytest.mark.parametrize("mode", ["success", "missing"])
+def test_后续失败不解除早前成功或未知来源保护(archive_case, oa_http, mode):
+    client, release, task = archive_case
+    form = prepare(client, release, task).data["data"]["form"]
+    oa_http.mode = mode
+    first = submit(client, release, task, form).data["data"]
+    oa_http.mode = "failure"
+    second = submit(client, release, task, form, previous_id=first["id"], confirmation="reapply" if mode == "success" else "checked_no_order")
+    assert second.status_code == 201
+    assert second.data["data"]["status"] == "failure"
+    release.publisher.is_superuser = True
+    release.publisher.save()
+    client.force_authenticate(release.publisher)
+    assert client.delete(f"/api/packages/tasks/{task.id}/").status_code == 400
+    assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"][1] == first
+
+
+@pytest.mark.parametrize("change", ["readonly", "revoked", "file_deleted", "task_failed"])
+def test_再次申请逐次检查现行成员与文件资格(archive_case, oa_http, change, tmp_path):
+    from apps.project.models import ProjectMember
+
+    client, release, task = archive_case
+    form = prepare(client, release, task).data["data"]["form"]
+    first = submit(client, release, task, form).data["data"]
+    if change == "revoked":
+        ProjectMember.objects.filter(project=release.project, user=release.publisher).delete()
+    elif change == "readonly":
+        ProjectMember.objects.filter(project=release.project, user=release.publisher).update(role="maintainer")
+        release.project.leader = None
+        release.project.save()
+    elif change == "file_deleted":
+        (tmp_path / "build/artifacts/软件.zip").unlink()
+    else:
+        task.status = "failure"
+        task.save()
+    result = submit(client, release, task, form, previous_id=first["id"], confirmation="reapply")
+    assert result.status_code in (400, 403, 404)
+    assert len(oa_http.requests) == 1

@@ -44,10 +44,10 @@ beforeEach(() => {
       form: payload.form || initialForm, configuration: { configured, reason: '尚未配置 OA 软件归档接口地址，请联系系统配置维护者' }, content_source: 'release_doc_changes' };
     else if (config.url?.endsWith('/oa-archive/records/')) data = savedRecords;
     else if (config.url?.endsWith('/oa-archive/submit/')) {
-      data = { id: 'application', submission_id: payload.submission_id, status: 'success', form: payload.form,
+      data = { id: `application-${savedRecords.length + 1}`, previous_id: payload.previous_id || null, confirmation: payload.confirmation || '', submission_id: payload.submission_id, status: 'success', form: payload.form,
         operator: { username: 'operator' }, source: { task_id: 'task', path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z',
         software_archive_id: { opaque: ['单据', 7] }, soft_number: 'SOFT-001', number_apply_id: null, message: '已发起归档' };
-      savedRecords = [data];
+      savedRecords = [data, ...savedRecords];
     }
     else if (config.url === '/releases/release/') data = { ...release, git_hash: initialForm.sn_code, release_doc: '已保存的发布说明', tag_name: 'V1.2.3', branch: 'main', created_at: '' };
     else if (config.url?.endsWith('/source-reference/')) data = { available: true, reference: 'V1.2.3', reason: '' };
@@ -94,8 +94,9 @@ it('实际发送修改后的资料并重新读取历史，成功后展示完整�
   mount();
   await selectArtifact();
   fireEvent.change(screen.getByRole('combobox', { name: /申请人/ }), { target: { value: 'oa.manual' } });
-  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
-  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  const submitButton = screen.getByRole('button', { name: '提交 OA 归档' });
+  fireEvent.click(submitButton);
+  fireEvent.click(submitButton);
   await screen.findByText('软件编号：SOFT-001');
   expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1);
   expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ form: { docCreator: 'oa.manual', applyCount: 1 } });
@@ -177,4 +178,53 @@ it('详情切换发布说明标签再返回打包区仍恢复当前产物草稿'
   fireEvent.click(screen.getByRole('button', { name: '打包任务' }));
   await selectArtifact();
   await waitFor(() => expect((screen.getByRole('textbox', { name: /软件名称/ }) as HTMLInputElement).value).toBe('切标签也保留'));
+});
+
+
+it('成功后再次申请先提醒，取消不派发，确认生成新申请且不继承自动编号', async () => {
+  configured = true;
+  mount();
+  await selectArtifact();
+  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  await screen.findByText('软件编号：SOFT-001');
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await selectArtifact();
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '软件编号' }) as HTMLInputElement).value).toBe(''));
+  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  const confirmation = (await screen.findByText('该产物已有已发起归档的记录，请确认仍需再次办理。')).closest('[role="dialog"]') as HTMLElement;
+  fireEvent.click(within(confirmation).getByRole('button', { name: /取\s*消/ }));
+  expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1);
+  await waitFor(() => expect(screen.queryByRole('button', { name: '确认再次申请' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  fireEvent.click(await screen.findByRole('button', { name: '确认再次申请' }));
+  await waitFor(() => expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(2));
+  const sends = requests.filter(entry => entry.url?.endsWith('/submit/')).map(entry => entry.data as Record<string, unknown>);
+  expect(sends[1]).toMatchObject({ previous_id: 'application-1', confirmation: 'reapply', form: { soft_number: '' } });
+  expect(sends[1].submission_id).not.toBe(sends[0].submission_id);
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
+});
+
+
+it('刷新后的未知申请恢复已发送资料，核对未建单后才能主动重试并保留历史', async () => {
+  configured = true;
+  savedRecords = [{ id: 'unknown-first', submission_id: 'old-operation', status: 'unknown',
+    form: { ...initialForm, other_description: '已经发送的完整资料\n末行' },
+    operator: { username: 'first-actor' }, source: { task_id: 'task', path: '软件一.zip' },
+    created_at: '2026-11-12T00:00:00Z', message: '结果未确认', soft_number: '' }];
+  mount();
+  await selectArtifact();
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '其他说明' }) as HTMLTextAreaElement).value).toBe('已经发送的完整资料\n末行'));
+  fireEvent.change(screen.getByRole('textbox', { name: '变更原因' }), { target: { value: '人工核对后的修改' } });
+  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  const check = await screen.findByRole('checkbox', { name: '我已核对 OA，确认此前申请未建单' });
+  const dialog = check.closest('[role="dialog"]') as HTMLElement;
+  const retry = within(dialog).getByRole('button', { name: '确认重试' }) as HTMLButtonElement;
+  expect(retry.disabled).toBe(true);
+  expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(0);
+  fireEvent.click(check);
+  expect(retry.disabled).toBe(false);
+  fireEvent.click(retry);
+  await waitFor(() => expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1));
+  expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ previous_id: 'unknown-first', confirmation: 'checked_no_order', form: { edit_reason: '人工核对后的修改' } });
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
 });

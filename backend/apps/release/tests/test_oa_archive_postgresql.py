@@ -126,3 +126,39 @@ def test_任务删除先持锁时申请等待并重新拒绝已删来源(archive
         assert deletion.result(timeout=10).status_code == 200
         assert sending.result(timeout=10).status_code == 404
     assert oa_http.requests == []
+
+
+@pytest.mark.parametrize("initial_mode,confirmation", [("success", "reapply"), ("missing", "checked_no_order")])
+def test_同一前次确认的并发新申请仅发送一次且保留全部历史(archive_case, oa_http, initial_mode, confirmation):
+    from apps.account.models import User
+    from apps.project.models import ProjectMember
+
+    client, release, task = archive_case
+    form = prepare(client, release, task).data["data"]["form"]
+    oa_http.mode = initial_mode
+    prior = submit(client, release, task, form).data["data"]
+    second_actor = User.objects.create_user(username="reapply-manager")
+    ProjectMember.objects.create(project=release.project, user=second_actor, role="manager")
+    oa_http.mode = "blocked"
+    oa_http.received.clear()
+    identity = uuid4()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(request_as, release.publisher, lambda api: submit(api, release, task, form, identity, previous_id=prior["id"], confirmation=confirmation))
+        try:
+            assert oa_http.received.wait(10)
+            second = pool.submit(request_as, second_actor, lambda api: submit(api, release, task, form, previous_id=prior["id"], confirmation=confirmation)).result(timeout=10)
+            assert second.status_code == 400, second.data
+            assert "正在发送" in str(second.data)
+            replay = submit(client, release, task, form, identity, previous_id=prior["id"], confirmation=confirmation)
+            assert replay.status_code == 200
+            assert replay.data["data"]["status"] == "sending"
+        finally:
+            oa_http.resume.set()
+        result = first.result(timeout=10)
+    assert result.status_code == 201
+    assert len(oa_http.requests) == 2
+    stale = submit(client, release, task, form, previous_id=prior["id"], confirmation=confirmation)
+    assert stale.status_code == 400
+    assert "最新" in str(stale.data)
+    history = client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"]
+    assert history == [result.data["data"], prior]

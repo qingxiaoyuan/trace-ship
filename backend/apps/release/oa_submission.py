@@ -18,6 +18,8 @@ from apps.system.oa_archive import OaArchiveConfig
 class ArchiveSubmitInput(ArchiveSelectionInput):
     submission_id = serializers.UUIDField()
     form = ArchiveFormInput()
+    previous_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    confirmation = serializers.ChoiceField(choices=["", "reapply", "retry", "checked_no_order"], required=False, default="")
 
 
 def lock_repository(repository_id):
@@ -57,6 +59,7 @@ def application_data(record):
         "response": record.response, "created_at": record.created_at.isoformat(),
         "finished_at": record.finished_at.isoformat() if record.finished_at else None,
         "previous_id": str(record.previous_id) if record.previous_id else None,
+        "confirmation": record.confirmation,
     }
 
 
@@ -125,12 +128,23 @@ class OaArchiveSubmission:
             if existing:
                 if (existing.release_id != release.id or existing.task_id != task.id
                         or existing.operator_id != user.id or existing.form != values["form"]
-                        or existing.source.get("artifact_id") != values["artifact_id"]):
+                        or existing.source.get("artifact_id") != values["artifact_id"]
+                        or existing.previous_id != values["previous_id"]
+                        or existing.confirmation != values["confirmation"]):
                     raise ValidationError({"detail": "提交标识已用于其他申请资料，请重新读取归档记录"})
                 return existing, False
             artifact = OaArchivePreparation.local_artifact(task, values["artifact_id"])
-            if OaArchiveApplication.objects.filter(task=task, artifact_path=artifact["path"]).exists():
-                raise ValidationError({"detail": "该产物已有申请记录，请先查看结果；首次办理入口不会再次发送"})
+            previous = OaArchiveApplication.objects.filter(task=task, artifact_path=artifact["path"]).first()
+            if previous:
+                if previous.status == "sending":
+                    raise ValidationError({"detail": "该产物正在发送，请等待结果；不能重复派发"})
+                if previous.id != values["previous_id"]:
+                    raise ValidationError({"detail": "该产物已有新的申请记录，请重新读取并确认最新结果"})
+                expected = {"success": "reapply", "failure": "retry", "unknown": "checked_no_order"}[previous.status]
+                if values["confirmation"] != expected:
+                    raise ValidationError({"detail": "请确认已有申请；结果未确认时须先核对 OA 并确认未建单，再主动重试"})
+            elif values["previous_id"] or values["confirmation"]:
+                raise ValidationError({"detail": "此前申请不属于当前产物，请重新读取归档记录"})
             url = OaArchiveConfig.get_url()
             if not url:
                 raise ValidationError({"detail": "尚未配置 OA 软件归档接口地址，请联系系统配置维护者"})
@@ -139,6 +153,7 @@ class OaArchiveSubmission:
                 protected_release=release, protected_task=task, operator=user,
                 operator_snapshot={"id": str(user.id), "username": user.username, "nickname": user.nickname},
                 artifact_path=artifact["path"], form=values["form"], endpoint=url,
+                previous=previous, confirmation=values["confirmation"],
                 source={"release_id": str(release.id), "project_id": str(release.project_id),
                         "repository_id": str(release.repository_id), "version": release.version,
                         "tag_name": release.tag_name, "git_hash": release.git_hash,

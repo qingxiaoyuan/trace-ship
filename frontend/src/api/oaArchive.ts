@@ -22,6 +22,7 @@ export interface ArchivePreparation {
   content_source: 'release_doc_changes' | 'release_doc_original';
   form: ArchiveForm;
 }
+export type ArchiveConfirmation = '' | 'reapply' | 'retry' | 'checked_no_order';
 export interface ArchiveApplication {
   id: string;
   submission_id: string;
@@ -36,12 +37,13 @@ export interface ArchiveApplication {
   created_at: string;
   finished_at: string | null;
   previous_id: string | null;
+  confirmation: ArchiveConfirmation;
 }
 export const oaArchiveApi = {
   options: (releaseId: string) => get<{ artifacts: ArchiveArtifact[] }>(`/releases/${releaseId}/oa-archive/options/`),
   prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchiveForm) =>
     post<ArchivePreparation>(`/releases/${releaseId}/oa-archive/prepare/`, { ...selection, ...(form ? { form } : {}) }),
   records: (releaseId: string) => get<ArchiveApplication[]>(`/releases/${releaseId}/oa-archive/records/`),
-  submit: (releaseId: string, selection: ArchiveSelection, form: ArchiveForm, submissionId: string) =>
-    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/submit/`, { ...selection, form, submission_id: submissionId }, { timeout: 45000, silent: true }),
+  submit: (releaseId: string, selection: ArchiveSelection, form: ArchiveForm, submissionId: string, confirmation?: { previous_id: string; confirmation: ArchiveConfirmation }) =>
+    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/submit/`, { ...selection, form, submission_id: submissionId, ...confirmation }, { timeout: 45000, silent: true }),
 };
