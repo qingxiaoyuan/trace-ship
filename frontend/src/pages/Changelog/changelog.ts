@@ -29,7 +29,7 @@ export const changelogEntries: ChangelogEntry[] = [
   {
     version: '2026.11.12',
     date: '2026-11-12',
-    summary: '提交正式版本的 OA 软件归档并保留申请历史',
+    summary: '提交 OA 软件归档并保留申请历史与 SVN 产物依据',
     items: [
       { category: 'feature', text: '系统配置新增独立「OA 软件归档」接口地址。正式版发布人、项目管理员和软件管理员可在发布详情选择一个现存打包产物，核对资料后手动提交，并查看实际操作者、完整资料及 OA 返回结果；已发起归档不表示 OA 审批通过。' },
       { category: 'improvement', text: '归档资料预填项目内软件名、完整源码提交 SHA 和人工保存的完整更新内容。不能可靠提取时保留原说明供核对；关闭重开及切换详情标签保留各产物草稿，刷新或离开页面后清除。' },

@@ -1401,7 +1401,7 @@
 - `POST /api/releases/{id}/oa-archive/submit/`：请求 `{task_id, artifact_id, submission_id, form}`，`submission_id` 为客户端本次操作生成并保留的 UUID。服务器在仓库→发布→任务锁内重新授权、检查任务与文件，再持久化独立 `sending` 申请并提交事务，最后仅发送一次 POST JSON。返回 201 和申请记录；同一操作者同一标识及相同资料重放返回 200 和原记录，不重新发送。标识被用于不同资料返回 400；已有该任务及规范相对路径的申请时当前首次办理入口返回 400，后续显式再次申请不受永久唯一约束限制。
 - `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/created_at/finished_at/previous_id`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source` 保留发布/项目/仓库/任务 ID、原版本、Tag、源码 SHA、任务内规范相对路径、原产物及 SVN 阶段快照，手改 `git_svn` 不改变来源。
 
-状态为 `sending`（发送中）、`success`（已发起归档）、`failure`（OA 返回 code=-1）、`unknown`（结果未确认）。`code=0` 且存在可靠返回资料时保存软件编号与不透明归档对象，编号申请单 ID 可空；不提供无契约的 OA 链接。超时、断连、非法 JSON、缺失结果及非成功 HTTP 状态均保存 unknown，不重发。发送记录在 HTTP 前提交，浏览器中断或进程中断留下的 sending 也不得自动派发。请求连接/读取超时为 5/30 秒，禁用环境认证与跳转，不传用户 JWT/SSO token 或文件。
+状态为 `sending`（发送中）、`success`（已发起归档）、`failure`（OA 返回 code=-1）、`unknown`（结果未确认）。`code=0` 且存在可靠返回资料时保存非空字符串软件编号与不透明归档对象（JSON 对象，内部字段不作假设），编号申请单 ID 为字符串，手填已有软件编号时允许 null 或空字符串；不提供无契约的 OA 链接。超时、断连、非法 JSON、缺失或类型不符的结果及非成功 HTTP 状态均保存 unknown，不重发。发送记录在 HTTP 前提交，浏览器中断或进程中断留下的 sending 也不得自动派发。请求连接/读取超时为 5/30 秒，禁用环境认证与跳转，不传用户 JWT/SSO token 或文件。
 
 成功、发送中与未知记录通过保护引用禁止来源任务、发布及父级级联删除；远端删 Tag 和清工作区前即检查。明确失败的普通来源关联可置空，完整历史快照不级联删除。到期文件清理保持原规则，不删除申请。首次办理已开放；显式再次申请、核对后重试与历史 SVN 选择分别由后续事项提供。
 

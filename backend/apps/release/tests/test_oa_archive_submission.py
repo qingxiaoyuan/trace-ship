@@ -45,6 +45,17 @@ def oa_http():
                 body = b'{"code":0,"data":{}}'
             elif state.mode == "invalid-number":
                 body = b'{"code":0,"data":{"other":NaN}}'
+            elif state.mode in ("archive-string", "archive-bool", "archive-list", "archive-empty-object", "number-object", "number-missing", "number-empty"):
+                payload = json.loads(body)
+                if state.mode.startswith("archive-"):
+                    payload["data"]["software_archive_id"] = {"archive-string": "单据", "archive-bool": True, "archive-list": ["单据"], "archive-empty-object": {}}[state.mode]
+                elif state.mode == "number-object":
+                    payload["data"]["number_apply_id"] = {"wrong": "type"}
+                elif state.mode == "number-missing":
+                    del payload["data"]["number_apply_id"]
+                else:
+                    payload["data"]["number_apply_id"] = ""
+                body = json.dumps(payload).encode()
             self.send_response(201 if state.mode == "created" else 200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -115,6 +126,17 @@ def test_真实HTTP结果持久化且原请求重放不重复发送(archive_case
     assert replay.status_code == 200
     assert replay.data["data"] == record
     assert submit(client, release, task, form).status_code == 400
+    assert len(oa_http.requests) == 1
+
+
+@pytest.mark.parametrize("mode,expected", [("archive-string", "unknown"), ("archive-bool", "unknown"), ("archive-list", "unknown"), ("archive-empty-object", "success"), ("number-object", "unknown"), ("number-missing", "unknown"), ("number-empty", "unknown")])
+def test_返回类型遵守外层契约但不猜测归档对象内部结构(archive_case, oa_http, mode, expected):
+    client, release, task = archive_case
+    oa_http.mode = mode
+    form = prepare(client, release, task).data["data"]["form"]
+    result = submit(client, release, task, form)
+    assert result.status_code == 201
+    assert result.data["data"]["status"] == expected
     assert len(oa_http.requests) == 1
 
 
