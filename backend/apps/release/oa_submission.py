@@ -128,12 +128,12 @@ class OaArchiveSubmission:
             if existing:
                 if (existing.release_id != release.id or existing.task_id != task.id
                         or existing.operator_id != user.id or existing.form != values["form"]
-                        or existing.source.get("artifact_id") != values["artifact_id"]
+                        or existing.artifact_path != OaArchivePreparation.selection_path(task, values)
                         or existing.previous_id != values["previous_id"]
                         or existing.confirmation != values["confirmation"]):
                     raise ValidationError({"detail": "提交标识已用于其他申请资料，请重新读取归档记录"})
                 return existing, False
-            artifact = OaArchivePreparation.local_artifact(task, values["artifact_id"])
+            artifact = OaArchivePreparation.selected_artifact(task, values)
             previous = OaArchiveApplication.objects.filter(task=task, artifact_path=artifact["path"]).first()
             if previous:
                 if previous.status == "sending":
@@ -157,8 +157,8 @@ class OaArchiveSubmission:
                 source={"release_id": str(release.id), "project_id": str(release.project_id),
                         "repository_id": str(release.repository_id), "version": release.version,
                         "tag_name": release.tag_name, "git_hash": release.git_hash,
-                        "task_id": str(task.id), "task_name": task.name, "artifact_id": values["artifact_id"],
-                        "path": artifact["path"], "artifact": artifact, "kind": "local", "supplemented": False,
+                        "task_id": str(task.id), "task_name": task.name, "artifact_id": artifact.get("artifact_id"),
+                        "path": artifact["path"], "artifact": artifact, "kind": artifact["kind"], "supplemented": artifact["supplemented"],
                         "svn": task.stage_info.get("svn_push", {})},
             )
         # 必须在事务提交后发送；进程中断留下 sending，绝不自动重发。

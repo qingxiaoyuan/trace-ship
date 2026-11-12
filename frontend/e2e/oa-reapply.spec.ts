@@ -62,10 +62,11 @@ async function capture(page: Page, label: string) {
   await page.screenshot({ path: path.join(reportDir, `oa-reapply-${label}.png`), animations: 'disabled' });
 }
 async function readHistory(page: Page, filename: string) {
-  await page.waitForLoadState('networkidle');
-  const pending = page.waitForResponse(response => response.url().endsWith('/oa-archive/records/') && response.request().method() === 'GET').then(response => response.json());
-  await releasePage(page);
-  const records = (await pending).data as Application[];
+  await page.goto(`/releases/${sample.release_id}`);
+  await expect(page.getByRole('heading', { name: sample.version, exact: true })).toBeVisible();
+  const pending = page.waitForResponse(response => response.url().endsWith('/oa-archive/records/') && response.request().method() === 'GET');
+  await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
+  const records = (await (await pending).json()).data as Application[];
   return records.filter(item => item.source.task_id === sample.tasks.first.id && item.source.path === filename);
 }
 
@@ -180,6 +181,9 @@ test('375px真实超时须核对未建单后主动重试，发送中其他窗口
   expect((await control()).count).toBe(before + 2);
   const records = await readHistory(page, filename);
   expect(records).toEqual([second, first]);
+  const historyRow = page.getByRole('article').filter({ hasText: filename }).first();
+  await historyRow.scrollIntoViewIfNeeded();
+  await expect(historyRow).toContainText('已核对 OA 未建单后重试');
   await capture(page, 'mobile-history');
   evidence.records = records;
   evidence.elapsedMs = Date.now() - started;

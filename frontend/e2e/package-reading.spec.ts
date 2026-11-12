@@ -208,20 +208,21 @@ test('项目管理员可恢复任务深链，读取长日志与真实下载，�
     const observeDownload = (item: Download) => downloads.push(item);
     page.on('download', observeDownload);
     const expiredArtifact = fixture.tasks.expired.artifacts[0];
-    const singleResponse = page.waitForResponse(item => item.url().endsWith(`/api/packages/tasks/${fixture.tasks.expired.id}/artifacts/${expiredArtifact.id}/download/`));
-    await page.getByRole('button', { name: `下载 ${expiredArtifact.name}`, exact: true }).click();
-    const singleResult = await singleResponse;
+    await expect(page.getByRole('button', { name: `下载 ${expiredArtifact.name}`, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '下载全部', exact: true })).toHaveCount(0);
+    await expect(page.getByText('本地文件已清理或不可用', { exact: true }).first()).toBeVisible();
+    // 保留元数据后入口隐藏，直接请求仍必须由生产 API 拒绝，不能只依赖页面。
+    const token = await page.evaluate(() => localStorage.getItem('accessToken'));
+    const headers = { Authorization: `Bearer ${token}` };
+    const taskEndpoint = `/api/packages/tasks/${fixture.tasks.expired.id}`;
+    const singleResult = await page.request.get(`${taskEndpoint}/artifacts/${expiredArtifact.id}/download/`, { headers });
     expect(singleResult.status()).toBe(404);
     const singleBody = await singleResult.json() as { message: string };
     expect(singleBody.message).toBe('产物文件不存在');
-    await expect(page.getByText(singleBody.message, { exact: true })).toBeVisible();
-    const response = page.waitForResponse(item => item.url().endsWith(`/api/packages/tasks/${fixture.tasks.expired.id}/download-all/`));
-    await page.getByRole('button', { name: '下载全部', exact: true }).click();
-    const result = await response;
+    const result = await page.request.get(`${taskEndpoint}/download-all/`, { headers });
     expect(result.status()).toBe(404);
     const body = await result.json() as { message: string };
     expect(body.message).toBe('没有可下载的有效产物文件');
-    await expect(page.getByText(body.message, { exact: true })).toBeVisible();
     expect(downloads).toHaveLength(0);
     observations.expiredDownload = { single: { status: singleResult.status(), message: singleBody.message }, all: { status: result.status(), message: body.message }, downloadCount: downloads.length };
     await page.waitForLoadState('networkidle');
@@ -229,14 +230,14 @@ test('项目管理员可恢复任务深链，读取长日志与真实下载，�
 
     // 在同一个隔离任务恢复一份实际文件，保留另一份缺失记录，覆盖部分过期。
     writeFileSync(availablePath, availableSource);
-    const partial = page.waitForResponse(item => item.url().endsWith(`/api/packages/tasks/${fixture.tasks.expired.id}/download-all/`));
-    await page.getByRole('button', { name: '下载全部', exact: true }).click();
-    const partialResult = await partial;
+    await page.reload();
+    await expect(page.getByRole('button', { name: '下载全部', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `下载 ${expiredArtifact.name}`, exact: true })).toHaveCount(0);
+    const partialResult = await page.request.get(`${taskEndpoint}/download-all/`, { headers });
     expect(partialResult.status()).toBe(404);
     expect(partialResult.headers()['content-disposition']).toBeUndefined();
     const partialBody = await partialResult.json() as { message: string };
     expect(partialBody.message).toBe('部分产物文件不存在或已清理，请逐个下载仍可用的产物');
-    await expect(page.getByText(partialBody.message, { exact: true })).toBeVisible();
     expect(downloads).toHaveLength(0);
     page.off('download', observeDownload);
     const available = await download(

@@ -1,13 +1,20 @@
 """已发布正式版的软件归档准备；此模块不向 OA 发送请求。"""
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 from rest_framework import serializers
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
 from apps.package.models import PackageTask
 from apps.package.services import PackageService
+from apps.package.services.artifacts import (
+    ArtifactQueryError,
+    local_artifact_available,
+    task_artifact_manifest,
+    validate_artifact_path,
+    verify_task_svn_artifact,
+)
 from apps.project.models import ProjectComponent
 from apps.system.oa_archive import OaArchiveConfig
 from utils.permissions import IsProjectManager, ProjectRolePermission
@@ -33,8 +40,22 @@ class ArchiveFormInput(serializers.Serializer):
 
 class ArchiveSelectionInput(serializers.Serializer):
     task_id = serializers.UUIDField()
-    artifact_id = serializers.CharField(max_length=200)
+    artifact_id = serializers.CharField(max_length=200, required=False, allow_null=True)
+    path = serializers.CharField(required=False, max_length=4096)
+    source_kind = serializers.ChoiceField(choices=["local", "svn"], required=False)
     form = ArchiveFormInput(required=False)
+
+    def validate(self, attrs):
+        if not attrs.get("artifact_id") and not attrs.get("path"):
+            raise ValidationError({"detail": "请选择一个任务产物或 SVN 文件"})
+        return attrs
+
+
+def archive_file_error(error):
+    """保留文件缺失、认证与网络错误的分类及状态。"""
+    failure = APIException({"detail": str(error), "state": error.state})
+    failure.status_code = error.status_code
+    raise failure from error
 
 
 def extract_archive_changes(doc: str) -> tuple[str, str]:
@@ -96,17 +117,56 @@ class OaArchivePreparation:
             raise ValidationError({"detail": "产物文件已不存在或路径不在任务目录内"})
         return {**artifact, "path": file_path.relative_to(root).as_posix()}
 
+    @staticmethod
+    def selection_path(task, selection):
+        """任务与规范相对路径是共同身份；产物 ID 只用于该任务内定位。"""
+        _, manifest = task_artifact_manifest(task)
+        artifact_id = selection.get("artifact_id")
+        original = next((item for item in manifest if item.get("id") == artifact_id), None) if artifact_id else None
+        if artifact_id and original is None:
+            raise NotFound("产物不在该任务清单中")
+        raw_path = original.get("path") if original else selection.get("path")
+        try:
+            path = validate_artifact_path(PurePosixPath(raw_path or "").as_posix())
+            if selection.get("path") and validate_artifact_path(PurePosixPath(selection["path"]).as_posix()) != path:
+                raise ArtifactQueryError("invalid_path", "所选文件与任务产物不一致")
+        except ArtifactQueryError as error:
+            archive_file_error(error)
+        return path
+
+    @classmethod
+    def selected_artifact(cls, task, selection):
+        path = cls.selection_path(task, selection)
+        original = next((item for item in task.artifact_info or [] if PurePosixPath(item.get("path") or "").as_posix() == path), None)
+        if selection.get("source_kind") != "svn" and original and local_artifact_available(task, original):
+            root_path = (Path(task.workspace_path) / "artifacts").resolve()
+            artifact = {**original, "path": (root_path / path).resolve().relative_to(root_path).as_posix()}
+            svn = (task.stage_info or {}).get("svn_push", {})
+            root = svn.get("remote_url", "") if svn.get("status") == "success" else ""
+            return {**artifact, "artifact_id": artifact.get("id"), "kind": "local", "supplemented": False,
+                    "url": f"{root.rstrip('/')}/{quote(path, safe='/')}" if root else "",
+                    "original": {key: artifact.get(key) for key in ("size", "sha256", "revision")}, "current": None}
+        try:
+            artifact = verify_task_svn_artifact(task, path)
+        except ArtifactQueryError as error:
+            archive_file_error(error)
+        return {**artifact, "kind": "svn", "supplemented": artifact["source"] == "svn_supplement"}
+
     @classmethod
     def options(cls, release, user) -> dict:
         cls.require_permission(release, user)
         cls.require_release(release)
         artifacts = []
+        svn_tasks = []
         for task in release.package_tasks.all():
             try:
                 cls.require_task(release, task)
             except ValidationError:
                 continue
-            for candidate in task.artifact_info:
+            stage = (task.stage_info or {}).get("svn_push", {})
+            if task.config_snapshot.get("svn_push_enabled") or stage.get("remote_url"):
+                svn_tasks.append({"task_id": str(task.id), "task_name": task.name})
+            for candidate in task.artifact_info or []:
                 try:
                     artifact = cls.local_artifact(task, candidate.get("id", ""))
                 except (NotFound, ValidationError):
@@ -114,9 +174,9 @@ class OaArchivePreparation:
                 artifacts.append({
                     "task_id": str(task.id), "task_name": task.name,
                     "artifact_id": artifact["id"], "name": artifact.get("name") or artifact["path"],
-                    "path": artifact["path"],
+                    "path": artifact["path"], "source_kind": "local",
                 })
-        return {"artifacts": artifacts}
+        return {"artifacts": artifacts, "svn_tasks": svn_tasks}
 
     @classmethod
     def prepare(cls, release, user, selection: dict) -> dict:
@@ -126,15 +186,15 @@ class OaArchivePreparation:
         if task is None:
             raise NotFound("打包任务不存在")
         cls.require_task(release, task)
-        artifact = cls.local_artifact(task, selection["artifact_id"])
-        svn = task.stage_info.get("svn_push", {})
-        svn_root = svn.get("remote_url", "") if svn.get("status") == "success" else ""
-        svn_url = f"{svn_root.rstrip('/')}/{quote(artifact['path'], safe='/')}" if svn_root else ""
+        artifact = cls.selected_artifact(task, selection)
+        svn_url = artifact["url"]
         content, source = extract_archive_changes(release.release_doc or "")
         component = ProjectComponent.objects.filter(project=release.project, repository=release.repository).first()
         configured = bool(OaArchiveConfig.get_url())
         return {
-            "selection": {"task_id": str(task.id), "artifact_id": selection["artifact_id"]},
+            "selection": {"task_id": str(task.id), "artifact_id": artifact.get("artifact_id"),
+                          "path": artifact["path"], "source_kind": artifact["kind"]},
+            "source": artifact,
             "configuration": {
                 "configured": configured,
                 "reason": "" if configured else "尚未配置 OA 软件归档接口地址，请联系系统配置维护者",
