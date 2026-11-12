@@ -110,6 +110,8 @@ interface DownloadPolicy {
 }
 
 export const systemApi = {
+  getOaArchiveConfig: () => get<{ url: string }>('/system/configs/oa-archive/'),
+  saveOaArchiveConfig: (url: string) => put<{ url: string }>('/system/configs/oa-archive/', { url }),
   getDownloadPolicy: () => get<DownloadPolicy>('/system/configs/download-policy/'),
   saveDownloadPolicy: (policy: { allowed_cidrs: string; trusted_proxy_cidrs?: string }) =>
     put<DownloadPolicy>('/system/configs/download-policy/', policy),

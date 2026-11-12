@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Check, CircleAlert, ChevronRight, PackageCheck, PackageX, Loader, Clock } from 'lucide-react';
 import dayjs from 'dayjs';
+import { OaArchivePreparationPanel } from './OaArchivePreparation';
 import { packageApi } from '@/api/package';
 import { projectApi } from '@/api/project';
 import type { NormalizedError } from '@/api/request';
@@ -107,7 +108,7 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
   </section>;
 }
 
-export function ReleasePackages({ release, maintainerMobile = false }: { release: Release; maintainerMobile?: boolean }) {
+export function ReleasePackages({ release, maintainerMobile = false, active = true }: { release: Release; maintainerMobile?: boolean; active?: boolean }) {
   const navigate = useNavigate();
   const screens = Grid.useBreakpoint();
   const tasks = release.package_tasks || [];
@@ -145,7 +146,8 @@ export function ReleasePackages({ release, maintainerMobile = false }: { release
 
   return (
     <div className="space-y-3">
-      {release.status === 'released' && <ReleaseRepackage key={release.id} release={release} desktop={!!screens.md} />}
+      {release.status === 'released' && <ReleaseRepackage key={release.id} release={release} desktop={active && !!screens.md} />}
+      {release.status === 'released' && release.release_type === 'formal' && <OaArchivePreparationPanel key={`oa-${release.id}`} release={release} active={active} />}
       {!tasks.length && <div className="py-8 text-center text-[13px] text-slate-400">该发布暂无打包任务</div>}
       {tasks.map((task) => {
         const info = statusMap[task.status];

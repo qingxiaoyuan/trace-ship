@@ -7,6 +7,80 @@
   },
   "item": [
     {
+      "name": "OA 软件归档资料准备",
+      "description": "当前只保存配置、选择产物及校验资料，不向 OA 创建单据。",
+      "item": [
+        {
+          "name": "读取 OA 软件归档配置",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/system/configs/oa-archive/"
+          }
+        },
+        {
+          "name": "保存 OA 软件归档配置",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/system/configs/oa-archive/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://oa.example.com/api/v1/ticketscript/create_software_archive_with_number\"\n}"
+            }
+          }
+        },
+        {
+          "name": "选择现存归档产物",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/options/"
+          }
+        },
+        {
+          "name": "准备归档资料（不发送 OA）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/prepare/",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"artifact_id\": \"{{artifact_id}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "认证",
       "item": [
         {

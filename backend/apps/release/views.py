@@ -267,6 +267,23 @@ class ReleaseViewSet(StandardModelViewSet):
             return [IsAuthenticated(), IsNotProjectMaintainer()]
         return super().get_permissions()
 
+    @action(detail=True, methods=["get"], url_path="oa-archive/options")
+    def oa_archive_options(self, request: Request, pk=None) -> Response:
+        """列出当前发布可准备归档的现存产物。"""
+        from apps.release.oa_archive import OaArchivePreparation
+
+        return success_response(OaArchivePreparation.options(self.get_object(), request.user))
+
+    @action(detail=True, methods=["post"], url_path="oa-archive/prepare")
+    def oa_archive_prepare(self, request: Request, pk=None) -> Response:
+        """准备单产物归档表单，只有本页草稿，不创建 OA 流程。"""
+        from apps.release.oa_archive import ArchiveSelectionInput, OaArchivePreparation
+
+        release = self.get_object()
+        serializer = ArchiveSelectionInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return success_response(OaArchivePreparation.prepare(release, request.user, serializer.validated_data))
+
     def _serialize_release(self, release: ReleaseRecord) -> dict[str, Any]:
         """
         序列化单条发布记录

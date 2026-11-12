@@ -27,6 +27,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.12',
+    date: '2026-11-12',
+    summary: '准备正式版本的 OA 软件归档资料',
+    items: [
+      { category: 'feature', text: '系统配置新增独立「OA 软件归档」接口地址。正式版发布人、项目管理员和软件管理员可在发布详情选择一个现存打包产物，核对并编辑申请资料；当前支持准备与校验，尚未向 OA 创建单据。' },
+      { category: 'improvement', text: '归档资料预填项目内软件名、完整源码提交 SHA 和人工保存的完整更新内容。不能可靠提取时保留原说明供核对；关闭重开及切换详情标签保留各产物草稿，刷新或离开页面后清除。' },
+    ],
+  },
+  {
     version: '2026.11.10',
     date: '2026-11-10',
     summary: '按访问网段限制文件下载',

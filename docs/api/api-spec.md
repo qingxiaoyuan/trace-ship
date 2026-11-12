@@ -1387,6 +1387,17 @@
 
 ---
 
+### 8.14 OA 软件归档资料准备
+
+本阶段仅配置、选择和校验资料，不创建 OA 流程或服务端申请记录。仅已发布正式版适用；操作者须为现行项目成员中的发布人（开发或测试等业务写入身份）、项目管理员、软件管理员，超管放行。维保、只读、已移除成员和其他项目身份均不扩权。
+
+- `GET /api/releases/{id}/oa-archive/options/`：返回 `{artifacts: [{task_id, task_name, artifact_id, name, path}]}`，只包含当前发布、项目及仓库内成功任务的现存本地产物。任务快照启用 SVN 时须推送成功。
+- `POST /api/releases/{id}/oa-archive/prepare/`：请求 `{task_id, artifact_id}`，逐次校验归属与文件仍存在，返回 `selection`、`configuration: {configured, reason}`、`content_source` 与 `form`。可追加 `form` 校验人工修改的资料，响应为独立副本，不回写项目、发布和打包记录。
+
+`form` 的四个必填字段为 `docCreator`、`soft_name`、`soft_version`、`developer`；分别预填操作者登录名、项目内软件名（回退仓库名）、发布版本号、发布人登录名。`soft_source` 可为空、内部自制或外购；`git_svn` 取成功推送目录内所选文件地址，无则留空；`sn_code` 只预填发布保存的完整 SHA，旧数据不完整则留空。`edit_content` 来自已保存说明的完整更新内容，保留换行、缩进与管道符；无法可靠识别时返回完整原文且 `content_source=release_doc_original`（正常为 `release_doc_changes`）。原因 `edit_reason`、其他说明 `other_description`、软件编号 `soft_number` 初始为空。所有预填可修改，`applyCount` 始终为 1；三个项目字段不进入资料副本。
+
+未配置地址时 `configuration.configured=false` 并返回原因；仍允许准备与校验。非法发布或任务资格返回 400，不可见资源返回 404，无操作权限返回 403。表单错误按 `data.form.<字段>` 返回。页内草稿由前端按发布/任务/产物区分保留，刷新或离开页面后消失。
+
 ## 九、打包接口（apps/package）
 
 打包统一由本模块承担（Jenkins 已下线）。镜像可来自本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护 `nexus_*` 键）。
@@ -1940,6 +1951,10 @@
 
 - `GET` 返回 `allowed_cidrs`（允许下载的 IP 和网段）、`trusted_proxy_cidrs`（可信上游代理的固定 IP）和 `can_edit`。已配置旧版管理网段限制时，`can_edit` 反映当前请求是否满足该限制。
 - `PUT` 传入 `{"allowed_cidrs":"10.20.30.0/24\n2001:db8:abcd::/48","trusted_proxy_cidrs":"10.50.60.7"}`。支持换行、空白或逗号分隔。IPv4 映射的 IPv6 地址或网段会转换为对应的 IPv4。白名单输入和规范化后的名单最多为 24,576 个字符。保存空白名单会禁止所有来源下载。省略上游代理字段时保留已有配置，传空字符串可清除。无权限返回 `403`，无效配置返回 `400`。
+
+### 13.1A OA 软件归档配置
+
+`GET /api/system/configs/oa-archive/` 与 `PUT /api/system/configs/oa-archive/` 均要求 `system.config` 权限（超管放行）。请求及响应数据为 `{url: "完整 HTTP(S) 接口地址"}`，空字符串表示未配置。建议路径为 `/api/v1/ticketscript/create_software_archive_with_number`。拒绝相对地址、非 HTTP(S)、URL 中认证信息和片段；不复用 SSO 地址或令牌。`oa_archive_url` 仅允许通过此专用接口保存，公开配置接口不返回该地址。保存与读取不访问 OA。
 
 ### 13.2 LDAP 连接测试
 

@@ -392,7 +392,7 @@ export default function ReleaseDetail() {
                 <ReleaseNotes release={release} active={activeTab === 'notes'} />
               </div>
               {activeTab === 'commits' && <ReleaseCommits release={release} />}
-              {activeTab === 'packages' && <ReleasePackages release={release} />}
+              <div hidden={activeTab !== 'packages'}><ReleasePackages release={release} active={activeTab === 'packages'} /></div>
             </div>
           </TsCard>
         </div>
