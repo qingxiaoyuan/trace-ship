@@ -280,7 +280,7 @@ jobs:
           mkdir -p "$CHECK_REPORT_DIR"
           npm ci 2>&1 | tee "$CHECK_REPORT_DIR/npm-install.log"
           sudo apt-get update
-          sudo apt-get install -y libldap2-dev libsasl2-dev
+          sudo apt-get install -y libldap2-dev libsasl2-dev subversion
           python -m pip install -r ../backend/requirements-dev.txt 2>&1 | tee "$CHECK_REPORT_DIR/python-install.log"
           npx playwright install --with-deps chromium 2>&1 | tee "$CHECK_REPORT_DIR/browser-install.log"
       - name: 执行真实浏览器冒烟
