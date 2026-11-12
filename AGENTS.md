@@ -236,6 +236,10 @@ npm run preview
 
 RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5)。`ReleaseReferences` 统一核验源码引用并保护最后有效引用。单项与批量清理仅删除远端 RC Tag 及缓存，保留发布、审批、说明和打包历史，记录逐次审计；结果区分平台删除、已清理、外部缺失、未知结果对账、阻止和失败。仓库级锁协调清理、Tag 删除与打包任务创建；排队/执行任务阻止相关引用清理。候选查询受项目可见范围限制，操作沿用项目管理员权限。接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
 
+### OA 软件归档
+
+已发布正式版可在发布详情为现存单产物首次提交 OA 归档；发送与历史 REST 见[发布 API 8.14](docs/api/api-spec.md#814-oa-软件归档资料准备与提交)。`OaArchiveApplication` 保存每次资料、实际操作者、原来源快照及不透明结果；按任务 + 规范相对路径识别文件，不能跨任务用产物 ID 判断。提交先按仓库→发布→任务锁逐次核验权限和资格，提交 sending 记录后才发送一次无认证 JSON，不自动重发。成功/发送中/未知记录用独立保护引用阻止发布、任务和父级级联删除，检查须早于删远端 Tag/工作区；明确失败历史不随来源删除丢失，到期文件清理保持正常。显式再次申请及 SVN 历史选择由 #107/#108 接入；遵循 ADR-0028。
+
 ### 打包流程
 
 打包统一由 `apps.package` 执行，镜像可来自本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键）。执行方式 `executor_type` 支持 `local_docker`（本地 Docker）与 `remote_node`（远程节点，SSH/SFTP 下发执行；`PackageNode.os_type` 支持 `windows` / `kylin` 麒麟 Linux，按节点 OS 语义执行 bat/sh 脚本，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；麒麟节点登录凭证为 `ssh_password` 类型）：

@@ -1892,6 +1892,10 @@ class ReleaseService:
         if release.formal_promotions.exists():
             raise serializers.ValidationError({"source_rc": "该 RC 已被正式版引用，不能删除发布记录"})
 
+        from apps.release.oa_submission import guard_archive_delete
+
+        guard_archive_delete(release=release)
+
         user = request_user or release.publisher
         provider = cls._get_provider(
             release.repository, request_user, project=release.project, operation="delete_tag",

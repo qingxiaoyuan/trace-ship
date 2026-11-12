@@ -13,7 +13,7 @@ with patch.dict(sys.modules, {"backend": runner}):
     postgresql = load_entry("postgresql_check_runner", "backend-postgresql.py")
 
 
-# 与共享检查入口实际收集的参数化测试一致，分别代表 15 次行锁行为。
+# 与共享检查入口实际收集的参数化测试一致，分别代表 21 次行锁行为。
 TEST_CASES = (
     "test_postgresql_task_creation_waits_for_cleanup",
     "test_reselection_and_submission_serialize_on_postgresql",
@@ -30,10 +30,16 @@ TEST_CASES = (
     "test_repackage_waits_for_config_change_and_revalidates[disabled-400]",
     "test_repackage_waits_for_config_change_and_revalidates[moved-project-403]",
     "test_config_writer_waits_for_repackage_snapshot",
+    "test_归档并发重放及不同请求均仅发送一次[True]",
+    "test_归档并发重放及不同请求均仅发送一次[False]",
+    "test_发送已提交时删除竞争不能绕过来源保护[task]",
+    "test_发送已提交时删除竞争不能绕过来源保护[release]",
+    "test_发送已提交时删除竞争不能绕过来源保护[project]",
+    "test_任务删除先持锁时申请等待并重新拒绝已删来源",
 )
 
 
-def test_postgresql_scope_includes_all_fifteen_cases() -> None:
+def test_postgresql_scope_includes_all_twenty_one_cases() -> None:
     """明确固定检查入口和参数化用例数量，范围调整时须同步验收门禁。"""
     assert postgresql.TEST_NODES == (
         "apps/release/tests/test_tag_cleanup.py::test_postgresql_task_creation_waits_for_cleanup",
@@ -45,14 +51,15 @@ def test_postgresql_scope_includes_all_fifteen_cases() -> None:
         "apps/release/tests/test_ai_remediation.py::test_postgresql_adoption_and_approval_are_serialized",
         "apps/system/tests/test_ai_settings.py::test_postgresql_review_snapshot_waits_for_complete_model_save",
         "apps/package/tests/test_release_repackage_postgresql.py",
+        "apps/release/tests/test_oa_archive_postgresql.py",
     )
-    assert len(TEST_CASES) == postgresql.EXPECTED_TESTS == 15
+    assert len(TEST_CASES) == postgresql.EXPECTED_TESTS == 21
 
 
-def write_junit(path: Path, count: int = 15, outcome: str | None = None) -> None:
+def write_junit(path: Path, count: int = 21, outcome: str | None = None) -> None:
     """生成包含实际测试节点的 JUnit，汇总属性不能代替逐项执行证据。"""
     root = ET.Element("testsuites")
-    suite = ET.SubElement(root, "testsuite", tests="15", failures="0", errors="0", skipped="0")
+    suite = ET.SubElement(root, "testsuite", tests="21", failures="0", errors="0", skipped="0")
     for index in range(count):
         case = ET.SubElement(suite, "testcase", name=TEST_CASES[index] if index < len(TEST_CASES) else f"额外用例{index + 1}")
         if index == 0 and outcome is not None:
@@ -60,11 +67,11 @@ def write_junit(path: Path, count: int = 15, outcome: str | None = None) -> None
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
-def test_postgresql_accepts_fifteen_executed_passing_tests(tmp_path: Path) -> None:
-    """十五项全部实际执行并通过才满足独立行锁验收。"""
+def test_postgresql_accepts_twenty_one_executed_passing_tests(tmp_path: Path) -> None:
+    """二十一项全部实际执行并通过才满足独立行锁验收。"""
     report = tmp_path / "junit.xml"
     write_junit(report)
-    assert postgresql.validate_junit(report) == {"tests": 15, "skipped": 0, "failures": 0, "errors": 0}
+    assert postgresql.validate_junit(report) == {"tests": 21, "skipped": 0, "failures": 0, "errors": 0}
 
 
 @pytest.mark.parametrize("outcome", ["skipped", "failure", "error"])
@@ -76,12 +83,12 @@ def test_postgresql_rejects_any_unfinished_or_failing_test(tmp_path: Path, outco
         postgresql.validate_junit(report)
 
 
-@pytest.mark.parametrize("count", [0, 1, 7, 9, 10, 11, 12, 13, 14, 16])
+@pytest.mark.parametrize("count", [0, 1, 7, 9, 10, 11, 12, 13, 14, 16, 20, 22])
 def test_postgresql_rejects_missing_or_unexpected_execution_count(tmp_path: Path, count: int) -> None:
     """空报告、漏执行和意外范围都必须失败，不能只相信 JUnit 的 tests 汇总值。"""
     report = tmp_path / "junit.xml"
     write_junit(report, count=count)
-    with pytest.raises(ValueError, match="必须执行 15 项"):
+    with pytest.raises(ValueError, match="必须执行 21 项"):
         postgresql.validate_junit(report)
 
 

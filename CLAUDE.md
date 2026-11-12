@@ -257,6 +257,8 @@ RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan
 
 ## Important Notes
 
+- OA 软件归档：已发布正式版现存单产物首次办理使用 `OaArchiveApplication`，资料/实际操作者/来源与不透明结果各自保存；身份为任务 + 规范相对路径。仓库→发布→任务锁内逐次授权，先持久化 sending 再单次无认证 JSON，不自动重发。成功、发送中、未知保护来源记录及父级级联，删除保护先于远端 Tag/工作区副作用；明确失败历史独立保留，到期清文件正常。再次办理与 SVN 历史选择按 #107/#108；见 [API 8.14](docs/api/api-spec.md#814-oa-软件归档资料准备与提交) 和 ADR-0028。
+
 - 后端使用 ruff 做 lint/format（配置在 `backend/pyproject.toml`，`pip install -r requirements-dev.txt` 后 `ruff check .`）；规则集渐进启用，存量代码已清零告警。
 - `docs/design/business-process-analysis.md` 原为阶段规划文档，2026-07 已按代码核对修订（文中标注「规划中，未实现」的除外）；实现需求时仍以代码为准。
 - 根目录 `AGENTS.md` 与本文件保持同步，优先参考 `AGENTS.md` 的"重要注意事项"一节。

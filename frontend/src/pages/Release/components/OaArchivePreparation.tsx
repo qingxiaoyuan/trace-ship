@@ -1,9 +1,9 @@
-import { useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Alert, AutoComplete, Button, Form, Input, Modal } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { accountApi } from '@/api/account';
 import { projectApi } from '@/api/project';
-import { oaArchiveApi, type ArchiveArtifact, type ArchiveForm, type ArchivePreparation } from '@/api/oaArchive';
+import { oaArchiveApi, type ArchiveApplication, type ArchiveArtifact, type ArchiveForm, type ArchivePreparation } from '@/api/oaArchive';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAuthStore } from '@/stores/authStore';
 import { useModalDraft } from '@/hooks/useModalDraft';
@@ -23,7 +23,9 @@ const fields: { key: Exclude<keyof ArchiveForm, 'applyCount'>; label: string; re
   { key: 'soft_number', label: '软件编号', note: '可留空；指定已有编号时使用该编号' },
 ];
 
-/** 本页内准备单产物归档资料，所有外部建单由后续提交能力接入。 */
+const statusText = { sending: '发送中', success: '已发起归档', failure: 'OA 返回失败', unknown: '结果未确认' };
+
+/** 单产物申请和项目内历史共用发布详情，未提交草稿仅在本页内保存。 */
 export function OaArchivePreparationPanel({ release, active = true }: { release: Release; active?: boolean }) {
   const user = useAuthStore(state => state.user);
   const project = useQuery({ queryKey: ['project', release.project], queryFn: () => projectApi.getProject(release.project), enabled: active });
@@ -35,31 +37,65 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
   const [prepared, setPrepared] = useState<ArchivePreparation>();
   const [formOpen, setFormOpen] = useState(false);
   const [form] = Form.useForm<ArchiveForm>();
+  const [viewing, setViewing] = useState<ArchiveApplication>();
+  const inFlight = useRef(false);
+  const submissionIds = useRef(new Map<string, string>());
+  const [uncertainKey, setUncertainKey] = useState('');
+  const identity = `${release.id}:${prepared?.selection.task_id}:${prepared?.selection.path || prepared?.selection.artifact_id}`;
   const draft = useModalDraft(formOpen && !!prepared,
-    `${release.id}:${prepared?.selection.task_id}:${prepared?.selection.artifact_id}`, () => prepared!.form);
+    identity, () => prepared!.form);
+  const records = useQuery({ queryKey: ['oa-archive-records', release.id], queryFn: () => oaArchiveApi.records(release.id), enabled: active,
+    refetchInterval: query => query.state.data?.some(item => item.status === 'sending') ? 2000 : false });
+  const existing = records.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path) || [];
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const options = useQuery({ queryKey: ['oa-archive-options', release.id], queryFn: () => oaArchiveApi.options(release.id), enabled: active && selectOpen && !!allowed, retry: false });
   const users = useQuery({ queryKey: ['oa-archive-users', deferredSearch], queryFn: () => accountApi.getUsers({ keyword: deferredSearch || undefined, is_active: true, page_size: 50 }), enabled: active && formOpen, retry: false });
   const prepare = useMutation({
     mutationFn: (artifact: ArchiveArtifact) => oaArchiveApi.prepare(release.id, artifact),
-    onSuccess: (data) => { setPrepared(data); setSelectOpen(false); setFormOpen(true); },
+    onSuccess: (data, artifact) => { setPrepared({ ...data, selection: { ...data.selection, path: artifact.path } }); setSelectOpen(false); setFormOpen(true); },
   });
   const validate = useMutation({
     mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1 }),
   });
+  const submit = useMutation({
+    mutationFn: (values: ArchiveForm) => {
+      let submissionId = submissionIds.current.get(identity);
+      if (!submissionId) { submissionId = crypto.randomUUID(); submissionIds.current.set(identity, submissionId); }
+      return oaArchiveApi.submit(release.id, prepared!.selection, { ...values, applyCount: 1 }, submissionId);
+    },
+    onSuccess: result => {
+      if (result.status === 'success') { draft.clear(); setFormOpen(false); }
+      void records.refetch();
+    },
+    onError: () => { setUncertainKey(identity); void records.refetch(); },
+    onSettled: () => { inFlight.current = false; },
+  });
+  async function send() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try { const values = await form.validateFields(); submit.mutate(values); }
+    catch { inFlight.current = false; form.submit(); }
+  }
   useEffect(() => {
     if (formOpen && draft.value) { form.resetFields(); form.setFieldsValue(draft.value); }
   }, [formOpen, draft.value, form]);
-  if (!allowed) return null;
   const artifact = options.data?.artifacts.find(item => `${item.task_id}:${item.artifact_id}` === selected);
   const userOptions = (users.data?.results || []).map(item => ({ value: item.username, label: `${item.nickname || item.username}（${item.username}）` }));
   return <section aria-label="OA 软件归档准备" className="space-y-2 rounded-lg border border-indigo-100 bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-[13px] font-medium">OA 软件归档</h3>
-      <Button className="min-h-11" onClick={() => { prepare.reset(); validate.reset(); setSelectOpen(true); }}>准备 OA 归档</Button>
+      {allowed && <Button className="min-h-11" disabled={submit.isPending} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>准备 OA 归档</Button>}
     </div>
-    <p className="text-[12px] text-slate-500">选择一个现存产物，填写本次申请资料。当前仅准备和校验，尚未接入 OA 发送。</p>
+    <p className="text-[12px] text-slate-500">选择一个现存产物，核对后手动提交 OA。已发起归档表示流程创建成功，不表示 OA 审批通过。</p>
+    {records.error && <><PermissionAlert error={records.error} errorTitle="归档记录加载失败" /><Button onClick={() => void records.refetch()}>重新读取归档记录</Button></>}
+    <div className="space-y-2" aria-label="归档申请历史">{records.data?.map(item => <article key={item.id} className="rounded border border-slate-200 p-3 text-[12px]">
+      <p className="break-words font-medium">{statusText[item.status]} · {item.source.path}</p>
+      <p>实际操作者：{item.operator.username} · {new Date(item.created_at).toLocaleString()}</p>
+      {item.soft_number && <p>软件编号：{item.soft_number}</p>}
+      <p className="whitespace-pre-wrap break-words">{item.message}</p>
+      <Button onClick={() => setViewing(item)}>查看申请资料</Button>
+    </article>)}</div>
     <Modal title="选择归档产物" open={selectOpen && active} onCancel={() => setSelectOpen(false)} footer={null} width={600}>
       <div className="space-y-3">
         <label htmlFor="archive-artifact" className="block">归档产物</label>
@@ -76,11 +112,15 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
     </Modal>
     <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => setFormOpen(false)} width={800}
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
-      footer={<div className="flex flex-wrap justify-end gap-2"><Button className="min-h-11" onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="min-h-11" type="primary" loading={validate.isPending} onClick={() => form.submit()}>校验资料</Button></div>}>
-      {prepared && <Form form={form} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
+      footer={<div className="flex flex-wrap justify-end gap-2"><Button className="min-h-11" onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="min-h-11" loading={validate.isPending} disabled={submit.isPending} onClick={() => form.submit()}>校验资料</Button><Button className="min-h-11" type="primary" loading={submit.isPending} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || existing.length > 0 || uncertainKey === identity} onClick={() => void send()}>提交 OA 归档</Button></div>}>
+      {prepared && <Form form={form} disabled={submit.isPending} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
         onFinishFailed={({ errorFields }) => { if (errorFields[0]) form.scrollToField(errorFields[0].name, { focus: true, block: 'center' }); }}>
         <div className="mb-3 space-y-2">
           {!prepared.configuration.configured && <Alert showIcon type="warning" title={prepared.configuration.reason} />}
+          {existing.length > 0 && <Alert type="info" title="该产物已有申请记录，请查看结果；当前入口不会再次发送。" />}
+          {uncertainKey === identity && <Alert type="warning" title="浏览器未可靠取得提交结果，请重新读取归档记录并核对 OA，系统不会自动重发。" />}
+          {submit.data && submit.data.status !== 'success' && <Alert type="warning" title={`${statusText[submit.data.status]}：${submit.data.message}`} />}
+          {submit.error && <PermissionAlert error={submit.error} errorTitle="提交结果需要核对" />}
           {prepared.content_source === 'release_doc_original' && <Alert type="warning" title="无法可靠识别更新内容，已保留发布说明原文，请人工核对补填。" />}
           <p className="text-[12px] text-slate-500">仅影响本次申请，数量固定为 1。关闭后保留本页草稿，离开页面或刷新后消失。</p>
           {users.error && <p className="text-[12px] text-amber-700">系统用户暂时无法加载，可直接填写 OA 登录名。</p>}
@@ -104,6 +144,15 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
         {validate.error && <div className="mt-3"><PermissionAlert error={validate.error} errorTitle="资料校验失败" /></div>}
         {validate.isSuccess && <div className="mt-3"><Alert type="success" showIcon title="资料校验通过，尚未向 OA 发送。" /></div>}
       </Form>}
+    </Modal>
+    <Modal title="归档申请记录" open={!!viewing && active} onCancel={() => setViewing(undefined)} footer={null} width={800} styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}>
+      {viewing && <div className="space-y-3 text-[13px]">
+        <p>{statusText[viewing.status]} · 实际操作者：{viewing.operator.username}</p>
+        <table aria-label="已提交归档资料" className="w-full table-fixed border-collapse"><tbody>{fields.map(field => <tr key={field.key} className="border-b border-slate-200"><th scope="row" className="w-24 bg-slate-50 p-2 text-left align-top">{field.label}</th><td className="whitespace-pre-wrap break-words p-2">{viewing.form[field.key] || '—'}</td></tr>)}</tbody></table>
+        <h4>原发布与产物依据</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.source, null, 2)}</pre>
+        <h4>软件归档返回对象</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.software_archive_id, null, 2)}</pre>
+        <h4>编号申请单 ID</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.number_apply_id, null, 2)}</pre>
+      </div>}
     </Modal>
   </section>;
 }

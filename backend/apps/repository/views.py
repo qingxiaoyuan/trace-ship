@@ -202,7 +202,10 @@ class RepositoryViewSet(StandardModelViewSet):
     def destroy(self, request: Request, *args, **kwargs) -> Response:
         """删除仓库"""
         instance = self.get_object()
-        self.perform_destroy(instance)
+        from apps.release.oa_submission import locked_archive_parent
+
+        with locked_archive_parent(instance):
+            self.perform_destroy(instance)
         return success_response(None, message="删除成功")
 
     @action(detail=True, methods=["post"])

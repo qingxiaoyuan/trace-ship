@@ -7,9 +7,26 @@
   },
   "item": [
     {
-      "name": "OA 软件归档资料准备",
-      "description": "当前只保存配置、选择产物及校验资料，不向 OA 创建单据。",
+      "name": "OA 软件归档",
+      "description": "准备不会发送；提交接口会向配置的 OA 发起一次实际申请。submission_id 为本次操作固定 UUID，重放必须沿用相同资料。",
       "item": [
+        {
+          "name": "提交单产物归档（实际发送）",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/submit/",
+            "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"artifact_id\": \"{{artifact_id}}\",\n  \"submission_id\": \"{{submission_id}}\",\n  \"form\": {\"docCreator\": \"operator\", \"soft_name\": \"软件\", \"soft_version\": \"V1.0.0\", \"developer\": \"receiver\", \"soft_number\": \"\"}\n}" }
+          }
+        },
+        {
+          "name": "读取归档申请历史",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/records/"
+          }
+        },
         {
           "name": "读取 OA 软件归档配置",
           "request": {
