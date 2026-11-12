@@ -14,7 +14,7 @@ from django.conf import settings
 from django.utils.dateparse import parse_datetime
 
 from .base import CommitInfo, MergeRequestInfo
-from .exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
+from .exceptions import AuthenticationError, AuthorizationError, ConnectionError, NotFoundError, ProviderError
 
 
 def _push_timeout() -> int:
@@ -93,9 +93,11 @@ class SVNProvider:
     def _classify_error(stderr: str) -> ProviderError:
         """根据 svn stderr 内容分类异常。"""
         lower = stderr.lower()
+        # SVN 明确返回授权拒绝时，不将其误报为密码失效。
+        if any(h in lower for h in ("authorization failed", "access denied", "forbidden", "e220004")):
+            return AuthorizationError(f"SVN 无权访问: {stderr}")
         # 认证失败优先判定
         auth_hints = [
-            "authorization failed",
             "authentication failed",
             "could not authenticate",
             "username not found",
@@ -275,6 +277,27 @@ class SVNProvider:
                 }
             )
         return entries
+
+    def inspect_path(self, url: str) -> dict:
+        """读取当前路径类型与元数据；不存在、认证和网络错误保留各自异常。"""
+        data = self._run(self._base_cmd() + ["info", "--xml", "-r", "HEAD", url + "@HEAD"], timeout=30)
+        try:
+            entry = ET.fromstring(data).find("entry")
+            if entry is None:
+                raise ValueError("缺少路径条目")
+            commit = entry.find("commit")
+            # svn info 不返回文件大小；在同一次读取取得的仓库 revision 上列出文件，避免混合两次 HEAD。
+            listed = self.list_dir(url + "@" + entry.get("revision", "HEAD")) if entry.get("kind") == "file" else []
+            size = listed[0]["size"] if listed else None
+            return {
+                "kind": entry.get("kind"),
+                "repository_revision": entry.get("revision", "HEAD"),
+                "size": size,
+                "revision": commit.get("revision") if commit is not None else None,
+                "date": commit.findtext("date") if commit is not None else None,
+            }
+        except (ET.ParseError, ValueError) as exc:
+            raise ProviderError("无法解析 SVN 路径信息") from exc
 
     def remote_exists(self, url: str) -> bool:
         """

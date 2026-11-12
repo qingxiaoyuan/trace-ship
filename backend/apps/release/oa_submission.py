@@ -35,6 +35,18 @@ def create_application(**values):
         raise ValidationError({"detail": "提交标识已使用或产物正在发送，请重新读取归档记录"}) from exc
 
 
+def has_creation_result(data, *, specified_number):
+    """校验契约的外层类型，不猜测 software_archive_id 对象内部字段。"""
+    if (not isinstance(data, dict) or not isinstance(data.get("soft_number"), str)
+            or not data["soft_number"].strip() or not isinstance(data.get("software_archive_id"), dict)
+            or "number_apply_id" not in data):
+        return False
+    number_id = data["number_apply_id"]
+    if isinstance(number_id, str):
+        return bool(number_id.strip()) or specified_number
+    return number_id is None and specified_number
+
+
 def application_data(record):
     """只暴露项目内可见的业务资料，不提供未约定的 OA 跳转链接。"""
     return {
@@ -154,7 +166,7 @@ class OaArchiveSubmission:
                 record.response = body
                 if isinstance(body, dict) and type(body.get("code")) is int:
                     data = body.get("data")
-                    if body["code"] == 0 and isinstance(data, dict) and isinstance(data.get("soft_number"), str) and data["soft_number"].strip() and data.get("software_archive_id") is not None:
+                    if body["code"] == 0 and has_creation_result(data, specified_number=bool(record.form.get("soft_number"))):
                         record.status = "success"
                         record.message = "已发起归档"
                         record.soft_number = data["soft_number"]

@@ -1401,7 +1401,7 @@
 - `POST /api/releases/{id}/oa-archive/submit/`：请求 `{task_id, artifact_id, submission_id, form}`，`submission_id` 为客户端本次操作生成并保留的 UUID。服务器在仓库→发布→任务锁内重新授权、检查任务与文件，再持久化独立 `sending` 申请并提交事务，最后仅发送一次 POST JSON。返回 201 和申请记录；同一操作者同一标识及相同资料重放返回 200 和原记录，不重新发送。标识被用于不同资料返回 400；已有该任务及规范相对路径的申请时当前首次办理入口返回 400，后续显式再次申请不受永久唯一约束限制。
 - `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/created_at/finished_at/previous_id`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source` 保留发布/项目/仓库/任务 ID、原版本、Tag、源码 SHA、任务内规范相对路径、原产物及 SVN 阶段快照，手改 `git_svn` 不改变来源。
 
-状态为 `sending`（发送中）、`success`（已发起归档）、`failure`（OA 返回 code=-1）、`unknown`（结果未确认）。`code=0` 且存在可靠返回资料时保存软件编号与不透明归档对象，编号申请单 ID 可空；不提供无契约的 OA 链接。超时、断连、非法 JSON、缺失结果及非成功 HTTP 状态均保存 unknown，不重发。发送记录在 HTTP 前提交，浏览器中断或进程中断留下的 sending 也不得自动派发。请求连接/读取超时为 5/30 秒，禁用环境认证与跳转，不传用户 JWT/SSO token 或文件。
+状态为 `sending`（发送中）、`success`（已发起归档）、`failure`（OA 返回 code=-1）、`unknown`（结果未确认）。`code=0` 且存在可靠返回资料时保存非空字符串软件编号与不透明归档对象（JSON 对象，内部字段不作假设），编号申请单 ID 为字符串，手填已有软件编号时允许 null 或空字符串；不提供无契约的 OA 链接。超时、断连、非法 JSON、缺失或类型不符的结果及非成功 HTTP 状态均保存 unknown，不重发。发送记录在 HTTP 前提交，浏览器中断或进程中断留下的 sending 也不得自动派发。请求连接/读取超时为 5/30 秒，禁用环境认证与跳转，不传用户 JWT/SSO token 或文件。
 
 成功、发送中与未知记录通过保护引用禁止来源任务、发布及父级级联删除；远端删 Tag 和清工作区前即检查。明确失败的普通来源关联可置空，完整历史快照不级联删除。到期文件清理保持原规则，不删除申请。首次办理已开放；显式再次申请、核对后重试与历史 SVN 选择分别由后续事项提供。
 
@@ -1612,7 +1612,7 @@
   "can_cancel": false,
   "can_delete": false,
   "can_push_svn": true,
-  "artifact_info": [{"id": "uuid", "name": "app.tar.gz", "path": "app.tar.gz"}],
+  "artifact_info": [{"id": "uuid", "name": "app.tar.gz", "path": "app.tar.gz", "local_available": true}],
   "duration": 300000,
   "error_message": "",
   "started_at": "2026-06-22T10:00:00+08:00",
@@ -1621,6 +1621,19 @@
   "updated_at": "2026-06-22T10:05:00+08:00"
 }
 ```
+
+本地文件到期清理后保留 `artifact_info` 中的原路径、大小、SHA-256 等已知依据；`local_available` 按实际本地文件逐次计算。为 false 时页面隐藏下载入口，直接请求仍按原下载权限及实际文件状态校验，不产生空文件。`stage_info.artifacts_cleaned_at` 记录清理时间。
+
+**任务 SVN 当前文件查询（只读）：**
+
+- **GET** `/api/packages/tasks/{id}/svn-artifacts/`：有原清单时返回 `mode=manifest`，逐项核验当前文件；原清单缺失时从保存的上传清单恢复，只排除能证明为系统生成的额外说明。
+- 没有两种清单时返回 `mode=browse`，`?path=目录/子目录` 浏览保存的任务目录内直接子项。相对路径参数由 HTTP 客户端编码，不接受绝对路径、越界或其他任务目录；文件不能当目录浏览。
+- **GET** 同入口加 `?file=目录/文件名`：重新核验单个当前文件。已有清单时只能选择清单内路径；缺清单时返回 `source=svn_supplement`。文件已删除或变成目录返回 409，无法可靠核验时返回分类原因。
+- 权限沿用任务所属项目的可见范围，包括维保只读；不新增文件下载权限。任务没有保存目录或凭证依据时返回 `unverifiable`，不使用当前配置猜测目录，不回传凭证明文。
+
+列表支持 `page` / `page_size`（默认 50，最多 100）；按页核验清单，浏览目录时分页显示直接子项。列表返回 `{task_id, root_url, mode, path, entries, total, page, page_size}`；每项包含 `artifact_id`（历史上传清单及补录可为空）、`path`、`name`、编码后的完整 `url`、`source`、`state`、`message`、`local_available`、`original` 和 `current`。来源为 `artifact_manifest` / `upload_manifest` / `svn_supplement`。`original` 保存已知 `size` / `sha256` / `revision`，未知为 null；`current` 保存当前 `kind` / `size` / `revision` / `date`，无法核验为 null，不能将当前值当作原构建快照。
+
+`state` 区分 `available`（当前文件存在）、`directory`（可浏览目录）、`missing`（不存在）、`not_file`（清单文件已变成目录）、`credential_invalid`、`forbidden`、`network_error`、`unverifiable`。失败响应的 `data.state` 复用分类，另有输入错误 `invalid_path` / `not_directory` / `invalid_page`。当前文件可能被覆盖，查询不证明原构建内容未变化；选中或后续提交时应重新核验。
 
 ### 9.11 取消打包任务
 

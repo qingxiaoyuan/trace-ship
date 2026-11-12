@@ -15,6 +15,11 @@ class AuthenticationError(ProviderError):
     pass
 
 
+class AuthorizationError(ProviderError):
+    """凭证已识别但无权访问资源。"""
+    pass
+
+
 class ConnectionError(ProviderError):
     """连接失败"""
     pass
