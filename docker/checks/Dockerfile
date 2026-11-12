@@ -7,11 +7,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends build-essential libldap2-dev libsasl2-dev git subversion \
+    && apt-get install -y --no-install-recommends build-essential libldap2-dev libsasl2-dev git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt backend/requirements-dev.txt /opt/checks/
 ARG PIP_INDEX_URL=https://pypi.org/simple
 RUN python -m pip install --no-cache-dir -r /opt/checks/requirements-dev.txt --index-url "$PIP_INDEX_URL"
+
+# 独立安装 SVN 工具，调整外部服务测试依赖时保留 Python 依赖层缓存。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends subversion \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/backend
