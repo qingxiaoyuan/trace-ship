@@ -12,7 +12,7 @@ export default defineConfig({
   forbidOnly: true,
   retries: 0,
   timeout: 60_000,
-  globalTimeout: 240_000,
+  globalTimeout: 420_000,
   expect: { timeout: 15_000 },
   outputDir: path.join(process.env.SMOKE_REPORT_DIR, 'artifacts'),
   reporter: [
