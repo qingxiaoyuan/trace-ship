@@ -27,7 +27,11 @@ async function releasePage(page: Page) {
 async function openForm(page: Page, filename: string) {
   const selected = sample.tasks[filename.replace(/\.zip$/, '')];
   await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
-  await page.getByLabel('归档目录', { exact: true }).selectOption(selected.id);
+  const choice = page.getByRole('combobox', { name: '归档目录', exact: true });
+  await expect(choice).toBeEnabled();
+  await choice.click();
+  await choice.fill(selected.name);
+  await page.getByRole('option').filter({ has: page.getByText(selected.name, { exact: true }) }).click();
   await page.getByRole('button', { name: '填写申请资料', exact: true }).click();
   await expect(page.getByRole('table', { name: '软件归档申请资料', exact: true })).toBeVisible();
 }
@@ -62,11 +66,13 @@ async function capture(page: Page, label: string) {
   await page.screenshot({ path: path.join(reportDir, `oa-reapply-${label}.png`), animations: 'disabled' });
 }
 async function readHistory(page: Page, filename: string) {
-  const pending = page.waitForResponse(response => response.url().endsWith('/oa-archive/records/') && response.request().method() === 'GET');
+  // 只读取导航后的查询，提交后的旧页面自动刷新可能仍在返回。
+  const navigated = page.waitForEvent('framenavigated', { predicate: frame => frame === page.mainFrame() });
+  const pending = navigated.then(() => page.waitForResponse(response => response.url().endsWith('/oa-archive/records/') && response.request().method() === 'GET')).then(response => response.json());
   await page.goto(`/releases/${sample.release_id}`);
   await expect(page.getByRole('heading', { name: sample.version, exact: true })).toBeVisible();
   await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
-  const records = (await (await pending).json()).data as Application[];
+  const records = (await pending).data as Application[];
   return records.filter(item => item.source.task_id === sample.tasks[filename.replace(/\.zip$/, '')].id && item.source.scope === 'directory' && item.source.path === '.');
 }
 

@@ -31,6 +31,7 @@ export const changelogEntries: ChangelogEntry[] = [
     date: '2026-11-13',
     summary: '从发布详情顶部发起整目录 OA 归档',
     items: [
+      { category: 'improvement', text: 'OA 归档入口与相邻按钮统一尺寸和图标，目录选择支持搜索并分行展示任务与时间；申请表按信息分区，统一下拉框与表格间距。' },
       { category: 'improvement', text: '发起 OA 归档入口移到发布详情顶部，第一步选择一次打包的完整产物目录，自动填入整个 SVN 目录地址；历史单文件申请继续保留。' },
       { category: 'fix', text: 'OA 软件归档配置的地址输入框与下方提示条增加间距，避免紧贴显示。' },
     ],

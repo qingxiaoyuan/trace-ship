@@ -75,10 +75,12 @@ function mount() {
 async function selectArtifact(id = 'one') {
   fireEvent.click(await screen.findByRole('button', { name: '发起 OA 归档' }));
   const select = await screen.findByLabelText('归档目录');
-  await within(select).findByRole('option', { name: /正式安装包 \/ 完整产物目录/ });
-  expect(within(select).getAllByRole('option')).toHaveLength(3);
-  expect(within(select).queryByText('软件一.zip')).toBeNull();
-  fireEvent.change(select, { target: { value: id === 'one' ? 'task' : 'task-two' } });
+  await waitFor(() => expect((select as HTMLInputElement).disabled).toBe(false));
+  fireEvent.mouseDown(select);
+  await screen.findByRole('option', { name: /正式安装包/ });
+  expect(screen.getAllByRole('option')).toHaveLength(2);
+  expect(screen.queryByText('软件一.zip')).toBeNull();
+  fireEvent.click(screen.getByRole('option', { name: id === 'one' ? /正式安装包/ : /第二次打包/ }));
   fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
   await screen.findByRole('table', { name: '软件归档申请资料' });
 }
@@ -170,9 +172,9 @@ it('人员选项使用系统登录名且仍可手填，来源提供内部自制�
   expect((creator as HTMLInputElement).value).toBe('account.login');
   fireEvent.change(screen.getByLabelText(/接收人/), { target: { value: 'oa.manual.receiver' } });
   const source = screen.getByLabelText('软件来源');
-  expect(within(source).getByRole('option', { name: '内部自制' })).toBeTruthy();
-  expect(within(source).getByRole('option', { name: '外购' })).toBeTruthy();
-  fireEvent.change(source, { target: { value: '外购' } });
+  fireEvent.mouseDown(source);
+  expect(await screen.findByRole('option', { name: '内部自制' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('option', { name: '外购' }));
   fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
   await screen.findByText('资料校验通过，尚未向 OA 发送。');
   expect(requests.filter(entry => entry.url?.endsWith('/prepare/')).at(-1)?.data).toMatchObject({ form: { docCreator: 'account.login', developer: 'oa.manual.receiver', soft_source: '外购' } });
@@ -248,8 +250,9 @@ it('无清单任务只选原 SVN 整个目录，表单明确补录和当前目�
   mount();
   fireEvent.click(await screen.findByRole('button', { name: '发起 OA 归档' }));
   const tasks = await screen.findByRole('combobox', { name: '归档目录' });
-  await screen.findByRole('option', { name: '无清单历史任务 / 完整产物目录' });
-  fireEvent.change(tasks, { target: { value: 'history' } });
+  await waitFor(() => expect((tasks as HTMLInputElement).disabled).toBe(false));
+  fireEvent.mouseDown(tasks);
+  fireEvent.click(await screen.findByRole('option', { name: /无清单历史任务/ }));
   expect(screen.queryByRole('radio')).toBeNull();
   expect(screen.queryByRole('button', { name: /进入目录/ })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
@@ -325,10 +328,13 @@ it('同名成功打包在目录选项中显示各自时间，选择对应那一�
   mount();
   fireEvent.click(await screen.findByRole('button', { name: '发起 OA 归档' }));
   const choice = await screen.findByLabelText('归档目录');
-  await waitFor(() => expect(within(choice).getAllByRole('option')).toHaveLength(3));
-  expect(within(choice).getByRole('option', { name: '2026-11-13 08:00:00 · 正式安装包 / 完整产物目录' })).toBeTruthy();
-  expect(within(choice).getByRole('option', { name: '2026-11-13 09:00:00 · 正式安装包 / 完整产物目录' })).toBeTruthy();
-  fireEvent.change(choice, { target: { value: 'task-two' } });
+  await waitFor(() => expect((choice as HTMLInputElement).disabled).toBe(false));
+  fireEvent.mouseDown(choice);
+  expect(await screen.findByRole('option', { name: /2026-11-13 08:00:00/ })).toBeTruthy();
+  expect(screen.getByRole('option', { name: /2026-11-13 09:00:00/ })).toBeTruthy();
+  fireEvent.change(choice, { target: { value: '09:00:00' } });
+  await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
+  fireEvent.click(screen.getByRole('option', { name: /2026-11-13 09:00:00/ }));
   fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
   await screen.findByRole('table', { name: '软件归档申请资料' });
   expect(requests.find(item => item.url?.endsWith('/prepare/'))?.data).toMatchObject({ task_id: 'task-two', scope: 'directory', path: '.' });

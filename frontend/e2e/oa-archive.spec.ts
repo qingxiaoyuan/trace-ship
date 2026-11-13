@@ -57,9 +57,19 @@ function archiveField(page: Page, label: string) {
 }
 async function openForm(page: Page, selected: Directory) {
   await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
-  await page.getByLabel('归档目录', { exact: true }).selectOption(selected.id);
-  const choice = page.getByLabel('归档目录', { exact: true });
-  expect(await choice.getByRole('option').count()).toBe(Object.keys(sample.tasks).length + 1);
+  const choice = page.getByRole('combobox', { name: '归档目录', exact: true });
+  await expect(choice).toBeEnabled();
+  await choice.click();
+  await expect(page.getByRole('option')).toHaveCount(Object.keys(sample.tasks).length);
+  await choice.fill(selected.name);
+  const selectedOption = page.getByRole('option').filter({ has: page.getByText(selected.name, { exact: true }) });
+  await expect(selectedOption).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations !== Infinity).length)).toBe(0);
+  const popupBounds = await page.getByRole('listbox').boundingBox();
+  expect(popupBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(popupBounds!.x + popupBounds!.width).toBeLessThanOrEqual((await page.viewportSize())!.width);
+  await screenshot(page, (await page.viewportSize())!.width < 768 ? 'mobile-directory-dropdown' : 'desktop-directory-dropdown');
+  await selectedOption.click();
   await expect(page.getByRole('radio')).toHaveCount(0);
   const prepared = page.waitForResponse(response => response.url().endsWith('/oa-archive/prepare/') && response.request().method() === 'POST');
   await page.getByRole('button', { name: '填写申请资料', exact: true }).click();
@@ -83,13 +93,14 @@ async function screenshot(page: Page, key: string, table?: Locator) {
   await page.screenshot({ path: path.join(reportDir, `oa-${key}.png`), animations: 'disabled' });
 }
 async function history(page: Page, selected: Directory, expected: Record<string, string | number>) {
-  await page.waitForLoadState('networkidle');
-  const release = page.waitForResponse(response => response.url().endsWith(`/releases/${sample.release_id}/`) && response.request().method() === 'GET');
-  const records = page.waitForResponse(response => response.url().endsWith(`/releases/${sample.release_id}/oa-archive/records/`) && response.request().method() === 'GET');
+  // 导航提交后才监听新页面，避免读取被刷新取消的旧页面自动查询。
+  const navigated = page.waitForEvent('framenavigated', { predicate: frame => frame === page.mainFrame() });
+  const release = navigated.then(() => page.waitForResponse(response => response.url().endsWith(`/releases/${sample.release_id}/`) && response.request().method() === 'GET')).then(response => response.json());
+  const records = navigated.then(() => page.waitForResponse(response => response.url().endsWith(`/releases/${sample.release_id}/oa-archive/records/`) && response.request().method() === 'GET')).then(response => response.json());
   await page.reload();
-  expect((await (await release).json()).data.release_doc).toBe(sample.release_doc);
+  expect((await release).data.release_doc).toBe(sample.release_doc);
   await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
-  const items = (await (await records).json()).data as Application[];
+  const items = (await records).data as Application[];
   const item = items.find(row => row.source.task_id === selected.id && row.source.scope === 'directory' && row.source.path === '.')!;
   expect(item.form).toEqual(expected);
   expect(item.operator).toMatchObject({ id: sample.actor_id, username: sample.username });
@@ -152,16 +163,22 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   const actions = page.getByLabel('发布版本操作');
   await expect(actions.getByRole('button', { name: '发起 OA 归档', exact: true })).toBeVisible();
   await expect(actions.getByRole('button', { name: '删除版本', exact: true })).toBeVisible();
+  const buttons = await actions.getByRole('button').evaluateAll(items => items.map(item => { const rect = item.getBoundingClientRect(); const style = getComputedStyle(item); return { height: rect.height, radius: style.borderRadius, font: style.fontSize }; }));
+  expect(buttons[0]).toEqual(buttons[1]);
+  evidence.headerButtons = buttons;
   await screenshot(page, 'desktop-header');
   const table = await openForm(page, selected);
   expect((await table.getByRole('rowheader').allTextContents()).map(label => label.replace(' *', ''))).toEqual(labels);
-  expect(await table.getByRole('row').count()).toBe(12);
-  expect(await table.getByRole('cell').count()).toBe(12);
+  expect(await table.getByRole('row').count()).toBe(15);
+  expect(await table.getByRole('cell').count()).toBe(15);
   await expect(page.getByLabel('变更内容', { exact: true })).toHaveValue(sample.changes);
   await expect(page.getByLabel('SN', { exact: true })).toHaveValue(sample.git_hash);
   await expect(page.getByLabel('产物 SVN 地址', { exact: true })).toHaveValue(selected.root_url);
   await expect(archiveField(page, '软件名称')).toHaveValue(sample.software_name);
-  for (const label of ['申请人', '软件名称', '软件版本', '接收人']) await archiveField(page, label).fill('');
+  for (const label of ['申请人', '软件名称', '软件版本', '接收人']) {
+    await archiveField(page, label).fill('');
+    await expect(archiveField(page, label)).toHaveValue('');
+  }
   const before = (await control()).count;
   await page.getByRole('button', { name: '提交 OA 归档', exact: true }).click();
   await expect(archiveField(page, '申请人')).toBeFocused();
@@ -176,7 +193,8 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   };
   const fields: [string, string][] = [['申请人', 'docCreator'], ['软件名称', 'soft_name'], ['软件版本', 'soft_version'], ['接收人', 'developer'], ['产物 SVN 地址', 'git_svn'], ['SN', 'sn_code'], ['变更内容', 'edit_content'], ['变更原因', 'edit_reason'], ['其他说明', 'other_description']];
   for (const [label, field] of fields) await archiveField(page, label).fill(String(expected[field as keyof typeof expected]));
-  await page.getByLabel('软件来源', { exact: true }).selectOption('内部自制');
+  await page.getByLabel('软件来源', { exact: true }).click();
+  await page.getByRole('option', { name: '内部自制', exact: true }).click();
   await archiveField(page, '申请人').scrollIntoViewIfNeeded();
   await screenshot(page, 'desktop-form', table);
   expect(evidence['desktop-form']).toMatchObject({ width: 1440, height: 1000 });

@@ -31,7 +31,11 @@ async function shot(page: Page, name: string, table?: Locator) {
 }
 async function choose(page: Page, key: keyof typeof paths) {
   await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
-  await page.getByLabel('归档目录', { exact: true }).selectOption(sample.tasks[key].id);
+  const choice = page.getByRole('combobox', { name: '归档目录', exact: true });
+  await expect(choice).toBeEnabled();
+  await choice.click();
+  await choice.fill(sample.tasks[key].name);
+  await page.getByRole('option').filter({ has: page.getByText(sample.tasks[key].name, { exact: true }) }).click();
   await expect(page.getByRole('radio')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /进入目录/ })).toHaveCount(0);
   await shot(page, `${key}-picker`);

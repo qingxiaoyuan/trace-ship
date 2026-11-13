@@ -262,7 +262,7 @@ export default function ReleaseDetail() {
                 danger
                 icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
                 onClick={() => setDeleteOpen(true)}
-                className="shrink-0"
+                className="shrink-0 max-md:min-h-11"
               >
                 删除版本
               </Button>
