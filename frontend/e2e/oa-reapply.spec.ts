@@ -76,6 +76,8 @@ async function readHistory(page: Page, filename: string) {
 
 test.beforeEach(async ({ page }) => {
   evidence = { scope: '真实 Chromium、生产页面/REST、隔离 OA HTTP；未访问业务 OA', viewportKind: '浏览器视口模拟，未测手机真机' };
+  await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined }));
+  evidence.submissionIdMode = '模拟内网 HTTP 缺少 randomUUID，覆盖首次及确认后发送';
   errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/login');

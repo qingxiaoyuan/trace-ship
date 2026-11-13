@@ -31,9 +31,11 @@ export const changelogEntries: ChangelogEntry[] = [
     date: '2026-11-13',
     summary: '从发布详情顶部发起整目录 OA 归档',
     items: [
+      { category: 'fix', text: '修复内网 HTTP 环境点击「提交 OA 归档」无反馈的问题；提交标识生成兼容浏览器能力，提交前异常会显示原因并允许恢复后再次操作。' },
+      { category: 'improvement', text: 'OA 归档的 git_svn 改为预填发布代码的 Git 分支名，支持手动修改和缺失补填；产物目录独立核验，已提交的历史资料保持原值。' },
       { category: 'fix', text: '重试历史失败或结果未确认的归档时，保留原申请明确指定的软件编号，并在确认框中展示；首次和成功后的再次申请仍自动申请新编号。' },
       { category: 'improvement', text: 'OA 归档入口与相邻按钮统一尺寸和图标，目录选择支持搜索并分行展示任务与时间；申请表按信息分区，统一下拉框与表格间距，标签与输入首行对齐；移除软件编号、申请数量及草稿说明提示，编号由 OA 自动申请。' },
-      { category: 'improvement', text: '发起 OA 归档入口移到发布详情顶部，第一步选择一次打包的完整产物目录，自动填入整个 SVN 目录地址；历史单文件申请继续保留。' },
+      { category: 'improvement', text: '发起 OA 归档入口移到发布详情顶部，第一步选择一次打包的完整产物目录；历史单文件申请继续保留。' },
       { category: 'fix', text: 'OA 软件归档配置的地址输入框与下方提示条增加间距，避免紧贴显示。' },
     ],
   },

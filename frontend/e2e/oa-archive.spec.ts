@@ -8,7 +8,7 @@ interface Artifact { id: string; name: string; path: string }
 interface Directory { id: string; name: string; artifacts: Artifact[]; root_url: string }
 interface OaSample {
   username: string; maintainer_username: string; actor_id: string; actor_name: string; release_id: string; version: string;
-  git_hash: string; software_name: string; changes: string; release_doc: string; document_source: string;
+  git_hash: string; branch: string; software_name: string; changes: string; release_doc: string; document_source: string;
   oa_url: string; control_url: string;
   tasks: Record<string, Directory>;
 }
@@ -21,7 +21,7 @@ interface Receipt { body: Record<string, string | number>; contentType: string; 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as { password: string; oa_archive: OaSample };
 const sample = fixture.oa_archive;
 const reportDir = process.env.SMOKE_REPORT_DIR!;
-const labels = ['申请人', '软件名称', '软件版本', '接收人', '软件来源', '产物 SVN 地址', 'SN', '变更内容', '变更原因', '其他说明'];
+const labels = ['申请人', '软件名称', '软件版本', '接收人', '软件来源', '代码 Git 分支', 'SN', '变更内容', '变更原因', '其他说明'];
 let evidence: Record<string, unknown>;
 let pageErrors: string[];
 
@@ -191,7 +191,7 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   expect(await table.getByRole('cell').count()).toBe(13);
   await expect(page.getByLabel('变更内容', { exact: true })).toHaveValue(sample.changes);
   await expect(page.getByLabel('SN', { exact: true })).toHaveValue(sample.git_hash);
-  await expect(page.getByLabel('产物 SVN 地址', { exact: true })).toHaveValue(selected.root_url);
+  await expect(page.getByLabel('代码 Git 分支', { exact: true })).toHaveValue(sample.branch);
   await expect(archiveField(page, '软件名称')).toHaveValue(sample.software_name);
   for (const label of ['申请人', '软件名称', '软件版本', '接收人']) {
     await archiveField(page, label).fill('');
@@ -205,11 +205,11 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   evidence.requiredFocus = '申请人';
   const expected = {
     docCreator: '人工申请人', applyCount: 1, soft_name: '人工确认软件 | 桌面', soft_version: '手填版本 88.1',
-    developer: 'oa.receiver', soft_source: '内部自制', git_svn: 'https://example.invalid/manual/directory',
+    developer: 'oa.receiver', soft_source: '内部自制', git_svn: 'release/manual-branch',
     sn_code: '人工补充 SN', edit_content: `${sample.changes}\n\n本次申请独立补充长文结尾。`,
     edit_reason: '修复说明\n保留第二行', other_description: '第一次打包目录独立草稿', soft_number: '',
   };
-  const fields: [string, string][] = [['申请人', 'docCreator'], ['软件名称', 'soft_name'], ['软件版本', 'soft_version'], ['接收人', 'developer'], ['产物 SVN 地址', 'git_svn'], ['SN', 'sn_code'], ['变更内容', 'edit_content'], ['变更原因', 'edit_reason'], ['其他说明', 'other_description']];
+  const fields: [string, string][] = [['申请人', 'docCreator'], ['软件名称', 'soft_name'], ['软件版本', 'soft_version'], ['接收人', 'developer'], ['代码 Git 分支', 'git_svn'], ['SN', 'sn_code'], ['变更内容', 'edit_content'], ['变更原因', 'edit_reason'], ['其他说明', 'other_description']];
   for (const [label, field] of fields) await archiveField(page, label).fill(String(expected[field as keyof typeof expected]));
   await page.getByLabel('软件来源', { exact: true }).click();
   await page.getByRole('option', { name: '内部自制', exact: true }).click();
@@ -246,9 +246,12 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   expect(pageErrors).toEqual([]);
 });
 
-test('375px 手机可编辑并自动申请软件编号，历史表格和主操作完整可用', async ({ page }) => {
+test('375px 手机缺少randomUUID仍可提交，历史表格和主操作完整可用', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined }));
   await page.setViewportSize({ width: 375, height: 812 });
   await releasePage(page);
+  expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe('undefined');
+  evidence.submissionIdMode = '模拟内网 HTTP 缺少 randomUUID，使用浏览器随机字节';
   const selected = directory('mobile');
   await expect(page.getByLabel('发布版本操作').getByRole('button', { name: '发起 OA 归档', exact: true })).toBeInViewport();
   await screenshot(page, 'mobile-header');

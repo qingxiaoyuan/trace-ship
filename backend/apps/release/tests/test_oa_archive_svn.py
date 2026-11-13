@@ -46,8 +46,9 @@ def test_历史清单选择后真实发送并保留原始与当前文件依据(h
     assert prepared.status_code == 200, prepared.data
     data = prepared.data["data"]
     assert data["selection"]["path"] == RELATIVE
-    assert data["form"]["git_svn"].endswith("/%E7%9B%AE%E5%BD%95%20%E7%A9%BA%E6%A0%BC/%E5%AE%89%E8%A3%85%E5%8C%85%401%25.zip")
-    form = {**data["form"], "git_svn": "https://oa.example/人工填写.zip"}
+    assert data["form"]["git_svn"] == "main"
+    assert data["source"]["url"].endswith("/%E7%9B%AE%E5%BD%95%20%E7%A9%BA%E6%A0%BC/%E5%AE%89%E8%A3%85%E5%8C%85%401%25.zip")
+    form = {**data["form"], "git_svn": "release/manual-branch"}
     result = send_file(client, release, data["selection"], form)
     assert result.status_code == 201, result.data
     record = result.data["data"]
@@ -59,7 +60,7 @@ def test_历史清单选择后真实发送并保留原始与当前文件依据(h
     assert record["source"]["git_hash"] == release.git_hash
     assert record["form"]["sn_code"] == release.git_hash
     assert len(oa_http.requests) == 1
-    assert oa_http.requests[0]["body"]["git_svn"] == "https://oa.example/人工填写.zip"
+    assert oa_http.requests[0]["body"]["git_svn"] == "release/manual-branch"
     assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == [record]
 
 

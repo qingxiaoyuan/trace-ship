@@ -44,7 +44,7 @@ async function choose(page: Page, key: keyof typeof paths) {
   await expect(table).toBeVisible();
   await expect(page.getByText(`${key === 'supplement' ? '从 SVN 补录' : '当前 SVN 目录'} · 整个产物目录`, { exact: true })).toBeVisible();
   await expect(page.getByLabel('SN', { exact: true })).toHaveValue(sample.git_hash);
-  await expect(page.getByLabel('产物 SVN 地址', { exact: true })).toHaveValue(sample.tasks[key].root_url);
+  await expect(page.getByLabel('代码 Git 分支', { exact: true })).toHaveValue(sample.branch);
   return table;
 }
 async function submit(page: Page) {
@@ -88,14 +88,14 @@ for (const key of ['history', 'supplement'] as const) {
     const before = (await control()).count;
     if (key === 'history') {
       await control({ svn: 'delete', path: key });
-      await page.getByLabel('产物 SVN 地址', { exact: true }).fill(`${sample.tasks[key].root_url}/../other-task/邻接任务.zip`);
+      await page.getByLabel('代码 Git 分支', { exact: true }).fill('release/other-branch');
       const denied = await submit(page);
       expect(denied.status()).toBe(409);
       expect((await denied.json()).data.state).toBe('missing');
       expect((await control()).count).toBe(before);
       await expect(page.getByText('SVN 当前路径不存在', { exact: true }).first()).toBeVisible();
       await shot(page, 'history-deleted');
-      evidence.deletedBeforeSubmit = { status: 409, dispatched: false, manualAddressCannotBypass: true };
+      evidence.deletedBeforeSubmit = { status: 409, dispatched: false, manualBranchCannotBypass: true };
       await control({ svn: 'write', path: `${key}/${paths[key]}`, content: '恢复当前文件' });
       await releasePage(page);
       table = await choose(page, key);
@@ -105,7 +105,7 @@ for (const key of ['history', 'supplement'] as const) {
     await control({ svn: 'write', path: `${key}/${paths[key]}`, content });
     const edited = `${sample.changes}\n\n历史归档人工补充 | ${key}\n保留末行`;
     await page.getByLabel('变更内容', { exact: true }).fill(edited);
-    await page.getByLabel('产物 SVN 地址', { exact: true }).fill('https://example.invalid/manual/archive-directory');
+    await page.getByLabel('代码 Git 分支', { exact: true }).fill('release/manual-branch');
     await page.getByLabel('其他说明', { exact: true }).fill(`${key} 的独立草稿`);
     await page.getByLabel('SN', { exact: true }).scrollIntoViewIfNeeded();
     await shot(page, `${key}-form`, table);
@@ -126,7 +126,7 @@ for (const key of ['history', 'supplement'] as const) {
     expect(source.original).not.toHaveProperty('sha256');
     expect(record.form.sn_code).toBe(sample.git_hash);
     expect(record.form.edit_content).toBe(edited);
-    expect(record.form.git_svn).toBe('https://example.invalid/manual/archive-directory');
+    expect(record.form.git_svn).toBe('release/manual-branch');
     const receipts = await control();
     expect(receipts.count).toBe(before + 1);
     expect(receipts.requests.at(-1).body).toEqual(record.form);

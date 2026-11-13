@@ -51,7 +51,7 @@ def test_发布人选择现存单产物并取得真实发布资料(archive_case)
     assert data["selection"] == {"task_id": str(task.id), "artifact_id": "artifact-1", "path": "软件.zip", "source_kind": "local"}
     assert data["form"] == {
         "docCreator": "releaseuser", "applyCount": 1, "soft_name": "项目内软件", "soft_version": "V1.2.3",
-        "developer": "releaseuser", "soft_source": "", "git_svn": "",
+        "developer": "releaseuser", "soft_source": "", "git_svn": "main",
         "sn_code": "0123456789abcdef0123456789abcdef01234567",
         "edit_content": "A 人工编辑后的内容 | 第二项\n第二行",
         "edit_reason": "", "other_description": "", "soft_number": "",
@@ -141,12 +141,16 @@ def test_不合资格的发布任务与文件不能准备归档(archive_case, in
     assert response.data["message"]
 
 
-def test_快照关闭推送的现存产物不受当前配置改变影响且成功推送预填文件地址(archive_case):
+@pytest.mark.parametrize("branch", ["release/v1.2.3", ""])
+def test_有无SVN均预填发布代码分支且缺失时不回退到Tag或产物地址(archive_case, branch):
     client, release, task = archive_case
+    release.branch = branch
+    release.save(update_fields=["branch"])
+    assert prepare(client, release, task).data["data"]["form"]["git_svn"] == branch
     task.config_snapshot = {"svn_push_enabled": True}
     task.stage_info = {"svn_push": {"status": "success", "remote_url": "https://svn.example.com/repo/formal/V1.2.3"}}
     task.save()
-    assert prepare(client, release, task).data["data"]["form"]["git_svn"] == "https://svn.example.com/repo/formal/V1.2.3/%E8%BD%AF%E4%BB%B6.zip"
+    assert prepare(client, release, task).data["data"]["form"]["git_svn"] == branch
 
 
 def test_完整正文保留空行缩进转义与长文本尾部并不读取旧更新字段(archive_case):

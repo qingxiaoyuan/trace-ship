@@ -215,7 +215,6 @@ class OaArchivePreparation:
             raise NotFound("打包任务不存在")
         cls.require_task(release, task)
         artifact = cls.selected_artifact(task, selection)
-        svn_url = artifact["url"]
         content, source = extract_archive_changes(release.release_doc or "")
         component = ProjectComponent.objects.filter(project=release.project, repository=release.repository).first()
         configured = bool(OaArchiveConfig.get_url())
@@ -236,7 +235,7 @@ class OaArchivePreparation:
                 "docCreator": user.username, "applyCount": 1,
                 "soft_name": (component.display_name if component else "") or release.repository.name,
                 "soft_version": release.version, "developer": release.publisher.username if release.publisher else "",
-                "soft_source": "", "git_svn": svn_url,
+                "soft_source": "", "git_svn": release.branch or "",
                 "sn_code": release.git_hash if re.fullmatch(r"[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", release.git_hash or "") else "",
                 "edit_content": content, "edit_reason": "", "other_description": "", "soft_number": "",
             },

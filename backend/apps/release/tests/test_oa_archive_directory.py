@@ -45,13 +45,14 @@ def test_多文件打包只提供一个完整目录并保存目录申请(archive
     data = result.data["data"]
     assert data["selection"] == {"task_id": str(task.id), "scope": "directory", "path": ".", "source_kind": "local"}
     assert data["source"]["current"]["artifact_count"] == 2
-    assert data["form"]["git_svn"] == ""
+    assert data["form"]["git_svn"] == "main"
     sent = send_file(client, release, data["selection"], data["form"])
     assert sent.status_code == 201, sent.data
     record = sent.data["data"]
     assert record["source"]["scope"] == "directory"
     assert record["source"]["path"] == "."
     assert record["source"]["artifact_id"] is None
+    assert oa_http.requests[0]["body"]["git_svn"] == "main"
     assert send_file(client, release, data["selection"], data["form"], record["submission_id"]).data["data"] == record
     assert send_file(client, release, data["selection"], data["form"]).status_code == 400
     again = send_file(client, release, {**data["selection"], "previous_id": record["id"], "confirmation": "reapply"}, data["form"])
@@ -114,7 +115,8 @@ def test_本地清理后的SVN归档使用整个当前目录而非文件地址(h
     result = prepare_directory(client, release, task, source_kind="svn")
     assert result.status_code == 200, result.data
     data = result.data["data"]
-    assert data["form"]["git_svn"] == task.stage_info["svn_push"]["remote_url"]
+    assert data["form"]["git_svn"] == "main"
+    assert data["source"]["url"] == task.stage_info["svn_push"]["remote_url"]
     assert data["source"]["supplemented"] is supplemented
     assert data["source"]["current"]["artifact_count"] >= 1
     assert "size" not in data["source"]["original"]

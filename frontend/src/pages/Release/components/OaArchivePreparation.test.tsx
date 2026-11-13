@@ -21,7 +21,7 @@ let savedRecords: unknown[] = [];
 const release = { id: 'release', project: 'project', repository: 'repo', publisher: 'publisher', version: 'V1.2.3',
   release_type: 'formal', status: 'released', package_tasks: [] } as unknown as Release;
 const initialForm = { docCreator: 'operator', applyCount: 1, soft_name: '项目内软件', soft_version: 'V1.2.3', developer: 'publisher',
-  soft_source: '', git_svn: '', sn_code: '0123456789abcdef0123456789abcdef01234567',
+  soft_source: '', git_svn: 'release/v1.2.3', sn_code: '0123456789abcdef0123456789abcdef01234567',
   edit_content: 'A 人工编辑 | 字面管道\n\n  第二行\n' + '完整内容'.repeat(100) + '末尾完整', edit_reason: '', other_description: '', soft_number: '' };
 
 beforeEach(() => {
@@ -123,6 +123,43 @@ it('实际发送修改后的资料并重新读取历史，成功后展示完整�
   const history = (await screen.findByRole('table', { name: '已提交归档资料' })).closest('[role="dialog"]') as HTMLElement;
   expect(within(history).getByText('oa.manual')).toBeTruthy();
   expect(within(history).getByText(/"opaque"/)).toBeTruthy();
+});
+
+it('内网HTTP没有randomUUID时点击提交仍发送一次并展示结果', async () => {
+  const originalUuid = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
+  Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined });
+  try {
+    configured = true;
+    mount();
+    await selectArtifact();
+    const submitButton = screen.getByRole('button', { name: '提交 OA 归档' });
+    fireEvent.click(submitButton);
+    fireEvent.click(submitButton);
+    await waitFor(() => expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1));
+    expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({
+      submission_id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+    });
+    await screen.findByText('软件编号：SOFT-001');
+  } finally {
+    if (originalUuid) Object.defineProperty(crypto, 'randomUUID', originalUuid);
+    else Reflect.deleteProperty(crypto, 'randomUUID');
+  }
+});
+
+it('提交标识生成异常时展示原因并解除防重锁，恢复后可重新提交', async () => {
+  const uuid = vi.spyOn(crypto, 'randomUUID').mockImplementation(() => { throw new Error('无法生成提交标识'); });
+  try {
+    configured = true;
+    mount();
+    await selectArtifact();
+    fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+    await screen.findByText('无法生成提交标识');
+    expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(0);
+    uuid.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+    await screen.findByText('软件编号：SOFT-001');
+    expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1);
+  } finally { uuid.mockRestore(); }
 });
 
 it('关闭重开和切换打包目录保留各自草稿，离开页面后丢弃', async () => {

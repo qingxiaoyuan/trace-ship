@@ -87,7 +87,7 @@ def create_oa_sample(runtime, password):
                       "root_url": f"{external['svn']['url']}/{key}"}
     return {
         "username": owner.username, "maintainer_username": maintainer.username, "actor_id": str(owner.id), "actor_name": owner.nickname,
-        "release_id": str(release.id), "version": release.version, "git_hash": release.git_hash,
+        "release_id": str(release.id), "version": release.version, "git_hash": release.git_hash, "branch": release.branch,
         "software_name": component.display_name, "changes": changes, "release_doc": release.release_doc,
         "document_source": "ReleaseDocGenerator._build_markdown_doc 原始两列表格；人工编辑后保存完整变更内容，保留旧 updates 对照",
         "oa_url": external["oa_url"], "control_url": external["control_url"], "tasks": tasks,
