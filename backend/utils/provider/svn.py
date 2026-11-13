@@ -222,12 +222,13 @@ class SVNProvider:
         """SVN 不支持 MR 概念，返回空列表"""
         return []
 
-    def list_dir(self, url: str = None) -> list[dict]:
+    def list_dir(self, url: str = None, *, recursive: bool = False) -> list[dict]:
         """
-        列出 SVN 远程目录的直接子项（不递归）。
+        列出 SVN 远程目录，默认只读取直接子项。
 
         Args:
             url: 要列出的远程目录地址，缺省为仓库根地址
+            recursive: 是否读取目录内全部文件和子目录
 
         Returns:
             条目列表，每项包含 name / kind(dir|file) / size / revision / author / date
@@ -237,7 +238,7 @@ class SVNProvider:
             ProviderError: XML 解析失败
         """
         target = (url or self.repo_url).rstrip("/")
-        cmd = self._base_cmd() + ["list", "--xml", target]
+        cmd = self._base_cmd() + ["list", "--xml"] + (["--recursive"] if recursive else []) + [target]
         xml_data = self._run(cmd, timeout=60)
         return self._parse_xml_list(xml_data)
 

@@ -170,7 +170,8 @@ class OaArchiveSubmission:
                         "repository_id": str(release.repository_id), "version": release.version,
                         "tag_name": release.tag_name, "git_hash": release.git_hash,
                         "task_id": str(task.id), "task_name": task.name, "artifact_id": artifact.get("artifact_id"),
-                        "path": artifact["path"], "artifact": artifact, "kind": artifact["kind"], "supplemented": artifact["supplemented"],
+                        "path": artifact["path"], "scope": artifact.get("scope", "file"),
+                        "artifact": artifact, "kind": artifact["kind"], "supplemented": artifact["supplemented"],
                         "svn": task.stage_info.get("svn_push", {})},
             )
         # 必须在事务提交后发送；进程中断留下 sending，绝不自动重发。
