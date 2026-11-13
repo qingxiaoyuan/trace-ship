@@ -7,7 +7,11 @@ from apps.release.tests.test_oa_archive import archive_case as _archive_case
 from apps.release.tests.test_oa_archive_submission import oa_http as _oa_http
 from apps.release.tests.test_oa_archive_svn import (
     history_case as _history_case,
+)
+from apps.release.tests.test_oa_archive_svn import (
     send_file,
+)
+from apps.release.tests.test_oa_archive_svn import (
     svn_sandbox as _svn_sandbox,
 )
 

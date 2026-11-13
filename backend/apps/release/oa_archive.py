@@ -15,8 +15,8 @@ from apps.package.services.artifacts import (
     local_artifact_available,
     task_artifact_manifest,
     validate_artifact_path,
-    verify_task_svn_artifact,
     verify_task_artifact_directory,
+    verify_task_svn_artifact,
 )
 from apps.project.models import ProjectComponent
 from apps.release.models import ReleaseRecord
