@@ -89,7 +89,10 @@ def main():
         seed = root / "seed"
         files = {
             "first/目录 空格/安装包@1%.zip": "首次归档产物\n",
-            **{f"first/{name}.zip": f"{name} 场景产物\n" for name in ("second", "mobile", "confirm", "failure", "timeout", "reapply", "reapply-unknown", "reapply-failure", "reapply-mobile")},
+            "first/嵌套目录/配套资源.dat": "同次构建的配套资源\n",
+            **{f"{name}/{filename}": f"{name} 场景产物\n"
+               for name in ("second", "mobile", "confirm", "failure", "timeout", "reapply", "reapply-unknown", "reapply-failure", "reapply-mobile")
+               for filename in (f"{name}.zip", "嵌套目录/配套资源.dat")},
             "history/目录 空格/历史安装包@1%.zip": "历史原构建产物\n",
             "history/release-V1.0.0.md": "系统生成说明\n",
             "supplement/目录 空格/补录安装包.zip": "无清单补录文件\n",

@@ -15,11 +15,18 @@ export interface ArchiveForm {
   other_description: string;
   soft_number: string;
 }
-export interface ArchiveSelection { task_id: string; artifact_id?: string | null; path?: string; source_kind?: 'local' | 'svn' }
+export interface ArchiveSelection { task_id: string; scope?: 'file' | 'directory'; artifact_id?: string | null; path?: string; source_kind?: 'local' | 'svn' }
 export interface ArchiveArtifact extends ArchiveSelection { task_name: string; name: string; path: string }
+export interface ArchiveDirectory extends ArchiveSelection { task_name: string; name: string; path: '.'; scope: 'directory'; source_kind: 'local' | 'svn'; artifact_count?: number | null; created_at?: string; svn_url?: string }
+export interface ArchiveDirectorySource {
+  kind: 'local' | 'svn'; scope: 'directory'; supplemented: boolean; name: string; path: '.'; url: string;
+  original: { artifact_count: number | null; files: { path: string; size: number | null; sha256: string | null; revision: string | null }[] };
+  current: { kind: 'dir'; artifact_count: number; repository_revision?: string; revision?: string; date?: string;
+    files?: { path: string; size: number | null; revision: string | null }[] };
+}
 export interface ArchivePreparation {
   selection: ArchiveSelection;
-  source?: Partial<TaskSvnArtifact> & { kind: 'local' | 'svn'; supplemented: boolean };
+  source?: ArchiveDirectorySource | (Partial<TaskSvnArtifact> & { kind: 'local' | 'svn'; scope?: 'file'; supplemented: boolean });
   configuration: { configured: boolean; reason: string };
   content_source: 'release_doc_changes' | 'release_doc_original';
   form: ArchiveForm;
@@ -30,7 +37,7 @@ export interface ArchiveApplication {
   submission_id: string;
   status: 'sending' | 'success' | 'failure' | 'unknown';
   operator: { id: string; username: string; nickname: string };
-  source: { task_id: string; task_name: string; path: string; version: string; tag_name: string; git_hash: string; kind: string; supplemented: boolean; [key: string]: unknown };
+  source: { scope?: 'file' | 'directory'; task_id: string; task_name: string; path: string; version: string; tag_name: string; git_hash: string; kind: string; supplemented: boolean; [key: string]: unknown };
   form: ArchiveForm;
   message: string;
   soft_number: string;
@@ -43,7 +50,7 @@ export interface ArchiveApplication {
   no_order_confirmation?: { operator: { id: string; username: string; nickname: string }; confirmed_at: string; evidence: string } | null;
 }
 export const oaArchiveApi = {
-  options: (releaseId: string) => get<{ artifacts: ArchiveArtifact[]; svn_tasks?: { task_id: string; task_name: string }[] }>(`/releases/${releaseId}/oa-archive/options/`),
+  options: (releaseId: string) => get<{ directories: ArchiveDirectory[]; artifacts: ArchiveArtifact[]; svn_tasks?: { task_id: string; task_name: string }[] }>(`/releases/${releaseId}/oa-archive/options/`),
   prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchiveForm) =>
     post<ArchivePreparation>(`/releases/${releaseId}/oa-archive/prepare/`, { ...selection, ...(form ? { form } : {}) }),
   records: (releaseId: string) => get<ArchiveApplication[]>(`/releases/${releaseId}/oa-archive/records/`),

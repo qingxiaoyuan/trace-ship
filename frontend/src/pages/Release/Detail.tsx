@@ -40,6 +40,7 @@ export default function ReleaseDetail() {
   const maintainerSource = typeof source === 'string' && /^\/(dashboard)?(?:\?|$)/.test(source) ? source : undefined;
   const { message, modal } = App.useApp();
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('notes');
+  const [archiveActionTarget, setArchiveActionTarget] = useState<HTMLSpanElement | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -254,16 +255,19 @@ export default function ReleaseDetail() {
             </div>
           </div>
           {status === 'pending' ? <WorkflowTerminateButton instance={workflowInstance} /> : null}
-          {status === 'released' && canManage ? (
-            <Button
-              danger
-              icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
-              onClick={() => setDeleteOpen(true)}
-              className="shrink-0"
-            >
-              删除版本
-            </Button>
-          ) : null}
+          {status === 'released' && <div aria-label="发布版本操作" className="flex flex-wrap items-center gap-2">
+            <span ref={setArchiveActionTarget} />
+            {canManage ? (
+              <Button
+                danger
+                icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                onClick={() => setDeleteOpen(true)}
+                className="shrink-0"
+              >
+                删除版本
+              </Button>
+            ) : null}
+          </div>}
           {status === 'draft' || status === 'rejected' ? (
             <div className="flex shrink-0 items-center gap-2">
               {status === 'draft' && canDevelop && !release.has_revision_history ? <Button type="primary" loading={submit.isPending}
@@ -392,7 +396,7 @@ export default function ReleaseDetail() {
                 <ReleaseNotes release={release} active={activeTab === 'notes'} />
               </div>
               {activeTab === 'commits' && <ReleaseCommits release={release} />}
-              <div hidden={activeTab !== 'packages'}><ReleasePackages release={release} active={activeTab === 'packages'} /></div>
+              <div hidden={activeTab !== 'packages'}><ReleasePackages release={release} active={activeTab === 'packages'} archiveActionTarget={archiveActionTarget} /></div>
             </div>
           </TsCard>
         </div>

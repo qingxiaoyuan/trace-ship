@@ -17,7 +17,6 @@ async function control(body?: object) {
 async function releasePage(page: Page) {
   await page.goto(`/releases/${sample.release_id}`);
   await expect(page.getByRole('heading', { name: sample.version, exact: true })).toBeVisible();
-  await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
 }
 async function shot(page: Page, name: string, table?: Locator) {
   const bounds = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
@@ -31,19 +30,19 @@ async function shot(page: Page, name: string, table?: Locator) {
   await page.screenshot({ path: path.join(reportDir, `oa-history-${name}.png`), animations: 'disabled' });
 }
 async function choose(page: Page, key: keyof typeof paths) {
-  await page.getByRole('button', { name: '准备 OA 归档', exact: true }).click();
-  await page.getByLabel('SVN 历史任务', { exact: true }).selectOption(sample.tasks[key].id);
-  if (key === 'supplement') await page.getByRole('button', { name: '进入目录 目录 空格', exact: true }).click();
-  await page.getByRole('radio', { name: paths[key], exact: true }).check();
+  await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
+  await page.getByLabel('归档目录', { exact: true }).selectOption(sample.tasks[key].id);
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /进入目录/ })).toHaveCount(0);
   await shot(page, `${key}-picker`);
   const response = page.waitForResponse(item => item.url().endsWith('/oa-archive/prepare/') && item.request().method() === 'POST');
   await page.getByRole('button', { name: '填写申请资料', exact: true }).click();
   expect((await response).status()).toBe(200);
   const table = page.getByRole('table', { name: '软件归档申请资料', exact: true });
   await expect(table).toBeVisible();
-  await expect(page.getByText(`${key === 'supplement' ? '从 SVN 补录' : 'SVN 当前文件'} · ${paths[key]}`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`${key === 'supplement' ? '从 SVN 补录' : '当前 SVN 目录'} · 整个产物目录`, { exact: true })).toBeVisible();
   await expect(page.getByLabel('SN', { exact: true })).toHaveValue(sample.git_hash);
-  await expect(page.getByLabel('产物 SVN 地址', { exact: true })).toHaveValue(`${sample.tasks[key].root_url}/${paths[key].split('/').map(encodeURIComponent).join('/')}`);
+  await expect(page.getByLabel('产物 SVN 地址', { exact: true })).toHaveValue(sample.tasks[key].root_url);
   return table;
 }
 async function submit(page: Page) {
@@ -79,14 +78,14 @@ test.afterEach(async ({ page, browser }, info) => {
 });
 
 for (const key of ['history', 'supplement'] as const) {
-  test(`${key === 'history' ? '1440px 历史清单' : '375px 无清单补录'}在真实 SVN 选择编辑提交并回读独立来源`, async ({ page }) => {
+  test(`${key === 'history' ? '1440px 历史清单' : '375px 无清单补录'}在真实 SVN 选择整个目录并编辑提交及回读独立来源`, async ({ page }) => {
     test.setTimeout(90_000);
     if (key === 'supplement') await page.setViewportSize({ width: 375, height: 812 });
     await releasePage(page);
     let table = await choose(page, key);
     const before = (await control()).count;
     if (key === 'history') {
-      await control({ svn: 'delete', path: `${key}/${paths[key]}` });
+      await control({ svn: 'delete', path: key });
       await page.getByLabel('产物 SVN 地址', { exact: true }).fill(`${sample.tasks[key].root_url}/../other-task/邻接任务.zip`);
       const denied = await submit(page);
       expect(denied.status()).toBe(409);
@@ -99,12 +98,12 @@ for (const key of ['history', 'supplement'] as const) {
       await releasePage(page);
       table = await choose(page, key);
     }
-    // 选择后覆盖；提交快照须取最新当前文件，不把当前值冒充历史元数据。
+    // 选择目录后覆盖其中交付文件；提交保存最新当前文件依据，不冒充原构建元数据。
     const content = `归档时当前内容-${key}`;
     await control({ svn: 'write', path: `${key}/${paths[key]}`, content });
     const edited = `${sample.changes}\n\n历史归档人工补充 | ${key}\n保留末行`;
     await page.getByLabel('变更内容', { exact: true }).fill(edited);
-    await page.getByLabel('产物 SVN 地址', { exact: true }).fill('https://example.invalid/manual/archive.zip');
+    await page.getByLabel('产物 SVN 地址', { exact: true }).fill('https://example.invalid/manual/archive-directory');
     await page.getByLabel('其他说明', { exact: true }).fill(`${key} 的独立草稿`);
     await page.getByLabel('SN', { exact: true }).scrollIntoViewIfNeeded();
     await shot(page, `${key}-form`, table);
@@ -114,20 +113,27 @@ for (const key of ['history', 'supplement'] as const) {
     expect(response.status()).toBe(201);
     const record = (await response.json()).data;
     expect(record.status).toBe('success');
-    expect(record.source).toMatchObject({ kind: 'svn', supplemented: key === 'supplement', task_id: sample.tasks[key].id, path: paths[key], git_hash: sample.git_hash });
-    expect(record.source.artifact.original).toEqual({ size: null, sha256: null, revision: null });
-    expect(record.source.artifact.current.size).toBe(Buffer.byteLength(content));
+    expect(record.source).toMatchObject({ kind: 'svn', supplemented: key === 'supplement', task_id: sample.tasks[key].id, scope: 'directory', path: '.', git_hash: sample.git_hash });
+    const source = record.source.artifact;
+    expect(source.scope).toBe('directory');
+    expect(source.current.kind).toBe('dir');
+    expect(source.current.files).toEqual(expect.arrayContaining([expect.objectContaining({ path: paths[key], size: Buffer.byteLength(content) })]));
+    if (key === 'history') expect(source.original.files).toEqual([expect.objectContaining({ path: paths[key], size: null, sha256: null, revision: null })]);
+    else expect(source.original).toEqual({ artifact_count: null, files: [] });
+    expect(source.current).not.toHaveProperty('size');
+    expect(source.original).not.toHaveProperty('sha256');
     expect(record.form.sn_code).toBe(sample.git_hash);
     expect(record.form.edit_content).toBe(edited);
-    expect(record.form.git_svn).toBe('https://example.invalid/manual/archive.zip');
+    expect(record.form.git_svn).toBe('https://example.invalid/manual/archive-directory');
     const receipts = await control();
     expect(receipts.count).toBe(before + 1);
     expect(receipts.requests.at(-1).body).toEqual(record.form);
     expect(receipts.requests.at(-1).hasAuthorization).toBe(false);
     await expect(page.getByRole('table', { name: '软件归档申请资料', exact: true })).not.toBeVisible();
     await releasePage(page);
-    const article = page.getByRole('article').filter({ hasText: paths[key] });
-    await expect(article).toContainText(key === 'supplement' ? '从 SVN 补录' : 'SVN 当前文件');
+    await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
+    const article = page.getByLabel('归档申请历史').getByRole('article').filter({ hasText: sample.tasks[key].name });
+    await expect(article).toContainText(key === 'supplement' ? '从 SVN 补录' : '当前 SVN 目录');
     await article.getByRole('button', { name: '查看申请资料', exact: true }).click();
     const history = page.getByRole('table', { name: '已提交归档资料', exact: true });
     const changes = history.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '变更内容', exact: true }) }).getByRole('cell');

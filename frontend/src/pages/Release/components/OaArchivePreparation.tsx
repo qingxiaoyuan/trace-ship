@@ -1,14 +1,15 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Alert, AutoComplete, Button, Checkbox, Form, Input, Modal } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { accountApi } from '@/api/account';
 import { projectApi } from '@/api/project';
-import { oaArchiveApi, type ArchiveApplication, type ArchiveConfirmation, type ArchiveArtifact, type ArchiveForm, type ArchivePreparation } from '@/api/oaArchive';
+import { oaArchiveApi, type ArchiveApplication, type ArchiveConfirmation, type ArchiveSelection, type ArchiveForm, type ArchivePreparation } from '@/api/oaArchive';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAuthStore } from '@/stores/authStore';
 import { useModalDraft } from '@/hooks/useModalDraft';
 import type { Release } from '@/types';
-import { OaArchiveArtifactPicker } from './OaArchiveArtifactPicker';
+import { OaArchiveDirectoryPicker } from './OaArchiveDirectoryPicker';
 
 const fields: { key: Exclude<keyof ArchiveForm, 'applyCount'>; label: string; required?: boolean; multiline?: boolean; note?: string }[] = [
   { key: 'docCreator', label: '申请人', required: true, note: '选择系统用户或填写 OA 登录名' },
@@ -16,7 +17,7 @@ const fields: { key: Exclude<keyof ArchiveForm, 'applyCount'>; label: string; re
   { key: 'soft_version', label: '软件版本', required: true },
   { key: 'developer', label: '接收人', required: true, note: '选择系统用户或填写 OA 登录名' },
   { key: 'soft_source', label: '软件来源' },
-  { key: 'git_svn', label: '产物 SVN 地址', note: '只提交地址，可手填；不会上传文件本体' },
+  { key: 'git_svn', label: '产物 SVN 地址', note: '预填整个产物目录地址，可手填；不会上传文件本体' },
   { key: 'sn_code', label: 'SN', note: '发布时保存的完整源码提交 SHA；旧记录缺失时可补填' },
   { key: 'edit_content', label: '变更内容', multiline: true },
   { key: 'edit_reason', label: '变更原因', multiline: true },
@@ -27,8 +28,8 @@ const fields: { key: Exclude<keyof ArchiveForm, 'applyCount'>; label: string; re
 const confirmationText = { '': '首次申请', reapply: '显式再次申请', retry: '失败后主动重试', checked_no_order: '已核对 OA 未建单后重试' };
 const statusText = { sending: '发送中', success: '已发起归档', failure: 'OA 返回失败', unknown: '结果未确认' };
 
-/** 单产物申请和项目内历史共用发布详情，未提交草稿仅在本页内保存。 */
-export function OaArchivePreparationPanel({ release, active = true }: { release: Release; active?: boolean }) {
+/** 目录申请和项目内历史共用发布详情，未提交草稿仅在本页内保存。 */
+export function OaArchivePreparationPanel({ release, active = true, actionTarget }: { release: Release; active?: boolean; actionTarget?: HTMLElement | null }) {
   const user = useAuthStore(state => state.user);
   const project = useQuery({ queryKey: ['project', release.project], queryFn: () => projectApi.getProject(release.project), enabled: active });
   const role = project.data?.my_role || '';
@@ -47,7 +48,7 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
   const [confirmation, setConfirmation] = useState<{ previous: ArchiveApplication; values: ArchiveForm; count: number }>();
   const [checkedNoOrder, setCheckedNoOrder] = useState(false);
   const [uncertain, setUncertain] = useState<Record<string, string>>({});
-  const identity = `${release.id}:${prepared?.selection.task_id}:${prepared?.selection.path || prepared?.selection.artifact_id}`;
+  const identity = `${release.id}:${prepared?.selection.scope || 'file'}:${prepared?.selection.task_id}:${prepared?.selection.path || prepared?.selection.artifact_id}`;
 
   const records = useQuery({ queryKey: ['oa-archive-records', release.id], queryFn: () => oaArchiveApi.records(release.id), enabled: active,
     refetchInterval: query => query.state.data?.some(item => item.status === 'sending') ? 2000 : false });
@@ -59,7 +60,7 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
       void records.refetch();
     },
   });
-  const existing = records.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path) || [];
+  const existing = records.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path && (item.source.scope || 'file') === (prepared?.selection.scope || 'file')) || [];
   const latest = existing[0];
   const uncertainKey = uncertain[identity] && !existing.some(item => item.submission_id === uncertain[identity]);
   const draft = useModalDraft(formOpen && !!prepared, identity,
@@ -68,8 +69,8 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
   const deferredSearch = useDeferredValue(search);
   const users = useQuery({ queryKey: ['oa-archive-users', deferredSearch], queryFn: () => accountApi.getUsers({ keyword: deferredSearch || undefined, is_active: true, page_size: 50 }), enabled: active && formOpen, retry: false });
   const prepare = useMutation({
-    mutationFn: (artifact: ArchiveArtifact) => oaArchiveApi.prepare(release.id, artifact),
-    onSuccess: async (data, artifact) => { await records.refetch(); setPrepared({ ...data, selection: { ...data.selection, path: data.selection.path || artifact.path } }); setSelectOpen(false); setFormOpen(true); },
+    mutationFn: (selection: ArchiveSelection) => oaArchiveApi.prepare(release.id, selection),
+    onSuccess: async data => { await records.refetch(); setPrepared(data); setSelectOpen(false); setFormOpen(true); },
   });
   const validate = useMutation({
     mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1 }),
@@ -105,7 +106,7 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
       const values = await form.validateFields();
       const current = await records.refetch();
       if (current.error) return;
-      const history = current.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path) || [];
+      const history = current.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path && (item.source.scope || 'file') === (prepared?.selection.scope || 'file')) || [];
       if (history[0]?.status === 'sending' || (uncertain[identity] && !history.some(item => item.submission_id === uncertain[identity]))) return;
       if (history[0]) { setCheckedNoOrder(false); setConfirmation({ previous: history[0], values, count: history.length }); }
       else { dispatched = true; dispatch(values); }
@@ -116,17 +117,18 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
     if (formOpen && draft.value) { form.resetFields(); form.setFieldsValue(draft.value); }
   }, [formOpen, draft.value, form]);
   const userOptions = (users.data?.results || []).map(item => ({ value: item.username, label: `${item.nickname || item.username}（${item.username}）` }));
+  const action = allowed ? <Button className="min-h-11" disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>发起 OA 归档</Button> : null;
   return <section aria-label="OA 软件归档准备" className="space-y-2 rounded-lg border border-indigo-100 bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-[13px] font-medium">OA 软件归档</h3>
-      {allowed && <Button className="min-h-11" disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>准备 OA 归档</Button>}
+      {actionTarget ? createPortal(action, actionTarget) : action}
     </div>
-    <p className="text-[12px] text-slate-500">{allowed ? '选择一个本地产物或 SVN 当前文件，核对后手动提交 OA。' : '查看本项目的归档申请资料、实际操作者与结果。'}已发起归档表示流程创建成功，不表示 OA 审批通过。</p>
+    <p className="text-[12px] text-slate-500">{allowed ? '选择一次成功打包的整个产物目录，核对后手动提交 OA。' : '查看本项目的归档申请资料、实际操作者与结果。'}已发起归档表示流程创建成功，不表示 OA 审批通过。</p>
     {records.error && <><PermissionAlert error={records.error} errorTitle="归档记录加载失败" /><Button onClick={() => void records.refetch()}>重新读取归档记录</Button></>}
     <div className="space-y-2" aria-label="归档申请历史">{records.data?.map(item => <article key={item.id} className="rounded border border-slate-200 p-3 text-[12px]">
-      <p className="break-words font-medium">{statusText[item.status]} · {item.source.path}</p>
+      <p className="break-words font-medium">{statusText[item.status]} · {item.source.scope === 'directory' ? `${item.source.task_name} / 整个产物目录` : item.source.path}</p>
       <p>{confirmationText[item.confirmation || '']}{item.previous_id && ` · 前次申请：${item.previous_id}`}</p>
-      {item.source.kind === 'svn' && <p>{item.source.supplemented ? '从 SVN 补录' : 'SVN 当前文件'} · {item.source.task_name}</p>}
+      {item.source.kind === 'svn' && <p>{item.source.supplemented ? '从 SVN 补录' : item.source.scope === 'directory' ? '当前 SVN 目录' : 'SVN 当前文件'} · {item.source.task_name}</p>}
       <p>实际操作者：{item.operator.username} · {new Date(item.created_at).toLocaleString()}</p>
       {item.soft_number && <p>软件编号：{item.soft_number}</p>}
       <p className="whitespace-pre-wrap break-words">{item.message}</p>
@@ -136,17 +138,17 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
         {allowed && item.status === 'failure' && !item.no_order_confirmation && <Button onClick={() => { confirmFailure.reset(); setNoOrderChecked(false); setConfirmingFailure(item); }}>确认未建单</Button>}
       </div>
     </article>)}</div>
-    <OaArchiveArtifactPicker releaseId={release.id} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={artifact => prepare.mutate(artifact)} pending={prepare.isPending} error={prepare.error} />
+    <OaArchiveDirectoryPicker releaseId={release.id} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={selection => prepare.mutate(selection)} pending={prepare.isPending} error={prepare.error} />
     <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => { if (!submit.isPending && !checking) setFormOpen(false); }} width={800}
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
       footer={<div className="flex flex-wrap justify-end gap-2"><Button className="min-h-11" disabled={submit.isPending || checking} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="min-h-11" loading={validate.isPending} disabled={submit.isPending || checking} onClick={() => form.submit()}>校验资料</Button><Button aria-label="提交 OA 归档" aria-busy={submit.isPending || checking} className="min-h-11" type="primary" loading={submit.isPending || checking} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey} onClick={() => void send()}>提交 OA 归档</Button></div>}>
       {prepared && <Form form={form} disabled={submit.isPending || checking} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
         onFinishFailed={({ errorFields }) => { if (errorFields[0]) form.scrollToField(errorFields[0].name, { focus: true, block: 'center' }); }}>
         <div className="mb-3 space-y-2">
-          {prepared.source?.kind === 'svn' && <Alert type="info" title={`${prepared.source.supplemented ? '从 SVN 补录' : 'SVN 当前文件'} · ${prepared.selection.path}`}
-            description={`提交时重新核验任务目录中的文件；手改产物地址不改变核验位置。原大小：${prepared.source.original?.size ?? '未知'}；当前大小：${prepared.source.current?.size ?? '未知'}；当前 revision：${prepared.source.current?.revision ?? '未知'}。当前文件元数据不代表原构建内容。`} />}
+          <Alert type="info" title={`${prepared.source?.kind === 'svn' ? prepared.source.supplemented ? '从 SVN 补录' : '当前 SVN 目录' : '本地产物'} · 整个产物目录`}
+            description={prepared.source?.kind === 'svn' ? '提交时重新核验任务保存的整个 SVN 目录及可用交付文件；手改申请地址不改变来源。当前目录内容不代表原构建内容，原始与当前依据分别保留。' : '本次归档包含所选成功打包的整个产物目录，多个文件仍只办理一份归档。提交时再次核验文件仍可用。'} />
           {!prepared.configuration.configured && <Alert showIcon type="warning" title={prepared.configuration.reason} />}
-          {existing.length > 0 && <Alert type="info" title={`该产物已有 ${existing.length} 次申请，最新结果：${statusText[latest.status]}。提交前需确认已有记录。`} />}
+          {existing.length > 0 && <Alert type="info" title={`该目录已有 ${existing.length} 次申请，最新结果：${statusText[latest.status]}。提交前需确认已有记录。`} />}
           {uncertainKey && <Alert type="warning" title="浏览器未可靠取得提交结果，请重新读取归档记录并核对 OA，系统不会自动重发。" action={<Button onClick={() => void records.refetch()}>重新读取归档记录</Button>} />}
           {submit.data && submit.data.status !== 'success' && <Alert type="warning" title={`${statusText[submit.data.status]}：${submit.data.message}`} />}
           {submit.error && <PermissionAlert error={submit.error} errorTitle="提交结果需要核对" />}
@@ -179,11 +181,11 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
       okText={confirmation?.previous.status === 'success' ? '确认再次申请' : '确认重试'}
       okButtonProps={{ disabled: confirmation?.previous.status === 'unknown' && !checkedNoOrder }} cancelText="取消">
       {confirmation && <div className="space-y-3 text-[13px]">
-        <p>该产物已有 {confirmation.count} 次申请。最新结果：{statusText[confirmation.previous.status]}；实际操作者：{confirmation.previous.operator.username}；提交时间：{new Date(confirmation.previous.created_at).toLocaleString()}。</p>
+        <p>该目录已有 {confirmation.count} 次申请。最新结果：{statusText[confirmation.previous.status]}；实际操作者：{confirmation.previous.operator.username}；提交时间：{new Date(confirmation.previous.created_at).toLocaleString()}。</p>
         <p className="whitespace-pre-wrap break-words">{confirmation.previous.message}</p>
         <p>本次会重新向 OA 发送并新增一条记录，所有历史保留。软件编号不会自动沿用此前生成的编号，需复用时请在表单中手填。</p>
         {confirmation.previous.status === 'unknown' ? <><Alert type="warning" showIcon title="OA 可能已经建单，请先人工核对；重复提交可能产生重复单据。系统不会自动查询或重发。" /><Checkbox checked={checkedNoOrder} onChange={event => setCheckedNoOrder(event.target.checked)}>我已核对 OA，确认此前申请未建单</Checkbox></>
-          : confirmation.previous.status === 'failure' ? <Alert type="warning" title="OA 返回失败不保证没有外部副作用，请核对后主动重试。" /> : <Alert type="warning" title="该产物已有已发起归档的记录，请确认仍需再次办理。" />}
+          : confirmation.previous.status === 'failure' ? <Alert type="warning" title="OA 返回失败不保证没有外部副作用，请核对后主动重试。" /> : <Alert type="warning" title="该目录已有已发起归档的记录，请确认仍需再次办理。" />}
       </div>}
     </Modal>
     <Modal title="核对失败申请" open={!!confirmingFailure && active}
@@ -193,7 +195,7 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
       okButtonProps={{ disabled: !noOrderChecked || !confirmationEvidence[confirmingFailure?.id || '']?.trim() }}>
       {confirmingFailure && <div className="space-y-3">
         <Alert type="warning" showIcon title="请先在 OA 核对这条失败申请是否建单。系统不会查询或重试。只解除本条失败申请的保护，其他归档记录仍独立保护来源。" />
-        <p className="break-words">{confirmingFailure.source.path} · {confirmingFailure.operator.username} · {new Date(confirmingFailure.created_at).toLocaleString()}</p>
+        <p className="break-words">{confirmingFailure.source.scope === 'directory' ? `${confirmingFailure.source.task_name} / 整个产物目录` : confirmingFailure.source.path} · {confirmingFailure.operator.username} · {new Date(confirmingFailure.created_at).toLocaleString()}</p>
         <label htmlFor="oa-no-order-evidence">核对依据</label>
         <Input.TextArea id="oa-no-order-evidence" maxLength={2000} value={confirmationEvidence[confirmingFailure.id] || ''} disabled={confirmFailure.isPending}
           onChange={event => setConfirmationEvidence(current => ({ ...current, [confirmingFailure.id]: event.target.value }))} />
@@ -208,7 +210,7 @@ export function OaArchivePreparationPanel({ release, active = true }: { release:
         {viewing.no_order_confirmation && <p className="whitespace-pre-wrap break-words">已核对未建单 · {viewing.no_order_confirmation.operator.username} · {new Date(viewing.no_order_confirmation.confirmed_at).toLocaleString()}<br />核对依据：{viewing.no_order_confirmation.evidence}</p>}
         <p>发送时间：{new Date(viewing.created_at).toLocaleString()}</p>
         <table aria-label="已提交归档资料" className="w-full table-fixed border-collapse"><tbody>{fields.map(field => <tr key={field.key} className="border-b border-slate-200"><th scope="row" className="w-24 bg-slate-50 p-2 text-left align-top">{field.label}</th><td className="whitespace-pre-wrap break-words p-2">{viewing.form[field.key] || '—'}</td></tr>)}</tbody></table>
-        {viewing.source.kind === 'svn' && <p>{viewing.source.supplemented ? '从 SVN 补录' : 'SVN 当前文件'} · {viewing.source.path}</p>}
+        {viewing.source.kind === 'svn' && <p>{viewing.source.supplemented ? '从 SVN 补录' : viewing.source.scope === 'directory' ? '当前 SVN 目录' : 'SVN 当前文件'} · {viewing.source.scope === 'directory' ? '整个产物目录' : viewing.source.path}</p>}
         <h4>原发布与产物依据</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.source, null, 2)}</pre>
         <h4>软件归档返回对象</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.software_archive_id, null, 2)}</pre>
         <h4>编号申请单 ID</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.number_apply_id, null, 2)}</pre>

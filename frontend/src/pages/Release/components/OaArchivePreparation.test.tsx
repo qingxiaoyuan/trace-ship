@@ -42,15 +42,19 @@ beforeEach(() => {
     else if (config.url?.endsWith('/oa-archive/options/')) data = { artifacts: [
       { task_id: 'task', task_name: '正式安装包', artifact_id: 'one', name: '软件一.zip', path: '软件一.zip' },
       { task_id: 'task', task_name: '正式安装包', artifact_id: 'two', name: '软件二.zip', path: '软件二.zip' },
-    ], svn_tasks: historyMode ? [{ task_id: 'history', task_name: '无清单历史任务' }] : [] };
+    ], directories: [
+      { task_id: 'task', task_name: '正式安装包', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'local', artifact_count: 2 },
+      { task_id: 'task-two', task_name: '第二次打包', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'local', artifact_count: 1 },
+      ...(historyMode ? [{ task_id: 'history', task_name: '无清单历史任务', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'svn' }] : []),
+    ] };
     else if (config.url === '/packages/tasks/history/svn-artifacts/') data = { mode: 'browse', root_url: 'svn://example/task', entries: [{ path: '目录/补录.zip', name: '补录.zip', source: 'svn_supplement', state: 'available', original: { size: null }, current: { kind: 'file', size: 7, revision: '2' } }], total: 1, page: 1, page_size: 50 };
-    else if (config.url?.endsWith('/oa-archive/prepare/')) data = { selection: { task_id: payload.task_id, artifact_id: payload.artifact_id, path: payload.path }, source: historyMode ? { kind: 'svn', supplemented: true, path: '目录/补录.zip', original: { size: null }, current: { kind: 'file', size: 7, revision: '2' } } : undefined,
+    else if (config.url?.endsWith('/oa-archive/prepare/')) data = { selection: { task_id: payload.task_id, scope: payload.scope, path: payload.path, source_kind: payload.source_kind }, source: historyMode ? { kind: 'svn', scope: 'directory', supplemented: true, path: '.', original: {}, current: { kind: 'dir', revision: '2' } } : undefined,
       form: payload.form || initialForm, configuration: { configured, reason: '尚未配置 OA 软件归档接口地址，请联系系统配置维护者' }, content_source: 'release_doc_changes' };
     else if (config.url?.endsWith('/oa-archive/records/')) data = savedRecords;
     else if (config.url?.endsWith('/oa-archive/confirm-no-order/')) data = savedRecords[0];
     else if (config.url?.endsWith('/oa-archive/submit/')) {
       data = { id: `application-${savedRecords.length + 1}`, previous_id: payload.previous_id || null, confirmation: payload.confirmation || '', submission_id: payload.submission_id, status: 'success', form: payload.form,
-        operator: { username: 'operator' }, source: { task_id: 'task', path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z',
+        operator: { username: 'operator' }, source: { task_id: 'task', scope: 'directory', path: '.' }, created_at: '2026-11-12T00:00:00Z',
         software_archive_id: { opaque: ['单据', 7] }, soft_number: 'SOFT-001', number_apply_id: null, message: '已发起归档' };
       savedRecords = [data, ...savedRecords];
     }
@@ -67,17 +71,20 @@ function mount() {
   return render(<QueryClientProvider client={client}><ConfigProvider theme={{ token: { motion: false } }}><App><MemoryRouter><ReleasePackages release={release} /></MemoryRouter></App></ConfigProvider></QueryClientProvider>);
 }
 async function selectArtifact(id = 'one') {
-  fireEvent.click(await screen.findByRole('button', { name: '准备 OA 归档' }));
-  const select = await screen.findByLabelText('归档产物');
-  await within(select).findByText('正式安装包 / 软件一.zip');
-  fireEvent.change(select, { target: { value: `task:${id}` } });
+  fireEvent.click(await screen.findByRole('button', { name: '发起 OA 归档' }));
+  const select = await screen.findByLabelText('归档目录');
+  await within(select).findByText('正式安装包 / 完整产物目录');
+  expect(within(select).getAllByRole('option')).toHaveLength(3);
+  expect(within(select).queryByText('软件一.zip')).toBeNull();
+  fireEvent.change(select, { target: { value: id === 'one' ? 'task' : 'task-two' } });
   fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
   await screen.findByRole('table', { name: '软件归档申请资料' });
 }
 
-it('从发布打包区选择单个产物并在真实字段表格编辑完整资料，校验不发送 OA', async () => {
+it('选择一次打包的完整目录并编辑完整资料，多个文件仅提供一个目录选项', async () => {
   mount();
   await selectArtifact();
+  expect(requests.find(entry => entry.url?.endsWith('/prepare/'))?.data).not.toHaveProperty('artifact_id');
   await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
   const dialog = screen.getByRole('dialog');
   const content = within(dialog).getByRole('textbox', { name: '变更内容' }) as HTMLTextAreaElement;
@@ -88,7 +95,7 @@ it('从发布打包区选择单个产物并在真实字段表格编辑完整资�
   fireEvent.click(within(dialog).getByRole('button', { name: '校验资料' }));
   await screen.findByText('资料校验通过，尚未向 OA 发送。');
   const prepared = requests.filter(entry => entry.url?.endsWith('/prepare/'));
-  expect(prepared.at(-1)?.data).toMatchObject({ task_id: 'task', artifact_id: 'one', form: { soft_name: '修改后的软件', edit_content: '手填 | 资料\n完整第二行', applyCount: 1 } });
+  expect(prepared.at(-1)?.data).toMatchObject({ task_id: 'task', scope: 'directory', path: '.', source_kind: 'local', form: { soft_name: '修改后的软件', edit_content: '手填 | 资料\n完整第二行', applyCount: 1 } });
   expect((screen.getByRole('button', { name: '提交 OA 归档' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByLabelText(/项目编号|项目负责人|项目主管/)).toBeNull();
   expect(requests.every(entry => !entry.url?.includes('ticketscript'))).toBe(true);
@@ -112,7 +119,7 @@ it('实际发送修改后的资料并重新读取历史，成功后展示完整�
   expect(within(history).getByText(/"opaque"/)).toBeTruthy();
 });
 
-it('关闭重开和切换产物保留各自草稿，离开页面后丢弃', async () => {
+it('关闭重开和切换打包目录保留各自草稿，离开页面后丢弃', async () => {
   const view = mount();
   await selectArtifact();
   fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '第一份草稿' } });
@@ -170,7 +177,7 @@ it('人员选项使用系统登录名且仍可手填，来源提供内部自制�
 });
 
 
-it('详情切换发布说明标签再返回打包区仍恢复当前产物草稿', async () => {
+it('详情切换发布说明标签再返回打包区仍恢复当前目录草稿', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><ConfigProvider theme={{ token: { motion: false } }}><App>
     <MemoryRouter initialEntries={['/releases/release']}><Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes></MemoryRouter>
@@ -196,7 +203,7 @@ it('成功后再次申请先提醒，取消不派发，确认生成新申请且�
   await selectArtifact();
   await waitFor(() => expect((screen.getByLabelText('软件编号') as HTMLInputElement).value).toBe(''));
   fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
-  const confirmation = (await screen.findByText('该产物已有已发起归档的记录，请确认仍需再次办理。')).closest('[role="dialog"]') as HTMLElement;
+  const confirmation = (await screen.findByText('该目录已有已发起归档的记录，请确认仍需再次办理。')).closest('[role="dialog"]') as HTMLElement;
   fireEvent.click(within(confirmation).getByRole('button', { name: /取\s*消/ }));
   expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1);
   await waitFor(() => expect(screen.queryByRole('button', { name: '确认再次申请' })).toBeNull());
@@ -214,7 +221,7 @@ it('刷新后的未知申请恢复已发送资料，核对未建单后才能主�
   configured = true;
   savedRecords = [{ id: 'unknown-first', submission_id: 'old-operation', status: 'unknown',
     form: { ...initialForm, other_description: '已经发送的完整资料\n末行' },
-    operator: { username: 'first-actor' }, source: { task_id: 'task', path: '软件一.zip' },
+    operator: { username: 'first-actor' }, source: { task_id: 'task', scope: 'directory', path: '.' },
     created_at: '2026-11-12T00:00:00Z', message: '结果未确认', soft_number: '' }];
   mount();
   await selectArtifact();
@@ -234,19 +241,21 @@ it('刷新后的未知申请恢复已发送资料，核对未建单后才能主�
   await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
 });
 
-it('无清单任务在原 SVN 目录选择单文件，表单明确补录和当前文件依据', async () => {
+it('无清单任务只选原 SVN 整个目录，表单明确补录和当前目录依据', async () => {
   historyMode = true;
   mount();
-  fireEvent.click(await screen.findByRole('button', { name: '准备 OA 归档' }));
-  const tasks = await screen.findByRole('combobox', { name: 'SVN 历史任务' });
-  await screen.findByRole('option', { name: '无清单历史任务' });
+  fireEvent.click(await screen.findByRole('button', { name: '发起 OA 归档' }));
+  const tasks = await screen.findByRole('combobox', { name: '归档目录' });
+  await screen.findByRole('option', { name: '无清单历史任务 / 完整产物目录' });
   fireEvent.change(tasks, { target: { value: 'history' } });
-  fireEvent.click(await screen.findByRole('radio', { name: /目录\/补录.zip/ }));
+  expect(screen.queryByRole('radio')).toBeNull();
+  expect(screen.queryByRole('button', { name: /进入目录/ })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
   await screen.findByRole('table', { name: '软件归档申请资料' });
   await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
-  expect(screen.getByText('从 SVN 补录 · 目录/补录.zip')).toBeTruthy();
-  expect(requests.find(item => item.url?.endsWith('/prepare/'))?.data).toMatchObject({ task_id: 'history', path: '目录/补录.zip', source_kind: 'svn' });
+  expect(screen.getByText('从 SVN 补录 · 整个产物目录')).toBeTruthy();
+  expect(requests.find(item => item.url?.endsWith('/prepare/'))?.data).toEqual({ task_id: 'history', scope: 'directory', path: '.', source_kind: 'svn' });
+  expect(requests.some(item => item.url?.includes('svn-artifacts'))).toBe(false);
 });
 
 
@@ -259,7 +268,7 @@ it('维保手机实际详情展示只读归档资料且不提供确认或发送�
   fireEvent.click(await screen.findByRole('button', { name: '查看申请资料' }));
   expect((await screen.findByRole('table', { name: '已提交归档资料' })).textContent).toContain('末尾完整');
   expect(screen.getAllByText(/实际操作者：归档操作者/).length).toBeGreaterThan(0);
-  expect(screen.queryByRole('button', { name: '准备 OA 归档' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '发起 OA 归档' })).toBeNull();
   expect(screen.queryByRole('button', { name: '确认未建单' })).toBeNull();
   expect(requests.filter(item => item.method === 'post')).toEqual([]);
 });
@@ -276,4 +285,34 @@ it('失败历史可独立核对未建单并保存依据而不重试', async () =
   await waitFor(() => expect(requests.some(item => item.url?.endsWith('/confirm-no-order/'))).toBe(true));
   expect(requests.find(item => item.url?.endsWith('/confirm-no-order/'))?.data).toMatchObject({ application_id: 'failed-record', confirmation: 'checked_no_order', evidence: '已按提交时间核对 OA，未建单' });
   expect(requests.filter(item => item.url?.endsWith('/submit/'))).toEqual([]);
+});
+
+
+it('默认发布说明页在删除版本旁直接发起完整目录归档', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><ConfigProvider theme={{ token: { motion: false } }}><App>
+    <MemoryRouter initialEntries={['/releases/release']}><Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes></MemoryRouter>
+  </App></ConfigProvider></QueryClientProvider>);
+  const action = await screen.findByRole('button', { name: '发起 OA 归档' });
+  expect(within(action.closest('[aria-label="发布版本操作"]') as HTMLElement).getByRole('button', { name: '删除版本' })).toBeTruthy();
+  fireEvent.click(action);
+  await screen.findByRole('dialog', { name: '选择归档目录' });
+});
+
+
+it('旧单文件历史保持文件身份，不继承为整目录的重试或草稿', async () => {
+  configured = true;
+  savedRecords = [{ id: 'legacy-file', submission_id: 'legacy', status: 'unknown',
+    form: { ...initialForm, other_description: '旧单文件资料' }, operator: { username: 'operator' },
+    source: { task_id: 'task', path: '软件一.zip', kind: 'svn' }, created_at: '2026-11-12T00:00:00Z' }];
+  mount();
+  expect(await screen.findByText('结果未确认 · 软件一.zip')).toBeTruthy();
+  await selectArtifact();
+  await waitFor(() => expect((screen.getByLabelText('其他说明') as HTMLTextAreaElement).value).toBe(''));
+  fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
+  await waitFor(() => expect(requests.filter(item => item.url?.endsWith('/submit/'))).toHaveLength(1));
+  const submitted = requests.find(item => item.url?.endsWith('/submit/'))?.data;
+  expect(submitted).toMatchObject({ task_id: 'task', scope: 'directory', path: '.' });
+  expect(submitted).not.toHaveProperty('previous_id');
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
 });

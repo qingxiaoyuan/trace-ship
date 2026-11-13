@@ -4,11 +4,11 @@ import path from 'node:path';
 
 interface Application {
   id: string; submission_id: string; previous_id: string | null; confirmation: string; status: string;
-  form: Record<string, string | number>; source: { task_id: string; path: string };
+  form: Record<string, string | number>; source: { task_id: string; scope: string; path: string };
 }
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
   password: string; oa_archive: { username: string; release_id: string; version: string; oa_url: string; control_url: string;
-    tasks: { first: { id: string; artifacts: { id: string; name: string; path: string }[] } } };
+    tasks: Record<string, { id: string; name: string }> };
 };
 const sample = fixture.oa_archive;
 const reportDir = process.env.SMOKE_REPORT_DIR!;
@@ -25,9 +25,9 @@ async function releasePage(page: Page) {
   await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
 }
 async function openForm(page: Page, filename: string) {
-  const selected = sample.tasks.first.artifacts.find(item => item.name === filename)!;
-  await page.getByRole('button', { name: '准备 OA 归档', exact: true }).click();
-  await page.getByLabel('归档产物', { exact: true }).selectOption(`${sample.tasks.first.id}:${selected.id}`);
+  const selected = sample.tasks[filename.replace(/\.zip$/, '')];
+  await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
+  await page.getByLabel('归档目录', { exact: true }).selectOption(selected.id);
   await page.getByRole('button', { name: '填写申请资料', exact: true }).click();
   await expect(page.getByRole('table', { name: '软件归档申请资料', exact: true })).toBeVisible();
 }
@@ -62,12 +62,12 @@ async function capture(page: Page, label: string) {
   await page.screenshot({ path: path.join(reportDir, `oa-reapply-${label}.png`), animations: 'disabled' });
 }
 async function readHistory(page: Page, filename: string) {
+  const pending = page.waitForResponse(response => response.url().endsWith('/oa-archive/records/') && response.request().method() === 'GET');
   await page.goto(`/releases/${sample.release_id}`);
   await expect(page.getByRole('heading', { name: sample.version, exact: true })).toBeVisible();
-  const pending = page.waitForResponse(response => response.url().endsWith('/oa-archive/records/') && response.request().method() === 'GET');
   await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
   const records = (await (await pending).json()).data as Application[];
-  return records.filter(item => item.source.task_id === sample.tasks.first.id && item.source.path === filename);
+  return records.filter(item => item.source.task_id === sample.tasks[filename.replace(/\.zip$/, '')].id && item.source.scope === 'directory' && item.source.path === '.');
 }
 
 test.beforeEach(async ({ page }) => {
@@ -135,7 +135,7 @@ test('桌面再次申请提醒可取消，刷新不重发，多窗口旧确认�
   expect((await control()).count).toBe(before + 2);
   const records = await readHistory(page, filename);
   expect(records).toEqual([second, first]);
-  const article = page.getByRole('article').filter({ hasText: filename }).last();
+  const article = page.getByLabel('归档申请历史').getByRole('article').filter({ hasText: sample.tasks[filename.replace(/\.zip$/, '')].name }).last();
   await article.getByRole('button', { name: '查看申请资料', exact: true }).click();
   await expect(page.getByRole('table', { name: '已提交归档资料', exact: true })).toContainText('首次资料');
   await capture(page, 'desktop-history');
@@ -181,7 +181,7 @@ test('375px真实超时须核对未建单后主动重试，发送中其他窗口
   expect((await control()).count).toBe(before + 2);
   const records = await readHistory(page, filename);
   expect(records).toEqual([second, first]);
-  const historyRow = page.getByRole('article').filter({ hasText: filename }).first();
+  const historyRow = page.getByLabel('归档申请历史').getByRole('article').filter({ hasText: sample.tasks[filename.replace(/\.zip$/, '')].name }).first();
   await historyRow.scrollIntoViewIfNeeded();
   await expect(historyRow).toContainText('已核对 OA 未建单后重试');
   await capture(page, 'mobile-history');

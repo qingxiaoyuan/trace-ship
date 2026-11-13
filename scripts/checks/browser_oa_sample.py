@@ -53,7 +53,7 @@ def create_oa_sample(runtime, password):
         svn_push_enabled=True, svn_url=external["svn"]["url"], svn_credential=credential,
     )
     tasks = {}
-    for key in ("first", "history", "supplement"):
+    for key in ("first", "second", "mobile", "confirm", "failure", "timeout", "reapply", "reapply-unknown", "reapply-failure", "reapply-mobile", "history", "supplement"):
         workspace = runtime / "workspaces" / f"oa-{key}"
         artifacts = workspace / "artifacts"
         artifacts.mkdir(parents=True)
@@ -65,18 +65,18 @@ def create_oa_sample(runtime, password):
             content = ("首次归档产物\n" if filename.startswith("目录") and key == "first"
                        else f"{filename.removesuffix('.zip')} 场景产物\n").encode()
             target = artifacts / filename
-            if key == "first":
+            if key not in {"history", "supplement"}:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
             if key != "supplement":
                 manifest.append({
                     "id": str(uuid.uuid4()), "name": target.name, "path": filename,
-                    "size": len(content) if key == "first" else None,
-                    "sha256": hashlib.sha256(content).hexdigest() if key == "first" else None,
+                    "size": len(content) if key not in {"history", "supplement"} else None,
+                    "sha256": hashlib.sha256(content).hexdigest() if key not in {"history", "supplement"} else None,
                 })
         task = PackageTask.objects.create(
             project=project, repository=repository, release=release, config=config,
-            name={"first": "首次归档成功任务", "history": "保留清单的历史任务", "supplement": "无清单 SVN 补录任务"}[key],
+            name={"first": "首次归档成功任务", "history": "保留清单的历史任务", "supplement": "无清单 SVN 补录任务"}.get(key, f"{key} 独立成功打包"),
             status="success", triggered_by=owner, version=release.version, tag_name=release.tag_name,
             release_type="formal", commit_hash=release.git_hash, workspace_path=str(workspace), artifact_info=manifest,
             config_snapshot={**PackageService._snapshot(config), "id": str(config.id), "name": config.name},
