@@ -20,7 +20,7 @@ export function OaArchiveCard() {
       message.success('OA 软件归档配置已保存');
     },
   });
-  return <section aria-label="OA 软件归档" className="tech-card space-y-3 rounded-xl px-5 py-4">
+  return <section aria-label="OA 软件归档" className="tech-card flex flex-col gap-3 rounded-xl px-5 py-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-[14px] font-semibold text-slate-900">OA 软件归档</h2>
       <Button onClick={() => save.mutate()} loading={save.isPending} disabled={config.isPending || !!config.error}>保存归档配置</Button>

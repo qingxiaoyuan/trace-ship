@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.13',
+    date: '2026-11-13',
+    summary: '改善 OA 归档配置的表单间距',
+    items: [
+      { category: 'fix', text: 'OA 软件归档配置的地址输入框与下方提示条增加间距，避免紧贴显示。' },
+    ],
+  },
+  {
     version: '2026.11.12',
     date: '2026-11-12',
     summary: '提交 OA 软件归档并接入历史 SVN 文件与补录',
