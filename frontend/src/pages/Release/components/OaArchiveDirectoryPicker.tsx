@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import dayjs from 'dayjs';
 import { Alert, Button, Modal } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { oaArchiveApi, type ArchiveDirectory, type ArchiveSelection } from '@/api/oaArchive';
@@ -19,11 +20,12 @@ export function OaArchiveDirectoryPicker({ releaseId, open, onClose, onSelect, p
       <select id="archive-directory" value={taskId} onChange={event => setTaskId(event.target.value)}
         className="min-h-11 w-full min-w-0 rounded border border-slate-300 bg-white p-2" disabled={options.isFetching || pending}>
         <option value="">选择一次成功打包</option>
-        {(options.data?.directories || []).map(item => <option key={item.task_id} value={item.task_id}>{item.task_name} / 完整产物目录</option>)}
+        {(options.data?.directories || []).map(item => <option key={item.task_id} value={item.task_id}>{item.created_at ? `${dayjs(item.created_at).format('YYYY-MM-DD HH:mm:ss')} · ` : ''}{item.task_name} / 完整产物目录</option>)}
       </select>
       {selected && <div className="space-y-2 text-xs">
+        <p className="break-words">打包任务：{selected.task_name}</p>
         <p>归档范围：整个产物目录</p>
-        {selected.created_at && <p>打包时间：{new Date(selected.created_at).toLocaleString()}</p>}
+        {selected.created_at && <p>打包时间：{dayjs(selected.created_at).format('YYYY-MM-DD HH:mm:ss')}</p>}
         {selected.svn_url && <p className="break-all">任务保存的 SVN 目录：{selected.svn_url}</p>}
         {selected.source_kind === 'svn' && <Alert type="info" title="按当前 SVN 目录办理" description="目录内容可能已被覆盖，不表示与原构建一致。填写和提交时重新核验任务保存的整个目录；没有原清单时明确标记从 SVN 补录。" />}
       </div>}

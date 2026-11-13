@@ -16,6 +16,7 @@ const requests: { url?: string; method?: string; data: unknown }[] = [];
 let role = 'manager';
 let configured = false;
 let historyMode = false;
+let sameTaskNames = false;
 let savedRecords: unknown[] = [];
 const release = { id: 'release', project: 'project', repository: 'repo', publisher: 'publisher', version: 'V1.2.3',
   release_type: 'formal', status: 'released', package_tasks: [] } as unknown as Release;
@@ -29,6 +30,7 @@ beforeEach(() => {
   role = 'manager';
   configured = false;
   historyMode = false;
+  sameTaskNames = false;
   savedRecords = [];
   requests.length = 0;
   useAuthStore.setState({ user: { id: 'operator', username: 'operator', is_superuser: false, permissions: [] } as unknown as UserInfo });
@@ -43,8 +45,8 @@ beforeEach(() => {
       { task_id: 'task', task_name: '正式安装包', artifact_id: 'one', name: '软件一.zip', path: '软件一.zip' },
       { task_id: 'task', task_name: '正式安装包', artifact_id: 'two', name: '软件二.zip', path: '软件二.zip' },
     ], directories: [
-      { task_id: 'task', task_name: '正式安装包', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'local', artifact_count: 2 },
-      { task_id: 'task-two', task_name: '第二次打包', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'local', artifact_count: 1 },
+      { task_id: 'task', task_name: '正式安装包', created_at: '2026-11-13T08:00:00', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'local', artifact_count: 2 },
+      { task_id: 'task-two', task_name: sameTaskNames ? '正式安装包' : '第二次打包', created_at: '2026-11-13T09:00:00', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'local', artifact_count: 1 },
       ...(historyMode ? [{ task_id: 'history', task_name: '无清单历史任务', scope: 'directory', path: '.', name: '完整产物目录', source_kind: 'svn' }] : []),
     ] };
     else if (config.url === '/packages/tasks/history/svn-artifacts/') data = { mode: 'browse', root_url: 'svn://example/task', entries: [{ path: '目录/补录.zip', name: '补录.zip', source: 'svn_supplement', state: 'available', original: { size: null }, current: { kind: 'file', size: 7, revision: '2' } }], total: 1, page: 1, page_size: 50 };
@@ -73,7 +75,7 @@ function mount() {
 async function selectArtifact(id = 'one') {
   fireEvent.click(await screen.findByRole('button', { name: '发起 OA 归档' }));
   const select = await screen.findByLabelText('归档目录');
-  await within(select).findByText('正式安装包 / 完整产物目录');
+  await within(select).findByRole('option', { name: /正式安装包 \/ 完整产物目录/ });
   expect(within(select).getAllByRole('option')).toHaveLength(3);
   expect(within(select).queryByText('软件一.zip')).toBeNull();
   fireEvent.change(select, { target: { value: id === 'one' ? 'task' : 'task-two' } });
@@ -315,4 +317,19 @@ it('旧单文件历史保持文件身份，不继承为整目录的重试或草�
   expect(submitted).toMatchObject({ task_id: 'task', scope: 'directory', path: '.' });
   expect(submitted).not.toHaveProperty('previous_id');
   await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
+});
+
+
+it('同名成功打包在目录选项中显示各自时间，选择对应那一次任务', async () => {
+  sameTaskNames = true;
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: '发起 OA 归档' }));
+  const choice = await screen.findByLabelText('归档目录');
+  await waitFor(() => expect(within(choice).getAllByRole('option')).toHaveLength(3));
+  expect(within(choice).getByRole('option', { name: '2026-11-13 08:00:00 · 正式安装包 / 完整产物目录' })).toBeTruthy();
+  expect(within(choice).getByRole('option', { name: '2026-11-13 09:00:00 · 正式安装包 / 完整产物目录' })).toBeTruthy();
+  fireEvent.change(choice, { target: { value: 'task-two' } });
+  fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
+  await screen.findByRole('table', { name: '软件归档申请资料' });
+  expect(requests.find(item => item.url?.endsWith('/prepare/'))?.data).toMatchObject({ task_id: 'task-two', scope: 'directory', path: '.' });
 });
