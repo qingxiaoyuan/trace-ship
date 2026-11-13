@@ -1,0 +1,385 @@
+import { test, expect } from '@playwright/test';
+import type { Page, Locator } from '@playwright/test';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { openArchiveDirectoryPicker, searchArchiveDirectory } from './helpers/oa-directory';
+
+interface Artifact { id: string; name: string; path: string }
+interface Directory { id: string; name: string; artifacts: Artifact[]; root_url: string }
+interface OaSample {
+  username: string; maintainer_username: string; actor_id: string; actor_name: string; release_id: string; version: string;
+  git_hash: string; branch: string; software_name: string; changes: string; release_doc: string; document_source: string;
+  oa_url: string; control_url: string;
+  tasks: Record<string, Directory>;
+}
+interface Application {
+  id: string; status: string; form: Record<string, string | number>;
+  operator: { id: string; username: string }; source: { task_id: string; path: string; scope: string; git_hash: string };
+  soft_number: string; software_archive_id: unknown; number_apply_id: unknown;
+}
+interface Receipt { body: Record<string, string | number>; contentType: string; hasAuthorization: boolean; hasCookie: boolean; mode: string }
+const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as { password: string; oa_archive: OaSample };
+const sample = fixture.oa_archive;
+const reportDir = process.env.SMOKE_REPORT_DIR!;
+const labels = ['申请人', '软件名称', '软件版本', '接收人', '软件来源', '代码 Git 分支', 'SN', '变更内容', '变更原因', '其他说明'];
+let evidence: Record<string, unknown>;
+let pageErrors: string[];
+
+async function control(body?: object) {
+  const response = await fetch(sample.control_url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  expect(response.ok).toBeTruthy();
+  return await response.json() as { count: number; requests: Receipt[] };
+}
+async function login(page: Page, username = sample.username) {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '本地账号', exact: true }).click();
+  await page.getByPlaceholder('请输入本地账号').fill(username);
+  await page.getByPlaceholder('请输入密码', { exact: true }).fill(fixture.password);
+  await page.getByRole('button', { name: '登 录', exact: true }).click();
+  await expect(page).not.toHaveURL(/\/login/);
+}
+async function configure(page: Page) {
+  await page.goto('/system/configs');
+  const section = page.getByRole('region', { name: 'OA 软件归档', exact: true });
+  await section.getByLabel('归档接口完整地址', { exact: true }).fill(sample.oa_url);
+  const saved = page.waitForResponse(response => response.url().endsWith('/configs/oa-archive/') && response.request().method() === 'PUT');
+  await section.getByRole('button', { name: '保存归档配置', exact: true }).click();
+  expect((await saved).status()).toBe(200);
+}
+async function releasePage(page: Page) {
+  await page.goto(`/releases/${sample.release_id}`);
+  await expect(page.getByRole('heading', { name: sample.version, exact: true })).toBeVisible();
+}
+function directory(key: string) {
+  return sample.tasks[key];
+}
+function archiveField(page: Page, label: string) {
+  return page.getByRole(['申请人', '接收人', '软件来源'].includes(label) ? 'combobox' : 'textbox', { name: label, exact: true });
+}
+async function openForm(page: Page, selected: Directory) {
+  await openArchiveDirectoryPicker(page);
+  await expect(page.getByRole('option')).toHaveCount(Object.keys(sample.tasks).length);
+  const selectedOption = await searchArchiveDirectory(page, selected.name);
+  await expect.poll(() => page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations !== Infinity).length)).toBe(0);
+  const popupBounds = await page.getByRole('listbox').boundingBox();
+  expect(popupBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(popupBounds!.x + popupBounds!.width).toBeLessThanOrEqual((await page.viewportSize())!.width);
+  await screenshot(page, (await page.viewportSize())!.width < 768 ? 'mobile-directory-dropdown' : 'desktop-directory-dropdown');
+  await selectedOption.click();
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  const prepared = page.waitForResponse(response => response.url().endsWith('/oa-archive/prepare/') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: '填写申请资料', exact: true }).click();
+  const preparation = await prepared;
+  expect(preparation.request().postDataJSON()).toMatchObject({ task_id: selected.id, scope: 'directory', path: '.' });
+  expect(preparation.request().postDataJSON()).not.toHaveProperty('artifact_id');
+  const table = page.getByRole('table', { name: '软件归档申请资料', exact: true });
+  await expect(table).toBeVisible();
+  await expect(table.getByRole('rowheader', { name: /软件编号|申请数量/ })).toHaveCount(0);
+  await expect(page.getByText(/仅影响本次申请，数量固定/)).toHaveCount(0);
+  const alignment = [];
+  for (const name of ['申请人', '软件名称', '变更内容']) {
+    const position = await archiveField(page, name).evaluate(input => {
+      const label = (input as HTMLInputElement).labels![0];
+      const range = document.createRange();
+      range.selectNodeContents(label.firstChild!);
+      const text = range.getBoundingClientRect();
+      const box = input.getBoundingClientRect();
+      const style = getComputedStyle(input);
+      // 弹窗进入时会缩放，CSS 行高与页面坐标必须换算到同一尺度。
+      const scale = box.height / (input as HTMLElement).offsetHeight;
+      const center = input.tagName === 'TEXTAREA'
+        ? box.top + (parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop) + parseFloat(style.lineHeight) / 2) * scale
+        : box.top + box.height / 2;
+      return { delta: Math.abs(text.top + text.height / 2 - center) / scale };
+    });
+    alignment.push({ name, ...position });
+  }
+  evidence.labelAlignment = alignment;
+  for (const position of alignment) expect(position.delta, position.name).toBeLessThanOrEqual(2);
+  return table;
+}
+async function screenshot(page: Page, key: string, table?: Locator) {
+  const actual = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
+  expect(actual.documentWidth).toBeLessThanOrEqual(actual.width);
+  if (table) {
+    const box = await table.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(actual.width);
+  }
+  evidence[key] = actual;
+  await page.screenshot({ path: path.join(reportDir, `oa-${key}.png`), animations: 'disabled' });
+}
+async function history(page: Page, selected: Directory, expected: Record<string, string | number>) {
+  // 导航提交后才监听新页面，避免读取被刷新取消的旧页面自动查询。
+  const navigated = page.waitForEvent('framenavigated', { predicate: frame => frame === page.mainFrame() });
+  const release = navigated.then(() => page.waitForResponse(response => response.url().endsWith(`/releases/${sample.release_id}/`) && response.request().method() === 'GET')).then(response => response.json());
+  const records = navigated.then(() => page.waitForResponse(response => response.url().endsWith(`/releases/${sample.release_id}/oa-archive/records/`) && response.request().method() === 'GET')).then(response => response.json());
+  await page.reload();
+  expect((await release).data.release_doc).toBe(sample.release_doc);
+  await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
+  const items = (await records).data as Application[];
+  const item = items.find(row => row.source.task_id === selected.id && row.source.scope === 'directory' && row.source.path === '.')!;
+  expect(item.form).toEqual(expected);
+  expect(item.operator).toMatchObject({ id: sample.actor_id, username: sample.username });
+  expect(item.source.git_hash).toBe(sample.git_hash);
+  const article = page.getByLabel('归档申请历史').getByRole('article').filter({ hasText: selected.name });
+  await article.getByRole('button', { name: '查看申请资料', exact: true }).click();
+  const table = page.getByRole('table', { name: '已提交归档资料', exact: true });
+  await expect(table).toBeVisible();
+  const content = table.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '变更内容', exact: true }) }).getByRole('cell');
+  await expect(content).toHaveText(String(expected.edit_content));
+  expect(await content.evaluate(element => getComputedStyle(element).whiteSpace)).toBe('pre-wrap');
+  evidence.history = { record: item, rows: await table.getByRole('rowheader').allTextContents(), contentPreserved: true, originalReleaseUnchanged: true };
+  await screenshot(page, `${test.info().testId.slice(-8)}-history`, table);
+  // 展示并截图长文末尾，证明完整记录可以在弹窗内滚动阅读。
+  await content.evaluate(element => element.scrollIntoView({ block: 'end' }));
+  await page.screenshot({ path: path.join(reportDir, `oa-${test.info().testId.slice(-8)}-history-tail.png`), animations: 'disabled' });
+  await table.locator('xpath=ancestor::*[@role="dialog"]').getByRole('button', { name: 'Close', exact: true }).click();
+  return item;
+}
+async function send(page: Page) {
+  const response = page.waitForResponse(item => item.url().endsWith('/oa-archive/submit/') && item.request().method() === 'POST', { timeout: 45_000 });
+  await page.getByRole('button', { name: '提交 OA 归档', exact: true }).click();
+  const result = await response;
+  expect(result.status()).toBe(201);
+  evidence.submit = { status: result.status(), body: result.request().postDataJSON() };
+  return (await result.json()).data as Application;
+}
+
+test.beforeEach(async ({ page }) => {
+  evidence = { source: sample.document_source, releaseId: sample.release_id, role: '隔离超管/项目管理员', viewportKind: '浏览器视口模拟，未测手机真机' };
+  pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await login(page);
+  await configure(page);
+  await control({ mode: 'success' });
+});
+test.afterEach(async ({ page, browser }, info) => {
+  evidence.browser = { name: 'Chromium', version: browser.version(), headless: true };
+  evidence.environment = { node: process.version, platform: process.platform, runReport: 'report.json' };
+  evidence.status = info.status;
+  evidence.pageErrors = pageErrors;
+  evidence.external = await control().catch(() => null);
+  if (info.status !== 'passed') {
+    evidence.errors = info.errors.map(error => error.message);
+    await page.screenshot({ path: path.join(reportDir, `oa-${info.testId.slice(-8)}-failure.png`), fullPage: true }).catch(() => {});
+  }
+  writeFileSync(path.join(reportDir, `oa-${info.testId.slice(-8)}-evidence.json`), JSON.stringify(evidence, null, 2));
+});
+
+test('桌面归档完整编辑、字段定位、对象草稿和标签保活，成功后从历史读取原样资料', async ({ page }) => {
+  test.setTimeout(90_000);
+  const selected = directory('first');
+  await page.goto(`/releases/${sample.release_id}`);
+  await expect(page.getByRole('heading', { name: sample.version, exact: true })).toBeVisible();
+  const notes = page.getByRole('table').filter({ hasText: '人工保存首行' });
+  await expect(notes.locator('strong').filter({ hasText: '归档重点' })).toBeVisible();
+  await expect(notes.getByRole('link', { name: '说明链接', exact: true })).toHaveAttribute('href', 'https://example.invalid/oa/help');
+  expect(await notes.locator('br').count()).toBeGreaterThan(0);
+  evidence.releaseDom = { strong: true, link: true, breaks: true };
+  const actions = page.getByLabel('发布版本操作');
+  await expect(actions.getByRole('button', { name: '发起 OA 归档', exact: true })).toBeVisible();
+  await expect(actions.getByRole('button', { name: '删除版本', exact: true })).toBeVisible();
+  const buttons = await actions.getByRole('button').evaluateAll(items => items.map(item => { const rect = item.getBoundingClientRect(); const style = getComputedStyle(item); return { height: rect.height, radius: style.borderRadius, font: style.fontSize }; }));
+  expect(buttons[0]).toEqual(buttons[1]);
+  evidence.headerButtons = buttons;
+  await screenshot(page, 'desktop-header');
+  const table = await openForm(page, selected);
+  expect((await table.getByRole('rowheader').allTextContents()).map(label => label.replace(' *', ''))).toEqual(labels);
+  expect(await table.getByRole('row').count()).toBe(13);
+  expect(await table.getByRole('cell').count()).toBe(13);
+  await expect(page.getByLabel('变更内容', { exact: true })).toHaveValue(sample.changes);
+  await expect(page.getByLabel('SN', { exact: true })).toHaveValue(sample.git_hash);
+  await expect(page.getByLabel('代码 Git 分支', { exact: true })).toHaveValue(sample.branch);
+  await expect(archiveField(page, '软件名称')).toHaveValue(sample.software_name);
+  for (const label of ['申请人', '软件名称', '软件版本', '接收人']) {
+    await archiveField(page, label).fill('');
+    await expect(archiveField(page, label)).toHaveValue('');
+  }
+  const before = (await control()).count;
+  await page.getByRole('button', { name: '提交 OA 归档', exact: true }).click();
+  await expect(archiveField(page, '申请人')).toBeFocused();
+  for (const label of ['申请人', '软件名称', '软件版本', '接收人']) await expect(page.getByText(`请填写${label}`, { exact: true })).toBeVisible();
+  expect((await control()).count).toBe(before);
+  evidence.requiredFocus = '申请人';
+  const expected = {
+    docCreator: '人工申请人', applyCount: 1, soft_name: '人工确认软件 | 桌面', soft_version: '手填版本 88.1',
+    developer: 'oa.receiver', soft_source: '内部自制', git_svn: 'release/manual-branch',
+    sn_code: '人工补充 SN', edit_content: `${sample.changes}\n\n本次申请独立补充长文结尾。`,
+    edit_reason: '修复说明\n保留第二行', other_description: '第一次打包目录独立草稿', soft_number: '',
+  };
+  const fields: [string, string][] = [['申请人', 'docCreator'], ['软件名称', 'soft_name'], ['软件版本', 'soft_version'], ['接收人', 'developer'], ['代码 Git 分支', 'git_svn'], ['SN', 'sn_code'], ['变更内容', 'edit_content'], ['变更原因', 'edit_reason'], ['其他说明', 'other_description']];
+  for (const [label, field] of fields) await archiveField(page, label).fill(String(expected[field as keyof typeof expected]));
+  await page.getByLabel('软件来源', { exact: true }).click();
+  await page.getByRole('option', { name: '内部自制', exact: true }).click();
+  await archiveField(page, '申请人').scrollIntoViewIfNeeded();
+  await screenshot(page, 'desktop-form', table);
+  expect(evidence['desktop-form']).toMatchObject({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+  await openForm(page, directory('second'));
+  await expect(page.getByLabel('其他说明', { exact: true })).toHaveValue('');
+  await page.getByLabel('其他说明', { exact: true }).fill('第二次打包目录独立草稿');
+  await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+  await page.getByRole('main').getByRole('button', { name: '发布说明', exact: true }).click();
+  await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
+  await openForm(page, selected);
+  for (const [label, field] of fields) await expect(archiveField(page, label)).toHaveValue(String(expected[field as keyof typeof expected]));
+  const result = await send(page);
+  expect(result.status).toBe('success');
+  const received = await control();
+  expect(received.count).toBe(before + 1);
+  expect(received.requests.at(-1)).toMatchObject({ body: expected, contentType: 'application/json', hasAuthorization: false, hasCookie: false });
+  expect(Object.keys(received.requests.at(-1)!.body).sort()).toEqual(Object.keys(expected).sort());
+  await expect(page.getByRole('table', { name: '软件归档申请资料', exact: true })).not.toBeVisible();
+  await openForm(page, directory('second'));
+  await expect(page.getByLabel('其他说明', { exact: true })).toHaveValue('第二次打包目录独立草稿');
+  await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+  await openForm(page, selected);
+  await expect(page.getByLabel('其他说明', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+  const saved = await history(page, selected, expected);
+  expect(saved.software_archive_id).toEqual({ opaque: { ticket: `archive-${received.count}` } });
+  expect(saved.number_apply_id).toBe(`number-${received.count}`);
+  expect((await control()).count).toBe(before + 1);
+  evidence.drafts = { isolatedByDirectory: true, keptAcrossTabs: true, successClearedOnlyCurrent: true };
+  expect(pageErrors).toEqual([]);
+});
+
+test('375px 手机缺少randomUUID仍可提交，历史表格和主操作完整可用', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined }));
+  await page.setViewportSize({ width: 375, height: 812 });
+  await releasePage(page);
+  expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe('undefined');
+  evidence.submissionIdMode = '模拟内网 HTTP 缺少 randomUUID，使用浏览器随机字节';
+  const selected = directory('mobile');
+  await expect(page.getByLabel('发布版本操作').getByRole('button', { name: '发起 OA 归档', exact: true })).toBeInViewport();
+  await screenshot(page, 'mobile-header');
+  const table = await openForm(page, selected);
+  await expect(page.getByLabel('变更内容', { exact: true })).toHaveValue(sample.changes);
+  await screenshot(page, 'mobile-form-top', table);
+  await archiveField(page, '接收人').fill('');
+  await page.getByRole('button', { name: '提交 OA 归档', exact: true }).click();
+  await expect(archiveField(page, '接收人')).toBeFocused();
+  await archiveField(page, '接收人').fill(sample.username);
+  evidence.requiredFocus = '接收人';
+  await expect(page.getByLabel('软件编号', { exact: true })).toHaveCount(0);
+  await page.getByLabel('变更原因', { exact: true }).fill('手机确认\n第二行');
+  await page.getByLabel('变更内容', { exact: true }).evaluate(element => { element.scrollTop = element.scrollHeight; element.scrollIntoView({ block: 'center' }); });
+  await screenshot(page, 'mobile-form-tail', table);
+  expect(evidence['mobile-form-tail']).toMatchObject({ width: 375, height: 812 });
+  await expect(page.getByRole('button', { name: '提交 OA 归档', exact: true })).toBeInViewport();
+  const before = (await control()).count;
+  const result = await send(page);
+  expect(result.status).toBe('success');
+  expect(result.form).toMatchObject({ soft_number: '', applyCount: 1 });
+  expect(result.soft_number).toMatch(/^OA-SMOKE-/);
+  expect(result.number_apply_id).toBeTruthy();
+  expect(result.form.edit_reason).toBe('手机确认\n第二行');
+  expect(result.form.edit_content).toBe(sample.changes);
+  const received = await control();
+  expect(received.count).toBe(before + 1);
+  expect(received.requests.at(-1)!.body).toEqual(result.form);
+  await history(page, selected, result.form);
+  expect((await control()).count).toBe(before + 1);
+  expect(pageErrors).toEqual([]);
+});
+
+for (const mode of ['failure', 'timeout'] as const) {
+  test(`${mode === 'failure' ? 'OA 明确失败' : '真实 OA 超时'}保留输入和历史，重开及刷新不自动重发`, async ({ page, context }) => {
+    test.setTimeout(90_000);
+    await releasePage(page);
+    const selected = directory(mode);
+    await openForm(page, selected);
+    await page.getByLabel('其他说明', { exact: true }).fill(`${mode} 场景保留输入\n末行`);
+    await control({ mode });
+    const before = (await control()).count;
+    const started = Date.now();
+    const pending = send(page);
+    if (mode === 'timeout') {
+      await expect.poll(async () => (await control()).count).toBe(before + 1);
+      await expect(archiveField(page, '申请人')).toBeDisabled();
+      await page.getByRole('button', { name: /提交 OA 归档$/ }).click({ force: true });
+      expect((await control()).count).toBe(before + 1);
+      const observer = await context.newPage();
+      await releasePage(observer);
+      await observer.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
+      await expect(observer.getByLabel('归档申请历史').getByRole('article').filter({ hasText: selected.name })).toContainText('发送中');
+      await screenshot(observer, 'timeout-sending');
+      await observer.close();
+    }
+    const result = await pending;
+    expect(result.status).toBe(mode === 'failure' ? 'failure' : 'unknown');
+    if (mode === 'timeout') expect(Date.now() - started).toBeGreaterThanOrEqual(29_000);
+    evidence.elapsedMs = Date.now() - started;
+    await expect(page.getByLabel('其他说明', { exact: true })).toHaveValue(`${mode} 场景保留输入\n末行`);
+    await screenshot(page, `${mode}-result`);
+    await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+    await openForm(page, selected);
+    await expect(page.getByLabel('其他说明', { exact: true })).toHaveValue(`${mode} 场景保留输入\n末行`);
+    await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+    await history(page, selected, result.form);
+    expect((await control()).count).toBe(before + 1);
+    evidence.noAutomaticResend = true;
+    expect(pageErrors).toEqual([]);
+  });
+}
+
+
+test('失败独立核对保留依据且不重试，375px维保详情只读展示申请历史', async ({ page, browser }) => {
+  await releasePage(page);
+  const selected = directory('confirm');
+  await openForm(page, selected);
+  await control({ mode: 'failure' });
+  const before = (await control()).count;
+  const result = await send(page);
+  expect(result.status).toBe('failure');
+  await page.getByRole('button', { name: '关闭并保留草稿', exact: true }).click();
+  await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
+  const article = page.getByLabel('归档申请历史').getByRole('article').filter({ hasText: selected.name });
+  await expect(article).toContainText('尚未核对未建单');
+  await article.getByRole('button', { name: '确认未建单', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '核对失败申请', exact: true });
+  await expect(dialog.getByRole('button', { name: '保存核对结果' })).toBeDisabled();
+  await dialog.getByLabel('核对依据', { exact: true }).fill('已按申请人及提交时间在隔离 OA 核对，确认未建单');
+  await dialog.getByRole('checkbox', { name: '我已核对 OA，确认这条失败申请未建单' }).check();
+  await screenshot(page, 'failure-confirmation');
+  const confirmed = page.waitForResponse(response => response.url().endsWith('/oa-archive/confirm-no-order/') && response.request().method() === 'POST');
+  await dialog.getByRole('button', { name: '保存核对结果' }).click();
+  const response = await confirmed;
+  expect(response.status()).toBe(200);
+  const checked = (await response.json()).data;
+  expect(checked.status).toBe('failure');
+  expect(checked.form).toEqual(result.form);
+  expect(checked.no_order_confirmation.operator.username).toBe(sample.username);
+  expect(checked.no_order_confirmation.evidence).toContain('确认未建单');
+  await expect(article).toContainText('已核对未建单');
+  await expect(article.getByRole('button', { name: '确认未建单', exact: true })).toHaveCount(0);
+  expect((await control()).count).toBe(before + 1);
+  evidence.confirmation = checked.no_order_confirmation;
+
+  const readonly = await browser.newContext({ baseURL: process.env.SMOKE_BASE_URL, viewport: { width: 375, height: 812 } });
+  try {
+    const mobile = await readonly.newPage();
+    await login(mobile, sample.maintainer_username);
+    await mobile.goto(`/releases/${sample.release_id}`);
+    await mobile.getByRole('tab', { name: '打包任务', exact: true }).click();
+    const item = mobile.getByLabel('归档申请历史').getByRole('article').filter({ hasText: selected.name });
+    await expect(item).toContainText('实际操作者：smoke_oa');
+    await expect(item).toContainText('已核对未建单');
+    await expect(mobile.getByRole('button', { name: /发起 OA 归档|确认未建单|提交 OA 归档|确认重试|下载/ })).toHaveCount(0);
+    await screenshot(mobile, 'maintainer-mobile-history');
+    await item.getByRole('button', { name: '查看申请资料' }).click();
+    const table = mobile.getByRole('table', { name: '已提交归档资料' });
+    await expect(table).toContainText('人工保存长文末尾：不能截断到列表摘要。');
+    await expect(mobile.getByRole('dialog', { name: '归档申请记录' })).toContainText('核对依据：已按申请人及提交时间');
+    await screenshot(mobile, 'maintainer-mobile-record', table);
+    await table.getByRole('row').filter({ hasText: '变更内容' }).evaluate(element => element.scrollIntoView({ block: 'end' }));
+    await mobile.screenshot({ path: path.join(reportDir, 'oa-maintainer-mobile-tail.png'), animations: 'disabled' });
+    await table.getByRole('row').first().scrollIntoViewIfNeeded();
+    await expect(mobile.getByRole('dialog', { name: '归档申请记录' })).toHaveCSS('opacity', '1');
+    await screenshot(mobile, 'maintainer-mobile-record-top', table);
+    evidence.maintainer = { role: 'maintainer', width: 375, fullContent: true, historyOnly: true };
+  } finally { await readonly.close(); }
+  expect((await control()).count).toBe(before + 1);
+});

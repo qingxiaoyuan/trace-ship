@@ -14,4 +14,9 @@ COPY backend/requirements.txt backend/requirements-dev.txt /opt/checks/
 ARG PIP_INDEX_URL=https://pypi.org/simple
 RUN python -m pip install --no-cache-dir -r /opt/checks/requirements-dev.txt --index-url "$PIP_INDEX_URL"
 
+# 独立安装 SVN 工具，调整外部服务测试依赖时保留 Python 依赖层缓存。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends subversion \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /workspace/backend

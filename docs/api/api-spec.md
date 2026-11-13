@@ -1387,6 +1387,29 @@
 
 ---
 
+### 8.14 OA 软件归档资料准备与提交
+
+仅已发布正式版适用；操作者须为现行项目成员中的发布人（开发或测试等业务写入身份）、项目管理员、软件管理员，超管放行。维保、只读、已移除成员和其他项目身份均不扩权。
+
+- `GET /api/releases/{id}/oa-archive/options/`：`directories` 每个合格任务最多一项 `{task_id, task_name, name, path:".", scope:"directory", source_kind, created_at, artifact_count, svn_url}`，数量为历史清单数量，未知为 null；不在候选列表逐项联网。旧 `artifacts` / `svn_tasks` 返回保持兼容。任务快照启用 SVN 时须推送成功。
+- `POST /api/releases/{id}/oa-archive/prepare/`：新界面请求 `{task_id, scope:"directory", path:".", source_kind:"local"|"svn"}`，仅表示整次打包根目录；不能带 artifact_id 或其他路径。成功推送过 SVN 时须实时核验保存的根目录，不能用本地文件或人工地址绕过。无 SVN 时须有实际本地产物。返回 `selection`、目录依据 `source`、`configuration: {configured, reason}`、`content_source` 与 `form`。可追加 `form` 校验独立申请副本，不回写来源。旧 `{task_id, artifact_id}` 或 `{task_id, path, source_kind:"svn"}` 单文件请求保持兼容，不把旧历史改为目录。
+
+`form` 的四个必填字段为 `docCreator`、`soft_name`、`soft_version`、`developer`；分别预填操作者登录名、项目内软件名（回退仓库名）、发布版本号、发布人登录名。`soft_source` 可为空、内部自制或外购；`git_svn` 取发布记录保存的代码 Git 分支名（如 `main`、`release/v1.0`，目录及旧单文件准备接口一致），无则留空可补填；不取产物 SVN 地址，已提交历史资料保持原值；`sn_code` 只预填发布保存的完整 SHA，旧数据不完整则留空。`edit_content` 来自已保存说明的完整更新内容，保留换行、缩进与管道符；无法可靠识别时返回完整原文且 `content_source=release_doc_original`（正常为 `release_doc_changes`）。原因 `edit_reason`、其他说明 `other_description`、软件编号 `soft_number` 初始为空。所有预填可修改，`applyCount` 始终为 1；三个项目字段不进入资料副本。
+
+未配置地址时 `configuration.configured=false` 并返回原因；仍允许准备与校验。非法发布或任务资格返回 400，不可见资源返回 404，无操作权限返回 403。表单错误按 `data.form.<字段>` 返回。页内草稿由前端按发布/任务/产物区分保留，刷新或离开页面后消失。
+
+- `POST /api/releases/{id}/oa-archive/submit/`：请求 `{task_id, scope:"directory", path:".", source_kind?, submission_id, form}`，选择参数与 prepare 一致，`submission_id` 为客户端本次操作生成并保留的 UUID。服务器在仓库→发布→任务锁内重新授权、检查任务与目录，再持久化独立 `sending` 申请并提交事务，最后仅发送一次 POST JSON。返回 201 和申请记录；同一操作者同一标识及相同资料重放返回 200 和原记录，不重新发送。标识被用于不同资料返回 400；已有该任务及根路径 `.` 的目录申请时（旧文件仍用规范相对路径），须额外提交 `previous_id`（最新申请 ID）及 `confirmation`：最新 success 用 `reapply`、failure 用 `retry`、unknown 用 `checked_no_order`（用户已人工核对 OA 未建单）。服务器在锁内核验最新记录；旧窗口、换人或前次记录不匹配均返回 400，sending 始终拒绝新派发。同一标识重放也须保持前次关联与确认方式不变。合法新操作使用新 UUID，每次重新授权及核验来源并新增记录。
+- `POST /api/releases/{id}/oa-archive/confirm-no-order/`：请求 `{application_id, confirmation:"checked_no_order", evidence}`，`evidence` 为必填核对依据，最多 2000 字。当前具有归档权限的操作者可单独确认本发布内的明确失败申请，文件过期不妨碍核对；不调用 OA、不重试。仓库→发布→任务→申请锁内仅解除该失败申请的保护，保存 `no_order_confirmation: {operator, confirmed_at, evidence}`；重复操作返回首次结果，不覆盖依据。成功、发送中、未知结果返回 400，其他发布申请返回 404，未授权返回 403。原状态、资料、响应保持不变。
+- `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/created_at/finished_at/previous_id/confirmation/no_order_confirmation`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source` 保留发布/项目/仓库/任务 ID、原版本、Tag、源码 SHA、任务内规范相对路径、原产物及 SVN 阶段快照，手改 `git_svn` 不改变来源。
+
+目录选择和提交均重新核验保存的 SVN 当前根目录；400 表示路径越界或历史依据缺失，409 表示目录已删除、不是目录或没有有效交付文件，502 表示网络、凭证或远端结果无法核验，`data.state` 区分原因。系统生成发布说明不算交付文件；遍历只在保存根目录内，目录内当前内容整体办理，不任选子目录。手填 `git_svn` 只属于申请资料，不改变核验目录。
+
+新申请的 `source.scope=directory`、`source.path="."`、`source.kind=local|svn`、`source.supplemented` 标明目录来源。`source.artifact.original` 保留 `artifact_count`（缺失为 null）与原 `files:[{path,size,sha256,revision}]`，`current` 保留当前目录 `kind:"dir"`、`artifact_count`；SVN 还包含 `repository_revision/revision/date/files:[{path,size,revision}]`。不会把某一个文件大小或哈希当成整个目录属性。当前内容可能已覆盖，与固定源码 git_hash/SN 分开。旧历史无 scope 或 scope=file 按原文件显示、保护，不迁移为目录。
+
+状态为 `sending`（发送中）、`success`（已发起归档）、`failure`（OA 返回 code=-1）、`unknown`（结果未确认）。`code=0` 且存在可靠返回资料时保存非空字符串软件编号与不透明归档对象（JSON 对象，内部字段不作假设），编号申请单 ID 为字符串，请求指定已有软件编号时允许 null 或空字符串；不提供无契约的 OA 链接。超时、断连、非法 JSON、缺失或类型不符的结果及非成功 HTTP 状态均保存 unknown，不重发。发送记录在 HTTP 前提交，浏览器中断或进程中断留下的 sending 也不得自动派发。请求连接/读取超时为 5/30 秒，禁用环境认证与跳转，不传用户 JWT/SSO token 或文件。
+
+成功、发送中、未知及尚未核对的失败记录通过保护引用禁止来源任务、发布及父级级联删除；远端删 Tag 和清工作区前即检查。仅明确失败且通过独立核对确认未建单后才解除本条保护；之后按原删除权限办理，普通来源关联可置空，完整历史快照与核对记录不级联删除。到期文件清理保持原规则，不删除申请。后续失败不解除此前成功、发送中或未知记录的保护。归档页面不显示软件编号和申请数量，数量固定 `applyCount=1`；首次及成功后的再次申请传 `soft_number=""`，由 OA 自动申请编号，不沿用此前生成的编号。历史失败或未知申请重试时保留其原始 `form.soft_number`（不是 OA 返回的 `soft_number`），确认框展示沿用的指定编号；API 仍兼容调用方显式传入已有编号。明确失败不保证没有外部副作用；未知结果的重试须人工核对并确认未建单，确认方式随新申请留痕，原未知记录不改写为失败或成功。历史 SVN 与补录目录同样适用以上确认和重试规则。
+
 ## 九、打包接口（apps/package）
 
 打包统一由本模块承担（Jenkins 已下线）。镜像可来自本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护 `nexus_*` 键）。
@@ -1594,7 +1617,7 @@
   "can_cancel": false,
   "can_delete": false,
   "can_push_svn": true,
-  "artifact_info": [{"id": "uuid", "name": "app.tar.gz", "path": "app.tar.gz"}],
+  "artifact_info": [{"id": "uuid", "name": "app.tar.gz", "path": "app.tar.gz", "local_available": true}],
   "duration": 300000,
   "error_message": "",
   "started_at": "2026-06-22T10:00:00+08:00",
@@ -1603,6 +1626,19 @@
   "updated_at": "2026-06-22T10:05:00+08:00"
 }
 ```
+
+本地文件到期清理后保留 `artifact_info` 中的原路径、大小、SHA-256 等已知依据；`local_available` 按实际本地文件逐次计算。为 false 时页面隐藏下载入口，直接请求仍按原下载权限及实际文件状态校验，不产生空文件。`stage_info.artifacts_cleaned_at` 记录清理时间。
+
+**任务 SVN 当前文件查询（只读）：**
+
+- **GET** `/api/packages/tasks/{id}/svn-artifacts/`：有原清单时返回 `mode=manifest`，逐项核验当前文件；原清单缺失时从保存的上传清单恢复，只排除能证明为系统生成的额外说明。
+- 没有两种清单时返回 `mode=browse`，`?path=目录/子目录` 浏览保存的任务目录内直接子项。相对路径参数由 HTTP 客户端编码，不接受绝对路径、越界或其他任务目录；文件不能当目录浏览。
+- **GET** 同入口加 `?file=目录/文件名`：重新核验单个当前文件。已有清单时只能选择清单内路径；缺清单时返回 `source=svn_supplement`。文件已删除或变成目录返回 409，无法可靠核验时返回分类原因。
+- 权限沿用任务所属项目的可见范围，包括维保只读；不新增文件下载权限。任务没有保存目录或凭证依据时返回 `unverifiable`，不使用当前配置猜测目录，不回传凭证明文。
+
+列表支持 `page` / `page_size`（默认 50，最多 100）；按页核验清单，浏览目录时分页显示直接子项。列表返回 `{task_id, root_url, mode, path, entries, total, page, page_size}`；每项包含 `artifact_id`（历史上传清单及补录可为空）、`path`、`name`、编码后的完整 `url`、`source`、`state`、`message`、`local_available`、`original` 和 `current`。来源为 `artifact_manifest` / `upload_manifest` / `svn_supplement`。`original` 保存已知 `size` / `sha256` / `revision`，未知为 null；`current` 保存当前 `kind` / `size` / `revision` / `date`，无法核验为 null，不能将当前值当作原构建快照。
+
+`state` 区分 `available`（当前文件存在）、`directory`（可浏览目录）、`missing`（不存在）、`not_file`（清单文件已变成目录）、`credential_invalid`、`forbidden`、`network_error`、`unverifiable`。失败响应的 `data.state` 复用分类，另有输入错误 `invalid_path` / `not_directory` / `invalid_page`。当前文件可能被覆盖，查询不证明原构建内容未变化；选中或后续提交时应重新核验。
 
 ### 9.11 取消打包任务
 
@@ -1940,6 +1976,10 @@
 
 - `GET` 返回 `allowed_cidrs`（允许下载的 IP 和网段）、`trusted_proxy_cidrs`（可信上游代理的固定 IP）和 `can_edit`。已配置旧版管理网段限制时，`can_edit` 反映当前请求是否满足该限制。
 - `PUT` 传入 `{"allowed_cidrs":"10.20.30.0/24\n2001:db8:abcd::/48","trusted_proxy_cidrs":"10.50.60.7"}`。支持换行、空白或逗号分隔。IPv4 映射的 IPv6 地址或网段会转换为对应的 IPv4。白名单输入和规范化后的名单最多为 24,576 个字符。保存空白名单会禁止所有来源下载。省略上游代理字段时保留已有配置，传空字符串可清除。无权限返回 `403`，无效配置返回 `400`。
+
+### 13.1A OA 软件归档配置
+
+`GET /api/system/configs/oa-archive/` 与 `PUT /api/system/configs/oa-archive/` 均要求 `system.config` 权限（超管放行）。请求及响应数据为 `{url: "完整 HTTP(S) 接口地址"}`，空字符串表示未配置。建议路径为 `/api/v1/ticketscript/create_software_archive_with_number`。拒绝相对地址、非 HTTP(S)、URL 中认证信息和片段；不复用 SSO 地址或令牌。`oa_archive_url` 仅允许通过此专用接口保存，公开配置接口不返回该地址。保存与读取不访问 OA。
 
 ### 13.2 LDAP 连接测试
 

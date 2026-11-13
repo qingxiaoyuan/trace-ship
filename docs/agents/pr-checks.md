@@ -12,7 +12,7 @@
 | 后端 / lint | `scripts/checks/backend-linux.py lint`，执行已有 Ruff 规则 | 本地与 CI 共用 `docker/checks/Dockerfile` 的 Linux/Python 3.11 镜像 |
 | 后端 / test | `scripts/checks/backend-linux.py test`，执行全量 pytest 与覆盖率门槛 | 同上 |
 | 浏览器 / 冒烟验收 | `test:browser`，真实 Chromium、完整前端及隔离 REST 服务 | Ubuntu 24.04、Node 24.x、Python 3.11 |
-| 后端 / PostgreSQL 并发锁 | `scripts/checks/backend-postgresql.py`，现有仓库锁与补打配置行锁的真实竞争 | 独立临时 PostgreSQL、同一 Linux/Python 3.11 检查镜像 |
+| 后端 / PostgreSQL 并发锁 | `scripts/checks/backend-postgresql.py`，仓库锁、补打配置行锁及 OA 提交/删除的真实竞争 | 独立临时 PostgreSQL、同一 Linux/Python 3.11 检查镜像 |
 | 打包 / 真实执行 | `scripts/checks/package-real.py`，生产 API 与本地 Docker 执行器实际构建隔离样本 | Linux、宿主 Docker、同一 Python 3.11 基础检查镜像 |
 
 检查独立运行；矩阵关闭提前终止，一项失败不会取消其他检查。每项保留命令真实退出状态，日志管道使用 `pipefail`。已知失败不跳过、不标记预期失败，也不使用 `continue-on-error` 将检查转为绿色。
@@ -100,6 +100,22 @@ Linux 首次安装浏览器还需 `npx playwright install --with-deps chromium`�
 
 Windows 受限环境中若 Vitest 临时文件重命名出现 `EPERM`，可只为本次子进程设置指向仓库内可写临时目录的 `TEMP` / `TMP`，并在报告中注明。不同平台结果分别记录，不将 Windows 基线套用到 Linux。
 
+### OA 归档浏览器验收
+
+浏览器入口还要求 `svn`、`svnadmin`、`svnserve`（Linux 安装 `subversion`；CI 已显式安装）。每次运行在随机回环端口启动独立 OA HTTP 服务及原生 SVN 仓库，凭据和文件只放本次临时目录。缺少工具时明确失败，不跳过、不连接开发或业务 SVN。入口停止服务后清理仓库、SQLite 与临时账号资料；保留清理结果。
+
+OA 场景通过生产登录、系统配置、发布详情、提交与历史接口，覆盖 1440×1000 和 375×812 浏览器视口下的首次办理、字段表格语义、四个必填字段定位、顶部按钮直接发起、按打包目录隔离和跨标签保留草稿、成功仅清当前草稿、人工保存的长正文与独立编辑提交副本、页面自动申请编号、失败和超时记录。外部样本记录实际 JSON、认证头是否存在及请求次数，验证不上传文件、不转发登录凭据、刷新和重开不自动重发。手机首次申请及再次申请场景另模拟浏览器缺少 `crypto.randomUUID`，由随机字节生成 UUID 并经生产 REST 校验；组件回归覆盖提交前异常提示及解除本地防重锁。超时样本真正超过产品 30 秒读取超时，前端沿用 45 秒等待；不得为验收缩短产品超时。
+
+`oa-history.spec.ts` 复用同一外部服务，分别在 1440×1000 和 375×812 视口验证历史完整目录与无清单目录补录、选择后删除全部交付物阻止派发、手改代码 Git 分支不能绕过产物目录核验、覆盖后保存当前元数据、完整编辑与历史回读；原元数据缺失保持未知。`browser_oa_sample.py` 提供原清单及无清单两类独立任务；`browser_oa_external.py` 的本次控制入口只操作临时仓库内文件，可用真实 SVN 提交覆盖或删除文件。普通产品请求仍走真实 SVN provider。外部样本不代表真实 OA 联调或业务仓库验收。
+
+可使用 `npm run test:browser -- oa-archive.spec.ts` 或 `npm run test:browser -- oa-history.spec.ts` 做定点行为复核，实际选择参数写入报告。完整门禁仍运行不带过滤参数的原入口。新增真实 OA 超时与桌面/手机场景后，全局 Playwright 预算为 420 秒，单场景按需要保留独立上限；已有场景不删减、不重试掩盖失败。OA 证据写入 `oa-*-evidence.json` 和对应实际视口截图，分别记录提交资料往返、DOM 语义和页面宽度；不保存令牌、密码、完整浏览器存储或原始请求头。
+
+### 任务 SVN 当前文件专项
+
+`backend/apps/package/tests/test_svn_artifacts.py` 通过公开 REST 接口和临时原生 `svnadmin` / `svnserve` 验证清单恢复、补录、中文嵌套路径、覆盖、删除、错误分类及清理下载边界。Linux 检查镜像安装 `subversion`，服务只监听回环地址，结束时停止进程；不读取业务凭证或连接业务 SVN。
+
+本机已有工具时可运行 `backend/.venv/bin/python -m pytest backend/apps/package/tests/test_svn_artifacts.py --no-cov`。没有服务端工具时，可显式设置 `TRACE_SHIP_TEST_SVN_DOCKER=1` 使用本机已准备的 `trace-ship-dev-svn:latest` 临时容器；只开放回环端口，数据位于容器临时存储，结束删除容器。两种条件均不满足时会跳过专项，跳过不能作为本事项的验收通过证据。完整后端检查仍使用上述共享 Linux 入口。
+
 ### PostgreSQL 并发锁
 
 在仓库根目录执行：
@@ -108,7 +124,7 @@ Windows 受限环境中若 Vitest 临时文件重命名出现 `EPERM`，可只�
 python scripts/checks/backend-postgresql.py --report-dir tmp/pr-checks/postgresql
 ```
 
-入口使用独立临时 PostgreSQL 与内部 Docker 网络，数据放本次临时存储，不连接业务数据库，也不开放宿主数据库端口。测试实际创建独立连接与竞争事务，覆盖既有来源重选/提交、版本占用、清理/任务创建、终止/重试，以及补打配置迁移、停用和快照读取时的配置行锁；另覆盖最后一名审批人与发起人终止、退回修改或采纳审查意见同时操作时各自的两个加锁顺序，以及共享模型保存中途提审快照等待整组配置提交。只替换外部任务投递与同步暂停点，SQL、授权、任务创建和审计使用生产实现。
+入口使用独立临时 PostgreSQL 与内部 Docker 网络，数据放本次临时存储，不连接业务数据库，也不开放宿主数据库端口。测试实际创建独立连接与竞争事务，覆盖既有来源重选/提交、版本占用、清理/任务创建、终止/重试，以及补打配置迁移、停用和快照读取时的配置行锁；另覆盖最后一名审批人与发起人终止、退回修改或采纳审查意见同时操作时各自的两个加锁顺序，以及共享模型保存中途提审快照等待整组配置提交。OA 归档另用临时 loopback HTTP 服务验证同一标识重放、不同操作者并发仅一次派发、发送中任务/发布/项目删除保护，以及任务先删除时提交等待后重新拒绝；成功后再次办理与未知核对后重试均验证双用户竞争、在途重放和过期确认拒绝。失败独立核对另覆盖与删除及重复核对的真实事务竞争，保留首次核对依据。归档的单文件兼容与完整目录分别执行上述竞争。门禁共 35 项，禁止跳过。只隔离外部边界与同步暂停点，SQL、授权、任务创建和审计使用生产实现。
 
 该任务要求所选 PostgreSQL 用例全部执行、零失败、零跳过；缺失报告、用例或数据库环境均失败。原 SQLite 全量及覆盖率门槛继续独立执行，其 PostgreSQL 跳过项不得用作并发通过的证据。报告记录实际数据库/镜像/提交与清理结果；仅清理本次入口创建的资源。
 

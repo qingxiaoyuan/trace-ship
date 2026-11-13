@@ -105,11 +105,12 @@ async function stop() {
 
 await mkdir(reportDir, { recursive: true });
 const metadata = {
-  startedAt, runId, command: 'npm run test:browser',
+  startedAt, runId, command: ['npm run test:browser', ...process.argv.slice(2)].join(' '),
+  testSelection: process.argv.slice(2),
   os: { platform: os.platform(), release: os.release(), arch: os.arch() },
   node: process.version,
   npm: process.env.npm_config_user_agent,
-  scope: '隔离 SQLite、虚构项目和维保账号、生产 API 与完整应用、真实无头 Chromium；未连接业务数据库或执行构建。',
+  scope: '隔离 SQLite、虚构账号、生产 API 与完整应用、真实无头 Chromium、回环 OA HTTP 和原生 SVN；未连接业务服务或执行构建。',
 };
 
 try {
@@ -120,11 +121,15 @@ try {
   const pythonVersion = spawnSync(python, ['--version'], { encoding: 'utf8', windowsHide: true });
   if (pythonVersion.status !== 0) throw new Error(`无法执行验收 Python：${pythonVersion.error?.message || pythonVersion.stderr}`);
   metadata.python = pythonVersion.stdout.trim();
+  const svnVersion = spawnSync('svn', ['--version', '--quiet'], { encoding: 'utf8', windowsHide: true });
+  if (svnVersion.status !== 0) throw new Error('真实浏览器 SVN 验收需要 subversion 工具');
+  metadata.svn = svnVersion.stdout.trim();
   runtime = await mkdtemp(path.join(os.tmpdir(), 'trace-ship-browser-'));
   await writeFile(path.join(runtime, '.browser-smoke'), runId);
   const backendPort = await unusedPort();
   const frontendPort = await unusedPort();
-  if (backendPort === frontendPort) throw new Error('分配到重复端口，请重新执行');
+  const externalPort = await unusedPort();
+  if (new Set([backendPort, frontendPort, externalPort]).size !== 3) throw new Error('分配到重复端口，请重新执行');
   const backendURL = `http://127.0.0.1:${backendPort}`;
   const baseURL = `http://127.0.0.1:${frontendPort}`;
   const env = {
@@ -135,6 +140,8 @@ try {
     // 防止调用者的开发环境变量启用 LDAP 或外部服务；Django 强制使用测试配置。
     LDAP_SERVER_URI: '', LDAP_BIND_DN: '', LDAP_BIND_PASSWORD: '', LDAP_USER_SEARCH_BASE: '',
   };
+  const external = start(python, [path.join(root, 'scripts/checks/browser_oa_external.py'), '--runtime', runtime, '--port', String(externalPort)], 'oa-external', env);
+  await ready(`http://127.0.0.1:${externalPort}/__browser_smoke__/${runId}`, [external]);
   const backend = start(python, [path.join(root, 'scripts/checks/browser_seed.py'), '--runtime', runtime, '--port', String(backendPort)], 'backend', env);
   await ready(`${backendURL}/__browser_smoke__/${runId}`, [backend]);
   const build = start(process.execPath, [path.join(frontend, 'node_modules/vite/bin/vite.js'), 'build', '--config', 'vite.smoke.config.ts'], 'build', env);
@@ -145,12 +152,12 @@ try {
   if (buildCode !== 0) throw new Error(`浏览器使用的生产构建失败（退出码 ${buildCode}），请查看 build.log`);
   const vite = start(process.execPath, [path.join(frontend, 'node_modules/vite/bin/vite.js'), 'preview', '--config', 'vite.smoke.config.ts'], 'vite', env);
   await ready(`${baseURL}/__browser_smoke__/${runId}`, [backend, vite]);
-  const runner = start(process.execPath, [path.join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'playwright.config.ts'], 'playwright', env);
+  const runner = start(process.execPath, [path.join(frontend, 'node_modules/@playwright/test/cli.js'), 'test', '--config', 'playwright.config.ts', ...process.argv.slice(2)], 'playwright', env);
   exitCode = await new Promise(resolve => {
     runner.child.once('error', () => resolve(1));
     runner.child.once('close', code => resolve(code ?? 1));
   });
-  if (backend.closed || vite.closed) throw new Error('浏览器验收期间独立服务意外退出');
+  if (backend.closed || vite.closed || external.closed) throw new Error('浏览器验收期间独立服务意外退出');
 } catch (error) {
   failure = error instanceof Error ? error.stack : String(error);
   exitCode = 1;
