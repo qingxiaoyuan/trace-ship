@@ -12,7 +12,7 @@ import { useModalDraft } from '@/hooks/useModalDraft';
 import type { Release } from '@/types';
 import { OaArchiveDirectoryPicker } from './OaArchiveDirectoryPicker';
 
-const fields: { key: Exclude<keyof ArchiveForm, 'applyCount'>; label: string; group?: string; required?: boolean; multiline?: boolean; note?: string }[] = [
+const fields: { key: Exclude<keyof ArchiveForm, 'applyCount' | 'soft_number'>; label: string; group?: string; required?: boolean; multiline?: boolean; note?: string }[] = [
   { key: 'docCreator', label: '申请人', group: '申请信息', required: true, note: '选择系统用户或填写 OA 登录名' },
   { key: 'soft_name', label: '软件名称', required: true },
   { key: 'soft_version', label: '软件版本', required: true },
@@ -23,8 +23,8 @@ const fields: { key: Exclude<keyof ArchiveForm, 'applyCount'>; label: string; gr
   { key: 'edit_content', label: '变更内容', group: '变更与补充', multiline: true },
   { key: 'edit_reason', label: '变更原因', multiline: true },
   { key: 'other_description', label: '其他说明', multiline: true },
-  { key: 'soft_number', label: '软件编号', note: '可留空；指定已有编号时使用该编号' },
 ];
+const historyFields = [...fields, { key: 'soft_number' as const, label: '软件编号' }];
 
 const confirmationText = { '': '首次申请', reapply: '显式再次申请', retry: '失败后主动重试', checked_no_order: '已核对 OA 未建单后重试' };
 const statusText = { sending: '发送中', success: '已发起归档', failure: 'OA 返回失败', unknown: '结果未确认' };
@@ -74,12 +74,12 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
     onSuccess: async data => { await records.refetch(); setPrepared(data); setSelectOpen(false); setFormOpen(true); },
   });
   const validate = useMutation({
-    mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1 }),
+    mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: '' }),
   });
   const submit = useMutation({
     mutationFn: ({ values, previous, submissionId }: { values: ArchiveForm; previous?: ArchiveApplication; submissionId: string }) => {
       const reason: ArchiveConfirmation = previous?.status === 'unknown' ? 'checked_no_order' : previous?.status === 'failure' ? 'retry' : 'reapply';
-      return oaArchiveApi.submit(release.id, prepared!.selection, { ...values, applyCount: 1 }, submissionId,
+      return oaArchiveApi.submit(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: '' }, submissionId,
         previous ? { previous_id: previous.id, confirmation: reason } : undefined);
     },
     onSuccess: result => {
@@ -157,7 +157,6 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
           {submit.data && submit.data.status !== 'success' && <Alert type="warning" title={`${statusText[submit.data.status]}：${submit.data.message}`} />}
           {submit.error && <PermissionAlert error={submit.error} errorTitle="提交结果需要核对" />}
           {prepared.content_source === 'release_doc_original' && <Alert type="warning" title="无法可靠识别更新内容，已保留发布说明原文，请人工核对补填。" />}
-          <p className="text-[12px] text-slate-500">仅影响本次申请，数量固定为 1。关闭后保留本页草稿，离开页面或刷新后消失。</p>
           {users.error && <p className="text-[12px] text-amber-700">系统用户暂时无法加载，可直接填写 OA 登录名。</p>}
         </div>
         <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -167,7 +166,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
             {field.group && <tr className="border-b border-slate-200 bg-indigo-50/50"><td colSpan={2} className="px-3 py-2 sm:px-4"><h4 className="text-[12px] font-medium text-indigo-600">{field.group}</h4></td></tr>}
             <tr className="border-b border-slate-100">
             <th scope="row" className="break-words bg-slate-50/70 px-3 py-3 text-left align-top font-medium text-slate-600 sm:px-4">
-              <label htmlFor={`archive-${field.key}`}>{field.label}{field.required && <span aria-hidden="true" className="text-rose-500"> *</span>}</label>
+              <label htmlFor={`archive-${field.key}`} className="block pt-1.5 leading-5">{field.label}{field.required && <span aria-hidden="true" className="text-rose-500"> *</span>}</label>
             </th>
             <td className="min-w-0 px-3 py-3 align-top sm:px-4">
               <Form.Item name={field.key} style={{ marginBottom: 0 }} rules={field.required ? [{ required: true, whitespace: true, message: `请填写${field.label}` }] : []}>
@@ -178,7 +177,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
               </Form.Item>
               {field.note && <p className="mt-1.5 break-words text-[12px] leading-5 text-slate-500">{field.note}</p>}
             </td>
-          </tr></Fragment>)}<tr><th scope="row" className="bg-slate-50/70 px-3 py-3 text-left font-medium text-slate-600 sm:px-4">申请数量</th><td className="px-3 py-3 sm:px-4">1</td></tr></tbody>
+          </tr></Fragment>)}</tbody>
         </table>
         </div>
         {validate.error && <div className="mt-3"><PermissionAlert error={validate.error} errorTitle="资料校验失败" /></div>}
@@ -192,7 +191,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
       {confirmation && <div className="space-y-3 text-[13px]">
         <p>该目录已有 {confirmation.count} 次申请。最新结果：{statusText[confirmation.previous.status]}；实际操作者：{confirmation.previous.operator.username}；提交时间：{new Date(confirmation.previous.created_at).toLocaleString()}。</p>
         <p className="whitespace-pre-wrap break-words">{confirmation.previous.message}</p>
-        <p>本次会重新向 OA 发送并新增一条记录，所有历史保留。软件编号不会自动沿用此前生成的编号，需复用时请在表单中手填。</p>
+        <p>本次会重新向 OA 发送并新增一条记录，所有历史保留。软件编号由 OA 重新申请，不沿用此前生成的编号。</p>
         {confirmation.previous.status === 'unknown' ? <><Alert type="warning" showIcon title="OA 可能已经建单，请先人工核对；重复提交可能产生重复单据。系统不会自动查询或重发。" /><Checkbox checked={checkedNoOrder} onChange={event => setCheckedNoOrder(event.target.checked)}>我已核对 OA，确认此前申请未建单</Checkbox></>
           : confirmation.previous.status === 'failure' ? <Alert type="warning" title="OA 返回失败不保证没有外部副作用，请核对后主动重试。" /> : <Alert type="warning" title="该目录已有已发起归档的记录，请确认仍需再次办理。" />}
       </div>}
@@ -218,7 +217,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
         <p>{confirmationText[viewing.confirmation || '']}{viewing.previous_id && ` · 前次申请：${viewing.previous_id}`}</p>
         {viewing.no_order_confirmation && <p className="whitespace-pre-wrap break-words">已核对未建单 · {viewing.no_order_confirmation.operator.username} · {new Date(viewing.no_order_confirmation.confirmed_at).toLocaleString()}<br />核对依据：{viewing.no_order_confirmation.evidence}</p>}
         <p>发送时间：{new Date(viewing.created_at).toLocaleString()}</p>
-        <table aria-label="已提交归档资料" className="w-full table-fixed border-collapse"><tbody>{fields.map(field => <tr key={field.key} className="border-b border-slate-200"><th scope="row" className="w-24 bg-slate-50 p-2 text-left align-top">{field.label}</th><td className="whitespace-pre-wrap break-words p-2">{viewing.form[field.key] || '—'}</td></tr>)}</tbody></table>
+        <table aria-label="已提交归档资料" className="w-full table-fixed border-collapse"><tbody>{historyFields.map(field => <tr key={field.key} className="border-b border-slate-200"><th scope="row" className="w-24 bg-slate-50 p-2 text-left align-top">{field.label}</th><td className="whitespace-pre-wrap break-words p-2">{viewing.form[field.key] || '—'}</td></tr>)}</tbody></table>
         {viewing.source.kind === 'svn' && <p>{viewing.source.supplemented ? '从 SVN 补录' : viewing.source.scope === 'directory' ? '当前 SVN 目录' : 'SVN 当前文件'} · {viewing.source.scope === 'directory' ? '整个产物目录' : viewing.source.path}</p>}
         <h4>原发布与产物依据</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.source, null, 2)}</pre>
         <h4>软件归档返回对象</h4><pre className="whitespace-pre-wrap break-all">{JSON.stringify(viewing.software_archive_id, null, 2)}</pre>

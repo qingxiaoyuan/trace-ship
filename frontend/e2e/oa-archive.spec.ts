@@ -20,7 +20,7 @@ interface Receipt { body: Record<string, string | number>; contentType: string; 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as { password: string; oa_archive: OaSample };
 const sample = fixture.oa_archive;
 const reportDir = process.env.SMOKE_REPORT_DIR!;
-const labels = ['申请人', '软件名称', '软件版本', '接收人', '软件来源', '产物 SVN 地址', 'SN', '变更内容', '变更原因', '其他说明', '软件编号', '申请数量'];
+const labels = ['申请人', '软件名称', '软件版本', '接收人', '软件来源', '产物 SVN 地址', 'SN', '变更内容', '变更原因', '其他说明'];
 let evidence: Record<string, unknown>;
 let pageErrors: string[];
 
@@ -78,6 +78,28 @@ async function openForm(page: Page, selected: Directory) {
   expect(preparation.request().postDataJSON()).not.toHaveProperty('artifact_id');
   const table = page.getByRole('table', { name: '软件归档申请资料', exact: true });
   await expect(table).toBeVisible();
+  await expect(table.getByRole('rowheader', { name: /软件编号|申请数量/ })).toHaveCount(0);
+  await expect(page.getByText(/仅影响本次申请，数量固定/)).toHaveCount(0);
+  const alignment = [];
+  for (const name of ['申请人', '软件名称', '变更内容']) {
+    const position = await archiveField(page, name).evaluate(input => {
+      const label = (input as HTMLInputElement).labels![0];
+      const range = document.createRange();
+      range.selectNodeContents(label.firstChild!);
+      const text = range.getBoundingClientRect();
+      const box = input.getBoundingClientRect();
+      const style = getComputedStyle(input);
+      // 弹窗进入时会缩放，CSS 行高与页面坐标必须换算到同一尺度。
+      const scale = box.height / (input as HTMLElement).offsetHeight;
+      const center = input.tagName === 'TEXTAREA'
+        ? box.top + (parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop) + parseFloat(style.lineHeight) / 2) * scale
+        : box.top + box.height / 2;
+      return { delta: Math.abs(text.top + text.height / 2 - center) / scale };
+    });
+    alignment.push({ name, ...position });
+  }
+  evidence.labelAlignment = alignment;
+  for (const position of alignment) expect(position.delta, position.name).toBeLessThanOrEqual(2);
   return table;
 }
 async function screenshot(page: Page, key: string, table?: Locator) {
@@ -169,8 +191,8 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   await screenshot(page, 'desktop-header');
   const table = await openForm(page, selected);
   expect((await table.getByRole('rowheader').allTextContents()).map(label => label.replace(' *', ''))).toEqual(labels);
-  expect(await table.getByRole('row').count()).toBe(15);
-  expect(await table.getByRole('cell').count()).toBe(15);
+  expect(await table.getByRole('row').count()).toBe(13);
+  expect(await table.getByRole('cell').count()).toBe(13);
   await expect(page.getByLabel('变更内容', { exact: true })).toHaveValue(sample.changes);
   await expect(page.getByLabel('SN', { exact: true })).toHaveValue(sample.git_hash);
   await expect(page.getByLabel('产物 SVN 地址', { exact: true })).toHaveValue(selected.root_url);
@@ -228,7 +250,7 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   expect(pageErrors).toEqual([]);
 });
 
-test('375px 手机可编辑并首次提交已有软件编号，历史表格和主操作完整可用', async ({ page }) => {
+test('375px 手机可编辑并自动申请软件编号，历史表格和主操作完整可用', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await releasePage(page);
   const selected = directory('mobile');
@@ -242,7 +264,7 @@ test('375px 手机可编辑并首次提交已有软件编号，历史表格和�
   await expect(archiveField(page, '接收人')).toBeFocused();
   await archiveField(page, '接收人').fill(sample.username);
   evidence.requiredFocus = '接收人';
-  await page.getByLabel('软件编号', { exact: true }).fill('EXISTING-SMOKE-088');
+  await expect(page.getByLabel('软件编号', { exact: true })).toHaveCount(0);
   await page.getByLabel('变更原因', { exact: true }).fill('手机确认\n第二行');
   await page.getByLabel('变更内容', { exact: true }).evaluate(element => { element.scrollTop = element.scrollHeight; element.scrollIntoView({ block: 'center' }); });
   await screenshot(page, 'mobile-form-tail', table);
@@ -251,8 +273,9 @@ test('375px 手机可编辑并首次提交已有软件编号，历史表格和�
   const before = (await control()).count;
   const result = await send(page);
   expect(result.status).toBe('success');
-  expect(result.soft_number).toBe('EXISTING-SMOKE-088');
-  expect(result.number_apply_id).toBeNull();
+  expect(result.form).toMatchObject({ soft_number: '', applyCount: 1 });
+  expect(result.soft_number).toMatch(/^OA-SMOKE-/);
+  expect(result.number_apply_id).toBeTruthy();
   expect(result.form.edit_reason).toBe('手机确认\n第二行');
   expect(result.form.edit_content).toBe(sample.changes);
   const received = await control();

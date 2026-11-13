@@ -119,7 +119,7 @@ test('桌面再次申请提醒可取消，刷新不重发，多窗口旧确认�
   await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
   expect((await control()).count).toBe(before + 1);
   await openForm(page, filename);
-  await expect(page.getByLabel('软件编号', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('软件编号', { exact: true })).toHaveCount(0);
   await page.getByLabel('其他说明', { exact: true }).fill('第二次资料\n新末尾');
   const cancel = await prompt(page, '确认再次申请');
   await cancel.getByRole('button', { name: /取\s*消/ }).click();

@@ -99,9 +99,11 @@ it('选择一次打包的完整目录并编辑完整资料，多个文件仅提�
   fireEvent.click(within(dialog).getByRole('button', { name: '校验资料' }));
   await screen.findByText('资料校验通过，尚未向 OA 发送。');
   const prepared = requests.filter(entry => entry.url?.endsWith('/prepare/'));
-  expect(prepared.at(-1)?.data).toMatchObject({ task_id: 'task', scope: 'directory', path: '.', source_kind: 'local', form: { soft_name: '修改后的软件', edit_content: '手填 | 资料\n完整第二行', applyCount: 1 } });
+  expect(prepared.at(-1)?.data).toMatchObject({ task_id: 'task', scope: 'directory', path: '.', source_kind: 'local', form: { soft_name: '修改后的软件', edit_content: '手填 | 资料\n完整第二行', applyCount: 1, soft_number: '' } });
   expect((screen.getByRole('button', { name: '提交 OA 归档' }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByLabelText(/项目编号|项目负责人|项目主管/)).toBeNull();
+  expect(screen.queryByLabelText(/项目编号|项目负责人|项目主管|软件编号/)).toBeNull();
+  expect(within(dialog).queryByRole('rowheader', { name: '申请数量' })).toBeNull();
+  expect(within(dialog).queryByText(/仅影响本次申请/)).toBeNull();
   expect(requests.every(entry => !entry.url?.includes('ticketscript'))).toBe(true);
 });
 
@@ -205,7 +207,7 @@ it('成功后再次申请先提醒，取消不派发，确认生成新申请且�
   await screen.findByText('软件编号：SOFT-001');
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   await selectArtifact();
-  await waitFor(() => expect((screen.getByLabelText('软件编号') as HTMLInputElement).value).toBe(''));
+  expect(screen.queryByLabelText('软件编号')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
   const confirmation = (await screen.findByText('该目录已有已发起归档的记录，请确认仍需再次办理。')).closest('[role="dialog"]') as HTMLElement;
   fireEvent.click(within(confirmation).getByRole('button', { name: /取\s*消/ }));
@@ -224,7 +226,7 @@ it('成功后再次申请先提醒，取消不派发，确认生成新申请且�
 it('刷新后的未知申请恢复已发送资料，核对未建单后才能主动重试并保留历史', async () => {
   configured = true;
   savedRecords = [{ id: 'unknown-first', submission_id: 'old-operation', status: 'unknown',
-    form: { ...initialForm, other_description: '已经发送的完整资料\n末行' },
+    form: { ...initialForm, soft_number: 'LEGACY-NUMBER', other_description: '已经发送的完整资料\n末行' },
     operator: { username: 'first-actor' }, source: { task_id: 'task', scope: 'directory', path: '.' },
     created_at: '2026-11-12T00:00:00Z', message: '结果未确认', soft_number: '' }];
   mount();
@@ -241,7 +243,7 @@ it('刷新后的未知申请恢复已发送资料，核对未建单后才能主�
   expect(retry.disabled).toBe(false);
   fireEvent.click(retry);
   await waitFor(() => expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1));
-  expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ previous_id: 'unknown-first', confirmation: 'checked_no_order', form: { edit_reason: '人工核对后的修改' } });
+  expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ previous_id: 'unknown-first', confirmation: 'checked_no_order', form: { edit_reason: '人工核对后的修改', soft_number: '', applyCount: 1 } });
   await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
 });
 
