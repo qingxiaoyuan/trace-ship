@@ -29,8 +29,9 @@ export const changelogEntries: ChangelogEntry[] = [
   {
     version: '2026.11.13',
     date: '2026-11-13',
-    summary: '改善 OA 归档配置的表单间距',
+    summary: '从发布详情顶部发起整目录 OA 归档',
     items: [
+      { category: 'improvement', text: '发起 OA 归档入口移到发布详情顶部，第一步选择一次打包的完整产物目录，自动填入整个 SVN 目录地址；历史单文件申请继续保留。' },
       { category: 'fix', text: 'OA 软件归档配置的地址输入框与下方提示条增加间距，避免紧贴显示。' },
     ],
   },

@@ -8,10 +8,12 @@ from django.db import close_old_connections, connection, transaction
 from rest_framework.test import APIClient
 
 from apps.release.tests.test_oa_archive import archive_case as _archive_case
-from apps.release.tests.test_oa_archive import prepare
+from apps.release.tests.test_oa_archive import prepare as prepare_file
 from apps.release.tests.test_oa_archive_submission import oa_http as _oa_http
-from apps.release.tests.test_oa_archive_submission import submit
+from apps.release.tests.test_oa_archive_submission import submit as submit_file
 from apps.repository.models import Repository
+from apps.release.tests.test_oa_archive_directory import prepare_directory
+from apps.release.tests.test_oa_archive_svn import send_file
 
 pytestmark = pytest.mark.django_db(transaction=True)
 archive_case = _archive_case
@@ -22,6 +24,21 @@ oa_http = _oa_http
 def require_postgresql():
     if connection.vendor != "postgresql":
         pytest.skip("OA 提交竞争必须使用真实 PostgreSQL")
+
+
+
+@pytest.fixture(params=["file", "directory"])
+def archive_requests(request):
+    """旧单文件和整个目录分别证明同样的锁与来源保护行为。"""
+    if request.param == "file":
+        return prepare_file, submit_file
+
+    def submit_directory(client, release, task, form, submission_id=None, **confirmation):
+        return send_file(client, release, {
+            "task_id": str(task.id), "scope": "directory", "path": ".", **confirmation,
+        }, form, submission_id)
+
+    return prepare_directory, submit_directory
 
 
 def request_as(actor, action):
@@ -35,7 +52,8 @@ def request_as(actor, action):
 
 
 @pytest.mark.parametrize("same_submission", [True, False])
-def test_归档并发重放及不同请求均仅发送一次(archive_case, oa_http, same_submission):
+def test_归档并发重放及不同请求均仅发送一次(archive_case, oa_http, archive_requests, same_submission):
+    prepare, submit = archive_requests
     from apps.account.models import User
     from apps.project.models import ProjectMember
 
@@ -65,7 +83,8 @@ def test_归档并发重放及不同请求均仅发送一次(archive_case, oa_ht
 
 
 @pytest.mark.parametrize("source", ["task", "release", "project"])
-def test_发送已提交时删除竞争不能绕过来源保护(archive_case, oa_http, source):
+def test_发送已提交时删除竞争不能绕过来源保护(archive_case, oa_http, archive_requests, source):
+    prepare, submit = archive_requests
     client, release, task = archive_case
     actor = release.publisher
     actor.is_superuser = True
@@ -91,7 +110,8 @@ def test_发送已提交时删除竞争不能绕过来源保护(archive_case, oa
     assert len(client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"]) == 1
 
 
-def test_任务删除先持锁时申请等待并重新拒绝已删来源(archive_case, oa_http):
+def test_任务删除先持锁时申请等待并重新拒绝已删来源(archive_case, oa_http, archive_requests):
+    prepare, submit = archive_requests
     client, release, task = archive_case
     actor = release.publisher
     actor.is_superuser = True
@@ -129,7 +149,8 @@ def test_任务删除先持锁时申请等待并重新拒绝已删来源(archive
 
 
 @pytest.mark.parametrize("initial_mode,confirmation", [("success", "reapply"), ("missing", "checked_no_order")])
-def test_同一前次确认的并发新申请仅发送一次且保留全部历史(archive_case, oa_http, initial_mode, confirmation):
+def test_同一前次确认的并发新申请仅发送一次且保留全部历史(archive_case, oa_http, archive_requests, initial_mode, confirmation):
+    prepare, submit = archive_requests
     from apps.account.models import User
     from apps.project.models import ProjectMember
 
@@ -165,7 +186,8 @@ def test_同一前次确认的并发新申请仅发送一次且保留全部历�
 
 
 @pytest.mark.parametrize("following", ["delete", "confirm"])
-def test_失败核对与删除或重复核对竞争原子且保留首次依据(archive_case, oa_http, following):
+def test_失败核对与删除或重复核对竞争原子且保留首次依据(archive_case, oa_http, archive_requests, following):
+    prepare, submit = archive_requests
     client, release, task = archive_case
     actor = release.publisher
     actor.is_superuser = True

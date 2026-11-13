@@ -33,13 +33,13 @@
           }
         },
         {
-          "name": "提交单产物归档（实际发送）",
+          "name": "提交完整产物目录归档（实际发送）",
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }],
-            "description": "历史 SVN 可用 task_id + path + source_kind=svn 选择单文件，artifact_id 可省略；仅限原任务目录，选择和提交实时核验，手填 git_svn 不改变文件位置。",
+            "description": "使用 task_id + scope=directory + path=. 选择本次打包整个产物根目录，不传 artifact_id；可传 source_kind=svn。选择和提交实时核验，手填 git_svn 不改变来源目录。",
             "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/submit/",
-            "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"artifact_id\": \"{{artifact_id}}\",\n  \"submission_id\": \"{{submission_id}}\",\n  \"form\": {\"docCreator\": \"operator\", \"soft_name\": \"软件\", \"soft_version\": \"V1.0.0\", \"developer\": \"receiver\", \"soft_number\": \"\"}\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"scope\": \"directory\",\n  \"path\": \".\",\n  \"submission_id\": \"{{submission_id}}\",\n  \"form\": {\"docCreator\": \"operator\", \"soft_name\": \"软件\", \"soft_version\": \"V1.0.0\", \"developer\": \"receiver\", \"soft_number\": \"\"}\n}" }
           }
         },
         {
@@ -85,7 +85,7 @@
           }
         },
         {
-          "name": "选择现存归档产物",
+          "name": "选择完整打包产物目录",
           "request": {
             "method": "GET",
             "header": [
@@ -111,11 +111,11 @@
                 "value": "application/json"
               }
             ],
-            "description": "历史 SVN 可用 task_id + path + source_kind=svn 选择单文件，artifact_id 可省略；仅限原任务目录，选择和提交实时核验，手填 git_svn 不改变文件位置。",
+            "description": "使用 task_id + scope=directory + path=. 选择本次打包整个产物根目录，不传 artifact_id；可传 source_kind=svn。选择和提交实时核验，手填 git_svn 不改变来源目录。",
             "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/prepare/",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"artifact_id\": \"{{artifact_id}}\"\n}"
+              "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"scope\": \"directory\",\n  \"path\": \".\"\n}"
             }
           }
         }

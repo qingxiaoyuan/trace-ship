@@ -16,6 +16,7 @@ from apps.package.services.artifacts import (
     task_artifact_manifest,
     validate_artifact_path,
     verify_task_svn_artifact,
+    verify_task_artifact_directory,
 )
 from apps.project.models import ProjectComponent
 from apps.release.models import ReleaseRecord
@@ -46,9 +47,14 @@ class ArchiveSelectionInput(serializers.Serializer):
     artifact_id = serializers.CharField(max_length=200, required=False, allow_null=True)
     path = serializers.CharField(required=False, max_length=4096)
     source_kind = serializers.ChoiceField(choices=["local", "svn"], required=False)
+    scope = serializers.ChoiceField(choices=["file", "directory"], required=False)
     form = ArchiveFormInput(required=False)
 
     def validate(self, attrs: dict) -> dict:
+        if attrs.get("scope") == "directory":
+            if attrs.get("path") != "." or "artifact_id" in attrs:
+                raise ValidationError({"detail": "请选择本次打包的完整产物目录，不接受单文件或子目录"})
+            return attrs
         if not attrs.get("artifact_id") and not attrs.get("path"):
             raise ValidationError({"detail": "请选择一个任务产物或 SVN 文件"})
         return attrs
@@ -123,6 +129,10 @@ class OaArchivePreparation:
     @staticmethod
     def selection_path(task: PackageTask, selection: dict) -> str:
         """任务与规范相对路径是共同身份；产物 ID 只用于该任务内定位。"""
+        if selection.get("scope") == "directory":
+            if selection.get("path") != "." or "artifact_id" in selection:
+                raise ValidationError({"detail": "归档目录必须是本次打包的完整产物目录"})
+            return "."
         _, manifest = task_artifact_manifest(task)
         artifact_id = selection.get("artifact_id")
         original = next((item for item in manifest if item.get("id") == artifact_id), None) if artifact_id else None
@@ -140,6 +150,11 @@ class OaArchivePreparation:
     @classmethod
     def selected_artifact(cls, task: PackageTask, selection: dict) -> dict:
         path = cls.selection_path(task, selection)
+        if selection.get("scope") == "directory":
+            try:
+                return verify_task_artifact_directory(task, source_kind=selection.get("source_kind"))
+            except ArtifactQueryError as error:
+                archive_file_error(error)
         original = next((item for item in task.artifact_info or [] if PurePosixPath(item.get("path") or "").as_posix() == path), None)
         if selection.get("source_kind") != "svn" and original and local_artifact_available(task, original):
             root_path = (Path(task.workspace_path) / "artifacts").resolve()
@@ -161,6 +176,7 @@ class OaArchivePreparation:
         cls.require_release(release)
         artifacts = []
         svn_tasks = []
+        directories = []
         for task in release.package_tasks.all():
             try:
                 cls.require_task(release, task)
@@ -169,6 +185,15 @@ class OaArchivePreparation:
             stage = (task.stage_info or {}).get("svn_push", {})
             if task.config_snapshot.get("svn_push_enabled") or stage.get("remote_url"):
                 svn_tasks.append({"task_id": str(task.id), "task_name": task.name})
+            source, manifest = task_artifact_manifest(task)
+            svn_root = stage.get("remote_url", "") if stage.get("status") == "success" else ""
+            if svn_root or any(local_artifact_available(task, item) for item in manifest):
+                directories.append({
+                    "task_id": str(task.id), "task_name": task.name, "name": "完整产物目录",
+                    "scope": "directory", "path": ".", "source_kind": "svn" if svn_root else "local",
+                    "created_at": task.created_at.isoformat(),
+                    "artifact_count": len(manifest) if source != "svn_supplement" else None, "svn_url": svn_root,
+                })
             for candidate in task.artifact_info or []:
                 try:
                     artifact = cls.local_artifact(task, candidate.get("id", ""))
@@ -179,7 +204,7 @@ class OaArchivePreparation:
                     "artifact_id": artifact["id"], "name": artifact.get("name") or artifact["path"],
                     "path": artifact["path"], "source_kind": "local",
                 })
-        return {"artifacts": artifacts, "svn_tasks": svn_tasks}
+        return {"artifacts": artifacts, "svn_tasks": svn_tasks, "directories": directories}
 
     @classmethod
     def prepare(cls, release: ReleaseRecord, user: User, selection: dict) -> dict:
@@ -194,9 +219,13 @@ class OaArchivePreparation:
         content, source = extract_archive_changes(release.release_doc or "")
         component = ProjectComponent.objects.filter(project=release.project, repository=release.repository).first()
         configured = bool(OaArchiveConfig.get_url())
+        selected = {"task_id": str(task.id), "path": artifact["path"], "source_kind": artifact["kind"]}
+        if artifact.get("scope") == "directory":
+            selected["scope"] = "directory"
+        else:
+            selected["artifact_id"] = artifact.get("artifact_id")
         return {
-            "selection": {"task_id": str(task.id), "artifact_id": artifact.get("artifact_id"),
-                          "path": artifact["path"], "source_kind": artifact["kind"]},
+            "selection": selected,
             "source": artifact,
             "configuration": {
                 "configured": configured,

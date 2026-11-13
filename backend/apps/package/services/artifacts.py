@@ -152,6 +152,48 @@ def task_artifact_manifest(task: PackageTask) -> tuple[str, list[dict]]:
     return "svn_supplement", []
 
 
+def verify_task_artifact_directory(task: PackageTask, *, source_kind: str | None = None) -> dict:
+    """整次打包的根目录；原清单只作历史依据，SVN 使用当前目录内容。"""
+    from apps.package.services import PackageService
+
+    source, manifest = task_artifact_manifest(task)
+    original = {
+        "artifact_count": len(manifest) if source != "svn_supplement" else None,
+        "files": [{key: item.get(key) for key in ("path", "size", "sha256", "revision")} for item in manifest],
+    }
+    stage = (task.stage_info or {}).get("svn_push") or {}
+    descriptor = {"scope": "directory", "path": ".", "name": "完整产物目录", "original": original}
+    # 有成功推送依据时必须核验 SVN，不能用本地文件替代已失效的远端目录。
+    if source_kind == "svn" or (stage.get("status") == "success" and stage.get("remote_url")):
+        root, provider = _svn_context(task)
+        try:
+            current = provider.inspect_path(root)
+            if current["kind"] != "dir":
+                raise ArtifactQueryError("not_directory", "任务保存的 SVN 位置不是目录，不能归档", 409)
+            entries = provider.list_dir(root + "@" + current["repository_revision"], recursive=True)
+        except ProviderError as exc:
+            raise _svn_error(exc) from exc
+        system_files = set(stage.get("system_files") or [])
+        if stage.get("status") == "success":
+            system_files.add(f"release-{PackageService._doc_filename(task.version)}.md")
+        files = []
+        for entry in entries:
+            if entry["kind"] != "file" or entry["name"] in system_files:
+                continue
+            path = validate_artifact_path(entry["name"])
+            files.append({"path": path, **{key: entry.get(key) for key in ("size", "revision")}})
+        if not files:
+            raise ArtifactQueryError("empty_directory", "SVN 当前目录没有可归档的交付文件", 409)
+        return {**descriptor, "kind": "svn", "url": root, "supplemented": source == "svn_supplement",
+                "current": {key: current.get(key) for key in ("kind", "repository_revision", "revision", "date")}
+                | {"artifact_count": len(files), "files": files}}
+    files = [item for item in manifest if local_artifact_available(task, item)]
+    if not files:
+        raise ArtifactQueryError("empty_directory", "本地产物目录已不存在或没有可归档的交付文件")
+    return {**descriptor, "kind": "local", "url": "", "supplemented": False,
+            "current": {"kind": "dir", "artifact_count": len(files)}}
+
+
 def _browse_task_directory(provider: SVNProvider, root: str, path: str) -> list[dict]:
     from urllib.parse import quote
 
