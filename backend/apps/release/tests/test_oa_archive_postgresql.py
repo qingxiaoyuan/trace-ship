@@ -9,11 +9,11 @@ from rest_framework.test import APIClient
 
 from apps.release.tests.test_oa_archive import archive_case as _archive_case
 from apps.release.tests.test_oa_archive import prepare as prepare_file
+from apps.release.tests.test_oa_archive_directory import prepare_directory
 from apps.release.tests.test_oa_archive_submission import oa_http as _oa_http
 from apps.release.tests.test_oa_archive_submission import submit as submit_file
-from apps.repository.models import Repository
-from apps.release.tests.test_oa_archive_directory import prepare_directory
 from apps.release.tests.test_oa_archive_svn import send_file
+from apps.repository.models import Repository
 
 pytestmark = pytest.mark.django_db(transaction=True)
 archive_case = _archive_case
