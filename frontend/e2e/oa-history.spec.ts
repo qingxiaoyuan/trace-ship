@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import type { Page, Locator } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { openArchiveDirectoryPicker, searchArchiveDirectory } from './helpers/oa-directory';
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8'));
 const sample = fixture.oa_archive;
@@ -30,12 +31,9 @@ async function shot(page: Page, name: string, table?: Locator) {
   await page.screenshot({ path: path.join(reportDir, `oa-history-${name}.png`), animations: 'disabled' });
 }
 async function choose(page: Page, key: keyof typeof paths) {
-  await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
-  const choice = page.getByRole('combobox', { name: '归档目录', exact: true });
-  await expect(choice).toBeEnabled();
-  await choice.click();
-  await choice.fill(sample.tasks[key].name);
-  await page.getByRole('option').filter({ has: page.getByText(sample.tasks[key].name, { exact: true }) }).click();
+  await openArchiveDirectoryPicker(page);
+  const selectedOption = await searchArchiveDirectory(page, sample.tasks[key].name);
+  await selectedOption.click();
   await expect(page.getByRole('radio')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /进入目录/ })).toHaveCount(0);
   await shot(page, `${key}-picker`);

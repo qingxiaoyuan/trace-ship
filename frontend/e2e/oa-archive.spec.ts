@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import type { Page, Locator } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { openArchiveDirectoryPicker, searchArchiveDirectory } from './helpers/oa-directory';
 
 interface Artifact { id: string; name: string; path: string }
 interface Directory { id: string; name: string; artifacts: Artifact[]; root_url: string }
@@ -56,14 +57,9 @@ function archiveField(page: Page, label: string) {
   return page.getByRole(['申请人', '接收人', '软件来源'].includes(label) ? 'combobox' : 'textbox', { name: label, exact: true });
 }
 async function openForm(page: Page, selected: Directory) {
-  await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
-  const choice = page.getByRole('combobox', { name: '归档目录', exact: true });
-  await expect(choice).toBeEnabled();
-  await choice.click();
+  await openArchiveDirectoryPicker(page);
   await expect(page.getByRole('option')).toHaveCount(Object.keys(sample.tasks).length);
-  await choice.fill(selected.name);
-  const selectedOption = page.getByRole('option').filter({ has: page.getByText(selected.name, { exact: true }) });
-  await expect(selectedOption).toHaveCount(1);
+  const selectedOption = await searchArchiveDirectory(page, selected.name);
   await expect.poll(() => page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations !== Infinity).length)).toBe(0);
   const popupBounds = await page.getByRole('listbox').boundingBox();
   expect(popupBounds!.x).toBeGreaterThanOrEqual(0);

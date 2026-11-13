@@ -29,6 +29,10 @@ const historyFields = [...fields, { key: 'soft_number' as const, label: '软件�
 const confirmationText = { '': '首次申请', reapply: '显式再次申请', retry: '失败后主动重试', checked_no_order: '已核对 OA 未建单后重试' };
 const statusText = { sending: '发送中', success: '已发起归档', failure: 'OA 返回失败', unknown: '结果未确认' };
 
+function getRequestSoftwareNumber(previous?: ArchiveApplication) {
+  return previous && ['failure', 'unknown'].includes(previous.status) ? previous.form.soft_number || '' : '';
+}
+
 /** 目录申请和项目内历史共用发布详情，未提交草稿仅在本页内保存。 */
 export function OaArchivePreparationPanel({ release, active = true, actionTarget }: { release: Release; active?: boolean; actionTarget?: HTMLElement | null }) {
   const user = useAuthStore(state => state.user);
@@ -74,12 +78,12 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
     onSuccess: async data => { await records.refetch(); setPrepared(data); setSelectOpen(false); setFormOpen(true); },
   });
   const validate = useMutation({
-    mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: '' }),
+    mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: getRequestSoftwareNumber(latest) }),
   });
   const submit = useMutation({
     mutationFn: ({ values, previous, submissionId }: { values: ArchiveForm; previous?: ArchiveApplication; submissionId: string }) => {
       const reason: ArchiveConfirmation = previous?.status === 'unknown' ? 'checked_no_order' : previous?.status === 'failure' ? 'retry' : 'reapply';
-      return oaArchiveApi.submit(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: '' }, submissionId,
+      return oaArchiveApi.submit(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: getRequestSoftwareNumber(previous) }, submissionId,
         previous ? { previous_id: previous.id, confirmation: reason } : undefined);
     },
     onSuccess: result => {
@@ -118,6 +122,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
     if (formOpen && draft.value) { form.resetFields(); form.setFieldsValue(draft.value); }
   }, [formOpen, draft.value, form]);
   const userOptions = (users.data?.results || []).map(item => ({ value: item.username, label: `${item.nickname || item.username}（${item.username}）` }));
+  const confirmedSoftwareNumber = getRequestSoftwareNumber(confirmation?.previous);
   const action = allowed ? <Button className="shrink-0 max-md:min-h-11" icon={<Archive className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />} disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>发起 OA 归档</Button> : null;
   return <section aria-label="OA 软件归档准备" className="space-y-2 rounded-lg border border-indigo-100 bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -191,7 +196,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
       {confirmation && <div className="space-y-3 text-[13px]">
         <p>该目录已有 {confirmation.count} 次申请。最新结果：{statusText[confirmation.previous.status]}；实际操作者：{confirmation.previous.operator.username}；提交时间：{new Date(confirmation.previous.created_at).toLocaleString()}。</p>
         <p className="whitespace-pre-wrap break-words">{confirmation.previous.message}</p>
-        <p>本次会重新向 OA 发送并新增一条记录，所有历史保留。软件编号由 OA 重新申请，不沿用此前生成的编号。</p>
+        <p>本次会重新向 OA 发送并新增一条记录，所有历史保留。{confirmedSoftwareNumber ? `本次沿用此前申请指定的软件编号：${confirmedSoftwareNumber}。` : '软件编号由 OA 重新申请，不沿用此前生成的编号。'}</p>
         {confirmation.previous.status === 'unknown' ? <><Alert type="warning" showIcon title="OA 可能已经建单，请先人工核对；重复提交可能产生重复单据。系统不会自动查询或重发。" /><Checkbox checked={checkedNoOrder} onChange={event => setCheckedNoOrder(event.target.checked)}>我已核对 OA，确认此前申请未建单</Checkbox></>
           : confirmation.previous.status === 'failure' ? <Alert type="warning" title="OA 返回失败不保证没有外部副作用，请核对后主动重试。" /> : <Alert type="warning" title="该目录已有已发起归档的记录，请确认仍需再次办理。" />}
       </div>}

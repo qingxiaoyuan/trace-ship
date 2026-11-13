@@ -223,9 +223,9 @@ it('成功后再次申请先提醒，取消不派发，确认生成新申请且�
 });
 
 
-it('刷新后的未知申请恢复已发送资料，核对未建单后才能主动重试并保留历史', async () => {
+it.each(['failure', 'unknown'] as const)('%s 重试保留历史指定编号，关闭重开和校验不改写原资料', async status => {
   configured = true;
-  savedRecords = [{ id: 'unknown-first', submission_id: 'old-operation', status: 'unknown',
+  savedRecords = [{ id: 'previous-first', submission_id: 'old-operation', status,
     form: { ...initialForm, soft_number: 'LEGACY-NUMBER', other_description: '已经发送的完整资料\n末行' },
     operator: { username: 'first-actor' }, source: { task_id: 'task', scope: 'directory', path: '.' },
     created_at: '2026-11-12T00:00:00Z', message: '结果未确认', soft_number: '' }];
@@ -233,17 +233,27 @@ it('刷新后的未知申请恢复已发送资料，核对未建单后才能主�
   await selectArtifact();
   await waitFor(() => expect((screen.getByLabelText('其他说明') as HTMLTextAreaElement).value).toBe('已经发送的完整资料\n末行'));
   fireEvent.change(screen.getByLabelText('变更原因'), { target: { value: '人工核对后的修改' } });
+  fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await selectArtifact();
+  expect(screen.queryByLabelText('软件编号')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
+  await screen.findByText('资料校验通过，尚未向 OA 发送。');
+  expect(requests.filter(entry => entry.url?.endsWith('/prepare/')).at(-1)?.data).toMatchObject({ form: { soft_number: 'LEGACY-NUMBER' } });
   fireEvent.click(screen.getByRole('button', { name: '提交 OA 归档' }));
-  const check = await screen.findByRole('checkbox', { name: '我已核对 OA，确认此前申请未建单' });
-  const dialog = check.closest('[role="dialog"]') as HTMLElement;
+  const confirmation = await screen.findByText(/沿用此前申请指定的软件编号：LEGACY-NUMBER/);
+  const dialog = confirmation.closest('[role="dialog"]') as HTMLElement;
   const retry = within(dialog).getByRole('button', { name: '确认重试' }) as HTMLButtonElement;
-  expect(retry.disabled).toBe(true);
   expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(0);
-  fireEvent.click(check);
+  if (status === 'unknown') {
+    expect(retry.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: '我已核对 OA，确认此前申请未建单' }));
+  }
   expect(retry.disabled).toBe(false);
   fireEvent.click(retry);
   await waitFor(() => expect(requests.filter(entry => entry.url?.endsWith('/submit/'))).toHaveLength(1));
-  expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ previous_id: 'unknown-first', confirmation: 'checked_no_order', form: { edit_reason: '人工核对后的修改', soft_number: '', applyCount: 1 } });
+  expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ previous_id: 'previous-first', confirmation: status === 'unknown' ? 'checked_no_order' : 'retry', form: { edit_reason: '人工核对后的修改', soft_number: 'LEGACY-NUMBER', applyCount: 1 } });
+  expect(savedRecords.at(-1)).toMatchObject({ form: { soft_number: 'LEGACY-NUMBER' } });
   await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
 });
 

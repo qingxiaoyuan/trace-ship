@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { openArchiveDirectoryPicker, searchArchiveDirectory } from './helpers/oa-directory';
 
 interface Application {
   id: string; submission_id: string; previous_id: string | null; confirmation: string; status: string;
@@ -26,12 +27,9 @@ async function releasePage(page: Page) {
 }
 async function openForm(page: Page, filename: string) {
   const selected = sample.tasks[filename.replace(/\.zip$/, '')];
-  await page.getByRole('button', { name: '发起 OA 归档', exact: true }).click();
-  const choice = page.getByRole('combobox', { name: '归档目录', exact: true });
-  await expect(choice).toBeEnabled();
-  await choice.click();
-  await choice.fill(selected.name);
-  await page.getByRole('option').filter({ has: page.getByText(selected.name, { exact: true }) }).click();
+  await openArchiveDirectoryPicker(page);
+  const selectedOption = await searchArchiveDirectory(page, selected.name);
+  await selectedOption.click();
   await page.getByRole('button', { name: '填写申请资料', exact: true }).click();
   await expect(page.getByRole('table', { name: '软件归档申请资料', exact: true })).toBeVisible();
 }
