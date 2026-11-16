@@ -89,6 +89,7 @@ class SystemConfigViewSet(StandardModelViewSet):
         """
         configs = (
             self.queryset.filter(is_public=True)
+            .exclude(key="oa_archive_url")
             .exclude(key__iregex=SENSITIVE_KEY_RE.pattern)
             .values_list("key", "value")
         )
@@ -117,6 +118,17 @@ class SystemConfigViewSet(StandardModelViewSet):
             "trusted_proxy_cidrs": saved_proxies,
             "can_edit": can_edit if saved_proxies == trusted_proxies else can_manage_download_policy(request, saved_proxies),
         }, "下载白名单已保存")
+
+    @action(detail=False, methods=["get", "put"], url_path="oa-archive")
+    def oa_archive(self, request: Request) -> Response:
+        """独立维护 OA 软件归档地址，不调用 OA。"""
+        from apps.system.oa_archive import OaArchiveConfig, OaArchiveConfigInput
+
+        if request.method == "PUT":
+            serializer = OaArchiveConfigInput(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            OaArchiveConfig.save(serializer.validated_data["url"])
+        return success_response({"url": OaArchiveConfig.get_url()})
 
     @action(detail=False, methods=["post"], url_path="ldap-test")
     def ldap_test(self, request: Request) -> Response:

@@ -207,7 +207,10 @@ class ProjectViewSet(StandardModelViewSet):
             统一成功响应
         """
         instance = self.get_object()
-        self.perform_destroy(instance)
+        from apps.release.oa_submission import locked_archive_parent
+
+        with locked_archive_parent(instance):
+            self.perform_destroy(instance)
         return success_response(None, "删除成功")
 
     def perform_create(self, serializer):

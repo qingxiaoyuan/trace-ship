@@ -118,6 +118,8 @@ docker compose -f docker/docker-compose.yml logs backend -f
 
 > 仅推荐在已有 PostgreSQL / Redis 服务时使用。
 
+OA 软件归档需要本机 `PATH` 中有 `curl`。使用 SVN 产物时还需要 `svn`。
+
 ```bash
 cd backend
 

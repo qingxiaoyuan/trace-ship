@@ -95,6 +95,7 @@ export function canPushSvn(task: PackageTask): boolean {
   return Boolean(
     task.status === 'success' &&
     (task.artifact_info || []).length > 0 &&
+    (task.artifact_info || []).every((artifact) => artifact.local_available !== false) &&
     snapshot.svn_push_enabled &&
     snapshot.svn_url &&
     snapshot.svn_credential_id

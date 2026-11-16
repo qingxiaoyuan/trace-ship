@@ -25,6 +25,10 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs):
+        from apps.system.oa_archive import OA_ARCHIVE_URL_KEY
+
+        if OA_ARCHIVE_URL_KEY in (attrs.get("key"), getattr(self.instance, "key", None)):
+            raise serializers.ValidationError("请在「OA 软件归档」中保存接口地址")
         if attrs.get("key") in DOWNLOAD_POLICY_KEYS:
             raise serializers.ValidationError("请在「文件下载限制」中保存下载白名单")
         # 旧键、新键都核验，禁止借修改 key 或元数据绕过整组保存。

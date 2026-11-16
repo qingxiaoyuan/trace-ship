@@ -20,7 +20,8 @@ export const ArtifactActions = memo(function ArtifactActions({
   const hideDownload = useHideFileDownload(task.my_role);
   const [downloading, setDownloading] = useState(false);
 
-  const hasArtifacts = (task.artifact_info || []).length > 0;
+  const hasArtifacts = (task.artifact_info || []).length > 0
+    && (task.artifact_info || []).every((artifact) => artifact.local_available !== false);
   const showPush = canPushSvn(task);
 
   const handleDownload = useCallback(async () => {
@@ -93,13 +94,14 @@ export const ArtifactRow = memo(function ArtifactRow({ artifact, taskId, project
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium text-slate-900 truncate">{artifact.name}</div>
+        {artifact.local_available === false && <p className="text-xs text-amber-700">本地文件已清理或不可用</p>}
         <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 max-md:text-xs">
           <span className="font-mono">{formatSize(artifact.size)}</span>
           <span className="h-1 w-1 rounded-full bg-slate-300" />
           <span className="font-mono truncate">{artifact.path}</span>
         </div>
       </div>
-      {hideDownload ? null : (
+      {hideDownload || artifact.local_available === false ? null : (
         <Button size="small" loading={downloading} icon={<Download className="h-3 w-3" strokeWidth={1.5} />} onClick={handleDownload} className="shrink-0">
           下载
         </Button>
@@ -132,7 +134,7 @@ export const ArtifactDownloadButton = memo(function ArtifactDownloadButton({
     }
   }, [artifact, taskId]);
 
-  if (hideDownload) return null;
+  if (hideDownload || artifact.local_available === false) return null;
 
   return (
     <button
@@ -183,6 +185,7 @@ export const ArtifactPanel = memo(function ArtifactPanel({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-slate-900 truncate">{a.name}</div>
+                {a.local_available === false && <p className="text-xs text-amber-700">本地文件已清理或不可用</p>}
                 <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 max-md:text-xs">
                   <span className="font-mono">{formatSize(a.size)}</span>
                   <span className="h-1 w-1 rounded-full bg-slate-300" />

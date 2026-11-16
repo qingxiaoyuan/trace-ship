@@ -765,6 +765,8 @@ export interface PackageSvnPushInfo {
 }
 
 export interface PackageArtifact {
+  /** 服务端逐次核验本地文件；原清单保留不代表文件仍可下载。 */
+  local_available?: boolean;
   id: string;
   name: string;
   path: string;

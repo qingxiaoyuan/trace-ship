@@ -60,6 +60,31 @@ export interface PackageTaskListParams {  project?: string;
   page_size?: number;
 }
 
+/** 原构建依据与 SVN 当前元数据分别表达；缺失历史值保持 null。 */
+export interface TaskSvnArtifact {
+  artifact_id: string | null;
+  path: string;
+  name: string;
+  url: string;
+  source: 'artifact_manifest' | 'upload_manifest' | 'svn_supplement';
+  state: 'available' | 'directory' | 'missing' | 'not_file' | 'credential_invalid' | 'forbidden' | 'network_error' | 'unverifiable';
+  message: string;
+  local_available: boolean;
+  original: { size: number | null; sha256: string | null; revision: string | null };
+  current: { kind: 'file' | 'dir'; size: number | null; revision: string | null; date?: string | null } | null;
+}
+
+export interface TaskSvnArtifactsData {
+  total: number;
+  page: number;
+  page_size: number;
+  task_id: string;
+  root_url: string;
+  mode: 'manifest' | 'browse';
+  path: string;
+  entries: TaskSvnArtifact[];
+}
+
 export const packageApi = {
   getImages: (params?: PackageImageListParams) =>
     get<PaginatedData<PackageImage>>('/packages/images/', { params }),
@@ -225,6 +250,8 @@ export const packageApi = {
   getTasks: (params?: PackageTaskListParams) =>
     get<PaginatedData<PackageTask>>('/packages/tasks/', { params }),
   getTask: (id: string) => get<PackageTask>(`/packages/tasks/${id}/`),
+  getTaskSvnArtifacts: (id: string, path = '', page = 1) =>
+    get<TaskSvnArtifactsData>(`/packages/tasks/${id}/svn-artifacts/`, { params: { path, page } }),
   cancelTask: (id: string) => post<PackageTask>(`/packages/tasks/${id}/cancel/`),
   deleteTask: (id: string) => del<null>(`/packages/tasks/${id}/`),
   pushSvn: (id: string) => post<PackageTask>(`/packages/tasks/${id}/push-svn/`),

@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Check, CircleAlert, ChevronRight, PackageCheck, PackageX, Loader, Clock } from 'lucide-react';
 import dayjs from 'dayjs';
+import { TaskSvnArtifacts } from './TaskSvnArtifacts';
+import { OaArchivePreparationPanel } from './OaArchivePreparation';
 import { packageApi } from '@/api/package';
 import { projectApi } from '@/api/project';
 import type { NormalizedError } from '@/api/request';
@@ -107,12 +109,13 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
   </section>;
 }
 
-export function ReleasePackages({ release, maintainerMobile = false }: { release: Release; maintainerMobile?: boolean }) {
+export function ReleasePackages({ release, maintainerMobile = false, active = true, archiveActionTarget }: { release: Release; maintainerMobile?: boolean; active?: boolean; archiveActionTarget?: HTMLElement | null }) {
   const navigate = useNavigate();
   const screens = Grid.useBreakpoint();
   const tasks = release.package_tasks || [];
 
-  if (maintainerMobile) return <div>
+  if (maintainerMobile) return <div className="space-y-3">
+    {release.status === 'released' && release.release_type === 'formal' && <OaArchivePreparationPanel key={`oa-${release.id}`} release={release} active={active || !!archiveActionTarget} actionTarget={archiveActionTarget} />}
     <div className="mb-[14px] flex min-h-[30px] items-center justify-between px-2 text-[#76869f]">
       <h2 className="text-[13px] font-normal">关联打包任务</h2><span className="text-[12px]">{tasks.length} 项</span>
     </div>
@@ -134,6 +137,7 @@ export function ReleasePackages({ release, maintainerMobile = false }: { release
             <span className={`rounded-md px-[11px] py-1 text-[11px] leading-[14px] ${color}`}>{task.status_display || info.text}</span>
             <span className="text-[12px] text-[#76869f]">产物 {task.artifact_count} 个</span>
           </div>
+          <div className="pb-3"><TaskSvnArtifacts taskId={task.id} taskName={task.name} /></div>
           <div className="flex min-h-[47px] items-center justify-between gap-2 border-t border-[#e9edf5]">
             <span className="text-[11px] text-[#76869f]">{task.status === 'success' ? '打包完成' : task.status === 'failure' ? '查看任务了解失败原因' : task.status_display || info.text}</span>
             <button type="button" onClick={() => navigate(`/packages/${task.id}`)} className="-mr-1 flex min-h-11 shrink-0 items-center gap-1 px-1 text-[12px] font-medium text-[#4f46e5]">查看任务<ChevronRight className="h-3 w-3" strokeWidth={1.65} /></button>
@@ -145,18 +149,19 @@ export function ReleasePackages({ release, maintainerMobile = false }: { release
 
   return (
     <div className="space-y-3">
-      {release.status === 'released' && <ReleaseRepackage key={release.id} release={release} desktop={!!screens.md} />}
+      {release.status === 'released' && <ReleaseRepackage key={release.id} release={release} desktop={active && !!screens.md} />}
+      {release.status === 'released' && release.release_type === 'formal' && <OaArchivePreparationPanel key={`oa-${release.id}`} release={release} active={active || !!archiveActionTarget} actionTarget={archiveActionTarget} />}
       {!tasks.length && <div className="py-8 text-center text-[13px] text-slate-400">该发布暂无打包任务</div>}
       {tasks.map((task) => {
         const info = statusMap[task.status];
         const Icon = info.icon;
         return (
           <div key={task.id} className="rounded-lg border border-indigo-50 bg-white px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-3 max-md:flex-col">
               <div>
                 <div className="flex items-center gap-2">
                   <Icon className={`h-4 w-4 ${info.cls}`} strokeWidth={1.5} />
-                  <span className="font-medium text-slate-900">{task.name}</span>
+                  <span className="break-words font-medium text-slate-900 [overflow-wrap:anywhere]">{task.name}</span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[12px] text-slate-500">
                   <span>{task.status_display || info.text}</span>
@@ -164,9 +169,12 @@ export function ReleasePackages({ release, maintainerMobile = false }: { release
                   <span>{task.created_at ? dayjs(task.created_at).format('YYYY-MM-DD HH:mm') : '-'}</span>
                 </div>
               </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-2 max-md:w-full">
+              <TaskSvnArtifacts taskId={task.id} taskName={task.name} />
               <Button size="small" onClick={() => navigate(`/packages/${task.id}`)}>
                 查看任务
               </Button>
+              </div>
             </div>
           </div>
         );

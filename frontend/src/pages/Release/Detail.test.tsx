@@ -43,7 +43,7 @@ beforeEach(() => {
     } : config.url?.endsWith('/changes-preview/') ? {
       base_tag: '', base_git_hash: '', head_hash: 'b'.repeat(40), first_release: true,
       no_changes: false, warnings: [], commits: [], merge_requests: [], parsed_updates: [],
-    } : config.url?.endsWith('/review-issues/') ? [] : {
+    } : config.url?.endsWith('/review-issues/') || config.url?.endsWith('/oa-archive/records/') ? [] : {
       id: 'release', project: 'project', version: 'V1.0.0', status: releaseStatus,
       release_type: formalRelease ? 'formal' : 'rc', source_rc: formalRelease && formalRcSource ? 'source-rc' : undefined,
       rejected_reason: '推 tag 失败',

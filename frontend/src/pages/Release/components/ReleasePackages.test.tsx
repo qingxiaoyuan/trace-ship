@@ -74,6 +74,7 @@ beforeEach(() => {
     }
     else if (config.url?.endsWith('/source-reference/')) data = { available: true, reference: 'V1.2.3', reason: '' };
     else if (config.url?.endsWith('/review-issues/')) data = [];
+    else if (config.url?.endsWith('/oa-archive/records/')) data = [];
     else if (config.url === '/packages/configs/config/trigger/') {
       taskCreated = true;
       if (triggerFailure) throw new AxiosError('Request failed', 'ERR_BAD_RESPONSE', config, undefined, {

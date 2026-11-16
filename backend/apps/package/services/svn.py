@@ -215,6 +215,7 @@ class SvnPushMixin:
             "remote_url": remote_url,
             "file_count": len(uploaded_files),
             "files": uploaded_files,
+            "system_files": [doc_name],
         }
 
     @classmethod

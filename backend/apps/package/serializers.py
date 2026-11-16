@@ -435,6 +435,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
     triggered_by_name = serializers.CharField(source="triggered_by.nickname", read_only=True, default="")
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     release_type_display = serializers.CharField(source="get_release_type_display", read_only=True)
+    artifact_info = serializers.SerializerMethodField()
     can_push_svn = serializers.SerializerMethodField()
     my_role = serializers.SerializerMethodField()
     can_cancel = serializers.SerializerMethodField()
@@ -453,6 +454,14 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "started_at", "finished_at", "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+    def get_artifact_info(self, obj: PackageTask) -> list[dict]:
+        from apps.package.services.artifacts import local_artifact_available
+
+        return [
+            {**item, "local_available": local_artifact_available(obj, item)}
+            for item in (obj.artifact_info or [])
+        ]
 
     def get_my_role(self, obj: PackageTask) -> str | None:
         """任务所属项目的有效角色，同一响应内按项目缓存。"""
@@ -490,6 +499,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
         return bool(
             obj.status == "success"
             and obj.artifact_info
+            and not (obj.stage_info or {}).get("artifacts_cleaned_at")
             and task_allows_svn_push(obj)
             and snapshot.get("svn_url")
             and snapshot.get("svn_credential_id")

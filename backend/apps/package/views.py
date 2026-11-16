@@ -718,7 +718,14 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """删除已结束的打包任务，同时清理工作区文件。"""
-        task = self.get_object()
+        from apps.release.oa_submission import locked_archive_task
+
+        with locked_archive_task(self.get_object()) as task:
+            return self._delete_finished_task(task)
+
+    @staticmethod
+    def _delete_finished_task(task):
+        """来源锁及归档保护检查已通过后，才清理工作区。"""
         if not task.is_finished:
             return error_response(
                 40000, "仅可删除已结束的任务（成功/失败/已取消）", status_code=status.HTTP_400_BAD_REQUEST
@@ -749,6 +756,29 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         PackageService.cancel_task(task)
         data = PackageTaskSerializer(task, context={"request": request}).data
         return success_response(data, "任务已取消")
+
+    @action(detail=True, methods=["get"], url_path="svn-artifacts")
+    @method_decorator(never_cache)
+    def svn_artifacts(self, request, pk=None):
+        """只读查看任务保存的 SVN 目录，沿用项目可见范围，不授予下载权限。"""
+        from apps.package.services.artifacts import (
+            ArtifactQueryError,
+            query_task_svn_artifacts,
+            verify_task_svn_artifact,
+        )
+
+        task = self.get_object()
+        try:
+            if "file" in request.query_params:
+                data = verify_task_svn_artifact(task, request.query_params["file"])
+            else:
+                data = query_task_svn_artifacts(
+                    task, request.query_params.get("path", ""),
+                    page=request.query_params.get("page", 1), page_size=request.query_params.get("page_size", 50),
+                )
+        except ArtifactQueryError as exc:
+            return error_response(40000, str(exc), data={"state": exc.state}, status_code=exc.status_code)
+        return success_response(data)
 
     @action(detail=True, methods=["post"], url_path="push-svn")
     def push_svn(self, request, pk=None):
@@ -836,6 +866,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
     def download_artifact(self, request: Request, pk: str | None = None, artifact_id: str | None = None) -> FileResponse:
         """下载任务产物。"""
         task = self.get_object()
+        if (task.stage_info or {}).get("artifacts_cleaned_at"):
+            raise Http404("本地产物已到期清理，仅保留原产物信息")
         artifact = next((item for item in task.artifact_info if item.get("id") == artifact_id), None)
         if not artifact:
             raise Http404("产物不存在")
@@ -858,6 +890,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
     def download_all(self, request: Request, pk: str | None = None) -> FileResponse:
         """将任务全部产物打包为 zip 一键下载。"""
         task = self.get_object()
+        if (task.stage_info or {}).get("artifacts_cleaned_at"):
+            raise Http404("本地产物已到期清理，仅保留原产物信息")
         workspace = Path(task.workspace_path).resolve() if task.workspace_path else None
         workspace_root = PackageService.workspace_root().resolve()
         if not workspace or (workspace != workspace_root and workspace_root not in workspace.parents):

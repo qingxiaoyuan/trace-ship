@@ -208,6 +208,7 @@ npm run preview
 - `PackageConfig`：项目组件级打包配置，归属以 `project_component` 为唯一事实源（`project` / `repository` 冗余字段已删除，API 响应的 project_id / project_name / repository_id / repository_name 字段由组件推导）；包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（所有版本统一跟随总开关，默认目录 formal|rc|beta/版本号；提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
 - `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），`arch` 记录芯片架构（`x86_64` / `x86_32` / `arm64` / `arm32`，默认 `x86_64`，选择节点时随节点名展示），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
 - `PackageTask`：打包任务记录，可关联仓库级 `ReleaseRecord`；状态为 `queued` / `running` / `success` / `failure` / `canceled`。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
+- 产物依据与文件保留期分离：清理本地文件后保留 `artifact_info`，API 的 `local_available` 逐次核验实际文件，过期文件不能继续下载或补推。任务 `svn-artifacts/` 只读查询使用保存的推送目录与凭证快照；有清单按清单恢复，无清单只在任务目录内浏览并标为“从 SVN 补录”。原始元数据与 SVN 当前元数据分别表达，缺失值保持未知；文件缺失与凭证、授权、网络故障分别反馈。接口细节见 [打包任务 API](docs/api/api-spec.md#910-打包任务列表--详情)。
 - `PackageConfigFavorite`：打包配置收藏（user + config 唯一），「打包配置」列表默认收藏优先排序，并驱动工作台「打包速览」面板的常用配置区；接口为 `POST /api/packages/configs/{id}/favorite/`（toggle）、`GET /api/packages/configs/favorites/`（附最近任务摘要）。任务统计聚合 `GET /api/packages/tasks/stats/?days=30`（口径：我发起的、近 N 天、仅终态），工作台打包成功率 KPI 与速览面板统一使用。
 - `Credential`：个人凭证密文与凭证元数据；仓库访问不改用共享服务凭证。
 - `RepositoryCredentialLoan`、`CredentialUsageLog`：仓库凭证仍归个人所有。项目使用仓库的前提是仓库所有者在该项目成员中；借用记录仅作补充授权与审计，其他用户始终不能查看明文。字段已统一为 project 口径：`RepositoryCredentialLoan.allowed_projects`、`CredentialUsageLog.project` / `project_component`。
@@ -235,6 +236,10 @@ npm run preview
 `ReleaseRecord.status` 不包含旧文档里的 `building` / `auditing` 状态。不要在新代码中依赖这些旧状态。
 
 RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan/trace-ship/issues/5)。`ReleaseReferences` 统一核验源码引用并保护最后有效引用。单项与批量清理仅删除远端 RC Tag 及缓存，保留发布、审批、说明和打包历史，记录逐次审计；结果区分平台删除、已清理、外部缺失、未知结果对账、阻止和失败。仓库级锁协调清理、Tag 删除与打包任务创建；排队/执行任务阻止相关引用清理。候选查询受项目可见范围限制，操作沿用项目管理员权限。接口见 [发布 API](docs/api/api-spec.md#83-发布详情)。
+
+### OA 软件归档
+
+已发布正式版可从发布详情顶部「发起 OA 归档」为某次成功打包的完整产物根目录提交 OA 归档（本地或任务保存的 SVN 当前目录；无清单标记从 SVN 补录）；发送与历史 REST 见[发布 API 8.14](docs/api/api-spec.md#814-oa-软件归档资料准备与提交)。`OaArchiveApplication` 保存每次资料、实际操作者、原来源快照及不透明结果；新申请按任务 + 根路径 `.` 识别整个目录，旧单文件申请继续按任务 + 规范相对路径保留身份；不能跨任务用产物 ID 判断。提交先按仓库→发布→任务锁逐次核验权限和资格，提交 sending 记录后才发送一次无认证 JSON，不自动重发。成功/发送中/未知及尚未核对的失败记录用独立保护引用阻止发布、任务和父级级联删除，检查须早于删远端 Tag/工作区；明确失败须由当前有归档权限的操作者通过独立核对入口保存确认人、时间与依据后，原子且幂等解除本条保护；其他历史保护不变，不自动查单或重试。失败历史不随来源删除丢失，到期文件清理保持正常。显式再次申请与核对后重试要求提交最新 `previous_id` 和对应 `confirmation`，在同一锁内拒绝过期确认，保留新旧申请及确认方式；每次重新授权核验，后续失败不解除旧保护。新申请不继承自动生成编号。目录选择及提交均重新核验根目录及有效交付文件，缺失、空目录、非目录或不可核验均阻止发送；仅有系统发布说明不算交付物；不任选子目录。历史单文件接口兼容保留，补录标记、原始与当前元数据分别保存；手改申请地址不改变文件边界。遵循 ADR-0028。
 
 ### 打包流程
 

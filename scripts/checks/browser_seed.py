@@ -169,6 +169,8 @@ def main() -> None:
         """固定远端 Tag / 提交样本，发布与审批业务仍走生产实现。"""
 
         def list_tags(self, repo_identity: str) -> list[TagInfo]:
+            if repo_identity == "oa/software":
+                return [TagInfo(name="VA.88.1.0_oa", commit_hash="8" * 40)]
             if repo_identity != repository.external_identity:
                 raise RuntimeError("冒烟样本禁止查询其他仓库")
             return [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in reading_releases] + [
@@ -345,6 +347,9 @@ def main() -> None:
     manifest["workflow_status"] = {
         "username": status_owner.username, "samples": create_workflow_status_samples(project, repository, status_owner),
     }
+    from browser_oa_sample import create_oa_sample
+
+    manifest["oa_archive"] = create_oa_sample(runtime, password)
     manifest_path = runtime / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     if os.name != "nt":

@@ -328,3 +328,13 @@ function readBlob(blob: Blob): Promise<string> {
     reader.readAsText(blob);
   });
 }
+
+it('本地文件清理后保留产物说明，隐藏单文件及全部下载入口', async () => {
+  taskResponse = { ...task, my_role: 'developer', can_push_svn: false,
+    artifact_info: [{ id: 'installer', name: '客户端.zip', path: '客户端.zip', size: 32, sha256: 'sha', local_available: false }],
+  };
+  renderTask();
+  expect(await screen.findByText('本地文件已清理或不可用')).toBeTruthy();
+  expect(screen.getAllByText('客户端.zip').length).toBeGreaterThan(0);
+  expect(screen.queryByRole('button', { name: /下载全部|^下载$|下载 客户端/ })).toBeNull();
+});
