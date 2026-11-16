@@ -37,8 +37,35 @@ def oa_http():
             if state.mode == "timeout":
                 time.sleep(0.3)
             body = json.dumps({"code": 0, "data": {"soft_number": "SOFT-001", "software_archive_id": {"opaque": ["单据", 7]}, "number_apply_id": None if requests[-1]["body"].get("soft_number") else "NUMBER-001"}}).encode()
+            status = 201 if state.mode == "created" else 200
+            content_type = "application/json"
             if state.mode == "failure":
                 body = json.dumps({"code": -1, "msg": "申请资料有误，请核对"}).encode()
+            elif state.mode == "nul-in-json":
+                body = b'{"code":-1,"msg":"bad\\u0000data"}'
+            elif state.mode == "literal-nul-escape":
+                body = b'{"code":-1,"msg":"literal \\\\u0000"}'
+            elif state.mode == "http-error-json":
+                status = 503
+                body = '{\n  "code": -1, "msg": "OA 暂不可用"\n}\n'.encode()
+            elif state.mode == "http-error-html":
+                status = 502
+                content_type = "text/html; charset=utf-8"
+                body = b"<html>Bad Gateway</html>\n"
+            elif state.mode == "utf8-without-charset":
+                status = 502
+                content_type = "text/plain"
+                body = "OA 暂不可用\n".encode()
+            elif state.mode == "unsupported-charset":
+                content_type = "text/plain; charset=unknown-charset"
+                body = "OA 返回正文\n".encode()
+            elif state.mode == "invalid-text-character":
+                content_type = "text/plain; charset=unicode_escape"
+                body = b"OA reply \\ud800"
+            elif state.mode in ("body-timeout", "slow-body"):
+                status = 502
+                content_type = "text/plain"
+                body = "前半段\n后一段".encode()
             elif state.mode == "invalid":
                 body = b"invalid json"
             elif state.mode == "missing":
@@ -56,11 +83,20 @@ def oa_http():
                 else:
                     payload["data"]["number_apply_id"] = ""
                 body = json.dumps(payload).encode()
-            self.send_response(201 if state.mode == "created" else 200)
-            self.send_header("Content-Type", "application/json")
+            state.response_body = body.decode()
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
             self.end_headers()
             try:
-                self.wfile.write(body)
+                if state.mode == "body-timeout":
+                    self.wfile.write("前半段\n".encode())
+                    time.sleep(0.3)
+                if state.mode == "slow-body":
+                    for index in range(10):
+                        self.wfile.write(f"第{index}段\n".encode())
+                        time.sleep(0.025)
+                else:
+                    self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
@@ -83,6 +119,8 @@ def submit(client, release, task, form, submission_id=None, **confirmation):
 
 def test_实际提交独立资料且重新读取完整结果来源(archive_case, oa_http):
     client, release, task = archive_case
+    endpoint = OaArchiveConfig.get_url()
+    OaArchiveConfig.save(endpoint + "?trace=hidden-in-history")
     form = prepare(client, release, task).data["data"]["form"]
     form.update(docCreator="oa-operator", soft_version="人工版本", edit_content="第一行 | 保留\n\n" + "长正文" * 400 + "末尾", project_number="不得发送", applyCount=9)
     response = submit(client, release, task, form)
@@ -97,14 +135,34 @@ def test_实际提交独立资料且重新读取完整结果来源(archive_case,
     assert record["soft_number"] == "SOFT-001"
     assert record["source"]["path"] == "软件.zip"
     assert record["source"]["task_id"] == str(task.id)
+    assert record["oa_endpoint"] == endpoint
+    OaArchiveConfig.save("https://changed.example.com/another-endpoint")
     assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == [record]
-    assert oa_http.requests == [{"path": "/api/v1/ticketscript/create_software_archive_with_number", "body": record["form"], "authorization": None, "type": "application/json"}]
+    assert oa_http.requests == [{"path": "/api/v1/ticketscript/create_software_archive_with_number?trace=hidden-in-history", "body": record["form"], "authorization": None, "type": "application/json"}]
     release.refresh_from_db()
     assert release.version == "V1.2.3"
 
 
-@pytest.mark.parametrize("mode,expected", [("success", "success"), ("created", "success"), ("failure", "failure"), ("invalid", "unknown"), ("invalid-number", "unknown"), ("missing", "unknown"), ("disconnect", "unknown"), ("timeout", "unknown")])
-def test_真实HTTP结果持久化且原请求重放不重复发送(archive_case, oa_http, monkeypatch, mode, expected):
+@pytest.mark.parametrize("mode,expected,upstream_status,reason", [
+    ("success", "success", 200, "已发起归档"),
+    ("created", "success", 201, "已发起归档"),
+    ("failure", "failure", 200, "申请资料有误，请核对"),
+    ("nul-in-json", "unknown", 200, "OA 未返回有效 JSON"),
+    ("literal-nul-escape", "failure", 200, r"literal \u0000"),
+    ("http-error-json", "unknown", 503, "OA 返回 HTTP 503：OA 暂不可用"),
+    ("http-error-html", "unknown", 502, "OA 返回 HTTP 502"),
+    ("utf8-without-charset", "unknown", 502, "OA 返回 HTTP 502"),
+    ("unsupported-charset", "unknown", 200, "OA 返回正文无法完整解码为文本"),
+    ("invalid-text-character", "unknown", 200, "OA 返回正文无法完整解码为文本"),
+    ("invalid", "unknown", 200, "OA 未返回有效 JSON"),
+    ("invalid-number", "unknown", 200, "OA 未返回有效 JSON"),
+    ("missing", "unknown", 200, "data.soft_number"),
+    ("disconnect", "unknown", None, "与 OA 的连接失败或中断"),
+    ("timeout", "unknown", None, "等待 OA 返回超时"),
+    ("body-timeout", "unknown", 502, "等待 OA 返回超时"),
+    ("slow-body", "unknown", 502, "等待 OA 返回超时"),
+])
+def test_真实HTTP结果持久化且原请求重放不重复发送(archive_case, oa_http, monkeypatch, mode, expected, upstream_status, reason):
     from apps.release.oa_submission import OaArchiveSubmission
 
     client, release, task = archive_case
@@ -117,6 +175,27 @@ def test_真实HTTP结果持久化且原请求重放不重复发送(archive_case
     assert result.status_code == 201
     record = result.data["data"]
     assert record["status"] == expected
+    assert reason in record["message"]
+    assert result.data["message"] == record["message"]
+    if upstream_status is None:
+        assert record["oa_response"] is None
+    else:
+        snapshot = record["oa_response"]
+        assert snapshot["status_code"] == upstream_status
+        assert snapshot["complete"] is (mode not in ("body-timeout", "slow-body"))
+        if mode == "body-timeout":
+            assert snapshot["body"] == "前半段\n"
+        elif mode == "slow-body":
+            assert snapshot["body"].startswith("第0段\n")
+            assert "第9段" not in snapshot["body"]
+        else:
+            assert snapshot["body"] == oa_http.response_body
+        if mode in ("unsupported-charset", "invalid-text-character"):
+            from base64 import b64decode
+
+            assert b64decode(snapshot["body_base64"]) == oa_http.response_body.encode()
+    if mode == "http-error-json":
+        assert record["response"] == {"code": -1, "msg": "OA 暂不可用"}
     assert record["form"]["soft_number"] == "EXISTING-9"
     if mode == "failure":
         assert record["message"] == "申请资料有误，请核对"
@@ -125,8 +204,22 @@ def test_真实HTTP结果持久化且原请求重放不重复发送(archive_case
     replay = submit(client, release, task, form, submission_id)
     assert replay.status_code == 200
     assert replay.data["data"] == record
+    assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == [record]
     assert submit(client, release, task, form).status_code == 400
     assert len(oa_http.requests) == 1
+
+
+def test_发送前预算耗尽返回明确错误且不创建申请(archive_case, oa_http, monkeypatch):
+    from apps.release import oa_submission
+
+    client, release, task = archive_case
+    form = prepare(client, release, task).data["data"]["form"]
+    monkeypatch.setattr(oa_submission, "PREPARATION_BUDGET", 0)
+    result = submit(client, release, task, form)
+    assert result.status_code == 400
+    assert "尚未发送 OA" in result.data["message"]
+    assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == []
+    assert oa_http.requests == []
 
 
 @pytest.mark.parametrize("mode,expected", [("archive-string", "unknown"), ("archive-bool", "unknown"), ("archive-list", "unknown"), ("archive-empty-object", "success"), ("number-object", "unknown"), ("number-missing", "unknown"), ("number-empty", "unknown")])

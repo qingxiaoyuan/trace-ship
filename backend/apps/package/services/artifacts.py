@@ -123,9 +123,9 @@ def _svn_error(exc: ProviderError) -> ArtifactQueryError:
     return ArtifactQueryError("unverifiable", "SVN 返回结果无法核验", 502)
 
 
-def _current_file(provider: SVNProvider, url: str) -> tuple[str, dict | None, str]:
+def _current_file(provider: SVNProvider, url: str, *, deadline: float | None = None) -> tuple[str, dict | None, str]:
     try:
-        current = provider.inspect_path(url)
+        current = provider.inspect_path(url, deadline=deadline)
         if current["kind"] != "file":
             return "not_file", current, "当前位置是目录，不能作为文件选择"
         return "available", current, "当前文件存在，内容可能已被覆盖"
@@ -152,7 +152,7 @@ def task_artifact_manifest(task: PackageTask) -> tuple[str, list[dict]]:
     return "svn_supplement", []
 
 
-def verify_task_artifact_directory(task: PackageTask, *, source_kind: str | None = None) -> dict:
+def verify_task_artifact_directory(task: PackageTask, *, source_kind: str | None = None, deadline: float | None = None) -> dict:
     """整次打包的根目录；原清单只作历史依据，SVN 使用当前目录内容。"""
     from apps.package.services import PackageService
 
@@ -167,10 +167,10 @@ def verify_task_artifact_directory(task: PackageTask, *, source_kind: str | None
     if source_kind == "svn" or (stage.get("status") == "success" and stage.get("remote_url")):
         root, provider = _svn_context(task)
         try:
-            current = provider.inspect_path(root)
+            current = provider.inspect_path(root, deadline=deadline)
             if current["kind"] != "dir":
                 raise ArtifactQueryError("not_directory", "任务保存的 SVN 位置不是目录，不能归档", 409)
-            entries = provider.list_dir(root + "@" + current["repository_revision"], recursive=True)
+            entries = provider.list_dir(root + "@" + current["repository_revision"], recursive=True, deadline=deadline)
         except ProviderError as exc:
             raise _svn_error(exc) from exc
         system_files = set(stage.get("system_files") or [])
@@ -261,7 +261,7 @@ def query_task_svn_artifacts(task: PackageTask, path: str = "", *, page: int = 1
             "total": len(manifest), "page": page, "page_size": page_size}
 
 
-def verify_task_svn_artifact(task: PackageTask, path: str) -> dict:
+def verify_task_svn_artifact(task: PackageTask, path: str, *, deadline: float | None = None) -> dict:
     """选择或提交时重新核验 SVN 当前文件；已有清单时禁止认领清单之外的路径。"""
     from urllib.parse import quote
 
@@ -272,7 +272,7 @@ def verify_task_svn_artifact(task: PackageTask, path: str) -> dict:
         raise ArtifactQueryError("invalid_path", "文件不在任务保存的产物清单中")
     root, provider = _svn_context(task)
     url = root + "/" + quote(relative, safe="/")
-    state, current, message = _current_file(provider, url)
+    state, current, message = _current_file(provider, url, deadline=deadline)
     if state != "available":
         raise ArtifactQueryError(state, message, 409 if state in ("missing", "not_file") else 502)
     original = original or {}

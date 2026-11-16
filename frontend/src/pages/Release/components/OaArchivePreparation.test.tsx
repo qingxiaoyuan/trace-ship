@@ -315,12 +315,16 @@ it('无清单任务只选原 SVN 整个目录，表单明确补录和当前目�
 
 it('维保手机实际详情展示只读归档资料且不提供确认或发送操作', async () => {
   role = 'maintainer';
-  savedRecords = [{ id: 'failed-record', status: 'failure', form: initialForm, operator: { username: '归档操作者' }, source: { path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z', message: 'OA 返回失败', software_archive_id: { opaque: '返回对象' } }];
+  const response = { code: -1, msg: '旧历史的解析结果' };
+  savedRecords = [{ id: 'failed-record', status: 'failure', form: initialForm, operator: { username: '归档操作者' }, source: { path: '软件一.zip' }, created_at: '2026-11-12T00:00:00Z', message: 'OA 返回失败', response }];
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><ConfigProvider theme={{ token: { motion: false } }}><App><MemoryRouter><MaintainerReleaseDetail release={release} /></MemoryRouter></App></ConfigProvider></QueryClientProvider>);
   fireEvent.click(screen.getByRole('tab', { name: '打包任务' }));
   fireEvent.click(await screen.findByRole('button', { name: '查看申请资料' }));
   expect((await screen.findByRole('table', { name: '已提交归档资料' })).textContent).toContain('末尾完整');
+  fireEvent.click(screen.getByText('历史保存的解析结果'));
+  expect(screen.getByLabelText('历史保存的解析结果').textContent).toBe(JSON.stringify(response, null, 2));
+  expect(screen.queryByText('OA 原始返回', { exact: true })).toBeNull();
   expect(screen.getAllByText(/实际操作者：归档操作者/).length).toBeGreaterThan(0);
   expect(screen.queryByRole('button', { name: '发起 OA 归档' })).toBeNull();
   expect(screen.queryByRole('button', { name: '确认未建单' })).toBeNull();
@@ -338,6 +342,41 @@ it('失败历史可独立核对未建单并保存依据而不重试', async () =
   fireEvent.click(within(dialog).getByRole('button', { name: '保存核对结果' }));
   await waitFor(() => expect(requests.some(item => item.url?.endsWith('/confirm-no-order/'))).toBe(true));
   expect(requests.find(item => item.url?.endsWith('/confirm-no-order/'))?.data).toMatchObject({ application_id: 'failed-record', confirmation: 'checked_no_order', evidence: '已按提交时间核对 OA，未建单' });
+  expect(requests.filter(item => item.url?.endsWith('/submit/'))).toEqual([]);
+});
+
+it('重开归档可查看上一次失败的实际地址、耗时和纯文本返回', async () => {
+  configured = true;
+  const rawBody = '<html>OA 暂不可用</html>\n';
+  const endpoint = 'https://oa.example.test/previous-archive';
+  savedRecords = [{
+    id: 'failed-directory', status: 'unknown', form: initialForm,
+    operator: { username: 'operator' }, source: { task_id: 'task', scope: 'directory', path: '.' },
+    created_at: '2026-11-12T00:00:00Z', finished_at: '2026-11-12T00:00:02.5Z',
+    message: 'OA 返回 HTTP 502', oa_endpoint: endpoint, oa_response: { status_code: 502, body: rawBody, complete: false },
+  }];
+  mount();
+  await selectArtifact();
+  fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
+  await selectArtifact();
+  fireEvent.click(await screen.findByRole('button', { name: '查看 OA 返回' }));
+  const table = await screen.findByRole('table', { name: '已提交归档资料' });
+  const detail = within(table.closest('[role="dialog"]') as HTMLElement);
+  expect(detail.getByText(`POST ${endpoint}`).textContent).toBe(`POST ${endpoint}`);
+  expect(detail.getByText('提交耗时 2.50 秒')).toBeTruthy();
+  fireEvent.click(detail.getByText('OA 原始返回 · HTTP 502'));
+  expect(detail.getByLabelText('OA 原始返回正文').textContent).toBe(rawBody);
+  expect(detail.getByText('响应正文不完整，仅显示已收到的内容。')).toBeTruthy();
+  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  try {
+    fireEvent.click(detail.getByRole('button', { name: '复制已收到正文' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(rawBody));
+  } finally {
+    if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  }
   expect(requests.filter(item => item.url?.endsWith('/submit/'))).toEqual([]);
 });
 

@@ -27,6 +27,7 @@ class OaArchiveApplication(models.Model):
     status = models.CharField(max_length=16, choices=[("sending", "发送中"), ("success", "已发起归档"), ("failure", "OA 返回失败"), ("unknown", "结果未确认")], default="sending", verbose_name="申请结果")
     message = models.TextField(blank=True, verbose_name="结果说明")
     response = models.JSONField(null=True, verbose_name="原始返回")
+    oa_response = models.JSONField(null=True, verbose_name="OA HTTP 响应")
     soft_number = models.TextField(blank=True, verbose_name="软件编号")
     software_archive_id = models.JSONField(null=True, verbose_name="归档单返回对象")
     number_apply_id = models.JSONField(null=True, verbose_name="编号申请单标识")

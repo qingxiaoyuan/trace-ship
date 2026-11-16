@@ -9,12 +9,22 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from time import monotonic
 
 from django.conf import settings
 from django.utils.dateparse import parse_datetime
 
 from .base import CommitInfo, MergeRequestInfo
 from .exceptions import AuthenticationError, AuthorizationError, ConnectionError, NotFoundError, ProviderError
+
+
+def _read_timeout(default: int, deadline: float | None) -> float:
+    if deadline is None:
+        return default
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise ConnectionError("SVN 读取等待超时")
+    return min(default, remaining)
 
 
 def _push_timeout() -> int:
@@ -52,7 +62,7 @@ class SVNProvider:
             cmd.extend(["--password", self.password])
         return cmd
 
-    def _run(self, cmd: list[str], timeout: int = 60) -> str:
+    def _run(self, cmd: list[str], timeout: float = 60) -> str:
         """
         执行 svn 命令
 
@@ -222,7 +232,7 @@ class SVNProvider:
         """SVN 不支持 MR 概念，返回空列表"""
         return []
 
-    def list_dir(self, url: str = None, *, recursive: bool = False) -> list[dict]:
+    def list_dir(self, url: str = None, *, recursive: bool = False, deadline: float | None = None) -> list[dict]:
         """
         列出 SVN 远程目录，默认只读取直接子项。
 
@@ -239,7 +249,7 @@ class SVNProvider:
         """
         target = (url or self.repo_url).rstrip("/")
         cmd = self._base_cmd() + ["list", "--xml"] + (["--recursive"] if recursive else []) + [target]
-        xml_data = self._run(cmd, timeout=60)
+        xml_data = self._run(cmd, timeout=_read_timeout(60, deadline))
         return self._parse_xml_list(xml_data)
 
     def _parse_xml_list(self, xml_data: str) -> list[dict]:
@@ -279,16 +289,16 @@ class SVNProvider:
             )
         return entries
 
-    def inspect_path(self, url: str) -> dict:
+    def inspect_path(self, url: str, *, deadline: float | None = None) -> dict:
         """读取当前路径类型与元数据；不存在、认证和网络错误保留各自异常。"""
-        data = self._run(self._base_cmd() + ["info", "--xml", "-r", "HEAD", url + "@HEAD"], timeout=30)
+        data = self._run(self._base_cmd() + ["info", "--xml", "-r", "HEAD", url + "@HEAD"], timeout=_read_timeout(30, deadline))
         try:
             entry = ET.fromstring(data).find("entry")
             if entry is None:
                 raise ValueError("缺少路径条目")
             commit = entry.find("commit")
             # svn info 不返回文件大小；在同一次读取取得的仓库 revision 上列出文件，避免混合两次 HEAD。
-            listed = self.list_dir(url + "@" + entry.get("revision", "HEAD")) if entry.get("kind") == "file" else []
+            listed = self.list_dir(url + "@" + entry.get("revision", "HEAD"), deadline=deadline) if entry.get("kind") == "file" else []
             size = listed[0]["size"] if listed else None
             return {
                 "kind": entry.get("kind"),

@@ -292,7 +292,7 @@ class ReleaseViewSet(StandardModelViewSet):
         serializer = ArchiveSubmitInput(data=request.data)
         serializer.is_valid(raise_exception=True)
         record, created = OaArchiveSubmission.submit(self.get_object(), request.user, serializer.validated_data)
-        return success_response(application_data(record), status=201 if created else 200)
+        return success_response(application_data(record), message=record.message or "OA 归档申请正在发送", status=201 if created else 200)
 
     @action(detail=True, methods=["post"], url_path="oa-archive/confirm-no-order")
     def oa_archive_confirm_no_order(self, request: Request, pk: str | None = None) -> Response:

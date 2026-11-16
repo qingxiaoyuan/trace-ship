@@ -13,7 +13,7 @@ class OaArchiveConfigInput(serializers.Serializer):
 
     def validate_url(self, value: str) -> str:
         parsed = urlsplit(value)
-        if value and (parsed.scheme not in ("http", "https") or parsed.username or parsed.password or parsed.fragment):
+        if value and (parsed.scheme not in ("http", "https") or parsed.username is not None or parsed.fragment):
             raise serializers.ValidationError("请输入不含认证信息和片段的完整 HTTP(S) 接口地址")
         return value
 

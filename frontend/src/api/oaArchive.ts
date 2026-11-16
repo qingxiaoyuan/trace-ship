@@ -40,6 +40,9 @@ export interface ArchiveApplication {
   source: { scope?: 'file' | 'directory'; task_id: string; task_name: string; path: string; version: string; tag_name: string; git_hash: string; kind: string; supplemented: boolean; [key: string]: unknown };
   form: ArchiveForm;
   message: string;
+  oa_endpoint?: string;
+  response?: unknown;
+  oa_response?: { status_code: number; body: string; complete?: boolean; body_base64?: string } | null;
   soft_number: string;
   software_archive_id: unknown;
   number_apply_id: unknown;
@@ -70,5 +73,5 @@ export const oaArchiveApi = {
   confirmNoOrder: (releaseId: string, applicationId: string, evidence: string) =>
     post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/confirm-no-order/`, { application_id: applicationId, confirmation: 'checked_no_order', evidence }),
   submit: (releaseId: string, selection: ArchiveSelection, form: ArchiveForm, submissionId: string, confirmation?: { previous_id: string; confirmation: ArchiveConfirmation }) =>
-    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/submit/`, { ...selection, form, submission_id: submissionId, ...confirmation }, { timeout: 45000, silent: true }),
+    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/submit/`, { ...selection, form, submission_id: submissionId, ...confirmation }, { timeout: 110_000, silent: true }),
 };

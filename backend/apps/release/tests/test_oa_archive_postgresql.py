@@ -148,6 +148,26 @@ def test_任务删除先持锁时申请等待并重新拒绝已删来源(archive
     assert oa_http.requests == []
 
 
+def test_归档等来源锁超时可重试且没有派发(archive_case, oa_http, monkeypatch):
+    from apps.release import oa_submission
+
+    client, release, task = archive_case
+    form = prepare_directory(client, release, task).data["data"]["form"]
+    selection = {"task_id": str(task.id), "scope": "directory", "path": "."}
+    monkeypatch.setattr(oa_submission, "LOCK_WAIT_MS", 150)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with transaction.atomic():
+            Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
+            result = pool.submit(request_as, release.publisher, lambda api: send_file(api, release, selection, form)).result(timeout=10)
+            assert result.status_code == 400, result.data
+            assert "尚未发送 OA" in result.data["message"]
+            assert not release.oa_applications.exists()
+            assert oa_http.requests == []
+    retried = send_file(client, release, selection, form)
+    assert retried.status_code == 201
+    assert len(oa_http.requests) == 1
+
+
 @pytest.mark.parametrize("initial_mode,confirmation", [("success", "reapply"), ("missing", "checked_no_order")])
 def test_同一前次确认的并发新申请仅发送一次且保留全部历史(archive_case, oa_http, archive_requests, initial_mode, confirmation):
     prepare, submit = archive_requests

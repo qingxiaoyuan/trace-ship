@@ -16,7 +16,7 @@ RUN python -m pip install --no-cache-dir -r /opt/checks/requirements-dev.txt --i
 
 # 独立安装 SVN 工具，调整外部服务测试依赖时保留 Python 依赖层缓存。
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends subversion \
+    && apt-get install -y --no-install-recommends subversion curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/backend

@@ -1,7 +1,7 @@
 import { Fragment, useDeferredValue, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Alert, AutoComplete, Button, Checkbox, Form, Input, Modal, Select } from 'antd';
-import { Archive, FolderArchive } from 'lucide-react';
+import { Alert, App, AutoComplete, Button, Checkbox, Form, Input, Modal, Select } from 'antd';
+import { Archive, Copy, FolderArchive } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { accountApi } from '@/api/account';
 import { projectApi } from '@/api/project';
@@ -31,6 +31,62 @@ const statusText = { sending: '发送中', success: '已发起归档', failure: 
 
 function getRequestSoftwareNumber(previous?: ArchiveApplication) {
   return previous && ['failure', 'unknown'].includes(previous.status) ? previous.form.soft_number || '' : '';
+}
+
+async function copyResponseText(text: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 内网 HTTP 或剪贴板权限受限时走浏览器复制事件。
+  }
+  let copied = false;
+  function onCopy(event: ClipboardEvent) {
+    if (!event.clipboardData) return;
+    event.clipboardData.setData('text/plain', text);
+    event.preventDefault();
+    copied = true;
+  }
+  document.addEventListener('copy', onCopy);
+  try {
+    document.execCommand('copy');
+    return copied;
+  } catch {
+    return false;
+  } finally {
+    document.removeEventListener('copy', onCopy);
+  }
+}
+
+function OaResponseDetails({ application }: { application: ArchiveApplication }) {
+  const { message } = App.useApp();
+  const upstream = application.oa_response;
+  const parsedHistory = !upstream && application.response != null;
+  const body = upstream?.body ?? (parsedHistory ? JSON.stringify(application.response, null, 2) : null);
+  const incomplete = upstream?.complete === false;
+  const bodyLabel = parsedHistory ? '历史保存的解析结果' : 'OA 原始返回正文';
+  const copyLabel = parsedHistory ? '复制解析结果' : incomplete ? '复制已收到正文' : '复制返回正文';
+  const elapsedMs = application.finished_at
+    ? Date.parse(application.finished_at) - Date.parse(application.created_at)
+    : NaN;
+  return <div className="space-y-2">
+    {application.oa_endpoint && <p className="break-all"><span className="font-medium">OA 请求地址</span> <code>POST {application.oa_endpoint}</code></p>}
+    {elapsedMs >= 0 && <p>提交耗时 {(elapsedMs / 1000).toFixed(2)} 秒</p>}
+    <details className="min-w-0 rounded border border-slate-200 p-2">
+      <summary className="cursor-pointer">{parsedHistory ? bodyLabel : 'OA 原始返回'}{upstream && ` · HTTP ${upstream.status_code}`}</summary>
+      {incomplete && <p className="mt-2 text-amber-800">响应正文不完整，仅显示已收到的内容。</p>}
+      {upstream?.body_base64 && <p className="mt-2 text-amber-800">正文以可读文本显示，接口里的 body_base64 字段保留原始字节。</p>}
+      {body ? <>
+        <Button size="small" className="mt-2 max-md:min-h-11" icon={<Copy size={14} />} onClick={async () => {
+          if (await copyResponseText(body)) void message.success('已复制');
+          else void message.error('复制失败，请选中正文手动复制');
+        }}>{copyLabel}</Button>
+        <pre aria-label={bodyLabel} className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{body}</pre>
+      </> : <p className="mt-2 text-slate-500">{incomplete ? '未收到正文' : upstream ? '响应正文为空' : '没有已保存的响应正文'}</p>}
+    </details>
+  </div>;
 }
 
 /** 目录申请和项目内历史共用发布详情，未提交草稿仅在本页内保存。 */
@@ -137,6 +193,9 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
   }, [formOpen, draft.value, form]);
   const userOptions = (users.data?.results || []).map(item => ({ value: item.username, label: `${item.nickname || item.username}（${item.username}）` }));
   const confirmedSoftwareNumber = getRequestSoftwareNumber(confirmation?.previous);
+  const currentResult = latest && latest.created_at > (submit.data?.created_at ?? '') ? latest : submit.data ?? latest;
+  const unresolvedResult = !submit.isPending && currentResult && ['failure', 'unknown'].includes(currentResult.status)
+    ? currentResult : undefined;
   const action = allowed ? <Button className="shrink-0 max-md:min-h-11" icon={<Archive className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />} disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>发起 OA 归档</Button> : null;
   return <section aria-label="OA 软件归档准备" className="space-y-2 rounded-lg border border-indigo-100 bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -161,7 +220,15 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
     <OaArchiveDirectoryPicker releaseId={release.id} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={selection => prepare.mutate(selection)} pending={prepare.isPending} error={prepare.error} />
     <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => { if (!submit.isPending && !checking) setFormOpen(false); }} width={800}
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 8, paddingTop: 4 } }}
-      footer={<>{!!submissionError && !confirmation && <div className="mb-3 text-left"><PermissionAlert error={submissionError} errorTitle="尚未提交 OA 归档" /></div>}<div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4"><Button className="max-md:min-h-11" disabled={submit.isPending || checking} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="max-md:min-h-11" loading={validate.isPending} disabled={submit.isPending || checking} onClick={() => form.submit()}>校验资料</Button><Button aria-label="提交 OA 归档" aria-busy={submit.isPending || checking} className="max-md:min-h-11" type="primary" loading={submit.isPending || checking} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey} onClick={() => void send()}>提交 OA 归档</Button></div></>}>
+      footer={<>
+        {submit.isPending && <p role="status" className="mb-2 text-left text-xs text-slate-500">正在提交，等待 OA 返回结果…</p>}
+        {unresolvedResult && <div className="mb-2 flex items-center gap-2 rounded bg-amber-50 p-2 text-left text-xs text-amber-900">
+          <p role="alert" className="min-w-0 flex-1 line-clamp-2 break-all">{statusText[unresolvedResult.status]} · {unresolvedResult.message}</p>
+          <Button size="small" className="shrink-0 max-md:min-h-11" onClick={() => setViewing(unresolvedResult)}>查看 OA 返回</Button>
+        </div>}
+        {!!submissionError && !confirmation && <div className="mb-3 text-left"><PermissionAlert error={submissionError} errorTitle="尚未提交 OA 归档" /></div>}
+        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4"><Button className="max-md:min-h-11" disabled={submit.isPending || checking} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="max-md:min-h-11" loading={validate.isPending} disabled={submit.isPending || checking} onClick={() => form.submit()}>校验资料</Button><Button aria-label="提交 OA 归档" aria-busy={submit.isPending || checking} className="max-md:min-h-11" type="primary" loading={submit.isPending || checking} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey} onClick={() => void send()}>提交 OA 归档</Button></div>
+      </>}>
       {prepared && <Form form={form} disabled={submit.isPending || checking} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
         onFinishFailed={({ errorFields }) => { if (errorFields[0]) form.scrollToField(errorFields[0].name, { focus: true, block: 'center' }); }}>
         <div className="mb-4 flex flex-col gap-3">
@@ -173,7 +240,6 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
           {!prepared.configuration.configured && <Alert showIcon type="warning" title={prepared.configuration.reason} />}
           {existing.length > 0 && <Alert type="info" title={`该目录已有 ${existing.length} 次申请，最新结果：${statusText[latest.status]}。提交前需确认已有记录。`} />}
           {uncertainKey && <Alert type="warning" title="浏览器未可靠取得提交结果，请重新读取归档记录并核对 OA，系统不会自动重发。" action={<Button onClick={() => void records.refetch()}>重新读取归档记录</Button>} />}
-          {submit.data && submit.data.status !== 'success' && <Alert type="warning" title={`${statusText[submit.data.status]}：${submit.data.message}`} />}
           {submit.error && <PermissionAlert error={submit.error} errorTitle="提交结果需要核对" />}
           {prepared.content_source === 'release_doc_original' && <Alert type="warning" title="无法可靠识别更新内容，已保留发布说明原文，请人工核对补填。" />}
           {users.error && <p className="text-[12px] text-amber-700">系统用户暂时无法加载，可直接填写 OA 登录名。</p>}
@@ -234,6 +300,8 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
     <Modal title="归档申请记录" open={!!viewing && active} onCancel={() => setViewing(undefined)} footer={null} width={800} styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}>
       {viewing && <div className="space-y-3 text-[13px]">
         <p>{statusText[viewing.status]} · 实际操作者：{viewing.operator.username}</p>
+        {viewing.message && <p className="whitespace-pre-wrap break-words">{viewing.message}</p>}
+        <OaResponseDetails application={viewing} />
         <p>{confirmationText[viewing.confirmation || '']}{viewing.previous_id && ` · 前次申请：${viewing.previous_id}`}</p>
         {viewing.no_order_confirmation && <p className="whitespace-pre-wrap break-words">已核对未建单 · {viewing.no_order_confirmation.operator.username} · {new Date(viewing.no_order_confirmation.confirmed_at).toLocaleString()}<br />核对依据：{viewing.no_order_confirmation.evidence}</p>}
         <p>发送时间：{new Date(viewing.created_at).toLocaleString()}</p>

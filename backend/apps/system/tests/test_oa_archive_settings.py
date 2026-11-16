@@ -34,6 +34,7 @@ def test_只有配置维护者与超管可以读写地址(superuser):
 def test_地址必须完整且不能通过通用配置接口公开或绕过校验():
     client = APIClient()
     client.force_authenticate(User.objects.create_superuser(username="admin"))
-    for address in ["/api/create", "file:///tmp/archive", "https://user:password@oa.example.com/archive", "https://oa.example.com/archive#fragment"]:
+    for address in ["/api/create", "file:///tmp/archive", "https://user:password@oa.example.com/archive",
+                    "https://@oa.example.com/archive", "https://oa.example.com/archive#fragment"]:
         assert client.put(URL, {"url": address}, format="json").status_code == 400
     assert client.post("/api/system/configs/", {"key": "oa_archive_url", "value": "bad", "is_public": True}, format="json").status_code == 400

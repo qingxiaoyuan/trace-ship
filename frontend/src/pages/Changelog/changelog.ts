@@ -27,10 +27,20 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.16',
+    date: '2026-11-16',
+    summary: '便于核对 OA 归档结果',
+    items: [
+      { category: 'fix', text: '限制归档全链路等待时间，超时可保留已收到的 OA 状态码和部分正文。修复中文响应解码，区分旧版解析记录并放大手机端复制按钮。' },
+      { category: 'improvement', text: '归档记录显示本次使用的 OA 请求地址和提交耗时，支持复制返回正文。重新打开同一产物目录的归档表单时，可以直接查看上次失败或未确认的结果。' },
+    ],
+  },
+  {
     version: '2026.11.13',
     date: '2026-11-13',
     summary: '从发布详情顶部发起整目录 OA 归档',
     items: [
+      { category: 'fix', text: '提交 OA 归档时等待后端返回结果，显示 OA 拒绝、超时或响应异常的原因。提交结果及申请历史可查看 OA 的 HTTP 状态码和原始正文。' },
       { category: 'fix', text: '修复内网 HTTP 环境点击「提交 OA 归档」无反馈的问题；提交标识生成兼容浏览器能力，提交前异常会显示原因并允许恢复后再次操作。' },
       { category: 'improvement', text: 'OA 归档的 git_svn 改为预填发布代码的 Git 分支名，支持手动修改和缺失补填；产物目录独立核验，已提交的历史资料保持原值。' },
       { category: 'fix', text: '重试历史失败或结果未确认的归档时，保留原申请明确指定的软件编号，并在确认框中展示；首次和成功后的再次申请仍自动申请新编号。' },

@@ -14,6 +14,7 @@ interface OaSample {
 }
 interface Application {
   id: string; status: string; form: Record<string, string | number>;
+  message: string; oa_response: { status_code: number; body: string } | null;
   operator: { id: string; username: string }; source: { task_id: string; path: string; scope: string; git_hash: string };
   soft_number: string; software_archive_id: unknown; number_apply_id: unknown;
 }
@@ -127,6 +128,12 @@ async function history(page: Page, selected: Directory, expected: Record<string,
   await article.getByRole('button', { name: '查看申请资料', exact: true }).click();
   const table = page.getByRole('table', { name: '已提交归档资料', exact: true });
   await expect(table).toBeVisible();
+  if (item.oa_response) {
+    const details = page.getByText(`OA 原始返回 · HTTP ${item.oa_response.status_code}`, { exact: true });
+    await details.click();
+    await expect(page.getByLabel('OA 原始返回正文')).toBeVisible();
+    expect(await page.getByLabel('OA 原始返回正文').textContent()).toBe(item.oa_response.body);
+  }
   const content = table.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '变更内容', exact: true }) }).getByRole('cell');
   await expect(content).toHaveText(String(expected.edit_content));
   expect(await content.evaluate(element => getComputedStyle(element).whiteSpace)).toBe('pre-wrap');
@@ -288,6 +295,7 @@ test('375px 手机缺少randomUUID仍可提交，历史表格和主操作完整�
 for (const mode of ['failure', 'timeout'] as const) {
   test(`${mode === 'failure' ? 'OA 明确失败' : '真实 OA 超时'}保留输入和历史，重开及刷新不自动重发`, async ({ page, context }) => {
     test.setTimeout(90_000);
+    if (mode === 'failure') await page.setViewportSize({ width: 375, height: 812 });
     await releasePage(page);
     const selected = directory(mode);
     await openForm(page, selected);
@@ -298,6 +306,7 @@ for (const mode of ['failure', 'timeout'] as const) {
     const pending = send(page);
     if (mode === 'timeout') {
       await expect.poll(async () => (await control()).count).toBe(before + 1);
+      await expect(page.getByText('正在提交，等待 OA 返回结果…', { exact: true })).toBeVisible();
       await expect(archiveField(page, '申请人')).toBeDisabled();
       await page.getByRole('button', { name: /提交 OA 归档$/ }).click({ force: true });
       expect((await control()).count).toBe(before + 1);
@@ -310,7 +319,26 @@ for (const mode of ['failure', 'timeout'] as const) {
     }
     const result = await pending;
     expect(result.status).toBe(mode === 'failure' ? 'failure' : 'unknown');
-    if (mode === 'timeout') expect(Date.now() - started).toBeGreaterThanOrEqual(29_000);
+    if (mode === 'timeout') {
+      expect(Date.now() - started).toBeGreaterThanOrEqual(29_000);
+      expect(result.oa_response).toBeNull();
+      await expect(page.getByRole('alert').filter({ hasText: '等待 OA 返回超时' })).toBeVisible();
+    } else {
+      expect(result.oa_response?.status_code).toBe(200);
+      expect(JSON.parse(result.oa_response!.body)).toEqual({ code: -1, msg: '隔离 OA 明确拒绝本次申请' });
+      await expect(page.getByRole('alert').filter({ hasText: '隔离 OA 明确拒绝本次申请' })).toBeVisible();
+      await page.getByRole('button', { name: '查看 OA 返回', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: '归档申请记录', exact: true });
+      await dialog.getByText('OA 原始返回 · HTTP 200', { exact: true }).click();
+      expect(await dialog.getByLabel('OA 原始返回正文').textContent()).toBe(result.oa_response!.body);
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      const copy = dialog.getByRole('button', { name: '复制返回正文', exact: true });
+      await expect.poll(async () => (await copy.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(36);
+      await copy.click();
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(result.oa_response!.body);
+      await screenshot(page, 'mobile-oa-original-response');
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    }
     evidence.elapsedMs = Date.now() - started;
     await expect(page.getByLabel('其他说明', { exact: true })).toHaveValue(`${mode} 场景保留输入\n末行`);
     await screenshot(page, `${mode}-result`);

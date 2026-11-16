@@ -148,11 +148,11 @@ class OaArchivePreparation:
         return path
 
     @classmethod
-    def selected_artifact(cls, task: PackageTask, selection: dict) -> dict:
+    def selected_artifact(cls, task: PackageTask, selection: dict, *, deadline: float | None = None) -> dict:
         path = cls.selection_path(task, selection)
         if selection.get("scope") == "directory":
             try:
-                return verify_task_artifact_directory(task, source_kind=selection.get("source_kind"))
+                return verify_task_artifact_directory(task, source_kind=selection.get("source_kind"), deadline=deadline)
             except ArtifactQueryError as error:
                 archive_file_error(error)
         original = next((item for item in task.artifact_info or [] if PurePosixPath(item.get("path") or "").as_posix() == path), None)
@@ -165,7 +165,7 @@ class OaArchivePreparation:
                     "url": f"{root.rstrip('/')}/{quote(path, safe='/')}" if root else "",
                     "original": {key: artifact.get(key) for key in ("size", "sha256", "revision")}, "current": None}
         try:
-            artifact = verify_task_svn_artifact(task, path)
+            artifact = verify_task_svn_artifact(task, path, deadline=deadline)
         except ArtifactQueryError as error:
             archive_file_error(error)
         return {**artifact, "kind": "svn", "supplemented": artifact["source"] == "svn_supplement"}
