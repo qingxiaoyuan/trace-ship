@@ -132,7 +132,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const maintainable = useMaintainedSoftware(open && !legacy, fixedProjectId);
   const [form] = Form.useForm<Partial<PackageConfig>>();
   const draft = useModalDraft<Partial<PackageConfig>>(open, editing ? `package-config:${editing.id}` : `package-config:new:${fixedProjectId || ''}`, () => editing
-    ? { ...editing, project: fixedProjectId ?? editing.project_id, repository: editing.repository_id, image_ref: editing.image_ref || undefined }
+    ? { ...editing, image_ref: editing.image_ref || undefined }
     : {
         project: fixedProjectId, executor_type: 'local_docker', build_path: '.', output_path: 'dist',
         auto_collect_output: false, auto_compress: false, env_vars: {}, cpu_cores: 0, cpu_priority: '', mem_limit_mb: 0,
@@ -147,7 +147,8 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     setAiModalOpen(true);
   };
 
-  const projectId = Form.useWatch('project', form) ?? fixedProjectId;
+  const scanProject = Form.useWatch('project', form);
+  const projectId = legacy ? editing?.project_id : fixedProjectId ?? scanProject;
   const softwareId = Form.useWatch('software', form) ?? editing?.software;
   const softwareOptions = maintainable.map((software) => ({
     value: software.id, label: `${software.name} · ${software.slug} · ${software.repository_name}`,
@@ -167,22 +168,16 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const { data: projectsData } = useQuery({
     queryKey: ['package-modal-projects'],
     queryFn: () => projectApi.getProjects({ page: 1, page_size: 1000 }),
-    enabled: open && !fixedProjectId,
+    enabled: open && !legacy && !fixedProjectId,
   });
 
   // 项目内录入时：所属项目只读展示，需要项目名称
   const { data: fixedProject } = useQuery({
     queryKey: ['package-modal-project', fixedProjectId],
     queryFn: () => projectApi.getProject(fixedProjectId as string),
-    enabled: open && !!fixedProjectId,
+    enabled: open && !legacy && !!fixedProjectId,
   });
   const fixedProjectName = editing?.project_name || fixedProject?.name || '';
-
-  const { data: componentsData } = useQuery({
-    queryKey: ['package-modal-components', projectId],
-    queryFn: () => projectApi.getComponents(projectId as string),
-    enabled: open && legacy && !!projectId,
-  });
 
   const { items: imageItems } = useAvailableImages();
 
@@ -231,23 +226,13 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     form.setFieldsValue(draft.value);
   }, [draft.value, form, open]);
 
-  useEffect(() => {
-    if (!open || !editing || editing.software || editing.project_component || !componentsData?.length) return;
-    const matches = componentsData.filter((item) => item.repository === editing.repository_id);
-    if (matches.length === 1) form.setFieldValue('project_component', matches[0].id);
-  }, [componentsData, editing, form, open]);
-
   const saveMutation = useMutation({
     mutationFn: (values: Partial<PackageConfig>) => {
-      const payload: Partial<PackageConfig> = { ...values };
-      // 项目和仓库在表单中用于旧配置和 AI 扫描，归属字段由所选软件或旧组件提供。
+      const { software, ...payload } = values;
+      // 项目选择只用于 AI 扫描。配置的归属在创建后固定。
       delete payload.project;
       delete payload.repository;
-      if (legacy) {
-        delete payload.software;
-      } else {
-        delete payload.project_component;
-      }
+      delete payload.project_component;
       if (payload.executor_type === 'remote_node') {
         // 远程节点不使用镜像；清理本地镜像字段避免后端校验冲突
         payload.image = null;
@@ -265,7 +250,8 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         payload.auto_compress = false;
       }
       if (editing) return packageApi.updateConfig(editing.id, payload);
-      return packageApi.createConfig(payload);
+      if (!software) throw new Error('请选择归属软件');
+      return packageApi.createConfig({ ...payload, software });
     },
     onSuccess: () => {
       message.success('保存成功');
@@ -279,7 +265,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     },
   });
 
-  // 打包配置仅项目管理员 / 软件管理员可维护：项目下拉只列出可管理的项目（超管放行）
+  // AI 扫描仍需在有权使用软件的项目上下文中执行。
   const projectOptions = useMemo(
     () =>
       (projectsData?.results || [])
@@ -288,18 +274,10 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             currentUser?.is_superuser ||
             p.my_role === 'software_admin' ||
             p.my_role === 'manager' ||
-            (!legacy && (p.my_role === 'developer' || p.my_role === 'tester')),
+            p.my_role === 'developer' || p.my_role === 'tester',
         )
         .map((p) => ({ label: p.name, value: p.id })),
-    [projectsData, currentUser, legacy],
-  );
-  const componentOptions = useMemo(
-    () => (componentsData || []).filter((item) => item.is_active).map((item) => ({
-      label: item.repository_detail.name,
-      value: item.id,
-      repository: item.repository,
-    })),
-    [componentsData],
+    [projectsData, currentUser],
   );
   const nodeOptions = useMemo(
     () =>
@@ -320,10 +298,10 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     referenceExemplars: boolean,
   ): AIGenerateScriptPayload => {
     const values = form.getFieldsValue() as Partial<PackageConfig>;
-    const project = fixedProjectId ?? values.project;
-    const repository = values.repository;
+    const project = legacy ? editing?.project_id : fixedProjectId ?? values.project;
+    const repository = editing?.repository_id ?? maintainable.find((item) => item.id === values.software)?.repository;
     if (!project || !repository) {
-      throw new Error('请先选择项目与关联仓库');
+      throw new Error('请先确认 AI 扫描项目与软件的主仓库');
     }
     const ref = values.image_ref;
     const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
@@ -485,32 +463,27 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                   placeholder="选择你维护的软件"
                   showSearch
                   optionFilterProp="label"
-                  onChange={(value) => {
-                    const software = maintainable.find((item) => item.id === value);
-                    form.setFieldValue('repository', software?.repository);
-                  }}
                 />
               </Form.Item>
             )}
-            {!fixedProjectId ? (
+            {legacy || fixedProjectId ? (
+              <Form.Item label={<FieldLabel text={legacy ? '原所属项目' : '当前项目'} />} className="mb-0">
+                <Input value={fixedProjectName} disabled className={inputCls} />
+              </Form.Item>
+            ) : (
               <Form.Item
                 name="project"
-                label={<FieldLabel text={legacy ? '原所属项目' : 'AI 扫描项目'} required={legacy} />}
-                rules={legacy ? [{ required: true, message: '请选择项目' }] : []}
+                label={<FieldLabel text="AI 扫描项目" />}
                 className="mb-0"
               >
                 <Select
                   options={projectOptions}
-                  placeholder={legacy ? '选择项目' : '使用 AI 生成脚本时选择'}
-                  allowClear={!legacy}
+                  placeholder="使用 AI 生成脚本时选择"
+                  allowClear
                   showSearch
                   optionFilterProp="label"
                   suffixIcon={<ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
                 />
-              </Form.Item>
-            ) : (
-              <Form.Item label={<FieldLabel text={legacy ? '原所属项目' : '当前项目'} />} className="mb-0">
-                <Input value={fixedProjectName} disabled className={inputCls} />
               </Form.Item>
             )}
           </div>
@@ -521,26 +494,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
           </Form.Item>
 
           <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
-            {legacy && <Form.Item
-              name="project_component"
-              label={<FieldLabel text="软件仓库" required />}
-              rules={[{ required: true, message: '请选择软件仓库' }]}
-              className="mb-0"
-            >
-              <Select
-                options={componentOptions}
-                placeholder={projectId ? '选择软件仓库' : '请先选择项目'}
-                disabled={!projectId}
-                showSearch
-                optionFilterProp="label"
-                onChange={(value) => {
-                  const selected = componentOptions.find((item) => item.value === value);
-                  form.setFieldValue('repository', selected?.repository);
-                }}
-                suffixIcon={<ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
-              />
-            </Form.Item>}
-            <Form.Item name="repository" hidden><Input /></Form.Item>
+            {legacy && (
+              <Form.Item label={<FieldLabel text="原仓库（软件待归属）" />} className="mb-0">
+                <Input value={editing?.repository_name || editing?.project_component_name} disabled className={inputCls} />
+              </Form.Item>
+            )}
             {isRemote ? (
               <Form.Item
                 name="node"

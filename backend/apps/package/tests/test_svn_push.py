@@ -12,6 +12,7 @@ from apps.package.services import PackageService
 from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
+from apps.software.models import ProjectSoftware, Software
 from utils.provider.svn import SVNProvider
 
 
@@ -70,6 +71,13 @@ def repository(project):
     )
     ensure_repository_component(repo, project)
     return repo
+
+
+@pytest.fixture
+def software(project, repository):
+    software = Software.objects.create(repository=repository, owner=project.leader, slug="web", name="Web 软件")
+    ProjectSoftware.objects.create(project=project, software=software)
+    return software
 
 
 @pytest.fixture
@@ -166,14 +174,13 @@ class TestSVNProviderWriteOps:
 class TestPackageConfigSVNValidation:
     """打包配置 SVN 推送校验测试。"""
 
-    def test_svn_push_enabled_requires_svn_url(self, api_client, project, repository, image, svn_credential):
+    def test_svn_push_enabled_requires_svn_url(self, api_client, software, image, svn_credential):
         """启用 SVN 推送时必须填写 svn_url。"""
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "测试配置",
-                "mode": "simple",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -185,14 +192,13 @@ class TestPackageConfigSVNValidation:
         assert response.status_code == 400
         assert "svn_url" in str(response.data)
 
-    def test_svn_push_enabled_requires_svn_credential(self, api_client, project, repository, image):
+    def test_svn_push_enabled_requires_svn_credential(self, api_client, software, image):
         """启用 SVN 推送时必须选择 SVN 凭证。"""
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "测试配置",
-                "mode": "simple",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -204,7 +210,7 @@ class TestPackageConfigSVNValidation:
         assert response.status_code == 400
         assert "svn_credential" in str(response.data)
 
-    def test_svn_credential_must_be_svn_password_type(self, api_client, project, repository, image, user):
+    def test_svn_credential_must_be_svn_password_type(self, api_client, software, image, user):
         """SVN 凭证类型必须为 svn_password。"""
         cred = Credential.objects.create(
             name="GitLab 凭证",
@@ -218,9 +224,8 @@ class TestPackageConfigSVNValidation:
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "测试配置",
-                "mode": "simple",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -233,14 +238,13 @@ class TestPackageConfigSVNValidation:
         assert response.status_code == 400
         assert "svn_credential" in str(response.data)
 
-    def test_svn_push_disabled_does_not_require_svn_fields(self, api_client, project, repository, image):
+    def test_svn_push_disabled_does_not_require_svn_fields(self, api_client, software, image):
         """未启用 SVN 推送时不需要 SVN 字段。"""
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "测试配置",
-                "mode": "simple",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",
@@ -251,14 +255,13 @@ class TestPackageConfigSVNValidation:
         assert response.status_code == 200
         assert response.data["data"]["svn_push_enabled"] is False
 
-    def test_create_config_with_svn_push_enabled(self, api_client, project, repository, image, svn_credential):
+    def test_create_config_with_svn_push_enabled(self, api_client, software, image, svn_credential):
         """完整 SVN 配置可以成功创建。"""
         response = api_client.post(
             "/api/packages/configs/",
             {
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "SVN 推送配置",
-                "mode": "simple",
                 "image": str(image.id),
                 "build_path": ".",
                 "output_path": "dist",

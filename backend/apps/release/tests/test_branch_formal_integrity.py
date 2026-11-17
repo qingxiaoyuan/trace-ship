@@ -85,15 +85,15 @@ def api(user, project, repository, remote):
     return client
 
 
-def create(api, project, repository, branch="develop"):
+def create(api, project, software, branch="develop"):
     """通过生产 REST 创建正式草稿，不提供客户端提交哈希。"""
-    return api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+    return api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
                     "release_type": "formal", "branch": branch, "version": "VA.1.0.0",
                     "package_config_ids": []}, format="json")
 
 
-def test_notes_and_approval_use_fixed_sha_after_branch_moves(api, project, repository, remote):
-    created = create(api, project, repository)
+def test_notes_and_approval_use_fixed_sha_after_branch_moves(api, project, software, remote):
+    created = create(api, project, software)
     assert created.status_code == 201, created.data
     release = ReleaseRecord.objects.get(pk=created.data["data"]["id"])
     remote.branch_head = remote.commit_list_head = MOVED
@@ -114,8 +114,8 @@ def test_notes_and_approval_use_fixed_sha_after_branch_moves(api, project, repos
 
 
 @pytest.mark.parametrize("field", ["version", "tag_name"])
-def test_version_change_invalidates_notes_and_rejects_stale_identity(api, project, repository, remote, field):
-    created = create(api, project, repository)
+def test_version_change_invalidates_notes_and_rejects_stale_identity(api, project, software, remote, field):
+    created = create(api, project, software)
     assert created.status_code == 201, created.data
     release = ReleaseRecord.objects.get(pk=created.data["data"]["id"])
     url = f"/api/releases/{release.id}/"
@@ -139,23 +139,23 @@ def test_version_change_invalidates_notes_and_rejects_stale_identity(api, projec
 
 
 @pytest.mark.parametrize("branch", ["only-tag", HEAD, "develop..only-tag", "missing"])
-def test_only_real_branches_can_create_formal_release(api, project, repository, remote, branch):
+def test_only_real_branches_can_create_formal_release(api, project, software, remote, branch):
     remote.tags = [TagInfo(name="only-tag", commit_hash=HEAD)]
-    response = create(api, project, repository, branch)
+    response = create(api, project, software, branch)
     assert response.status_code == 400, response.data
     assert "分支" in response.data["message"]
     assert not ReleaseRecord.objects.exists()
 
 
-def test_branch_endpoint_head_wins_over_generic_commit_order(api, project, repository, remote):
+def test_branch_endpoint_head_wins_over_generic_commit_order(api, project, software, remote):
     remote.commit_list_head = MOVED
-    created = create(api, project, repository, "feature/nested")
+    created = create(api, project, software, "feature/nested")
     assert created.status_code == 201, created.data
     assert created.data["data"]["git_hash"] == HEAD
 
 
-def test_edit_cannot_replace_branch_with_tag(api, project, repository, remote):
-    created = create(api, project, repository)
+def test_edit_cannot_replace_branch_with_tag(api, project, software, remote):
+    created = create(api, project, software)
     assert created.status_code == 201, created.data
     url = f"/api/releases/{created.data['data']['id']}/"
     doc = api.post(url + "generate-doc/").data["data"]
@@ -168,8 +168,8 @@ def test_edit_cannot_replace_branch_with_tag(api, project, repository, remote):
 
 
 @pytest.mark.parametrize("identity", ["VA.1.0.0", HEAD])
-def test_formal_identity_cannot_be_forged_in_notes(api, project, repository, remote, identity):
-    created = create(api, project, repository)
+def test_formal_identity_cannot_be_forged_in_notes(api, project, software, remote, identity):
+    created = create(api, project, software)
     assert created.status_code == 201, created.data
     url = f"/api/releases/{created.data['data']['id']}/"
     doc = api.post(url + "generate-doc/").data["data"]
@@ -180,11 +180,11 @@ def test_formal_identity_cannot_be_forged_in_notes(api, project, repository, rem
 
 
 @pytest.mark.parametrize("failure", ["commits", "mrs", "empty"])
-def test_incomplete_formal_changes_never_fall_back_to_branch(api, project, repository, remote, monkeypatch, failure):
+def test_incomplete_formal_changes_never_fall_back_to_branch(api, project, software, remote, monkeypatch, failure):
     """完整区间获取失败时不生成可提审的空壳说明，也不回退分支。"""
     from utils.provider.exceptions import ConnectionError
 
-    created = create(api, project, repository)
+    created = create(api, project, software)
     assert created.status_code == 201, created.data
     url = f"/api/releases/{created.data['data']['id']}/"
 
@@ -204,8 +204,8 @@ def test_incomplete_formal_changes_never_fall_back_to_branch(api, project, repos
     assert api.post(url + "submit-audit/").status_code == 400
 
 
-def test_refresh_requires_confirmation_of_current_heads(api, project, repository, remote):
-    created = create(api, project, repository)
+def test_refresh_requires_confirmation_of_current_heads(api, project, software, remote):
+    created = create(api, project, software)
     url = f"/api/releases/{created.data['data']['id']}/"
     doc = api.post(url + "generate-doc/").data["data"]
     remote.branch_head = MOVED
@@ -229,8 +229,8 @@ def test_refresh_requires_confirmation_of_current_heads(api, project, repository
 
 
 @pytest.mark.parametrize("release_type", ["rc", "beta"])
-def test_updated_nonformal_notes_use_confirmed_commit(api, project, repository, remote, release_type):
-    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+def test_updated_nonformal_notes_use_confirmed_commit(api, project, software, remote, release_type):
+    created = api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": release_type, "branch": "develop", "version": "VA.1.0.0"}, format="json")
     assert created.status_code == 201, created.data
     url = f"/api/releases/{created.data['data']['id']}/"
@@ -252,11 +252,11 @@ def test_updated_nonformal_notes_use_confirmed_commit(api, project, repository, 
     assert "后续功能" in regenerated.data["data"] and "固定 MR" not in regenerated.data["data"]
 
 
-def test_branch_update_requires_publisher_and_draft(api, user, project, repository, remote):
+def test_branch_update_requires_publisher_and_draft(api, user, project, software, remote):
     from apps.account.models import User
     from apps.project.models import ProjectMember
 
-    created = create(api, project, repository)
+    created = create(api, project, software)
     url = f"/api/releases/{created.data['data']['id']}/"
     other = User.objects.create_user(username="other", password="test")
     ProjectMember.objects.create(project=project, user=other, role="developer")
@@ -269,16 +269,16 @@ def test_branch_update_requires_publisher_and_draft(api, user, project, reposito
     assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
 
 
-def test_existing_patch_cannot_silently_refresh_moved_head(api, project, repository, remote):
-    created = create(api, project, repository)
+def test_existing_patch_cannot_silently_refresh_moved_head(api, project, software, remote):
+    created = create(api, project, software)
     url = f"/api/releases/{created.data['data']['id']}/"
     remote.branch_head = MOVED
     assert api.patch(url, {"branch": "develop"}, format="json").status_code == 400
     assert api.get(url).data["data"]["git_hash"] == HEAD
 
 
-def test_existing_draft_can_switch_branches(api, project, repository, remote):
-    created = create(api, project, repository)
+def test_existing_draft_can_switch_branches(api, project, software, remote):
+    created = create(api, project, software)
     url = f"/api/releases/{created.data['data']['id']}/"
     assert api.post(url + "generate-doc/").status_code == 200
     remote.branch_head = MOVED
@@ -288,8 +288,8 @@ def test_existing_draft_can_switch_branches(api, project, repository, remote):
     assert api.post(url + "submit-audit/").status_code == 400
 
 
-def test_direct_confirmation_cannot_bypass_nonancestor_guard(api, project, repository, remote):
-    created = create(api, project, repository)
+def test_direct_confirmation_cannot_bypass_nonancestor_guard(api, project, software, remote):
+    created = create(api, project, software)
     url = f"/api/releases/{created.data['data']['id']}/"
     remote.branch_head = MOVED
     remote.get_merge_base = lambda identity, refs: "c" * 40
@@ -298,13 +298,13 @@ def test_direct_confirmation_cannot_bypass_nonancestor_guard(api, project, repos
 
 
 @pytest.mark.parametrize("release_type,suffix", [("rc", "rc"), ("beta", "alpha")])
-def test_nonformal_regeneration_freezes_base_sha_and_reuses_it(api, project, repository, remote, release_type, suffix):
-    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+def test_nonformal_regeneration_freezes_base_sha_and_reuses_it(api, project, software, remote, release_type, suffix):
+    created = api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": release_type, "branch": "develop", "version": "VA.1.0.0"}, format="json")
     url = f"/api/releases/{created.data['data']['id']}/"
     remote.branch_head = MOVED
     assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
-    remote.tags = [TagInfo(name=f"VA.0.9.0-{suffix}", commit_hash=HEAD)]
+    remote.tags = [TagInfo(name=f"{software.slug}/VA.0.9.0-{suffix}", commit_hash=HEAD)]
     tag_reads = []
     def read_tags(identity):
         tag_reads.append(identity)
@@ -315,42 +315,57 @@ def test_nonformal_regeneration_freezes_base_sha_and_reuses_it(api, project, rep
     assert api.post(url + "generate-doc/").status_code == 200
     detail = api.get(url).data["data"]
     assert detail["base_git_hash"] == HEAD
-    remote.tags = [TagInfo(name=f"VA.0.9.0-{suffix}", commit_hash="c" * 40)]
+    remote.tags = [TagInfo(name=f"{software.slug}/VA.0.9.0-{suffix}", commit_hash="c" * 40)]
     assert api.post(url + "generate-doc/").status_code == 200
     assert calls == [(HEAD, MOVED), (HEAD, MOVED)]
     assert len(tag_reads) == 1
     assert api.get(url).data["data"]["base_git_hash"] == HEAD
 
 
-@pytest.mark.parametrize("failure", ["tags", "fork", "missing_hash"])
-def test_nonformal_regeneration_rejects_unreliable_baseline(api, project, repository, remote, failure):
+@pytest.mark.parametrize("failure", ["tags", "missing_hash"])
+def test_nonformal_regeneration_rejects_unreliable_baseline(api, project, software, remote, failure):
     from utils.provider.exceptions import ProviderError
 
-    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+    created = api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": "rc", "branch": "develop", "version": "VA.1.0.0"}, format="json")
     url = f"/api/releases/{created.data['data']['id']}/"
     remote.branch_head = MOVED
     assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
-    remote.tags = [TagInfo(name="VA.0.9.0-rc", commit_hash=None if failure == "missing_hash" else HEAD)]
+    remote.tags = [TagInfo(name=f"{software.slug}/VA.0.9.0-rc", commit_hash=None if failure == "missing_hash" else HEAD)]
     if failure == "tags":
         def unavailable(identity):
             raise ProviderError("Tag 查询失败")
         remote.list_tags = unavailable
-    elif failure == "fork":
-        remote.get_merge_base = lambda identity, refs: "c" * 40
     assert api.post(url + "generate-doc/").status_code in (400, 502)
     assert api.post(url + "submit-audit/").status_code == 400
     detail = api.get(url).data["data"]
     assert not detail["release_doc"] and not detail["changes_initialized"]
 
 
+def test_legacy_nonformal_regeneration_rejects_diverged_base(api, project, repository, user, remote):
+    # 待归属旧 RC 沿用保存时的仓库范围；出现分叉时保持原生成门禁。
+    draft = ReleaseRecord.objects.create(
+        repository=repository, project=project, publisher=user, release_type="rc",
+        version="VA.1.0.0", tag_name="VA.1.0.0-rc", branch="develop", git_hash=HEAD, status="draft",
+    )
+    url = f"/api/releases/{draft.pk}/"
+    remote.branch_head = MOVED
+    assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 200
+    remote.tags = [TagInfo(name="VA.0.9.0-rc", commit_hash=HEAD)]
+    remote.get_merge_base = lambda identity, refs: "c" * 40
+    assert api.post(url + "generate-doc/").status_code == 400
+    assert api.post(url + "submit-audit/").status_code == 400
+    detail = api.get(url).data["data"]
+    assert detail["software"] is None and not detail["release_doc"] and not detail["changes_initialized"]
+
+
 @pytest.mark.parametrize("release_type", ["rc", "beta"])
-def test_rejected_branch_release_requires_new_application(api, user, project, repository, remote, release_type):
+def test_rejected_branch_release_requires_new_application(api, user, project, repository, software, remote, release_type):
     """RC/Beta 驳回后旧单结束，新申请固定新的提交。"""
     WorkflowDefinition.objects.create(project=project, repository=repository, name="候选审批", release_type=release_type,
         node_config=[{"node_id": "check", "node_name": "确认", "mode": "any",
                       "approvers": [{"type": "user", "user_id": str(user.id)}]}])
-    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+    created = api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": release_type, "branch": "develop", "package_config_ids": []}, format="json")
     assert created.status_code == 201, created.data
     url = f"/api/releases/{created.data['data']['id']}/"
@@ -363,7 +378,7 @@ def test_rejected_branch_release_requires_new_application(api, user, project, re
     assert api.post(url + "submit-audit/").status_code == 400
     remote.branch_head = remote.commit_list_head = MOVED
     assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
-    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+    created = api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": release_type, "branch": "develop", "package_config_ids": []}, format="json")
     assert created.status_code == 201, created.data
     new_id = created.data["data"]["id"]
@@ -376,7 +391,7 @@ def test_rejected_branch_release_requires_new_application(api, user, project, re
     assert release.status == "rejected" and release.git_hash == HEAD and release.workflow_instance_id == old.id
 
 
-def test_new_application_after_rejection_captures_current_ai_settings(api, user, project, repository, remote,
+def test_new_application_after_rejection_captures_current_ai_settings(api, user, project, repository, software, remote,
                                                                django_capture_on_commit_callbacks):
     """新申请固定新提交及当前配置，已驳回申请及报告保持历史。"""
     from apps.system.tests.review_helpers import configure_review
@@ -386,7 +401,7 @@ def test_new_application_after_rejection_captures_current_ai_settings(api, user,
         node_config=[{"node_id": "ai", "node_name": "代码审查", "node_type": "ai_review"},
                      {"node_id": "check", "node_name": "确认", "mode": "any",
                       "approvers": [{"type": "user", "user_id": str(user.id)}]}])
-    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+    created = api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": "rc", "branch": "develop", "package_config_ids": []}, format="json")
     assert created.status_code == 201, created.data
     url = f"/api/releases/{created.data['data']['id']}/"
@@ -405,7 +420,7 @@ def test_new_application_after_rejection_captures_current_ai_settings(api, user,
     remote.branch_head = remote.commit_list_head = MOVED
     assert api.post(url + "branch-update/", {"old_hash": HEAD, "new_hash": MOVED}, format="json").status_code == 400
     assert api.post(url + "submit-audit/").status_code == 400
-    created = api.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+    created = api.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": "rc", "branch": "develop", "package_config_ids": []}, format="json")
     assert created.status_code == 201, created.data
     new_id = created.data["data"]["id"]

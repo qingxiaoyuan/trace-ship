@@ -59,7 +59,7 @@ export const releaseApi = {
   getReleases: (params?: Record<string, unknown>) =>
     get<PaginatedData<Release>>('/releases/', { params }),
   getRelease: (id: string, project?: string) => get<Release>(`/releases/${id}/`, { params: { project } }),
-  createRelease: (data: Record<string, unknown>) =>
+  createRelease: (data: Record<string, unknown> & { project: string; software: string }) =>
     post<Release>('/releases/', data),
   /** 删除草稿 / 已驳回发布（仅草稿、已驳回状态可删） */
   deleteRelease: (id: string) => del<null>(`/releases/${id}/`),

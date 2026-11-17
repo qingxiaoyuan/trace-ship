@@ -48,7 +48,7 @@ def test_software_draft_uses_verified_repository_and_tag_namespace(api, project,
     assert bypass.status_code == 400, bypass.data
     wrong = create_draft(api, project, client, tag_name="server-b/VA.1.0.1-rc")
     assert wrong.status_code == 400
-    result = create_draft(api, project, client)
+    result = create_draft(api, project, client, repository=str(client.repository_id))
     assert result.status_code == 201, result.data
     draft = result.data["data"]
     assert draft["software"] == str(client.id)
@@ -57,6 +57,35 @@ def test_software_draft_uses_verified_repository_and_tag_namespace(api, project,
     assert draft["git_hash"] == "1" * 40
     assert draft["package_config_ids"] == []
     assert api.patch(f"/api/releases/{draft['id']}/", {"software": str(server.id)}, format="json").status_code == 400
+
+
+def test_matching_software_is_required_for_optional_repository(api, project, software_pair, user, remote):
+    from apps.project.services import ensure_repository_component
+    from apps.repository.models import Repository
+
+    other_repository = Repository.objects.create(
+        name="同一项目的其他仓库", vendor="gitlab", repo_type="git",
+        url="https://gitlab.example.test/other.git", external_identity="test/other", created_by=user,
+    )
+    ensure_repository_component(other_repository, project)
+    client, _ = software_pair
+    response = create_draft(api, project, client, repository=str(other_repository.pk))
+    assert response.status_code == 400, response.data
+    assert api.get("/api/releases/", {"project": str(project.pk)}).data["data"]["total"] == 0
+
+
+@pytest.mark.parametrize("software_input", [{}, {"software": None}])
+def test_release_creation_requires_software_even_before_a_project_selects_any(
+    api, project, repository, remote, software_input,
+):
+    payload = {
+        "project": str(project.pk), "repository": str(repository.pk), "release_type": "rc",
+        "branch": "develop", "version": "VA.1.0.1", **software_input,
+    }
+    response = api.post("/api/releases/", payload, format="json")
+    assert response.status_code == 400, response.data
+    history = api.get("/api/releases/", {"project": str(project.pk)}).data["data"]
+    assert history["total"] == 0
 
 
 def test_version_suggestion_uses_target_namespace(api, project, software_pair, remote):

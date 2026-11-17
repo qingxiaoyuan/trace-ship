@@ -15,10 +15,10 @@ from apps.package.models import (
     PackageTask,
 )
 from apps.package.services.configurations import can_maintain_config, require_config_maintenance
-from apps.project.models import Project, ProjectComponent
+from apps.project.models import ProjectComponent
 from apps.project.serializers import resolve_my_role
 from apps.repository.models import Repository
-from apps.software.models import ProjectSoftware, Software
+from apps.software.models import Software
 
 
 def validate_safe_rel_path(value: str, field: str = "path") -> str:
@@ -346,24 +346,20 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         component = attrs.get("project_component", getattr(self.instance, "project_component", None))
         software = attrs.get("software", getattr(self.instance, "software", None))
-        if bool(component) == bool(software):
-            raise serializers.ValidationError({"software": "请为配置选择一个归属软件或待归属项目组件"})
-        if self.instance and getattr(self.instance, "software_id", None) != getattr(software, "pk", None):
-            raise serializers.ValidationError({"software": "已保存配置不能通过编辑更改软件归属"})
+        if self.instance is not None:
+            if self.instance.software_id != getattr(software, "pk", None):
+                raise serializers.ValidationError({"software": "已保存配置不能通过编辑更改软件归属"})
+            if self.instance.project_component_id != getattr(component, "pk", None):
+                raise serializers.ValidationError({"project_component": "已保存配置不能通过编辑更改原项目组件"})
+        elif not software or component is not None:
+            raise serializers.ValidationError({"software": "新建打包配置请指定唯一归属软件"})
         repository = software.repository if software else component.repository
         if self.instance is None:
             Repository.objects.select_for_update(no_key=True).get(pk=repository.pk)
-            if software:
-                software.refresh_from_db()
-                if not software.is_active:
-                    raise serializers.ValidationError({"software": "软件已停用"})
-        elif repository.pk != self.instance.source_repository_id:
-            raise serializers.ValidationError({"project_component": "不能将配置移到其他仓库"})
+            software.refresh_from_db()
         require_config_maintenance(user, software=software, component=component)
-        if component and (self.instance is None or self.instance.project_component_id != component.pk):
-            Project.objects.select_for_update(no_key=True).get(pk=component.project_id)
-            if ProjectSoftware.objects.filter(project_id=component.project_id).exists():
-                raise serializers.ValidationError({"software": "此项目已接入软件，请按归属软件新建打包配置"})
+        if self.instance is None and not software.is_active:
+            raise serializers.ValidationError({"software": "软件已停用"})
         image_info = attrs.pop("image_info", None)
         if image_info:
             attrs["image"] = self._resolve_image_info(image_info)
@@ -421,6 +417,14 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+
+class PackageConfigCreateSerializer(PackageConfigSerializer):
+    """新配置只归属可维护的软件。"""
+
+    software = serializers.PrimaryKeyRelatedField(
+        queryset=Software.objects.all(), error_messages={"required": "请选择归属软件", "null": "请选择归属软件"},
+    )
 
 
 class PackageKnowledgeSerializer(serializers.ModelSerializer):

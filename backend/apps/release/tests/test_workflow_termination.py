@@ -17,7 +17,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture
-def flow(user, project, repository, mock_git_provider, monkeypatch):
+def flow(user, project, repository, software, mock_git_provider, monkeypatch):
     """使用生产创建/生成/提审接口，只替换 GitLab 外部边界。"""
     reviewer = User.objects.create_user(username="termination_reviewer")
     ProjectMember.objects.create(project=project, user=reviewer, role="developer")
@@ -43,7 +43,7 @@ def flow(user, project, repository, mock_git_provider, monkeypatch):
     api = APIClient()
     api.force_authenticate(user)
     created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": "formal",
+        "project": str(project.id), "software": str(software.id), "release_type": "formal",
         "branch": "develop", "package_config_ids": [],
     }, format="json")
     assert created.status_code == 201, created.data

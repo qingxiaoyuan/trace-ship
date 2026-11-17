@@ -135,7 +135,7 @@ export const packageApi = {
   getConfigs: (params?: PackageConfigListParams) =>
     get<PaginatedData<PackageConfig>>('/packages/configs/', { params }),
   getConfig: (id: string) => get<PackageConfig>(`/packages/configs/${id}/`),
-  createConfig: (data: Partial<PackageConfig>) => post<PackageConfig>('/packages/configs/', data),
+  createConfig: (data: Partial<PackageConfig> & { software: string }) => post<PackageConfig>('/packages/configs/', data),
   updateConfig: (id: string, data: Partial<PackageConfig>) =>
     put<PackageConfig>(`/packages/configs/${id}/`, data),
   patchConfig: (id: string, data: Partial<PackageConfig>) =>

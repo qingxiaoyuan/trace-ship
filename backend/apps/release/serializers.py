@@ -95,10 +95,10 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     cleanup_history = serializers.SerializerMethodField()
     revision_update_required = serializers.SerializerMethodField()
 
-    def get_revision_update_required(self, obj):
+    def get_revision_update_required(self, obj) -> bool:
         return bool(obj.status == "draft" and obj.revision_source_hash and obj.git_hash.lower() == obj.revision_source_hash.lower())
 
-    def get_cleanup_history(self, obj):
+    def get_cleanup_history(self, obj) -> list[dict]:
         return [{"status": item.status, "message": item.message, "protected_by": item.protected_by,
                  "created_at": item.created_at, "actor_id": item.actor_id, "actor_name": str(item.actor) if item.actor else "已删除账号"}
                 for item in obj.cleanup_attempts.select_related("actor").order_by("created_at")]
@@ -292,20 +292,6 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             for field in ("project", "repository", "release_type"):
                 if field in attrs and attrs[field] != getattr(self.instance, field):
                     raise serializers.ValidationError({field: "草稿不能更换项目、仓库或发布类型，请重新创建"})
-        elif attrs.get("software"):
-            from apps.software.models import Software
-
-            software = Software.objects.select_related("repository").filter(
-                pk=attrs["software"], project_links__project=attrs["project"],
-            ).first()
-            if software is None:
-                raise serializers.ValidationError({"software": "当前项目尚未选用此软件"})
-            if attrs.get("repository", software.repository) != software.repository:
-                raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
-            attrs["software"] = software
-            attrs["repository"] = software.repository
-        elif "repository" not in attrs:
-            raise serializers.ValidationError({"repository": "请选择软件或仓库"})
         marked = attrs.get("review_context_is_requirement", getattr(self.instance, "review_context_is_requirement", False))
         context = attrs.get("review_context", getattr(self.instance, "review_context", ""))
         paths = attrs.get("review_document_paths", getattr(self.instance, "review_document_paths", []))
@@ -318,6 +304,25 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"branch": "请选择分支"})
         if release_type != "formal" and attrs.get("source_rc"):
             raise serializers.ValidationError({"source_rc": "只有正式版可选择来源 RC"})
+        return attrs
+
+
+class ReleaseCreateSerializer(ReleaseRecordSerializer):
+    """新申请必须从发起项目显式选用的软件创建。"""
+
+    software = serializers.UUIDField(error_messages={"required": "请选择发布软件", "null": "请选择发布软件"})
+
+    def validate(self, attrs: dict) -> dict:
+        from apps.software.models import Software
+
+        attrs = super().validate(attrs)
+        software = Software.objects.filter(pk=attrs["software"], project_links__project=attrs["project"]).first()
+        if software is None:
+            raise serializers.ValidationError({"software": "当前项目尚未选用此软件"})
+        repository = attrs.pop("repository", None)
+        if repository is not None and repository.pk != software.repository_id:
+            raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
+        attrs["software"] = software
         return attrs
 
 

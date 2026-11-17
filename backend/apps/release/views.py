@@ -33,6 +33,7 @@ from apps.release.exporters import ReleaseDocExporter
 from apps.release.models import ReleaseRecord, ReleaseReviewIssue
 from apps.release.serializers import (
     ReleaseCommitSerializer,
+    ReleaseCreateSerializer,
     ReleaseListSerializer,
     ReleaseRecordSerializer,
     ReleaseReviewIssueSerializer,
@@ -230,6 +231,8 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         if self.action == "list":
             return ReleaseListSerializer
+        if self.action == "create":
+            return ReleaseCreateSerializer
         return ReleaseRecordSerializer
 
     def get_queryset(self):
@@ -522,8 +525,7 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             release = ReleaseService.create_release(
                 project=data["project"],
-                repository=data["repository"],
-                software=data.get("software"),
+                software=data["software"],
                 release_type=data["release_type"],
                 branch=data.get("branch", ""),
                 source_rc=data.get("source_rc"),

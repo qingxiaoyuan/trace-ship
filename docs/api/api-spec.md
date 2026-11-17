@@ -964,7 +964,7 @@
 
 软件响应包含 `id`、`repository`、`repository_name`、`slug`、`name`、`description`、`is_active` 和 `owner`。目录和详情还返回当前账号的 `can_maintain` 与 `can_manage`；协作维护者名单 `maintainers` 仅负责人和超管可见。仓库所有者、软件负责人、协作维护者及显式选用项目的成员可查看相应软件。共享目录不包含任一项目的任务、凭证或成员资料。
 
-`slug` 最长 80 个字符，仅允许小写英文字母、数字及分隔用短横线，主仓库内唯一。登记后修改标识或主仓库返回 400。软件和选用关联仅提供启停，软件本身无删除接口。有软件身份或选用依据的父项删除返回 409。旧仓库发布和历史查询沿用原接口。
+`slug` 最长 80 个字符，仅允许小写英文字母、数字及分隔用短横线，主仓库内唯一。登记后修改标识或主仓库返回 400。软件和选用关联仅提供启停，软件本身无删除接口。有软件身份或选用依据的父项删除返回 409。既有仓库发布和历史查询沿用原 ID 和授权。
 
 ## 七、提交审查接口
 
@@ -1078,7 +1078,7 @@
 
 ### 软件发布与共享版本
 
-创建发布时传入 `project`、`software`、`release_type` 和 `branch`。服务端从软件取得主仓库，兼容请求同时传入一致的 `repository`。Tag 使用稳定软件标识和原版本格式，例如 `client-a/VA.2.1.0`。可传原格式部分或当前软件的完整 Tag，人工填写的 Tag 优先于 `version`。保存后的项目、仓库、软件、发布类型不可改。项目曾选用该仓库下任一软件时，省略 `software` 的新建请求返回 400。其他仓库仍可在过渡期按旧规则新建，旧草稿保留原入口。
+创建发布必须传入 `project` 和 `software`，以及目标发布类型、分支等信息。服务端从该软件取得主仓库，核验实际项目选用、角色与仓库使用资格。`repository` 可省略；如传入，必须和软件主仓库一致。省略软件的新建请求返回 400。Tag 使用稳定软件标识和原版本格式，例如 `client-a/VA.2.1.0`。可传原格式部分或当前软件的完整 Tag，人工填写的 Tag 优先于 `version`。既有仓库草稿、在途审批和待归属历史使用原记录和授权。
 
 | 入口 | 参数与行为 |
 | --- | --- |
@@ -1087,14 +1087,14 @@
 | **GET** `/api/releases/software-changes-preview/` | 同建议参数，另需 `branch`，可传 `tag_name`。与草稿变更预览使用相同的固定 SHA 区间，返回 `base_tag`、`base_git_hash`、`head_hash`、提交、合并请求、更新条目和核验提示。 |
 | **GET** `/api/releases/rc-candidates/` | 软件发布传入 `project` 和 `software`，按该软件查询已发布 RC 和可用源码。仓库兼容路径继续接受 `project` 与 `repository`。 |
 
-列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。待归属历史的软件字段为空。列表和目录可按 `project`、`software` 查询。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；响应提供已保存说明及查看项目任务，审批、整改、原项目元信息和原项目任务按各自授权读取。旧链接在原项目权限范围内继续使用原发起项目字段。
+列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。待归属历史的软件字段为空。列表和目录可按 `project`、`software` 查询；列表可用 `project=<项目 UUID>&repository=<仓库 UUID>&unassigned=true` 精确筛选该项目的待归属历史，仅使用 `repository` 则查看该仓库全部有权版本。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；审批、整改、原项目元信息和任务按各自项目授权读取。
 
-软件草稿说明保存软件显示名称、稳定标识、主仓库名称、完整 Tag 与固定 SHA。正式、RC 和 Beta 的说明与审查采用同软件、同类型的有效基线。软件按类型及规范化版本占用，项目和日期不拆分同一编号。主仓库模板逐次创建独立审批实例。正式审批门禁与未知推 Tag 的核对方式沿用现有规则。过渡期软件发布成功先不触发旧自动打包，仓库级补打入口、已发布版本删除和相关 Tag 清理拒绝软件记录。
+软件草稿说明保存软件显示名称、稳定标识、主仓库名称、完整 Tag 与固定 SHA。正式、RC 和 Beta 的说明与审查采用同软件、同类型的有效基线。软件按类型及规范化版本占用，项目和日期不拆分同一编号。主仓库模板逐次创建独立审批实例。推 Tag 成功后只触发本次选中的有效软件配置，既有版本可以被其他选用项目复用；删除和清理仍受源码、任务与 OA 引用保护。
 
 ### 8.2 创建发布申请
 
 - **POST** `/api/releases/`
-- 项目成员可创建（草稿）。
+- 有项目发布权限且项目已启用选用该软件时，可以创建草稿。
 
 **请求体：**
 
@@ -1117,12 +1117,11 @@
 }
 ```
 
-> `version` / `tag_name` 可选，为空时后端基于仓库 tag 和仓库 `version_rule` 自动计算；rc/beta 类型自动补类型后缀与日期段。传入 `tag_name` 时，以其去掉类型后缀及日期后的值作为 `version`，覆盖同时传入的旧自动建议版本，与草稿编辑语义一致。
-> `repository` 必须属于所选项目。
+> `version` / `tag_name` 可选。省略时按本软件的可识别远端 Tag、成功历史和有效占用建议版本；格式、类型后缀和日期规则来自主仓库。传入 `tag_name` 时以该值为准，不采用同时提交的旧建议号。
 
 #### 分支创建与 RC 来源兼容
 
-`POST /api/releases/` 当前的正式版、RC/Beta 均按 `branch` 创建，服务端通过分支专用接口确认真实分支并保存其完整 HEAD 为 `git_hash`，客户端提交的哈希不能覆盖。Tag、SHA、提交范围和不存在的分支均不可替代分支。正式版强制从 RC 晋升暂缓（#52），新建页面不要求 RC。为保留现存来源链处理，正式接口继续兼容显式传入 `source_rc`（UUID）：须为同项目、同仓库的已发布 RC，并核验启用关联、仓库所有者成员资格、凭证及远端完整提交；该兼容路径的分支与哈希由 RC 确定。RC/Beta 不能传非空 `source_rc`。
+`POST /api/releases/` 的正式版、RC/Beta 可以按 `branch` 创建，服务端确认真实分支并保存其完整 HEAD 为 `git_hash`。正式版强制从 RC 晋升暂缓（#52）。正式接口仍可显式传入 `source_rc`（UUID），新申请的来源 RC 必须是同一软件的已发布版本，发起项目须有权使用该软件和源码；分支和哈希由 RC 确定。旧草稿保留原 RC 来源与更新入口。RC/Beta 不接受非空 `source_rc`。
 
 `GET /api/releases/rc-candidates/?project=<UUID>&repository=<UUID>` 返回标准分页数据，支持 `search`（版本或 Tag）、`page`、`page_size`，按发布时间倒序。每项包含 `id`、`version`、`tag_name`、`branch`、`git_hash`、`released_at`、`available` 和 `unavailable_reason`。查询受项目可见范围限制；引用缺失、缺少完整 SHA 或 Tag 改写时返回不可用原因，Provider 故障返回错误而非空候选。原 RC Tag 缺失时，接受同来源 RC 链中已发布且远端 SHA 一致的正式 Tag；原 Tag 被改写、无等价引用或外部访问失败仍拒绝。
 
@@ -1540,7 +1539,7 @@
 - **GET / PUT / PATCH / DELETE** `/api/packages/configs/{id}/`
 - 软件配置由软件维护负责人、获授权的协作维护者或超管维护。项目成员可查看本项目启用选用的软件配置概要。仅有项目管理角色时，不能修改共享配置。
 - 查询返回 `software`、`software_name`、`software_slug`、`can_maintain`。共享配置没有归属项目，`project_component` 与 `project_id` 为空。查询指定 `project` 时，共享配置的 `my_role` 表示在该项目的有效角色。脚本、环境变量及 SVN 连接参数只对获授权的配置维护者返回。
-- 待归属旧配置继续使用 `project_component` 和原项目权限。已接入软件的项目应按软件新建配置。共享配置已有任务或归属确认记录时可停用，保留原配置及历史。
+- `POST` 必须提供 `software`。待归属旧配置继续使用原配置 ID、`project_component` 和原项目权限；组件仅用于旧记录读取和已有操作。配置归属确认通过独立命令完成，不通过普通编辑更换。共享配置已有任务或归属确认记录时可停用，保留原配置及历史。
 
 **查询参数：** `project`、`software`、`repository`、`project_component`、`is_active`、`auto_package_on_release`。
 

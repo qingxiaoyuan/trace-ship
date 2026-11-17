@@ -959,15 +959,18 @@ def test_trigger_auto_packages_partial_selection_filters(project, repository, us
 
 
 @pytest.mark.django_db
-def test_create_release_saves_selected_package_config_ids(project, repository, user, monkeypatch):
-    """创建发布时保存用户勾选的自动打包配置，并忽略未开启/不存在的 id。"""
+def test_create_release_saves_selected_package_config_ids(api_client, project, repository, user, monkeypatch):
+    """发布只接受本软件启用的自动打包配置并保存实际选择。"""
     from apps.release.services import ReleaseService
+    from apps.software.models import ProjectSoftware, Software
     from utils.provider.base import TagInfo
 
+    software = Software.objects.create(repository=repository, owner=user, slug="web", name="Web 软件")
+    ProjectSoftware.objects.create(project=project, software=software)
     source_rc = ReleaseRecord.objects.create(
-        project=project, repository=repository, publisher=user,
-        release_type="rc", status="released", version="VA.1.0.0",
-        tag_name="VA.1.0.0-rc", branch="main", git_hash="a" * 40,
+        project=project, repository=repository, software=software, publisher=user,
+        release_type="rc", status="released", version="V.1.0.0",
+        tag_name="web/V.1.0.0-rc", branch="main", git_hash="a" * 40,
     )
 
     class FakeProvider:
@@ -976,33 +979,32 @@ def test_create_release_saves_selected_package_config_ids(project, repository, u
 
     image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
     config = PackageConfig.objects.create(
-        project_component=project.project_components.get(repository=repository),
+        software=software,
         name="Web 打包",
         image=image,
         auto_package_on_release=True,
     )
     other_config = PackageConfig.objects.create(
-        project_component=project.project_components.get(repository=repository),
+        software=software,
         name="普通打包",
         image=image,
         auto_package_on_release=False,
     )
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda repo, request_user=None, **_kwargs: FakeProvider())
 
+    url = "/api/releases/"
+    payload = {
+        "project": str(project.pk), "software": str(software.pk), "release_type": "formal",
+        "source_rc": str(source_rc.pk), "branch": "main", "version": "V.1.0.0",
+    }
+    for unavailable in (str(other_config.pk), "00000000-0000-0000-0000-000000000000"):
+        refused = api_client.post(url, {**payload, "package_config_ids": [str(config.pk), unavailable]}, format="json")
+        assert refused.status_code == 400 and "自动打包配置" in refused.data["message"], refused.data
+        assert not ReleaseRecord.objects.filter(software=software, status="draft").exists()
 
-    release = ReleaseService.create_release(
-        project=project,
-        repository=repository,
-        release_type="formal",
-        source_rc=source_rc.id,
-        branch="main",
-        publisher=user,
-        version="VA.1.0.0",
-        package_config_ids=[
-            str(config.id),
-            str(other_config.id),  # 未开启自动打包 -> 忽略
-            "00000000-0000-0000-0000-000000000000",  # 不存在 -> 忽略
-        ],
+    created = api_client.post(
+        url, {**payload, "package_config_ids": [str(config.pk)]}, format="json",
     )
-
-    assert list(release.package_config_ids) == [str(config.id)]
+    assert created.status_code == 201, created.data
+    release = ReleaseRecord.objects.get(pk=created.data["data"]["id"])
+    assert release.package_config_ids == [str(config.pk)] and release.source_rc_id == source_rc.pk

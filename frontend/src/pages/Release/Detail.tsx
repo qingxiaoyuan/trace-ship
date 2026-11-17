@@ -303,7 +303,7 @@ export default function ReleaseDetail() {
         </div>
         {canDevelop && (status === 'rejected' && !(release.rejected_reason || '').startsWith('推 tag 失败') || status === 'draft' && release.has_revision_history) ? <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
           <p className="min-w-0 flex-1">审批已结束，修改代码后请新建发布。</p>
-          <Button onClick={() => navigate(`/releases/create?project_id=${release.project}`)}>新建发布</Button>
+          <Button onClick={() => navigate(`/releases/create?${new URLSearchParams({ project: release.project, ...(release.software ? { software: release.software } : {}) })}`)}>新建发布</Button>
         </div> : null}
         {submit.error ? <div className="mt-3"><PermissionAlert error={submit.error} errorTitle="提交审批失败" /></div> : null}
         <ReleaseSource key={`release-source:${release.id}`} release={release}

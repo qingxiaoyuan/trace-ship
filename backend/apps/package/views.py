@@ -47,6 +47,7 @@ from apps.package.nexus import NexusError, NexusService
 from apps.package.remote_base import RemoteNodeError, test_node_connection
 from apps.package.serializers import (
     BranchPackageTriggerSerializer,
+    PackageConfigCreateSerializer,
     PackageConfigSerializer,
     PackageImageSerializer,
     PackageKnowledgeSerializer,
@@ -370,6 +371,11 @@ class PackageConfigViewSet(StandardModelViewSet):
     search_fields = ["name", "software__name", "software__repository__name", "project_component__repository__name"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-annotated_is_favorite", "-created_at"]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return PackageConfigCreateSerializer
+        return super().get_serializer_class()
 
     def get_permissions(self):
         permissions = super().get_permissions()
