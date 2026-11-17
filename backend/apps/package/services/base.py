@@ -136,7 +136,10 @@ class PackageBaseMixin:
         shell: bool = False,
     ) -> None:
         """执行命令并把输出写入日志。"""
-        cls._append_log(task, f"$ {cls._display_command(command, shell=shell)}")
+        display_command = command
+        if task.software_id and command[0] == "docker" and command[-2:-1] == ["-ec"]:
+            display_command = [*command[:-1], "<共享配置脚本>"]
+        cls._append_log(task, f"$ {cls._display_command(display_command, shell=shell)}")
         process = subprocess.Popen(
             command if not shell else command[0],
             cwd=str(cwd),

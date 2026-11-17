@@ -170,7 +170,13 @@ class GlobalSearchService:
         """打包任务：任务名 / 配置名 / 任务 ID 匹配，副标题为「仓库 · 状态」"""
         from apps.package.models import PackageTask
 
-        condition = Q(name__icontains=q) | Q(config__name__icontains=q)
+        condition = (
+            Q(name__icontains=q)
+            | Q(config_snapshot__name__icontains=q)
+            | Q(config_snapshot__software_name__icontains=q)
+            | Q(config_snapshot__software_slug__icontains=q)
+            | (Q(software__isnull=True) & Q(config__name__icontains=q))
+        )
         try:
             condition |= Q(id=uuid.UUID(q))
         except (ValueError, AttributeError):

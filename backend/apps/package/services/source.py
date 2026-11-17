@@ -33,9 +33,17 @@ class SourceCheckoutMixin:
             clone_cmd.append("--recurse-submodules")
         clone_cmd.extend([clone_url, str(source_dir)])
         cls._run_command(task, clone_cmd, workspace, env)
-        if task.release_id:
-            actual = subprocess.check_output(["git", "-C", str(source_dir), "rev-parse", "HEAD"], text=True).strip()
-            cls.verify_source_hash(task, actual)
+        if task.release_id or task.software_id:
+            prefix = ["git", "-C", str(source_dir)]
+            actual = subprocess.check_output([*prefix, "rev-parse", "HEAD"], text=True).strip()
+            if task.release_id:
+                cls.verify_source_hash(task, actual)
+            else:
+                branch = subprocess.run(
+                    [*prefix, "symbolic-ref", "--quiet", "HEAD"],
+                    capture_output=True, text=True, check=False,
+                )
+                cls.verify_branch_source(task, branch.stdout.strip(), actual)
         # 写入本次发布说明到源码根目录，供构建脚本读取（分支直打包无发布说明，跳过）
         if task.release_id:
             doc_path = source_dir / f"release-{cls._doc_filename(task.version)}.md"
@@ -68,7 +76,16 @@ class SourceCheckoutMixin:
     @staticmethod
     def verify_source_hash(task, actual: str) -> None:
         if actual.strip() != task.commit_hash:
-            raise ValueError("实际检出的提交与发布快照不一致，已阻止执行构建脚本")
+            snapshot_kind = "发布" if task.release_id else "分支"
+            raise ValueError(f"实际检出的提交与{snapshot_kind}快照不一致，已阻止执行构建脚本")
+
+    @classmethod
+    def verify_branch_source(cls, task, reference: str, commit_hash: str) -> None:
+        """共享分支任务校验实际分支和创建时固定的源码。"""
+        if reference != f"refs/heads/{task.tag_name}":
+            raise ValueError("实际检出内容不属于所选分支，已阻止执行构建脚本")
+        cls.verify_source_hash(task, commit_hash)
+
 
     @staticmethod
     def _auth_clone_args(repo, request_user=None, project=None) -> list[str]:

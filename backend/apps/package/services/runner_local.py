@@ -147,7 +147,7 @@ class LocalRunnerMixin:
     def _archive_stem(cls, task: PackageTask) -> str:
         """生成产物压缩包文件名主干（不含扩展名）：软件名-版本-日期
 
-        软件名取打包配置名（配置被删除时回退仓库名）；版本取发布版本号；
+        软件名优先使用任务保存的显示名称；旧任务沿用配置名称或仓库名称，版本取发布版本号；
         日期为打包当天（本地时区 YYYYMMDD）。
         文件名中的非法字符统一替换为 -，避免 Windows / 下载场景命名问题。
         """
@@ -156,10 +156,10 @@ class LocalRunnerMixin:
             cleaned = _ARCHIVE_NAME_INVALID_RE.sub("-", part or "").strip("-")
             return cleaned or "package"
 
+        snapshot = task.config_snapshot or {}
         software = safe(
-            task.config.name
-            if task.config
-            else (task.repository.name if task.repository else "")
+            snapshot.get("software_name") or snapshot.get("name")
+            or (task.config.name if task.config else (task.repository.name if task.repository else ""))
         )
         version = safe(task.version or "")
         date = timezone.localdate().strftime("%Y%m%d")

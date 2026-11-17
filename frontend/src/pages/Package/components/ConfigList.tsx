@@ -36,6 +36,7 @@ interface ConfigListProps {
   canCreate?: boolean;
   /** 是否展示行内「触发打包」按钮（默认展示，项目详情按项目角色收口） */
   canTrigger?: boolean;
+  canUseShared?: boolean;
   /** 切换收藏（星标），由父组件负责乐观更新与缓存失效 */
   onToggleFavorite: (config: PackageConfig) => void;
 }
@@ -53,6 +54,7 @@ export const ConfigList = memo(function ConfigList({
   onNew,
   canCreate = true,
   canTrigger = true,
+  canUseShared = false,
   onToggleFavorite,
 }: ConfigListProps) {
   const [keyword, setKeyword] = useState('');
@@ -65,7 +67,7 @@ export const ConfigList = memo(function ConfigList({
     return configs.filter((c) => {
       if (keyword) {
         const kw = keyword.toLowerCase();
-        const txt = `${c.name} ${c.project_name || ''} ${c.repository_name || ''}`.toLowerCase();
+        const txt = `${c.name} ${c.software_name || ''} ${c.project_name || ''} ${c.repository_name || ''}`.toLowerCase();
         if (!txt.includes(kw)) return false;
       }
       return true;
@@ -90,7 +92,7 @@ export const ConfigList = memo(function ConfigList({
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={1.5} />
           <input
             type="text"
-            placeholder="搜索配置名称 / 仓库"
+            placeholder="搜索配置、软件或仓库"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             className="w-[240px] rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] text-slate-700 placeholder-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
@@ -163,7 +165,7 @@ export const ConfigList = memo(function ConfigList({
                           onDelete={onDelete}
                           onTrigger={onTrigger}
                           onOpenHistory={onOpenHistory}
-                          canTrigger={canTrigger}
+                          canTrigger={canTrigger && (!config.software || canUseShared)}
                           onToggleFavorite={onToggleFavorite}
                           onBrowseSvn={setBrowsing}
                         />
@@ -275,13 +277,15 @@ const ConfigRow = memo(function ConfigRow({
   );
 
   // 是否启用了 SVN 产物推送（展示「浏览 SVN」入口）
-  const svnEnabled = Boolean(config.svn_push_enabled && config.svn_url);
-  // 打包配置参数仅项目管理员 / 软件管理员可维护（后端 my_role：超管返回 software_admin）
-  const canManage = config.my_role === 'software_admin' || config.my_role === 'manager';
-  const canTriggerConfig = canTrigger && ['manager', 'developer', 'tester', 'software_admin'].includes(config.my_role || '');
+  const svnEnabled = Boolean(!config.software && config.svn_push_enabled && config.svn_url);
+  const canManage = config.can_maintain ?? ['software_admin', 'manager'].includes(config.my_role || '');
+  const canTriggerConfig = canTrigger && config.is_active
+    && ['manager', 'developer', 'tester', 'software_admin'].includes(config.my_role || '');
 
   return (
     <div
+      role="group"
+      aria-label={[config.name, config.software_name].filter(Boolean).join(' · ')}
       className={`transition-colors max-md:rounded-xl max-md:border max-md:bg-white max-md:p-4 ${onOpenHistory ? 'cursor-pointer ' : ''}${
         config.is_favorite
           ? 'bg-amber-50/40 hover:bg-amber-50/60 max-md:border-amber-200/70'
@@ -297,12 +301,12 @@ const ConfigRow = memo(function ConfigRow({
           </div>
           <div className="min-w-0">
             <div className="truncate text-[13px] font-medium text-slate-900">{config.name}</div>
-            <div className="truncate font-mono text-[10px] text-slate-400">{executorSummary(config)}</div>
+            <div className="truncate font-mono text-[10px] text-slate-400">{[config.software_name, executorSummary(config)].filter(Boolean).join(' · ')}</div>
           </div>
         </div>
         <div className="col-span-2">
           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-            {config.custom_script ? '自定义脚本' : '内置脚本'}
+            {config.software && !canManage ? '—' : config.custom_script ? '自定义脚本' : '内置脚本'}
           </span>
         </div>
         <div className="col-span-2">
@@ -346,6 +350,7 @@ const ConfigRow = memo(function ConfigRow({
           {canTriggerConfig && (
             <button
               title="触发打包"
+              aria-label="触发打包"
               className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
               onClick={handleTrigger}
             >
@@ -355,6 +360,7 @@ const ConfigRow = memo(function ConfigRow({
           {/* 无权限用户也可查看配置（只读，用于参考模仿） */}
           <button
             title={canManage ? '编辑配置' : '查看配置（只读）'}
+            aria-label={canManage ? '编辑配置' : '查看配置（只读）'}
             className="rounded-md p-1.5 text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
             onClick={handleEdit}
           >
@@ -393,13 +399,13 @@ const ConfigRow = memo(function ConfigRow({
         </div>
         <div className="mt-2 flex items-center gap-2">
           <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{config.name}</span>
-          <span className="shrink-0 truncate text-[12px] text-slate-400">{config.project_name || '-'}</span>
+          <span className="max-w-[55%] truncate text-[12px] text-slate-400">{config.software_name || config.project_name || '-'}</span>
         </div>
         <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
           <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
           <span className="truncate font-mono">{config.repository_name || '-'}</span>
           <span className="shrink-0 text-slate-200">|</span>
-          <span className="shrink-0">{config.custom_script ? '自定义脚本' : '内置脚本'}</span>
+          <span className="shrink-0">{config.software && !canManage ? '—' : config.custom_script ? '自定义脚本' : '内置脚本'}</span>
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-indigo-50 pt-3">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
@@ -426,6 +432,7 @@ const ConfigRow = memo(function ConfigRow({
             {canTriggerConfig && (
               <button
                 title="触发打包"
+                aria-label="触发打包"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
                 onClick={handleTrigger}
               >
@@ -435,6 +442,7 @@ const ConfigRow = memo(function ConfigRow({
             {/* 无权限用户也可查看配置（只读，用于参考模仿） */}
             <button
               title={canManage ? '编辑配置' : '查看配置（只读）'}
+              aria-label={canManage ? '编辑配置' : '查看配置（只读）'}
               className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-indigo-100 hover:text-indigo-600"
               onClick={handleEdit}
             >

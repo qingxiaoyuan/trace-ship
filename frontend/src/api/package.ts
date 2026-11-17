@@ -28,6 +28,7 @@ export interface PackageImageListParams {
 }
 
 export interface PackageConfigListParams {
+  software?: string;
   project?: string;
   repository?: string;
   /** 项目组件过滤（后端 project_component 参数） */
@@ -49,7 +50,9 @@ export interface TaskLogChunk {
   truncated?: boolean;
 }
 
-export interface PackageTaskListParams {  project?: string;
+export interface PackageTaskListParams {
+  project?: string;
+  software?: string;
   repository?: string;
   release?: string;
   config?: string;
@@ -141,11 +144,13 @@ export const packageApi = {
   triggerConfig: (id: string, releaseId: string) =>
     post<PackageTask>(`/packages/configs/${id}/trigger/`, { release_id: releaseId }),
   /** 按仓库某条分支最新代码直接触发打包（不经发布流程，任务标题与编码按分支名命名） */
-  triggerConfigBranch: (id: string, branch: string) =>
-    post<PackageTask>(`/packages/configs/${id}/trigger-branch/`, { branch }),
+  triggerConfigBranch: (id: string, branch: string, scope?: { project: string; software: string }) =>
+    post<PackageTask>(`/packages/configs/${id}/trigger-branch/`, { branch, ...scope }),
+  getUsageProjects: (id: string) =>
+    get<Array<{ id: string; name: string }>>(`/packages/configs/${id}/usage-projects/`),
   /** 切换打包配置收藏状态，返回最新收藏状态 */
-  toggleFavorite: (id: string) =>
-    post<{ is_favorite: boolean }>(`/packages/configs/${id}/favorite/`),
+  toggleFavorite: (id: string, project?: string) =>
+    post<{ is_favorite: boolean }>(`/packages/configs/${id}/favorite/`, project ? { project } : undefined),
   /** 我收藏的打包配置列表（不分页，含最近一次任务摘要） */
   getFavorites: () => get<FavoritePackageConfig[]>('/packages/configs/favorites/'),
   /** 打包任务统计（我发起的、近 N 天、仅终态任务） */
@@ -155,7 +160,8 @@ export const packageApi = {
    get<SvnEntriesData>(`/packages/configs/${id}/svn-entries/`, { params: { path: path || '' } }),
   /** 测试 SVN 推送配置连通性（支持未保存配置） */
   testSvn: (data: {
-    project_id: string;
+    project_id?: string;
+    software?: string;
     svn_url: string;
     svn_credential_id: string;
     svn_path_template?: string;

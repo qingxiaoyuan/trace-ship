@@ -6,6 +6,8 @@
 export interface PackageTriggerTarget {
   id: string;
   name: string;
+  software?: string | null;
+  software_name?: string;
   repository_name?: string;
   project?: string;
   project_id?: string;
