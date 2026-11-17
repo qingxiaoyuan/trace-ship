@@ -318,6 +318,30 @@ class PackageConfigAssignment(models.Model):
         db_table = "package_config_assignment"
 
 
+class PackageSvnNamespace(models.Model):
+    """用于串行检查同一 SVN 地址下重叠目录的项目占用。"""
+
+    server = models.CharField(max_length=300, primary_key=True)
+
+    class Meta:
+        db_table = "package_svn_namespace"
+
+
+class PackageSvnTarget(models.Model):
+    """推送之前固定实际项目；任务或项目删除后远端文件仍可能存在。"""
+
+    namespace = models.ForeignKey(PackageSvnNamespace, on_delete=models.PROTECT)
+    path = models.TextField()
+    path_key = models.CharField(max_length=64)
+    project_id = models.UUIDField()
+
+    class Meta:
+        db_table = "package_svn_target"
+        constraints = [
+            models.UniqueConstraint(fields=("namespace", "path_key", "project_id"), name="package_svn_target_project"),
+        ]
+
+
 class PackageConfigFavorite(models.Model):
     """打包配置收藏（用户级常用配置入口）。"""
 

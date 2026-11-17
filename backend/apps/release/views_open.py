@@ -10,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.release.delivery_identity import release_software_name
+from apps.release.delivery_identity import release_repository_name, release_software_name
 from apps.release.models import ReleaseRecord
 from utils.authentication import AccessTokenAuthentication
 from utils.permissions import HasAccessTokenScope
@@ -62,7 +62,7 @@ class OpenReleaseDocView(APIView):
         return success_response({
             "project_name": release.project.name,
             "repository_id": str(release.repository_id),
-            "repository_name": release.repository.name,
+            "repository_name": release_repository_name(release),
             "software_id": str(release.software_id) if release.software_id else None,
             "software_name": release_software_name(release) if release.software_id else None,
             "software_slug": release.software.slug if release.software_id else None,

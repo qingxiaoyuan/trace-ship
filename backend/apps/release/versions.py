@@ -65,6 +65,8 @@ def version_key(repository, release_type: str, tag: str) -> str:
     from apps.release.services import VersionCalculator
 
     calculator = VersionCalculator(repository.get_version_rule())
+    if release_type in ("rc", "beta") and not (calculator.suffixes.get(release_type) or "").strip("-"):
+        raise serializers.ValidationError({"version": "仓库未配置该发布类型的版本后缀"})
     match = calculator._build_regex(release_type).fullmatch(tag)
     if not match:
         raise serializers.ValidationError({"version": "版本号不符合仓库当前规则，请修改草稿后重试"})
@@ -170,6 +172,24 @@ def suggest_software_version(software, release_type: str, tags: list[TagInfo]) -
         "next_tag_name": software_tag(software, tag, release_type=release_type),
     }
 
+
+
+def suggest_software_versions(software, release_type: str, tags: list[TagInfo]) -> dict:
+    """请求类型单独校验，其余类型各自提供可用的建议。"""
+    requested = suggest_software_version(software, release_type, tags)
+    all_types = {release_type: requested}
+    for kind in ("formal", "rc", "beta"):
+        if kind == release_type:
+            continue
+        try:
+            all_types[kind] = suggest_software_version(software, kind, tags)
+        except serializers.ValidationError:
+            continue
+    return {
+        **requested,
+        "has_existing_tags": any(item["latest_tag"] for item in all_types.values()),
+        "all_types": all_types,
+    }
 
 def guard_software_tag_identity(software, tag_name: str) -> None:
     """即使远端暂缺，已被其他身份记录的完整 Tag 也不能重新指向源码。"""

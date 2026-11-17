@@ -80,7 +80,7 @@ class TestOpenTagCompare:
     def test_compare_success(self, repository):
         """合法请求返回区间 commits 与过滤后的 MRs"""
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=_mock_provider()):
+        with patch("apps.repository.open_compare.get_provider", return_value=_mock_provider()):
             response = client.get(URL, {
                 "repository_id": str(repository.id),
                 "from_tag": "v1.0.0",
@@ -98,7 +98,7 @@ class TestOpenTagCompare:
     def test_tag_not_found(self, repository):
         """tag 不存在返回 404"""
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=_mock_provider()):
+        with patch("apps.repository.open_compare.get_provider", return_value=_mock_provider()):
             response = client.get(URL, {
                 "repository_id": str(repository.id),
                 "from_tag": "v9.9.9",
@@ -121,7 +121,7 @@ class TestOpenTagCompare:
         provider = _mock_provider()
         provider.list_tags.side_effect = ProviderError("连接超时")
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=provider):
+        with patch("apps.repository.open_compare.get_provider", return_value=provider):
             response = client.get(URL, {
                 "repository_id": str(repository.id),
                 "from_tag": "v1.0.0",
@@ -154,7 +154,7 @@ class TestOpenTagCompare:
         arguments = {"project_id": str(project.pk), "software_id": str(a.pk),
                      "from_tag": "v1.0.0", "to_tag": "app-a/v1.1.0"}
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=provider):
+        with patch("apps.repository.open_compare.get_provider", return_value=provider):
             result = client.get(URL, arguments)
         assert result.status_code == 200, result.data
         assert result.data["data"]["software_id"] == str(a.pk)
@@ -182,7 +182,7 @@ class TestOpenTagCompare:
         provider.list_tags.return_value[1].commit_hash = moved_sha
         arguments = {"repository_id": str(repository.pk), "from_tag": "v1.0.0", "to_tag": "v1.1.0"}
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=provider):
+        with patch("apps.repository.open_compare.get_provider", return_value=provider):
             software_result = client.get(URL, {**arguments, "software_id": str(software.pk)})
             assert software_result.status_code == 409
             provider.compare_commits.assert_not_called()

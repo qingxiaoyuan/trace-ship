@@ -153,7 +153,7 @@ export function ReleasePackages({ release, maintainerMobile = false, active = tr
 
   return (
     <div className="space-y-3">
-      {release.status === 'released' && <ReleaseRepackage key={`${release.id}:${release.project}`} release={release} enabled={active && (!!screens.md || !!release.software)} />}
+      {release.status === 'released' && !release.shared_history_only && <ReleaseRepackage key={`${release.id}:${release.project}`} release={release} enabled={active && (!!screens.md || !!release.software)} />}
       {release.status === 'released' && release.release_type === 'formal' && <OaArchivePreparationPanel key={`oa-${release.id}:${release.project}`} release={release} active={active || !!archiveActionTarget} actionTarget={archiveActionTarget} />}
       {!tasks.length && <div className="py-8 text-center text-[13px] text-slate-400">该发布暂无打包任务</div>}
       {tasks.map((task) => {

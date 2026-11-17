@@ -11,10 +11,11 @@ from typing import Any
 from xml.sax.saxutils import escape
 
 from markdown_it import MarkdownIt
+from markdown_it.rules_inline import html_inline
 
-from apps.release.delivery_identity import release_software_name
+from apps.release.delivery_identity import release_repository_name, release_software_name
 from apps.release.models import ReleaseRecord
-from utils.markdown_table import table_newlines_to_br
+from utils.markdown_table import markdown_code_lines, table_newlines_to_br
 
 
 def _release_body(md: str) -> list[str | list[list[str]]]:
@@ -51,20 +52,54 @@ def _release_body(md: str) -> list[str | list[list[str]]]:
     return blocks
 
 
-def _word_text(text: str) -> str:
-    return re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 
 
-def _xml_escape(text: str) -> str:
-    """转义 XML 特殊字符，保留 <br/> 标签"""
-    # 先把 <br> 统一为占位符
-    placeholder = "\x00BR\x00"
-    text = re.sub(r"<br\s*/?>", placeholder, text, flags=re.IGNORECASE)
-    # 转义特殊字符
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    # 恢复占位符为 <br/>
-    text = text.replace(placeholder, "<br/>")
+def _inline_breaks(text: str) -> str:
+    """用 Markdown 解析位置替换真实的断行标记，保留代码及原始标点。"""
+    parser = MarkdownIt()
+    breaks = []
+
+    def record_html(state, silent):
+        start = state.pos
+        if not html_inline(state, silent):
+            return False
+        if not silent and _BREAK.fullmatch(state.src[start:state.pos]):
+            breaks.append((start, state.pos))
+        return True
+
+    parser.inline.ruler.at("html_inline", record_html)
+    parser.parseInline(text)
+    for start, end in reversed(breaks):
+        text = text[:start] + "\n" + text[end:]
     return text
+
+
+def _word_text(text: str, *, cell: bool = False) -> str:
+    if cell:
+        return _inline_breaks(text)
+    parts = []
+    prose = []
+    code_lines = markdown_code_lines(text)
+    for index, line in enumerate(text.splitlines(keepends=True)):
+        if index in code_lines:
+            if prose:
+                parts.append(_inline_breaks("".join(prose)))
+                prose.clear()
+            parts.append(line)
+        else:
+            prose.append(line)
+    parts.append(_inline_breaks("".join(prose)))
+    return "".join(parts)
+
+
+def _pdf_text(text: str) -> str:
+    """用实际断行渲染排版；转义包括代码中的字面标签。"""
+    lines = []
+    for line in text.expandtabs(4).split("\n"):
+        indentation = len(line) - len(line.lstrip(" "))
+        lines.append("&#160;" * indentation + escape(line[indentation:]))
+    return "<br/>".join(lines)
 
 
 class ReleaseDocExporter:
@@ -85,7 +120,7 @@ class ReleaseDocExporter:
         return [
             ("软件", release_software_name(release)),
             ("软件标识", release.software.slug if release.software_id else "—"),
-            ("主仓库", release.repository.name),
+            ("主仓库", release_repository_name(release)),
             ("软件版本", release.version),
             ("发布 Tag", release.tag_name),
             ("来源分支", release.branch),
@@ -118,7 +153,7 @@ class ReleaseDocExporter:
             "project_name": release.project.name,
             "software_name": release_software_name(release),
             "software_slug": release.software.slug if release.software_id else "—",
-            "repository_name": release.repository.name,
+            "repository_name": release_repository_name(release),
             "version": release.version,
             "tag_name": release.tag_name,
             "release_type": release.get_release_type_display(),
@@ -229,10 +264,10 @@ class ReleaseDocExporter:
             story.append(Spacer(1, 8))
             for block in ctx["body"]:
                 if isinstance(block, str):
-                    story.append(Paragraph(_xml_escape(block).replace("\n", "<br/>"), cell_style))
+                    story.append(Paragraph(_pdf_text(_word_text(block)), cell_style))
                 else:
                     table_data = [
-                        [Paragraph(_xml_escape(value), label_style if index == 0 else cell_style)
+                        [Paragraph(_pdf_text(_word_text(value, cell=True)), label_style if index == 0 else cell_style)
                          for index, value in enumerate(row)]
                         for row in block
                     ]
@@ -258,7 +293,7 @@ class ReleaseDocExporter:
                     f"<b>{c['hash']} - {escape(c['author'])}</b>",
                     cell_style,
                 ))
-                story.append(Paragraph(_xml_escape(c["message"]), cell_style))
+                story.append(Paragraph(_pdf_text(c["message"]), cell_style))
                 story.append(Spacer(1, 4))
         else:
             story.append(Paragraph("无", cell_style))
@@ -309,7 +344,7 @@ class ReleaseDocExporter:
                 doc_table.style = "Table Grid"
                 for index, row in enumerate(block):
                     for column, value in enumerate(row):
-                        doc_table.rows[index].cells[column].text = _word_text(value)
+                        doc_table.rows[index].cells[column].text = _word_text(value, cell=True)
             document.add_paragraph()
 
         # 关联提交

@@ -319,6 +319,16 @@ def main() -> None:
         for software in sample_software
     ]
     package_tasks.get_provider = lambda *_args: SampleRepository()
+    identity_owner = User.objects.create_user(username="smoke_identity_owner", password=password)
+    identity_reader = User.objects.create_user(username="smoke_identity_reader", password=password)
+    identity_project = Project.objects.create(name="软件选用验收项目", code="SMOKE-IDENTITY", leader=identity_owner)
+    ProjectMember.objects.create(project=identity_project, user=identity_owner, role="manager")
+    ProjectMember.objects.create(project=identity_project, user=identity_reader, role="maintainer")
+    identity_repository = Repository.objects.create(
+        name="身份验收仓库", repo_type="git", vendor="gitlab", created_by=identity_owner,
+        url="https://example.invalid/smoke/identity.git", external_identity="smoke/identity",
+    )
+    ProjectComponent.objects.create(project=identity_project, repository=identity_repository, component_code="identity")
     manifest = {
         "username": reader.username, "password": password,
         "operator": {"username": owner.username, "role": "manager", "id": str(owner.id)}, "tasks": {},
@@ -329,8 +339,8 @@ def main() -> None:
             "actor": package_actor.username, "reader": package_reader.username,
         },
         "software_identity": {
-            "repository_id": str(repository.id), "project_id": str(project.id),
-            "delegate": software_delegate.username,
+            "repository_id": str(identity_repository.id), "project_id": str(identity_project.id),
+            "owner": identity_owner.username, "reader": identity_reader.username, "delegate": software_delegate.username,
         },
         "software_release": {
             "project_id": str(release_project.id), "project_name": release_project.name, "shared_project_id": str(shared_project.id),
@@ -457,7 +467,8 @@ def main() -> None:
     status_owner = User.objects.create_user(username="smoke_workflow", password=password, nickname="冒烟审批状态用户")
     ProjectMember.objects.create(project=project, user=status_owner, role="manager")
     manifest["workflow_status"] = {
-        "username": status_owner.username, "samples": create_workflow_status_samples(project, repository, status_owner),
+        "username": status_owner.username, "project_id": str(project.pk),
+        "samples": create_workflow_status_samples(project, repository, status_owner),
     }
     from browser_oa_sample import create_oa_sample
 

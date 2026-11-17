@@ -42,6 +42,9 @@ export const changelogEntries: ChangelogEntry[] = [
       { category: 'feature', text: '共享正式版可为查看项目的打包任务发起 OA 归档，预填真实软件名、版本、原发布分支和固定提交。申请历史继续按任务所属项目查看。' },
       { category: 'improvement', text: '发布单、周报和发布相关消息带上软件、版本、完整 Tag 与固定源码。跨项目补打的消息发给有权查看任务的实际发起人。' },
       { category: 'improvement', text: '清理或删除 Tag 前会核对固定提交、当前打包任务及历史引用；存在相关记录或 OA 归档保护时显示拒绝原因。' },
+      { category: 'improvement', text: '共享配置的 SVN 目录按打包任务的发起项目分配。目录重叠时会拒绝推送、当前文件查询或归档；同项目可按原模式覆盖。' },
+      { category: 'fix', text: '停止选用软件后，本项目已有打包或归档记录的版本仍可从详情链接回看。' },
+      { category: 'fix', text: '发布单和 OA 归档保存原主仓库名称；Word 和 PDF 保留发布说明代码示例中的字面换行标记。未配置 RC 或 Beta 后缀时，其他类型仍可计算建议版本。' },
     ],
   },
   {

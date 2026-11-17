@@ -62,6 +62,7 @@ from apps.package.services.configurations import (
     selected_project_software,
     visible_configs,
 )
+from apps.package.services.svn_scope import SvnTargetConflict, verify_svn_target
 from apps.package.services.tasks import PackageTaskDispatchError
 from apps.project.models import Project, ProjectComponent
 from apps.project.services import visible_project_ids
@@ -606,7 +607,11 @@ class PackageConfigViewSet(StandardModelViewSet):
         target_url = f"{base_url}/{sub_path}" if sub_path else base_url
         provider = get_provider("svn", base_url, config.svn_credential.get_data())
         try:
+            verify_svn_target(config.project_component.project_id, target_url)
             entries = provider.list_dir(target_url)
+            verify_svn_target(config.project_component.project_id, target_url)
+        except SvnTargetConflict as exc:
+            return error_response(40900, str(exc), status_code=status.HTTP_409_CONFLICT)
         except ProviderError as exc:
             return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
         return success_response({"base_url": base_url, "path": sub_path, "entries": entries})
@@ -660,7 +665,13 @@ class PackageConfigViewSet(StandardModelViewSet):
 
         provider = get_provider("svn", target_url, credential.get_data())
         try:
+            if not software_id:
+                verify_svn_target(project.pk, target_url)
             entries = provider.list_dir(target_url)
+            if not software_id:
+                verify_svn_target(project.pk, target_url)
+        except SvnTargetConflict as exc:
+            return error_response(40900, str(exc), status_code=status.HTTP_409_CONFLICT)
         except AuthenticationError as exc:
             return error_response(40100, f"SVN 账号或密码错误: {exc}", status_code=status.HTTP_401_UNAUTHORIZED)
         except NotFoundError as exc:

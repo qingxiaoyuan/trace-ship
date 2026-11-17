@@ -861,6 +861,24 @@ class ReleaseService:
     封装创建发布、生成发布说明、提交审批、推 tag 等核心业务逻辑。
     """
 
+    @classmethod
+    def preview_software_branch(cls, link, user, *, branch, release_type, tag_name=""):
+        """核验分支完整提交，以目标软件的版本和基线生成预览。"""
+        from apps.release.formal_changes import FormalChanges
+        from apps.release.versions import normalize_software_tag, suggest_software_version
+
+        repository = link.software.repository
+        provider = cls._get_provider(repository, user, project=link.project)
+        head = cls._resolve_branch_head_hash(repository, branch, provider=provider)
+        tags = provider.list_tags(repository.external_identity)
+        tag = tag_name or suggest_software_version(link.software, release_type, tags)["next_tag_name"]
+        version, tag = normalize_software_tag(link.software, release_type, tag)
+        draft = ReleaseRecord(
+            project=link.project, software=link.software, repository=repository, release_type=release_type,
+            branch=branch, git_hash=head, version=version, tag_name=tag, status="draft",
+        )
+        return FormalChanges.preview(FormalChanges.collect(draft, provider, tags=tags))
+
     @staticmethod
     def empty_draft_filter() -> Q:
         """返回可安全清理的空草稿条件。"""

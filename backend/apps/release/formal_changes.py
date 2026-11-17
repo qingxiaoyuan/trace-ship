@@ -7,6 +7,7 @@ from itertools import groupby
 from django.db.models import Q
 from rest_framework import serializers
 
+from apps.release.delivery_identity import release_repository_name
 from apps.release.models import ReleaseRecord
 from utils.commit_parser import extract_update_lines
 from utils.provider.base import GitProvider, TagInfo
@@ -59,7 +60,7 @@ class FormalChanges:
         return [
             ("软件", " ".join(release.software_name_snapshot.splitlines())),
             ("软件标识", release.software.slug),
-            ("主仓库", " ".join(release.source_repository_name_snapshot.splitlines())),
+            ("主仓库", " ".join(release_repository_name(release).splitlines())),
             ("发布 Tag", release.tag_name),
         ]
 

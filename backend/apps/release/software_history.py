@@ -10,7 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.package.models import PackageConfig, PackageTask
+from apps.package.models import PackageConfig, PackageConfigAssignment, PackageTask
 from apps.release.models import OaArchiveApplication, ReleaseRecord, ReleaseTagCleanupAttempt, ReleaseVersionClaim
 from apps.release.references import ReleaseReferences
 from apps.release.services import ReleaseService
@@ -19,6 +19,32 @@ from apps.repository.models import Repository, RepositoryTag
 from apps.software.models import Software
 from apps.software.services import can_manage_software
 from utils.provider.exceptions import ProviderError
+
+
+def _configuration_evidence(tasks):
+    """旧任务的原配置与原项目都能对应确认记录时，纳入核对依据。"""
+    saved = {}
+    for task in tasks:
+        value = (task.config_snapshot or {}).get("config_id")
+        try:
+            snapshot_id = UUID(str(value)) if value is not None else None
+        except (ValueError, TypeError):
+            continue
+        if snapshot_id and task.config_id and snapshot_id != task.config_id:
+            continue
+        if config_id := snapshot_id or task.config_id:
+            saved[task.pk] = config_id
+    assignments = {
+        item.config_id: item
+        for item in PackageConfigAssignment.objects.filter(config_id__in=set(saved.values()))
+        .select_related("config__software")
+    }
+    return {
+        task.pk: item.config.software_id for task in tasks
+        if (item := assignments.get(saved.get(task.pk))) and item.config.software_id
+        and task.project_id == item.legacy_project_id and task.repository_id == item.config.software.repository_id
+        and task.created_at <= item.confirmed_at
+    }
 
 
 def inventory(repository_id: UUID | None = None) -> dict:
@@ -42,16 +68,19 @@ def inventory(repository_id: UUID | None = None) -> dict:
         )
 
     task_rows = []
+    confirmations = _configuration_evidence(tasks)
     task_software = defaultdict(set)
     for task in tasks:
         snapshot = task.config_snapshot or {}
         identities = (getattr(task, "software_id", None), snapshot.get("software_id"))
-        task_software[task.release_id].update(str(value) for value in identities if value)
+        config_software = confirmations.get(task.pk)
+        task_software[task.release_id].update(str(value) for value in (*identities, config_software) if value)
         task_rows.append({
             "id": task.id, "release_id": task.release_id, "project_id": task.project_id,
             "repository_id": task.repository_id, "config_id": task.config_id,
             "snapshot_config_id": snapshot.get("config_id"), "snapshot_config_name": snapshot.get("config_name"),
             "software_id": getattr(task, "software_id", None) or snapshot.get("software_id"),
+            "confirmed_config_software_id": config_software,
             "tag_name": task.tag_name, "source_ref": task.source_ref, "commit_hash": task.commit_hash,
             "status": task.status, "artifact_count": len(task.artifact_info or []),
         })
@@ -83,6 +112,10 @@ def inventory(repository_id: UUID | None = None) -> dict:
         if len(task_software[release.id]) > 1:
             issues["multiple_software_in_task_evidence"].append({
                 "release": release.id, "software_ids": sorted(task_software[release.id]),
+            })
+        if release.software_id and (conflicts := task_software[release.id] - {str(release.software_id)}):
+            issues["release_software_conflicts_with_tasks"].append({
+                "release": release.id, "software_ids": sorted(conflicts),
             })
         release_rows.append({
             "id": release.id, "project_id": release.project_id, "repository_id": release.repository_id,
@@ -149,8 +182,9 @@ def _assignment_error(release: ReleaseRecord, software: Software, user, key: str
         str(value) for task in release.package_tasks.all()
         for value in (getattr(task, "software_id", None), (task.config_snapshot or {}).get("software_id")) if value
     }
+    linked_software.update(str(pk) for pk in _configuration_evidence(release.package_tasks.all()).values())
     if linked_software - {str(software.pk)}:
-        return "任务快照指向不同软件，不能把同一发布复制或合并为单一软件"
+        return "任务快照或已确认的原打包配置指向其他软件，请核对历史归属"
     if _related_releases(release).filter(software__isnull=False).exclude(software=software).exists():
         return "已有归属的来源 RC 或关联正式版属于另一软件，请核对历史来源链"
     if ReleaseVersionClaim.objects.filter(

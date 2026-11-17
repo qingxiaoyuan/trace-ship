@@ -4,7 +4,7 @@
 from rest_framework import serializers
 
 from apps.project.services import visible_project_ids
-from apps.release.delivery_identity import release_software_name
+from apps.release.delivery_identity import release_repository_name, release_software_name
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 from apps.workflow.services import resolve_release
 
@@ -30,6 +30,11 @@ def release_for_display(instance: WorkflowInstance, request):
         cache[instance.id] = release
     return release
 
+
+
+def software_name_for_display(instance: WorkflowInstance, request) -> str:
+    release = release_for_display(instance, request)
+    return release_software_name(release) if release else ""
 
 def user_display(user) -> str:
     """返回用户的展示名（昵称优先，回退到用户名）。"""
@@ -272,12 +277,11 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
         """返回审批关联的主仓库名称。"""
         release = release_for_display(obj.instance, self.context.get("request"))
         if release and release.repository_id:
-            return release.repository.name
+            return release_repository_name(release)
         return ""
 
     def get_software_name(self, obj) -> str:
-        release = release_for_display(obj.instance, self.context.get("request"))
-        return release_software_name(release) if release else ""
+        return software_name_for_display(obj.instance, self.context.get("request"))
 
     def get_version(self, obj: WorkflowTask) -> str:
         """返回发布版本号。"""
@@ -386,12 +390,11 @@ class WorkflowInstanceSerializer(serializers.ModelSerializer):
         """返回审批关联的主仓库名称。"""
         release = release_for_display(obj, self.context.get("request"))
         if release and release.repository_id:
-            return release.repository.name
+            return release_repository_name(release)
         return ""
 
     def get_software_name(self, obj) -> str:
-        release = release_for_display(obj, self.context.get("request"))
-        return release_software_name(release) if release else ""
+        return software_name_for_display(obj, self.context.get("request"))
 
     def get_current_node(self, obj: WorkflowInstance) -> str:
         """返回本轮实际当前节点名称，终态为空。"""
@@ -485,12 +488,11 @@ class WorkflowInstanceListSerializer(serializers.ModelSerializer):
         """返回审批关联的主仓库名称。"""
         release = release_for_display(obj, self.context.get("request"))
         if release and release.repository_id:
-            return release.repository.name
+            return release_repository_name(release)
         return ""
 
     def get_software_name(self, obj) -> str:
-        release = release_for_display(obj, self.context.get("request"))
-        return release_software_name(release) if release else ""
+        return software_name_for_display(obj, self.context.get("request"))
 
     def get_current_node(self, obj: WorkflowInstance) -> str:
         """与详情保持相同的当前节点语义。"""

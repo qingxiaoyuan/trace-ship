@@ -17,7 +17,7 @@ from rest_framework.exceptions import APIException, NotFound, PermissionDenied, 
 from apps.account.models import User
 from apps.package.models import PackageTask
 from apps.project.models import Project
-from apps.release.delivery_identity import release_software_name
+from apps.release.delivery_identity import release_repository_name, release_software_name
 from apps.release.models import OaArchiveApplication, ReleaseRecord
 from apps.release.oa_archive import ArchiveFormInput, ArchiveSelectionInput, OaArchivePreparation
 from apps.release.oa_http import OaHttpResult, post_archive
@@ -259,7 +259,7 @@ class OaArchiveSubmission:
                         "software_id": str(release.software_id) if release.software_id else None,
                         "software_name": release_software_name(release) if release.software_id else None,
                         "software_slug": release.software.slug if release.software_id else None,
-                        "repository_id": str(release.repository_id), "repository_name": release.repository.name,
+                        "repository_id": str(release.repository_id), "repository_name": release_repository_name(release),
                         "version": release.version, "branch": release.branch,
                         "tag_name": release.tag_name, "git_hash": release.git_hash,
                         "task_id": str(task.id), "task_name": task.name, "artifact_id": artifact.get("artifact_id"),

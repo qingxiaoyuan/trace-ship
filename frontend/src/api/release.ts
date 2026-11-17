@@ -35,7 +35,7 @@ export const releaseApi = {
   getSoftwareBranches: (project: string, software: string) =>
     get<RepositoryBranch[]>('/releases/software-branches/', { params: { project, software } }),
   getSoftwareNextVersion: (project: string, software: string, release_type: ReleaseType) =>
-    get<SoftwareVersion & { has_existing_tags: boolean; all_types: Record<ReleaseType, SoftwareVersion> }>(
+    get<SoftwareVersion & { has_existing_tags: boolean; all_types: Partial<Record<ReleaseType, SoftwareVersion>> }>(
       '/releases/next-version/', { params: { project, software, release_type } },
     ),
   previewSoftwareChanges: (project: string, software: string, branch: string, release_type: ReleaseType, tag_name?: string) =>

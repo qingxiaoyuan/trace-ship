@@ -88,7 +88,8 @@ class TestOpenReleaseDoc:
         current = _make_release(project, repository, "app-a/VA.1.0.1", "released")
         current.software = a
         current.git_hash = "a" * 40
-        current.save(update_fields=["software", "git_hash"])
+        current.source_repository_name_snapshot = "发布时仓库名称"
+        current.save(update_fields=["software", "git_hash", "source_repository_name_snapshot"])
         _make_release(project, repository, "VA.0.0.1", "released")
         api = _auth_client(["release.doc"])
         assert api.get(URL, {"software_id": str(b.pk), "tag": current.tag_name}).status_code == 404
@@ -99,6 +100,7 @@ class TestOpenReleaseDoc:
             data = response.data["data"]
             assert data["software_id"] == str(a.pk) and data["software_name"] == "软件 A"
             assert data["tag_name"] == release.tag_name and data["git_hash"] == release.git_hash
+            assert data["repository_name"] == (release.source_repository_name_snapshot or repository.name)
         unknown = api.get(URL, {"repository_id": str(repository.pk), "tag": "VA.0.0.1"}).data["data"]
         assert unknown["software_id"] is None and unknown["software_name"] is None
         assert api.get(URL, {"repository_id": "invalid", "tag": "VA.0.0.1"}).status_code == 400

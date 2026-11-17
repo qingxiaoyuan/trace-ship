@@ -625,8 +625,8 @@ export default function ReleaseCreate() {
                     return (
                       <div key={rt} className="rounded-md border border-slate-200 bg-white/70 px-2.5 py-2">
                         <div className="text-[10px] text-slate-400 max-md:text-xs">{label}</div>
-                        <div className="mt-0.5 truncate font-mono text-[11px] text-slate-600" title={item?.latest_tag || '无'}>
-                          {item?.latest_tag || '无'}
+                        <div className="mt-0.5 truncate font-mono text-[11px] text-slate-600" title={item ? item.latest_tag || '无' : '暂无建议'}>
+                          {item ? item.latest_tag || '无' : '暂无建议'}
                         </div>
                         <div className="mt-1 text-[9px] text-slate-300">下一个 {item?.next_tag_name || '—'}</div>
                       </div>

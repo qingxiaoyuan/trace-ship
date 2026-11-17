@@ -108,6 +108,22 @@ def test_version_suggestion_uses_target_namespace(api, project, software_pair, r
         assert result.data["data"]["next_tag_name"].startswith(f"{software.slug}/{expected}-rc")
 
 
+
+def test_disabled_rc_suffix_leaves_formal_and_beta_suggestions_available(api, project, software_pair, remote):
+    software = software_pair[0]
+    repository = software.repository
+    rule = {**repository.get_version_rule(), "suffixes": {"rc": "", "beta": "beta"}}
+    repository.version_rule = rule
+    repository.save(update_fields=["version_rule"])
+    endpoint = "/api/releases/next-version/"
+    params = {"project": str(project.pk), "software": str(software.pk)}
+    formal = api.get(endpoint, {**params, "release_type": "formal"})
+    assert formal.status_code == 200, formal.data
+    assert formal.data["data"]["next_tag_name"].startswith("client-a/")
+    assert set(formal.data["data"]["all_types"]) == {"formal", "beta"}
+    blocked = api.get(endpoint, {**params, "release_type": "rc"})
+    assert blocked.status_code == 400 and "后缀" in blocked.data["message"]
+
 def test_two_software_use_same_number_and_repository_approval(api, project, software_pair, user, remote):
     from apps.workflow.models import WorkflowDefinition
 
@@ -795,6 +811,23 @@ def test_retry_uses_original_protected_snapshot_and_rechecks_project(
     assert stopped.status_code == 200, stopped.data
     assert viewer.post(task_url + "retry/").status_code == 400
     assert viewer.get(task_url).status_code == 200
+    detail_url = f"/api/releases/{release.pk}/"
+    shared = reader.get(detail_url, {"project": str(target.pk)})
+    assert shared.status_code == 200, shared.data
+    detail = shared.data["data"]
+    assert detail["shared_readonly"] and detail["shared_history_only"] and detail["project"] == str(target.pk)
+    assert {item["id"] for item in detail["package_tasks"]} == {first["id"], replacement["id"]}
+    assert "publisher" not in detail and "workflow_instance" not in detail
+    assert reader.get(detail_url).status_code == 200
+    assert viewer.get("/api/releases/", {"project": str(target.pk)}).data["data"]["total"] == 0
+    unused = ReleaseRecord.objects.create(
+        project=project, repository=software.repository, software=software, publisher=user, status="released",
+        version="VA.8.0.1", tag_name="client-a/VA.8.0.1", git_hash="a" * 40,
+    )
+    assert reader.get(f"/api/releases/{unused.pk}/", {"project": str(target.pk)}).status_code == 404
+    assert viewer.post(config_url + "trigger/", {
+        "release_id": str(release.pk), "project": str(target.pk), "software": str(software.pk),
+    }, format="json").status_code == 404
 
 
 def test_software_tag_deletion_preserves_ambiguous_and_changed_remote_references(
@@ -863,3 +896,73 @@ def test_archive_api_hides_a_reused_task_from_the_origin_project(
         nonexistent = api.post(url + action + "/", {**args, "task_id": str(uuid4())}, format="json")
         assert protected.status_code == nonexistent.status_code == 404
         assert protected.data == nonexistent.data
+
+@pytest.mark.parametrize("first_confirmation", ["config", "release"])
+def test_old_task_prevents_conflicting_release_and_configuration_confirmations(
+    project, software_pair, user, remote, tmp_path, first_confirmation,
+):
+    import json
+    from io import StringIO
+
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from apps.package.models import PackageConfig, PackageTask
+    from apps.release.models import ReleaseRecord
+    from utils.provider.base import TagInfo
+
+    one, other = software_pair
+    config = PackageConfig.objects.create(
+        project_component=project.project_components.get(repository=one.repository), name="历史构建配置",
+    )
+    release = ReleaseRecord.objects.create(
+        project=project, repository=one.repository, publisher=user, release_type="formal",
+        status="released", version="VA.1.0.8", tag_name="VA.1.0.8", git_hash="a" * 40,
+    )
+    remote.tags = [TagInfo(name=release.tag_name, commit_hash=release.git_hash)]
+    PackageTask.objects.create(
+        release=release, config=config, project=project, repository=one.repository,
+        name="旧打包任务", config_snapshot={"config_id": str(config.pk)}, status="success",
+    )
+    mappings = {
+        "config": {
+            "config": str(config.pk), "software": str(one.pk), "projects": [str(project.pk)],
+            "basis": "核对原项目配置",
+        },
+        "release": {"release": str(release.pk), "software": str(other.pk), "basis": "核对发布记录"},
+    }
+
+    def confirm(kind, *, apply):
+        output = StringIO()
+        mapping = tmp_path / f"{kind}.json"
+        mapping.write_text(json.dumps([mappings[kind]]), encoding="utf-8")
+        options = {"actor": user.username} if kind == "config" else {"confirmed_by": user.username}
+        command = "reconcile_package_configs" if kind == "config" else "assign_software_release_history"
+        call_command(command, mapping=mapping, apply=apply, stdout=output, **options)
+        return json.loads(output.getvalue())
+
+    second = "release" if first_confirmation == "config" else "config"
+    confirm(first_confirmation, apply=True)
+    if first_confirmation == "config":
+        output = StringIO()
+        call_command("assign_software_release_history", stdout=output)
+        report = json.loads(output.getvalue())
+        task_row = next(row for row in report["before"]["tasks"] if row["release_id"] == str(release.pk))
+        assert task_row["confirmed_config_software_id"] == str(one.pk)
+    if second == "release":
+        assert confirm(second, apply=False)["proposals"][0]["status"] == "blocked"
+    else:
+        with pytest.raises(CommandError):
+            confirm(second, apply=False)
+    with pytest.raises(CommandError):
+        confirm(second, apply=True)
+    release.refresh_from_db()
+    config.refresh_from_db()
+    assert release.software_id == (other.pk if first_confirmation == "release" else None)
+    assert config.software_id == (one.pk if first_confirmation == "config" else None)
+
+    mappings[second]["software"] = mappings[first_confirmation]["software"]
+    confirm(second, apply=True)
+    release.refresh_from_db()
+    config.refresh_from_db()
+    assert release.software_id == config.software_id
