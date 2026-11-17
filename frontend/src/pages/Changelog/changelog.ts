@@ -27,6 +27,15 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.17',
+    date: '2026-11-17',
+    summary: '支持独立登记和选用软件',
+    items: [
+      { category: 'feature', text: '一个仓库可登记多个软件。软件维护负责人可移交责任、授权协作维护或停用软件；协作者可在「软件」目录管理获授权的软件资料。' },
+      { category: 'feature', text: '项目可显式选用已登记的软件，也可停止或恢复选用。项目成员仍可查阅本项目的选用记录。' },
+    ],
+  },
+  {
     version: '2026.11.16',
     date: '2026-11-16',
     summary: '便于核对 OA 归档结果',

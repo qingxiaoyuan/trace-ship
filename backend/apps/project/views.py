@@ -4,6 +4,7 @@
 提供项目 CRUD、项目成员管理接口。
 """
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404
@@ -210,6 +211,12 @@ class ProjectViewSet(StandardModelViewSet):
         from apps.release.oa_submission import locked_archive_parent
 
         with locked_archive_parent(instance):
+            instance = get_object_or_404(Project.objects.select_for_update(no_key=True), pk=instance.pk)
+            if instance.project_software.exists():
+                return error_response(
+                    40901, "项目已有软件选用记录，不能删除。请停止选用或停用项目。",
+                    status_code=status.HTTP_409_CONFLICT,
+                )
             self.perform_destroy(instance)
         return success_response(None, "删除成功")
 
@@ -354,24 +361,66 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
             status=status.HTTP_201_CREATED,
         )
 
+    @transaction.atomic
     def update(self, request: Request, *args, **kwargs) -> Response:
-        """更新项目内组件配置；不修改物理仓库。"""
+        """锁定关联的仓库后更新组件，避免和软件使用交错。"""
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
+        target = serializer.validated_data.get("repository", instance.repository)
+        repositories = {instance.repository_id, target.pk}
+        locked_ids = set(
+            Repository.objects.filter(pk__in=repositories).order_by("pk")
+            .select_for_update(no_key=True).values_list("pk", flat=True)
+        )
+        current = get_object_or_404(self.get_queryset(), pk=instance.pk)
+        if locked_ids != repositories or current.repository_id != instance.repository_id:
+            return error_response(40901, "组件或仓库已变化，请刷新后重试。", status_code=status.HTTP_409_CONFLICT)
+        if target.pk != current.repository_id and self._preserves_software_repository(current):
+            return self._software_repository_conflict()
+        serializer.instance = current
         self.perform_update(serializer)
         return success_response(serializer.data, "更新成功")
+
+    @staticmethod
+    def _preserves_software_repository(component: ProjectComponent) -> bool:
+        """保留已有软件选用的最后一个项目仓库关系。"""
+        from apps.software.models import ProjectSoftware
+
+        if not ProjectSoftware.objects.filter(
+            project=component.project, software__repository=component.repository,
+        ).exists():
+            return False
+        return not ProjectComponent.objects.filter(
+            project=component.project, repository=component.repository,
+        ).exclude(pk=component.pk).exists()
+
+    @staticmethod
+    def _software_repository_conflict() -> Response:
+        return error_response(
+            40901, "该仓库在当前项目下已有软件选用记录，不能移除最后一个关联；请改为停用。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
 
     def partial_update(self, request: Request, *args, **kwargs) -> Response:
         """部分更新项目内组件配置。"""
         kwargs["partial"] = True
         return self.update(request, *args, **kwargs)
 
+    @transaction.atomic
     def destroy(self, request: Request, *args, **kwargs) -> Response:
         """仅解除项目关系，绝不删除物理仓库。有发布或打包历史时只能停用。"""
         instance = self.get_object()
         from apps.release.models import ReleaseRecord
+
+        get_object_or_404(Repository.objects.select_for_update(no_key=True), pk=instance.repository_id)
+        current = get_object_or_404(self.get_queryset(), pk=instance.pk)
+        if current.repository_id != instance.repository_id:
+            return error_response(40901, "组件或仓库已变化，请刷新后重试。", status_code=status.HTTP_409_CONFLICT)
+        instance = current
+        if self._preserves_software_repository(instance):
+            return self._software_repository_conflict()
 
         if ReleaseRecord.objects.filter(
             project_id=instance.project_id, repository_id=instance.repository_id

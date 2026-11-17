@@ -879,6 +879,7 @@ export interface Repository {
     component_name: string;
   }>;
   credential_loans?: ProjectComponent['credential_loans'];
+  can_register_software?: boolean;
   created_by?: string | null;
   created_by_name?: string;
   owner_name?: string;

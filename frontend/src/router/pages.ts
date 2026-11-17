@@ -3,6 +3,7 @@ import { lazy } from 'react';
 export const Dashboard = lazy(() => import('@/pages/Dashboard'));
 export const ProjectList = lazy(() => import('@/pages/Project/List'));
 export const ProjectDetail = lazy(() => import('@/pages/Project/Detail'));
+export const Software = lazy(() => import('@/pages/Software'));
 export const RepositoryList = lazy(() => import('@/pages/Repository/List'));
 export const RepositoryDetail = lazy(() => import('@/pages/Repository/Detail'));
 export const CredentialList = lazy(() => import('@/pages/Credential/List'));
