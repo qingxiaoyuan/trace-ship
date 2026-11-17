@@ -177,15 +177,16 @@ def test_rejects_untrusted_paths_and_non_publisher_update(user, project, draft):
     assert result.status_code == 403
 
 
-def test_only_review_context_prevents_empty_draft_cleanup(user, draft, mock_git_provider, monkeypatch):
+def test_only_review_context_prevents_empty_draft_cleanup(user, draft, software, mock_git_provider, monkeypatch):
     original = "\n  第一行\n第二行\n\n"
     draft.review_context = original
+    draft.software = software
     draft.save()
     monkeypatch.setattr("apps.release.services.get_provider", lambda *args: mock_git_provider)
     client = APIClient()
     client.force_authenticate(user)
     response = client.post("/api/releases/", {
-        "project": str(draft.project_id), "repository": str(draft.repository_id), "release_type": "rc",
+        "project": str(draft.project_id), "software": str(software.id), "release_type": "rc",
         "branch": "develop", "version": draft.version,
     }, format="json")
     assert response.status_code == 201, response.data

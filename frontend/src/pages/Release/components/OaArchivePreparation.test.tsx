@@ -162,6 +162,7 @@ it('提交标识生成异常时展示原因并解除防重锁，恢复后可重�
   } finally { uuid.mockRestore(); }
 });
 
+// 此场景完整挂载五次归档表单，独立计时，保留每次等待和断言的原阈值。
 it('关闭重开和切换打包目录保留各自草稿，离开页面后丢弃', async () => {
   const view = mount();
   await selectArtifact();
@@ -180,7 +181,7 @@ it('关闭重开和切换打包目录保留各自草稿，离开页面后丢弃'
   mount();
   await selectArtifact('two');
   await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('项目内软件'));
-});
+}, 15_000);
 
 it('四项必填有字段提示和焦点定位，可选资料留空仍能校验', async () => {
   mount();

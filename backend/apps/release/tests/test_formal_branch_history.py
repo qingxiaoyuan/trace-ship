@@ -91,29 +91,40 @@ def api(project, repository, user):
 @pytest.mark.parametrize("with_history", [False, True])
 @pytest.mark.parametrize("version_input", ["tag_only", "stale_input", "legacy_draft", "legacy_initialized"])
 def test_generate_5240_on_a_uses_5239_when_master_is_ten_releases_ahead(
-    api, project, repository, user, branch_history, with_history, version_input,
+    api, project, repository, user, software, branch_history, with_history, version_input,
 ):
+    legacy = version_input.startswith("legacy")
+    prefix = "" if legacy else f"{software.slug}/"
+    if not legacy:
+        git = branch_history["git"]
+        for tag, ref in (("5.2.39", "5.2.39"), ("5.9.4", "5.9.4")):
+            git("tag", f"{prefix}{tag}", ref)
     if with_history:
         for version, branch, sha in [
             ("5.2.39", "a", branch_history["base"]), ("5.9.4", "master", branch_history["master"]),
         ]:
             ReleaseRecord.objects.create(
                 project=project, repository=repository, publisher=user, release_type="formal", status="released",
-                version=version, tag_name=version, branch=branch, git_hash=sha,
+                version=version, tag_name=f"{prefix}{version}", branch=branch, git_hash=sha,
+                software=None if legacy else software,
             )
-    payload = {
-        "project": str(project.id), "repository": str(repository.id), "branch": "a",
-        "release_type": "formal", "tag_name": "5.2.40", "package_config_ids": [],
-    }
-    if version_input == "stale_input":
-        # 兼容同时发送自动计算版本和手工 Tag 的客户端，最终发布身份应取 Tag。
-        payload["version"] = "5.9.5"
-    created = api.post("/api/releases/", payload, format="json")
-    assert created.status_code == 201, created.data
-    identity = created.data["data"]["id"]
-    if version_input.startswith("legacy"):
-        # 复现旧版接受两个不同身份字段后遗留的草稿。
-        ReleaseRecord.objects.filter(pk=identity).update(version="5.9.5")
+    if legacy:
+        draft = ReleaseRecord.objects.create(
+            project=project, repository=repository, publisher=user, release_type="formal",
+            version="5.9.5", tag_name="5.2.40", branch="a", git_hash=branch_history["head"],
+        )
+        identity = draft.pk
+    else:
+        payload = {
+            "project": str(project.id), "software": str(software.pk), "branch": "a",
+            "release_type": "formal", "tag_name": "5.2.40", "package_config_ids": [],
+        }
+        if version_input == "stale_input":
+            # 兼容同时发送自动计算版本和手工 Tag 的客户端，最终发布身份应取 Tag。
+            payload["version"] = "5.9.5"
+        created = api.post("/api/releases/", payload, format="json")
+        assert created.status_code == 201, created.data
+        identity = created.data["data"]["id"]
     if version_input == "legacy_initialized":
         ReleaseRecord.objects.filter(pk=identity).update(
             base_tag="5.9.4", base_git_hash=branch_history["master"], changes_initialized=True,
@@ -122,14 +133,14 @@ def test_generate_5240_on_a_uses_5239_when_master_is_ten_releases_ahead(
         )
     preview = api.get(f"/api/releases/{identity}/changes-preview/")
     assert preview.status_code == 200, preview.data
-    assert preview.data["data"]["base_tag"] == "5.2.39"
+    assert preview.data["data"]["base_tag"] == f"{prefix}5.2.39"
     if version_input.startswith("legacy"):
         assert ReleaseRecord.objects.get(pk=identity).version == "5.9.5", "预览不得修改草稿"
     generated = api.post(f"/api/releases/{identity}/generate-doc/")
     assert generated.status_code == 200, generated.data
     release = ReleaseRecord.objects.get(pk=identity)
-    assert release.version == "5.2.40" and release.tag_name == "5.2.40"
-    assert (release.base_tag, release.base_git_hash) == ("5.2.39", branch_history["base"])
+    assert release.version == "5.2.40" and release.tag_name == f"{prefix}5.2.40"
+    assert (release.base_tag, release.base_git_hash) == (f"{prefix}5.2.39", branch_history["base"])
     assert release.git_hash == branch_history["head"]
     assert "维护分支本次修复" in generated.data["data"]
     assert "主线功能" not in generated.data["data"]
@@ -140,35 +151,41 @@ def test_generate_5240_on_a_uses_5239_when_master_is_ten_releases_ahead(
 
 
 @pytest.mark.parametrize("mode", ["nearest", "multiple", "none", "same", "snapshot", "initialized"])
-def test_diverged_formal_tags_fall_back_to_reachable_history(api, project, repository, user, branch_history, mode):
+def test_diverged_formal_tags_fall_back_to_reachable_history(api, project, repository, user, software, branch_history, mode):
     git = branch_history["git"]
-    git("tag", "-f", "5.2.39", branch_history["master"])
-    expected_tag = "5.2.37" if mode == "multiple" else "5.2.38"
+    legacy = mode == "initialized"
+    prefix = "" if legacy else f"{software.slug}/"
+    git("tag", "-f", f"{prefix}5.2.39", branch_history["master"])
+    expected_tag = f"{prefix}5.2.37" if mode == "multiple" else f"{prefix}5.2.38"
     expected_base = branch_history["head"] if mode == "same" else branch_history["base"]
     if mode != "none":
         git("tag", expected_tag, expected_base)
     else:
         expected_tag = expected_base = ""
     if mode == "multiple":
-        git("tag", "5.2.38", branch_history["master"])
+        git("tag", f"{prefix}5.2.38", branch_history["master"])
     if mode == "snapshot":
         # 远端同名 Tag 被改写后，平台历史快照仍优先参与祖先筛选。
         ReleaseRecord.objects.create(
             project=project, repository=repository, publisher=user, release_type="formal", status="released",
-            version="5.2.39", tag_name="5.2.39", branch="master", git_hash=branch_history["master"],
+            software=software, version="5.2.39", tag_name=f"{prefix}5.2.39", branch="master", git_hash=branch_history["master"],
         )
-        git("tag", "-f", "5.2.39", branch_history["base"])
-    created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "branch": "a",
-        "release_type": "formal", "tag_name": "5.2.40", "package_config_ids": [],
-    }, format="json")
-    assert created.status_code == 201, created.data
-    identity = created.data["data"]["id"]
-    if mode == "initialized":
-        ReleaseRecord.objects.filter(pk=identity).update(
+        git("tag", "-f", f"{prefix}5.2.39", branch_history["base"])
+    if legacy:
+        draft = ReleaseRecord.objects.create(
+            project=project, repository=repository, publisher=user, release_type="formal",
+            version="5.2.40", tag_name="5.2.40", branch="a", git_hash=branch_history["head"],
             base_tag="5.2.39", base_git_hash=branch_history["master"], changes_initialized=True,
             release_doc="原来固定到了其他分支的说明",
         )
+        identity = draft.pk
+    else:
+        created = api.post("/api/releases/", {
+            "project": str(project.id), "software": str(software.pk), "branch": "a",
+            "release_type": "formal", "tag_name": "5.2.40", "package_config_ids": [],
+        }, format="json")
+        assert created.status_code == 201, created.data
+        identity = created.data["data"]["id"]
     preview = api.get(f"/api/releases/{identity}/changes-preview/")
     assert preview.status_code == 200, preview.data
     assert preview.data["data"]["base_tag"] == expected_tag
@@ -192,7 +209,7 @@ def test_diverged_formal_tags_fall_back_to_reachable_history(api, project, repos
         [branch_history["head"]]
     )
     # 新增更近的可达 Tag 不改变已生成的固定区间，也不丢失原回退提示。
-    git("tag", "-f", "5.2.39", branch_history["head"])
+    git("tag", "-f", f"{prefix}5.2.39", branch_history["head"])
     regenerated = api.post(f"/api/releases/{identity}/generate-doc/")
     assert regenerated.status_code == 200, regenerated.data
     release.refresh_from_db()

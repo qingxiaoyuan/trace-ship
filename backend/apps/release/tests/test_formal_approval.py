@@ -45,8 +45,10 @@ def test_formal_rejects_bypass(user, project, repository, mode):
 
 
 @pytest.mark.parametrize("use_rc", [False, True], ids=["branch", "historical_rc"])
-def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, project, repository, monkeypatch, use_rc):
+def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, project, repository, software, monkeypatch, use_rc):
     from datetime import UTC, datetime
+
+    from django.utils import timezone
 
     from utils.provider.base import BranchInfo, CommitInfo, TagInfo
 
@@ -59,6 +61,9 @@ def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, proj
         publisher=user,
         release_type="rc",
         status="released",
+        software=software,
+        software_confirmed_at=timezone.now(),
+        historical_base_version="9.0.0",
         version="VA.9.0.0",
         tag_name="VA.9.0.0-rc",
         git_hash=sha,
@@ -107,7 +112,7 @@ def test_formal_requires_all_nodes_and_publishes_only_approved_source(user, proj
         "/api/releases/",
         {
             "project": str(project.id),
-            "repository": str(repository.id),
+            "software": str(software.id),
             "release_type": "formal",
             **({"source_rc": str(rc.id)} if rc else {"branch": "develop", "git_hash": "c" * 40}),
             "version": "VA.1.0.0",

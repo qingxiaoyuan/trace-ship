@@ -56,6 +56,7 @@ TEST_CASES = (
     "test_同一前次确认的并发新申请仅发送一次且保留全部历史[directory-missing-checked_no_order]",
     "test_失败核对与删除或重复核对竞争原子且保留首次依据[directory-delete]",
     "test_失败核对与删除或重复核对竞争原子且保留首次依据[directory-confirm]",
+    "test_共享归档并发派发按任务项目隔离并保护来源",
 )
 
 

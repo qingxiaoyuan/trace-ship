@@ -28,6 +28,7 @@ from apps.release.models import (
     ReleaseReviewReply,
 )
 from apps.repository.models import CommitRecord, Repository
+from apps.software.models import Software
 from apps.system.services import OperationLogService
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance
 from apps.workflow.services import WorkflowEngine
@@ -1060,7 +1061,7 @@ class ReleaseService:
     def create_release(
         cls,
         project: Project,
-        repository: Repository,
+        software: Software,
         release_type: str,
         branch: str,
         publisher,
@@ -1080,14 +1081,13 @@ class ReleaseService:
         review_context: str = "",
         review_context_is_requirement: bool = False,
         review_document_paths: list | None = None,
-        software=None,
     ) -> ReleaseRecord:
         """
         创建发布申请
 
         Args:
             project: 项目实例
-            repository: 目标仓库实例
+            software: 项目已选用的目标软件
             release_type: 发布类型
             branch: 发布分支
             publisher: 发布人
@@ -1103,7 +1103,7 @@ class ReleaseService:
             self_test_passed: 自测试通过
             retest_passed: 研发测试复验通过
             package_config_ids: 用户勾选的发布后自动打包配置 id 列表；
-                None 表示未显式选择（历史语义），[] 表示不自动打包，其余为快照固定
+                空值或空列表表示不自动打包，其余为快照固定
 
         Returns:
             新创建的 ReleaseRecord
@@ -1115,26 +1115,18 @@ class ReleaseService:
             guard_software_tag_identity,
             normalize_software_tag,
             suggest_software_version,
-            version_tags,
         )
-        from apps.software.models import ProjectSoftware
         from apps.software.services import require_project_software
         from utils.permissions import IsProjectDeveloper
 
-        repository = Repository.objects.select_for_update(no_key=True).get(pk=repository.pk)
+        repository = Repository.objects.select_for_update(no_key=True).get(pk=software.repository_id)
         project = Project.objects.select_for_update(no_key=True).filter(pk=project.pk).first()
         if project is None:
             raise NotFound("发起项目已删除")
-        if software is not None:
-            if software.repository_id != repository.pk:
-                raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
-            link = require_project_software(project, software, publisher, IsProjectDeveloper())
-            software, project = link.software, link.project
-        elif ProjectSoftware.objects.filter(project=project, software__repository=repository).exists():
-            raise serializers.ValidationError({"software": "此项目已选用主仓库软件，请选择具体软件发布"})
+        link = require_project_software(project, software, publisher, IsProjectDeveloper())
+        software, project = link.software, link.project
         cls.validate_source_context(project, repository)
         release_rule = ReleaseValidator.get_release_rule(project)
-        version_rule = repository.get_version_rule()
 
         provider = cls._get_provider(repository, publisher, project=project)
         tags: list[TagInfo] | None = None
@@ -1143,30 +1135,12 @@ class ReleaseService:
                 tags = provider.list_tags(repository.external_identity)
             except ProviderError as exc:
                 raise serializers.ValidationError({"repository": f"获取 tag 列表失败: {exc}"})
-            if software is None:
-                calculator = VersionCalculator(version_rule)
-                version, tag_name = calculator.calculate(version_tags(repository, tags), release_type)
-            else:
-                suggestion = suggest_software_version(software, release_type, tags)
-                version, tag_name = suggestion["next_version"], suggestion["next_tag_name"]
-        elif software is not None:
+            suggestion = suggest_software_version(software, release_type, tags)
+            version, tag_name = suggestion["next_version"], suggestion["next_tag_name"]
+        else:
             version, tag_name = normalize_software_tag(software, release_type, tag_name or version)
-        else:
-            tag_name = tag_name or version
-            if release_type in ("rc", "beta"):
-                suffixes = version_rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
-                suffix = (suffixes.get(release_type, "") or "").strip("-")
-                if suffix and not re.search(rf"-{re.escape(suffix)}(?:_\d{{8}})?$", tag_name):
-                    offset = -9 if re.search(r"_\d{8}$", tag_name) else len(tag_name)
-                    tag_name = f"{tag_name[:offset]}-{suffix}{tag_name[offset:]}"
-            tag_name = ReleaseValidator.ensure_tag_date(tag_name, version_rule)
-            version = ReleaseValidator.strip_suffix(tag_name, version_rule)
 
-        if software is None:
-            ReleaseValidator.validate_tag_suffix(release_type, tag_name, version_rule)
-            cls.validate_legacy_tag_namespace(repository, tag_name)
-        else:
-            guard_software_tag_identity(software, tag_name)
+        guard_software_tag_identity(software, tag_name)
         ReleaseValidator.validate_release_cycle(project, release_type, release_rule)
         if tags is None:
             cls._validate_tag_not_exists(provider, repository, tag_name)
@@ -1192,39 +1166,23 @@ class ReleaseService:
             publisher=publisher,
         ).filter(cls.empty_draft_filter()).delete()
 
-        if software is not None:
-            from apps.package.models import PackageConfig
+        from apps.package.models import PackageConfig
 
-            requested = {str(config_id) for config_id in (package_config_ids or [])}
-            valid_package_config_ids = [
-                str(config_id) for config_id in PackageConfig.objects.filter(
-                    software=software, auto_package_on_release=True, is_active=True, id__in=requested,
-                ).values_list("id", flat=True)
-            ]
-            if set(valid_package_config_ids) != requested:
-                raise serializers.ValidationError({"package_config_ids": "请选择当前软件启用的自动打包配置"})
-        elif package_config_ids is not None:
-            # 宽容过滤：只保留属于该仓库且启用了自动打包的配置，非法/不存在/停用的 id 忽略
-            from apps.package.models import PackageConfig
-
-            valid_package_config_ids = [
-                str(config_id)
-                for config_id in PackageConfig.objects.filter(
-                    project_component__project=project,
-                    project_component__repository=repository,
-                    auto_package_on_release=True,
-                    id__in=[str(x) for x in package_config_ids],
-                ).values_list("id", flat=True)
-            ]
-        else:
-            valid_package_config_ids = None
+        requested = {str(config_id) for config_id in (package_config_ids or [])}
+        valid_package_config_ids = [
+            str(config_id) for config_id in PackageConfig.objects.filter(
+                software=software, auto_package_on_release=True, is_active=True, id__in=requested,
+            ).values_list("id", flat=True)
+        ]
+        if set(valid_package_config_ids) != requested:
+            raise serializers.ValidationError({"package_config_ids": "请选择当前软件启用的自动打包配置"})
 
         release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
             software=software,
-            software_name_snapshot=software.name if software else "",
-            source_repository_name_snapshot=repository.name if software else "",
+            software_name_snapshot=software.name,
+            source_repository_name_snapshot=repository.name,
             version=version,
             tag_name=tag_name,
             redmine_url=redmine_url or "",
@@ -1249,7 +1207,7 @@ class ReleaseService:
             self_test_passed=self_test_passed,
             retest_passed=retest_passed,
             package_config_ids=valid_package_config_ids,
-            doc_source_fixed=software is not None,
+            doc_source_fixed=True,
         )
         OperationLogService.log_release(
             user=publisher,

@@ -167,6 +167,14 @@ def main() -> None:
 
     PackageService.dispatch_task = staticmethod(record_dispatch)
 
+    flow_software = Software.objects.create(
+        repository=repository, slug="formal-flow", name="冒烟正式发布软件", owner=owner,
+    )
+    ProjectSoftware.objects.create(project=project, software=flow_software)
+    legacy_project = Project.objects.create(name="尚未选用软件的旧项目", code="SMOKE-LEGACY", leader=owner, status=1)
+    ProjectMember.objects.create(project=legacy_project, user=owner, role="manager")
+    ProjectComponent.objects.create(project=legacy_project, repository=repository, component_code="legacy")
+
     software_repository = Repository.objects.create(
         name="隔离软件主仓库", repo_type="git", vendor="gitlab",
         url="https://example.invalid/smoke/versioned-software.git", external_identity="smoke/versioned-software",
@@ -194,6 +202,8 @@ def main() -> None:
             return [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in reading_releases] + [
                 TagInfo(name="V.5.2.39", commit_hash="2" * 40),
                 TagInfo(name="V.5.2.38", commit_hash="1" * 40),
+                TagInfo(name=f"{flow_software.slug}/V.5.2.39", commit_hash="2" * 40),
+                TagInfo(name=f"{flow_software.slug}/V.5.2.38", commit_hash="1" * 40),
             ]
 
         def list_branches(self, repo_identity: str) -> list[BranchInfo]:
@@ -331,8 +341,12 @@ def main() -> None:
                 "config": str(config.id), "config_name": config.name,
             } for software, config in zip(sample_software, software_auto_configs, strict=True)],
         },
-        "release_flow": {"project_id": str(project.id), "repository_name": repository.name,
-                         "branch": "main", "git_hash": "a" * 40},
+        "release_flow": {
+            "project_id": str(project.id), "repository_id": str(repository.id),
+            "software_id": str(flow_software.id), "software_label": f"{flow_software.name} · {flow_software.slug} · {repository.name}",
+            "software_slug": flow_software.slug, "legacy_project_id": str(legacy_project.id),
+            "branch": "main", "git_hash": "a" * 40,
+        },
         "reading": {"project_id": str(project.id), "project_name": project.name,
                     "repository_id": str(repository.id), "software_name": component.display_name,
                     "release_ids": [str(item.id) for item in reading_releases],

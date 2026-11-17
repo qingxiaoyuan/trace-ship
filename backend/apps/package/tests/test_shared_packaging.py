@@ -4,7 +4,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.account.models import User
-from apps.package.models import PackageImage
+from apps.package.models import PackageConfig, PackageImage
 from apps.project.models import Project, ProjectMember
 from apps.project.services import ensure_repository_component
 from apps.repository.models import Repository
@@ -60,12 +60,12 @@ def test_explicit_software_maintenance_and_project_config_use(shared):
     owner, admin, collaborator, reader, software, (a, b, c), image = shared
     denied = create_shared_config(admin, software, image)
     assert denied.status_code == 403
-    for project, status in [(a, 400), (c, 200)]:
+    for project in (a, c):
         component = project.project_components.get(repository=software.repository)
         legacy = client_for(admin).post("/api/packages/configs/", {
             "project_component": str(component.pk), "name": "兼容配置", "image": str(image.pk),
         }, format="json")
-        assert legacy.status_code == status, legacy.data
+        assert legacy.status_code == 400, legacy.data
 
     created = create_shared_config(collaborator, software, image)
     assert created.status_code == 200, created.data
@@ -97,6 +97,23 @@ def test_explicit_software_maintenance_and_project_config_use(shared):
     software.maintainer_grants.filter(user=collaborator).delete()
     assert client_for(collaborator).patch(config_url, {"name": "已撤销"}, format="json").status_code in (403, 404)
     assert client_for(owner).patch(config_url, {"name": "负责人修改"}, format="json").status_code == 200
+
+
+@pytest.mark.django_db
+def test_legacy_config_keeps_its_original_component_when_edited(shared):
+    _, admin, _, _, software, (a, _, c), image = shared
+    old_component = a.project_components.get(repository=software.repository)
+    old = PackageConfig.objects.create(project_component=old_component, name="待归属配置", image=image)
+    client = client_for(admin)
+    url = f"/api/packages/configs/{old.pk}/"
+    assert client.patch(url, {"name": "更新配置参数"}, format="json").status_code == 200
+    assert client.patch(url, {"software": str(software.pk)}, format="json").status_code == 400
+    other = c.project_components.get(repository=software.repository)
+    assert client.patch(url, {"project_component": str(other.pk)}, format="json").status_code == 400
+    detail = client.get(url).data["data"]
+    assert detail["software"] is None
+    assert str(detail["project_component"]) == str(old_component.pk)
+    assert detail["name"] == "更新配置参数"
 
 
 @pytest.mark.django_db

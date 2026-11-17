@@ -41,7 +41,7 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
     enabled: active && !!projectId,
   });
 
-  // 项目内操作权限：配置增删改需 manager，触发打包需 tester/developer/manager
+  // 项目角色控制打包触发，共享配置的维护权来自软件。
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),

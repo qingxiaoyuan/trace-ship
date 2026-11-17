@@ -171,7 +171,7 @@ export default function ProjectDetail() {
           {canDevelop && (project.status === 'active' || project.status === 1) && <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate(`/releases/create?project_id=${project.id}`)}
+              onClick={() => navigate(`/releases/create?project=${project.id}`)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
             >
               <Rocket className="h-3.5 w-3.5" strokeWidth={1.5} />

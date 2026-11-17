@@ -381,7 +381,7 @@
           }
         },
         {
-          "name": "下一版本号",
+          "name": "仓库版本查询（旧记录）",
           "request": {
             "method": "GET",
             "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
@@ -511,6 +511,43 @@
       ]
     },
     {
+      "name": "软件登记与项目选用",
+      "item": [
+        {
+          "name": "登记软件",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/software/",
+            "body": {"mode": "raw", "raw": "{\"repository\":\"{{repository_id}}\",\"slug\":\"client-a\",\"name\":\"客户端 A\"}"}
+          }
+        },
+        {
+          "name": "查看项目已选软件",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/projects/{{project_id}}/software/"
+          }
+        },
+        {
+          "name": "选用软件",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "url": "{{base_url}}/api/projects/{{project_id}}/software/",
+            "body": {"mode": "raw", "raw": "{\"software\":\"{{software_id}}\"}"}
+          }
+        }
+      ]
+    },
+    {
       "name": "发布管理",
       "item": [
         {
@@ -522,7 +559,15 @@
           }
         },
         {
-          "name": "创建发布",
+          "name": "软件版本建议",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": "{{base_url}}/api/releases/next-version/?project={{project_id}}&software={{software_id}}&release_type=formal"
+          }
+        },
+        {
+          "name": "创建软件发布",
           "request": {
             "method": "POST",
             "header": [
@@ -532,7 +577,7 @@
             "url": "{{base_url}}/api/releases/",
             "body": {
               "mode": "raw",
-              "raw": "{\"project\":\"{{project_id}}\",\"repository\":\"{{repository_id}}\",\"branch\":\"master\",\"release_type\":\"formal\",\"version\":\"\",\"tag_name\":\"\"}"
+              "raw": "{\"project\":\"{{project_id}}\",\"software\":\"{{software_id}}\",\"branch\":\"main\",\"release_type\":\"formal\",\"package_config_ids\":[]}"
             }
           }
         },
@@ -825,7 +870,7 @@
           }
         },
         {
-          "name": "创建打包配置（含自定义脚本）",
+          "name": "创建共享打包配置",
           "request": {
             "method": "POST",
             "header": [
@@ -835,12 +880,12 @@
             "url": "{{base_url}}/api/packages/configs/",
             "body": {
               "mode": "raw",
-              "raw": "{\"project\":\"{{project_id}}\",\"repository\":\"{{repository_id}}\",\"name\":\"演示打包\",\"image_info\":{\"source\":\"local\",\"image_name\":\"trace-ship/pack-web\",\"image_tag\":\"latest\"},\"custom_script\":\"\",\"build_path\":\".\",\"output_path\":\"dist\",\"env_vars\":{},\"auto_package_on_release\":false,\"is_active\":true,\"svn_push_enabled\":false}"
+              "raw": "{\"software\":\"{{software_id}}\",\"name\":\"演示打包\",\"image_info\":{\"source\":\"local\",\"image_name\":\"trace-ship/pack-web\",\"image_tag\":\"latest\"},\"custom_script\":\"\",\"build_path\":\".\",\"output_path\":\"dist\",\"env_vars\":{},\"auto_package_on_release\":false,\"is_active\":true,\"svn_push_enabled\":false}"
             }
           }
         },
         {
-          "name": "手动触发打包",
+          "name": "在目标项目复用已发布软件版本",
           "request": {
             "method": "POST",
             "header": [
@@ -850,16 +895,16 @@
             "url": "{{base_url}}/api/packages/configs/{{package_config_id}}/trigger/",
             "body": {
               "mode": "raw",
-              "raw": "{\"release_id\":\"{{release_id}}\"}"
+              "raw": "{\"release_id\":\"{{release_id}}\",\"project\":\"{{project_id}}\",\"software\":\"{{software_id}}\"}"
             }
           }
         },
         {
-          "name": "SVN 推送目录条目",
+          "name": "任务 SVN 交付目录条目",
           "request": {
             "method": "GET",
             "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
-            "url": "{{base_url}}/api/packages/configs/{{package_config_id}}/svn-entries/"
+            "url": "{{base_url}}/api/packages/tasks/{{package_task_id}}/svn-artifacts/"
           }
         },
         {
@@ -873,7 +918,7 @@
             "url": "{{base_url}}/api/packages/configs/test-svn/",
             "body": {
               "mode": "raw",
-              "raw": "{\"project_id\":\"{{project_id}}\",\"svn_url\":\"svn://localhost:3690/repo\",\"svn_credential_id\":\"{{credential_id}}\"}"
+              "raw": "{\"project_id\":\"{{project_id}}\",\"software\":\"{{software_id}}\",\"svn_url\":\"svn://localhost:3690/repo\",\"svn_credential_id\":\"{{credential_id}}\"}"
             }
           }
         },
@@ -1121,6 +1166,7 @@
     {"key": "project_id", "value": "", "type": "string"},
     {"key": "user_id", "value": "", "type": "string"},
     {"key": "repository_id", "value": "", "type": "string"},
+    {"key": "software_id", "value": "", "type": "string"},
     {"key": "credential_id", "value": "", "type": "string"},
     {"key": "commit_id", "value": "", "type": "string"},
     {"key": "release_id", "value": "", "type": "string"},
