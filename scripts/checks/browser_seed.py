@@ -44,12 +44,14 @@ def main() -> None:
 
     from apps.account.models import User
     from apps.credential.models import Credential
-    from apps.package.models import PackageConfig, PackageTask
+    from apps.package.models import PackageConfig, PackageImage, PackageTask
+    from apps.package.services import tasks as package_tasks
     from apps.package.services import PackageService
     from apps.project.models import Project, ProjectComponent, ProjectMember
     from apps.release.models import ReleaseRecord
     from apps.release.services import ReleaseDocGenerator, ReleaseService
     from apps.repository.models import Repository, RepositoryBranch
+    from apps.software.models import ProjectSoftware, Software
     from apps.workflow.models import WorkflowDefinition
     from utils.provider.base import CommitInfo, TagInfo
 
@@ -231,9 +233,38 @@ def main() -> None:
     )
     PackageConfig.objects.create(project_component=other_component, name="其他项目配置不得选择", is_active=True)
     software_delegate = User.objects.create_user(username="smoke_software_delegate", password=password)
+    package_project = Project.objects.create(
+        name="冒烟共享打包发起项目", code="SMOKE-PKG", leader=owner, status=1,
+    )
+    package_actor = User.objects.create_user(username="smoke_package_actor", password=password)
+    package_reader = User.objects.create_user(username="smoke_package_reader", password=password)
+    ProjectMember.objects.create(project=package_project, user=owner, role="manager")
+    ProjectMember.objects.create(project=package_project, user=package_actor, role="software_admin")
+    ProjectMember.objects.create(project=package_project, user=package_reader, role="maintainer")
+    ProjectComponent.objects.create(project=package_project, repository=repository, component_code="shared")
+    shared_software = Software.objects.create(repository=repository, owner=owner, name="冒烟共享客户端", slug="shared-pkg-client")
+    ProjectSoftware.objects.bulk_create([
+        ProjectSoftware(project=selected, software=shared_software) for selected in (other_project, package_project)
+    ])
+    shared_image = PackageImage.objects.create(name="隔离镜像", image="example.invalid/browser:1")
+    shared_config = PackageConfig.objects.create(software=shared_software, image=shared_image, name="浏览器共享打包配置")
+    git_credential = Credential.objects.create(
+        name="冒烟虚构 Git 凭证", owner=owner, cred_type="gitlab_token", auth_mode="token",
+    )
+    git_credential.set_data({"token": secrets.token_urlsafe(24)})
+    git_credential.save()
+    repository.credential = git_credential
+    repository.save(update_fields=["credential"])
+    package_tasks.get_provider = lambda *_args: SampleRepository()
     manifest = {
         "username": reader.username, "password": password,
         "operator": {"username": owner.username, "role": "manager", "id": str(owner.id)}, "tasks": {},
+        "shared_packaging": {
+            "config": str(shared_config.id), "name": shared_config.name, "software": str(shared_software.id),
+            "software_name": shared_software.name, "project": str(package_project.id),
+            "other_project": str(other_project.id), "project_name": package_project.name,
+            "actor": package_actor.username, "reader": package_reader.username,
+        },
         "software_identity": {
             "repository_id": str(repository.id), "project_id": str(project.id),
             "delegate": software_delegate.username,

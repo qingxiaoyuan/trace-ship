@@ -311,7 +311,7 @@ const BuildRow = memo(function BuildRow({ task, onOpen, canDelete, onDelete }: B
         </div>
         <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
           <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-          <span className="truncate font-mono">{task.repository_name || '-'}</span>
+          <span className="truncate font-mono">{[task.software_name, task.repository_name].filter(Boolean).join(' · ') || '-'}</span>
         </div>
         <div className="mt-2.5">
           <ProgressBar progress={task.progress || 0} status={task.status} />

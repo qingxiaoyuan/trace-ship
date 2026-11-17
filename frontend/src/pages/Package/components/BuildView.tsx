@@ -6,6 +6,7 @@ import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal } from '
 import dayjs from 'dayjs';
 import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
+import { TaskSvnArtifacts } from '@/pages/Release/components/TaskSvnArtifacts';
 import { ArtifactPanel, ArtifactActions } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
 import { formatDuration, getSvnPushWarning, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText, isBranchTask } from './utils';
@@ -90,7 +91,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
                       to={`/repositories/${task.repository}`}
                       className="text-indigo-500 transition-colors hover:text-indigo-600"
                     >
-                      {task.repository_name || '仓库'}
+                      {[task.software_name, task.repository_name].filter(Boolean).join(' · ') || '仓库'}
                     </Link>
                   </>
                 ) : null}
@@ -162,7 +163,12 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
               <PackageIcon className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">打包产物</h3>
             </div>
-            <ArtifactActions task={task} pushing={pushing} onPushSvn={handlePushSvn} />
+            <div className="flex flex-wrap items-center gap-2">
+              {task.software && !task.release && task.stage_info?.svn_push?.status === 'success' && (
+                <TaskSvnArtifacts key={task.id} taskId={task.id} taskName={task.name} />
+              )}
+              <ArtifactActions task={task} pushing={pushing} onPushSvn={handlePushSvn} />
+            </div>
           </div>
           <ArtifactPanel artifacts={artifacts} taskId={task.id} projectRole={task.my_role} />
         </div>

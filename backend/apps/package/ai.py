@@ -166,6 +166,7 @@ class PackageScriptAIService:
         return {
             "project_id": project_id,
             "repository_id": repository_id,
+            "software_id": payload.get("software"),
             "executor_type": executor_type,
             "node": payload.get("node"),
             "node_os_type": node_os_type,
@@ -355,6 +356,8 @@ class PackageScriptAIService:
         image_ref: str = "",
         limit: int = MAX_EXEMPLAR_SCRIPTS,
         max_chars: int = MAX_EXEMPLAR_TOTAL_CHARS,
+        scoped: bool = False,
+        software_id=None,
     ) -> list[dict]:
         """
         从历史成功任务快照中提取自定义脚本作为参考。
@@ -363,9 +366,11 @@ class PackageScriptAIService:
         按（评分、成功次数、最近时间）降序，去重键为 (config_id, custom_script)。
         无成功任务时返回空列表，不报错。
         """
+        candidates = PackageTask.objects.filter(status="success")
+        if scoped:
+            candidates = candidates.filter(project_id=project_id, software_id=software_id)
         tasks = (
-            PackageTask.objects.filter(status="success")
-            .select_related("project", "repository")
+            candidates.select_related("project", "repository")
             .order_by("-created_at")[:MAX_EXEMPLAR_CANDIDATE_TASKS]
         )
         merged: dict[tuple, dict] = {}
@@ -718,6 +723,8 @@ class PackageScriptAIService:
                 normalized["executor_type"],
                 image_ref=normalized["image_ref"],
                 max_chars=limits["exemplar_chars"],
+                scoped=True,
+                software_id=normalized["software_id"],
             )
 
         system, user = cls._build_prompt(

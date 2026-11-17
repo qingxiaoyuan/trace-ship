@@ -8,6 +8,7 @@ type TestStatus = 'idle' | 'testing' | 'success' | 'error';
 
 interface SvnTestButtonProps {
   projectId?: string;
+  softwareId?: string;
   svnUrl?: string | null;
   svnCredentialId?: string | null;
   svnPathTemplate?: string | null;
@@ -16,6 +17,7 @@ interface SvnTestButtonProps {
 
 export function SvnTestButton({
   projectId,
+  softwareId,
   svnUrl,
   svnCredentialId,
   svnPathTemplate,
@@ -31,6 +33,7 @@ export function SvnTestButton({
       }
       return packageApi.testSvn({
         project_id: projectId,
+        software: softwareId,
         svn_url: svnUrl.trim(),
         svn_credential_id: svnCredentialId,
         svn_path_template: svnPathTemplate?.trim(),

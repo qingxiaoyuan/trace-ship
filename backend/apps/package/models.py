@@ -153,7 +153,7 @@ class PackageNode(models.Model):
 
 
 class PackageConfig(models.Model):
-    """项目组件级打包配置，项目与仓库归属一律以 project_component 为准。"""
+    """共享打包配置直接归软件，待归属旧配置仍归项目组件。"""
 
     EXECUTOR_CHOICES = [
         ("local_docker", "本地 Docker"),
@@ -166,6 +166,12 @@ class PackageConfig(models.Model):
         on_delete=models.PROTECT,
         related_name="package_configs",
         verbose_name="项目组件",
+        null=True,
+        blank=True,
+    )
+    software = models.ForeignKey(
+        "software.Software", on_delete=models.PROTECT, related_name="package_configs",
+        null=True, blank=True, verbose_name="软件",
     )
     name = models.CharField(max_length=200, verbose_name="配置名称")
     executor_type = models.CharField(
@@ -263,6 +269,15 @@ class PackageConfig(models.Model):
         verbose_name = "打包配置"
         verbose_name_plural = "打包配置"
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(software__isnull=True, project_component__isnull=False)
+                    | models.Q(software__isnull=False, project_component__isnull=True)
+                ),
+                name="package_config_has_one_owner",
+            ),
+        ]
         indexes = [
             models.Index(
                 fields=["project_component", "is_active"],
@@ -270,8 +285,37 @@ class PackageConfig(models.Model):
             ),
         ]
 
+    @property
+    def source_repository(self):
+        """配置对应的物理仓库。"""
+        return self.software.repository if self.software_id else self.project_component.repository
+
+    @property
+    def source_repository_id(self):
+        return self.software.repository_id if self.software_id else self.project_component.repository_id
+
     def __str__(self) -> str:
         return self.name
+
+
+class PackageConfigAssignment(models.Model):
+    """旧配置确认共享时保留原项目与授权依据。"""
+
+    config = models.OneToOneField(
+        PackageConfig, on_delete=models.PROTECT, related_name="assignment",
+    )
+    legacy_component_id = models.UUIDField(verbose_name="原组件 ID")
+    legacy_project_id = models.UUIDField(verbose_name="原项目 ID")
+    shared_project_ids = models.JSONField(verbose_name="确认时的共享项目 ID")
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+",
+    )
+    confirmed_by_username = models.CharField(max_length=150)
+    basis = models.TextField()
+    confirmed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "package_config_assignment"
 
 
 class PackageConfigFavorite(models.Model):
@@ -328,6 +372,10 @@ class PackageTask(models.Model):
         related_name="tasks",
         verbose_name="打包配置",
     )
+    software = models.ForeignKey(
+        "software.Software", on_delete=models.PROTECT, related_name="package_tasks",
+        null=True, blank=True, verbose_name="软件",
+    )
     release = models.ForeignKey(
         "release.ReleaseRecord",
         on_delete=models.CASCADE,
@@ -366,7 +414,7 @@ class PackageTask(models.Model):
         default="formal",
         verbose_name="发布类型",
     )
-    tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
+    tag_name = models.CharField(max_length=200, verbose_name="Tag 名称")
     source_ref = models.CharField(max_length=200, blank=True, verbose_name="实际源码拉取引用")
     version = models.CharField(max_length=100, verbose_name="版本号")
     commit_hash = models.CharField(max_length=100, blank=True, verbose_name="提交哈希")
