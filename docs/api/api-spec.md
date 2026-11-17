@@ -1058,8 +1058,9 @@
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| project | string | 项目 ID |
-| repository | string | 仓库 ID |
+| project | string | 查看项目 ID，包含该项目发起的申请及选用软件的已发布版本 |
+| software | string | 软件 ID |
+| repository | string | 主仓库 ID |
 | release_type | string | formal/rc/beta |
 | status | string | draft/pending/released/rejected |
 | publisher | string | 发布人 ID |
@@ -1073,6 +1074,21 @@
 
 `search` 同时检索版本号、Tag、所属项目内的软件名和已保存的 `release_doc` 正文，可与 `project`、`repository`、`release_type` 组合，查询和总数在服务端完整可见范围内计算。列表附带 `update_summary`（最多 300 字符，保留多行变更内容的文本摘要）及 `package_summary`：`status`、`counts`、`config_count`、`task_id`。后者分别取各关联配置的最新任务，配置删除后以快照中的配置 ID 保持分组，失败配置不会被其他配置成功掩盖。原完整说明及字段保持不变。
 
+### 软件发布与共享版本
+
+创建发布时传入 `project`、`software`、`release_type` 和 `branch`。服务端从软件取得主仓库，兼容请求同时传入一致的 `repository`。Tag 使用稳定软件标识和原版本格式，例如 `client-a/VA.2.1.0`。可传原格式部分或当前软件的完整 Tag，人工填写的 Tag 优先于 `version`。保存后的项目、仓库、软件、发布类型不可改。项目曾选用该仓库下任一软件时，省略 `software` 的新建请求返回 400。其他仓库仍可在过渡期按旧规则新建，旧草稿保留原入口。
+
+| 入口 | 参数与行为 |
+| --- | --- |
+| **GET** `/api/releases/software-branches/` | `project`、`software`。返回主仓库中的真实分支，校验目标项目发布角色、启用选用和个人仓库凭证。 |
+| **GET** `/api/releases/next-version/` | `project`、`software`、可选 `release_type`。返回 `latest_tag`、`next_version`、`next_tag_name`、`has_existing_tags` 和 `all_types`。建议使用可识别的远端 Tag、已确认历史和有效占用，草稿不占用编号。在途占用影响建议号，最近发布仍按已发布证据返回。 |
+| **GET** `/api/releases/software-changes-preview/` | 同建议参数，另需 `branch`，可传 `tag_name`。与草稿变更预览使用相同的固定 SHA 区间，返回 `base_tag`、`base_git_hash`、`head_hash`、提交、合并请求、更新条目和核验提示。 |
+| **GET** `/api/releases/rc-candidates/` | 软件发布传入 `project` 和 `software`，按该软件查询已发布 RC 和可用源码。仓库兼容路径继续接受 `project` 与 `repository`。 |
+
+列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。待归属历史的软件字段为空。列表和目录可按 `project`、`software` 查询。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；响应提供已保存说明及查看项目任务，审批、整改、原项目元信息和原项目任务按各自授权读取。旧链接在原项目权限范围内继续使用原发起项目字段。
+
+软件草稿说明保存软件显示名称、稳定标识、主仓库名称、完整 Tag 与固定 SHA。正式、RC 和 Beta 的说明与审查采用同软件、同类型的有效基线。软件按类型及规范化版本占用，项目和日期不拆分同一编号。主仓库模板逐次创建独立审批实例。正式审批门禁与未知推 Tag 的核对方式沿用现有规则。过渡期软件发布成功先不触发旧自动打包，仓库级补打入口、已发布版本删除和相关 Tag 清理拒绝软件记录。
+
 ### 8.2 创建发布申请
 
 - **POST** `/api/releases/`
@@ -1083,11 +1099,11 @@
 ```json
 {
   "project": "uuid",
-  "repository": "uuid",
+  "software": "uuid",
   "release_type": "formal",
   "branch": "main",
   "version": "VA.4.1.155",
-  "tag_name": "VA.4.1.155_20260731",
+  "tag_name": "client-a/VA.4.1.155_20260731",
   "related_changes": [],
   "updates": [{"type": "A", "content": "...", "source": "commit", "source_ref": "abc123"}],
   "has_config_changes": false,
@@ -1114,7 +1130,7 @@
 
 #### 版本占用、正式审批与 Tag 清理
 
-正式、RC、Beta 编号独立计算，成功历史保留编号依据。提交审批按物理仓库 + 类型 + 主次修订号占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。不强制草稿补选 RC 来源，按保存的提交完成正式审批和推 Tag；历史迁移兼容标记仍不可经 API 写入。
+正式、RC、Beta 编号独立计算，成功历史保留编号依据。软件发布提审按软件 + 类型 + 主次修订号占用，待归属旧申请按原仓库范围占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。不强制草稿补选 RC 来源，按保存的提交完成正式审批和推 Tag；历史迁移兼容标记仍不可经 API 写入。
 
 成功调用 `POST /api/releases/{id}/delete-released/` 删除发布记录和 Tag 后释放该申请的版本占用，可重新创建同版本并重新审批。仅清理 Tag、保留发布记录时仍保留占用。旧版删除遗留的已消费孤立占用不再抬高自动编号；再次提审会实时核验远端和同仓库全部有效发布，确认均无同版本冲突后才允许复用，不因日期、数字前导零或项目不同放行。版本规则改变后仍保留原占用 Tag 身份，在提审、推送及重试时持续核验旧远端 Tag 和有效发布记录，旧规则下已发布、在审或审批完成但推送失败的记录继续阻止同版本重发。历史记录优先使用该发布关联且同仓库同类型的规范化版本占用，规则变化与显示 version 不改变已占编号。没有占用的旧记录从完整 Tag 保留全部候选编号；唯一编号正常比较，多个候选涉及本次目标编号时返回 400 并提示核对该条历史记录，无关编号不受影响。显示 version 可能残留旧前缀或部分后缀，现行规则也不代表历史规则，因此不能据此排除候选。创建、编辑时按当前完整规则从最终 Tag 提取显示版本，重叠后缀与日期形态后缀不会截断；终止复用申请会恢复旧孤立占用，供后续申请核验。远端查询或删除失败不释放占用，现存 Tag 不被覆盖；引用保护与删除权限保持不变。
 
@@ -1250,7 +1266,7 @@
 - **GET** `/api/releases/{id}/changes-preview/`
 - 按现有项目可见范围读取；只用于有来源 RC 的正式记录。
 - 首次生成前返回当前候选基线，不写入快照；首次生成后按冻结的完整 SHA 返回同一区间。
-- 基线为同物理仓库中低于目标版本且在来源祖先链上的最高正式版本，平台已发布历史快照优先于同名远端 Tag。
+- 软件发布基线为同软件中低于目标版本且在来源祖先链上的最高正式版本，旧仓库发布沿用原仓库范围，平台已发布历史快照优先于同名远端 Tag。
 - 正式草稿按最终 Tag 对应版本选择基线。旧草稿的 `version` 与 Tag 不一致时，预览不写库；生成说明在同一事务中修正版本号，重建旧说明、基线及关联变更，失败整体回滚。正常固定基线和已提审/已发布身份保持不变。
 - `data` 包含 `base_tag`、`base_git_hash`、`head_hash`、`commits`、`merge_requests`、`parsed_updates`、`warnings`、`first_release`、`no_changes`。完整分页后的提交和 MR 在单次响应中返回；MR 只有合并或 squash SHA 位于提交区间内才自动纳入，缺少证据时列入 `warnings`。
 - 非祖先候选按版本递减继续查找可达正式 Tag；无可用基线取截至来源 SHA 的全部可达历史；同 SHA 返回空提交并标记 `no_changes`。`warnings` 及生成说明的「核验提示」记录跳过 Tag 和实际区间，并随基线冻结。旧草稿的非祖先基线允许重新选择，已进入流程/已发布记录不自动改写；GitLab 故障返回 502，生成失败不保存部分结果。

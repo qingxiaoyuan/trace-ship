@@ -212,9 +212,9 @@ class ProjectViewSet(StandardModelViewSet):
 
         with locked_archive_parent(instance):
             instance = get_object_or_404(Project.objects.select_for_update(no_key=True), pk=instance.pk)
-            if instance.project_software.exists():
+            if instance.project_software.exists() or instance.releases.filter(software__isnull=False).exists():
                 return error_response(
-                    40901, "项目已有软件选用记录，不能删除。请停止选用或停用项目。",
+                    40901, "项目已有软件选用或发布记录，不能删除。请停止选用或停用项目。",
                     status_code=status.HTTP_409_CONFLICT,
                 )
             self.perform_destroy(instance)
@@ -526,20 +526,15 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
     @action(detail=True, methods=["post"], url_path="delete-tag")
     def delete_tag(self, request: Request, *args, **kwargs) -> Response:
         """项目管理员凭 delete_tag 借用权限幂等删除组件 Tag。"""
-        from apps.repository.models import RepositoryTag
-        from utils.provider.exceptions import NotFoundError
-
         tag_name = (request.data.get("tag_name") or "").strip()
         if not tag_name:
             return error_response(40001, "tag_name 不能为空")
-        component, provider = self._provider(request, operation="delete_tag")
-        remote_deleted = True
-        try:
-            provider.delete_tag(component.repository.external_identity, tag_name)
-        except NotFoundError:
-            remote_deleted = False
-        RepositoryTag.objects.filter(repository=component.repository, name=tag_name).delete()
-        return success_response({"tag_name": tag_name, "remote_deleted": remote_deleted})
+        component = self.get_object()
+        loan = request.query_params.get("credential_loan") or request.data.get("credential_loan")
+        return success_response(RepositoryService.delete_tag(
+            component.repository, tag_name, request.user, component=component, loan=loan,
+        ))
+
 
 
 class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):

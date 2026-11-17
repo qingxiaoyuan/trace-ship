@@ -28,6 +28,7 @@ class TagCleanup:
             "cleanup_status": release.tag_cleanup_status,
         }
         try:
+            ReleaseReferences.guard_shared_delete(release.repository, release.tag_name)
             if release.release_type != "rc" or release.status != "released":
                 raise serializers.ValidationError({"release": "仅已发布 RC 可以清理 Tag"})
             # 即使原 RC 仍在，也必须找到可用正式引用后才允许删除。
@@ -57,6 +58,7 @@ class TagCleanup:
             release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
             status, reason, reference = "failure", "", ""
             try:
+                ReleaseReferences.guard_shared_delete(release.repository, release.tag_name)
                 provider = ReleaseService._get_provider(
                     release.repository, user, project=release.project, operation="delete_tag"
                 )

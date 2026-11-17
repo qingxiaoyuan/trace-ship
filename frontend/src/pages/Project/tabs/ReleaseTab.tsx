@@ -273,7 +273,7 @@ function RepositoryReleaseList({ releases, loading }: { releases: Release[]; loa
           const config = typeDisplay[item.release_type] || { status: 'neutral' as StatusType, text: item.release_type || '-' };
           const publisherLabel = item.publisher_name || item.publisher || '-';
           return (
-            <button key={item.id} type="button" onClick={() => navigate(`/releases/${item.id}`)} className="block w-full text-left transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4">
+            <button key={item.id} type="button" onClick={() => navigate(`/releases/${item.id}${item.shared_readonly ? `?project=${item.project}` : ''}`)} className="block w-full text-left transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4">
               <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
                 <div className="col-span-3 flex items-center gap-2">{renderReleasePrimary(item)}</div>
                 <div className="col-span-2 truncate font-mono text-[12px] text-slate-600">{item.tag_name || '-'}</div>
@@ -354,7 +354,7 @@ export function ReleaseTab({ projectId, repositoryId }: ReleaseTabProps) {
           <span className="mt-0.5 block text-[10px] text-slate-400">{group.items.length} 个版本</span>
         </>
       )}
-      onItemClick={(item) => navigate(`/releases/${item.id}`)}
+      onItemClick={(item) => navigate(`/releases/${item.id}?project=${projectId}`)}
       loading={releasesLoading || componentsLoading}
       searchPlaceholder="搜索仓库、版本号、Tag 或 Redmine"
       emptyText="暂无关联仓库或已发布版本"

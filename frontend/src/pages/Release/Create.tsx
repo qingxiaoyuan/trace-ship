@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Form, Select, Checkbox, Input } from 'antd';
+import { Button, Form, Select, Checkbox, Input } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { projectApi } from '@/api/project';
 import { repositoryApi } from '@/api/repository';
+import { softwareApi } from '@/api/software';
 import { releaseApi } from '@/api/release';
 import { packageApi } from '@/api/package';
 import { useAppMessage } from '@/hooks/useAppMessage';
@@ -67,6 +68,7 @@ export default function ReleaseCreate() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const projectIdFromQuery = searchParams.get('project_id') || undefined;
+  const softwareIdFromQuery = searchParams.get('software_id') || undefined;
   const { message } = useAppMessage();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
@@ -89,7 +91,10 @@ export default function ReleaseCreate() {
 
   // 响应式跟踪关键字段
   const watchProject = Form.useWatch('project', form) as string | undefined;
-  const watchRepository = Form.useWatch('repository', form) as string | undefined;
+  const legacyRepository = Form.useWatch('repository', form) as string | undefined;
+  const formSoftware = Form.useWatch('software', form) as string | undefined;
+  const [repositoryMode, setRepositoryMode] = useState(false);
+  const [previewTag, setPreviewTag] = useState<string>();
   const watchReleaseType = (Form.useWatch('release_type', form) as ReleaseType) || 'formal';
   const watchBranch = Form.useWatch('branch', form) as string | undefined;
   const sourceReady = !!watchBranch;
@@ -99,6 +104,19 @@ export default function ReleaseCreate() {
     queryFn: () => projectApi.getProjects({ page_size: 1000 }),
     enabled: !projectIdFromQuery,
   });
+
+  const projectSoftwareQuery = useQuery({
+    queryKey: ['project-software-release', watchProject],
+    queryFn: () => softwareApi.listProject(watchProject!),
+    enabled: !!watchProject,
+    retry: false,
+  });
+  const softwareLinks = projectSoftwareQuery.data;
+  const hasSoftware = !!softwareLinks?.length;
+  const usesSoftware = hasSoftware && !repositoryMode;
+  const selectedSoftware = usesSoftware ? softwareLinks?.find((item) => item.software.id === formSoftware && item.is_usable)?.software : undefined;
+  const watchSoftware = selectedSoftware?.id;
+  const watchRepository = usesSoftware ? selectedSoftware?.repository : legacyRepository;
 
   const { data: projectComponents = [], isLoading: reposLoading } = useQuery({
     queryKey: ['project-components', watchProject],
@@ -111,8 +129,10 @@ export default function ReleaseCreate() {
     isLoading: branchesLoading,
     error: branchesError,
   } = useQuery({
-    queryKey: ['repository-branches', watchRepository],
-    queryFn: () => repositoryApi.getBranches(watchRepository || ''),
+    queryKey: ['release-branches', watchProject, watchSoftware, watchRepository],
+    queryFn: () => watchSoftware
+      ? releaseApi.getSoftwareBranches(watchProject!, watchSoftware)
+      : repositoryApi.getBranches(watchRepository!),
     enabled: !!watchRepository,
     retry: false,
   });
@@ -132,22 +152,35 @@ export default function ReleaseCreate() {
         is_active: true,
         page_size: 1000,
       }),
-    enabled: !!watchRepository,
+    enabled: !!watchRepository && !usesSoftware,
   });
   const autoPackageConfigs: PackageConfig[] = autoPackageData?.results || [];
 
   // 自动版本号预览
   const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
-    queryKey: ['repository-next-version', watchProject, watchRepository, watchReleaseType, watchBranch],
-    queryFn: () => repositoryApi.getNextVersion(watchRepository || '', watchReleaseType),
+    queryKey: ['release-next-version', watchProject, watchSoftware, watchRepository, watchReleaseType],
+    queryFn: () => watchSoftware
+      ? releaseApi.getSoftwareNextVersion(watchProject!, watchSoftware, watchReleaseType)
+      : repositoryApi.getNextVersion(watchRepository!, watchReleaseType),
     enabled: !!watchRepository && sourceReady,
   });
 
   // 变更预览：选 branch 后拉取 commits + MRs + parsed_updates（按发布类型取基线 tag）
   const { data: changesPreview, isLoading: changesLoading } = useQuery<ChangesPreview>({
-    queryKey: ['repository-changes-preview', watchProject, watchRepository, watchBranch, watchReleaseType],
-    queryFn: () =>
-      repositoryApi.previewChanges(watchRepository || '', watchBranch || '', watchReleaseType),
+    queryKey: ['release-source-preview', watchProject, watchSoftware, watchRepository, watchBranch, watchReleaseType, previewTag],
+    queryFn: async () => {
+      if (!watchSoftware) return repositoryApi.previewChanges(watchRepository!, watchBranch!, watchReleaseType);
+      const preview = await releaseApi.previewSoftwareChanges(watchProject!, watchSoftware, watchBranch!, watchReleaseType, previewTag);
+      const commitSources = new Set(preview.parsed_updates.filter(item => item.source === 'commit').map(item => item.source_ref));
+      const mrSources = new Set(preview.parsed_updates.filter(item => item.source === 'mr').map(item => item.source_ref));
+      return {
+        last_tag: preview.base_tag || null,
+        head_hash: preview.head_hash,
+        commits: preview.commits.map(item => ({ ...item, has_af: commitSources.has(item.hash) })),
+        merge_requests: preview.merge_requests.map(item => ({ ...item, has_af: mrSources.has(item.number) })),
+        parsed_updates: preview.parsed_updates,
+      };
+    },
     enabled: !!watchRepository && !!watchBranch,
     retry: false,
   });
@@ -160,14 +193,14 @@ export default function ReleaseCreate() {
 
   const commitCheckKey = useMemo(
     () => JSON.stringify([
-      watchRepository || '',
+      watchSoftware || watchRepository || '',
       watchBranch || '',
       watchReleaseType || '',
       changesPreview?.last_tag || '',
       (changesPreview?.commits || []).map((commit) => commit.hash),
       pendingParsedUpdates.map((item) => [item.source || 'commit', item.source_ref || '', item.type || 'A', item.content || '']),
     ]),
-    [watchRepository, watchBranch, watchReleaseType, changesPreview?.last_tag, changesPreview?.commits, pendingParsedUpdates],
+    [watchSoftware, watchRepository, watchBranch, watchReleaseType, changesPreview?.last_tag, changesPreview?.commits, pendingParsedUpdates],
   );
 
   // 已加入更新内容的条目引用（`source:source_ref`），弹窗内据此过滤已填入的未解析 Commit。
@@ -201,7 +234,7 @@ export default function ReleaseCreate() {
   const lastPreviewRef = useRef<string>('');
   useEffect(() => {
     if (!changesPreview) return;
-    const key = `${watchRepository}-${watchBranch}-${watchReleaseType}`;
+    const key = JSON.stringify([watchSoftware || watchRepository, watchBranch, watchReleaseType, previewTag]);
     if (key === lastPreviewRef.current) return;
     lastPreviewRef.current = key;
     // 切换分支/发布类型后基线 tag 变化，无论新结果是否为空都重置回填，避免旧类型更新项残留
@@ -213,7 +246,7 @@ export default function ReleaseCreate() {
         source_ref: u.source_ref,
       }))
     );
-  }, [changesPreview, watchRepository, watchBranch, watchReleaseType]);
+  }, [changesPreview, watchSoftware, watchRepository, watchBranch, watchReleaseType, previewTag]);
 
   const projectOptions = useMemo(
     () => (projectData?.results || []).map((p) => ({ label: p.name, value: p.id })),
@@ -221,13 +254,19 @@ export default function ReleaseCreate() {
   );
   const repoOptions = useMemo(
     () => (projectComponents || [])
-      .filter((item) => item.is_active)
+      .filter((item) => item.is_active && !softwareLinks?.some(link => link.software.repository === item.repository))
       .map((item) => ({
         label: item.repository_detail?.name || item.display_name,
         value: item.repository,
       })),
-    [projectComponents],
+    [projectComponents, softwareLinks],
   );
+  const softwareOptions = (softwareLinks || [])
+    .filter((item) => item.is_usable)
+    .map(({ software }) => ({
+      label: [software.name, software.slug, software.repository_name].join(' · '),
+      value: software.id,
+    }));
   const branchOptions = useMemo(
     () => (branches || []).map((b) => ({ label: b.name, value: b.name })),
     [branches]
@@ -239,6 +278,12 @@ export default function ReleaseCreate() {
     }
   }, [projectIdFromQuery, form]);
 
+  useEffect(() => {
+    if (!repositoryMode && softwareIdFromQuery && softwareLinks?.some(item => item.is_usable && item.software.id === softwareIdFromQuery)) {
+      form.setFieldValue('software', softwareIdFromQuery);
+    }
+  }, [form, repositoryMode, softwareIdFromQuery, softwareLinks]);
+
   // tag_name 自动回填
   const tagNameDirtyRef = useRef(false);
   useEffect(() => {
@@ -246,17 +291,18 @@ export default function ReleaseCreate() {
     if (suggested && sourceReady && !tagNameDirtyRef.current) {
       form.setFieldsValue({ tag_name: suggested });
     }
-  }, [nextVersionData?.next_tag_name, form, sourceReady, watchProject, watchRepository, watchReleaseType, watchBranch]);
+  }, [nextVersionData?.next_tag_name, form, sourceReady, watchProject, watchSoftware, watchRepository, watchReleaseType, watchBranch]);
 
   useEffect(() => {
     tagNameDirtyRef.current = false;
-  }, [watchRepository, watchBranch, watchReleaseType]);
+  }, [watchSoftware, watchRepository, watchBranch, watchReleaseType]);
 
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) =>
       releaseApi.createRelease({
         project: values.project as string,
-        repository: values.repository as string,
+        software: watchSoftware,
+        repository: watchSoftware ? undefined : values.repository,
         release_type: values.release_type as ReleaseType,
         branch: values.branch as string,
         tag_name: (values.tag_name as string)?.trim() || undefined,
@@ -272,8 +318,7 @@ export default function ReleaseCreate() {
         impact_desc: impactDesc,
         self_test_passed: selfTestPassed,
         retest_passed: retestPassed,
-        package_config_ids:
-          autoPackageConfigIds ?? autoPackageConfigs.map((config) => config.id),
+        package_config_ids: watchSoftware ? [] : autoPackageConfigIds ?? autoPackageConfigs.map((config) => config.id),
       }),
     onSuccess: (release) => {
       setCreatedRelease(release);
@@ -310,6 +355,7 @@ export default function ReleaseCreate() {
   });
 
   const resetSource = () => {
+    setPreviewTag(undefined);
     form.setFieldsValue({ source_rc: undefined, tag_name: undefined });
     tagNameDirtyRef.current = false;
     lastPreviewRef.current = '';
@@ -318,9 +364,10 @@ export default function ReleaseCreate() {
     setCommitCheckOpen(false);
   };
   const handleProjectChange = () => {
+    setRepositoryMode(false);
     resetSource();
     setAutoPackageConfigIds(null);
-    form.setFieldsValue({ repository: undefined, branch: undefined });
+    form.setFieldsValue({ software: undefined, repository: undefined, branch: undefined });
   };
   const handleRepoChange = (repositoryId?: unknown) => {
     resetSource();
@@ -328,6 +375,11 @@ export default function ReleaseCreate() {
     form.setFieldsValue({ branch: component?.default_branch || undefined });
     // 切换仓库后重置发布后自动打包勾选（null 表示默认全选）
     setAutoPackageConfigIds(null);
+  };
+
+  const handleSoftwareChange = () => {
+    resetSource();
+    form.setFieldsValue({ repository: undefined, branch: undefined });
   };
 
   const handleSubmitAudit = () => {
@@ -364,7 +416,7 @@ export default function ReleaseCreate() {
         </button>
         <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">创建发布</h1>
         <p className="mt-1 text-[13px] text-slate-500">
-          选择项目与一个已关联仓库。版本和 Tag 属于仓库本身，多个项目发布的是同一套仓库版本。
+          选择项目、目标软件和来源分支。选用同一软件的项目共用版本记录。
         </p>
       </div>
 
@@ -431,17 +483,42 @@ export default function ReleaseCreate() {
                   hint="只有你参与的项目才会显示"
                 />
               </Form.Item>
+              <div>
+              {usesSoftware ? (
+                <Form.Item name="software" label="目标软件" rules={[{ required: true, message: '请选择软件' }]}>
+                  <SelectField
+                    icon={<GitBranch className="h-4 w-4 text-slate-400" strokeWidth={1.5} />}
+                    placeholder="选择软件"
+                    options={softwareOptions}
+                    onChange={handleSoftwareChange}
+                    disabled={createMutation.isPending}
+                    hint={softwareOptions.length ? '列出当前项目可发布的软件及主仓库' : '当前项目没有可发布的软件'}
+                  />
+                </Form.Item>
+              ) : (
               <Form.Item name="repository" label="目标仓库" rules={[{ required: true, message: '请选择仓库' }]}>
                 <SelectField
                   icon={<GitBranch className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
                   placeholder="选择仓库"
-                  loading={reposLoading}
-                  disabled={createMutation.isPending}
+                  loading={reposLoading || (!!watchProject && projectSoftwareQuery.isLoading)}
+                  disabled={createMutation.isPending || (!!watchProject && !softwareLinks)}
                   options={repoOptions}
                   onChange={handleRepoChange}
-                  hint="仅列出当前项目已关联且启用的仓库；Tag 推送到该仓库"
+                  hint={projectSoftwareQuery.isError ? '获取项目选用的软件失败，请重新选择项目后重试' : '此列表显示尚未接入软件的仓库'}
                 />
               </Form.Item>
+              )}
+              {hasSoftware && repoOptions.length > 0 && (
+                <Button type="link" className="!px-0" disabled={createMutation.isPending} onClick={() => {
+                  setRepositoryMode(value => !value);
+                  resetSource();
+                  setAutoPackageConfigIds(null);
+                  form.setFieldsValue({ software: undefined, repository: undefined, branch: undefined });
+                }}>
+                  {usesSoftware ? '选择尚未接入软件的仓库' : '返回选择软件'}
+                </Button>
+              )}
+              </div>
             </div>
             <Form.Item
               name="release_type"
@@ -471,6 +548,11 @@ export default function ReleaseCreate() {
                 placeholder="选择分支"
                 loading={branchesLoading}
                 options={branchOptions}
+                onChange={() => {
+                  setPreviewTag(undefined);
+                  tagNameDirtyRef.current = false;
+                  form.setFieldValue('tag_name', nextVersionData?.next_tag_name);
+                }}
                 hint={
                   branchesErrorMsg
                     ? branchesErrorMsg
@@ -516,10 +598,11 @@ export default function ReleaseCreate() {
               <input
                 placeholder="留空自动生成"
                 onChange={() => { tagNameDirtyRef.current = true; }}
+                onBlur={(event) => { if (watchSoftware) setPreviewTag(event.target.value.trim() || undefined); }}
                 className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[13px] text-slate-700 placeholder-slate-400 outline-none"
               />
             </Form.Item>
-            <p className="mt-1 text-[11px] text-slate-400">正式无后缀 / RC 加 -rc / Beta 加 -beta</p>
+            <p className="mt-1 text-[11px] text-slate-400">{selectedSoftware ? `软件前缀 ${selectedSoftware.slug}/，版本格式沿用主仓库规则` : '正式无后缀 / RC 加 -rc / Beta 加 -beta'}</p>
 
             <Form.Item
               name="redmine_url"
@@ -678,7 +761,7 @@ export default function ReleaseCreate() {
           )}
 
           {/* 发布后自动打包（可勾选，默认全选，快照固定） */}
-          {formReady && (autoPackageLoading || autoPackageConfigs.length > 0) && (
+          {!usesSoftware && formReady && (autoPackageLoading || autoPackageConfigs.length > 0) && (
             <section className="tech-card mb-5 rounded-xl p-5">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1147,7 +1230,7 @@ export default function ReleaseCreate() {
                           {row.key}
                         </td>
                         <td className="px-3 py-2 align-middle">
-                          {createdRelease.release_type === 'formal' && isFormalIdentityField(row.key) ? (
+                          {(createdRelease.software || createdRelease.release_type === 'formal') && isFormalIdentityField(row.key) ? (
                             <span className="break-all text-[13px]">{row.value}</span>
                           ) : isCheckboxField(row.key) ? (
                             <CheckboxField

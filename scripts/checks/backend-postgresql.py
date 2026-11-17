@@ -35,6 +35,7 @@ PUBLIC_PACKAGE_INDEXES = (
     "https://mirrors.huaweicloud.com/repository/pypi/simple",
 )
 TEST_NODES = (
+    "apps/release/tests/test_software_release.py::test_postgresql_same_software_across_projects_claims_once",
     "apps/release/tests/test_tag_cleanup.py::test_postgresql_task_creation_waits_for_cleanup",
     "apps/release/tests/test_rc_source.py::test_reselection_and_submission_serialize_on_postgresql",
     "apps/release/tests/test_version_reservation.py::test_postgresql_serializes_same_version_submissions",
@@ -46,7 +47,7 @@ TEST_NODES = (
     "apps/package/tests/test_release_repackage_postgresql.py",
     "apps/release/tests/test_oa_archive_postgresql.py",
 )
-EXPECTED_TESTS = 36
+EXPECTED_TESTS = 37
 
 
 def validate_junit(path: Path) -> dict[str, int]:

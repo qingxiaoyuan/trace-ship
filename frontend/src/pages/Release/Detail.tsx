@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Empty, Button, Grid, Input, Modal, Typography } from 'antd';
 import { AlertTriangle, ChevronRight, ExternalLink, RefreshCw, Rocket, Trash2 } from 'lucide-react';
@@ -51,10 +51,12 @@ export default function ReleaseDetail() {
   const screens = Grid.useBreakpoint();
   const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
 
+  const [params] = useSearchParams();
+  const accessProject = params.get('project') || undefined;
   const queryClient = useQueryClient();
   const { data: release, isLoading, error } = useQuery({
-    queryKey: ['release', id],
-    queryFn: () => releaseApi.getRelease(id || ''),
+    queryKey: accessProject ? ['release', id, accessProject] : ['release', id],
+    queryFn: () => releaseApi.getRelease(id || '', accessProject),
     enabled: !!id,
   });
   const { data: project } = useQuery({
@@ -91,11 +93,11 @@ export default function ReleaseDetail() {
       type: 'release',
       id: release.id,
       title: release.version,
-      subtitle: `发布 · ${[release.project_name, release.repository_name].filter(Boolean).join(' / ') || '-'}`,
-      path: `/releases/${release.id}`,
+      subtitle: `发布 · ${[release.project_name, release.software_name, release.repository_name].filter(Boolean).join(' / ') || '-'}`,
+      path: `/releases/${release.id}${accessProject ? `?project=${accessProject}` : ''}`,
     });
     return () => setEntityTitle(null);
-  }, [release, setEntityTitle]);
+  }, [accessProject, release, setEntityTitle]);
 
   /** 重试推 tag：仅推 tag 环节失败的已驳回发布展示入口（后端仍会二次校验审批状态） */
   const handleRetryPushTag = async () => {
@@ -173,6 +175,8 @@ export default function ReleaseDetail() {
 
   const type = release.release_type as ReleaseType;
   const status = release.status as ReleaseStatus;
+  const detailTab = release.shared_readonly && activeTab === 'commits' ? 'notes' : activeTab;
+  const visibleTabs = release.shared_readonly ? tabs.filter(tab => tab.key !== 'commits') : tabs;
 
   if (maintainer && screens.md === false) return <MaintainerReleaseDetail key={release.id} release={release} />;
 
@@ -236,6 +240,10 @@ export default function ReleaseDetail() {
                 ) : (
                   <span>{release.project_name || '-'}</span>
                 )}
+                {release.software_name && <>
+                  <span className="h-1 w-1 rounded-full bg-slate-300" />
+                  <span className="break-all font-medium text-slate-800">{release.software_name}</span>
+                </>}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 {release.repository ? (
                   <Link
@@ -248,16 +256,16 @@ export default function ReleaseDetail() {
                   <span>{release.repository_name || '-'}</span>
                 )}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
-                <span>发布人 {release.publisher_name || release.publisher || '-'}</span>
+                {!release.shared_readonly && <span>发布人 {release.publisher_name || release.publisher || '-'}</span>}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span>{release.created_at ? dayjs(release.created_at).format('YYYY-MM-DD HH:mm') : '-'}</span>
               </div>
             </div>
           </div>
           {status === 'pending' ? <WorkflowTerminateButton instance={workflowInstance} /> : null}
-          {status === 'released' && <div aria-label="发布版本操作" className="flex flex-wrap items-center gap-2">
+          {status === 'released' && !release.shared_readonly && <div aria-label="发布版本操作" className="flex flex-wrap items-center gap-2">
             <span ref={setArchiveActionTarget} />
-            {canManage ? (
+            {canManage && !release.software ? (
               <Button
                 danger
                 icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
@@ -300,7 +308,7 @@ export default function ReleaseDetail() {
         {submit.error ? <div className="mt-3"><PermissionAlert error={submit.error} errorTitle="提交审批失败" /></div> : null}
         <ReleaseSource key={`release-source:${release.id}`} release={release}
           canRefresh={!release.has_revision_history && canDevelop && (user?.is_superuser || release.publisher === user?.id)} />
-        {(role === 'developer' || role === 'tester' || role === 'auditor' || role === 'manager' || role === 'software_admin') && (
+        {!release.shared_readonly && (role === 'developer' || role === 'tester' || role === 'auditor' || role === 'manager' || role === 'software_admin') && (
           <ReviewContext key={`review-context:${release.id}`} release={release}
             canEdit={canDevelop && (user?.is_superuser || release.publisher === user?.id)} onDirtyChange={dirty => setDirtyContextId(dirty ? release.id : null)} />
         )}
@@ -370,11 +378,11 @@ export default function ReleaseDetail() {
 
       {/* 主体：左 Tab 区 + 右发布流程时间线 */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className={release.shared_readonly ? 'lg:col-span-3' : 'lg:col-span-2'}>
           <TsCard bodyStyle={{ padding: 0 }}>
             <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto border-b border-indigo-50 px-4">
-              {tabs.map((tab) => {
-                const active = activeTab === tab.key;
+              {visibleTabs.map((tab) => {
+                const active = detailTab === tab.key;
                 return (
                   <button
                     key={tab.key}
@@ -392,17 +400,17 @@ export default function ReleaseDetail() {
               })}
             </div>
             <div className="p-5">
-              <div hidden={activeTab !== 'notes'}>
-                <ReleaseNotes release={release} active={activeTab === 'notes'} />
+              <div hidden={detailTab !== 'notes'}>
+                <ReleaseNotes release={release} active={detailTab === 'notes'} />
               </div>
-              {activeTab === 'commits' && <ReleaseCommits release={release} />}
-              <div hidden={activeTab !== 'packages'}><ReleasePackages release={release} active={activeTab === 'packages'} archiveActionTarget={archiveActionTarget} /></div>
+              {detailTab === 'commits' && <ReleaseCommits release={release} />}
+              <div hidden={detailTab !== 'packages'}><ReleasePackages release={release} active={detailTab === 'packages'} archiveActionTarget={archiveActionTarget} /></div>
             </div>
           </TsCard>
         </div>
 
         {/* 右侧发布流程时间线 */}
-        <ReleaseTimeline release={release} />
+        {!release.shared_readonly && <ReleaseTimeline release={release} />}
       </div>
     </div>
   );

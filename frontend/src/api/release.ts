@@ -7,6 +7,8 @@ import type {
   ReleaseCommit,
   ReleaseReviewIssue,
   SvnSyncResult,
+  RepositoryBranch,
+  ReleaseType,
 } from '@/types';
 
 export interface CleanupCandidate {
@@ -23,7 +25,23 @@ export interface BranchUpdatePreview {
   diffs: { old_path: string; new_path: string; diff: string }[];
 }
 
+interface SoftwareVersion {
+  latest_tag: string | null;
+  next_version: string;
+  next_tag_name: string;
+}
+
 export const releaseApi = {
+  getSoftwareBranches: (project: string, software: string) =>
+    get<RepositoryBranch[]>('/releases/software-branches/', { params: { project, software } }),
+  getSoftwareNextVersion: (project: string, software: string, release_type: ReleaseType) =>
+    get<SoftwareVersion & { has_existing_tags: boolean; all_types: Record<ReleaseType, SoftwareVersion> }>(
+      '/releases/next-version/', { params: { project, software, release_type } },
+    ),
+  previewSoftwareChanges: (project: string, software: string, branch: string, release_type: ReleaseType, tag_name?: string) =>
+    get<FormalChangesPreviewData>('/releases/software-changes-preview/', {
+      params: { project, software, branch, release_type, tag_name }, timeout: 300_000,
+    }),
   previewBranchUpdate: (id: string) => get<BranchUpdatePreview>(`/releases/${id}/branch-update/`),
   confirmBranchUpdate: (id: string, oldHash: string, newHash: string) =>
     post<Release>(`/releases/${id}/branch-update/`, { old_hash: oldHash, new_hash: newHash }),
@@ -40,7 +58,7 @@ export const releaseApi = {
     patch<Release>(`/releases/${id}/`, { review_context: reviewContext, review_document_paths: reviewDocumentPaths, review_context_is_requirement: isRequirement }),
   getReleases: (params?: Record<string, unknown>) =>
     get<PaginatedData<Release>>('/releases/', { params }),
-  getRelease: (id: string) => get<Release>(`/releases/${id}/`),
+  getRelease: (id: string, project?: string) => get<Release>(`/releases/${id}/`, { params: { project } }),
   createRelease: (data: Record<string, unknown>) =>
     post<Release>('/releases/', data),
   /** 删除草稿 / 已驳回发布（仅草稿、已驳回状态可删） */
@@ -70,7 +88,8 @@ export const releaseApi = {
     get<Blob>(`/releases/${id}/export-word/`, { responseType: 'blob' }),
   exportMd: (id: string) =>
     get<Blob>(`/releases/${id}/export-md/`, { responseType: 'blob' }),
-  getCatalog: () => get<{ formal: Release[]; rc: Release[]; beta: Release[] }>('/releases/catalog/'),
+  getCatalog: (params?: { project: string; software?: string }) =>
+    get<{ formal: Release[]; rc: Release[]; beta: Release[] }>('/releases/catalog/', { params }),
   /** 发布关联提交快照（分页） */
   getCommits: (id: string, params?: Record<string, unknown>) =>
     get<PaginatedData<ReleaseCommit>>(`/releases/${id}/commits/`, { params }),

@@ -332,7 +332,7 @@ class RepositoryService:
 
     @staticmethod
     @transaction.atomic
-    def delete_tag(repo: Repository, tag_name: str, request_user=None) -> dict:
+    def delete_tag(repo: Repository, tag_name: str, request_user=None, *, component=None, loan=None) -> dict:
         """
         删除仓库标签
 
@@ -353,10 +353,24 @@ class RepositoryService:
         """
         from apps.release.references import ReleaseReferences
 
-        Repository.objects.select_for_update(no_key=True).get(pk=repo.pk)
+        repo = Repository.objects.select_for_update(no_key=True).get(pk=repo.pk)
+        if component is not None:
+            from django.shortcuts import get_object_or_404
+            from rest_framework.exceptions import PermissionDenied
+
+            from apps.project.models import ProjectComponent
+            from utils.permissions import IsProjectManager
+
+            component = get_object_or_404(ProjectComponent, pk=component.pk, project_id=component.project_id, repository=repo)
+            if not IsProjectManager()._check(component.project, request_user):
+                raise PermissionDenied("没有当前项目的 Tag 删除权限")
         if repo.repo_type != "git":
             raise ValueError("非 Git 仓库不支持标签删除")
-        cred_data = resolve_credential(repo, request_user)
+        ReleaseReferences.guard_shared_delete(repo, tag_name)
+        cred_data = resolve_credential(
+            repo, request_user, project=component.project if component else None, loan=loan,
+            operation="delete_tag", project_component=component,
+        )
         provider = get_provider(repo.vendor, RepositoryService._resolve_server_url(repo), cred_data)
         ReleaseReferences.guard_delete(repo, tag_name, provider.list_tags(repo.external_identity))
         remote_deleted = True

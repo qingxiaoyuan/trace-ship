@@ -4,11 +4,12 @@ import re
 from dataclasses import asdict
 from itertools import groupby
 
+from django.db.models import Q
 from rest_framework import serializers
 
 from apps.release.models import ReleaseRecord
 from utils.commit_parser import extract_update_lines
-from utils.provider.base import GitProvider
+from utils.provider.base import GitProvider, TagInfo
 from utils.provider.exceptions import ProviderError
 
 
@@ -32,6 +33,7 @@ class FormalChanges:
     def identity_rows(release: ReleaseRecord) -> list[tuple[str, str]]:
         """正式说明的系统身份字段，同时用于渲染与保存校验。"""
         rows = [("当前发布版本号", release.version), ("Git提交hash", release.git_hash)]
+        rows.extend(FormalChanges.software_identity_rows(release))
         if not release.source_rc_id:
             return rows
         scope = (
@@ -50,6 +52,17 @@ class FormalChanges:
             ("变更范围", scope),
         ]
 
+    @staticmethod
+    def software_identity_rows(release: ReleaseRecord) -> list[tuple[str, str]]:
+        if not release.software_id or release.software_confirmed_at:
+            return []
+        return [
+            ("软件", " ".join(release.software_name_snapshot.splitlines())),
+            ("软件标识", release.software.slug),
+            ("主仓库", " ".join(release.source_repository_name_snapshot.splitlines())),
+            ("发布 Tag", release.tag_name),
+        ]
+
     @classmethod
     def validate_doc_identity(cls, release: ReleaseRecord, content: str) -> None:
         if not release.changes_initialized:
@@ -61,13 +74,18 @@ class FormalChanges:
                 raise serializers.ValidationError({"release_doc": f"{label}由系统维护，请重新生成说明后编辑人工内容"})
 
     @staticmethod
-    def baseline(release: ReleaseRecord, provider: GitProvider) -> tuple[str, str, list[str]]:
+    def baseline(
+        release: ReleaseRecord, provider: GitProvider, *, tags: list[TagInfo] | None = None,
+    ) -> tuple[str, str, list[str]]:
         from apps.release.services import ReleaseValidator, VersionCalculator
+        from apps.release.versions import software_tag_part, software_version_candidates
 
         rule = release.repository.get_version_rule()
+        software = release.software if not release.software_confirmed_at else None
+        tag_part = software_tag_part(software, release.tag_name) if software else release.tag_name
         identity_changed = (
             release.status == "draft"
-            and release.version != ReleaseValidator.strip_suffix(release.tag_name, rule)
+            and release.version != ReleaseValidator.strip_suffix(tag_part or "", rule)
         )
         ancestry = {}
 
@@ -106,30 +124,35 @@ class FormalChanges:
             if release.status != "draft":
                 raise serializers.ValidationError({"base_tag": "已进入流程的正式基线不在来源提交的祖先链上，不能自动更改历史区间"})
             skipped.append(release.base_tag)
-        pattern = VersionCalculator(rule).build_scan_regex()
+        release_type = release.release_type
+        pattern = VersionCalculator(rule).build_scan_regex() if software is None else VersionCalculator(rule)._build_regex(release_type)
 
         def version_key(name: str) -> tuple[int, int, int] | None:
             match = pattern.fullmatch(name)
-            if match is None or match.group("suffix"):
+            if match is None or (software is None and match.group("suffix")):
                 return None
             return tuple(int(match.group(part)) for part in ("major", "minor", "patch"))
 
         # 预览与生成均以最终 Tag 对应的版本为上界，兼容旧草稿遗留的自动建议版本。
-        target = version_key(release.tag_name if release.status == "draft" else release.version)
+        target = version_key((tag_part or "") if software or release.status == "draft" else release.version)
         if target is None:
-            raise serializers.ValidationError({"version": "正式版本号不符合仓库规则，无法确定累计变更基线"})
-        tags = {tag.name: tag.commit_hash or "" for tag in provider.list_tags(release.repository.external_identity)}
-        # 历史正式发布的提交快照优先于可能被改写的远端同名 Tag。
-        history = {}
-        for previous in ReleaseRecord.objects.filter(
-            repository=release.repository, release_type="formal", status="released"
-        ):
-            if previous.git_hash:
-                history.setdefault(previous.tag_name, set()).add(previous.git_hash)
-        for name in history:
-            tags.pop(name, None)
-        pairs = list(tags.items()) + [(name, sha) for name, hashes in history.items() for sha in hashes]
-        candidates = [(version_key(name), name, sha) for name, sha in pairs]
+            raise serializers.ValidationError({"version": "版本号不符合仓库规则，无法确定累计变更基线"})
+        remote_tags = provider.list_tags(release.repository.external_identity) if tags is None else tags
+        if software is not None:
+            candidates = software_version_candidates(software, release_type, remote_tags)
+        else:
+            tags = {tag.name: tag.commit_hash or "" for tag in remote_tags}
+            # 历史发布的提交快照优先于可能被改写的远端同名 Tag。
+            history = {}
+            for previous in ReleaseRecord.objects.filter(
+                repository=release.repository, release_type="formal", status="released",
+            ).filter(Q(software__isnull=True) | Q(software_confirmed_at__isnull=False)):
+                if previous.git_hash:
+                    history.setdefault(previous.tag_name, set()).add(previous.git_hash)
+            for name in history:
+                tags.pop(name, None)
+            pairs = list(tags.items()) + [(name, sha) for name, hashes in history.items() for sha in hashes]
+            candidates = [(version_key(name), name, sha) for name, sha in pairs]
         candidates = [item for item in candidates if item[0] is not None and item[0] < target]
 
         for _, group in groupby(sorted(candidates, reverse=True), key=lambda item: item[0]):
@@ -148,13 +171,13 @@ class FormalChanges:
         return "", "", warnings_for("", "")
 
     @classmethod
-    def collect(cls, release: ReleaseRecord, provider: GitProvider) -> dict:
+    def collect(cls, release: ReleaseRecord, provider: GitProvider, *, tags: list[TagInfo] | None = None) -> dict:
         head = release.git_hash
-        if release.release_type != "formal" or not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", head or ""):
+        if (release.release_type != "formal" and not release.software_id) or not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", head or ""):
             raise serializers.ValidationError({"git_hash": "正式发布缺少有效的完整提交快照，请重新选择来源"})
         if release.source_rc_id and release.source_rc_git_hash != head:
             raise serializers.ValidationError({"source_rc": "正式来源提交与 RC 快照不一致，请重新选择来源"})
-        base_tag, base, warnings = cls.baseline(release, provider)
+        base_tag, base, warnings = cls.baseline(release, provider, tags=tags)
         commits = (
             [] if base == head else provider.list_release_commits(release.repository.external_identity, base, head)
         )

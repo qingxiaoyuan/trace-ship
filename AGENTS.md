@@ -201,7 +201,7 @@ npm run preview
 - `Repository`：可复用且按 `vendor + url + external_identity` 全局唯一的物理代码仓库，仅支持 Git（GitLab）；仓库归属以 `ProjectComponent` 为唯一依据。仓库版本规则在登记时从项目规则复制（仓库创建/关联时通过 API 序列化器完成），此后独立维护。SVN 仅作为打包产物推送目标。
 - 数据可见范围：超管可查看全部；其他用户只可查看具有显式 `ProjectMember` 记录的项目。仓库只对创建者本人或其所属项目成员可见（按 `ProjectComponent` 组件关联单路径判断）；`repository.manage` 只控制维护能力，不扩大仓库数据范围。无法解析业务 ID 的旧审批，仅在无仓库的项目级定义中按原定义项目与原始 ID 授权；仓库级定义不能证明发布归属；业务 ID 或定义变化时清除原授权依据，发布项目快照也须与原业务 ID 匹配。合法但已删除的发布不能按共享仓库推断归属。
 - `CommitRecord`：提交记录与提交规范审查结果。
-- `ReleaseRecord`：仓库级发布申请；一次发布只针对一个项目上下文中的一个仓库，状态为 `draft` / `pending` / `released` / `rejected`。
+- `ReleaseRecord`：发布申请；软件发布固定单一软件和主仓库，原项目与旧仓库历史保留，状态为 `draft` / `pending` / `released` / `rejected`。
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：仓库级审批流程定义、实例和审批任务；仓库创建时补齐 formal/rc/beta 内置流程，仅仓库创建者可编辑节点。正式发布默认仓库拥有者审批，RC / Beta 默认空审批链（提交后直接推 Tag）。审批人类型为仓库拥有者与指定人员（可搜索选择）；存量配置中的项目负责人/角色/发起人仍可解析展示。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
@@ -217,11 +217,13 @@ npm run preview
 
 ### 发布主流程
 
-发布保持仓库级语义：先选择项目，再从该项目关联的仓库中选择一个软件仓库发起发布；打包统一由 `apps.package` 承担。
+已接入的软件发布使用单一软件身份，主仓库提供源码与审批模板，项目仍是操作权限与执行记录的上下文。新申请固定完整 SHA，以软件、发布类型和规范化基础版本占用编号。共享读取仅开放已发布版本及说明，任务按查看项目筛选。涉及历史归属、旧入口过渡、Tag 保护或运维预检时，阅读 [ADR-0029](docs/adr/0029-software-release-identity.md#历史发布归属确认与过渡) 和 [发布 API](docs/api/api-spec.md#软件发布与共享版本)。
+
+过渡期仓库级入口先选择项目和该项目尚未接入软件的仓库；打包统一由 `apps.package` 承担。
 
 存量数据上线前后使用 `python manage.py check_product_repository_consistency --json --strict` 做只读核对；历史发布回填与重复仓库归并命令均默认 dry-run，只有人工确认报告后才可追加 `--apply`。禁止在数据迁移中静默合并重复仓库。
 
-仓库级发布流程：
+旧仓库发布及共享的审批流程：
 
 1. 创建发布：`ReleaseService.create_release` 校验项目已启用关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；如未传版本号，基于远端可识别 Tag、成功发布历史和已消费版本占用自动计算，正式/RC/Beta 独立递增，草稿不抬高编号。同一仓库被多个项目发布时共享同一套 Tag。 正式版、RC/Beta 当前均按分支创建，服务端通过分支详情核验真实分支并保存完整 HEAD，不接受 Tag、SHA、提交范围冒充分支或客户端哈希覆盖；正式版强制从 RC 晋升暂缓（#52）。已有 `source_rc` 的正式记录继续校验来源 Tag 与完整提交快照，原 RC Tag 缺失时仅接受同来源链、同 SHA 的平台已发布正式 Tag；历史来源、累计说明和引用保护继续保留。发起人可在分支草稿预览新旧提交及代码差异并确认更新；服务端核验确认时的 HEAD，变更后清空原说明及关联变更，正式/RC/Beta 均须重新生成说明后提审。切换分支及已有 RC 来源重选继续保留，来源改变同样清空说明和关联；进入流程后禁止修改来源。
 

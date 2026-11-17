@@ -44,7 +44,7 @@ def _baseline(release, provider) -> tuple[str, str]:
     from apps.release.services import VersionCalculator
 
     full_sha = r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}"
-    if release.release_type == "formal":
+    if release.release_type == "formal" or release.software_id:
         if not release.changes_initialized:
             raise serializers.ValidationError({"base_tag": "请先生成正式发布说明以固定基线"})
         if bool(release.base_tag) != bool(release.base_git_hash) or (

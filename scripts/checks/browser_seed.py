@@ -50,8 +50,9 @@ def main() -> None:
     from apps.release.models import ReleaseRecord
     from apps.release.services import ReleaseDocGenerator, ReleaseService
     from apps.repository.models import Repository, RepositoryBranch
+    from apps.software.models import ProjectSoftware, Software
     from apps.workflow.models import WorkflowDefinition
-    from utils.provider.base import CommitInfo, TagInfo
+    from utils.provider.base import BranchInfo, CommitInfo, TagInfo
 
     # 随机握手标识保证入口不会误用某个既有业务服务。
     global urlpatterns
@@ -165,12 +166,28 @@ def main() -> None:
 
     PackageService.dispatch_task = staticmethod(record_dispatch)
 
+    software_repository = Repository.objects.create(
+        name="隔离软件主仓库", repo_type="git", vendor="gitlab",
+        url="https://example.invalid/smoke/versioned-software.git", external_identity="smoke/versioned-software",
+        created_by=owner, default_branch="main", version_rule=repository.get_version_rule(),
+    )
+    RepositoryBranch.objects.create(
+        repository=software_repository, name="main", is_default=True, last_commit_hash="a" * 40,
+        last_commit_at=timezone.now(),
+    )
+    software_tags = [
+        TagInfo(name="client-a/V.5.2.12-rc", commit_hash="4" * 40),
+        TagInfo(name="server-b/V.8.0.3-rc", commit_hash="5" * 40),
+    ]
+
     class SampleRepository:
         """固定远端 Tag / 提交样本，发布与审批业务仍走生产实现。"""
 
         def list_tags(self, repo_identity: str) -> list[TagInfo]:
             if repo_identity == "oa/software":
                 return [TagInfo(name="VA.88.1.0_oa", commit_hash="8" * 40)]
+            if repo_identity == software_repository.external_identity:
+                return list(software_tags)
             if repo_identity != repository.external_identity:
                 raise RuntimeError("冒烟样本禁止查询其他仓库")
             return [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in reading_releases] + [
@@ -178,25 +195,33 @@ def main() -> None:
                 TagInfo(name="V.5.2.38", commit_hash="1" * 40),
             ]
 
-        def get_branch(self, repo_identity: str, branch_name: str):
-            from utils.provider.base import BranchInfo
+        def list_branches(self, repo_identity: str) -> list[BranchInfo]:
+            return [self.get_branch(repo_identity, "main")]
 
-            if repo_identity != repository.external_identity or branch_name != "main":
+        def create_tag(self, repo_identity: str, tag_name: str, commit_hash: str, message: str = "") -> TagInfo:
+            if repo_identity != software_repository.external_identity or not tag_name.startswith("client-a/"):
+                raise RuntimeError("冒烟样本禁止推送其他 Tag")
+            tag = TagInfo(name=tag_name, commit_hash=commit_hash, message=message)
+            software_tags.append(tag)
+            return tag
+
+        def get_branch(self, repo_identity: str, branch_name: str):
+            if repo_identity not in (repository.external_identity, software_repository.external_identity) or branch_name != "main":
                 raise RuntimeError("冒烟样本禁止查询其他分支")
             return BranchInfo(name="main", last_commit_hash="a" * 40)
 
         def list_release_commits(self, repo_identity: str, base: str, head: str) -> list[CommitInfo]:
-            if base not in ("", "1" * 40) or head != "a" * 40:
+            if base not in ("", "1" * 40, "4" * 40, "5" * 40) or head != "a" * 40:
                 raise RuntimeError("冒烟样本禁止查询其他提交区间")
             return self.list_commits(repo_identity, "main")
 
         def list_release_merge_requests(self, repo_identity: str) -> list:
-            if repo_identity != repository.external_identity:
+            if repo_identity not in (repository.external_identity, software_repository.external_identity):
                 raise RuntimeError("冒烟样本禁止查询其他仓库")
             return []
 
         def list_commits(self, repo_identity: str, branch: str, **kwargs) -> list[CommitInfo]:
-            if repo_identity != repository.external_identity or branch != "main":
+            if repo_identity not in (repository.external_identity, software_repository.external_identity) or branch != "main":
                 raise RuntimeError("冒烟样本禁止查询其他分支")
             return [CommitInfo(hash="a" * 40, author="冒烟管理员", author_email="isolated@example.invalid",
                                message="更新内容：\n1. A 正式版分支发布冒烟", committed_at=timezone.now())]
@@ -231,12 +256,35 @@ def main() -> None:
     )
     PackageConfig.objects.create(project_component=other_component, name="其他项目配置不得选择", is_active=True)
     software_delegate = User.objects.create_user(username="smoke_software_delegate", password=password)
+    release_project = Project.objects.create(name="隔离软件版本项目", code="SMOKE-SW-RELEASE", leader=owner, status=1)
+    shared_reader = User.objects.create_user(username="smoke_shared_version_reader", password=password)
+    shared_project = Project.objects.create(name="隔离软件复用项目", code="SMOKE-SW-READ", leader=owner, status=1)
+    for context in (release_project, shared_project):
+        ProjectMember.objects.create(project=context, user=owner, role="manager")
+        ProjectComponent.objects.create(project=context, repository=software_repository, component_code="software-release")
+    ProjectMember.objects.create(project=shared_project, user=shared_reader, role="maintainer")
+    sample_software = [
+        Software.objects.create(repository=software_repository, slug=slug, name=name, owner=owner)
+        for slug, name in (("client-a", "隔离客户端"), ("server-b", "隔离服务端"))
+    ]
+    for software in sample_software:
+        ProjectSoftware.objects.create(project=release_project, software=software)
+    ProjectSoftware.objects.create(project=shared_project, software=sample_software[0])
+    WorkflowDefinition.objects.update_or_create(
+        repository=software_repository, biz_type="release", release_type="rc",
+        defaults={"project": release_project, "name": "隔离 RC 直接发布", "node_config": [], "is_active": True},
+    )
     manifest = {
         "username": reader.username, "password": password,
         "operator": {"username": owner.username, "role": "manager", "id": str(owner.id)}, "tasks": {},
         "software_identity": {
             "repository_id": str(repository.id), "project_id": str(project.id),
             "delegate": software_delegate.username,
+        },
+        "software_release": {
+            "project_id": str(release_project.id), "shared_project_id": str(shared_project.id),
+            "shared_reader": shared_reader.username, "repository_name": software_repository.name,
+            "software": [{"id": str(software.id), "name": software.name, "slug": software.slug} for software in sample_software],
         },
         "release_flow": {"project_id": str(project.id), "repository_name": repository.name,
                          "branch": "main", "git_hash": "a" * 40},

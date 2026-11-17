@@ -33,6 +33,8 @@ export const changelogEntries: ChangelogEntry[] = [
     items: [
       { category: 'feature', text: '一个仓库可登记多个软件。软件维护负责人可移交责任、授权协作维护或停用软件；协作者可在「软件」目录管理获授权的软件资料。' },
       { category: 'feature', text: '项目可显式选用已登记的软件，也可停止或恢复选用。项目成员仍可查阅本项目的选用记录。' },
+      { category: 'feature', text: '新建发布可选择项目已启用的软件。同仓库中的不同软件各自建议和占用版本号，审批后按固定提交推送带软件标识的 Tag。' },
+      { category: 'feature', text: '选用同一软件的项目可共享查看已发布版本及说明，打包任务仅显示当前查看项目的记录。' },
     ],
   },
   {

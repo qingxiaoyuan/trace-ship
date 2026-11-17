@@ -162,7 +162,7 @@ npm run test:browser # 隔离 REST 服务 + 真实 Chromium 冒烟，准备方�
 - 维保工作台：`GET /api/releases/dashboard/context/` 按完整显式可见项目集合返回布局与项目数量，复用 `has_only_maintainer_projects` 的有效角色规则。前端首页、导航与路由共用结果，加载失败可重试，首次加载、重新进入首页及成员变更后重新核验；维保首页分页显示所属项目已发布版本，按 `released_at` 倒序、缺失时间排后，软件名使用列表的 `component_name`。列表支持项目内软件名、版本/Tag 和已保存发布说明正文的组合检索，并提供多行更新摘要及各配置最近打包结果。`GET /api/releases/dashboard/maintainer-summary/` 独立返回全部所属项目的范围树、近 30 天发布数/终态打包成功率、全时段失败任务数和最近打包任务；主列表筛选不改变总览。手机范围抽屉使用临时选择，应用后生效，关闭不修改查询；手机隐藏打包面板。第三方问题反馈单尚未接入，不以发布整改意见替代；问题单列与「需要关注」区域保留设计位置并明确标记待接入，问题筛选不可用。桌面和手机的维保需求均只查看信息，前端和服务端均按目标项目有效角色收敛操作权限；手机只读专项继续 #29，现行范围见 #7。
 - 数据可见范围：超管可查看全部；其他用户只可查看具有显式 `ProjectMember` 记录的项目。仓库只对创建者本人或其所属项目成员可见（按 `ProjectComponent` 组件关联单路径判断）；`repository.manage` 只控制维护能力，不扩大仓库数据范围。无法解析业务 ID 的旧审批，仅在无仓库的项目级定义中按原定义项目与原始 ID 授权；仓库级定义不能证明发布归属；业务 ID 或定义变化时清除原授权依据，发布项目快照也须与原业务 ID 匹配。合法但已删除的发布不能按共享仓库推断归属。
 - `apps.repository.Repository` 与 `CommitRecord`：按 `vendor + url + external_identity` 全局唯一的物理代码仓库（仅 Git/GitLab）与提交记录。仓库归属以 `ProjectComponent` 为唯一依据；仓库版本规则登记时从项目复制（仓库创建/关联时通过 API 序列化器完成），此后独立维护。SVN 仅作为打包产物推送目标。
-- `apps.release.ReleaseRecord` 与 `ReleaseCommit`：仓库级发布记录与关联提交；发布始终针对一个项目上下文中的一个仓库。
+- `apps.release.ReleaseRecord` 与 `ReleaseCommit`：发布记录与关联提交；软件发布固定单一软件与主仓库，保留原发起项目。
 - `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：仓库级审批流程定义、实例与任务；仅仓库创建者可编辑节点。正式发布默认需审批，RC / Beta 默认无须审批。
 - `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：打包镜像记录（来源为本地 Docker 或 Nexus）、项目组件级打包配置和仓库级发布打包任务记录。
 - `apps.credential.RepositoryCredentialLoan` / `CredentialUsageLog`：仓库凭证仍归个人所有。项目要使用某仓库，必须先把仓库所有者加入该项目成员再关联仓库；凭证随所有者进入项目。借用记录仅作补充授权与审计（字段已统一为 project 口径：`RepositoryCredentialLoan.allowed_projects`、`CredentialUsageLog.project` / `project_component`）。
@@ -196,9 +196,11 @@ npm run test:browser # 隔离 REST 服务 + 真实 Chromium 冒烟，准备方�
 
 ### 发布主流程
 
+已接入的软件发布使用单一软件身份，主仓库提供源码与审批模板，项目仍是操作权限与执行记录的上下文。新申请固定完整 SHA，以软件、发布类型和规范化基础版本占用编号。共享读取仅开放已发布版本及说明，任务按查看项目筛选。涉及历史归属、旧入口过渡、Tag 保护或运维预检时，阅读 [ADR-0029](docs/adr/0029-software-release-identity.md#历史发布归属确认与过渡) 和 [发布 API](docs/api/api-spec.md#软件发布与共享版本)。
+
 存量切换前后运行 `python manage.py check_product_repository_consistency --json --strict`。重复仓库归并与历史发布回填均必须先执行默认 dry-run、人工确认报告后再追加 `--apply`；普通迁移不得静默覆盖或删除历史关联。
 
-发布保持仓库级流程，`ReleaseRecord` 状态仅有 `draft` / `pending` / `released` / `rejected` 四种，不包含旧文档中的 `building` / `auditing`：
+以下沿用原仓库发布及旧历史兼容规则。`ReleaseRecord` 状态仅有 `draft` / `pending` / `released` / `rejected` 四种，不包含旧文档中的 `building` / `auditing`：
 
 1. 创建发布（`ReleaseService.create_release`）：校验项目已关联该仓库、仓库所有者仍是项目成员、分支规则与 tag 后缀；未传版本号时基于远端可识别 Tag、成功发布历史和已消费版本占用自动计算，正式/RC/Beta 独立递增，草稿不抬高编号。同一仓库被多个项目发布时共享同一套 Tag。 正式版、RC/Beta 当前均按分支创建，服务端通过分支详情核验真实分支并保存完整 HEAD，不接受 Tag、SHA、提交范围冒充分支或客户端哈希覆盖；正式版强制从 RC 晋升暂缓（#52）。已有 `source_rc` 的正式记录继续校验来源 Tag 与完整提交快照，原 RC Tag 缺失时仅接受同来源链、同 SHA 的平台已发布正式 Tag；历史来源、累计说明和引用保护继续保留。发起人可在分支草稿预览新旧提交及代码差异并确认更新；服务端核验确认时的 HEAD，变更后清空原说明及关联变更，正式/RC/Beta 均须重新生成说明后提审。切换分支及已有 RC 来源重选继续保留，来源改变同样清空说明和关联；进入流程后禁止修改来源。
 

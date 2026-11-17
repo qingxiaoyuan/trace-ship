@@ -118,6 +118,8 @@ class TaskLifecycleMixin:
             raise PermissionDenied("没有在当前项目补打已发布版本的权限")
         if release.status != "released":
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})
+        if release.software_id:
+            raise serializers.ValidationError({"release": "共享软件版本暂未接入打包，请使用已接入的软件打包入口"})
         if not config.is_active:
             raise serializers.ValidationError({"config": "打包配置已停用"})
         if config.project_component.repository_id != release.repository_id:
