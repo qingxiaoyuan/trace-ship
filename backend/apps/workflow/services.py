@@ -33,7 +33,7 @@ def resolve_release(instance: WorkflowInstance) -> "ReleaseRecord | None":
     from apps.release.models import ReleaseRecord
 
     try:
-        return ReleaseRecord.objects.select_related("project", "repository", "publisher").filter(id=instance.biz_id).first()
+        return ReleaseRecord.objects.select_related("project", "repository", "publisher", "software").filter(id=instance.biz_id).first()
     except (ValueError, ValidationError):
         return None
 

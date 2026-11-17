@@ -323,7 +323,7 @@ def main() -> None:
             "delegate": software_delegate.username,
         },
         "software_release": {
-            "project_id": str(release_project.id), "shared_project_id": str(shared_project.id),
+            "project_id": str(release_project.id), "project_name": release_project.name, "shared_project_id": str(shared_project.id),
             "shared_reader": shared_reader.username, "shared_builder": shared_builder.username,
             "repository_name": software_repository.name, "shared_project_name": shared_project.name,
             "software": [{

@@ -191,7 +191,7 @@ def test_maintainer_summary_uses_visible_projects_and_real_windows(user, project
     assert data["stats"]["package_success"] == 1
     assert data["stats"]["package_success_rate"] == 33.3
     assert [item["id"] for item in data["projects"]] == [str(project.id)]
-    assert data["software_count"] == 1
+    assert data["software_count"] == 0
     assert all(item["project"] == str(project.id) for item in data["recent_tasks"])
     assert str(tasks[-1].id) not in {item["id"] for item in data["recent_tasks"]}
     assert APIClient().get("/api/releases/dashboard/maintainer-summary/").status_code == 401

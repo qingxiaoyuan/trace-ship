@@ -18,8 +18,11 @@ from apps.package.services.artifacts import (
     verify_task_artifact_directory,
     verify_task_svn_artifact,
 )
-from apps.project.models import ProjectComponent
+from apps.project.models import Project
+from apps.project.services import visible_project_ids
+from apps.release.delivery_identity import release_software_name
 from apps.release.models import ReleaseRecord
+from apps.software.models import ProjectSoftware
 from apps.system.oa_archive import OaArchiveConfig
 from utils.permissions import IsProjectManager, ProjectRolePermission
 
@@ -85,15 +88,26 @@ class ArchivePublisherPermission(ProjectRolePermission):
 
 class OaArchivePreparation:
     @staticmethod
-    def can_prepare(release: ReleaseRecord, user: User) -> bool:
-        return IsProjectManager()._check(release.project, user) or (
-            release.publisher_id == user.id and ArchivePublisherPermission()._check(release.project, user)
-        )
+    def project(release: ReleaseRecord, user: User, project_id, *, history: bool = False) -> Project:
+        """按声明的项目解释共享版本，旧链接缺省使用原发布项目。"""
+        project = Project.objects.filter(pk=project_id or release.project_id, pk__in=visible_project_ids(user)).first()
+        if project is not None:
+            if project.pk == release.project_id:
+                return project
+            links = ProjectSoftware.objects.filter(project=project, software_id=release.software_id)
+            if not history:
+                links = links.filter(is_active=True)
+            if release.status == "released" and links.exists():
+                return project
+        raise NotFound("当前项目下找不到可归档的发布记录")
 
-    @classmethod
-    def require_permission(cls, release: ReleaseRecord, user: User) -> None:
-        if not cls.can_prepare(release, user):
-            raise PermissionDenied("仅发布人、目标项目管理员或软件管理员可准备归档，且须保持项目业务写入权限")
+    @staticmethod
+    def require_permission(release: ReleaseRecord, project: Project, user: User) -> None:
+        if IsProjectManager()._check(project, user):
+            return
+        if release.publisher_id == user.pk and ArchivePublisherPermission()._check(project, user):
+            return
+        raise PermissionDenied("仅发布人、目标项目管理员或软件管理员可准备归档，且须保持项目业务写入权限")
 
     @staticmethod
     def require_release(release: ReleaseRecord) -> None:
@@ -101,9 +115,10 @@ class OaArchivePreparation:
             raise ValidationError({"detail": "仅已发布的正式版可准备 OA 软件归档"})
 
     @staticmethod
-    def require_task(release: ReleaseRecord, task: PackageTask) -> None:
-        if (task.release_id != release.id or task.project_id != release.project_id
-                or task.repository_id != release.repository_id):
+    def require_task(release: ReleaseRecord, project: Project, task: PackageTask) -> None:
+        if (task.release_id != release.pk or task.project_id != project.pk
+                or task.repository_id != release.repository_id
+                or (project.pk != release.project_id and task.software_id != release.software_id)):
             raise ValidationError({"detail": "打包任务不属于当前发布及目标项目"})
         if task.status != "success":
             raise ValidationError({"detail": "仅打包成功的任务可准备归档"})
@@ -171,15 +186,16 @@ class OaArchivePreparation:
         return {**artifact, "kind": "svn", "supplemented": artifact["source"] == "svn_supplement"}
 
     @classmethod
-    def options(cls, release: ReleaseRecord, user: User) -> dict:
-        cls.require_permission(release, user)
+    def options(cls, release: ReleaseRecord, user: User, project_id=None) -> dict:
+        project = cls.project(release, user, project_id)
+        cls.require_permission(release, project, user)
         cls.require_release(release)
         artifacts = []
         svn_tasks = []
         directories = []
-        for task in release.package_tasks.filter(project_id=release.project_id):
+        for task in release.package_tasks.filter(project=project):
             try:
-                cls.require_task(release, task)
+                cls.require_task(release, project, task)
             except ValidationError:
                 continue
             stage = (task.stage_info or {}).get("svn_push", {})
@@ -207,16 +223,16 @@ class OaArchivePreparation:
         return {"artifacts": artifacts, "svn_tasks": svn_tasks, "directories": directories}
 
     @classmethod
-    def prepare(cls, release: ReleaseRecord, user: User, selection: dict) -> dict:
-        cls.require_permission(release, user)
+    def prepare(cls, release: ReleaseRecord, user: User, selection: dict, project_id=None) -> dict:
+        project = cls.project(release, user, project_id)
+        cls.require_permission(release, project, user)
         cls.require_release(release)
-        task = PackageTask.objects.filter(pk=selection["task_id"], project_id=release.project_id).first()
+        task = PackageTask.objects.filter(pk=selection["task_id"], project=project).first()
         if task is None:
             raise NotFound("打包任务不存在或无权查看")
-        cls.require_task(release, task)
+        cls.require_task(release, project, task)
         artifact = cls.selected_artifact(task, selection)
         content, source = extract_archive_changes(release.release_doc or "")
-        component = ProjectComponent.objects.filter(project=release.project, repository=release.repository).first()
         configured = bool(OaArchiveConfig.get_url())
         selected = {"task_id": str(task.id), "path": artifact["path"], "source_kind": artifact["kind"]}
         if artifact.get("scope") == "directory":
@@ -233,7 +249,7 @@ class OaArchivePreparation:
             "content_source": source,
             "form": selection.get("form") or {
                 "docCreator": user.username, "applyCount": 1,
-                "soft_name": (component.display_name if component else "") or release.repository.name,
+                "soft_name": release_software_name(release),
                 "soft_version": release.version, "developer": release.publisher.username if release.publisher else "",
                 "soft_source": "", "git_svn": release.branch or "",
                 "sn_code": release.git_hash if re.fullmatch(r"[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", release.git_hash or "") else "",

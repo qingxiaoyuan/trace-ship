@@ -47,7 +47,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
       type: 'workflow',
       id: instance.id,
       title,
-      subtitle: `审批 · ${[instance.project_name, instance.repository_name].filter(Boolean).join(' / ') || '-'}`,
+      subtitle: `审批 · ${[instance.project_name, instance.software_name, instance.repository_name].filter(Boolean).join(' / ') || '-'}`,
       path: `/workflows/${instance.id}`,
     });
     return () => setEntityTitle(null);
@@ -76,7 +76,7 @@ export function ApprovalDetailView({ source, onBack }: ApprovalDetailViewProps) 
     packageStatus: instance.package_status || '',
     applicant: instance.applicant || '',
     projectName: instance.project_name || '',
-    softwareName: instance.repository_name || '',
+    softwareName: instance.software_name || '',
     submitTime: instance.submit_time || '',
     currentNode: instance.current_node || '',
     mode: instance.tasks?.find((task) => task.id === source.taskId && task.can_act === true)?.mode,

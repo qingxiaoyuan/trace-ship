@@ -41,10 +41,10 @@ const tabItems = [
 
 /** 详情头统计项 */
 const headerStats = [
-  { key: 'repo_count', label: '软件仓库', icon: GitFork, color: 'text-indigo-400' },
+  { key: 'software_count', label: '选用软件', icon: GitFork, color: 'text-indigo-400' },
   { key: 'package_count', label: '打包配置', icon: Hammer, color: 'text-cyan-500' },
   { key: 'member_count', label: '成员', icon: Users, color: 'text-violet-500' },
-  { key: 'release_count', label: '累计发布', icon: Rocket, color: 'text-emerald-500' },
+  { key: 'published_version_count', label: '已发布版本', icon: Rocket, color: 'text-emerald-500' },
 ] as const;
 
 /** 项目状态徽标 */

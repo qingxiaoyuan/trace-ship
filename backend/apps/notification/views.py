@@ -61,7 +61,7 @@ class NotificationViewSet(StandardReadOnlyModelViewSet):
     @action(detail=False, methods=["get"], url_path="remind-summary")
     def remind_summary(self, request: Request) -> Response:
         """强提醒聚合：待办审批、待整改意见、未读系统强提醒"""
-        data = NotificationService.remind_summary(request.user)
+        data = NotificationService.remind_summary(request)
         return success_response(data)
 
     @action(detail=False, methods=["post"], url_path="remind-ack")

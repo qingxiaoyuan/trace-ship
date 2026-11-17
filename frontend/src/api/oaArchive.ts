@@ -66,12 +66,12 @@ export function createArchiveSubmissionId(): string {
 }
 
 export const oaArchiveApi = {
-  options: (releaseId: string) => get<{ directories: ArchiveDirectory[]; artifacts: ArchiveArtifact[]; svn_tasks?: { task_id: string; task_name: string }[] }>(`/releases/${releaseId}/oa-archive/options/`),
-  prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchiveForm) =>
-    post<ArchivePreparation>(`/releases/${releaseId}/oa-archive/prepare/`, { ...selection, ...(form ? { form } : {}) }),
-  records: (releaseId: string) => get<ArchiveApplication[]>(`/releases/${releaseId}/oa-archive/records/`),
-  confirmNoOrder: (releaseId: string, applicationId: string, evidence: string) =>
-    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/confirm-no-order/`, { application_id: applicationId, confirmation: 'checked_no_order', evidence }),
-  submit: (releaseId: string, selection: ArchiveSelection, form: ArchiveForm, submissionId: string, confirmation?: { previous_id: string; confirmation: ArchiveConfirmation }) =>
-    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/submit/`, { ...selection, form, submission_id: submissionId, ...confirmation }, { timeout: 110_000, silent: true }),
+  options: (releaseId: string, project?: string) => get<{ directories: ArchiveDirectory[]; artifacts: ArchiveArtifact[]; svn_tasks?: { task_id: string; task_name: string }[] }>(`/releases/${releaseId}/oa-archive/options/`, { params: { project } }),
+  prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchiveForm, project?: string) =>
+    post<ArchivePreparation>(`/releases/${releaseId}/oa-archive/prepare/`, { ...selection, ...(form ? { form } : {}) }, { params: { project } }),
+  records: (releaseId: string, project?: string) => get<ArchiveApplication[]>(`/releases/${releaseId}/oa-archive/records/`, { params: { project } }),
+  confirmNoOrder: (releaseId: string, applicationId: string, evidence: string, project?: string) =>
+    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/confirm-no-order/`, { application_id: applicationId, confirmation: 'checked_no_order', evidence }, { params: { project } }),
+  submit: (releaseId: string, selection: ArchiveSelection, form: ArchiveForm, submissionId: string, confirmation?: { previous_id: string; confirmation: ArchiveConfirmation }, project?: string) =>
+    post<ArchiveApplication>(`/releases/${releaseId}/oa-archive/submit/`, { ...selection, form, submission_id: submissionId, ...confirmation }, { timeout: 110_000, silent: true, params: { project } }),
 };

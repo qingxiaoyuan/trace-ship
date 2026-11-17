@@ -50,7 +50,7 @@ TEST_NODES = (
     "apps/package/tests/test_shared_packaging_postgresql.py",
     "apps/release/tests/test_oa_archive_postgresql.py",
 )
-EXPECTED_TESTS = 41
+EXPECTED_TESTS = 42
 
 
 def validate_junit(path: Path) -> dict[str, int]:

@@ -409,6 +409,8 @@
 
 ### 4.3 项目详情
 
+详情的 `software_count` 统计项目当前选用的软件，`published_version_count` 统计项目版本目录内的已发布版本，包含当前选用软件的共享版本及项目内待归属历史。旧 `release_count` 保留原项目发起的申请数量。
+
 - **GET** `/api/projects/{id}/`
 
 详情附带 `repo_count` / `member_count` / `package_count` / `release_count`。
@@ -1291,11 +1293,11 @@
 - **GET** `/api/releases/{id}/export-pdf/`：导出 PDF 文件（`application/pdf`）。
 - **GET** `/api/releases/{id}/export-word/`：导出 Word 文件（`.docx`）。
 
-均为文件流下载，非统一 JSON 响应。
+均为文件流下载。三个格式的来源区使用发布时软件名、稳定标识、软件版本、完整 Tag、主仓库、分支与固定 SHA，保留已保存的发布说明正文。待归属历史标记「软件归属未知」。下载文件名含有软件标识时使用安全片段。
 
-沿发布所属项目授权。下载白名单外或目标项目有效角色为 `maintainer` 时，三个接口均返回 `403`。在线说明仍可从发布详情读取。其他项目的开发/管理角色、共享仓库关系或历史全局权限不授予维保项目的导出能力。
+沿发布所属项目授权。下载白名单外或目标项目有效角色为 `maintainer` 时，三个接口均返回 `403`。共享查看其他项目的版本可在线阅读；文件走原发布项目的下载授权。在线说明仍可从发布详情读取。其他项目的开发/管理角色、共享仓库关系或历史全局权限不授予维保项目的导出能力。
 
-**工作台周报**使用 `GET /api/releases/dashboard/weekly-report/`。返回近 7 天内最新的最多 100 条可导出发布记录（`text/csv`，UTF-8 BOM）。记录范围为用户可见且有文件导出权限的项目。白名单外或仅有维保项目时返回 `403`。没有符合条件的记录时，返回空响应体且不附带文件名。
+**工作台周报**使用 `GET /api/releases/dashboard/weekly-report/`。返回近 7 天内最新的最多 100 条可导出发布记录（`text/csv`，UTF-8 BOM）。记录范围为用户可见且有文件导出权限的原发起项目。CSV 保留已有列，追加软件、软件标识、完整 Tag、来源分支与源码 SHA。白名单外或仅有维保项目时返回 `403`。没有符合条件的记录时，返回空响应体且不附带文件名。
 
 ### 8.10 提交审批
 
@@ -1362,11 +1364,11 @@
 
 登录后按完整可见项目集合返回只读首页摘要，不接受 `project`、`search`、类型或页码改变总览范围：
 
-- `projects`：项目 `id/name/release_count` 和该项目 `software` 数组（仓库 `id`、项目内软件 `name`、已发布 `release_count`），不受分页限制。
-- `software_count`：可见范围内项目→软件引用数，共享仓库按项目分别计数。
-- `stats`：`days=30`、服务端 `since/until`、`released_count`（窗口内实际发布时间，缺失时间排除）、`failed_task_count`（所属项目全部现存失败记录，不限时间）。
+- `projects`：每个项目返回 `id/name/release_count` 和范围数组 `software`。已选用的软件使用稳定的软件 UUID（`id/software_id`），主仓库由 `repository_id/repository_name` 表示。项目内待归属历史的 `software_id` 为 null。点击范围节点时列表同时传 `repository=<UUID>&unassigned=true`，仅统计并显示该仓库尚未确认软件的历史；单传 `repository` 继续查询整个仓库。范围树不受分页限制。
+- `software_count`：可见项目当前选用的不同软件数量。多个项目选用同一软件只计一次，待归属历史不计作软件。
+- `stats`：`days=30`、服务端 `since/until`、`released_count`（窗口内实际发布时间，缺失时间排除，同一共享版本全局计一次）、`failed_task_count`（所属项目全部现存失败记录，不限时间）。
 - `stats.package_total/package_success/package_success_rate`：窗口内创建且当前为 success/failure/canceled 的任务，包含他人触发，成功率保留一位小数，分母包含取消任务；无样本时计数 0、成功率为 `null`。
-- `recent_tasks`：所属项目最近 3 个任务。每项包含任务 ID、项目/软件/版本、状态、创建/开始/完成时间、耗时、错误原因、产物数量与触发来源，不包含凭证、脚本、环境变量或配置快照明文。「需要关注」与问题单列显示待接入状态，不以打包失败或发布整改意见替代。
+- `recent_tasks`：所属项目最近 3 个任务。每项包含任务 ID、真实项目、软件、主仓库、版本、Tag、状态、创建/开始/完成时间、耗时、错误原因、产物数量与触发来源，不包含凭证、脚本、环境变量或配置快照明文。「需要关注」与问题单列显示待接入状态，不以打包失败或发布整改意见替代。
 
 接口失败与零样本分别处理；主版本列表的项目、软件、关键词和类型筛选不改变上述指标与打包近况。原本人发起统计接口及默认工作台调用保持原语义。
 
@@ -1434,18 +1436,18 @@
 
 ### 8.14 OA 软件归档资料准备与提交
 
-仅已发布正式版适用；操作者须为现行项目成员中的发布人（开发或测试等业务写入身份）、项目管理员、软件管理员，超管放行。维保、只读、已移除成员和其他项目身份均不扩权。
+仅已发布正式版适用。归档各入口接收查询参数 `project=<UUID>`，共享版本通过它指定办理项目，省略时使用原发布项目。候选、校验、发送与历史只使用该项目实际发起的任务。发起归档和核对失败须为目标项目管理员、软件管理员、拥有目标项目业务写入权限的原发布人或超管。维保可在有权项目读取历史。
 
 - `GET /api/releases/{id}/oa-archive/options/`：`directories` 每个合格任务最多一项 `{task_id, task_name, name, path:".", scope:"directory", source_kind, created_at, artifact_count, svn_url}`，数量为历史清单数量，未知为 null；不在候选列表逐项联网。旧 `artifacts` / `svn_tasks` 返回保持兼容。任务快照启用 SVN 时须推送成功。
 - `POST /api/releases/{id}/oa-archive/prepare/`：新界面请求 `{task_id, scope:"directory", path:".", source_kind:"local"|"svn"}`，仅表示整次打包根目录；不能带 artifact_id 或其他路径。成功推送过 SVN 时须实时核验保存的根目录，不能用本地文件或人工地址绕过。无 SVN 时须有实际本地产物。返回 `selection`、目录依据 `source`、`configuration: {configured, reason}`、`content_source` 与 `form`。可追加 `form` 校验独立申请副本，不回写来源。旧 `{task_id, artifact_id}` 或 `{task_id, path, source_kind:"svn"}` 单文件请求保持兼容，不把旧历史改为目录。
 
-`form` 的四个必填字段为 `docCreator`、`soft_name`、`soft_version`、`developer`；分别预填操作者登录名、项目内软件名（回退仓库名）、发布版本号、发布人登录名。`soft_source` 可为空、内部自制或外购；`git_svn` 取发布记录保存的代码 Git 分支名（如 `main`、`release/v1.0`，目录及旧单文件准备接口一致），无则留空可补填；不取产物 SVN 地址，已提交历史资料保持原值；`sn_code` 只预填发布保存的完整 SHA，旧数据不完整则留空。`edit_content` 来自已保存说明的完整更新内容，保留换行、缩进与管道符；无法可靠识别时返回完整原文且 `content_source=release_doc_original`（正常为 `release_doc_changes`）。原因 `edit_reason`、其他说明 `other_description`、软件编号 `soft_number` 初始为空。所有预填可修改，`applyCount` 始终为 1；三个项目字段不进入资料副本。
+`form` 的四个必填字段为 `docCreator`、`soft_name`、`soft_version`、`developer`；分别预填操作者登录名、发布时保存的软件名称（待归属时预填「软件归属未知」，可手工填写）、发布版本号、发布人登录名。`soft_source` 可为空、内部自制或外购；`git_svn` 取发布记录保存的代码 Git 分支名（如 `main`、`release/v1.0`，目录及旧单文件准备接口一致），无则留空可补填；不取产物 SVN 地址，已提交历史资料保持原值；`sn_code` 只预填发布保存的完整 SHA，旧数据不完整则留空。`edit_content` 来自已保存说明的完整更新内容，保留换行、缩进与管道符；无法可靠识别时返回完整原文且 `content_source=release_doc_original`（正常为 `release_doc_changes`）。原因 `edit_reason`、其他说明 `other_description`、软件编号 `soft_number` 初始为空。所有预填可修改，`applyCount` 始终为 1；三个项目字段不进入资料副本。
 
-未配置地址时 `configuration.configured=false` 并返回原因；仍允许准备与校验。非法发布或任务资格返回 400，不可见资源返回 404，无操作权限返回 403。表单错误按 `data.form.<字段>` 返回。页内草稿由前端按发布/任务/产物区分保留，刷新或离开页面后消失。
+未配置地址时 `configuration.configured=false` 并返回原因；仍允许准备与校验。非法发布或任务资格返回 400，不可见资源返回 404，无操作权限返回 403。表单错误按 `data.form.<字段>` 返回。页内草稿由前端按发布、查看项目、任务及产物区分保留，刷新或离开页面后消失。
 
 - `POST /api/releases/{id}/oa-archive/submit/`：请求 `{task_id, scope:"directory", path:".", source_kind?, submission_id, form}`，选择参数与 prepare 一致，`submission_id` 为客户端本次操作生成并保留的 UUID。服务器在仓库→发布→任务锁内重新授权、检查任务与目录，再持久化独立 `sending` 申请并提交事务，最后仅发送一次 POST JSON。返回 201 和申请记录；同一操作者同一标识及相同资料重放返回 200 和原记录，不重新发送。标识被用于不同资料返回 400；已有该任务及根路径 `.` 的目录申请时（旧文件仍用规范相对路径），须额外提交 `previous_id`（最新申请 ID）及 `confirmation`：最新 success 用 `reapply`、failure 用 `retry`、unknown 用 `checked_no_order`（用户已人工核对 OA 未建单）。服务器在锁内核验最新记录；旧窗口、换人或前次记录不匹配均返回 400，sending 始终拒绝新派发。同一标识重放也须保持前次关联与确认方式不变。合法新操作使用新 UUID，每次重新授权及核验来源并新增记录。
-- `POST /api/releases/{id}/oa-archive/confirm-no-order/`：请求 `{application_id, confirmation:"checked_no_order", evidence}`，`evidence` 为必填核对依据，最多 2000 字。当前具有归档权限的操作者可单独确认本发布内的明确失败申请，文件过期不妨碍核对；不调用 OA、不重试。仓库→发布→任务→申请锁内仅解除该失败申请的保护，保存 `no_order_confirmation: {operator, confirmed_at, evidence}`；重复操作返回首次结果，不覆盖依据。成功、发送中、未知结果返回 400，其他发布申请返回 404，未授权返回 403。原状态、资料、响应保持不变。
-- `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/oa_response/oa_endpoint/created_at/finished_at/previous_id/confirmation/no_order_confirmation`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source` 保留发布/项目/仓库/任务 ID、原版本、Tag、源码 SHA、任务内规范相对路径、原产物及 SVN 阶段快照，手改 `git_svn` 不改变来源。
+- `POST /api/releases/{id}/oa-archive/confirm-no-order/`：请求 `{application_id, confirmation:"checked_no_order", evidence}`，`evidence` 为必填核对依据，最多 2000 字。当前具有归档权限的操作者可单独确认本项目明确失败的申请，文件过期不妨碍核对；不调用 OA、不重试。仓库→发布→任务→申请锁内仅解除该失败申请的保护，保存 `no_order_confirmation: {operator, confirmed_at, evidence}`；重复操作返回首次结果，不覆盖依据。成功、发送中、未知结果返回 400，其他发布申请返回 404，未授权返回 403。原状态、资料、响应保持不变。
+- `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/oa_response/oa_endpoint/created_at/finished_at/previous_id/confirmation/no_order_confirmation`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source.project_id` 是任务真实项目，`source.release_project_id` 是原发布项目。来源快照还保存发布、软件、主仓库和任务身份、原版本、分支、Tag、源码 SHA、相对路径、产物和 SVN 阶段依据。旧申请沿用保存内容，源任务删除后按当时保存的项目识别可见范围。
 
 提交等待 OA 响应或后端超时后返回。响应外层 `message` 与 `data.message` 均为本次结果说明，`data.status` 区分成功、明确拒绝和结果未确认。`data.response` 是解析后的 OA JSON。收到 OA 最终响应状态时，`data.oa_response` 包含 `status_code`、解码后的 `body` 和正文是否完整的 `complete`。收到状态后超时、断连或正文超出 2 MiB 时，保留状态码和已收到的正文（最多 2 MiB），标为 `complete=false`，申请结果为 `unknown`。未收到最终响应或历史无原始响应时，此字段为 null。无 `charset` 以 UTF-8 解码。无法无损显示文本（包括空字符）时，以可读文本展示，并在 `body_base64` 保存所收正文的原始字节。旧记录缺少 `complete` 时按原记录视为已完整接收；仅有 `response` 的旧记录标注为「历史保存的解析结果」。HTTP 201 表示已创建本系统的申请记录，OA 结果以申请状态为准。`data.oa_endpoint` 取本次发送保存的地址，返回协议、主机、端口及路径，省略查询参数。`created_at` 和 `finished_at` 用于计算申请保存到本次取得结果的耗时。
 

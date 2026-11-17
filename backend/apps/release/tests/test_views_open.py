@@ -76,3 +76,29 @@ class TestOpenReleaseDoc:
         client = _auth_client(["release.doc"])
         response = client.get(URL, {"tag": "VA.9.9.9", "repository_id": str(repository.id)})
         assert response.status_code == 404
+
+    def test_按软件查询原始Tag与带前缀Tag且不扩大令牌范围(self, project, repository, user):
+        from apps.software.models import Software
+
+        a = Software.objects.create(repository=repository, owner=user, name="软件 A", slug="app-a")
+        b = Software.objects.create(repository=repository, owner=user, name="软件 B", slug="app-b")
+        history = _make_release(project, repository, "VA.1.0.0", "released")
+        history.software = a
+        history.save(update_fields=["software"])
+        current = _make_release(project, repository, "app-a/VA.1.0.1", "released")
+        current.software = a
+        current.git_hash = "a" * 40
+        current.save(update_fields=["software", "git_hash"])
+        _make_release(project, repository, "VA.0.0.1", "released")
+        api = _auth_client(["release.doc"])
+        assert api.get(URL, {"software_id": str(b.pk), "tag": current.tag_name}).status_code == 404
+        assert _auth_client(["repo.compare"]).get(URL, {"software_id": str(a.pk), "tag": current.tag_name}).status_code == 403
+        for release in [history, current]:
+            response = api.get(URL, {"software_id": str(a.pk), "tag": release.tag_name})
+            assert response.status_code == 200
+            data = response.data["data"]
+            assert data["software_id"] == str(a.pk) and data["software_name"] == "软件 A"
+            assert data["tag_name"] == release.tag_name and data["git_hash"] == release.git_hash
+        unknown = api.get(URL, {"repository_id": str(repository.pk), "tag": "VA.0.0.1"}).data["data"]
+        assert unknown["software_id"] is None and unknown["software_name"] is None
+        assert api.get(URL, {"repository_id": "invalid", "tag": "VA.0.0.1"}).status_code == 400

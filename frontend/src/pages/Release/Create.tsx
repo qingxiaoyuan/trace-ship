@@ -105,6 +105,12 @@ export default function ReleaseCreate() {
     enabled: !projectIdFromQuery,
   });
 
+  const fixedProject = useQuery({
+    queryKey: ['project', projectIdFromQuery],
+    queryFn: () => projectApi.getProject(projectIdFromQuery!),
+    enabled: !!projectIdFromQuery,
+  });
+
   const projectSoftwareQuery = useQuery({
     queryKey: ['project-software-release', watchProject],
     queryFn: () => softwareApi.listProject(watchProject!),
@@ -254,8 +260,8 @@ export default function ReleaseCreate() {
   }, [changesPreview, watchSoftware, watchRepository, watchBranch, watchReleaseType, previewTag]);
 
   const projectOptions = useMemo(
-    () => (projectData?.results || []).map((p) => ({ label: p.name, value: p.id })),
-    [projectData]
+    () => (fixedProject.data ? [fixedProject.data] : projectData?.results || []).map((p) => ({ label: p.name, value: p.id })),
+    [fixedProject.data, projectData]
   );
   const repoOptions = useMemo(
     () => (projectComponents || [])
@@ -483,7 +489,7 @@ export default function ReleaseCreate() {
                 <SelectField
                   icon={<FolderKanban className="h-4 w-4 text-slate-400" style={{ strokeWidth: 1.5 }} />}
                   placeholder="选择项目"
-                  loading={projectsLoading}
+                  loading={projectsLoading || fixedProject.isLoading}
                   options={projectOptions}
                   onChange={handleProjectChange}
                   disabled={!!projectIdFromQuery || createMutation.isPending}
@@ -1146,12 +1152,12 @@ export default function ReleaseCreate() {
           </section>
 
           {/* 底部操作 */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <Info className="h-3 w-3" style={{ strokeWidth: 1.5 }} />
               <span>创建后状态为草稿，提交审批前请确认更新内容、配置项与测试状态</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2 max-md:justify-end">
               <button
                 type="button"
                 onClick={() => navigate(-1)}
@@ -1162,7 +1168,7 @@ export default function ReleaseCreate() {
               <button
                 type="submit"
                 disabled={createMutation.isPending || autoPackageBlocked}
-                className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
+                className="btn-glow inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
               >
                 <Rocket className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
                 {createMutation.isPending ? '创建中…' : '创建发布'}
@@ -1296,7 +1302,7 @@ export default function ReleaseCreate() {
               type="button"
               onClick={handleSubmitAudit}
               disabled={currentStep === 2 || submitMutation.isPending || !docSaved || !docRows.length}
-              className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
+              className="btn-glow inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
             >
               {currentStep === 2 ? '已提交审批' : submitMutation.isPending ? '提交中…' : '提交审批'}
             </button>

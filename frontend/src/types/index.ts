@@ -74,6 +74,8 @@ export interface Project {
   member_count?: number;
   package_count?: number;
   release_count?: number;
+  software_count?: number;
+  published_version_count?: number;
   created_at: string;
   version_rule?: unknown;
   release_rule?: unknown;
@@ -1009,8 +1011,8 @@ export interface WorkflowTask {
   title: string;
   applicant: string;
   project_name: string;
-  /** 软件名：发布目标仓库名 */
   repository_name?: string;
+  software_name?: string;
   current_node: string;
   submit_time: string;
   remaining_time?: string;
@@ -1104,8 +1106,8 @@ export interface WorkflowInstance {
   title?: string;
   applicant?: string;
   project_name?: string;
-  /** 软件名：发布目标仓库名 */
   repository_name?: string;
+  software_name?: string;
   current_node?: string;
   submit_time?: string;
   version?: string;
@@ -1136,8 +1138,8 @@ export interface WorkflowInstanceListItem {
   title: string;
   applicant: string;
   project_name: string;
-  /** 软件名：发布目标仓库名 */
   repository_name?: string;
+  software_name?: string;
   current_node: string;
   submit_time: string;
   version?: string;
@@ -1164,6 +1166,8 @@ export interface Notification {
 /** 强提醒：待我审批的任务摘要 */
 export interface RemindTodoTask {
   id: string;
+  instance_id?: string;
+  software_name?: string;
   title: string;
   version: string;
   project_name: string;
@@ -1173,6 +1177,7 @@ export interface RemindTodoTask {
 /** 强提醒：待我整改的意见摘要 */
 export interface RemindOpenIssue {
   id: string;
+  software_name?: string;
   release_id: string;
   version: string;
   content: string;

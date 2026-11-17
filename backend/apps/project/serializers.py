@@ -100,6 +100,8 @@ class ProjectSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
     package_count = serializers.SerializerMethodField()
     release_count = serializers.SerializerMethodField()
+    software_count = serializers.IntegerField(read_only=True, default=0)
+    published_version_count = serializers.IntegerField(read_only=True, default=0)
     my_role = serializers.SerializerMethodField()
 
     class Meta:
@@ -108,7 +110,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "id", "code", "name", "leader_id", "leader_name", "description",
             "version_rule", "release_rule", "status",
             "created_at", "updated_at",
-            "repo_count", "member_count", "package_count", "release_count",
+            "repo_count", "member_count", "package_count", "release_count", "software_count", "published_version_count",
             "my_role",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]

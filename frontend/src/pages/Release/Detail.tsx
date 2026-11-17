@@ -240,10 +240,8 @@ export default function ReleaseDetail() {
                 ) : (
                   <span>{release.project_name || '-'}</span>
                 )}
-                {release.software_name && <>
-                  <span className="h-1 w-1 rounded-full bg-slate-300" />
-                  <span className="break-all font-medium text-slate-800">{release.software_name}</span>
-                </>}
+                <span className="h-1 w-1 rounded-full bg-slate-300" />
+                <span className="break-all font-medium text-slate-800">{release.software_name || '软件归属未知'}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 {release.repository ? (
                   <Link
@@ -255,17 +253,19 @@ export default function ReleaseDetail() {
                 ) : (
                   <span>{release.repository_name || '-'}</span>
                 )}
-                <span className="h-1 w-1 rounded-full bg-slate-300" />
-                {!release.shared_readonly && <span>发布人 {release.publisher_name || release.publisher || '-'}</span>}
+                {!release.shared_readonly && <>
+                  <span className="h-1 w-1 rounded-full bg-slate-300" />
+                  <span>发布人 {release.publisher_name || release.publisher || '-'}</span>
+                </>}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span>{release.created_at ? dayjs(release.created_at).format('YYYY-MM-DD HH:mm') : '-'}</span>
               </div>
             </div>
           </div>
           {status === 'pending' ? <WorkflowTerminateButton instance={workflowInstance} /> : null}
-          {status === 'released' && !release.shared_readonly && <div aria-label="发布版本操作" className="flex flex-wrap items-center gap-2">
+          {status === 'released' && <div aria-label="发布版本操作" className="flex flex-wrap items-center gap-2">
             <span ref={setArchiveActionTarget} />
-            {canManage && !release.software ? (
+            {canManage && !release.shared_readonly && !release.software ? (
               <Button
                 danger
                 icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}

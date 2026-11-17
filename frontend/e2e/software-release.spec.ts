@@ -7,6 +7,7 @@ const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as
   password: string;
   software_release: {
     project_id: string;
+    project_name: string;
     shared_project_id: string;
     shared_reader: string;
     shared_builder: string;
@@ -33,9 +34,11 @@ async function choose(page: Page, name: string, option: string | RegExp) {
 }
 
 test('同仓库软件分别选择自动打包配置，按选用项目复用固定版本', async ({ browser, page }) => {
+  test.setTimeout(90_000);
   const [client, server] = sample.software;
   await signIn(page, fixture.operator.username);
   await page.goto('/releases/create?project_id=' + sample.project_id);
+  await expect(page.getByTitle(sample.project_name, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /^RC / }).click();
   await choose(page, '目标软件', server.name);
   await choose(page, '分支', /^main$/);
@@ -72,6 +75,42 @@ test('同仓库软件分别选择自动打包配置，按选用项目复用固�
   const notes = (await generated.json()).data as string;
   expect(notes).toContain('| 软件 | ' + client.name + ' |');
   expect(notes).toContain('| 发布 Tag | ' + draft.tag_name + ' |');
+  const draftPath = '/releases/' + draft.id;
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(draftPath);
+  await expect(page.getByRole('heading', { name: 'V.5.2.13', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '修改文档', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '修改发布说明', exact: true });
+  for (const [label, value] of [
+    ['软件', client.name], ['软件标识', client.slug], ['发布 Tag', draft.tag_name],
+    ['主仓库', sample.repository_name], ['Git提交hash', draft.git_hash],
+  ]) {
+    const row = editor.getByRole('row').filter({ has: page.getByRole('cell', { name: label, exact: true }) });
+    await expect(row.getByRole('cell', { name: value, exact: true })).toBeVisible();
+    await expect(row.getByRole('textbox')).toHaveCount(0);
+  }
+  const body = editor.getByRole('row').filter({ has: page.getByRole('cell', { name: '变更内容', exact: true }) }).getByRole('textbox');
+  const edited = '交付 A | B<br>**软件确认** [版本说明](https://example.invalid/software)\n最后一行';
+  await body.fill(edited);
+  const saving = page.waitForResponse(response => response.url().endsWith('/update-doc/'));
+  await editor.getByRole('button', { name: 'OK', exact: true }).click();
+  const saved = await saving;
+  expect(saved.status()).toBe(200);
+  const savedDoc = (await saved.json()).data.release_doc as string;
+  expect(savedDoc).toContain('交付 A \\| B');
+  await page.reload();
+  const rendered = page.getByRole('cell', { name: /交付 A \| B/ });
+  await expect(rendered.locator('strong', { hasText: '软件确认' })).toBeVisible();
+  await expect(rendered.getByRole('link', { name: '版本说明' })).toHaveAttribute('href', 'https://example.invalid/software');
+  expect(await rendered.locator('br').count()).toBeGreaterThan(0);
+  await expect(rendered).toContainText('最后一行');
+  const desktop = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
+  expect(desktop).toMatchObject({ width: 1440, height: 1000 });
+  expect(desktop.documentWidth).toBeLessThanOrEqual(desktop.width);
+  await page.screenshot({ path: path.join(reportDir, 'software-release-saved-desktop.png'), fullPage: true });
+  await page.getByRole('button', { name: '修改文档', exact: true }).click();
+  await expect(body).toHaveValue(edited);
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
   const submitting = page.waitForResponse(response => response.url().endsWith('/submit-audit/'));
   await page.getByRole('button', { name: '提交审批', exact: true }).click();
   expect((await submitting).status()).toBe(200);
@@ -125,19 +164,35 @@ test('同仓库软件分别选择自动打包配置，按选用项目复用固�
   try {
     const shared = await sharedContext.newPage();
     await signIn(shared, sample.shared_reader);
-    await shared.goto('/releases/' + draft.id + '?project=' + sample.shared_project_id);
+    await expect(shared.getByRole('button', { name: /^选择项目与软件：/ })).toBeVisible();
+    await shared.getByRole('button', { name: /^选择项目与软件：/ }).click();
+    const scope = shared.getByRole('dialog', { name: '选择项目与软件', exact: true });
+    await scope.getByRole('radio', { name: sample.shared_project_name + ' / ' + client.name, exact: true }).check();
+    expect(new URL(shared.url()).searchParams.has('software')).toBe(false);
+    await scope.getByRole('button', { name: '应用筛选', exact: true }).click();
+    await expect(shared).toHaveURL(new RegExp('software=' + client.id));
+    await shared.getByRole('link', { name: /^查看 V\.5\.2\.13 的发布说明$/ }).click();
+    await expect(shared).toHaveURL('/releases/' + draft.id + '?project=' + sample.shared_project_id);
     await shared.reload();
     const notesTable = shared.getByRole('table');
     await expect(notesTable.getByRole('rowheader', { name: '软件', exact: true })).toBeVisible();
     await expect(notesTable.getByRole('cell', { name: client.name, exact: true })).toBeVisible();
     await expect(notesTable.getByRole('cell', { name: draft.tag_name, exact: true })).toBeVisible();
+    const readOnlyBody = notesTable.getByRole('cell', { name: /交付 A \| B/ });
+    await expect(readOnlyBody.locator('strong', { hasText: '软件确认' })).toBeVisible();
+    await expect(readOnlyBody.getByRole('link', { name: '版本说明' })).toHaveAttribute('href', 'https://example.invalid/software');
+    await expect(readOnlyBody).toContainText('最后一行');
+    expect(await readOnlyBody.locator('br').count()).toBeGreaterThan(0);
+    const mobile = await shared.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
+    expect(mobile).toMatchObject({ width: 375, height: 812 });
+    expect(mobile.documentWidth).toBeLessThanOrEqual(mobile.width);
     await expect(shared.getByRole('tab', { name: '提交记录' })).toHaveCount(0);
     await expect(shared.getByRole('button', { name: /编辑说明|下载|导出|发起 OA 归档|删除版本/ })).toHaveCount(0);
     await shared.getByRole('tab', { name: '打包任务' }).click();
     await expect(shared.getByRole('region', { name: '补打已发布版本' })).toHaveCount(0);
     expect(await shared.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
     await shared.screenshot({ path: path.join(reportDir, 'software-release-shared-mobile.png'), fullPage: true });
-    writeFileSync(path.join(reportDir, 'software-release-evidence.json'), JSON.stringify({ tag: draft.tag_name, git_hash: draft.git_hash, notes }, null, 2));
+    writeFileSync(path.join(reportDir, 'software-release-evidence.json'), JSON.stringify({ tag: draft.tag_name, git_hash: draft.git_hash, notes, savedDoc, desktop, mobile }, null, 2));
   } finally {
     await sharedContext.close();
   }
