@@ -499,6 +499,20 @@
 
 ---
 
+### 4.10 项目选用软件
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | `/api/projects/{project_id}/software/` | 项目成员查看显式选用记录。每条包含关联 `id`、`is_active` 和嵌套的软件身份 `software`。包含已停止选用的记录。 |
+| GET | `/api/projects/{project_id}/software/?active=true` | 仅返回当前启用、软件启用且主仓库仍符合目标项目使用条件的选用。 |
+| GET | `/api/projects/{project_id}/software/available/` | 项目管理员或项目软件管理员查看可首次选用的软件。候选来自已启用的主仓库组件，且仓库所有者符合入项规则。 |
+| POST | `/api/projects/{project_id}/software/` | 提交 `{"software":"软件 UUID"}` 选用软件，首次返回 201；已存在的关联复用原身份并启用，返回 200。 |
+| PATCH | `/api/projects/{project_id}/software/{id}/` | 提交 `{"is_active":false}` 停止选用，或传 `true` 恢复；这里的 `id` 为关联 UUID。 |
+
+`can_view_repository` 按当前账号的仓库可见范围决定是否提供主仓库链接。历史选用保留主仓库名称。`is_usable` 表示软件当前在此项目满足启用、选用和仓库使用条件。
+
+写操作按目标项目管理角色授权。选用及恢复须满足项目和软件启用、主仓库组件启用、仓库所有者入项。维保角色可查看其所属项目的选用记录。所有者或协作维护者访问该软件时仍需具备本项目管理权限，才能变更选用。关联其他仓库或软件不会自动创建本项目的选用记录。
+
 ## 五、凭证管理接口
 
 凭证可见性：统一为个人凭证（仅归属人与超管可见可用）；SVN 凭证（`svn_password`）全系统共享，所有登录用户可见可用。
@@ -934,6 +948,21 @@
 ```
 
 ---
+
+### 软件目录和维护
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | `/api/software/` | 分页查看有权的软件，可按 `repository`、`is_active` 过滤，或用 `search` 搜索名称、标识和主仓库名。 |
+| POST | `/api/software/` | 主仓库所有者或超管提交 `repository`、`slug`、`name` 和可选 `description`，返回 201。负责人自动取主仓库所有者。 |
+| GET | `/api/software/{id}/` | 查看单个软件。 |
+| PATCH | `/api/software/{id}/` | 负责人、协作维护者或超管更新 `name` 与 `description`；负责人或超管可传 `owner_username` 移交负责人，或传 `is_active` 启停软件。 |
+| POST | `/api/software/{id}/maintainers/` | 负责人或超管传 `{"username":"登录名"}` 授权有效账号协作维护。 |
+| DELETE | `/api/software/{id}/maintainers/{user_id}/` | 负责人或超管撤销账号的协作授权。 |
+
+软件响应包含 `id`、`repository`、`repository_name`、`slug`、`name`、`description`、`is_active` 和 `owner`。目录和详情还返回当前账号的 `can_maintain` 与 `can_manage`；协作维护者名单 `maintainers` 仅负责人和超管可见。仓库所有者、软件负责人、协作维护者及显式选用项目的成员可查看相应软件。共享目录不包含任一项目的任务、凭证或成员资料。
+
+`slug` 最长 80 个字符，仅允许小写英文字母、数字及分隔用短横线，主仓库内唯一。登记后修改标识或主仓库返回 400。软件和选用关联仅提供启停，软件本身无删除接口。有软件身份或选用依据的父项删除返回 409。旧仓库发布和历史查询沿用原接口。
 
 ## 七、提交审查接口
 

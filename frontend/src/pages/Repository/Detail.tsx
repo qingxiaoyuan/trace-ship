@@ -18,6 +18,7 @@ import { CredentialTab } from './tabs/CredentialTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { VersionRuleTab } from './tabs/VersionRuleTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
+import { SoftwareDirectory } from '@/pages/Software/SoftwareDirectory';
 import { ReleaseTab } from '@/pages/Project/tabs/ReleaseTab';
 import type { Repository } from '@/types';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
@@ -28,6 +29,7 @@ const tabs = [
   { key: 'commits', label: '最近提交' },
   { key: 'branches', label: '分支' },
   { key: 'tags', label: '标签' },
+  { key: 'software', label: '软件' },
   { key: 'releases', label: '发布版本' },
   { key: 'svn', label: 'SVN 制品' },
   { key: 'credential', label: '凭证配置' },
@@ -260,6 +262,7 @@ export default function RepositoryDetail() {
           {activeTab === 'commits' && <CommitsTab repoId={repo.id} />}
           {activeTab === 'branches' && <BranchesTab repoId={repo.id} repoType={repo.repo_type} />}
           {activeTab === 'tags' && <TagsTab repoId={repo.id} repoType={repo.repo_type} />}
+          {activeTab === 'software' && <SoftwareDirectory key={repo.id} repository={repo} />}
           {activeTab === 'releases' && <ReleaseTab repositoryId={repo.id} />}
           {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}

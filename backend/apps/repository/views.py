@@ -8,7 +8,7 @@ from typing import Any
 
 from django.db.models import Count, Prefetch, Q
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, permissions, serializers
+from rest_framework import filters, permissions, serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -205,6 +205,11 @@ class RepositoryViewSet(StandardModelViewSet):
         from apps.release.oa_submission import locked_archive_parent
 
         with locked_archive_parent(instance):
+            if instance.software.exists():
+                return error_response(
+                    40901, "主仓库已登记软件，不能删除。请在软件页面停用不再使用的软件。",
+                    status_code=status.HTTP_409_CONFLICT,
+                )
             self.perform_destroy(instance)
         return success_response(None, message="删除成功")
 

@@ -230,9 +230,14 @@ def main() -> None:
         project=other_project, repository=repository, component_code="shared", display_name="隔离软件"
     )
     PackageConfig.objects.create(project_component=other_component, name="其他项目配置不得选择", is_active=True)
+    software_delegate = User.objects.create_user(username="smoke_software_delegate", password=password)
     manifest = {
         "username": reader.username, "password": password,
         "operator": {"username": owner.username, "role": "manager", "id": str(owner.id)}, "tasks": {},
+        "software_identity": {
+            "repository_id": str(repository.id), "project_id": str(project.id),
+            "delegate": software_delegate.username,
+        },
         "release_flow": {"project_id": str(project.id), "repository_name": repository.name,
                          "branch": "main", "git_hash": "a" * 40},
         "reading": {"project_id": str(project.id), "project_name": project.name,

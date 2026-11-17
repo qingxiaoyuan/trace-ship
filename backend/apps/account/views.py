@@ -442,6 +442,7 @@ class AuthViewSet(viewsets.GenericViewSet):
             {"id": "changelog", "name": "更新日志", "path": "/changelog", "icon": "FileTextOutlined", "modules": []},
             {"id": "projects", "name": "项目/产品", "path": "/projects", "icon": "FolderOutlined", "modules": ["project"]},
             {"id": "repositories", "name": "仓库", "path": "/repositories", "icon": "DatabaseOutlined", "modules": ["repository"]},
+            {"id": "software", "name": "软件", "path": "/software", "icon": "AppstoreOutlined", "modules": []},
             {"id": "credentials", "name": "凭证", "path": "/credentials", "icon": "KeyOutlined", "modules": ["credential"]},
             {"id": "packages", "name": "打包看板", "path": "/packages", "icon": "PlayCircleOutlined", "modules": ["package"]},
             {"id": "commits", "name": "提交审查", "path": "/commits", "icon": "FileTextOutlined", "modules": ["commit"]},
@@ -617,6 +618,15 @@ class UserViewSet(StandardModelViewSet):
         if self.action in ["create", "destroy"]:
             return [IsAuthenticated(), HasPermission("system.user")]
         return super().get_permissions()
+
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        instance = self.get_object()
+        if instance.owned_software.exists():
+            return error_response(
+                40901, "该账号仍是软件维护负责人，请先移交维护责任。",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         """

@@ -82,6 +82,7 @@ urlpatterns = [
     path("api/account/", include("apps.account.urls_account")),
     path("api/projects/", include("apps.project.urls")),
     path("api/repositories/", include("apps.repository.urls")),
+    path("api/software/", include("apps.software.urls")),
     path("api/commits/", include("apps.repository.urls_commits")),
     path("api/releases/", include("apps.release.urls")),
     path("api/packages/", include("apps.package.urls")),

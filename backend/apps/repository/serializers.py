@@ -93,6 +93,7 @@ class RepositorySerializer(serializers.ModelSerializer):
     used_by_projects = serializers.SerializerMethodField()
     credential_loans = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(source="created_by.nickname", read_only=True, default="")
+    can_register_software = serializers.SerializerMethodField()
 
     class Meta:
         model = Repository
@@ -108,7 +109,7 @@ class RepositorySerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
             "project_count",
             "used_by_projects",
-            "credential_loans",
+            "credential_loans", "can_register_software",
         ]
         read_only_fields = [
             "id", "health_status", "last_sync_at", "created_by", "created_by_name",
@@ -116,6 +117,13 @@ class RepositorySerializer(serializers.ModelSerializer):
             "credential_name", "credential_owner_name", "credential_mode_display",
             "clone_url", "project_count",
         ]
+
+    def get_can_register_software(self, obj: Repository) -> bool:
+        from apps.project.services import repository_owner
+
+        actor = getattr(self.context.get("request"), "user", None)
+        owner = repository_owner(obj)
+        return bool(actor and owner and (actor.is_superuser or actor.pk == owner.pk))
 
     def _visible_project_ids(self) -> set:
         if "visible_project_ids" in self.context:

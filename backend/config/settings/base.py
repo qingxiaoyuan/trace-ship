@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.account.apps.AccountConfig",
     "apps.credential.apps.CredentialConfig",
     "apps.project.apps.ProjectConfig",
+    "apps.software",
     "apps.repository.apps.RepositoryConfig",
     "apps.release.apps.ReleaseConfig",
     # Jenkins 模块已下线：仅保留迁移 tombstone（release.0001 历史迁移依赖），

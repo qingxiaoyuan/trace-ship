@@ -14,6 +14,7 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { OverviewTab } from './tabs/OverviewTab';
+import { ProjectSoftwareTab } from './tabs/ProjectSoftwareTab';
 import { ProjectComponentTab } from './tabs/ProjectComponentTab';
 import { MemberTab } from './tabs/MemberTab';
 import { ReleaseTab } from './tabs/ReleaseTab';
@@ -27,10 +28,11 @@ import type { ProjectStatus } from '@/types';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { isMaintainerRestrictedPath } from '@/layouts/components/navMenu';
 
-/** Tab 配置：基本信息 / 软件仓库 / 成员 / 打包配置 / SVN 制品 / 发布版本 */
+/** 项目详情页标签 */
 const tabItems = [
   { key: 'overview', label: '基本信息' },
   { key: 'repos', label: '软件仓库' },
+  { key: 'software', label: '选用软件' },
   { key: 'members', label: '成员' },
   { key: 'packages', label: '打包配置' },
   { key: 'svn', label: 'SVN 制品' },
@@ -218,6 +220,7 @@ export default function ProjectDetail() {
         <div className="p-5">
           {activeTab === 'overview' && <OverviewTab project={project} />}
           {mountedTabs.has('repos') && <div hidden={activeTab !== 'repos'}><ProjectComponentTab projectId={id || ''} active={activeTab === 'repos'} /></div>}
+          {activeTab === 'software' && <ProjectSoftwareTab key={project.id} project={project} />}
           {mountedTabs.has('members') && <div hidden={activeTab !== 'members'}><MemberTab projectId={id || ''} active={activeTab === 'members'} /></div>}
           {mountedTabs.has('packages') && <div hidden={activeTab !== 'packages'}><PackageTab projectId={id || ''} active={activeTab === 'packages'} /></div>}
           {activeTab === 'svn' && <SvnArtifactsTab projectId={id || ''} />}

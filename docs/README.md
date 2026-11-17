@@ -14,6 +14,7 @@
 | [#10 初始需求与阶段计划的历史归档](https://github.com/qingxiaoyuan/trace-ship/issues/10) | 历史归档，不作为当前开发任务 |
 | [#58 在发布审批中加入可配置技能的 AI 代码审查节点](https://github.com/qingxiaoyuan/trace-ship/issues/58) | 已确认功能规格与八项验收；技能边界见 [ADR-0026](adr/0026-document-based-ai-review-skills.md)，整改闭环见 [ADR-0027](adr/0027-release-review-revision-cycle.md) |
 | [#103 正式版本打包后填写资料并发起 OA 软件归档](https://github.com/qingxiaoyuan/trace-ship/issues/103) | 规格与测试边界已确认；[ADR-0028](adr/0028-oa-software-archive-submission.md) 约定申请与来源保留；#104—#108 已接入配置、首次与再次申请、核对后重试、结果和来源保护、历史 SVN 当前文件与补录，整体交付证据以 Issue/PR 为准 |
+| [#111 按软件独立管理发布版本并支持跨项目复用](https://github.com/qingxiaoyuan/trace-ship/issues/111) | 已确认领域方案与改造规格；[ADR-0029](adr/0029-software-release-identity.md) 约定软件身份、Tag、共享配置和项目权限边界，软件登记、共享维护和项目选用见 [#112](https://github.com/qingxiaoyuan/trace-ship/issues/112) |
 
 当前进度以对应 Issue 最新正文与评论为准。迁移原文保存在各 Issue 的折叠附录中；归档不意味着验收通过，历史原文不覆盖现行决策。
 
@@ -25,7 +26,7 @@
 | 渲染与交互验收 | [内容、DOM、桌面/手机布局及真实浏览器交互](agents/rendering-acceptance.md) |
 | PR 自动检查与失败基线 | [运行时、Linux 后端、PostgreSQL 并发、真实打包、浏览器冒烟及归档](agents/pr-checks.md)、[已知失败记录](agents/check-baselines.md) |
 | 领域术语 | [GLOSSARY.md](../GLOSSARY.md) |
-| 架构决策 | [ADR 目录](adr/)，RC 晋升决策仍为 proposed |
+| 架构决策 | [ADR 目录](adr/)，RC 晋升决策仍为 proposed；[软件身份与版本归属](adr/0029-software-release-identity.md)已确认，整体实施见 #111 |
 | 后端架构参考 | [后台设计](design/后台设计.md) |
 | AI 审查上下文管理 | [OpenCode 官方实现参考与本仓库取舍](design/ai-review-context-reference.md) |
 | 业务流程参考 | [业务流程分析](design/business-process-analysis.md)，历史说明需结合当前代码与 ADR 使用 |
