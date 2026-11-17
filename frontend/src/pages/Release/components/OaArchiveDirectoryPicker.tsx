@@ -7,12 +7,12 @@ import { oaArchiveApi, type ArchiveDirectory, type ArchiveSelection } from '@/ap
 import { PermissionAlert } from '@/components/PermissionAlert';
 
 /** 每次只选择一次成功打包的整个产物根目录，进入表单时实时核验。 */
-export function OaArchiveDirectoryPicker({ releaseId, open, onClose, onSelect, pending, error }: {
-  releaseId: string; open: boolean; onClose: () => void; onSelect: (selection: ArchiveSelection) => void;
+export function OaArchiveDirectoryPicker({ releaseId, project, open, onClose, onSelect, pending, error }: {
+  releaseId: string; project?: string; open: boolean; onClose: () => void; onSelect: (selection: ArchiveSelection) => void;
   pending: boolean; error: unknown;
 }) {
   const [taskId, setTaskId] = useState('');
-  const options = useQuery({ queryKey: ['oa-archive-options', releaseId], queryFn: () => oaArchiveApi.options(releaseId), enabled: open, retry: false, staleTime: 0 });
+  const options = useQuery({ queryKey: ['oa-archive-options', releaseId, project], queryFn: () => oaArchiveApi.options(releaseId, project), enabled: open, retry: false, staleTime: 0 });
   const selected: ArchiveDirectory | undefined = options.data?.directories?.find(item => item.task_id === taskId);
   return <Modal title="选择归档目录" open={open} onCancel={onClose} footer={null} width={680}>
     <div className="flex flex-col gap-4 pt-1">

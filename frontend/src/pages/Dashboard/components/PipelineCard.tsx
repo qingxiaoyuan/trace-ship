@@ -33,7 +33,7 @@ export function PipelineCard({
         <SmallTag className={releaseTypeClass[release.release_type]}>{releaseTypeText[release.release_type]}</SmallTag>
       </div>
       <div className="mt-1.5 truncate text-[11px] text-slate-500">
-        {release.repository_name ? `${release.project_name || '-'} / ${release.repository_name}` : release.project_name || '-'}
+        {[release.project_name, release.software_name || '软件归属未知', release.repository_name].filter(Boolean).join(' / ')}
       </div>
       <div className="mt-2 flex items-center gap-1.5">
         {status === 'released' ? (
@@ -44,7 +44,7 @@ export function PipelineCard({
           <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass[status]}`} />
         )}
         <span className="truncate text-[10px] text-slate-400">
-          {release.publisher || '系统'} · {statusLabel} · {formatRelative(release.created_at)}
+          {!release.shared_readonly && `${release.publisher_name || release.publisher || '系统'} · `}{statusLabel} · {formatRelative(release.created_at)}
         </span>
       </div>
     </button>

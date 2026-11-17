@@ -40,6 +40,7 @@ interface RepositoryTreeTableProps<T, TMeta> {
   searchPlaceholder?: string;
   emptyText?: string;
   itemLabel?: string;
+  showGroupCount?: boolean;
   minTableWidth?: number;
   initialExpandedGroupIds?: string[];
 }
@@ -70,6 +71,7 @@ export function RepositoryTreeTable<T, TMeta = unknown>({
   searchPlaceholder = '搜索仓库或版本',
   emptyText = '暂无数据',
   itemLabel = '条记录',
+  showGroupCount = true,
   minTableWidth = 1040,
   initialExpandedGroupIds,
 }: RepositoryTreeTableProps<T, TMeta>) {
@@ -160,7 +162,7 @@ export function RepositoryTreeTable<T, TMeta = unknown>({
           {normalizedKeyword ? '搜索结果已展开' : allExpanded ? '全部折叠' : '全部展开'}
         </button>
         <div className="ml-auto text-[12px] text-slate-400">
-          共 {filteredGroups.length} 个仓库 · {visibleItemCount} {itemLabel}
+          共 {showGroupCount ? `${filteredGroups.length} 个仓库 · ` : ''}{visibleItemCount} {itemLabel}
         </div>
       </div>
 

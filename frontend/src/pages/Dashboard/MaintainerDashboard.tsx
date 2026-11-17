@@ -40,7 +40,9 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
   const requestedPage = Number(params.get('page') || 1);
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const project = params.get('project') || undefined;
-  const repository = project ? params.get('repository') || undefined : undefined;
+  const software = project ? params.get('software') || undefined : undefined;
+  const repository = project && !software ? params.get('repository') || undefined : undefined;
+  const unassigned = !!repository && params.get('unassigned') === 'true';
   const releaseType = params.get('type') || undefined;
   const search = params.get('search') || '';
   const filtered = !!(project || releaseType || search);
@@ -49,9 +51,9 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
     refetchOnMount: 'always', refetchOnWindowFocus: true, refetchInterval: 60_000, retry: false,
   });
   const { data, isPending, isError, refetch } = useQuery({
-    queryKey: ['maintainer-releases', user?.id, projectCount, project, repository, releaseType, search, page],
-    queryFn: () => releaseApi.getReleases({ status: 'released', ordering: '-released_at', project, repository,
-      release_type: releaseType, search: search || undefined, page, page_size: 6 }),
+    queryKey: ['maintainer-releases', user?.id, projectCount, project, repository, software, unassigned, releaseType, search, page],
+    queryFn: () => releaseApi.getReleases({ status: 'released', ordering: '-released_at', project, repository, software,
+      unassigned: unassigned || undefined, release_type: releaseType, search: search || undefined, page, page_size: 6 }),
     refetchOnMount: 'always', refetchOnWindowFocus: true, refetchInterval: 60_000, retry: false,
   });
   const updateFilters = (updates: Record<string, string | undefined>) => {
@@ -60,13 +62,14 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
     Object.entries(updates).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
     setParams(next, { replace: true });
   };
-  const reset = () => updateFilters({ project: undefined, repository: undefined, type: undefined, search: undefined });
+  const reset = () => updateFilters({ project: undefined, repository: undefined, software: undefined, unassigned: undefined, type: undefined, search: undefined });
   const from = location.pathname + location.search;
   const stats = summary.data?.stats;
   const selectedProject = summary.data?.projects.find((item) => item.id === project);
-  const selectedSoftware = selectedProject?.software.find((item) => item.id === repository);
+  const selectedSoftware = selectedProject?.software.find((item) => item.id === (software || repository));
+  const selectedName = selectedSoftware?.software_id === null && !unassigned ? selectedSoftware.repository_name : selectedSoftware?.name;
   const emptyReason = search ? `未找到与“${search}”匹配的版本`
-    : `${selectedSoftware?.name || selectedProject?.name || '所属项目'} 暂无${releaseType ? ` ${releaseTypeText[releaseType as ReleaseType] || releaseType} ` : '已发布'}版本`;
+    : `${selectedName || selectedProject?.name || '所属项目'} 暂无${releaseType ? ` ${releaseTypeText[releaseType as ReleaseType] || releaseType} ` : '已发布'}版本`;
   const kpiCards: KpiCard[] = [
     {
       title: '近30天发布',
@@ -140,7 +143,9 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
         </div>
 
         <div className="mnt-filters">
-          <MaintainerScopePicker projects={summary.data?.projects || []} value={{ project, repository }} disabled={!summary.data} onApply={(scope) => updateFilters({ project: scope.project, repository: scope.repository })} />
+          <MaintainerScopePicker projects={summary.data?.projects || []} value={{ project, repository, software, unassigned }} disabled={!summary.data} onApply={(scope) => updateFilters({
+            project: scope.project, repository: scope.repository, software: scope.software, unassigned: scope.unassigned ? 'true' : undefined,
+          })} />
           <label className="mnt-release-search"><Search size={16} aria-hidden /><input aria-label="搜索版本、软件或发布说明" placeholder="搜索软件、版本号或发布说明" value={search} onChange={(event) => updateFilters({ search: event.target.value })} /></label>
           <div className="mnt-type-filters" role="group" aria-label="发布类型">
             {(['', 'formal', 'rc', 'beta'] as const).map((type) => <button type="button" key={type} aria-pressed={(releaseType || '') === type} className={(releaseType || '') === type ? 'is-active' : ''} onClick={() => updateFilters({ type: type || undefined })}>{type ? releaseTypeText[type as ReleaseType] : '全部类型'}</button>)}
@@ -163,15 +168,15 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
           : <>
             <ul className="mnt-release-list">
               {data.results.map((release) => <li key={release.id} className="mnt-release-row">
-                <div className="mnt-release-identity"><Box className="mnt-pc-only" size={14} aria-hidden /><span className="mnt-release-project">{release.project_name}</span><ChevronRight size={12} aria-hidden /><span className="mnt-release-software">{release.component_name || release.repository_name}</span>
+                <div className="mnt-release-identity"><Box className="mnt-pc-only" size={14} aria-hidden /><span className="mnt-release-project">{release.project_name}</span><ChevronRight size={12} aria-hidden /><span className="mnt-release-software" title={release.repository_name}>{release.software_name || (release.software === null ? '软件归属未知' : release.component_name)}</span>
                 </div>
                 <div className="mnt-release-version">
-                  <Link onClick={rememberScroll} state={{ maintainerFrom: from }} to={`/releases/${release.id}`}>{release.version}</Link>
+                  <Link onClick={rememberScroll} state={{ maintainerFrom: from }} to={`/releases/${release.id}${release.shared_readonly ? `?project=${release.project}` : ''}`}>{release.version}</Link>
                   <div><span className={`mnt-type-badge ${release.release_type}`}>{releaseTypeText[release.release_type]}</span>
                     <time dateTime={release.released_at || undefined} title={release.released_at ? dayjs(release.released_at).format('YYYY-MM-DD HH:mm') : undefined}>{releasedDate(release.released_at)}</time></div>
                 </div>
                 <p className="mnt-release-summary">{release.update_summary || '暂无更新摘要'}</p>
-                <div className="mnt-release-action"><span className="mnt-phone-only">问题单待接入</span><span className={`mnt-release-package mnt-pc-only ${release.package_summary?.status || 'none'}`}><Hammer size={13} aria-hidden />{packageText[release.package_summary?.status || 'none']}</span><Link className="mnt-text-link" aria-label={`查看 ${release.version} 的发布说明`} onClick={rememberScroll} state={{ maintainerFrom: from }} to={`/releases/${release.id}`}><FileText size={15} aria-hidden />发布说明<ArrowRight className="mnt-pc-only" size={13} aria-hidden /></Link></div>
+                <div className="mnt-release-action"><span className="mnt-phone-only">问题单待接入</span><span className={`mnt-release-package mnt-pc-only ${release.package_summary?.status || 'none'}`}><Hammer size={13} aria-hidden />{packageText[release.package_summary?.status || 'none']}</span><Link className="mnt-text-link" aria-label={`查看 ${release.version} 的发布说明`} onClick={rememberScroll} state={{ maintainerFrom: from }} to={`/releases/${release.id}${release.shared_readonly ? `?project=${release.project}` : ''}`}><FileText size={15} aria-hidden />发布说明<ArrowRight className="mnt-pc-only" size={13} aria-hidden /></Link></div>
               </li>)}
             </ul>
             <div className="mnt-pagination"><span>共 {data.total} 个版本</span><Pagination current={page} pageSize={6} total={data.total} showSizeChanger={false} size="small" responsive onChange={(next) => { const nextParams = new URLSearchParams(params); nextParams.set('page', String(next)); setParams(nextParams); scrollTo(0); }} /><small>6条 / 页</small></div>
@@ -182,7 +187,7 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
         <section className="mnt-package-panel">
           <div className="mnt-title-row"><h2>打包近况</h2><Link className="mnt-text-link" to="/packages">查看全部 <ArrowRight size={13} aria-hidden /></Link></div><p className="mnt-panel-description">所属项目的最近任务</p>
           {summary.isPending ? <Skeleton active paragraph={{ rows: 3 }} /> : summary.isError ? <p className="mnt-aside-empty">总览暂不可用，请重试</p> : !summary.data?.recent_tasks.length ? <p className="mnt-aside-empty">暂无打包任务</p> : <ul>{summary.data.recent_tasks.map((task) => <li key={task.id}><Link to={`/packages/${task.id}`} className="mnt-task-item">
-            <div><span className={`mnt-task-dot ${task.status}`} /><strong>{task.component_name}</strong><span className={`mnt-task-badge ${task.status}`}>{task.status_display}</span></div>
+            <div><span className={`mnt-task-dot ${task.status}`} /><strong title={task.repository_name}>{task.software_name || (task.software_name === null ? '软件归属未知' : task.component_name)}</strong><span className={`mnt-task-badge ${task.status}`}>{task.status_display}</span></div>
             <div className="mnt-task-meta"><span>{task.version || '未关联版本'} · {task.trigger_source === 'auto_release' ? '自动' : task.trigger_source === 'manual_release' ? '手动' : task.trigger_source === 'manual_branch' ? '分支' : '打包'}{task.artifact_count > 0 ? ` · ${task.artifact_count} 个产物` : ''}</span><span>{taskMeta(task)}</span></div>
           </Link></li>)}</ul>}
           <p className="mnt-package-footer">日志、产物在任务详情中查看</p>

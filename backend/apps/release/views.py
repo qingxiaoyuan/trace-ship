@@ -14,6 +14,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.http import content_disposition_header
 from django.views.decorators.cache import never_cache
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
@@ -120,6 +121,7 @@ class ReleaseFilter(filters.FilterSet):
     review_status = filters.CharFilter(method="filter_review_status")
     project = filters.UUIDFilter(method="filter_project")
     software = filters.UUIDFilter(field_name="software_id")
+    unassigned = filters.BooleanFilter(field_name="software_id", lookup_expr="isnull")
     publisher = filters.UUIDFilter(method="filter_publisher")
 
     class Meta:
@@ -169,7 +171,7 @@ class ReleaseSearchFilter(drf_filters.SearchFilter):
 
     def get_search_fields(self, view: Any, request: Request) -> list[str]:
         fields = super().get_search_fields(view, request)
-        return [*fields, "component_name", "release_doc"] if view.action == "list" else fields
+        return [*fields, "component_name", "software__slug", "release_doc"] if view.action == "list" else fields
 
 
 class ReleaseViewSet(StandardModelViewSet):
@@ -261,13 +263,29 @@ class ReleaseViewSet(StandardModelViewSet):
             queryset = queryset.annotate(component_name=Coalesce(
                 F("software__name"), NullIf(Subquery(component_name), Value("")), F("repository__name"),
             ))
-        if self.action in ("list", "retrieve", "catalog"):
+        reading = self.action in ("list", "retrieve", "catalog", "dashboard_overview", "dashboard_trend")
+        archive = self.action in (
+            "oa_archive_options", "oa_archive_prepare", "oa_archive_submit",
+            "oa_archive_confirm_no_order", "oa_archive_records",
+        )
+        project_id = self._requested_project_id() if reading or archive else None
+        if reading or (archive and project_id is not None):
             from apps.release.visibility import releases_for_read
 
-            project = self.request.query_params.get("project")
-            project_id = serializers.UUIDField().run_validation(project) if project else None
-            return releases_for_read(queryset, user, project_id)
+            return releases_for_read(
+                queryset, user, project_id,
+                include_inactive_links=self.action in ("oa_archive_records", "oa_archive_confirm_no_order"),
+            )
         return queryset.filter(project_id__in=visible_project_ids(user))
+
+    def _requested_project_id(self):
+        project = self.request.query_params.get("project")
+        if not project:
+            return None
+        try:
+            return serializers.UUIDField().run_validation(project)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({"project": exc.detail}) from exc
 
     def get_permissions(self):
         """
@@ -295,7 +313,7 @@ class ReleaseViewSet(StandardModelViewSet):
         """列出当前发布可准备归档的现存产物。"""
         from apps.release.oa_archive import OaArchivePreparation
 
-        return success_response(OaArchivePreparation.options(self.get_object(), request.user))
+        return success_response(OaArchivePreparation.options(self.get_object(), request.user, self._requested_project_id()))
 
     @action(detail=True, methods=["post"], url_path="oa-archive/prepare")
     def oa_archive_prepare(self, request: Request, pk: str | None = None) -> Response:
@@ -305,7 +323,7 @@ class ReleaseViewSet(StandardModelViewSet):
         release = self.get_object()
         serializer = ArchiveSelectionInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        return success_response(OaArchivePreparation.prepare(release, request.user, serializer.validated_data))
+        return success_response(OaArchivePreparation.prepare(release, request.user, serializer.validated_data, self._requested_project_id()))
 
     @action(detail=True, methods=["post"], url_path="oa-archive/submit")
     def oa_archive_submit(self, request: Request, pk: str | None = None) -> Response:
@@ -314,7 +332,9 @@ class ReleaseViewSet(StandardModelViewSet):
 
         serializer = ArchiveSubmitInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        record, created = OaArchiveSubmission.submit(self.get_object(), request.user, serializer.validated_data)
+        record, created = OaArchiveSubmission.submit(
+            self.get_object(), request.user, serializer.validated_data, self._requested_project_id(),
+        )
         return success_response(application_data(record), message=record.message or "OA 归档申请正在发送", status=201 if created else 200)
 
     @action(detail=True, methods=["post"], url_path="oa-archive/confirm-no-order")
@@ -324,16 +344,20 @@ class ReleaseViewSet(StandardModelViewSet):
 
         serializer = ArchiveNoOrderInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        record = OaArchiveSubmission.confirm_no_order(self.get_object(), request.user, serializer.validated_data)
+        record = OaArchiveSubmission.confirm_no_order(
+            self.get_object(), request.user, serializer.validated_data, self._requested_project_id(),
+        )
         return success_response(application_data(record))
 
     @action(detail=True, methods=["get"], url_path="oa-archive/records")
     def oa_archive_records(self, request: Request, pk: str | None = None) -> Response:
         """当前项目可见成员可回读完整资料、操作者与 OA 原始返回对象。"""
-        from apps.release.oa_submission import application_data
+        from apps.release.oa_archive import OaArchivePreparation
+        from apps.release.oa_submission import application_data, archive_records
 
         release = self.get_object()
-        records = release.oa_applications.filter(Q(task__project_id=release.project_id) | Q(task__isnull=True))
+        project = OaArchivePreparation.project(release, request.user, self._requested_project_id(), history=True)
+        records = archive_records(release, project)
         return success_response([application_data(item) for item in records])
 
     def _serialize_release(self, release: ReleaseRecord) -> dict[str, Any]:
@@ -912,13 +936,11 @@ class ReleaseViewSet(StandardModelViewSet):
         Returns:
             Markdown 文件响应（纯文本，不经 DRF 渲染器）
         """
-        from utils.markdown_table import table_newlines_to_br
-
         release = self.get_object()
         # 导出文件转为标准 Markdown 表格语法（单元格内换行用 <br>）
-        md_content = table_newlines_to_br(release.release_doc or "")
+        md_content = ReleaseDocExporter.export_markdown(release)
         response = HttpResponse(md_content, content_type="text/markdown; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="release-{release.version}.md"'
+        response["Content-Disposition"] = content_disposition_header(True, ReleaseDocExporter.filename(release, "md"))
         return response
 
     @action(detail=True, methods=["post"], url_path="submit-audit")
@@ -1040,7 +1062,7 @@ class ReleaseViewSet(StandardModelViewSet):
         except Exception as exc:
             return _handle_service_error(exc, "导出 PDF")
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="release-{release.version}.pdf"'
+        response["Content-Disposition"] = content_disposition_header(True, ReleaseDocExporter.filename(release, "pdf"))
         return response
 
     @action(detail=True, methods=["get"], url_path="export-word")
@@ -1065,7 +1087,7 @@ class ReleaseViewSet(StandardModelViewSet):
             word_bytes,
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
-        response["Content-Disposition"] = f'attachment; filename="release-{release.version}.docx"'
+        response["Content-Disposition"] = content_disposition_header(True, ReleaseDocExporter.filename(release, "docx"))
         return response
 
     @action(detail=True, methods=["get"], url_path="commits")

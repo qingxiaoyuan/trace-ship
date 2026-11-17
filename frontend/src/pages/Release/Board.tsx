@@ -3,6 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, ChevronRight, ExternalLink, GitBranch, Loader, Plus, XCircle } from 'lucide-react';
 import dayjs from 'dayjs';
+import { Select } from 'antd';
+import { softwareApi } from '@/api/software';
+import { fetchAllPages } from '@/pages/Package/components/boardData';
 import { releaseApi } from '@/api/release';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { getAvatarColor } from '@/utils/avatar';
@@ -37,11 +40,9 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
         <span className="shrink-0 text-slate-300">/</span>
         <span className="truncate font-mono text-[10px] text-slate-400 max-md:text-xs">{release.repository_name || '-'}</span>
       </div>
-      {release.software_name && (
-        <div className="mt-1 truncate text-[11px] font-medium text-slate-700 max-md:text-xs">
-          {release.software_name}{release.software_slug && <span className="ml-1 font-mono font-normal text-slate-500">{release.software_slug}</span>}
-        </div>
-      )}
+      <div className="mt-1 truncate text-[11px] font-medium text-slate-700 max-md:text-xs">
+        {release.software_name || '软件归属未知'}{release.software_slug && <span className="ml-1 font-mono font-normal text-slate-500">{release.software_slug}</span>}
+      </div>
       {release.redmine_url ? (
         <a
           href={release.redmine_url}
@@ -71,12 +72,12 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
 }
 
 /** 发布看板（看板视图） */
-export function ReleaseBoard() {
+export function ReleaseBoard({ software, search }: { software?: string; search?: string } = {}) {
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['release-board', 'kanban'],
-    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 100 }),
+    queryKey: ['release-board', 'kanban', software, search],
+    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 100, software, search }),
   });
 
   // 一次 groupBy 替代每列各自 filter 两次（items + count）
@@ -129,11 +130,11 @@ export function ReleaseBoard() {
 }
 
 /** 发布列表视图 */
-export function ReleaseList() {
+export function ReleaseList({ software, search }: { software?: string; search?: string } = {}) {
   const navigate = useNavigate();
   const { data, isLoading } = useQuery({
-    queryKey: ['release-board', 'list'],
-    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 8 }),
+    queryKey: ['release-board', 'list', software, search],
+    queryFn: () => releaseApi.getReleases({ page: 1, page_size: 8, software, search }),
   });
 
   // 发布看板不再展示草稿：草稿为内部过程状态，过滤后不出现在看板/列表
@@ -195,10 +196,8 @@ export function ReleaseList() {
                   </div>
                   <div className="col-span-3 flex items-center gap-1 text-[12px] text-slate-600">
                     <span className="truncate">{release.project_name || '-'}</span>
-                    {release.software_name && <>
-                      <span className="shrink-0 text-slate-300">/</span>
-                      <span className="shrink-0 max-w-[8rem] truncate">{release.software_name}</span>
-                    </>}
+                    <span className="shrink-0 text-slate-300">/</span>
+                    <span className="shrink-0 max-w-[8rem] truncate">{release.software_name || '软件归属未知'}</span>
                     <span className="shrink-0 text-slate-300">/</span>
                     <span className="truncate font-mono text-[11px] text-slate-400">{release.repository_name || '-'}</span>
                   </div>
@@ -247,7 +246,7 @@ export function ReleaseList() {
                     <span className="font-mono text-[16px] font-semibold tracking-tight text-slate-900">
                       {release.version}
                     </span>
-                    <span className="truncate text-[12px] text-slate-400">{[release.project_name, release.software_name].filter(Boolean).join(' / ') || '-'}</span>
+                    <span className="truncate text-[12px] text-slate-400">{[release.project_name, release.software_name || '软件归属未知'].filter(Boolean).join(' / ') || '-'}</span>
                   </div>
                   <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                     <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
@@ -297,6 +296,12 @@ export function ReleaseBoardPage() {
   const maintainer = useDashboardContext()?.layout_mode === 'maintainer';
   const navigate = useNavigate();
   const [view, setView] = useState<'board' | 'list'>('board');
+  const [software, setSoftware] = useState<string>();
+  const [search, setSearch] = useState('');
+  const catalog = useQuery({
+    queryKey: ['release-software-filter'],
+    queryFn: () => fetchAllPages((page) => softwareApi.list({ page })),
+  });
 
   return (
     <div className="space-y-5 ts-fade-in-up">
@@ -335,7 +340,15 @@ export function ReleaseBoardPage() {
           </button>}
         </div>
       </div>
-      {view === 'board' ? <ReleaseBoard /> : <ReleaseList />}
+      <div className="flex flex-wrap gap-2">
+        <Select aria-label="按软件筛选发布" placeholder="全部软件" allowClear showSearch={{ optionFilterProp: 'label' }}
+          className="min-w-44 max-w-full" value={software} onChange={setSoftware} loading={catalog.isLoading}
+          options={catalog.data?.results.map(item => ({ value: item.id, label: `${item.name} · ${item.repository_name}` }))} />
+        <input type="search" aria-label="搜索软件、版本号或 Tag" placeholder="搜索软件、版本号或 Tag"
+          className="min-w-0 rounded-md border border-indigo-100 bg-white px-3 py-1.5 text-sm" value={search}
+          onChange={event => setSearch(event.target.value)} />
+      </div>
+      {view === 'board' ? <ReleaseBoard software={software} search={search} /> : <ReleaseList software={software} search={search} />}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import re
 
 from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
-from django.db.models import Count, IntegerField, OuterRef, Q, QuerySet, Subquery
+from django.db.models import Count, IntegerField, OuterRef, Q, QuerySet, Subquery, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -102,10 +102,10 @@ def repository_owner(repository):
     return None
 
 
-def _related_count_subquery(model, project_field: str = "project_id"):
+def _related_count_subquery(model, project_field: str = "project_id", *, filters: dict | None = None):
     """独立子查询计数，避免多个 Count(distinct) 在主查询里交叉 JOIN。"""
     inner = (
-        model.objects.filter(**{project_field: OuterRef("pk")})
+        model.objects.filter(**{project_field: OuterRef("pk")}, **(filters or {}))
         .order_by()
         .values(project_field)
         .annotate(_c=Count("*"))
@@ -123,12 +123,31 @@ def annotate_project_list_counts(queryset):
 
 
 def annotate_project_detail_counts(queryset):
-    """详情额外统计打包配置与发布单，同样各自子查询，互不 JOIN。"""
+    """分别统计选用软件、可用配置与该项目版本目录。"""
     from apps.package.models import PackageConfig
     from apps.release.models import ReleaseRecord
+    from apps.software.models import ProjectSoftware
+
+    choices = ProjectSoftware.objects.filter(project_id=OuterRef(OuterRef("pk")))
+    active_software = choices.filter(is_active=True).values("software_id")
+    releases = ReleaseRecord.objects.filter(status="released").filter(
+        Q(software_id__in=active_software)
+        | (Q(project_id=OuterRef("pk")) & (Q(software_id__isnull=True) | Q(software_id__in=choices.values("software_id"))))
+    )
+    configs = PackageConfig.objects.filter(
+        Q(project_component__project_id=OuterRef("pk")) | Q(
+            software_id__in=choices.filter(is_active=True, software__is_active=True).values("software_id")
+        )
+    )
+
+    def counted(items):
+        totals = items.order_by().values(group=Value(1)).annotate(total=Count("pk")).values("total")
+        return Coalesce(Subquery(totals[:1], output_field=IntegerField()), 0)
 
     return annotate_project_list_counts(queryset).annotate(
-        package_count=_related_count_subquery(PackageConfig, "project_component__project_id"),
+        software_count=_related_count_subquery(ProjectSoftware, filters={"is_active": True}),
+        package_count=counted(configs),
+        published_version_count=counted(releases),
         release_count=_related_count_subquery(ReleaseRecord),
     )
 

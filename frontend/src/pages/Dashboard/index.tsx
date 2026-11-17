@@ -212,7 +212,7 @@ function GeneralDashboard() {
       key: `audit-${task.id}`,
       type: 'audit' as const,
       kind: 'audit' as const,
-      title: `${task.project_name || '-'} 发布审批 · ${task.version || '-'}`,
+      title: `发布审批 · ${[task.project_name, task.software_name, task.version].filter(Boolean).join(' / ')}`,
       badge: task.release_type ? `${releaseTypeText[task.release_type]}发布` : '发布审批',
       badgeClass: auditBadgeClass[task.release_type || ''] || 'border-slate-200 bg-slate-50 text-slate-500',
       meta: `${task.applicant || '-'} 提交于 ${formatRelative(task.submit_time)} · 当前节点：${task.current_node || '-'}`,
@@ -474,7 +474,7 @@ function GeneralDashboard() {
         <RecentReleasesPanel
           releases={recentReleases}
           onViewAll={() => navigate('/releases')}
-          onRowClick={(release) => navigate(`/releases/${release.id}`)}
+          onRowClick={(release) => navigate(`/releases/${release.id}${release.shared_readonly ? `?project=${release.project}` : ''}`)}
         />
         {trendChartCard}
         {packageTriggerModal}
@@ -501,7 +501,7 @@ function GeneralDashboard() {
           <RecentReleasesPanel
             releases={recentReleases}
             onViewAll={() => navigate('/releases')}
-            onRowClick={(release) => navigate(`/releases/${release.id}`)}
+            onRowClick={(release) => navigate(`/releases/${release.id}${release.shared_readonly ? `?project=${release.project}` : ''}`)}
           />
         </div>
         {/* 右列：我的待办 + 发布趋势 */}

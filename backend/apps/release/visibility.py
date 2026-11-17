@@ -6,11 +6,13 @@ from apps.project.services import visible_project_ids
 from apps.software.models import ProjectSoftware
 
 
-def releases_for_read(queryset, user, project_id=None):
+def releases_for_read(queryset, user, project_id=None, *, include_inactive_links=False):
     """选用项目只共享该软件已发布版本，发起项目仍保留原申请范围。"""
     projects = visible_project_ids(user)
     origin = Q(project_id__in=projects)
-    links = ProjectSoftware.objects.filter(project_id__in=projects, is_active=True)
+    links = ProjectSoftware.objects.filter(project_id__in=projects)
+    if not include_inactive_links:
+        links = links.filter(is_active=True)
     if project_id is not None:
         origin &= Q(project_id=project_id)
         links = links.filter(project_id=project_id)

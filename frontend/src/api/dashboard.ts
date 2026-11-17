@@ -10,7 +10,7 @@ export interface MaintainerProjectScope {
   id: string;
   name: string;
   release_count: number;
-  software: Array<{ id: string; name: string; release_count: number }>;
+  software: Array<{ id: string; name: string; release_count: number; software_id?: string | null; repository_name?: string }>;
 }
 
 export interface MaintainerPackageTask {
@@ -19,6 +19,9 @@ export interface MaintainerPackageTask {
   project: string;
   project_name: string;
   component_name: string;
+  software_name?: string | null;
+  repository_name?: string;
+  tag_name?: string;
   version: string;
   status: 'queued' | 'running' | 'success' | 'failure' | 'canceled';
   status_display: string;

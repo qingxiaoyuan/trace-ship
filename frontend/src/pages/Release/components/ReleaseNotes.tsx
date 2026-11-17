@@ -114,10 +114,12 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
 
   const handleCloseEdit = () => setEditOpen(false);
 
+  const exportName = [release.software_slug, release.version].filter(Boolean).join('_');
+
   const handleExportPdf = async () => {
     try {
       const blob = await releaseApi.exportPdf(release.id);
-      downloadBlob(blob, `${release.version}_发布单.pdf`);
+      downloadBlob(blob, `${exportName}_发布单.pdf`);
       message.success('PDF 导出成功');
     } catch {
       // 导出失败由全局拦截器统一提示
@@ -127,7 +129,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
   const handleExportWord = async () => {
     try {
       const blob = await releaseApi.exportWord(release.id);
-      downloadBlob(blob, `${release.version}_发布单.docx`);
+      downloadBlob(blob, `${exportName}_发布单.docx`);
       message.success('Word 导出成功');
     } catch {
       // 导出失败由全局拦截器统一提示
@@ -137,7 +139,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
   const handleExportMd = async () => {
     try {
       const blob = await releaseApi.exportMd(release.id);
-      downloadBlob(blob, `${release.version}_发布单.md`);
+      downloadBlob(blob, `${exportName}_发布单.md`);
       message.success('Markdown 导出成功');
     } catch {
       // 导出失败由全局拦截器统一提示

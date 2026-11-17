@@ -42,6 +42,9 @@ export function ProjectSoftwareTab({ project }: { project: Project }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: baseKey }),
         queryClient.invalidateQueries({ queryKey: ['software-directory'] }),
+        queryClient.invalidateQueries({ queryKey: ['project', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['release-tab', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['release-software-filter'] }),
       ]);
     },
   });

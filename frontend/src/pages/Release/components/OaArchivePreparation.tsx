@@ -1,4 +1,4 @@
-import { Fragment, useDeferredValue, useEffect, useRef, useState } from 'react';
+import { Fragment, useDeferredValue, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Alert, App, AutoComplete, Button, Checkbox, Form, Input, Modal, Select } from 'antd';
 import { Archive, Copy, FolderArchive } from 'lucide-react';
@@ -8,7 +8,6 @@ import { projectApi } from '@/api/project';
 import { createArchiveSubmissionId, oaArchiveApi, type ArchiveApplication, type ArchiveConfirmation, type ArchiveSelection, type ArchiveForm, type ArchivePreparation } from '@/api/oaArchive';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAuthStore } from '@/stores/authStore';
-import { useModalDraft } from '@/hooks/useModalDraft';
 import type { Release } from '@/types';
 import { OaArchiveDirectoryPicker } from './OaArchiveDirectoryPicker';
 
@@ -28,6 +27,11 @@ const historyFields = [...fields, { key: 'soft_number' as const, label: '软件�
 
 const confirmationText = { '': '首次申请', reapply: '显式再次申请', retry: '失败后主动重试', checked_no_order: '已核对 OA 未建单后重试' };
 const statusText = { sending: '发送中', success: '已发起归档', failure: 'OA 返回失败', unknown: '结果未确认' };
+
+function matchesSelection(item: ArchiveApplication, selection?: ArchiveSelection) {
+  return !!selection && item.source.task_id === selection.task_id && item.source.path === selection.path
+    && (item.source.scope || 'file') === (selection.scope || 'file');
+}
 
 function getRequestSoftwareNumber(previous?: ArchiveApplication) {
   return previous && ['failure', 'unknown'].includes(previous.status) ? previous.form.soft_number || '' : '';
@@ -93,6 +97,7 @@ function OaResponseDetails({ application }: { application: ArchiveApplication })
 export function OaArchivePreparationPanel({ release, active = true, actionTarget }: { release: Release; active?: boolean; actionTarget?: HTMLElement | null }) {
   const user = useAuthStore(state => state.user);
   const project = useQuery({ queryKey: ['project', release.project], queryFn: () => projectApi.getProject(release.project), enabled: active });
+  const archiveProject = release.shared_readonly ? release.project : undefined;
   const role = project.data?.my_role || '';
   const allowed = user?.is_superuser || ['manager', 'software_admin'].includes(role)
     || (release.publisher === user?.id && ['developer', 'tester'].includes(role));
@@ -100,6 +105,8 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
   const [prepared, setPrepared] = useState<ArchivePreparation>();
   const [formOpen, setFormOpen] = useState(false);
   const [form] = Form.useForm<ArchiveForm>();
+  const [openingValues, setOpeningValues] = useState<ArchiveForm>();
+  const drafts = useRef(new Map<string, ArchiveForm>());
   const [viewing, setViewing] = useState<ArchiveApplication>();
   const [confirmingFailure, setConfirmingFailure] = useState<ArchiveApplication>();
   const [noOrderChecked, setNoOrderChecked] = useState(false);
@@ -110,41 +117,50 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
   const [confirmation, setConfirmation] = useState<{ previous: ArchiveApplication; values: ArchiveForm; count: number }>();
   const [checkedNoOrder, setCheckedNoOrder] = useState(false);
   const [uncertain, setUncertain] = useState<Record<string, string>>({});
-  const identity = `${release.id}:${prepared?.selection.scope || 'file'}:${prepared?.selection.task_id}:${prepared?.selection.path || prepared?.selection.artifact_id}`;
+  const selectionKey = (selection?: ArchiveSelection) =>
+    `${release.id}:${release.project}:${selection?.scope || 'file'}:${selection?.task_id}:${selection?.path || selection?.artifact_id}`;
+  const identity = selectionKey(prepared?.selection);
 
-  const records = useQuery({ queryKey: ['oa-archive-records', release.id], queryFn: () => oaArchiveApi.records(release.id), enabled: active,
+  const records = useQuery({ queryKey: ['oa-archive-records', release.id, release.project], queryFn: () => oaArchiveApi.records(release.id, archiveProject), enabled: active,
     refetchInterval: query => query.state.data?.some(item => item.status === 'sending') ? 2000 : false });
   const confirmFailure = useMutation({
-    mutationFn: () => oaArchiveApi.confirmNoOrder(release.id, confirmingFailure!.id, confirmationEvidence[confirmingFailure!.id] || ''),
+    mutationFn: () => oaArchiveApi.confirmNoOrder(release.id, confirmingFailure!.id, confirmationEvidence[confirmingFailure!.id] || '', archiveProject),
     onSuccess: result => {
       setConfirmationEvidence(current => { const remaining = { ...current }; delete remaining[result.id]; return remaining; });
       setConfirmingFailure(undefined);
       void records.refetch();
     },
   });
-  const existing = records.data?.filter(item => item.source.task_id === prepared?.selection.task_id && item.source.path === prepared?.selection.path && (item.source.scope || 'file') === (prepared?.selection.scope || 'file')) || [];
+  const existing = records.data?.filter(item => matchesSelection(item, prepared?.selection)) || [];
   const latest = existing[0];
   const uncertainKey = uncertain[identity] && !existing.some(item => item.submission_id === uncertain[identity]);
-  const draft = useModalDraft(formOpen && !!prepared, identity,
-    () => latest && ['failure', 'unknown'].includes(latest.status) ? latest.form : prepared!.form);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const users = useQuery({ queryKey: ['oa-archive-users', deferredSearch], queryFn: () => accountApi.getUsers({ keyword: deferredSearch || undefined, is_active: true, page_size: 50 }), enabled: active && formOpen, retry: false });
   const prepare = useMutation({
-    mutationFn: (selection: ArchiveSelection) => oaArchiveApi.prepare(release.id, selection),
-    onSuccess: async data => { await records.refetch(); setSubmissionError(undefined); setPrepared(data); setSelectOpen(false); setFormOpen(true); },
+    mutationFn: (selection: ArchiveSelection) => oaArchiveApi.prepare(release.id, selection, undefined, archiveProject),
+    onSuccess: async data => {
+      const fresh = await records.refetch();
+      const prior = fresh.data?.find(item => matchesSelection(item, data.selection));
+      const fallback = prior && ['failure', 'unknown'].includes(prior.status) ? prior.form : data.form;
+      setOpeningValues({ ...(drafts.current.get(selectionKey(data.selection)) || fallback) });
+      setSubmissionError(undefined);
+      setPrepared(data);
+      setSelectOpen(false);
+      setFormOpen(true);
+    },
   });
   const validate = useMutation({
-    mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: getRequestSoftwareNumber(latest) }),
+    mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: getRequestSoftwareNumber(latest) }, archiveProject),
   });
   const submit = useMutation({
     mutationFn: ({ values, previous, submissionId }: { values: ArchiveForm; previous?: ArchiveApplication; submissionId: string }) => {
       const reason: ArchiveConfirmation = previous?.status === 'unknown' ? 'checked_no_order' : previous?.status === 'failure' ? 'retry' : 'reapply';
       return oaArchiveApi.submit(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: getRequestSoftwareNumber(previous) }, submissionId,
-        previous ? { previous_id: previous.id, confirmation: reason } : undefined);
+        previous ? { previous_id: previous.id, confirmation: reason } : undefined, archiveProject);
     },
     onSuccess: result => {
-      if (result.status === 'success') { draft.clear(); setFormOpen(false); }
+      if (result.status === 'success') { drafts.current.delete(identity); setFormOpen(false); }
       void records.refetch();
     },
     onError: (error, variables) => {
@@ -188,9 +204,11 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
     }
     finally { if (!dispatched) inFlight.current = false; setChecking(false); }
   }
-  useEffect(() => {
-    if (formOpen && draft.value) { form.resetFields(); form.setFieldsValue(draft.value); }
-  }, [formOpen, draft.value, form]);
+  useLayoutEffect(() => {
+    if (!formOpen || !openingValues) return;
+    form.resetFields();
+    form.setFieldsValue(openingValues);
+  }, [formOpen, openingValues, form]);
   const userOptions = (users.data?.results || []).map(item => ({ value: item.username, label: `${item.nickname || item.username}（${item.username}）` }));
   const confirmedSoftwareNumber = getRequestSoftwareNumber(confirmation?.previous);
   const currentResult = latest && latest.created_at > (submit.data?.created_at ?? '') ? latest : submit.data ?? latest;
@@ -217,7 +235,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
         {allowed && item.status === 'failure' && !item.no_order_confirmation && <Button onClick={() => { confirmFailure.reset(); setNoOrderChecked(false); setConfirmingFailure(item); }}>确认未建单</Button>}
       </div>
     </article>)}</div>
-    <OaArchiveDirectoryPicker releaseId={release.id} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={selection => prepare.mutate(selection)} pending={prepare.isPending} error={prepare.error} />
+    <OaArchiveDirectoryPicker releaseId={release.id} project={archiveProject} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={selection => prepare.mutate(selection)} pending={prepare.isPending} error={prepare.error} />
     <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => { if (!submit.isPending && !checking) setFormOpen(false); }} width={800}
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 8, paddingTop: 4 } }}
       footer={<>
@@ -229,7 +247,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
         {!!submissionError && !confirmation && <div className="mb-3 text-left"><PermissionAlert error={submissionError} errorTitle="尚未提交 OA 归档" /></div>}
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4"><Button className="max-md:min-h-11" disabled={submit.isPending || checking} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="max-md:min-h-11" loading={validate.isPending} disabled={submit.isPending || checking} onClick={() => form.submit()}>校验资料</Button><Button aria-label="提交 OA 归档" aria-busy={submit.isPending || checking} className="max-md:min-h-11" type="primary" loading={submit.isPending || checking} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey} onClick={() => void send()}>提交 OA 归档</Button></div>
       </>}>
-      {prepared && <Form form={form} disabled={submit.isPending || checking} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
+      {prepared && <Form form={form} initialValues={openingValues} disabled={submit.isPending || checking} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { drafts.current.set(identity, { ...values, applyCount: 1 }); validate.reset(); }}
         onFinishFailed={({ errorFields }) => { if (errorFields[0]) form.scrollToField(errorFields[0].name, { focus: true, block: 'center' }); }}>
         <div className="mb-4 flex flex-col gap-3">
           <div className="flex items-start gap-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">

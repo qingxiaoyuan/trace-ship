@@ -34,7 +34,7 @@ function toDetail(
     packageStatus: (row as WorkflowTask).package_status,
     applicant: row.applicant,
     projectName: row.project_name,
-    softwareName: row.repository_name || '',
+    softwareName: row.software_name || '',
     submitTime: row.submit_time,
     currentNode: row.current_node,
     mode: (row as WorkflowTask).mode,
@@ -185,7 +185,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                       {row.project_name || '-'}
                     </div>
                     <div className="col-span-6 truncate text-[12px] text-slate-600 md:col-span-2" title={row.repository_name || ''}>
-                      {row.repository_name || '-'}
+                      {row.software_name || '-'}
                     </div>
                     <div className="col-span-6 flex items-center gap-1.5 md:col-span-1">
                       <span
@@ -220,7 +220,7 @@ export function ApprovalListView({ onOpenDetail }: ApprovalListViewProps) {
                         {row.title}
                       </p>
                       <p className="truncate text-[12px] text-slate-400">
-                        {[row.project_name, row.repository_name].filter(Boolean).join(' · ') || '-'}
+                        {[row.project_name, row.software_name, row.repository_name].filter(Boolean).join(' · ') || '-'}
                       </p>
                     </div>
                     {row.branch ? (

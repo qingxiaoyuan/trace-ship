@@ -5,6 +5,7 @@ from uuid import UUID
 from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -75,18 +76,21 @@ class SoftwareViewSet(viewsets.GenericViewSet):
     def retrieve(self, request: Request, *args, **kwargs) -> Response:
         return success_response(self.get_serializer(self.get_object()).data)
 
+    @extend_schema(request=SoftwareRegistrationSerializer, responses={201: SoftwareSerializer})
     def create(self, request: Request, *args, **kwargs) -> Response:
         inputs = SoftwareRegistrationSerializer(data=request.data)
         inputs.is_valid(raise_exception=True)
         software = register_software(request.user, **inputs.validated_data)
         return success_response(self.get_serializer(software).data, "登记成功", status=status.HTTP_201_CREATED)
 
+    @extend_schema(request=SoftwareUpdateSerializer, responses={200: SoftwareSerializer})
     def partial_update(self, request: Request, *args, **kwargs) -> Response:
         inputs = SoftwareUpdateSerializer(data=request.data)
         inputs.is_valid(raise_exception=True)
         software = update_software(self.get_object(), request.user, inputs.validated_data)
         return success_response(self.get_serializer(software).data, "更新成功")
 
+    @extend_schema(request=SoftwareGrantSerializer, responses={200: SoftwareSerializer})
     @action(detail=True, methods=["post"], url_path="maintainers")
     def grant_maintainer(self, request: Request, pk: UUID) -> Response:
         inputs = SoftwareGrantSerializer(data=request.data)
@@ -94,6 +98,7 @@ class SoftwareViewSet(viewsets.GenericViewSet):
         software = grant_software_maintenance(self.get_object(), request.user, **inputs.validated_data)
         return success_response(self.get_serializer(software).data, "已授权")
 
+    @extend_schema(responses={200: SoftwareSerializer})
     @action(detail=True, methods=["delete"], url_path="maintainers/<uuid:user_id>")
     def revoke_maintainer(self, request: Request, pk: UUID, user_id: UUID) -> Response:
         software = revoke_software_maintenance(self.get_object(), request.user, user_id)
@@ -165,6 +170,7 @@ class ProjectSoftwareViewSet(
         )
         return success_response(SoftwareSummarySerializer(candidates, many=True).data)
 
+    @extend_schema(request=ProjectSoftwareSelectionSerializer, responses={200: ProjectSoftwareSerializer, 201: ProjectSoftwareSerializer})
     def create(self, request: Request, *args, **kwargs) -> Response:
         inputs = ProjectSoftwareSelectionSerializer(data=request.data)
         inputs.is_valid(raise_exception=True)
@@ -181,6 +187,7 @@ class ProjectSoftwareViewSet(
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
+    @extend_schema(request=ProjectSoftwareStateSerializer, responses={200: ProjectSoftwareSerializer})
     def partial_update(self, request: Request, *args, **kwargs) -> Response:
         inputs = ProjectSoftwareStateSerializer(data=request.data)
         inputs.is_valid(raise_exception=True)

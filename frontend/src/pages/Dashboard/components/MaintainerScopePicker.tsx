@@ -3,7 +3,7 @@ import { Drawer, Grid, Popover } from 'antd';
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, Folder, LayoutGrid, Search, Workflow, X } from 'lucide-react';
 import type { MaintainerProjectScope } from '@/api/dashboard';
 
-export interface MaintainerScope { project?: string; repository?: string }
+export interface MaintainerScope { project?: string; repository?: string; software?: string; unassigned?: boolean }
 
 interface Props {
   projects: MaintainerProjectScope[];
@@ -29,21 +29,23 @@ export function MaintainerScopePicker({ projects, value, disabled, onApply }: Pr
   }, [open, mobile]);
   const orderedProjects = [...projects].sort((first, second) => second.release_count - first.release_count || first.name.localeCompare(second.name, 'zh-CN'));
   const project = projects.find((item) => item.id === value.project);
-  const software = project?.software.find((item) => item.id === value.repository);
+  const software = project?.software.find((item) => item.id === (value.software || value.repository));
   const draftProject = projects.find((item) => item.id === draft.project);
-  const draftSoftware = draftProject?.software.find((item) => item.id === draft.repository);
-  const label = `${project?.name || '全部项目'} · ${software?.name || '全部软件'}`;
+  const draftSoftware = draftProject?.software.find((item) => item.id === (draft.software || draft.repository));
+  const softwareName = software?.software_id === null && !value.unassigned ? software.repository_name : software?.name;
+  const draftName = draftSoftware?.software_id === null && !draft.unassigned ? draftSoftware.repository_name : draftSoftware?.name;
+  const label = `${project?.name || '全部项目'} · ${softwareName || '全部软件'}`;
 
   const change = (next: MaintainerScope) => {
     setDraft(next);
     if (!mobile) { onApply(next); setOpen(false); }
   };
   const option = (text: string, next: MaintainerScope, count?: number, icon = false) => {
-    const checked = draft.project === next.project && draft.repository === next.repository;
+    const checked = draft.project === next.project && draft.repository === next.repository && draft.software === next.software && !!draft.unassigned === !!next.unassigned;
     return <label className={`mnt-scope-option ${checked ? 'is-selected' : ''}`}>
       <input type="radio" name="maintainer-scope" aria-label={text} checked={checked} onChange={() => change(next)} />
       {icon && <LayoutGrid size={15} aria-hidden />}
-      <span>{next.project ? projects.find((item) => item.id === next.project)?.software.find((item) => item.id === next.repository)?.name || '全部软件' : text}</span>
+      <span>{next.project ? projects.find((item) => item.id === next.project)?.software.find((item) => item.id === (next.software || next.repository))?.name || '全部软件' : text}</span>
       {count !== undefined && <small>{count} 个版本</small>}
       {checked ? <CheckCircle2 size={17} aria-hidden /> : <Circle size={17} aria-hidden />}
     </label>;
@@ -62,7 +64,11 @@ export function MaintainerScopePicker({ projects, value, disabled, onApply }: Pr
           {isExpanded && <div className="mnt-scope-children">
             {option(`${item.name} / 全部软件`, { project: item.id }, item.release_count)}
             {item.software.filter((entry) => !keyword || item.name.toLowerCase().includes(keyword.toLowerCase()) || entry.name.toLowerCase().includes(keyword.toLowerCase())).map((entry) =>
-              <div key={entry.id}>{option(`${item.name} / ${entry.name}`, { project: item.id, repository: entry.id }, entry.release_count)}</div>)}
+              <div key={entry.id} title={entry.repository_name}>
+                {option(`${item.name} / ${entry.name}`, entry.software_id
+                  ? { project: item.id, software: entry.software_id }
+                  : { project: item.id, repository: entry.id, unassigned: entry.software_id === null }, entry.release_count)}
+              </div>)}
           </div>}
         </div>;
       })}
@@ -71,8 +77,8 @@ export function MaintainerScopePicker({ projects, value, disabled, onApply }: Pr
   const trigger = <button ref={triggerRef} type="button" className={`mnt-scope-trigger ${value.project ? 'has-scope' : ''}`} disabled={disabled} aria-label={`选择项目与软件：${label}`} aria-haspopup="dialog" aria-expanded={open}
     onClick={() => { setDraft(value); setKeyword(''); const initialProject = value.project || orderedProjects[0]?.id; setExpanded(initialProject ? [initialProject] : []); setOpen(!open); }}>
     <Workflow size={17} className="mnt-scope-mobile-icon" aria-hidden /><span className="mnt-scope-project-label">项目 · {project?.name || '全部'}</span>
-    <ChevronRight className="mnt-scope-desktop-separator" size={12} aria-hidden /><span className="mnt-scope-software-label">软件 · {software?.name || '全部'}</span>
-    <span className="mnt-scope-mobile-label">{value.project ? <><span>{project?.name || '所选项目'}</span><strong>{software?.name || '全部软件'}</strong></> : label}</span><ChevronDown size={15} aria-hidden />
+    <ChevronRight className="mnt-scope-desktop-separator" size={12} aria-hidden /><span className="mnt-scope-software-label">软件 · {softwareName || '全部'}</span>
+    <span className="mnt-scope-mobile-label">{value.project ? <><span>{project?.name || '所选项目'}</span><strong>{softwareName || '全部软件'}</strong></> : label}</span><ChevronDown size={15} aria-hidden />
   </button>;
 
   return <>
@@ -96,7 +102,7 @@ export function MaintainerScopePicker({ projects, value, disabled, onApply }: Pr
       <div className="mnt-scope-search-wrap">{searchControl}</div>
       <div className="mnt-scope-body">{tree}</div>
       <div className="mnt-scope-footer">
-        <p>当前选择：{draftProject?.name || '全部项目'} / {draftSoftware?.name || '全部软件'}</p>
+        <p>当前选择：{draftProject?.name || '全部项目'} / {draftName || '全部软件'}</p>
         <div><button type="button" className="mnt-scope-clear" onClick={() => setDraft({})}>清空</button>
           <button type="button" className="mnt-scope-apply" onClick={() => { onApply(draft); setOpen(false); }}>应用筛选</button></div>
       </div>
