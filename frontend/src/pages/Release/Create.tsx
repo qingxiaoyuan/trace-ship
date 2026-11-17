@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, Form, Select, Checkbox, Input } from 'antd';
+import { Alert, Button, Form, Select, Checkbox, Input } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -141,20 +141,25 @@ export default function ReleaseCreate() {
     ? (branchesError as { message?: string })?.message || '获取分支失败，请检查仓库凭证与连通性'
     : undefined;
 
-  // 发布后自动打包配置：该仓库启用了「发布后自动打包」的打包配置，可勾选（默认全选）
-  const { data: autoPackageData, isLoading: autoPackageLoading } = useQuery({
-    queryKey: ['package-configs-auto', watchProject, watchRepository],
+  // 按项目与目标软件读取当前可选的自动打包配置。
+  const autoPackageQuery = useQuery({
+    queryKey: ['package-configs-auto', watchProject, watchRepository, watchSoftware],
     queryFn: () =>
       packageApi.getConfigs({
         project: watchProject,
         repository: watchRepository || '',
+        software: watchSoftware,
         auto_package_on_release: true,
         is_active: true,
         page_size: 1000,
       }),
-    enabled: !!watchRepository && !usesSoftware,
+    enabled: !!watchProject && !!watchRepository,
   });
-  const autoPackageConfigs: PackageConfig[] = autoPackageData?.results || [];
+  const autoPackageLoading = autoPackageQuery.isLoading;
+  const autoPackageBlocked = !!watchSoftware && (autoPackageLoading
+    || (autoPackageQuery.isError && autoPackageConfigIds?.length !== 0));
+  const autoPackageConfigs: PackageConfig[] = (autoPackageQuery.data?.results || [])
+    .filter(config => watchSoftware ? config.software === watchSoftware : !config.software);
 
   // 自动版本号预览
   const { data: nextVersionData, isLoading: nextVersionLoading } = useQuery({
@@ -318,7 +323,7 @@ export default function ReleaseCreate() {
         impact_desc: impactDesc,
         self_test_passed: selfTestPassed,
         retest_passed: retestPassed,
-        package_config_ids: watchSoftware ? [] : autoPackageConfigIds ?? autoPackageConfigs.map((config) => config.id),
+        package_config_ids: autoPackageQuery.isError ? [] : autoPackageConfigIds ?? autoPackageConfigs.map((config) => config.id),
       }),
     onSuccess: (release) => {
       setCreatedRelease(release);
@@ -379,6 +384,7 @@ export default function ReleaseCreate() {
 
   const handleSoftwareChange = () => {
     resetSource();
+    setAutoPackageConfigIds(null);
     form.setFieldsValue({ repository: undefined, branch: undefined });
   };
 
@@ -462,7 +468,8 @@ export default function ReleaseCreate() {
       {/* ========== 步骤 1：填写表单 ========== */}
       {currentStep === 0 && (
         <>
-        <Form form={form} disabled={createMutation.isPending} layout="vertical" onFinish={(v) => createMutation.mutate(v)} requiredMark={false}>
+        <Form form={form} disabled={createMutation.isPending} layout="vertical"
+          onFinish={(values) => { if (!autoPackageBlocked) createMutation.mutate(values); }} requiredMark={false}>
           {/* 1. 基础配置 */}
           <section className="tech-card mb-5 rounded-xl p-5">
             <div className="mb-4 flex items-center gap-2">
@@ -761,7 +768,15 @@ export default function ReleaseCreate() {
           )}
 
           {/* 发布后自动打包（可勾选，默认全选，快照固定） */}
-          {!usesSoftware && formReady && (autoPackageLoading || autoPackageConfigs.length > 0) && (
+          {formReady && autoPackageQuery.isError && (
+            <Alert showIcon type="error" title="自动打包配置加载失败"
+              description={autoPackageConfigIds?.length === 0 ? '本次发布已选择不自动打包。' : '请重新加载配置，或选择本次发布不自动打包。'}
+              action={<div className="flex flex-wrap gap-2">
+                <Button onClick={() => { setAutoPackageConfigIds(null); void autoPackageQuery.refetch(); }}>重新加载</Button>
+                <Button onClick={() => setAutoPackageConfigIds([])}>本次不自动打包</Button>
+              </div>} />
+          )}
+          {formReady && (autoPackageLoading || autoPackageConfigs.length > 0) && (
             <section className="tech-card mb-5 rounded-xl p-5">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1146,7 +1161,7 @@ export default function ReleaseCreate() {
               </button>
               <button
                 type="submit"
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || autoPackageBlocked}
                 className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-60"
               >
                 <Rocket className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />

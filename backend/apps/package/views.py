@@ -450,8 +450,14 @@ class PackageConfigViewSet(StandardModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
-        if instance.software_id and (instance.tasks.exists() or hasattr(instance, "assignment")):
-            raise serializers.ValidationError({"config": "已有历史依据的共享配置只能停用。"})
+        if instance.software_id:
+            selections = ReleaseRecord.objects.filter(software_id=instance.software_id).values_list(
+                "package_config_ids", flat=True,
+            ).iterator()
+            if instance.tasks.exists() or hasattr(instance, "assignment") or any(
+                str(instance.pk) in (ids or []) for ids in selections
+            ):
+                raise serializers.ValidationError({"config": "已有发布或打包记录引用此配置，请停用配置。"})
         super().perform_destroy(instance)
 
     @action(detail=True, methods=["get"], url_path="usage-projects")
@@ -513,13 +519,28 @@ class PackageConfigViewSet(StandardModelViewSet):
             config = self.get_object()
             params = ReleasePackageTriggerSerializer(data=request.data)
             params.is_valid(raise_exception=True)
+            inputs = params.validated_data
             releases = ReleaseRecord.objects.select_related("project", "repository")
-            if not request.user.is_superuser:
+            options = {}
+            if config.software_id:
+                from apps.release.visibility import releases_for_read
+
+                if not inputs.get("project") or inputs.get("software") != config.software_id:
+                    raise serializers.ValidationError({"software": "必须显式指定项目和配置所属软件。"})
+                project = self._explicit_project(inputs["project"])
+                self._require_project_role(project, IsProjectReleasePackager())
+                releases = releases_for_read(releases, request.user, project.pk).filter(
+                    status="released", software_id=inputs["software"],
+                )
+                options = {"project": project}
+            else:
+                if "project" in inputs or "software" in inputs:
+                    raise serializers.ValidationError({"config": "此配置尚未归属共享软件。"})
                 releases = releases.filter(project_id__in=visible_project_ids(request.user))
-            release = releases.filter(id=params.validated_data["release_id"]).first()
+            release = releases.filter(id=inputs["release_id"]).first()
             if release is None:
                 raise NotFound("发布记录不存在或无权查看")
-            task = PackageService.create_task_for_release(config, release, request_user=request.user)
+            task = PackageService.create_task_for_release(config, release, request_user=request.user, **options)
         except PackageTaskDispatchError as exc:
             return error_response(
                 50300, str(exc), {"task_id": str(exc.task.id), "status": exc.task.status},
@@ -828,6 +849,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             raise Http404("任务不存在或无权查看") from exc
 
     def get_permissions(self):
+        if self.action == "retry":
+            return [IsAuthenticated(), IsProjectReleasePackager()]
         if self.action in ("cancel", "push_svn"):
             # 取消任务 / 手动推 SVN：管理员/开发可操作
             return [IsAuthenticated(), IsProjectDeveloper()]
@@ -845,9 +868,14 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """删除已结束的打包任务，同时清理工作区文件。"""
-        from apps.release.oa_submission import locked_archive_task
+        from apps.release.oa_submission import guard_archive_delete, locked_archive_task
 
         with locked_archive_task(self.get_object()) as task:
+            if not ProjectRolePermission()._check(task.project, request.user):
+                raise NotFound("任务不存在或无权查看")
+            self.check_permissions(request)
+            self.check_object_permissions(request, task)
+            guard_archive_delete(task=task)
             return self._delete_finished_task(task)
 
     @staticmethod
@@ -857,6 +885,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             return error_response(
                 40000, "仅可删除已结束的任务（成功/失败/已取消）", status_code=status.HTTP_400_BAD_REQUEST
             )
+        if PackageTask.objects.filter(retry_of=task).exists():
+            raise serializers.ValidationError({"task": "已有任务使用此记录重试，请保留原打包记录"})
         # 清理工作区目录（容错，日志文件随目录一并删除）
         if task.workspace_path:
             try:
@@ -873,6 +903,23 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         """当前用户发起的打包任务统计（?days=30，口径为本人已结束任务）。"""
         data = PackageService.my_task_stats(request.user, request.query_params.get("days"))
         return success_response(data)
+
+    @action(detail=True, methods=["post"], url_path="retry")
+    def retry(self, request, pk=None):
+        """从有权的失败任务新建一次重试，保留原任务结果。"""
+        if request.data:
+            raise serializers.ValidationError({"detail": "重试使用原任务的源码与配置快照"})
+        try:
+            task, created = PackageService.retry_shared_task(self.get_object(), request.user)
+        except PackageTaskDispatchError as exc:
+            return error_response(
+                50300, str(exc), {"task_id": str(exc.task.id), "status": exc.task.status},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return success_response(
+            self.get_serializer(task).data, "已创建重试任务" if created else "已返回本次重试任务",
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):

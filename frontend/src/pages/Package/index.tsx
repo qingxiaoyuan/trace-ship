@@ -5,6 +5,7 @@ import { Alert, App, Button } from 'antd';
 import { ChevronRight, History, List, Package as PackageIcon, Plus, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
+import type { NormalizedError } from '@/api/request';
 import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
 import { useMaintainedSoftware } from '@/hooks/useMaintainedSoftware';
@@ -371,6 +372,21 @@ export default function PackageTaskPage() {
     },
   });
 
+  const retryTaskMutation = useMutation<PackageTask, NormalizedError, PackageTask>({
+    mutationFn: (task: PackageTask) => packageApi.retryTask(task.id),
+    onSuccess: (task) => {
+      message.success('已进入重试任务');
+      void queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['release', task.release] });
+      navigate(`/packages/${task.id}`);
+    },
+    onError: (error) => {
+      const failed = error.data as { task_id?: string } | undefined;
+      if (failed?.task_id) navigate(`/packages/${failed.task_id}`);
+      message.error(readErrorMessage(error, '重试构建失败'));
+    },
+  });
+
   const deleteConfigMutation = useMutation({
     mutationFn: (configId: string) => packageApi.deleteConfig(configId),
     onSuccess: () => {
@@ -719,7 +735,8 @@ export default function PackageTaskPage() {
 
       {view === 'build' && selectedTask && (!routeTaskId || selectedTask.id === routeTaskId) && (
         <BuildView task={selectedTask} logText={logText} logPartial={logPartial} logError={logError}
-          onRetryLog={() => { void loadTaskDetail(selectedTask.id).catch(() => {}); }} onBack={backToList} onCancel={handleCancel} />
+          onRetryLog={() => { void loadTaskDetail(selectedTask.id).catch(() => {}); }} onBack={backToList} onCancel={handleCancel}
+          onRetryTask={retryTaskMutation.mutate} retrying={retryTaskMutation.isPending} />
       )}
 
       {view === 'build' && taskError && (

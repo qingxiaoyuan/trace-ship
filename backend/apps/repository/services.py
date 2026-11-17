@@ -366,7 +366,7 @@ class RepositoryService:
                 raise PermissionDenied("没有当前项目的 Tag 删除权限")
         if repo.repo_type != "git":
             raise ValueError("非 Git 仓库不支持标签删除")
-        ReleaseReferences.guard_shared_delete(repo, tag_name)
+        ReleaseReferences.guard_repository_tag_delete(repo, tag_name)
         cred_data = resolve_credential(
             repo, request_user, project=component.project if component else None, loan=loan,
             operation="delete_tag", project_component=component,

@@ -9,6 +9,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
 from django.db.models import Count, IntegerField, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from apps.account.models import User
@@ -186,8 +187,13 @@ def user_can_use_repository_credential(repository, user) -> bool:
     return False
 
 
+@transaction.atomic
 def ensure_repository_component(repository, project) -> ProjectComponent:
     """为项目 + 仓库调用补齐默认项目组件（项目上下文登记仓库时使用）。"""
+    from apps.repository.models import Repository
+
+    repository = get_object_or_404(Repository.objects.select_for_update(no_key=True), pk=repository.pk)
+    project = get_object_or_404(Project.objects.select_for_update(no_key=True), pk=project.pk)
     existing = ProjectComponent.objects.filter(
         project=project,
         repository=repository,

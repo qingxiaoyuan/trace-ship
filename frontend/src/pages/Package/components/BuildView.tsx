@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { App, Button } from 'antd';
-import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal } from 'lucide-react';
+import { ChevronRight, Loader, Package as PackageIcon, RotateCcw, Square, Terminal } from 'lucide-react';
 import dayjs from 'dayjs';
 import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
@@ -21,9 +21,13 @@ interface BuildViewProps {
   onRetryLog?: () => void;
   onBack: () => void;
   onCancel: (task: PackageTask) => void;
+  onRetryTask?: (task: PackageTask) => void;
+  retrying?: boolean;
 }
 
-export const BuildView = memo(function BuildView({ task, logText, logPartial, logError, onRetryLog, onBack, onCancel }: BuildViewProps) {
+export const BuildView = memo(function BuildView({
+  task, logText, logPartial, logError, onRetryLog, onBack, onCancel, onRetryTask, retrying,
+}: BuildViewProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const artifacts = task.artifact_info || [];
@@ -99,7 +103,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
                   <>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
                     <Link
-                      to={`/releases/${task.release}`}
+                      to={`/releases/${task.release}${task.software ? `?project=${task.project}` : ''}`}
                       className="text-indigo-500 transition-colors hover:text-indigo-600"
                     >
                       发布 {task.release_version || ''}
@@ -120,6 +124,12 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
           {running && task.can_cancel === true && (
             <Button danger icon={<Square className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={() => onCancel(task)}>
               停止构建
+            </Button>
+          )}
+          {task.can_retry && onRetryTask && (
+            <Button className="max-md:min-h-9" loading={retrying} icon={<RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />}
+              onClick={() => onRetryTask(task)}>
+              重试构建
             </Button>
           )}
         </div>

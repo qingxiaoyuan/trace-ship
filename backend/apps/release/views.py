@@ -332,7 +332,9 @@ class ReleaseViewSet(StandardModelViewSet):
         """当前项目可见成员可回读完整资料、操作者与 OA 原始返回对象。"""
         from apps.release.oa_submission import application_data
 
-        return success_response([application_data(item) for item in self.get_object().oa_applications.all()])
+        release = self.get_object()
+        records = release.oa_applications.filter(Q(task__project_id=release.project_id) | Q(task__isnull=True))
+        return success_response([application_data(item) for item in records])
 
     def _serialize_release(self, release: ReleaseRecord) -> dict[str, Any]:
         """

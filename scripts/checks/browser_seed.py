@@ -259,11 +259,13 @@ def main() -> None:
     software_delegate = User.objects.create_user(username="smoke_software_delegate", password=password)
     release_project = Project.objects.create(name="隔离软件版本项目", code="SMOKE-SW-RELEASE", leader=owner, status=1)
     shared_reader = User.objects.create_user(username="smoke_shared_version_reader", password=password)
+    shared_builder = User.objects.create_user(username="smoke_shared_version_builder", password=password)
     shared_project = Project.objects.create(name="隔离软件复用项目", code="SMOKE-SW-READ", leader=owner, status=1)
     for context in (release_project, shared_project):
         ProjectMember.objects.create(project=context, user=owner, role="manager")
         ProjectComponent.objects.create(project=context, repository=software_repository, component_code="software-release")
     ProjectMember.objects.create(project=shared_project, user=shared_reader, role="maintainer")
+    ProjectMember.objects.create(project=shared_project, user=shared_builder, role="developer")
     sample_software = [
         Software.objects.create(repository=software_repository, slug=slug, name=name, owner=owner)
         for slug, name in (("client-a", "隔离客户端"), ("server-b", "隔离服务端"))
@@ -298,6 +300,14 @@ def main() -> None:
     git_credential.save()
     repository.credential = git_credential
     repository.save(update_fields=["credential"])
+    software_repository.credential = git_credential
+    software_repository.save(update_fields=["credential"])
+    software_auto_configs = [
+        PackageConfig.objects.create(
+            software=software, image=shared_image, name=software.name + "自动配置", auto_package_on_release=True,
+        )
+        for software in sample_software
+    ]
     package_tasks.get_provider = lambda *_args: SampleRepository()
     manifest = {
         "username": reader.username, "password": password,
@@ -314,8 +324,12 @@ def main() -> None:
         },
         "software_release": {
             "project_id": str(release_project.id), "shared_project_id": str(shared_project.id),
-            "shared_reader": shared_reader.username, "repository_name": software_repository.name,
-            "software": [{"id": str(software.id), "name": software.name, "slug": software.slug} for software in sample_software],
+            "shared_reader": shared_reader.username, "shared_builder": shared_builder.username,
+            "repository_name": software_repository.name, "shared_project_name": shared_project.name,
+            "software": [{
+                "id": str(software.id), "name": software.name, "slug": software.slug,
+                "config": str(config.id), "config_name": config.name,
+            } for software, config in zip(sample_software, software_auto_configs, strict=True)],
         },
         "release_flow": {"project_id": str(project.id), "repository_name": repository.name,
                          "branch": "main", "git_hash": "a" * 40},

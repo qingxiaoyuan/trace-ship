@@ -3,10 +3,13 @@
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.release.models import ReleaseRecord, ReleaseTagCleanupAttempt
+from apps.release.oa_submission import guard_archive_delete
 from apps.release.references import ReleaseReferences
 from apps.repository.models import Repository, RepositoryTag
+from utils.permissions import IsProjectManager
 from utils.provider.exceptions import NotFoundError, ProviderError
 
 
@@ -28,9 +31,9 @@ class TagCleanup:
             "cleanup_status": release.tag_cleanup_status,
         }
         try:
-            ReleaseReferences.guard_shared_delete(release.repository, release.tag_name)
             if release.release_type != "rc" or release.status != "released":
                 raise serializers.ValidationError({"release": "仅已发布 RC 可以清理 Tag"})
+            guard_archive_delete(release=release)
             # 即使原 RC 仍在，也必须找到可用正式引用后才允许删除。
             reference = ReleaseReferences.resolve(release, tags, excluded=release.tag_name)
             current = next((tag for tag in tags if tag.name == release.tag_name), None)
@@ -51,14 +54,27 @@ class TagCleanup:
 
         if tag_name != release.tag_name:
             raise serializers.ValidationError({"tag_name": "请确认完整 RC Tag 名称，仅删除远端标签"})
-        # 意图先提交，远端成功后本地写入失败时仍可据此对账。
-        attempt = ReleaseTagCleanupAttempt.objects.create(release=release, actor=user)
+        # 意图与删除使用同一仓库锁，先提交意图供远端操作后的对账使用。
+        with transaction.atomic():
+            if Repository.objects.select_for_update(no_key=True).filter(pk=release.repository_id).first() is None:
+                raise NotFound("来源仓库已删除")
+            release = ReleaseRecord.objects.select_for_update().filter(pk=release.pk).first()
+            if release is None:
+                raise NotFound("发布记录已删除")
+            if release.release_type != "rc" or release.status != "released":
+                raise serializers.ValidationError({"release": "仅已发布 RC 可以清理 Tag"})
+            if tag_name != release.tag_name:
+                raise serializers.ValidationError({"tag_name": "请确认完整 RC Tag 名称，仅删除远端标签"})
+            if not IsProjectManager()._check(release.project, user):
+                raise PermissionDenied("没有在当前项目清理 RC Tag 的权限")
+            attempt = ReleaseTagCleanupAttempt.objects.create(release=release, actor=user)
         with transaction.atomic():
             Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
             release = ReleaseRecord.objects.select_for_update().get(pk=release.pk)
             status, reason, reference = "failure", "", ""
             try:
-                ReleaseReferences.guard_shared_delete(release.repository, release.tag_name)
+                if not IsProjectManager()._check(release.project, user):
+                    raise serializers.ValidationError({"permission": "没有在当前项目清理 RC Tag 的权限"})
                 provider = ReleaseService._get_provider(
                     release.repository, user, project=release.project, operation="delete_tag"
                 )

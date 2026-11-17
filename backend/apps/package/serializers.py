@@ -148,10 +148,12 @@ class PackageNodeSerializer(serializers.ModelSerializer):
 
 
 class ReleasePackageTriggerSerializer(serializers.Serializer):
-    """补打仅接受固定发布 ID，不接收任何临时构建参数。"""
+    """共享版本显式指定发起项目和软件，源码与参数由服务端记录决定。"""
 
     release = serializers.UUIDField(required=False)
     release_id = serializers.UUIDField(required=False)
+    project = serializers.UUIDField(required=False)
+    software = serializers.UUIDField(required=False)
 
     def to_internal_value(self, data: object) -> dict[str, object]:
         if not isinstance(data, dict):
@@ -167,7 +169,9 @@ class ReleasePackageTriggerSerializer(serializers.Serializer):
             raise serializers.ValidationError({"release_id": "必须指定已发布版本"})
         if attrs.get("release") and attrs.get("release_id") and attrs["release"] != attrs["release_id"]:
             raise serializers.ValidationError({"release_id": "release 与 release_id 必须指向同一发布"})
-        return {"release_id": release_id}
+        attrs.pop("release", None)
+        attrs["release_id"] = release_id
+        return attrs
 
 
 class BranchPackageTriggerSerializer(serializers.Serializer):
@@ -465,16 +469,18 @@ class PackageTaskSerializer(serializers.ModelSerializer):
     my_role = serializers.SerializerMethodField()
     can_cancel = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
+    can_retry = serializers.SerializerMethodField()
 
     class Meta:
         model = PackageTask
         fields = [
-            "id", "config", "config_name", "release", "release_version",
+            "id", "config", "config_name", "release", "release_version", "retry_of",
             "project", "project_name", "repository", "repository_name",
             "software", "software_name", "software_slug", "triggered_by", "triggered_by_name", "name",
             "build_type", "release_type", "release_type_display",
             "tag_name", "source_ref", "version", "commit_hash", "config_snapshot",
             "status", "status_display", "progress", "stage_info", "can_push_svn", "my_role", "can_cancel", "can_delete",
+            "can_retry",
             "artifact_info", "duration", "error_message",
             "started_at", "finished_at", "created_at", "updated_at",
         ]
@@ -516,6 +522,12 @@ class PackageTaskSerializer(serializers.ModelSerializer):
     def get_can_cancel(self, obj: PackageTask) -> bool:
         """取消入口同时要求进行中状态与项目开发权限。"""
         return obj.status in ("queued", "running") and self.get_my_role(obj) in ("manager", "developer", "software_admin")
+
+    def get_can_retry(self, obj: PackageTask) -> bool:
+        return (
+            obj.status == "failure" and bool(obj.software_id)
+            and self.get_my_role(obj) in ("manager", "developer", "tester", "software_admin")
+        )
 
     def get_can_delete(self, obj: PackageTask) -> bool:
         """独立删除权限不能覆盖维保项目的只读边界。"""

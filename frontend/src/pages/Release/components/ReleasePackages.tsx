@@ -22,7 +22,7 @@ const statusMap: Record<PackageTaskStatus, { text: string; cls: string; icon: ty
 };
 
 /** 只补打当前已发布版本；配置与源码身份均由服务端再次校验。 */
-function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boolean }) {
+function ReleaseRepackage({ release, enabled }: { release: Release; enabled: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
@@ -30,32 +30,34 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
   const project = useQuery({
     queryKey: ['project', release.project],
     queryFn: () => projectApi.getProject(release.project),
-    enabled: desktop && !!release.project,
+    enabled: enabled && !!release.project,
   });
   // 维保职责按目标项目判断，不能用用户其他项目的角色推断本次权限。
   const canRepackage = user?.is_superuser || ['developer', 'tester', 'manager', 'software_admin']
     .includes(project.data?.my_role || '');
   const configs = useQuery({
-    queryKey: ['release-package-configs', release.project, release.repository],
+    queryKey: ['release-package-configs', release.project, release.repository, release.software],
     queryFn: async () => {
       const result: PackageConfig[] = [];
       let page = 1;
       while (true) {
         const data = await packageApi.getConfigs({
-          project: release.project, repository: release.repository, is_active: true, page, page_size: 100,
+          project: release.project, repository: release.repository, software: release.software || undefined,
+          is_active: true, page, page_size: 100,
         });
         result.push(...data.results);
         if (!data.results.length || result.length >= data.total) break;
         page += 1;
       }
-      return result.filter((config) => config.is_active && config.project_id === release.project
-        && config.repository_id === release.repository);
+      return result.filter(config => config.is_active && config.repository_id === release.repository
+        && (release.software ? config.software === release.software : !config.software && config.project_id === release.project));
     },
-    enabled: desktop && !!canRepackage && !!release.project && !!release.repository,
+    enabled: enabled && !!canRepackage && !!release.project && !!release.repository,
     retry: false,
   });
   const trigger = useMutation({
-    mutationFn: () => packageApi.triggerConfig(configId!, release.id),
+    mutationFn: () => packageApi.triggerConfig(configId!, release.id, release.software
+      ? { project: release.project, software: release.software } : undefined),
     onSettled: (task, error) => {
       const failedTask = (error as NormalizedError | null)?.data as { task_id?: string } | undefined;
       if (!task && !failedTask?.task_id) return;
@@ -68,8 +70,7 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
   });
   const failedTaskId = ((trigger.error as NormalizedError | null)?.data as { task_id?: string } | undefined)?.task_id;
 
-  // 切换断点只隐藏入口，保留配置与任务结果，避免恢复桌面后丢失新任务链接。
-  if (!desktop) return null;
+  if (!enabled) return null;
   if (project.isPending) return <div className="text-[13px] text-slate-400">正在核验补打权限…</div>;
   if (project.error) return <div className="space-y-2">
     <PermissionAlert error={project.error} errorTitle="补打权限加载失败" />
@@ -81,6 +82,7 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
     <div>
       <h3 className="text-[13px] font-medium text-slate-900">补打已发布版本</h3>
       <p className="mt-1 text-[12px] text-slate-600">当前版本：{release.version} / {release.tag_name}</p>
+      {release.software && <p className="mt-1 text-[12px] text-slate-600">任务归属项目：{release.project_name}</p>}
       <p className="mt-1 text-[12px] text-slate-500">使用已有配置和当前版本源码补打，所有版本的 SVN 推送统一遵循配置中的总开关。</p>
     </div>
     {configs.error ? <div className="space-y-2">
@@ -88,18 +90,20 @@ function ReleaseRepackage({ release, desktop }: { release: Release; desktop: boo
       <Button onClick={() => void configs.refetch()}>重试加载配置</Button>
     </div> : <>
       <label htmlFor="release-repackage-config" className="block text-[12px] text-slate-600">打包配置</label>
-      <div className="flex items-center gap-2">
-        <Select id="release-repackage-config" className="min-w-0 flex-1" virtual={false}
+      <div className="flex items-center gap-2 max-md:flex-col max-md:items-stretch">
+        <Select id="release-repackage-config" className="min-w-0 flex-1 max-md:min-h-9" virtual={false}
           value={configId} onChange={(value) => { setConfigId(value); trigger.reset(); }}
           loading={configs.isFetching} disabled={trigger.isPending || configs.isPending}
           placeholder="选择已有打包配置" options={(configs.data || []).map((config) => ({ value: config.id, label: config.name }))}
           notFoundContent={configs.isPending ? '加载中…' : '暂无启用的打包配置'} />
-        <Button type="primary" loading={trigger.isPending}
+        <Button type="primary" className="max-md:min-h-9" loading={trigger.isPending}
           disabled={!configId || !configs.data?.some((config) => config.id === configId)} onClick={() => trigger.mutate()}>
           补打当前版本
         </Button>
       </div>
-      {!configs.isPending && !configs.data?.length && <p className="text-[12px] text-slate-500">当前项目的软件暂无启用的打包配置，请联系项目管理员。</p>}
+      {!configs.isPending && !configs.data?.length && <p className="text-[12px] text-slate-500">{release.software
+        ? '当前项目没有可用的配置。请核对软件选用、软件启停和打包配置。'
+        : '当前项目的软件暂无启用的打包配置，请联系项目管理员。'}</p>}
     </>}
     {trigger.error && <PermissionAlert error={trigger.error} errorTitle="补打失败" />}
     {failedTaskId && <Button onClick={() => navigate(`/packages/${failedTaskId}`)}>查看失败任务</Button>}
@@ -149,7 +153,7 @@ export function ReleasePackages({ release, maintainerMobile = false, active = tr
 
   return (
     <div className="space-y-3">
-      {!release.software && release.status === 'released' && <ReleaseRepackage key={release.id} release={release} desktop={active && !!screens.md} />}
+      {release.status === 'released' && <ReleaseRepackage key={`${release.id}:${release.project}`} release={release} enabled={active && (!!screens.md || !!release.software)} />}
       {!release.shared_readonly && release.status === 'released' && release.release_type === 'formal' && <OaArchivePreparationPanel key={`oa-${release.id}`} release={release} active={active || !!archiveActionTarget} actionTarget={archiveActionTarget} />}
       {!tasks.length && <div className="py-8 text-center text-[13px] text-slate-400">该发布暂无打包任务</div>}
       {tasks.map((task) => {

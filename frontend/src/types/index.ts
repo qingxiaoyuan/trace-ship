@@ -724,12 +724,14 @@ export interface PackageTask {
   my_role?: string | null;
   can_cancel?: boolean;
   can_delete?: boolean;
+  can_retry?: boolean;
   id: string;
   config?: string | null;
   config_name?: string;
   /** 关联发布（分支直打包任务为空） */
   release: string | null;
   release_version?: string | null;
+  retry_of?: string | null;
   software?: string | null;
   software_name?: string;
   software_slug?: string;
