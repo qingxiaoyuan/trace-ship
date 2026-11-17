@@ -36,7 +36,7 @@ export function ReleaseSource({ release, canRefresh = false }: { release: Releas
     },
   });
   const reference = useQuery({ queryKey: ['release-reference', release.id, release.tag_cleanup_status, release.source_rc],
-    queryFn: () => releaseApi.getSourceReference(release.id), enabled: release.release_type === 'formal' && (release.status === 'released' || !!release.source_rc), retry: false });
+    queryFn: () => releaseApi.getSourceReference(release.id), enabled: !release.shared_readonly && release.release_type === 'formal' && (release.status === 'released' || !!release.source_rc), retry: false });
   const commit = release.git_hash || release.source_rc_git_hash || '';
   const canUpdate = release.status === 'draft' && canRefresh;
   const commitDetailsId = `release-commit-${release.id}`;
@@ -147,7 +147,7 @@ export function ReleaseSource({ release, canRefresh = false }: { release: Releas
     </> : null}
     {editing && canUpdate ? <div className="mt-4 space-y-3 border-t border-slate-200/70 pt-3">
       <p className="text-amber-700">保存新来源后，原发布说明和关联变更将清空，需要重新生成。</p>
-      <RcSourceSelect project={release.project} repository={release.repository} value={selected} onChange={setSelected} />
+      <RcSourceSelect project={release.project} repository={release.repository} software={release.software || undefined} value={selected} onChange={setSelected} />
       {update.error ? <p role="alert">{update.error.message}</p> : null}
       <div className="flex gap-2">
         <Button type="primary" disabled={!selected || selected === release.source_rc} loading={update.isPending}

@@ -37,6 +37,11 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
         <span className="shrink-0 text-slate-300">/</span>
         <span className="truncate font-mono text-[10px] text-slate-400 max-md:text-xs">{release.repository_name || '-'}</span>
       </div>
+      {release.software_name && (
+        <div className="mt-1 truncate text-[11px] font-medium text-slate-700 max-md:text-xs">
+          {release.software_name}{release.software_slug && <span className="ml-1 font-mono font-normal text-slate-500">{release.software_slug}</span>}
+        </div>
+      )}
       {release.redmine_url ? (
         <a
           href={release.redmine_url}
@@ -111,7 +116,7 @@ export function ReleaseBoard() {
                   <ReleaseCard
                     key={release.id}
                     release={release}
-                    onClick={() => navigate(`/releases/${release.id}`)}
+                    onClick={() => navigate(`/releases/${release.id}${release.shared_readonly ? `?project=${release.project}` : ''}`)}
                   />
                 ))
               )}
@@ -138,7 +143,7 @@ export function ReleaseList() {
     <div className="tech-card overflow-hidden rounded-xl">
       <div className="hidden grid-cols-12 gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
         <div className="col-span-2">版本</div>
-        <div className="col-span-3">项目 / 仓库</div>
+        <div className="col-span-3">项目 / 软件 / 仓库</div>
         <div className="col-span-2">类型</div>
         <div className="col-span-2">发布人</div>
         <div className="col-span-2">状态</div>
@@ -190,6 +195,10 @@ export function ReleaseList() {
                   </div>
                   <div className="col-span-3 flex items-center gap-1 text-[12px] text-slate-600">
                     <span className="truncate">{release.project_name || '-'}</span>
+                    {release.software_name && <>
+                      <span className="shrink-0 text-slate-300">/</span>
+                      <span className="shrink-0 max-w-[8rem] truncate">{release.software_name}</span>
+                    </>}
                     <span className="shrink-0 text-slate-300">/</span>
                     <span className="truncate font-mono text-[11px] text-slate-400">{release.repository_name || '-'}</span>
                   </div>
@@ -238,7 +247,7 @@ export function ReleaseList() {
                     <span className="font-mono text-[16px] font-semibold tracking-tight text-slate-900">
                       {release.version}
                     </span>
-                    <span className="truncate text-[12px] text-slate-400">{release.project_name || '-'}</span>
+                    <span className="truncate text-[12px] text-slate-400">{[release.project_name, release.software_name].filter(Boolean).join(' / ') || '-'}</span>
                   </div>
                   <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                     <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />

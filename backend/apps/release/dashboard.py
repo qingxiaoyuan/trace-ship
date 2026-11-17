@@ -50,7 +50,7 @@ def weekly_release_report(user: User, now: datetime) -> str:
     return "\ufeff" + output.getvalue()
 
 
-def release_update_summary(release: ReleaseRecord) -> str:
+def release_update_summary(release: ReleaseRecord, *, include_request_updates: bool = True) -> str:
     """从保存的说明提取更新段落；仅压缩列表预览，完整文档保持原样。"""
     doc = release.release_doc or ""
     lines = []
@@ -64,7 +64,7 @@ def release_update_summary(release: ReleaseRecord) -> str:
         elif collecting:
             # 人工编辑可能把更新值首行留空，仍按已有表格的续行语义读取。
             lines.append(re.sub(r"(?<!\\)\|\s*$", "", line))
-    if not lines:
+    if not lines and include_request_updates:
         lines = [str(item.get("content", "")) for item in release.updates or [] if isinstance(item, dict)]
     if not any(lines):
         lines = [line for line in doc.splitlines() if line.strip() and not line.lstrip().startswith(("#", "|"))]
@@ -74,12 +74,13 @@ def release_update_summary(release: ReleaseRecord) -> str:
     return re.sub(r"\s+", " ", text.replace("**", "").replace("`", "").replace("\\|", "|")).strip("； ")[:300]
 
 
-def release_package_summary(release: ReleaseRecord) -> dict[str, Any]:
+def release_package_summary(release: ReleaseRecord, *, project_id=None) -> dict[str, Any]:
     """分别取每份配置的最近任务，失败配置不能被其他配置的成功掩盖。"""
     latest = {}
+    project_id = project_id if project_id is not None else release.project_id
     tasks = sorted(release.package_tasks.all(), key=lambda item: (item.created_at, str(item.id)), reverse=True)
     for task in tasks:
-        if task.project_id != release.project_id or task.repository_id != release.repository_id:
+        if task.project_id != project_id or task.repository_id != release.repository_id:
             continue
         latest.setdefault(str(task.config_id or (task.config_snapshot or {}).get("config_id") or task.id), task)
     counts = dict(Counter(task.status for task in latest.values()))

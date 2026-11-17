@@ -11,11 +11,19 @@ from apps.release.models import ReleaseRecord
 
 class ReleaseReferences:
     @staticmethod
+    def guard_shared_delete(repository, tag_name: str) -> None:
+        if ReleaseRecord.objects.filter(repository=repository, tag_name=tag_name, software__isnull=False).exists():
+            raise serializers.ValidationError({"tag": "共享软件版本的引用保护尚未开放，暂不能删除此 Tag"})
+
+    @staticmethod
     def resolve(release: ReleaseRecord, tags: list, excluded: str = "") -> str:
         """返回可拉取的等价引用；绝不回退到分支或接受被改写的原 Tag。"""
         sha = release.git_hash
         if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", sha or ""):
             raise serializers.ValidationError({"source": "发布记录缺少完整提交快照"})
+        source = release.source_rc if release.source_rc_id else None
+        if source and release.software_id and source.software_id and source.software_id != release.software_id:
+            raise serializers.ValidationError({"source": "原 RC 与正式发布归属不同软件，不能作为等价来源"})
         current = next((tag for tag in tags if tag.name == release.tag_name and tag.name != excluded), None)
         if current:
             if current.commit_hash != sha:
@@ -34,6 +42,8 @@ class ReleaseReferences:
                 .exclude(tag_name=excluded)
                 .order_by("-released_at")
             )
+            if release.software_id:
+                alternatives = alternatives.filter(Q(software=release.software) | Q(software__isnull=True))
             by_name = {tag.name: tag for tag in tags}
             for formal in alternatives:
                 tag = by_name.get(formal.tag_name)
@@ -44,6 +54,7 @@ class ReleaseReferences:
     @staticmethod
     def guard_delete(repository, tag_name: str, tags: list, *, allow_rc_cleanup: bool = False) -> None:
         """保护跨项目任务和最后源码引用；不在错误中泄露其他项目详情。"""
+        ReleaseReferences.guard_shared_delete(repository, tag_name)
         if (
             PackageTask.objects.filter(repository=repository, status__in=["queued", "running"])
             .filter(Q(tag_name=tag_name) | Q(source_ref=tag_name))

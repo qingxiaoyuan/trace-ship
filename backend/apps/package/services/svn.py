@@ -221,7 +221,7 @@ class SvnPushMixin:
     @classmethod
     def sync_release_docs_to_svn(cls, release) -> list[dict[str, Any]]:
         """
-        将发布文档同步替换到该发布所有已推送 SVN 的打包任务目录。
+        将发布文档同步到原项目已推送 SVN 的打包任务目录。
 
         修改发布文档（update-doc）后调用：仅处理已成功推送过 SVN 的打包任务，
         按目录并行执行 SVN 文件替换。任一任务失败不影响其它任务，也不抛出异常，
@@ -241,7 +241,7 @@ class SvnPushMixin:
 
         # 主线程收集任务上下文并解析凭证（避免工作线程操作 ORM 连接）
         jobs: list[dict[str, Any]] = []
-        tasks = release.package_tasks.filter(status="success")
+        tasks = release.package_tasks.filter(status="success", project_id=release.project_id)
         for task in tasks:
             stage = (task.stage_info or {}).get("svn_push")
             if not stage or stage.get("status") != "success":

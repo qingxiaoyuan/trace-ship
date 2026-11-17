@@ -102,20 +102,33 @@ class ReleaseRecord(models.Model):
         related_name="releases",
         verbose_name="目标仓库",
     )
+    software = models.ForeignKey(
+        "software.Software", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="releases", verbose_name="软件",
+    )
+    software_name_snapshot = models.CharField(max_length=200, blank=True, verbose_name="软件显示名称快照")
+    source_repository_name_snapshot = models.CharField(max_length=200, blank=True, verbose_name="主仓库名称快照")
+    software_confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="+", verbose_name="历史软件归属确认人",
+    )
+    software_confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name="历史软件归属确认时间")
+    software_confirmation_basis = models.TextField(blank=True, verbose_name="历史软件归属依据")
+    historical_base_version = models.CharField(max_length=100, blank=True, verbose_name="已确认历史基础版本")
     source_rc = models.ForeignKey(
         "self", on_delete=models.PROTECT, null=True, blank=True,
         related_name="formal_promotions", verbose_name="来源 RC",
     )
     source_rc_version = models.CharField(max_length=100, blank=True, verbose_name="来源 RC 版本快照")
-    source_rc_tag = models.CharField(max_length=100, blank=True, verbose_name="来源 RC Tag 快照")
+    source_rc_tag = models.CharField(max_length=181, blank=True, verbose_name="来源 RC Tag 快照")
     source_rc_git_hash = models.CharField(max_length=100, blank=True, verbose_name="来源 RC 提交快照")
     legacy_approval_allowed = models.BooleanField(default=False, editable=False, verbose_name="升级前正式审批兼容")
     tag_cleanup_status = models.CharField(max_length=20, blank=True, verbose_name="Tag 清理状态")
     tag_cleaned_at = models.DateTimeField(null=True, blank=True, verbose_name="Tag 清理时间")
     tag_cleaned_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="cleaned_rc_tags", verbose_name="Tag 清理人")
-    tag_cleanup_reference = models.CharField(max_length=100, blank=True, verbose_name="保护正式 Tag 快照")
+    tag_cleanup_reference = models.CharField(max_length=181, blank=True, verbose_name="保护正式 Tag 快照")
     version = models.CharField(max_length=100, verbose_name="版本号")
-    tag_name = models.CharField(max_length=100, verbose_name="Tag 名称")
+    tag_name = models.CharField(max_length=181, verbose_name="Tag 名称")
     redmine_url = models.URLField(
         max_length=500,
         blank=True,
@@ -123,7 +136,7 @@ class ReleaseRecord(models.Model):
     )
     # 发布时的基线 tag：生成发布说明时持久化的上一个 tag 快照，
     # 供详情页展示「上一 tag -> 本次 tag」提交区间，历史数据为空。
-    base_tag = models.CharField(max_length=100, blank=True, verbose_name="基线 Tag")
+    base_tag = models.CharField(max_length=181, blank=True, verbose_name="基线 Tag")
     base_git_hash = models.CharField(max_length=100, blank=True, verbose_name="正式基线提交快照")
     changes_initialized = models.BooleanField(default=False, verbose_name="正式变更基线已固定")
     changes_warnings = models.JSONField(default=list, blank=True, verbose_name="正式变更核验提示")
@@ -203,6 +216,7 @@ class ReleaseRecord(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["project", "status"]),
+            models.Index(fields=["software", "release_type", "status"]),
             models.Index(fields=["project", "release_type"]),
             models.Index(fields=["repository", "status"]),
             models.Index(fields=["version"]),
@@ -219,7 +233,7 @@ class ReleaseReviewScope(models.Model):
     instance = models.OneToOneField(
         "workflow.WorkflowInstance", on_delete=models.CASCADE, related_name="review_scope", verbose_name="审批轮次",
     )
-    base_tag = models.CharField(max_length=100, blank=True, verbose_name="基线版本")
+    base_tag = models.CharField(max_length=181, blank=True, verbose_name="基线版本")
     base_git_hash = models.CharField(max_length=100, blank=True, verbose_name="基线提交")
     head_git_hash = models.CharField(max_length=100, verbose_name="目标提交")
     context = models.TextField(blank=True, verbose_name="补充审查说明快照")
@@ -242,7 +256,7 @@ class ReleaseTagCleanupAttempt(models.Model):
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, verbose_name="操作人")
     status = models.CharField(max_length=30, default="attempting", verbose_name="结果")
     message = models.TextField(blank=True, verbose_name="说明")
-    protected_by = models.CharField(max_length=100, blank=True, verbose_name="保护正式 Tag")
+    protected_by = models.CharField(max_length=181, blank=True, verbose_name="保护正式 Tag")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="操作时间")
 
     class Meta:
@@ -250,20 +264,31 @@ class ReleaseTagCleanupAttempt(models.Model):
 
 
 class ReleaseVersionClaim(models.Model):
-    """进入流程后的仓库级占用；成功保留，明确删除发布和 Tag 后可释放。"""
+    """进入流程后的版本占用；旧申请沿用仓库范围。"""
 
     repository = models.ForeignKey("repository.Repository", on_delete=models.CASCADE, verbose_name="仓库")
     release_type = models.CharField(max_length=20, verbose_name="发布类型")
+    software = models.ForeignKey(
+        "software.Software", null=True, blank=True, on_delete=models.PROTECT, verbose_name="软件",
+    )
     base_version = models.CharField(max_length=100, verbose_name="规范化基础版本")
     # 占用的原始 Tag 身份；旧孤立占用复用时保留，供推送前核验旧规则引用。
-    tag_name = models.CharField(max_length=100, verbose_name="发布 Tag")
+    tag_name = models.CharField(max_length=181, verbose_name="发布 Tag")
     release = models.ForeignKey(ReleaseRecord, null=True, on_delete=models.SET_NULL, related_name="version_claims", verbose_name="发布申请")
     consumed = models.BooleanField(default=False, verbose_name="已成功发布")
     reused = models.BooleanField(default=False, verbose_name="复用历史占用")
 
     class Meta:
         db_table = "release_version_claim"
-        constraints = [models.UniqueConstraint(fields=["repository", "release_type", "base_version"], name="unique_repository_release_version")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["repository", "release_type", "base_version"],
+                condition=models.Q(software__isnull=True), name="unique_repository_release_version",
+            ),
+            models.UniqueConstraint(
+                fields=["software", "release_type", "base_version"], name="unique_software_release_version",
+            ),
+        ]
 
 
 class ReleaseCommit(models.Model):

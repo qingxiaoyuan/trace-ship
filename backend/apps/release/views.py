@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery, Value
 from django.db.models.functions import Coalesce, NullIf
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
@@ -34,6 +35,8 @@ from apps.release.serializers import (
     ReleaseListSerializer,
     ReleaseRecordSerializer,
     ReleaseReviewIssueSerializer,
+    SoftwareChangesQuerySerializer,
+    SoftwareReleaseQuerySerializer,
 )
 from apps.release.services import (
     ReleaseReviewError,
@@ -97,6 +100,8 @@ def _handle_service_error(exc: Exception, action_desc: str) -> Response:
         return error_response(40003, str(exc))
     if isinstance(exc, serializers.ValidationError):
         return error_response(40002, _extract_validation_message(exc))
+    if isinstance(exc, APIException):
+        raise exc
     if isinstance(exc, ProviderError):
         logger.warning("%s失败（Git 平台错误）: %s", action_desc, exc, exc_info=True)
         return error_response(50200, f"{action_desc}失败: {exc}", status_code=502)
@@ -113,12 +118,25 @@ class ReleaseFilter(filters.FilterSet):
     created_at__lte = filters.DateTimeFilter(field_name="created_at", lookup_expr="lte")
     version__icontains = filters.CharFilter(field_name="version", lookup_expr="icontains")
     review_status = filters.CharFilter(method="filter_review_status")
+    project = filters.UUIDFilter(method="filter_project")
+    software = filters.UUIDFilter(field_name="software_id")
+    publisher = filters.UUIDFilter(method="filter_publisher")
 
     class Meta:
         model = ReleaseRecord
         fields = [
-            "project", "repository", "release_type", "status", "publisher",
+            "project", "software", "repository", "release_type", "status", "publisher",
         ]
+
+    def filter_project(self, queryset, name, value):
+        if "origin_read" in queryset.query.annotations:
+            return queryset
+        return queryset.filter(project_id=value)
+
+    def filter_publisher(self, queryset, name, value):
+        if "origin_read" in queryset.query.annotations:
+            queryset = queryset.filter(origin_read=True)
+        return queryset.filter(publisher_id=value)
 
     def filter_review_status(self, queryset, name, value):
         """
@@ -127,6 +145,8 @@ class ReleaseFilter(filters.FilterSet):
         open=待整改（存在待整改意见），replied=待复核（存在待复核意见），其他值不过滤。
         """
         if value in (ReleaseReviewIssue.STATUS_OPEN, ReleaseReviewIssue.STATUS_REPLIED):
+            if "origin_read" in queryset.query.annotations:
+                queryset = queryset.filter(origin_read=True)
             return queryset.filter(review_issues__status=value).distinct()
         return queryset
 
@@ -221,7 +241,7 @@ class ReleaseViewSet(StandardModelViewSet):
             return ReleaseRecord.objects.none()
         user = self.request.user
         queryset = (
-            ReleaseRecord.objects.select_related("project", "repository", "publisher")
+            ReleaseRecord.objects.select_related("project", "repository", "publisher", "software")
             .prefetch_related("package_tasks")
             # 列表页「待整改 / 待复核」徽标：注记待整改（open）与待复核（replied）整改意见数，避免逐条查询
             .annotate(
@@ -233,18 +253,21 @@ class ReleaseViewSet(StandardModelViewSet):
                 ),
             )
         )
-        if self.action == "list":
+        if self.action in ("list", "catalog"):
             # 同一物理仓库在不同项目中可使用不同软件名称，停用组件的历史仍可阅读。
             component_name = ProjectComponent.objects.filter(
                 project_id=OuterRef("project_id"), repository_id=OuterRef("repository_id"),
             ).values("display_name")[:1]
             queryset = queryset.annotate(component_name=Coalesce(
-                NullIf(Subquery(component_name), Value("")), F("repository__name"),
+                F("software__name"), NullIf(Subquery(component_name), Value("")), F("repository__name"),
             ))
-        if user.is_superuser:
-            return queryset.all()
-        project_ids = visible_project_ids(user)
-        return queryset.filter(project_id__in=project_ids)
+        if self.action in ("list", "retrieve", "catalog"):
+            from apps.release.visibility import releases_for_read
+
+            project = self.request.query_params.get("project")
+            project_id = serializers.UUIDField().run_validation(project) if project else None
+            return releases_for_read(queryset, user, project_id)
+        return queryset.filter(project_id__in=visible_project_ids(user))
 
     def get_permissions(self):
         """
@@ -323,6 +346,83 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         return ReleaseRecordSerializer(release, context={"request": self.request}).data
 
+    def _software_context(self, request: Request, project_id, software_id):
+        from apps.software.models import ProjectSoftware
+        from apps.software.services import require_project_software
+
+        links = ProjectSoftware.objects.select_related("project", "software")
+        link = get_object_or_404(
+            links, project_id=project_id, software_id=software_id,
+            project_id__in=visible_project_ids(request.user),
+        )
+        return require_project_software(link.project, link.software, request.user, IsProjectDeveloper())
+
+    @action(detail=False, methods=["get"], url_path="next-version")
+    def next_version(self, request: Request) -> Response:
+        """只在有权使用的目标项目中计算软件的建议版本。"""
+        from apps.release.versions import suggest_software_version
+
+        params = SoftwareReleaseQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        link = self._software_context(request, params.validated_data["project"], params.validated_data["software"])
+        repository = link.software.repository
+        try:
+            provider = ReleaseService._get_provider(repository, request.user, project=link.project)
+            tags = provider.list_tags(repository.external_identity)
+            all_types = {
+                kind: suggest_software_version(link.software, kind, tags)
+                for kind in ("formal", "rc", "beta")
+            }
+        except Exception as exc:
+            return _handle_service_error(exc, "获取建议版本")
+        return success_response({
+            **all_types[params.validated_data["release_type"]],
+            "has_existing_tags": any(item["latest_tag"] for item in all_types.values()),
+            "all_types": all_types,
+        })
+
+    @action(detail=False, methods=["get"], url_path="software-changes-preview")
+    def software_changes_preview(self, request: Request) -> Response:
+        """从分支详情取得完整提交，按目标软件和类型预览。"""
+        from apps.release.formal_changes import FormalChanges
+        from apps.release.versions import normalize_software_tag, suggest_software_version
+
+        params = SoftwareChangesQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        values = params.validated_data
+        link = self._software_context(request, values["project"], values["software"])
+        repository = link.software.repository
+        try:
+            provider = ReleaseService._get_provider(repository, request.user, project=link.project)
+            head = ReleaseService._resolve_branch_head_hash(repository, values["branch"], provider=provider)
+            tags = provider.list_tags(repository.external_identity)
+            release_type = values["release_type"]
+            tag = values.get("tag_name") or suggest_software_version(link.software, release_type, tags)["next_tag_name"]
+            version, tag = normalize_software_tag(link.software, release_type, tag)
+            draft = ReleaseRecord(
+                project=link.project, software=link.software, repository=repository, release_type=release_type,
+                branch=values["branch"], git_hash=head, version=version, tag_name=tag, status="draft",
+            )
+            changes = FormalChanges.collect(draft, provider, tags=tags)
+            return success_response(FormalChanges.preview(changes))
+        except Exception as exc:
+            return _handle_service_error(exc, "预览软件变更")
+
+    @action(detail=False, methods=["get"], url_path="software-branches")
+    def software_branches(self, request: Request) -> Response:
+        from dataclasses import asdict
+
+        params = SoftwareReleaseQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        link = self._software_context(request, params.validated_data["project"], params.validated_data["software"])
+        repository = link.software.repository
+        try:
+            provider = ReleaseService._get_provider(repository, request.user, project=link.project)
+            branches = provider.list_branches(repository.external_identity)
+            return success_response([asdict(branch) for branch in branches])
+        except Exception as exc:
+            return _handle_service_error(exc, "获取分支")
+
     @action(detail=False, methods=["get"], url_path="rc-candidates")
     def rc_candidates(self, request: Request) -> Response:
         """仅返回当前可见项目、启用仓库下的 RC 及实时引用可用性。"""
@@ -330,24 +430,35 @@ class ReleaseViewSet(StandardModelViewSet):
 
         params = serializers.Serializer(data=request.query_params)
         params.fields["project"] = serializers.UUIDField(required=True)
-        params.fields["repository"] = serializers.UUIDField(required=True)
+        params.fields["repository"] = serializers.UUIDField(required=False)
+        params.fields["software"] = serializers.UUIDField(required=False)
         params.is_valid(raise_exception=True)
         project = Project.objects.filter(
             id=params.validated_data["project"], id__in=visible_project_ids(request.user),
         ).first()
         if project is None:
             return error_response(40400, "项目不存在或不可见", status_code=404)
-        repository = Repository.objects.filter(
-            id=params.validated_data["repository"],
-            project_components__project=project, project_components__is_active=True,
-        ).first()
-        if repository is None:
-            return error_response(40400, "仓库未在当前项目中启用", status_code=404)
+        software_id = params.validated_data.get("software")
         try:
+            queryset = ReleaseRecord.objects.filter(release_type="rc", status="released")
+            if software_id:
+                link = self._software_context(request, project.pk, software_id)
+                repository = link.software.repository
+                if params.validated_data.get("repository", repository.pk) != repository.pk:
+                    raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
+                queryset = queryset.filter(software=link.software)
+            else:
+                repository = Repository.objects.filter(
+                    id=params.validated_data.get("repository"),
+                    project_components__project=project, project_components__is_active=True,
+                ).first()
+                if repository is None:
+                    return error_response(40400, "仓库未在当前项目中启用", status_code=404)
+                queryset = queryset.filter(project=project, repository=repository).filter(
+                    Q(software__isnull=True) | Q(software_confirmed_at__isnull=False)
+                )
             ReleaseService.validate_source_context(project, repository)
-            queryset = self.get_queryset().filter(
-                project=project, repository=repository, release_type="rc", status="released",
-            ).order_by("-released_at", "-created_at", "id")
+            queryset = queryset.order_by("-released_at", "-created_at", "id")
             search = request.query_params.get("search", "").strip()
             if search:
                 queryset = queryset.filter(Q(version__icontains=search) | Q(tag_name__icontains=search))
@@ -386,6 +497,7 @@ class ReleaseViewSet(StandardModelViewSet):
             release = ReleaseService.create_release(
                 project=data["project"],
                 repository=data["repository"],
+                software=data.get("software"),
                 release_type=data["release_type"],
                 branch=data.get("branch", ""),
                 source_rc=data.get("source_rc"),
@@ -406,6 +518,10 @@ class ReleaseViewSet(StandardModelViewSet):
                 review_context_is_requirement=data.get("review_context_is_requirement", False),
                 review_document_paths=data.get("review_document_paths", []),
             )
+        except APIException as exc:
+            if not isinstance(exc, serializers.ValidationError):
+                raise
+            return _handle_service_error(exc, "创建发布")
         except Exception as exc:
             return _handle_service_error(exc, "创建发布")
         return success_response(self._serialize_release(release), message="创建成功", status=201)
@@ -436,7 +552,9 @@ class ReleaseViewSet(StandardModelViewSet):
 
         source_changed = False
         old_version = instance.version
+        old_tag = instance.tag_name
         try:
+            ReleaseService.require_software_use(instance, request.user)
             if instance.release_type == "formal" and (instance.source_rc_id or data.get("source_rc")):
                 if "source_rc" in data:
                     if (str(data["source_rc"]) != str(instance.source_rc_id)
@@ -464,7 +582,15 @@ class ReleaseViewSet(StandardModelViewSet):
 
         # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
         version_rule = instance.repository.get_version_rule()
-        if "tag_name" in data and data.get("tag_name"):
+        if instance.software_id and (new_tag := data.get("tag_name") or data.get("version")):
+            from apps.release.versions import guard_software_tag_identity, normalize_software_tag
+
+            try:
+                instance.version, instance.tag_name = normalize_software_tag(instance.software, instance.release_type, new_tag)
+                guard_software_tag_identity(instance.software, instance.tag_name)
+            except serializers.ValidationError as exc:
+                return error_response(40002, _extract_validation_message(exc))
+        elif "tag_name" in data and data.get("tag_name"):
             instance.tag_name = data["tag_name"]
             # rc/beta 类型自动补后缀（后缀位于日期段之前）
             if instance.release_type in ("rc", "beta"):
@@ -494,11 +620,19 @@ class ReleaseViewSet(StandardModelViewSet):
                 instance.release_type, instance.tag_name, version_rule
             )
             if "tag_name" in data or "version" in data:
-                ReleaseService.validate_tag_not_exists(instance.repository, instance.tag_name, request.user)
+                if not instance.software_id:
+                    ReleaseService.validate_legacy_tag_namespace(instance.repository, instance.tag_name)
+                ReleaseService.validate_tag_not_exists(
+                    instance.repository, instance.tag_name, request.user, project=instance.project,
+                )
         except serializers.ValidationError as exc:
             return error_response(40002, _extract_validation_message(exc))
 
-        changes_invalidated = source_changed or (instance.release_type == "formal" and instance.version != old_version)
+        changes_invalidated = (
+            source_changed
+            or ((instance.software_id or instance.release_type == "formal") and instance.version != old_version)
+            or (instance.software_id and instance.tag_name != old_tag)
+        )
         if changes_invalidated:
             from apps.release.formal_changes import FormalChanges
 
@@ -532,6 +666,7 @@ class ReleaseViewSet(StandardModelViewSet):
         if release.source_rc_id:
             return error_response(40002, "来源 RC 发布请使用重选来源功能")
         try:
+            ReleaseService.require_software_use(release, request.user)
             ReleaseService.validate_source_context(release.project, release.repository)
             provider = ReleaseService._get_provider(release.repository, request.user, project=release.project)
             head = ReleaseService._resolve_branch_head_hash(
@@ -607,6 +742,8 @@ class ReleaseViewSet(StandardModelViewSet):
 
         release = self.get_object()
         try:
+            if release.status == "draft":
+                ReleaseService.require_software_use(release, request.user)
             provider = ReleaseService._get_provider(release.repository, request.user, project=release.project)
             data = FormalChanges.preview(FormalChanges.collect(release, provider))
         except Exception as exc:
@@ -672,7 +809,7 @@ class ReleaseViewSet(StandardModelViewSet):
 
         class ItemSerializer(serializers.Serializer):
             id = serializers.UUIDField()
-            tag_name = serializers.CharField(max_length=100)
+            tag_name = serializers.CharField(max_length=181)
 
         params = serializers.Serializer(data=request.data)
         params.fields["items"] = serializers.ListField(child=ItemSerializer(), min_length=1, max_length=50)
@@ -731,7 +868,7 @@ class ReleaseViewSet(StandardModelViewSet):
         release = self.get_object()
         md_content = request.data.get("release_doc", "")
         try:
-            release = ReleaseService.update_doc(release, md_content)
+            release = ReleaseService.update_doc(release, md_content, request.user)
             # 保存成功后同步替换已推送 SVN 的发布文档；失败不阻塞保存
             from apps.package.services import PackageService
 
@@ -1135,7 +1272,7 @@ class ReleaseViewSet(StandardModelViewSet):
         Returns:
             {formal: Release[], rc: Release[], beta: Release[]}
         """
-        queryset = self.get_queryset().filter(status="released").order_by("-version")
+        queryset = self.filter_queryset(self.get_queryset()).filter(status="released").order_by("-version")
         formal = queryset.filter(release_type="formal")
         rc = queryset.filter(release_type="rc")
         beta = queryset.filter(release_type="beta")

@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import threading
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 from queue import Queue
 
@@ -61,7 +62,7 @@ from apps.package.services.configurations import (
     visible_configs,
 )
 from apps.package.services.tasks import PackageTaskDispatchError
-from apps.project.models import Project
+from apps.project.models import Project, ProjectComponent
 from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
 from apps.software.models import Software
@@ -76,6 +77,7 @@ from utils.permissions import (
     IsProjectMember,
     IsProjectPackageAdmin,
     IsProjectPackager,
+    IsProjectReleasePackager,
     ProjectRolePermission,
 )
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
@@ -369,6 +371,12 @@ class PackageConfigViewSet(StandardModelViewSet):
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-annotated_is_favorite", "-created_at"]
 
+    def get_permissions(self):
+        permissions = super().get_permissions()
+        if self.action == "favorite":
+            permissions.append(IsNotProjectMaintainer())
+        return permissions
+
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
@@ -396,10 +404,41 @@ class PackageConfigViewSet(StandardModelViewSet):
             require_config_maintenance(
                 self.request.user, software=config.software, component=config.project_component,
             )
+        if config.project_component_id:
+            if self.action == "trigger":
+                self._require_project_role(config.project_component.project, IsProjectReleasePackager())
+            elif self.action == "trigger_branch":
+                self._require_project_role(config.project_component.project, IsProjectPackager())
         return config
+
+    def _require_project_role(self, project, permission):
+        if not permission._check(project, self.request.user):
+            self.permission_denied(self.request)
+
+    @staticmethod
+    def _declared_uuid(data, field):
+        if isinstance(data, Mapping) and data.get(field):
+            try:
+                return serializers.UUIDField().run_validation(data[field])
+            except serializers.ValidationError:
+                # 归属无法识别时由请求序列化器处理格式错误。
+                return None
+        return None
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
+        component_id = self._declared_uuid(request.data, "project_component")
+        component = (
+            ProjectComponent.objects.select_related("project").filter(pk=component_id).first()
+            if component_id else None
+        )
+        if component is not None:
+            self._require_project_role(component.project, IsProjectPackageAdmin())
+        elif isinstance(request.data, Mapping) and not request.data.get("software"):
+            project_id = self._declared_uuid(request.data, "project")
+            if project_id:
+                project = Project.objects.filter(pk=project_id).first()
+                self._require_project_role(project, IsProjectPackageAdmin())
         return super().create(request, *args, **kwargs)
 
     @transaction.atomic
@@ -434,8 +473,12 @@ class PackageConfigViewSet(StandardModelViewSet):
     def favorite(self, request, pk=None):
         """切换收藏该配置（已收藏则取消，未收藏则收藏）。"""
         config = self.get_object()
-        project = self._explicit_project(request.data.get("project")) if config.software_id else None
-        is_favorite = PackageService.toggle_favorite(config, request.user, project=project)
+        if config.software_id:
+            project_id = request.data.get("project") if isinstance(request.data, Mapping) else None
+            project = self._explicit_project(project_id)
+            is_favorite = PackageService.toggle_favorite(config, request.user, project=project)
+        else:
+            is_favorite = PackageService.toggle_favorite(config, request.user)
         return success_response(
             {"is_favorite": is_favorite},
             "已收藏" if is_favorite else "已取消收藏",
@@ -494,10 +537,15 @@ class PackageConfigViewSet(StandardModelViewSet):
     def trigger_branch(self, request, pk=None):
         """按显式项目和软件触发分支最新代码打包。"""
         config = self.get_object()
+        project = None
+        if config.software_id and (project_id := self._declared_uuid(request.data, "project")):
+            project = self._explicit_project(project_id)
+            self._require_project_role(project, IsProjectPackager())
         arguments = BranchPackageTriggerSerializer(data=request.data)
         arguments.is_valid(raise_exception=True)
         inputs = arguments.validated_data
-        project = self._explicit_project(inputs["project"]) if "project" in inputs else None
+        if project is None and "project" in inputs:
+            project = self._explicit_project(inputs["project"])
         try:
             task = PackageService.create_task_for_branch(
                 config, inputs["branch"], request_user=request.user, project=project,

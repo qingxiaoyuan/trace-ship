@@ -7,18 +7,19 @@ import { releaseApi } from '@/api/release';
 interface Props {
   project?: string;
   repository?: string;
+  software?: string;
   value?: string;
   disabled?: boolean;
   onChange?: (id: string) => void;
 }
 
 /** 候选查询按上下文隔离，分页和搜索不会使用上一个请求的结果。 */
-export function RcSourceSelect({ project, repository, value, onChange, disabled }: Props) {
+export function RcSourceSelect({ project, repository, software, value, onChange, disabled }: Props) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const { data, isFetching, error } = useQuery({
-    queryKey: ['rc-candidates', project, repository, search, page],
-    queryFn: () => releaseApi.getRcCandidates({ project, repository, search, page, page_size: 5 }),
+    queryKey: ['rc-candidates', project, repository, software, search, page],
+    queryFn: () => releaseApi.getRcCandidates({ project, repository, software, search, page, page_size: 5 }),
     enabled: !!project && !!repository,
     retry: false,
   });

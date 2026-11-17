@@ -54,8 +54,10 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
     queryFn: () => projectApi.getProject(release.project || release.project_id || ''),
     enabled: active && !!(release.project || release.project_id),
   });
-  const { canDevelop, role } = useProjectRole(project);
-  const hideDownload = useHideFileDownload(role);
+  const { canDevelop: projectCanDevelop, role } = useProjectRole(project);
+  const canDevelop = !release.shared_readonly && projectCanDevelop;
+  const hideByRole = useHideFileDownload(role);
+  const hideDownload = release.shared_readonly || hideByRole;
 
   const generateMutation = useMutation({
     mutationFn: () => releaseApi.generateDoc(release.id),
@@ -182,7 +184,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                         {row.key}
                       </td>
                       <td className="px-3 py-2 align-middle">
-                        {release.release_type === 'formal' && isFormalIdentityField(row.key) ? (
+                        {(release.software || release.release_type === 'formal') && isFormalIdentityField(row.key) ? (
                           <span className="break-all text-[13px]">{row.value}</span>
                         ) : isCheckboxField(row.key) ? (
                           <CheckboxField
@@ -311,7 +313,7 @@ export function ReleaseNotes({ release, active = true }: ReleaseNotesProps & { a
                       {row.key}
                     </td>
                     <td className="px-3 py-2 align-middle">
-                      {release.release_type === 'formal' && isFormalIdentityField(row.key) ? (
+                      {(release.software || release.release_type === 'formal') && isFormalIdentityField(row.key) ? (
                           <span className="break-all text-[13px]">{row.value}</span>
                         ) : isCheckboxField(row.key) ? (
                         <CheckboxField

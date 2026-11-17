@@ -33,7 +33,7 @@ it('正式版、RC 和测试版均按分支创建，不显示来源 RC 选择', 
 
 it('选择分支后切换项目清空分支和版本，不能提交旧来源', async () => {
   request.defaults.adapter = async (config) => {
-    let data: unknown = { results: [], total: 0 };
+    let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p1', name: '项目一' }, { id: 'p2', name: '项目二' }] };
     if (config.url?.includes('/components/')) data = [{ repository: 'r1', is_active: true, repository_detail: { name: '仓库一' } }];
     if (config.url?.endsWith('/branches/')) data = [{ name: 'develop' }];
@@ -46,9 +46,10 @@ it('选择分支后切换项目清空分支和版本，不能提交旧来源', a
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目一'));
-  fireEvent.mouseDown(screen.getByLabelText('目标仓库'));
+  await waitFor(() => expect((screen.getByLabelText('目标仓库') as HTMLInputElement).disabled).toBe(false));
+  fireEvent.keyDown(screen.getByLabelText('目标仓库'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('仓库一'));
-  fireEvent.mouseDown(screen.getByLabelText('分支'));
+  fireEvent.keyDown(screen.getByLabelText('分支'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('develop', { selector: '.ant-select-item-option-content' }));
   expect(await screen.findByDisplayValue('VA.1.0.0')).toBeTruthy();
   fireEvent.mouseDown(screen.getByLabelText('项目'));
@@ -62,7 +63,7 @@ it('选择分支后切换项目清空分支和版本，不能提交旧来源', a
 it('正式版提交所选分支，创建期间锁定来源，避免旧响应覆盖', async () => {
   let finish: (() => void) | undefined;
   request.defaults.adapter = async (config) => {
-    let data: unknown = { results: [], total: 0 };
+    let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
     if (config.url?.includes('/components/')) data = [{ repository: 'r', is_active: true, repository_detail: { name: '仓库' } }];
     if (config.url?.endsWith('/branches/')) data = [{ name: 'develop' }];
@@ -85,9 +86,10 @@ it('正式版提交所选分支，创建期间锁定来源，避免旧响应覆�
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('目标仓库'));
+  await waitFor(() => expect((screen.getByLabelText('目标仓库') as HTMLInputElement).disabled).toBe(false));
+  fireEvent.keyDown(screen.getByLabelText('目标仓库'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('仓库', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('分支'));
+  fireEvent.keyDown(screen.getByLabelText('分支'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('develop', { selector: '.ant-select-item-option-content' }));
   fireEvent.click(screen.getByRole('button', { name: '创建发布' }));
   await waitFor(() => expect(finish).toBeTypeOf('function'));
@@ -105,7 +107,7 @@ it('正式分支发布说明保留第十二条更新，允许补充说明并反�
   let saved = '';
   let submissions = 0;
   request.defaults.adapter = async (config) => {
-    let data: unknown = { results: [], total: 0 };
+    let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
     if (config.url?.includes('/components/')) data = [{ repository: 'r', is_active: true, repository_detail: { name: '仓库' } }];
     if (config.url?.endsWith('/branches/')) data = [{ name: 'develop' }];
@@ -125,9 +127,10 @@ it('正式分支发布说明保留第十二条更新，允许补充说明并反�
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('目标仓库'));
+  await waitFor(() => expect((screen.getByLabelText('目标仓库') as HTMLInputElement).disabled).toBe(false));
+  fireEvent.keyDown(screen.getByLabelText('目标仓库'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('仓库', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('分支'));
+  fireEvent.keyDown(screen.getByLabelText('分支'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('develop', { selector: '.ant-select-item-option-content' }));
   fireEvent.click(screen.getByRole('button', { name: '创建发布' }));
   const notes = await screen.findByDisplayValue(/累计功能12/) as HTMLTextAreaElement;
