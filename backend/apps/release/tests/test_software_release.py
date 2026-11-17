@@ -435,3 +435,402 @@ def test_software_candidates_keep_illegal_commit_in_fixed_review_scope(api, proj
     assert len(commits) == 1
     assert commits[0]["review_status"] == "illegal" and commits[0]["review_reason"] == "历史提交缺少规范信息"
     assert api.post(url + "submit-audit/").status_code == 200
+
+
+def test_other_project_packages_the_published_version_with_its_own_permissions(
+    api, project, software_pair, other_project, remote, user, django_capture_on_commit_callbacks, monkeypatch,
+):
+    from apps.credential.models import CredentialUsageLog
+    from apps.package.models import PackageConfig, PackageTask
+    from apps.project.models import ProjectMember
+    from apps.release.models import ReleaseRecord
+    from apps.workflow.models import WorkflowDefinition
+
+    software, unrelated = software_pair
+    target, operator = other_project
+    WorkflowDefinition.objects.create(
+        project=project, repository=software.repository, biz_type="release", release_type="rc",
+        name="候选版发布", node_config=[],
+    )
+    release_url = f"/api/releases/{create_draft(api, project, software).data['data']['id']}/"
+    assert api.post(release_url + "generate-doc/").status_code == 200
+    assert api.post(release_url + "submit-audit/").status_code == 200
+    version = api.get(release_url).data["data"]
+    config = PackageConfig.objects.create(software=software, name="麒麟交付", custom_script="echo original")
+    wrong = PackageConfig.objects.create(software=unrelated, name="其他软件")
+    source_task = PackageTask.objects.create(
+        project=project, repository=software.repository, software=software, config=config,
+        release_id=version["id"], name="甲的任务", status="success",
+    )
+    viewer = APIClient()
+    viewer.force_authenticate(operator)
+    payload = {"release_id": version["id"], "project": str(target.pk), "software": str(software.pk)}
+    url = f"/api/packages/configs/{config.pk}/trigger/"
+    assert viewer.post(url, {"release_id": version["id"]}, format="json").status_code == 400
+    assert viewer.post(url, {**payload, "project": str(project.pk)}, format="json").status_code == 404
+    assert viewer.post(f"/api/packages/configs/{wrong.pk}/trigger/", payload, format="json").status_code == 404
+    dispatched = []
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", dispatched.append)
+    before = [tag.name for tag in remote.tags]
+    with django_capture_on_commit_callbacks(execute=True):
+        result = viewer.post(url, payload, format="json")
+    assert result.status_code == 201, result.data
+    task = viewer.get(f"/api/packages/tasks/{result.data['data']['id']}/").data["data"]
+    assert {field: str(task[field]) for field in ("project", "software", "release", "triggered_by")} == {
+        "project": str(target.pk), "software": str(software.pk), "release": version["id"],
+        "triggered_by": str(operator.pk),
+    }
+    assert (task["tag_name"], task["commit_hash"], task["version"]) == (
+        version["tag_name"], version["git_hash"], version["version"],
+    )
+    assert "echo original" not in str(task["config_snapshot"])
+    assert dispatched == [task["id"]]
+    assert [tag.name for tag in remote.tags] == before
+    assert ReleaseRecord.objects.count() == 1
+    assert CredentialUsageLog.objects.filter(project=target, actor=operator, result="success").exists()
+    assert viewer.get(f"/api/packages/tasks/{source_task.pk}/logs/?tail=10").status_code == 404
+    assert [row["id"] for row in viewer.get(release_url, {"project": str(target.pk)}).data["data"]["package_tasks"]] == [
+        task["id"],
+    ]
+    ProjectMember.objects.filter(project=target, user=operator).update(role="maintainer")
+    target.leader = user
+    target.save(update_fields=["leader"])
+    assert viewer.post(url, payload, format="json").status_code == 403
+
+
+def test_release_dispatches_only_the_selected_software_config_in_the_origin_project(
+    api, project, software_pair, other_project, remote, django_capture_on_commit_callbacks, monkeypatch,
+):
+    from apps.package.models import PackageConfig, PackageImage
+    from apps.workflow.models import WorkflowDefinition
+
+    software, unrelated = software_pair
+    selected = PackageConfig.objects.create(software=software, name="已选配置", auto_package_on_release=True)
+    image = PackageImage.objects.create(name="配置停用测试镜像", image="test:software")
+    deselected = PackageConfig.objects.create(
+        software=software, name="已取消配置", auto_package_on_release=True, image=image,
+    )
+    wrong = PackageConfig.objects.create(software=unrelated, name="其他软件配置", auto_package_on_release=True)
+    inactive = PackageConfig.objects.create(
+        software=software, name="已停用配置", auto_package_on_release=True, is_active=False,
+    )
+    WorkflowDefinition.objects.create(
+        project=project, repository=software.repository, biz_type="release", release_type="rc",
+        name="候选版发布", node_config=[],
+    )
+    for unavailable in (wrong, inactive):
+        invalid = create_draft(api, project, software, package_config_ids=[str(unavailable.pk)])
+        assert invalid.status_code == 400, invalid.data
+    response = create_draft(api, project, software, package_config_ids=[str(deselected.pk), str(selected.pk)])
+    assert response.status_code == 201, response.data
+    draft = response.data["data"]
+    assert set(draft["package_config_ids"]) == {str(selected.pk), str(deselected.pk)}
+    config_url = f"/api/packages/configs/{deselected.pk}/"
+    assert api.delete(config_url).status_code == 400
+    disabled = api.patch(config_url, {"is_active": False}, format="json")
+    assert disabled.status_code == 200, disabled.data
+    url = f"/api/releases/{draft['id']}/"
+    assert api.post(url + "generate-doc/").status_code == 200
+    dispatched = []
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", dispatched.append)
+    with django_capture_on_commit_callbacks(execute=True):
+        assert api.post(url + "submit-audit/").status_code == 200
+    release = api.get(url).data["data"]
+    tasks = api.get("/api/packages/tasks/", {"release": release["id"]}).data["data"]["results"]
+    assert release["status"] == "released"
+    assert len(tasks) == 1 and dispatched == [tasks[0]["id"]]
+    task = tasks[0]
+    assert tuple(str(task[field]) for field in ("config", "project", "software", "tag_name")) == (
+        str(selected.pk), str(project.pk), str(software.pk), release["tag_name"],
+    )
+    assert task["config_snapshot"]["trigger_source"] == "auto_release"
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("operation", ["cleanup", "consumer"])
+def test_postgresql_shared_package_serializes_cleanup_and_consumer_delete(
+    project, software_pair, other_project, user, remote, monkeypatch, operation,
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from django.db import close_old_connections, connection
+
+    from apps.package.models import PackageConfig
+    from apps.package.services import tasks
+    from apps.release.models import ReleaseRecord
+    from utils.provider.base import TagInfo
+
+    if connection.vendor != "postgresql":
+        pytest.skip("跨项目任务与删除竞争需要真实 PostgreSQL")
+    software = software_pair[0]
+    target, operator = other_project
+    identity = {"project": project, "repository": software.repository, "software": software,
+                "publisher": user, "status": "released", "git_hash": "a" * 40}
+    rc = ReleaseRecord.objects.create(
+        **identity, release_type="rc", version="VA.8.0.0", tag_name="client-a/VA.8.0.0-rc",
+    )
+    formal = ReleaseRecord.objects.create(
+        **identity, release_type="formal", version="VA.8.0.0", tag_name="client-a/VA.8.0.0", source_rc=rc,
+    )
+    remote.tags = [TagInfo(name=item.tag_name, commit_hash=item.git_hash) for item in (rc, formal)]
+    config = PackageConfig.objects.create(software=software, name="并发共享配置")
+    checked, resume, starting_delete, finished_delete = Event(), Event(), Event(), Event()
+    original_resolve = tasks.resolve_credential
+
+    def pause_with_repository_locked(*args, **kwargs):
+        value = original_resolve(*args, **kwargs)
+        checked.set()
+        assert resume.wait(12)
+        return value
+
+    monkeypatch.setattr(tasks, "resolve_credential", pause_with_repository_locked)
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", lambda *_: None)
+
+    def request(create):
+        close_old_connections()
+        client = APIClient()
+        client.force_authenticate(operator if create or operation == "consumer" else user)
+        try:
+            if create:
+                return client.post(f"/api/packages/configs/{config.pk}/trigger/", {
+                    "release_id": str(rc.pk), "project": str(target.pk), "software": str(software.pk),
+                }, format="json")
+            starting_delete.set()
+            if operation == "consumer":
+                return client.delete(f"/api/projects/{target.pk}/")
+            return client.post(f"/api/releases/{rc.pk}/cleanup-tag/", {"tag_name": rc.tag_name}, format="json")
+        finally:
+            if not create:
+                finished_delete.set()
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        creating = workers.submit(request, True)
+        try:
+            assert checked.wait(10)
+            removing = workers.submit(request, False)
+            assert starting_delete.wait(10)
+            assert not finished_delete.wait(1), "删除没有等待乙项目首个任务的仓库锁"
+        finally:
+            resume.set()
+        created = creating.result(timeout=10)
+        result = removing.result(timeout=10)
+
+    assert created.status_code == 201, created.data
+    if operation == "consumer":
+        assert result.status_code == 400 and "排队或运行" in str(result.data)
+    else:
+        assert result.data["data"]["status"] == "blocked"
+        assert "排队或运行" in result.data["data"]["reason"]
+    assert rc.tag_name in {tag.name for tag in remote.tags}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_postgresql_consumer_deletion_waits_for_archive_protection(
+    project, software_pair, other_project, user,
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from uuid import uuid4
+
+    from django.db import close_old_connections, connection, transaction
+
+    from apps.package.models import PackageTask
+    from apps.release.models import OaArchiveApplication, ReleaseRecord
+    from apps.repository.models import Repository
+
+    if connection.vendor != "postgresql":
+        pytest.skip("跨项目归档引用保护竞争需要真实 PostgreSQL")
+    software = software_pair[0]
+    target, operator = other_project
+    release = ReleaseRecord.objects.create(
+        project=project, repository=software.repository, software=software, publisher=user,
+        release_type="formal", status="released", version="VA.8.1.0", tag_name="client-a/VA.8.1.0",
+        git_hash="a" * 40,
+    )
+    task = PackageTask.objects.create(
+        project=target, repository=software.repository, software=software, release=release, status="success",
+        name="乙的归档来源私有任务",
+    )
+    protected, resume, starting_delete, finished_delete = Event(), Event(), Event(), Event()
+
+    def protect():
+        close_old_connections()
+        try:
+            with transaction.atomic():
+                Repository.objects.select_for_update(no_key=True).get(pk=software.repository_id)
+                ReleaseRecord.objects.select_for_update().get(pk=release.pk)
+                PackageTask.objects.select_for_update().get(pk=task.pk)
+                # 模拟已持锁的归档事实，OA 跨项目准备及发送由后续切片接入。
+                OaArchiveApplication.objects.create(
+                    submission_id=uuid4(), release=release, task=task, protected_release=release,
+                    protected_task=task, operator=operator, artifact_path=".", status="sending",
+                )
+                protected.set()
+                assert resume.wait(12)
+        finally:
+            close_old_connections()
+
+    def delete():
+        close_old_connections()
+        try:
+            client = APIClient()
+            client.force_authenticate(operator)
+            starting_delete.set()
+            return client.delete(f"/api/projects/{target.pk}/")
+        finally:
+            finished_delete.set()
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        saving = workers.submit(protect)
+        try:
+            assert protected.wait(10)
+            removing = workers.submit(delete)
+            assert starting_delete.wait(10)
+            assert not finished_delete.wait(1)
+        finally:
+            resume.set()
+        saving.result(timeout=10)
+        result = removing.result(timeout=10)
+    assert result.status_code == 400
+    assert "OA 归档" in str(result.data) and task.name not in str(result.data)
+    assert OaArchiveApplication.objects.filter(protected_task=task, status="sending").exists()
+
+
+def test_retry_uses_original_protected_snapshot_and_rechecks_project(
+    api, project, software_pair, other_project, user, django_capture_on_commit_callbacks, monkeypatch, tmp_path,
+):
+    from apps.account.models import User
+    from apps.package.models import PackageConfig, PackageImage, PackageTask
+    from apps.project.models import ProjectMember
+    from apps.release.models import ReleaseRecord
+
+    software = software_pair[0]
+    target, operator = other_project
+    release = ReleaseRecord.objects.create(
+        project=project, repository=software.repository, software=software, publisher=user, status="released",
+        version="VA.8.0.0", tag_name="client-a/VA.8.0.0", git_hash="a" * 40,
+    )
+    image = PackageImage.objects.create(name="重试测试镜像", image="test:retry")
+    config = PackageConfig.objects.create(software=software, name="原配置", image=image, custom_script="echo first")
+    config_url = f"/api/packages/configs/{config.pk}/"
+    issued = []
+    workspace_file = tmp_path / "保留失败日志.txt"
+    workspace_file.write_text("首次尝试结果")
+    def dispatch(task_id):
+        task = PackageTask.objects.get(pk=task_id)
+        issued.append(task.config_snapshot["custom_script"])
+        if len(issued) == 1:
+            PackageTask.objects.filter(pk=task_id).update(status="failure", workspace_path=str(tmp_path))
+
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", dispatch)
+    viewer = APIClient()
+    viewer.force_authenticate(operator)
+    with django_capture_on_commit_callbacks(execute=True):
+        initial = viewer.post(config_url + "trigger/", {
+            "release_id": str(release.pk), "project": str(target.pk), "software": str(software.pk),
+        }, format="json")
+    assert initial.status_code == 201, initial.data
+    first = initial.data["data"]
+    task_url = f"/api/packages/tasks/{first['id']}/"
+    assert viewer.get(task_url).data["data"]["can_retry"]
+    assert api.patch(config_url, {"custom_script": "echo updated"}, format="json").status_code == 200
+    readonly = User.objects.create_user(username="retry_maintainer")
+    ProjectMember.objects.create(project=target, user=readonly, role="maintainer")
+    reader = APIClient()
+    reader.force_authenticate(readonly)
+    assert not reader.get(task_url).data["data"]["can_retry"]
+    assert reader.post(task_url + "retry/").status_code == 403
+    with django_capture_on_commit_callbacks(execute=True):
+        result = viewer.post(task_url + "retry/")
+    assert result.status_code == 201, result.data
+    replacement = result.data["data"]
+    assert str(replacement["retry_of"]) == first["id"]
+    for field in ("project", "software", "release", "tag_name", "commit_hash", "version"):
+        assert replacement[field] == first[field]
+    assert issued == ["echo first", "echo first"]
+    assert "echo first" not in str(replacement)
+    assert viewer.get(task_url).data["data"]["status"] == "failure"
+    again = viewer.post(task_url + "retry/")
+    assert again.status_code == 200 and again.data["data"]["id"] == replacement["id"]
+    administrator = User.objects.create_user(username="retry_superuser", is_superuser=True)
+    admin = APIClient()
+    admin.force_authenticate(administrator)
+    blocked = admin.delete(task_url)
+    assert blocked.status_code == 400 and "保留原打包记录" in str(blocked.data)
+    assert workspace_file.read_text() == "首次尝试结果"
+    link = ProjectSoftware.objects.get(project=target, software=software)
+    stopped = viewer.patch(f"/api/projects/{target.pk}/software/{link.pk}/", {"is_active": False}, format="json")
+    assert stopped.status_code == 200, stopped.data
+    assert viewer.post(task_url + "retry/").status_code == 400
+    assert viewer.get(task_url).status_code == 200
+
+
+def test_software_tag_deletion_preserves_ambiguous_and_changed_remote_references(
+    api, project, software_pair, other_project, user, remote,
+):
+    from apps.package.models import PackageTask
+    from apps.release.models import ReleaseRecord
+    from utils.provider.base import TagInfo
+
+    software = software_pair[0]
+    target, operator = other_project
+    original = ReleaseRecord.objects.create(
+        project=project, repository=software.repository, software=software, publisher=user, release_type="formal",
+        status="released", version="VA.8.0.0", tag_name="client-a/VA.8.0.0", git_hash="a" * 40,
+    )
+    url = f"/api/releases/{original.pk}/"
+    payload = {"tag_name": original.tag_name}
+    remote.tags = [TagInfo(name=original.tag_name, commit_hash="b" * 40)]
+    drift = api.post(url + "delete-released/", payload, format="json")
+    assert drift.status_code == 400 and "快照不一致" in str(drift.data)
+    assert remote.tags[0].commit_hash == "b" * 40
+    remote.tags[0].commit_hash = original.git_hash
+    duplicate = ReleaseRecord.objects.create(
+        project=target, repository=software.repository, publisher=operator, release_type="formal",
+        status="released", version="乙未归属私有记录", tag_name=original.tag_name, git_hash=original.git_hash,
+    )
+    PackageTask.objects.create(
+        project=target, repository=software.repository, release=duplicate, name="乙私有执行名称", status="success",
+    )
+    reject = api.post(url + "delete-released/", payload, format="json")
+    assert reject.status_code == 400 and "同名 Tag" in str(reject.data)
+    assert "乙" not in str(reject.data)
+    assert remote.tags[0].name == original.tag_name
+    duplicate.delete()
+    assert api.post(url + "cleanup-tag/", payload, format="json").status_code == 400
+    assert api.post(url + "delete-released/", payload, format="json").status_code == 200
+    assert not remote.tags
+
+
+def test_archive_api_hides_a_reused_task_from_the_origin_project(
+    api, project, software_pair, other_project, user,
+):
+    from uuid import uuid4
+
+    from apps.package.models import PackageTask
+    from apps.release.models import ReleaseRecord
+
+    software = software_pair[0]
+    target, operator = other_project
+    release = ReleaseRecord.objects.create(
+        project=project, repository=software.repository, software=software, publisher=user, release_type="formal",
+        status="released", version="VA.8.0.0", tag_name="client-a/VA.8.0.0", git_hash="a" * 40,
+    )
+    task = PackageTask.objects.create(
+        project=target, repository=software.repository, release=release, software=software, triggered_by=operator,
+        name="乙复用的归档产物", status="success",
+    )
+    url = f"/api/releases/{release.pk}/oa-archive/"
+    assert api.get(url + "options/").data["data"] == {"artifacts": [], "svn_tasks": [], "directories": []}
+    form = {"docCreator": "申请人", "soft_name": "软件", "soft_version": "8.0.0", "developer": "开发人员"}
+    for action in ("prepare", "submit"):
+        args = {"scope": "directory", "path": ".", "source_kind": "local"}
+        if action == "submit":
+            args.update({"submission_id": str(uuid4()), "form": form})
+        protected = api.post(url + action + "/", {**args, "task_id": str(task.pk)}, format="json")
+        nonexistent = api.post(url + action + "/", {**args, "task_id": str(uuid4())}, format="json")
+        assert protected.status_code == nonexistent.status_code == 404
+        assert protected.data == nonexistent.data

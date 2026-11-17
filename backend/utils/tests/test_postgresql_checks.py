@@ -16,6 +16,9 @@ with patch.dict(sys.modules, {"backend": runner}):
 # 与共享检查入口实际收集的参数化测试一致，每项对应一次行锁行为。
 TEST_CASES = (
     "test_postgresql_same_software_across_projects_claims_once",
+    "test_postgresql_shared_package_serializes_cleanup_and_consumer_delete[cleanup]",
+    "test_postgresql_shared_package_serializes_cleanup_and_consumer_delete[consumer]",
+    "test_postgresql_consumer_deletion_waits_for_archive_protection",
     "test_postgresql_task_creation_waits_for_cleanup",
     "test_reselection_and_submission_serialize_on_postgresql",
     "test_postgresql_serializes_same_version_submissions[False]",
@@ -60,6 +63,8 @@ def test_postgresql_scope_includes_all_required_cases() -> None:
     """明确固定检查入口和参数化用例数量，范围调整时须同步验收门禁。"""
     assert postgresql.TEST_NODES == (
         "apps/release/tests/test_software_release.py::test_postgresql_same_software_across_projects_claims_once",
+        "apps/release/tests/test_software_release.py::test_postgresql_shared_package_serializes_cleanup_and_consumer_delete",
+        "apps/release/tests/test_software_release.py::test_postgresql_consumer_deletion_waits_for_archive_protection",
         "apps/release/tests/test_tag_cleanup.py::test_postgresql_task_creation_waits_for_cleanup",
         "apps/release/tests/test_rc_source.py::test_reselection_and_submission_serialize_on_postgresql",
         "apps/release/tests/test_version_reservation.py::test_postgresql_serializes_same_version_submissions",

@@ -385,6 +385,10 @@ class PackageTask(models.Model):
         verbose_name="关联发布",
         help_text="发布触发任务绑定发布记录；分支直打包任务该字段为空",
     )
+    retry_of = models.OneToOneField(
+        "self", on_delete=models.PROTECT, related_name="retried_task",
+        null=True, blank=True, verbose_name="重试来源任务",
+    )
     project = models.ForeignKey(
         "project.Project",
         on_delete=models.CASCADE,

@@ -36,6 +36,8 @@ PUBLIC_PACKAGE_INDEXES = (
 )
 TEST_NODES = (
     "apps/release/tests/test_software_release.py::test_postgresql_same_software_across_projects_claims_once",
+    "apps/release/tests/test_software_release.py::test_postgresql_shared_package_serializes_cleanup_and_consumer_delete",
+    "apps/release/tests/test_software_release.py::test_postgresql_consumer_deletion_waits_for_archive_protection",
     "apps/release/tests/test_tag_cleanup.py::test_postgresql_task_creation_waits_for_cleanup",
     "apps/release/tests/test_rc_source.py::test_reselection_and_submission_serialize_on_postgresql",
     "apps/release/tests/test_version_reservation.py::test_postgresql_serializes_same_version_submissions",
@@ -48,7 +50,7 @@ TEST_NODES = (
     "apps/package/tests/test_shared_packaging_postgresql.py",
     "apps/release/tests/test_oa_archive_postgresql.py",
 )
-EXPECTED_TESTS = 38
+EXPECTED_TESTS = 41
 
 
 def validate_junit(path: Path) -> dict[str, int]:

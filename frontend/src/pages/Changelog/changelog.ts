@@ -36,6 +36,8 @@ export const changelogEntries: ChangelogEntry[] = [
       { category: 'feature', text: '新建发布可选择项目已启用的软件。同仓库中的不同软件各自建议和占用版本号，审批后按固定提交推送带软件标识的 Tag。' },
       { category: 'feature', text: '选用同一软件的项目可共享查看已发布版本及说明，打包任务仅显示当前查看项目的记录。' },
       { category: 'feature', text: '软件维护人员可以为软件维护多套共享打包配置。选用该软件的项目可各自发起分支打包，任务保存源码和配置快照，日志与产物按发起项目查看。' },
+      { category: 'feature', text: '新建软件发布可勾选自动打包配置；选用同一软件的项目可从发布详情复用固定版本，为当前项目补打。失败任务可按原源码与原配置重试。' },
+      { category: 'improvement', text: '清理或删除 Tag 前会核对固定提交、当前打包任务及历史引用；存在相关记录或 OA 归档保护时显示拒绝原因。' },
     ],
   },
   {

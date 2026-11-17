@@ -11,9 +11,10 @@ from apps.release.models import ReleaseRecord
 
 class ReleaseReferences:
     @staticmethod
-    def guard_shared_delete(repository, tag_name: str) -> None:
+    def guard_repository_tag_delete(repository, tag_name: str) -> None:
+        """共享版本的破坏操作只从原发起项目的发布入口办理。"""
         if ReleaseRecord.objects.filter(repository=repository, tag_name=tag_name, software__isnull=False).exists():
-            raise serializers.ValidationError({"tag": "共享软件版本的引用保护尚未开放，暂不能删除此 Tag"})
+            raise serializers.ValidationError({"tag": "共享软件版本的 Tag 请通过有权的发布详情删除或清理"})
 
     @staticmethod
     def resolve(release: ReleaseRecord, tags: list, excluded: str = "") -> str:
@@ -43,7 +44,15 @@ class ReleaseReferences:
                 .order_by("-released_at")
             )
             if release.software_id:
-                alternatives = alternatives.filter(Q(software=release.software) | Q(software__isnull=True))
+                software_scope = Q(software_id=release.software_id)
+                if release.software_confirmed_at:
+                    # 已核对的历史原链可包含尚未归属的正式版。
+                    software_scope |= Q(software__isnull=True)
+                alternatives = alternatives.filter(software_scope)
+            else:
+                alternatives = alternatives.filter(
+                    Q(software__isnull=True) | Q(software_confirmed_at__isnull=False),
+                )
             by_name = {tag.name: tag for tag in tags}
             for formal in alternatives:
                 tag = by_name.get(formal.tag_name)
@@ -54,14 +63,15 @@ class ReleaseReferences:
     @staticmethod
     def guard_delete(repository, tag_name: str, tags: list, *, allow_rc_cleanup: bool = False) -> None:
         """保护跨项目任务和最后源码引用；不在错误中泄露其他项目详情。"""
-        ReleaseReferences.guard_shared_delete(repository, tag_name)
         if (
             PackageTask.objects.filter(repository=repository, status__in=["queued", "running"])
-            .filter(Q(tag_name=tag_name) | Q(source_ref=tag_name))
+            .filter(Q(tag_name=tag_name) | Q(source_ref=tag_name) | Q(release__tag_name=tag_name))
             .exists()
         ):
             raise serializers.ValidationError({"tag": "该引用仍被排队或运行中的打包任务使用"})
         records = ReleaseRecord.objects.filter(repository=repository, tag_name=tag_name)
+        if records.filter(status="released").count() > 1:
+            raise serializers.ValidationError({"tag": "有多条已发布记录使用同名 Tag，请核对历史归属后再操作"})
         for record in records:
             if record.release_type == "rc" and record.formal_promotions.exists():
                 if not allow_rc_cleanup:

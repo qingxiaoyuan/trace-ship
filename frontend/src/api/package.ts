@@ -141,8 +141,9 @@ export const packageApi = {
   patchConfig: (id: string, data: Partial<PackageConfig>) =>
     patch<PackageConfig>(`/packages/configs/${id}/`, data),
   deleteConfig: (id: string) => del<null>(`/packages/configs/${id}/`),
-  triggerConfig: (id: string, releaseId: string) =>
-    post<PackageTask>(`/packages/configs/${id}/trigger/`, { release_id: releaseId }),
+  triggerConfig: (id: string, releaseId: string, scope?: { project: string; software: string }) =>
+    post<PackageTask>(`/packages/configs/${id}/trigger/`, { release_id: releaseId, ...scope }),
+  retryTask: (id: string) => post<PackageTask>(`/packages/tasks/${id}/retry/`, {}),
   /** 按仓库某条分支最新代码直接触发打包（不经发布流程，任务标题与编码按分支名命名） */
   triggerConfigBranch: (id: string, branch: string, scope?: { project: string; software: string }) =>
     post<PackageTask>(`/packages/configs/${id}/trigger-branch/`, { branch, ...scope }),

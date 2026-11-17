@@ -177,7 +177,7 @@ class OaArchivePreparation:
         artifacts = []
         svn_tasks = []
         directories = []
-        for task in release.package_tasks.all():
+        for task in release.package_tasks.filter(project_id=release.project_id):
             try:
                 cls.require_task(release, task)
             except ValidationError:
@@ -210,9 +210,9 @@ class OaArchivePreparation:
     def prepare(cls, release: ReleaseRecord, user: User, selection: dict) -> dict:
         cls.require_permission(release, user)
         cls.require_release(release)
-        task = PackageTask.objects.filter(pk=selection["task_id"]).first()
+        task = PackageTask.objects.filter(pk=selection["task_id"], project_id=release.project_id).first()
         if task is None:
-            raise NotFound("打包任务不存在")
+            raise NotFound("打包任务不存在或无权查看")
         cls.require_task(release, task)
         artifact = cls.selected_artifact(task, selection)
         content, source = extract_archive_changes(release.release_doc or "")

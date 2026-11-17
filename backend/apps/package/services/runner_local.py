@@ -88,6 +88,7 @@ class LocalRunnerMixin:
         output_path = env["OUTPUT_PATH"]
         command = [
             "docker", "run", "--rm",
+            "--label", f"trace-ship.package-task={task.pk}",
             # 分配伪终端：避免容器内进程因 stdout 非 TTY 退化为块缓冲，保证打包日志实时输出
             "-t",
             # 使用宿主机网络，便于容器直接访问内网 npm 源等服务

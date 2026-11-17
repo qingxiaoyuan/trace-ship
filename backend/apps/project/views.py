@@ -210,8 +210,8 @@ class ProjectViewSet(StandardModelViewSet):
         instance = self.get_object()
         from apps.release.oa_submission import locked_archive_parent
 
-        with locked_archive_parent(instance):
-            instance = get_object_or_404(Project.objects.select_for_update(no_key=True), pk=instance.pk)
+        with locked_archive_parent(instance, user=request.user):
+            instance = get_object_or_404(Project.objects.all(), pk=instance.pk)
             if instance.project_software.exists() or instance.releases.filter(software__isnull=False).exists():
                 return error_response(
                     40901, "项目已有软件选用或发布记录，不能删除。请停止选用或停用项目。",
@@ -338,12 +338,17 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
         """返回单个项目组件。"""
         return success_response(self.get_serializer(self.get_object()).data)
 
+    @transaction.atomic
     def create(self, request: Request, *args, **kwargs) -> Response:
-        """将已有物理仓库关联为当前项目的组件。"""
+        """按仓库、项目顺序锁定后，关联物理仓库。"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        repository = serializer.validated_data["repository"]
         project = self.get_parent_project()
+        repository = get_object_or_404(
+            Repository.objects.select_for_update(no_key=True), pk=serializer.validated_data["repository"].pk,
+        )
+        project = get_object_or_404(Project.objects.select_for_update(no_key=True), pk=project.pk)
+        self.check_object_permissions(request, project)
         component_code = serializer.validated_data.get("component_code") or next_component_code(
             project, repository.name
         )
@@ -374,6 +379,8 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
             Repository.objects.filter(pk__in=repositories).order_by("pk")
             .select_for_update(no_key=True).values_list("pk", flat=True)
         )
+        project = get_object_or_404(Project.objects.select_for_update(no_key=True), pk=instance.project_id)
+        self.check_object_permissions(request, project)
         current = get_object_or_404(self.get_queryset(), pk=instance.pk)
         if locked_ids != repositories or current.repository_id != instance.repository_id:
             return error_response(40901, "组件或仓库已变化，请刷新后重试。", status_code=status.HTTP_409_CONFLICT)

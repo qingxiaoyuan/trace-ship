@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.notification.services import NotificationService
 from apps.project.models import Project
@@ -1121,6 +1122,9 @@ class ReleaseService:
         from utils.permissions import IsProjectDeveloper
 
         repository = Repository.objects.select_for_update(no_key=True).get(pk=repository.pk)
+        project = Project.objects.select_for_update(no_key=True).filter(pk=project.pk).first()
+        if project is None:
+            raise NotFound("发起项目已删除")
         if software is not None:
             if software.repository_id != repository.pk:
                 raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
@@ -1189,7 +1193,16 @@ class ReleaseService:
         ).filter(cls.empty_draft_filter()).delete()
 
         if software is not None:
-            valid_package_config_ids = []
+            from apps.package.models import PackageConfig
+
+            requested = {str(config_id) for config_id in (package_config_ids or [])}
+            valid_package_config_ids = [
+                str(config_id) for config_id in PackageConfig.objects.filter(
+                    software=software, auto_package_on_release=True, is_active=True, id__in=requested,
+                ).values_list("id", flat=True)
+            ]
+            if set(valid_package_config_ids) != requested:
+                raise serializers.ValidationError({"package_config_ids": "请选择当前软件启用的自动打包配置"})
         elif package_config_ids is not None:
             # 宽容过滤：只保留属于该仓库且启用了自动打包的配置，非法/不存在/停用的 id 忽略
             from apps.package.models import PackageConfig
@@ -1828,8 +1841,6 @@ class ReleaseService:
             pass
         logger.info("推 tag 成功，发布完成: release=%s tag=%s", release.id, release.tag_name)
         NotificationService.notify_release_released(release)
-        if release.software_id:
-            return tag_info
         try:
             from apps.package.services import PackageService
 
@@ -1940,26 +1951,41 @@ class ReleaseService:
             ProviderError: 远端删除失败（认证、连接等）
         """
         from apps.release.references import ReleaseReferences
+        from utils.permissions import IsProjectManager
 
-        Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
-        release.refresh_from_db()
+        if Repository.objects.select_for_update(no_key=True).filter(pk=release.repository_id).first() is None:
+            raise NotFound("来源仓库已删除")
+        release = ReleaseRecord.objects.select_for_update().filter(pk=release.pk).first()
+        if release is None:
+            raise NotFound("发布记录已删除")
+        if request_user is not None and not IsProjectManager()._check(release.project, request_user):
+            raise PermissionDenied("没有在当前项目删除已发布版本的权限")
         if release.status != "released":
             raise serializers.ValidationError({"status": "仅已发布状态可删除版本"})
         if tag_name != release.tag_name:
             raise serializers.ValidationError({"tag_name": "输入的 Tag 名称与发布版本不一致"})
-        ReleaseReferences.guard_shared_delete(release.repository, tag_name)
+        if release.cleanup_attempts.exists():
+            raise serializers.ValidationError({"tag": "已有 Tag 清理审计，请保留发布记录"})
         if release.formal_promotions.exists():
             raise serializers.ValidationError({"source_rc": "该 RC 已被正式版引用，不能删除发布记录"})
 
         from apps.release.oa_submission import guard_archive_delete
 
         guard_archive_delete(release=release)
+        if (release.software_id and release.package_tasks.exists()) or (
+            release.package_tasks.exclude(project_id=release.project_id).exists()
+        ):
+            raise serializers.ValidationError({"tag": "该软件版本仍有关联打包记录，请保留发布记录和 Tag"})
 
         user = request_user or release.publisher
         provider = cls._get_provider(
             release.repository, request_user, project=release.project, operation="delete_tag",
         )
-        ReleaseReferences.guard_delete(release.repository, tag_name, provider.list_tags(release.repository.external_identity))
+        tags = provider.list_tags(release.repository.external_identity)
+        ReleaseReferences.guard_delete(release.repository, tag_name, tags)
+        current_tag = next((tag for tag in tags if tag.name == tag_name), None)
+        if release.software_id and current_tag and current_tag.commit_hash != release.git_hash:
+            raise serializers.ValidationError({"tag": "远端 Tag 提交与发布快照不一致，已阻止删除"})
         remote_deleted = True
         try:
             provider.delete_tag(

@@ -1140,7 +1140,7 @@
 
 `POST /api/releases/{id}/cleanup-tag/` 请求 `{tag_name: 完整Tag名}`。`POST /api/releases/cleanup-tags/` 请求 `{items: [{id, tag_name}, ...]}`，每批 1–50 项。批量逐项返回结果，不以整体 HTTP 200 代表全部成功；重试仅提交待重试项。结果 `status` 为 `success`、`already_cleaned`、`external_missing`、`reconciled_missing`、`blocked`、`failure`，附 `id`、可用时的 `tag_name` 与 `reason`。后两种缺失结果不能宣称由平台完成删除。
 
-清理沿用项目管理员/超管权限，保留所有平台历史。排队/执行中的打包任务阻止相关引用删除，仓库标签删除与发布版本删除也保护最后有效引用。详情提供 `tag_cleanup_status`、`tag_cleaned_at`（最近核验时间）、`tag_cleaned_by`、`tag_cleanup_reference` 和 `cleanup_history`（状态、原因、保护引用、时间、操作者）。
+清理沿用原发起项目管理员/超管权限，保留平台历史。清理和删除均查验同名 Tag 的发布证据、实际远端提交、跨项目在途打包、最后有效引用及 OA 保护。共享版本的 Tag 从发布入口操作；发布仍有历史清理或关联打包记录时保留发布和 Tag。拒绝原因不包含无权项目的执行细节。详情提供 `tag_cleanup_status`、`tag_cleaned_at`（最近核验时间）、`tag_cleaned_by`、`tag_cleanup_reference` 和 `cleanup_history`（状态、原因、保护引用、时间、操作者）。
 
 ### 8.3 发布详情
 
@@ -1604,16 +1604,15 @@
 }
 ```
 
-为指定已发布版本按现有配置创建打包任务，返回任务详情（HTTP 201）。桌面发布详情的「打包任务」提供配置选择和新任务链接，手机隐藏补打入口。
+上例用于未归属的软件仓库历史。共享软件配置同时要求 `project` 和 `software` 为目标项目与软件的 UUID，例如 `{ "release_id": "uuid", "project": "uuid", "software": "uuid" }`。成功返回打包任务详情（HTTP 201）。桌面与手机的软件发布详情可从「打包任务」选择配置。旧仓库版本沿用桌面入口及原项目配置。
 
-- 授权按配置所属项目的有效角色判断：`developer`、`tester`、`manager`、`software_admin` 可补打，超管放行；必须显式属于目标项目。维保请求返回 403，不创建或投递任务。分支直打 `trigger-branch` 也不授予维保；另一项目的开发角色不能用于目标维保项目。
-- 配置须启用，发布状态须为 `released`，且项目、物理仓库均与配置一致。不可见发布与不存在的发布统一返回 404；共享仓库不会扩大项目权限。
-- 请求仅接受 `release_id`，兼容旧别名 `release`；两者同时传入须为同一 UUID。缺失、无效 UUID、冲突别名或任何额外字段均返回 400，不接受临时分支、脚本、环境变量、镜像、节点及操作者覆盖。
-- 新任务关联当前发布，使用服务端版本、Tag、完整提交快照和当前已保存配置，`triggered_by` 为实际操作人。任务的 `trigger_source` 为 `manual_release`，所有版本的 SVN 推送统一遵循创建任务时的总开关，与发布后自动打包一致。执行前仍解析有效等价引用并核验实际检出 SHA；无有效引用或提交漂移时真实失败，不退回移动分支。
-- 任务依次取得仓库锁、配置行锁，刷新配置后按当前项目重新校验实际操作人，再创建任务；配置迁移或成员降权不能沿用请求开始时的授权。事务提交后沿既有 Celery / 本地线程回退策略投递。全部投递方式失败时，保留状态为 `failure` 的任务并返回 HTTP 503：`{code: 50300, message: "打包任务投递失败，请稍后重试", data: {task_id: "uuid", status: "failure"}}`；客户端可据此查看失败任务，不应视为创建成功。
-- 业务操作日志使用 `module=package`、`action=trigger_release`，记录实际操作人、已授权的项目/配置/发布/版本、新任务及投递结果；校验失败也记录失败，不记录未授权资源详情或客户端执行参数。
+- `developer`、`tester`、`manager`、`software_admin` 可在所属项目内复用已发布版本，超管放行。维保不能补打、重试或分支直打；角色以实际发起项目为准。不可见项目、版本及配置的反馈不公开其他项目详情。
+- 软件版本和启用配置必须属于同一软件，项目须保持启用选用且能使用主仓库与个人凭证。任务归目标项目，发布及 Tag 记录继续沿用原身份；配置、日志、产物和审计按任务发起项目授权。
+- 请求兼容旧发布 ID 别名 `release`，同时传入两个别名时必须相同。拒绝分支、脚本、镜像、节点、环境变量或操作者覆盖。任务保存原版本、Tag、完整提交、实际操作者及已保存配置快照，`trigger_source` 为 `manual_release`。
+- 持仓库锁后读取发布、配置和发起项目，再核验当前权限，事务提交后投递。全部投递方式失败时保留失败任务并返回 HTTP 503，响应 `data` 包含 `task_id` 及 `status=failure`。操作审计使用 `module=package`、`action=trigger_release`，记录真实发起项目及授权资源身份。
+- 已有软件版本的构建从完整 Tag 引用拉取，执行前再次核对有效引用、固定 SHA 和实际检出的提交。原 Tag、实际 `source_ref` 及显示版本独立保存。SVN 推送依照任务创建时的配置快照。
 
-发布推 Tag 成功后，后端仍为开启 `auto_package_on_release` 的配置自动创建任务，按自动发布策略决定 SVN 推送。
+新建软件发布可在 `package_config_ids` 传入本软件启用自动打包的配置 ID 数组。省略或传入空数组表示本次不自动打包。配置不属于当前软件或在创建时不可用则返回 400。发布推 Tag 成功后仅为发起项目创建本次选取且仍有效的任务；打包失败不回滚发布。旧仓库记录保留原来空值触发所有可用自动配置的语义。
 
 **分支直打：** `POST /api/packages/configs/{id}/trigger-branch/`。共享配置要求显式传入 `{ "project": "uuid", "software": "uuid", "branch": "feature/demo" }`。可用 `GET /api/packages/configs/{id}/usage-projects/` 查询具备触发权限的项目。服务端以目标项目核验软件选用、配置和操作者权限，使用该项目授权的仓库凭证读取分支 HEAD，然后保存软件身份、配置快照和完整提交哈希。实际检出分支或 SHA 与保存记录不一致时，任务失败并阻止执行脚本。待归属旧配置继续发送 `{ "branch": "feature/demo" }`。任务的 `trigger_source` 为 `manual_branch`，没有关联发布，沿用正式类型与分支名版本及对应 SVN 推送配置。
 
@@ -1706,6 +1705,12 @@
 
 - **POST** `/api/packages/tasks/{id}/cancel/`
 - 目标项目的 manager / developer / software_admin 可操作，超管放行；仅 queued / running 任务可取消。详情 `can_cancel` 同时反映角色与任务状态，维保为 false。
+
+#### 重试失败的软件任务
+
+- **POST** `/api/packages/tasks/{id}/retry/`，请求体为空。
+- 原任务须已失败且有明确软件、启用配置和完整提交。按原任务所属项目重新核验补打角色、软件选用及仓库凭证。已发布版本的重试继续绑定同一发布；分支任务继续使用原分支与完整提交。
+- 首次返回 HTTP 201 和新任务，`retry_of` 为原任务 ID；重复请求返回 HTTP 200 和同一个重试任务。重试沿用原配置、源码、版本和 Tag 快照，审计记录实际操作者。有关联重试时保留原任务，禁止删除其日志与工作区。维保的 `can_retry` 为 `false`。
 
 ### 9.12 手动推送产物到 SVN
 

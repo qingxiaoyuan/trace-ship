@@ -52,9 +52,11 @@ def prepare_git(runtime: Path) -> tuple[Path, str, str]:
     command(["git", "-C", str(seed), "commit", "-m", "固定发布样本"])
     fixed_sha = command(["git", "-C", str(seed), "rev-parse", "HEAD"])
     command(["git", "-C", str(seed), "tag", "VA.27.42.0"])
+    command(["git", "-C", str(seed), "tag", "client-a/VA.27.42.0"])
     (seed / "sample.txt").write_text("moving-branch-not-release", encoding="utf-8")
     command(["git", "-C", str(seed), "commit", "-am", "分支后续变化"])
     branch_sha = command(["git", "-C", str(seed), "rev-parse", "HEAD"])
+    command(["git", "-C", str(seed), "branch", "client-a/VA.27.42.0"])
     bare = runtime / "git" / "smoke" / "software.git"
     bare.parent.mkdir(parents=True)
     command(["git", "clone", "--bare", str(seed), str(bare)])
@@ -82,8 +84,9 @@ def git_sample_server(runtime: Path, bare: Path, token: str, observations: dict[
                     self.send_error(401)
                     return
                 observations["authenticated_tag_queries"] += 1
-                rows = command(["git", "--git-dir", str(bare), "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/tags"])
-                data = [{"name": name, "commit": {"id": sha}} for name, sha in (row.split() for row in rows.splitlines())]
+                rows = command(["git", "--git-dir", str(bare), "for-each-ref", "--format=%(refname) %(objectname)", "refs/tags"])
+                data = [{"name": name.removeprefix("refs/tags/"), "commit": {"id": sha}}
+                        for name, sha in (row.split() for row in rows.splitlines())]
                 content = json.dumps(data).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -171,6 +174,7 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
     from apps.project.models import Project, ProjectComponent, ProjectMember
     from apps.release.models import ReleaseRecord
     from apps.repository.models import Repository
+    from apps.software.models import ProjectSoftware, Software
     from apps.system.models import OperationLog
 
     call_command("migrate", verbosity=0)
@@ -178,6 +182,7 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
     token = secrets.token_urlsafe(32)
     owner = User.objects.create_user(username="package_owner", password=password, nickname="隔离仓库所有者")
     actor = User.objects.create_user(username="package_developer", password=password, nickname="隔离实际开发操作人")
+    reuse_actor = User.objects.create_user(username="package_reuse", password=password, nickname="隔离复用项目开发人员")
     reader = User.objects.create_user(username="package_maintainer", password=password, nickname="隔离只读维保")
     project = Project.objects.create(name="隔离真实构建项目", code="REAL-PACKAGE", leader=owner, status=1)
     ProjectMember.objects.create(project=project, user=owner, role="manager")
@@ -210,6 +215,21 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
         # 真实构建样本关闭 SVN；开关开启时的推送与补推由 SVN 专项回归覆盖。
         svn_push_enabled=False, svn_url="https://example.invalid/never-push",
         svn_credential=svn_credential, cleanup_workspace=True,
+    )
+    consumer = Project.objects.create(name="隔离软件复用项目", code="REAL-REUSE", leader=owner, status=1)
+    ProjectMember.objects.create(project=consumer, user=owner, role="manager")
+    ProjectMember.objects.create(project=consumer, user=reuse_actor, role="developer")
+    ProjectComponent.objects.create(project=consumer, repository=repository, component_code="reuse")
+    software = Software.objects.create(repository=repository, owner=owner, slug="client-a", name="真实构建客户端")
+    ProjectSoftware.objects.create(project=project, software=software)
+    ProjectSoftware.objects.create(project=consumer, software=software)
+    software_release = ReleaseRecord.objects.create(
+        project=project, repository=repository, software=software, publisher=owner,
+        release_type="formal", status="released", version=release.version, tag_name="client-a/VA.27.42.0",
+        git_hash=sha, branch="main", release_doc=release.release_doc, released_at=timezone.now(),
+    )
+    shared_config = PackageConfig.objects.create(
+        software=software, name="共享真实构建配置", image=package_image, cleanup_workspace=True,
     )
     app_server = make_server("127.0.0.1", 0, get_wsgi_application(), handler_class=QuietWSGIHandler)
     threading.Thread(target=app_server.serve_forever, daemon=True).start()
@@ -306,6 +326,52 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
         request("GET", f"/api/packages/tasks/{task_id}/artifacts/{artifacts[0]['id']}/download/", expected=403)
         request("POST", f"/api/packages/configs/{config.id}/favorite/", expected=403)
         assert PackageTask.objects.count() == 2
+        reuse_login = request(
+            "POST", "/api/auth/login/", json={"username": reuse_actor.username, "password": password},
+        ).json()["data"]
+        session.headers["Authorization"] = "Bearer " + reuse_login["access_token"]
+        request("GET", f"/api/packages/tasks/{task_id}/", expected=404)
+        command_prefix = ["git", "--git-dir", str(bare)]
+        remote_before = command([*command_prefix, "tag", "--list"])
+        reuse_payload = {"release_id": str(software_release.pk), "project": str(consumer.pk), "software": str(software.pk)}
+        shared_url = f"/api/packages/configs/{shared_config.pk}/trigger/"
+        shared_id = request("POST", shared_url, expected=201, json=reuse_payload).json()["data"]["id"]
+        shared = task_detail(shared_id)
+        assert shared["status"] == "success", shared["error_message"]
+        assert {field: shared[field] for field in ("project", "software", "triggered_by", "version", "tag_name",
+                                                   "commit_hash", "source_ref", "release")} == {
+            "project": str(consumer.pk), "software": str(software.pk), "triggered_by": str(reuse_actor.pk),
+            "version": software_release.version, "tag_name": software_release.tag_name, "commit_hash": sha,
+            "source_ref": software_release.tag_name, "release": str(software_release.pk),
+        }
+        shared_artifacts = {item["path"]: item for item in shared["artifact_info"]}
+        assert set(shared_artifacts) == set(hashes)
+        shared_info = request(
+            "GET", f"/api/packages/tasks/{shared_id}/artifacts/{shared_artifacts['build-info.json']['id']}/download/",
+        ).json()
+        shared_app = request(
+            "GET", f"/api/packages/tasks/{shared_id}/artifacts/{shared_artifacts['software.pyz']['id']}/download/",
+        ).content
+        shared_digest = hashlib.sha256(shared_app).hexdigest()
+        assert shared_digest == shared_artifacts["software.pyz"]["sha256"]
+        assert shared_info == {
+            "version": software_release.version, "tag": software_release.tag_name, "project_code": consumer.code,
+            "commit": sha, "sample": "fixed-release", "app_sha256": shared_digest,
+        }, shared_info
+        shared_app_path = downloads / "shared-software.pyz"
+        shared_app_path.write_bytes(shared_app)
+        assert json.loads(command([sys.executable, str(shared_app_path)])) == executable
+        assert shared_artifacts["release.md"]["sha256"] == hashes["release.md"]
+        assert command([*command_prefix, "tag", "--list"]) == remote_before
+        assert ReleaseRecord.objects.count() == 2
+        assert CredentialUsageLog.objects.filter(project=consumer, actor=reuse_actor, credential=credential).exists()
+        command([*command_prefix, "tag", "-f", software_release.tag_name, branch_sha])
+        shared_failure_id = request("POST", shared_url, expected=201, json=reuse_payload).json()["data"]["id"]
+        shared_failure = task_detail(shared_failure_id)
+        assert shared_failure["status"] == "failure" and not shared_failure["artifact_info"]
+        shared_failure_log = request("GET", f"/api/packages/tasks/{shared_failure_id}/logs/").content
+        assert b"docker run" not in shared_failure_log
+        (REPORT / "shared-drift-blocked.log").write_bytes(shared_failure_log)
         assert observations["authenticated_tag_queries"] >= 2 and observations["authenticated_git_requests"] >= 2
         return {
             "success_task": task_id, "drift_task": failed_id, "actor": str(actor.id), "project": str(project.id),
@@ -315,6 +381,12 @@ def verify(runtime: Path, image: str) -> dict[str, Any]:
             "svn_disabled_by_config": True, "unused_svn_credential": True,
             "credential_audit_count": usage.count(), "operation_audit": {"user": str(audit.user_id), "result": audit.result, "detail": audit.detail},
             "source_and_tmp_cleaned": True, "drift_stopped_before_docker": True, "protocol_sample": observations,
+            "shared_prefixed_tag": {
+                "success_task": shared_id, "drift_task": shared_failure_id, "source_project": str(project.pk),
+                "build_project": str(consumer.pk), "software": str(software.pk), "tag": software_release.tag_name,
+                "build_info": shared_info, "same_name_branch_sha": branch_sha,
+                "release_and_remote_tag_counts_preserved": True, "source_project_task_access": 404,
+            },
             "actor_role": "developer", "maintainer_readonly": {
                 "trigger": 403, "file_log": 403, "single_artifact": 403, "zip": 403, "favorite": 403,
                 "task_detail": 200, "online_log": 200, "no_extra_task": True,
@@ -348,18 +420,27 @@ def main() -> int:
     status = 1
     try:
         (REPORT / "dependencies.txt").write_text(command([sys.executable, "-m", "pip", "freeze"]) + "\n", encoding="utf-8")
-        evidence["checks"] = verify(runtime, image)
+        checks = evidence["checks"] = verify(runtime, image)
         events = command([
             "docker", "events", "--since", str(evidence["started_at"]),
             "--until", datetime.now(UTC).isoformat(), "--filter", "type=container",
             "--filter", f"image={image}", "--format", "{{json .}}",
         ])
         container_events = [json.loads(line) for line in events.splitlines() if line]
+        evidence["docker_events"] = [{
+            "action": event["Action"], "container_id": event["Actor"]["ID"],
+            "task_id": event["Actor"]["Attributes"].get("trace-ship.package-task"),
+            "exit_code": event["Actor"]["Attributes"].get("exitCode"),
+        } for event in container_events]
         starts = [event for event in container_events if event["Action"] == "start"]
         finishes = [event for event in container_events if event["Action"] == "die"]
-        assert len(starts) == 1 and len(finishes) == 1, "只有正向任务可以真正启动构建容器"
-        assert finishes[0]["Actor"]["Attributes"]["exitCode"] == "0"
-        evidence["docker_events"] = container_events
+        expected_tasks = {checks["success_task"], checks["shared_prefixed_tag"]["success_task"]}
+        failed_tasks = {checks["drift_task"], checks["shared_prefixed_tag"]["drift_task"]}
+        assert len(starts) == len(finishes) == 2, "两个正向任务应各执行一个容器"
+        for records in (starts, finishes):
+            assert {event["Actor"]["Attributes"].get("trace-ship.package-task") for event in records} == expected_tasks
+        assert all(event["Actor"]["Attributes"].get("exitCode") == "0" for event in finishes)
+        assert not failed_tasks.intersection(event["task_id"] for event in evidence["docker_events"])
         status = 0
     except Exception as error:
         evidence["failure"] = {"type": type(error).__name__, "message": str(error), "traceback": traceback.format_exc()}
