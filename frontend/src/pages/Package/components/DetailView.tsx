@@ -128,7 +128,7 @@ export const DetailView = memo(function DetailView({
                     <>
                       <span>·</span>
                       <Link
-                        to={`/releases/${task.release}`}
+                        to={`/releases/${task.release}${task.software ? `?project=${task.project}` : ''}`}
                         className="text-indigo-500 transition-colors hover:text-indigo-600"
                       >
                         发布 {task.release_version || ''}

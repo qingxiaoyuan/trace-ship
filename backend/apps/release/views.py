@@ -277,7 +277,7 @@ class ReleaseViewSet(StandardModelViewSet):
 
             return releases_for_read(
                 queryset, user, project_id,
-                include_inactive_links=self.action in ("oa_archive_records", "oa_archive_confirm_no_order"),
+                include_consumed_links=self.action in ("retrieve", "oa_archive_records", "oa_archive_confirm_no_order"),
             )
         return queryset.filter(project_id__in=visible_project_ids(user))
 
@@ -389,51 +389,29 @@ class ReleaseViewSet(StandardModelViewSet):
     @action(detail=False, methods=["get"], url_path="next-version")
     def next_version(self, request: Request) -> Response:
         """只在有权使用的目标项目中计算软件的建议版本。"""
-        from apps.release.versions import suggest_software_version
+        from apps.release.versions import suggest_software_versions
 
         params = SoftwareReleaseQuerySerializer(data=request.query_params)
-        params.is_valid(raise_exception=True)
-        link = self._software_context(request, params.validated_data["project"], params.validated_data["software"])
-        repository = link.software.repository
-        try:
-            provider = ReleaseService._get_provider(repository, request.user, project=link.project)
-            tags = provider.list_tags(repository.external_identity)
-            all_types = {
-                kind: suggest_software_version(link.software, kind, tags)
-                for kind in ("formal", "rc", "beta")
-            }
-        except Exception as exc:
-            return _handle_service_error(exc, "获取建议版本")
-        return success_response({
-            **all_types[params.validated_data["release_type"]],
-            "has_existing_tags": any(item["latest_tag"] for item in all_types.values()),
-            "all_types": all_types,
-        })
-
-    @action(detail=False, methods=["get"], url_path="software-changes-preview")
-    def software_changes_preview(self, request: Request) -> Response:
-        """从分支详情取得完整提交，按目标软件和类型预览。"""
-        from apps.release.formal_changes import FormalChanges
-        from apps.release.versions import normalize_software_tag, suggest_software_version
-
-        params = SoftwareChangesQuerySerializer(data=request.query_params)
         params.is_valid(raise_exception=True)
         values = params.validated_data
         link = self._software_context(request, values["project"], values["software"])
         repository = link.software.repository
         try:
             provider = ReleaseService._get_provider(repository, request.user, project=link.project)
-            head = ReleaseService._resolve_branch_head_hash(repository, values["branch"], provider=provider)
             tags = provider.list_tags(repository.external_identity)
-            release_type = values["release_type"]
-            tag = values.get("tag_name") or suggest_software_version(link.software, release_type, tags)["next_tag_name"]
-            version, tag = normalize_software_tag(link.software, release_type, tag)
-            draft = ReleaseRecord(
-                project=link.project, software=link.software, repository=repository, release_type=release_type,
-                branch=values["branch"], git_hash=head, version=version, tag_name=tag, status="draft",
-            )
-            changes = FormalChanges.collect(draft, provider, tags=tags)
-            return success_response(FormalChanges.preview(changes))
+            return success_response(suggest_software_versions(link.software, values["release_type"], tags))
+        except Exception as exc:
+            return _handle_service_error(exc, "获取建议版本")
+
+    @action(detail=False, methods=["get"], url_path="software-changes-preview")
+    def software_changes_preview(self, request: Request) -> Response:
+        """从分支详情取得完整提交，按目标软件和类型预览。"""
+        params = SoftwareChangesQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        values = dict(params.validated_data)
+        link = self._software_context(request, values.pop("project"), values.pop("software"))
+        try:
+            return success_response(ReleaseService.preview_software_branch(link, request.user, **values))
         except Exception as exc:
             return _handle_service_error(exc, "预览软件变更")
 

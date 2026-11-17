@@ -18,6 +18,7 @@ from apps.package.services.artifacts import (
     verify_task_artifact_directory,
     verify_task_svn_artifact,
 )
+from apps.package.services.svn_scope import SvnTargetConflict, verify_svn_target
 from apps.project.models import Project
 from apps.project.services import visible_project_ids
 from apps.release.delivery_identity import release_software_name
@@ -176,6 +177,11 @@ class OaArchivePreparation:
             artifact = {**original, "path": (root_path / path).resolve().relative_to(root_path).as_posix()}
             svn = (task.stage_info or {}).get("svn_push", {})
             root = svn.get("remote_url", "") if svn.get("status") == "success" else ""
+            if root:
+                try:
+                    verify_svn_target(task.project_id, root)
+                except SvnTargetConflict as exc:
+                    archive_file_error(ArtifactQueryError("target_conflict", str(exc), 409))
             return {**artifact, "artifact_id": artifact.get("id"), "kind": "local", "supplemented": False,
                     "url": f"{root.rstrip('/')}/{quote(path, safe='/')}" if root else "",
                     "original": {key: artifact.get(key) for key in ("size", "sha256", "revision")}, "current": None}
@@ -199,10 +205,15 @@ class OaArchivePreparation:
             except ValidationError:
                 continue
             stage = (task.stage_info or {}).get("svn_push", {})
+            svn_root = stage.get("remote_url", "") if stage.get("status") == "success" else ""
+            if svn_root:
+                try:
+                    verify_svn_target(task.project_id, svn_root)
+                except SvnTargetConflict:
+                    continue
             if task.config_snapshot.get("svn_push_enabled") or stage.get("remote_url"):
                 svn_tasks.append({"task_id": str(task.id), "task_name": task.name})
             source, manifest = task_artifact_manifest(task)
-            svn_root = stage.get("remote_url", "") if stage.get("status") == "success" else ""
             if svn_root or any(local_artifact_available(task, item) for item in manifest):
                 directories.append({
                     "task_id": str(task.id), "task_name": task.name, "name": "完整产物目录",

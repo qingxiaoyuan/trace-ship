@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
   password: string;
-  workflow_status: { username: string; samples: Array<{ id: string; release_id: string; version: string; state: string; node: string }> };
+  workflow_status: { username: string; project_id: string; samples: Array<{ id: string; release_id: string; version: string; state: string; node: string }> };
 };
 const sample = fixture.workflow_status.samples.find(item => item.state === 'running' && item.node === '技术负责人审批')!;
 const reportDir = process.env.SMOKE_REPORT_DIR!;
@@ -39,7 +39,7 @@ test('审批直接驳回并从看板及列表找到原申请，工作台无草�
   await expect(page.getByRole('button', { name: '提交审批', exact: true })).toHaveCount(0);
   await expect(page.getByRole('region', { name: '审批轮次', exact: true })).toHaveCount(0);
   await page.getByRole('main').getByRole('button', { name: '新建发布', exact: true }).click();
-  await expect(page).toHaveURL(/\/releases\/create\?project_id=/);
+  await expect(page).toHaveURL(url => url.pathname === '/releases/create' && url.searchParams.get('project') === fixture.workflow_status.project_id);
 
   await page.goto('/releases');
   await page.getByRole('button', { name: '列表', exact: true }).click();

@@ -214,7 +214,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
   const currentResult = latest && latest.created_at > (submit.data?.created_at ?? '') ? latest : submit.data ?? latest;
   const unresolvedResult = !submit.isPending && currentResult && ['failure', 'unknown'].includes(currentResult.status)
     ? currentResult : undefined;
-  const action = allowed ? <Button className="shrink-0 max-md:min-h-11" icon={<Archive className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />} disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>发起 OA 归档</Button> : null;
+  const action = allowed && !release.shared_history_only ? <Button className="shrink-0 max-md:min-h-11" icon={<Archive className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />} disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>发起 OA 归档</Button> : null;
   return <section aria-label="OA 软件归档准备" className="space-y-2 rounded-lg border border-indigo-100 bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-[13px] font-medium">OA 软件归档</h3>

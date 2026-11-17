@@ -116,6 +116,8 @@ export interface Release {
   software_slug?: string | null;
   /** 共享详情的项目字段对应查看上下文，原申请操作仍在原项目。 */
   shared_readonly?: boolean;
+  /** 项目已停止选用，仅可从原任务或归档追溯该版本。 */
+  shared_history_only?: boolean;
   /** 已保存发布说明的列表摘要，完整说明通过详情读取。 */
   update_summary?: string;
   /** 各关联配置最近任务的汇总，失败优先，避免单个成功掩盖其他配置失败。 */

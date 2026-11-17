@@ -35,6 +35,7 @@ TEST_CASES = (
     "test_repackage_waits_for_config_change_and_revalidates[moved-project-403]",
     "test_config_writer_waits_for_repackage_snapshot",
     "test_shared_branch_snapshot_and_edit_serialize",
+    "test_postgresql_first_svn_push_reserves_directory_before_remote_write",
     "test_归档并发重放及不同请求均仅发送一次[file-True]",
     "test_归档并发重放及不同请求均仅发送一次[file-False]",
     "test_发送已提交时删除竞争不能绕过来源保护[file-task]",
@@ -76,6 +77,7 @@ def test_postgresql_scope_includes_all_required_cases() -> None:
         "apps/system/tests/test_ai_settings.py::test_postgresql_review_snapshot_waits_for_complete_model_save",
         "apps/package/tests/test_release_repackage_postgresql.py",
         "apps/package/tests/test_shared_packaging_postgresql.py",
+        "apps/package/tests/test_svn_delivery_scope.py::test_postgresql_first_svn_push_reserves_directory_before_remote_write",
         "apps/release/tests/test_oa_archive_postgresql.py",
     )
     assert len(TEST_CASES) == postgresql.EXPECTED_TESTS

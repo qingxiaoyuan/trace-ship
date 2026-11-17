@@ -12,7 +12,7 @@ from django.http import Http404
 from rest_framework.exceptions import ValidationError
 
 from apps.account.models import User
-from apps.package.models import PackageConfig, PackageConfigAssignment
+from apps.package.models import PackageConfig, PackageConfigAssignment, PackageTask
 from apps.package.services.configurations import CONFIG_RELATIONS, can_maintain_config, lock_package_config
 from apps.release.models import ReleaseRecord
 from apps.software.models import ProjectSoftware, Software
@@ -129,6 +129,17 @@ class Command(BaseCommand):
         blocking_releases = Command._pending_release_ids(config)
         if blocking_releases:
             return "blocked", f"请先处理引用配置的旧发布申请：{', '.join(blocking_releases)}"
+
+        related_tasks = PackageTask.objects.filter(
+            Q(config_id=config.pk) | Q(config__isnull=True, config_snapshot__config_id=str(config.pk)),
+            project_id=component.project_id, repository_id=component.repository_id,
+            release__software_confirmed_at__isnull=False,
+        ).exclude(release__software_id=software_id)
+        if any(
+            (task.config_snapshot or {}).get("config_id") in (None, str(config.pk))
+            for task in related_tasks
+        ):
+            return "blocked", "原配置的历史打包任务关联了已确认属于其他软件的发布"
 
         if not apply:
             return "ready", ""

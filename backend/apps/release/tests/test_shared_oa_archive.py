@@ -59,6 +59,8 @@ def directory(task):
 
 def test_共享归档按任务项目办理并保留已删除任务的申请副本(shared_archive, oa_http):
     client, consumer, task, origin_client, release, origin_task = shared_archive
+    release.source_repository_name_snapshot = "归档版本原主仓库名称"
+    release.save(update_fields=["source_repository_name_snapshot"])
     options = client.get(archive_url(release, "options", consumer))
     assert options.status_code == 200, options.data
     assert [row["task_id"] for row in options.data["data"]["directories"]] == [str(task.pk)]
@@ -83,6 +85,7 @@ def test_共享归档按任务项目办理并保留已删除任务的申请副�
     assert record["source"]["release_project_id"] == str(release.project_id)
     assert record["source"]["software_name"] == "桌面交付软件"
     assert record["source"]["tag_name"] == "desktop/V1.2.3"
+    assert record["source"]["repository_name"] == "归档版本原主仓库名称"
     assert origin_client.get(archive_url(release, "records")).data["data"] == []
 
     confirm = {"application_id": record["id"], "confirmation": "checked_no_order", "evidence": "隔离 OA 已核对"}
@@ -91,7 +94,11 @@ def test_共享归档按任务项目办理并保留已删除任务的申请副�
     assert result.status_code == 200
     grant_delete_task_permission(task.triggered_by)
     assert client.delete(f"/api/packages/tasks/{task.pk}/").status_code == 200
+    ProjectSoftware.objects.filter(project=consumer, software=release.software).update(is_active=False)
     assert client.get(archive_url(release, "records", consumer)).data["data"] == [result.data["data"]]
+    detail = client.get(f"/api/releases/{release.pk}/", {"project": str(consumer.pk)})
+    assert detail.status_code == 200 and detail.data["data"]["project"] == str(consumer.pk)
+    assert detail.data["data"]["package_tasks"] == [] and detail.data["data"]["shared_readonly"]
     assert origin_client.get(archive_url(release, "records")).data["data"] == []
     assert len(oa_http.requests) == 1
     assert origin_client.get(archive_url(release, "options")).data["data"]["directories"][0]["task_id"] == str(origin_task.pk)

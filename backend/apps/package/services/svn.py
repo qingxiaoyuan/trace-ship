@@ -13,8 +13,10 @@ from rest_framework import serializers
 
 from apps.credential.models import Credential
 from apps.package.models import PackageTask
+from apps.package.services.svn_scope import reserve_svn_target, verify_svn_target
 from utils.markdown_table import table_newlines_to_br
 from utils.provider.factory import get_provider
+from utils.provider.svn_path import canonical_svn_url
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +165,12 @@ class SvnPushMixin:
         # 自定义模板按原文渲染，不再自动插入类型目录或 -rc/-beta 后缀。
         if path_template == DEFAULT_SVN_PATH_TEMPLATE:
             version_dir = f"{release_type}/{version_dir}"
-        remote_url = f"{svn_url.rstrip('/')}/{version_dir}"
+        try:
+            svn_url = canonical_svn_url(svn_url)
+            remote_url = canonical_svn_url(f"{svn_url}/{version_dir}")
+        except ValueError as exc:
+            raise RuntimeError("SVN 目录地址无效，无法推送") from exc
+        verify_svn_target(task.project_id, remote_url)
 
         # 创建 provider；提交模式决定目录已存在时的行为：
         # new_dir（默认）报错终止；overwrite 走 checkout→镜像覆盖→commit
@@ -172,11 +179,6 @@ class SvnPushMixin:
         remote_exists = provider.remote_exists(remote_url)
         if remote_exists and commit_mode != "overwrite":
             raise RuntimeError(f"SVN 目录已存在: {remote_url}")
-        if not remote_exists:
-            # svn import 不会自动创建父目录：分支直打包的版本目录可能含斜杠
-            # （如 feature/demo），需先逐级创建缺失的中间目录，否则推送必然失败
-            cls._ensure_svn_parent_dirs(provider, svn_url, version_dir)
-
         artifacts_dir = workspace / "artifacts"
         if not artifacts_dir.exists():
             raise RuntimeError("产物目录不存在，无法推送")
@@ -199,6 +201,10 @@ class SvnPushMixin:
         message = f"Release {task.version} artifacts ({task.tag_name})"
         if release_doc:
             message += f"\n\n{release_doc}"
+        reserve_svn_target(task, remote_url, existing=remote_exists)
+        if not remote_exists:
+            # svn import 不会自动创建多级版本目录的父目录。
+            cls._ensure_svn_parent_dirs(provider, svn_url, remote_url.removeprefix(svn_url + "/"))
         if remote_exists:
             # 覆盖式提交：checkout 目标目录后镜像同步（新增/修改/删除一并提交），
             # 同名发布文档随之上传覆盖
@@ -258,6 +264,8 @@ class SvnPushMixin:
                 "ok": False,
             }
             try:
+                verify_svn_target(task.project_id, remote_url)
+                remote_url = canonical_svn_url(remote_url)
                 credential = Credential.objects.get(id=cred_id)
                 if not credential.is_active:
                     raise RuntimeError("SVN 凭证已停用")

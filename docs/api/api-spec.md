@@ -1087,7 +1087,7 @@
 | **GET** `/api/releases/software-changes-preview/` | 同建议参数，另需 `branch`，可传 `tag_name`。与草稿变更预览使用相同的固定 SHA 区间，返回 `base_tag`、`base_git_hash`、`head_hash`、提交、合并请求、更新条目和核验提示。 |
 | **GET** `/api/releases/rc-candidates/` | 软件发布传入 `project` 和 `software`，按该软件查询已发布 RC 和可用源码。仓库兼容路径继续接受 `project` 与 `repository`。 |
 
-列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。待归属历史的软件字段为空。列表和目录可按 `project`、`software` 查询；列表可用 `project=<项目 UUID>&repository=<仓库 UUID>&unassigned=true` 精确筛选该项目的待归属历史，仅使用 `repository` 则查看该仓库全部有权版本。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；审批、整改、原项目元信息和任务按各自项目授权读取。
+列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。待归属历史的软件字段为空。列表和目录可按 `project`、`software` 查询；列表可用 `project=<项目 UUID>&repository=<仓库 UUID>&unassigned=true` 精确筛选该项目的待归属历史，仅使用 `repository` 则查看该仓库全部有权版本。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；审批、整改、原项目元信息和任务按各自项目授权读取。停止选用后，只有本项目留有对应打包任务或归档的版本可从详情深链回看，此时响应包含 `shared_history_only=true`。该版本不会因此重新进入项目版本列表，也不能在该项目发起补打或新归档。
 
 软件草稿说明保存软件显示名称、稳定标识、主仓库名称、完整 Tag 与固定 SHA。正式、RC 和 Beta 的说明与审查采用同软件、同类型的有效基线。软件按类型及规范化版本占用，项目和日期不拆分同一编号。主仓库模板逐次创建独立审批实例。推 Tag 成功后只触发本次选中的有效软件配置，既有版本可以被其他选用项目复用；删除和清理仍受源码、任务与 OA 引用保护。
 
@@ -1574,6 +1574,7 @@
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
 - 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
 - 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。不再提供 RC / 测试版独立开关；已有配置无需重新保存，新建任务立即统一跟随 `svn_push_enabled`。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。自动与手动打包的正式版、RC、测试版及分支直打统一遵循总开关；分支默认进入 `formal/{分支名}`。已创建任务保留原快照的最终推送决定，不重新计算类型开关，也不因当前配置启用而获得补推能力；旧版本重新补打属于新任务。
+- 推送前按真实发起项目固定 SVN 目标。相同目录或父子范围已经由其他项目使用时，推送（含补推）、查看当前 SVN 文件、OA 归档和同步发布说明返回冲突；保留同一项目的既有覆盖模式。共享配置可用 `{project_code}` 给各项目划分目录。结果未知继续保留占用，旧任务保存的真实目录也纳入核对。URL、模板和覆盖模式沿用原设置。同一 SVN 仓库请统一配置服务地址。
 - 打包配置使用软件的 Git 主仓库。项目使用共享配置前，须启用对该软件及其主仓库的关联，仓库所有者须在项目内。
 
 **配置收藏：**

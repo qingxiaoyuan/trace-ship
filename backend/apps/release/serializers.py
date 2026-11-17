@@ -39,6 +39,7 @@ def _shared_release_fields(release: ReleaseRecord) -> dict:
         "created_at": release.created_at,
         "released_at": release.released_at,
         "shared_readonly": True,
+        "shared_history_only": not release.shared_project_active,
     }
 
 

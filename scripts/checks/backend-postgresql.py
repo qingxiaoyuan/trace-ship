@@ -48,9 +48,10 @@ TEST_NODES = (
     "apps/system/tests/test_ai_settings.py::test_postgresql_review_snapshot_waits_for_complete_model_save",
     "apps/package/tests/test_release_repackage_postgresql.py",
     "apps/package/tests/test_shared_packaging_postgresql.py",
+    "apps/package/tests/test_svn_delivery_scope.py::test_postgresql_first_svn_push_reserves_directory_before_remote_write",
     "apps/release/tests/test_oa_archive_postgresql.py",
 )
-EXPECTED_TESTS = 42
+EXPECTED_TESTS = 43
 
 
 def validate_junit(path: Path) -> dict[str, int]:

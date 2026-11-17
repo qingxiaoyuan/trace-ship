@@ -3,12 +3,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
-  username: string;
   password: string;
-  operator: { username: string };
-  software_identity: { repository_id: string; project_id: string; delegate: string };
+  software_identity: { repository_id: string; project_id: string; owner: string; reader: string; delegate: string };
 };
-const { repository_id, project_id, delegate } = fixture.software_identity;
+const { repository_id, project_id, owner, reader, delegate } = fixture.software_identity;
 const softwareName = '身份验收客户端';
 const renamed = '移动端验收客户端';
 
@@ -22,7 +20,7 @@ async function login(page: Page, username: string) {
 }
 
 test('仓库登记、协作撤销与手机端项目选用均通过生产接口', async ({ page, browser }) => {
-  await login(page, fixture.operator.username);
+  await login(page, owner);
   await page.goto(`/repositories/${repository_id}/software`);
   await page.getByRole('button', { name: '登记软件' }).click();
   const registration = page.getByRole('dialog', { name: '登记软件' });
@@ -89,15 +87,15 @@ test('仓库登记、协作撤销与手机端项目选用均通过生产接口',
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
     await page.screenshot({ path: path.join(process.env.SMOKE_REPORT_DIR!, 'software-selection-mobile.png') });
 
-    const reader = await browser.newPage({ viewport: { width: 375, height: 812 } });
+    const readerPage = await browser.newPage({ viewport: { width: 375, height: 812 } });
     try {
-      await login(reader, fixture.username);
-      await reader.goto(`/projects/${project_id}/software`);
-      await expect(reader.getByText(renamed, { exact: true })).toBeVisible();
-      await expect(reader.getByRole('button', { name: '选用已有软件', exact: true })).toHaveCount(0);
-      await expect(reader.getByRole('button', { name: '恢复选用' })).toHaveCount(0);
+      await login(readerPage, reader);
+      await readerPage.goto(`/projects/${project_id}/software`);
+      await expect(readerPage.getByText(renamed, { exact: true })).toBeVisible();
+      await expect(readerPage.getByRole('button', { name: '选用已有软件', exact: true })).toHaveCount(0);
+      await expect(readerPage.getByRole('button', { name: '恢复选用' })).toHaveCount(0);
     } finally {
-      await reader.close();
+      await readerPage.close();
     }
   } finally {
     await mobile.close();
