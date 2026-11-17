@@ -14,7 +14,11 @@ from apps.package.models import (
     PackageNode,
     PackageTask,
 )
-from apps.project.models import ProjectComponent
+from apps.package.services.configurations import can_maintain_config, require_config_maintenance
+from apps.project.models import Project, ProjectComponent
+from apps.project.serializers import resolve_my_role
+from apps.repository.models import Repository
+from apps.software.models import ProjectSoftware, Software
 
 
 def validate_safe_rel_path(value: str, field: str = "path") -> str:
@@ -166,18 +170,40 @@ class ReleasePackageTriggerSerializer(serializers.Serializer):
         return {"release_id": release_id}
 
 
+class BranchPackageTriggerSerializer(serializers.Serializer):
+    """分支直打接受分支名，软件配置还须显式提供真实项目与软件。"""
+
+    branch = serializers.CharField(max_length=100, required=False)
+    branch_name = serializers.CharField(max_length=100, required=False)
+    project = serializers.UUIDField(required=False)
+    software = serializers.UUIDField(required=False)
+
+    def validate(self, attrs):
+        branch, legacy_branch = attrs.get("branch"), attrs.pop("branch_name", None)
+        if branch and legacy_branch and branch != legacy_branch:
+            raise serializers.ValidationError({"branch": "分支名与旧字段 branch_name 不一致"})
+        if not branch and not legacy_branch:
+            raise serializers.ValidationError({"branch": "必须指定分支名"})
+        attrs["branch"] = branch or legacy_branch
+        if bool(attrs.get("project")) != bool(attrs.get("software")):
+            raise serializers.ValidationError({"software": "项目和软件须同时指定"})
+        return attrs
+
+
 class PackageConfigSerializer(serializers.ModelSerializer):
-    """项目组件级打包配置序列化器（项目与仓库归属以 project_component 为唯一事实源）。"""
+    """软件共享配置及待归属旧配置。"""
 
     project_component = serializers.PrimaryKeyRelatedField(
         queryset=ProjectComponent.objects.all(), required=False
     )
-    project_id = serializers.UUIDField(source="project_component.project.id", read_only=True)
-    project_name = serializers.CharField(source="project_component.project.name", read_only=True)
-    repository_id = serializers.UUIDField(source="project_component.repository.id", read_only=True)
-    repository_name = serializers.CharField(
-        source="project_component.repository.name", read_only=True, default=""
-    )
+    software = serializers.PrimaryKeyRelatedField(queryset=Software.objects.all(), required=False)
+    software_name = serializers.CharField(source="software.name", read_only=True, default="")
+    software_slug = serializers.CharField(source="software.slug", read_only=True, default="")
+    project_id = serializers.UUIDField(source="project_component.project_id", read_only=True, default=None)
+    project_name = serializers.CharField(source="project_component.project.name", read_only=True, default="")
+    repository_id = serializers.UUIDField(source="source_repository.id", read_only=True)
+    repository_name = serializers.CharField(source="source_repository.name", read_only=True)
+    can_maintain = serializers.SerializerMethodField()
     project_component_name = serializers.CharField(
         source="project_component.display_name", read_only=True, default=""
     )
@@ -205,7 +231,7 @@ class PackageConfigSerializer(serializers.ModelSerializer):
             "id", "project_id", "project_name",
             "repository_id", "repository_name",
             "project_component", "project_component_name",
-            "name",
+            "software", "software_name", "software_slug", "can_maintain", "name",
             "executor_type", "executor_type_display", "node", "node_id", "node_name", "node_host",
             "node_os_type",
             "image", "image_id", "image_name", "image_ref", "image_source", "image_info", "custom_script",
@@ -258,34 +284,26 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         return image
 
     def get_my_role(self, obj: PackageConfig) -> str | None:
-        """当前请求用户在配置所属项目中的角色。
-
-        与 `ProjectSerializer.get_my_role` 保持一致：超管与项目负责人均视为 manager；
-        成员记录为 software_admin 时优先生效；非成员返回 None。
-        前端 `ConfigList`/`PackageConfigModal` 同时接受 manager / software_admin
-        作为可维护信号，因此超管返回 manager 不会影响 UI 放行。
-        列表场景下视图已通过 Prefetch(to_attr="_my_member") 预取当前用户
-        的成员记录，避免逐条查询产生 N+1。
-        """
         request = self.context.get("request")
         user = getattr(request, "user", None)
         if not user or not user.is_authenticated:
             return None
-        if user.is_superuser:
-            return "manager"
-        # 视图通过 Prefetch(to_attr="_my_member") 预取当前用户成员记录；
-        # 嵌套调用或未 prefetch 时回退到直接查询（仅单条，无 N+1 风险）
-        project = obj.project_component.project
-        members = getattr(project, "_my_member", None)
-        if members is None:
-            member = project.members.filter(user=user).only("role").first()
-        else:
-            member = members[0] if members else None
-        if member and member.role == "software_admin":
-            return "software_admin"
-        if str(project.leader_id) == str(user.id):
-            return "manager"
-        return member.role if member else None
+        project = self.context.get("package_project") if obj.software_id else obj.project_component.project
+        return resolve_my_role(project, user) if project is not None else None
+
+    def get_can_maintain(self, obj: PackageConfig) -> bool:
+        user = getattr(self.context.get("request"), "user", None)
+        return bool(user and user.is_authenticated and can_maintain_config(
+            user, software=obj.software, component=obj.project_component,
+        ))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.software_id and not data["can_maintain"]:
+            for name in ("custom_script", "env_vars", "svn_credential", "svn_credential_id",
+                         "svn_credential_name", "svn_url", "svn_path_template", "node_host"):
+                data.pop(name, None)
+        return data
 
     def get_is_favorite(self, obj: PackageConfig) -> bool:
         """当前请求用户是否已收藏该配置。
@@ -302,17 +320,6 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         if not user or not user.is_authenticated:
             return False
         return PackageConfigFavorite.objects.filter(config=obj, user=user).exists()
-
-    def validate_project_component(self, value):
-        """校验打包配置维护权限（组件所属项目的管理员 / 软件管理员）。"""
-        user = self.context["request"].user
-        if user.is_superuser:
-            return value
-        from utils.permissions import IsProjectPackageAdmin
-
-        if not IsProjectPackageAdmin()._check(value.project, user):
-            raise serializers.ValidationError("只有项目管理员或软件管理员才能维护打包配置")
-        return value
 
     def validate_build_path(self, value: str) -> str:
         return validate_safe_rel_path(value, "build_path")
@@ -331,19 +338,34 @@ class PackageConfigSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs: dict) -> dict:
-        """校验组件、镜像和脚本约束。"""
-        project_component = attrs.get(
-            "project_component", getattr(self.instance, "project_component", None)
-        )
-        if project_component is None:
-            raise serializers.ValidationError({"project_component": "必须选择项目组件（软件仓库）"})
+        """校验配置归属、维护授权与执行参数。"""
+        user = self.context["request"].user
+        component = attrs.get("project_component", getattr(self.instance, "project_component", None))
+        software = attrs.get("software", getattr(self.instance, "software", None))
+        if bool(component) == bool(software):
+            raise serializers.ValidationError({"software": "请为配置选择一个归属软件或待归属项目组件"})
+        if self.instance and getattr(self.instance, "software_id", None) != getattr(software, "pk", None):
+            raise serializers.ValidationError({"software": "已保存配置不能通过编辑更改软件归属"})
+        repository = software.repository if software else component.repository
+        if self.instance is None:
+            Repository.objects.select_for_update(no_key=True).get(pk=repository.pk)
+            if software:
+                software.refresh_from_db()
+                if not software.is_active:
+                    raise serializers.ValidationError({"software": "软件已停用"})
+        elif repository.pk != self.instance.source_repository_id:
+            raise serializers.ValidationError({"project_component": "不能将配置移到其他仓库"})
+        require_config_maintenance(user, software=software, component=component)
+        if component and (self.instance is None or self.instance.project_component_id != component.pk):
+            Project.objects.select_for_update(no_key=True).get(pk=component.project_id)
+            if ProjectSoftware.objects.filter(project_id=component.project_id).exists():
+                raise serializers.ValidationError({"software": "此项目已接入软件，请按归属软件新建打包配置"})
         image_info = attrs.pop("image_info", None)
         if image_info:
             attrs["image"] = self._resolve_image_info(image_info)
         image = attrs.get("image", getattr(self.instance, "image", None))
         env_vars = attrs.get("env_vars", getattr(self.instance, "env_vars", {}))
 
-        repository = project_component.repository
         if repository.repo_type != "git":
             raise serializers.ValidationError({"repository": "打包配置第一阶段仅支持 Git 仓库"})
         if not isinstance(env_vars, dict):
@@ -428,7 +450,10 @@ class PackageKnowledgeSerializer(serializers.ModelSerializer):
 class PackageTaskSerializer(serializers.ModelSerializer):
     """打包任务序列化器。"""
 
-    config_name = serializers.CharField(source="config.name", read_only=True, default="")
+    config_name = serializers.SerializerMethodField()
+    config_snapshot = serializers.SerializerMethodField()
+    software_name = serializers.CharField(source="config_snapshot.software_name", read_only=True, default="")
+    software_slug = serializers.CharField(source="config_snapshot.software_slug", read_only=True, default="")
     project_name = serializers.CharField(source="project.name", read_only=True)
     repository_name = serializers.CharField(source="repository.name", read_only=True)
     release_version = serializers.CharField(source="release.version", read_only=True)
@@ -446,7 +471,7 @@ class PackageTaskSerializer(serializers.ModelSerializer):
         fields = [
             "id", "config", "config_name", "release", "release_version",
             "project", "project_name", "repository", "repository_name",
-            "triggered_by", "triggered_by_name", "name",
+            "software", "software_name", "software_slug", "triggered_by", "triggered_by_name", "name",
             "build_type", "release_type", "release_type_display",
             "tag_name", "source_ref", "version", "commit_hash", "config_snapshot",
             "status", "status_display", "progress", "stage_info", "can_push_svn", "my_role", "can_cancel", "can_delete",
@@ -454,6 +479,20 @@ class PackageTaskSerializer(serializers.ModelSerializer):
             "started_at", "finished_at", "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+    def get_config_name(self, obj: PackageTask) -> str:
+        snapshot = obj.config_snapshot or {}
+        return snapshot.get("name") or (obj.config.name if obj.config_id else "")
+
+    def get_config_snapshot(self, obj: PackageTask) -> dict:
+        snapshot = obj.config_snapshot or {}
+        if not obj.software_id:
+            return snapshot
+        sensitive = {
+            "custom_script", "env_vars", "svn_credential_id", "svn_url", "svn_path_template",
+            "node_credential_id", "node_host", "node_port", "node_work_root",
+        }
+        return {key: value for key, value in snapshot.items() if key not in sensitive}
 
     def get_artifact_info(self, obj: PackageTask) -> list[dict]:
         from apps.package.services.artifacts import local_artifact_available

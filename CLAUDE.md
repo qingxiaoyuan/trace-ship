@@ -164,7 +164,7 @@ npm run test:browser # 隔离 REST 服务 + 真实 Chromium 冒烟，准备方�
 - `apps.repository.Repository` 与 `CommitRecord`：按 `vendor + url + external_identity` 全局唯一的物理代码仓库（仅 Git/GitLab）与提交记录。仓库归属以 `ProjectComponent` 为唯一依据；仓库版本规则登记时从项目复制（仓库创建/关联时通过 API 序列化器完成），此后独立维护。SVN 仅作为打包产物推送目标。
 - `apps.release.ReleaseRecord` 与 `ReleaseCommit`：发布记录与关联提交；软件发布固定单一软件与主仓库，保留原发起项目。
 - `apps.workflow.WorkflowDefinition` / `WorkflowInstance` / `WorkflowTask`：仓库级审批流程定义、实例与任务；仅仓库创建者可编辑节点。正式发布默认需审批，RC / Beta 默认无须审批。
-- `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：打包镜像记录（来源为本地 Docker 或 Nexus）、项目组件级打包配置和仓库级发布打包任务记录。
+- `apps.package.PackageImage` / `PackageConfig` / `PackageTask`：打包镜像、软件共享或旧项目组件配置、按实际发起项目授权的打包任务。
 - `apps.credential.RepositoryCredentialLoan` / `CredentialUsageLog`：仓库凭证仍归个人所有。项目要使用某仓库，必须先把仓库所有者加入该项目成员再关联仓库；凭证随所有者进入项目。借用记录仅作补充授权与审计（字段已统一为 project 口径：`RepositoryCredentialLoan.allowed_projects`、`CredentialUsageLog.project` / `project_component`）。
 - `apps.feedback.Feedback`：使用反馈，全员可提交/点赞/查看，删除仅限本人或超管；超管可将反馈标记为已处理（`open` / `processed` 状态流转，记录处理人与处理时间）。
 
@@ -217,7 +217,7 @@ RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan
 ### 打包能力（apps.package）
 
 - `PackageImage`：打包镜像记录，来源为本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键），按镜像坐标唯一，由选择时自动创建，定义镜像、`script_entry` 入口、默认构建/产物目录。
-- `PackageConfig`：项目组件级打包配置，归属以 `project_component` 为唯一事实源（`project` / `repository` 冗余字段已删除，API 响应的 project_id / project_name / repository_id / repository_name 字段由组件推导）；包含镜像引用、可选 `custom_script` 自定义脚本、环境变量、构建/产物目录、发布后自动打包开关、SVN 推送配置（svn_url / svn_credential / svn_path_template，以及 svn_push_enabled 总开关、svn_commit_mode）。
+- `PackageConfig`：共享配置归软件，由软件维护人员维护。原配置继续归项目组件，返回的项目与仓库字段由组件推导。涉及共享配置归属确认、项目选用、权限或分支直打，阅读 [打包 API](docs/api/api-spec.md#96-打包配置列表与维护)。
 - `PackageNode`：远程打包节点（`os_type` 支持 `windows` / `kylin` 麒麟 Linux，`arch` 记录芯片架构 `x86_64` / `x86_32` / `arm64` / `arm32` 默认 `x86_64`，SSH/SFTP 接入；`PackageConfig.executor_type=remote_node` 时按节点 OS 语义下发 bat/sh 脚本执行，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；登录凭证 Windows 用 `windows_password`、麒麟用 `ssh_password`）。
 - `PackageTask`：打包任务记录，状态 `queued` / `running` / `success` / `failure` / `canceled`，保存配置快照、工作区路径、日志路径、产物信息、SVN 推送结果。
 - 产物依据与文件保留期分离：清理本地文件后保留 `artifact_info`，API 的 `local_available` 逐次核验实际文件，过期文件不能继续下载或补推。任务 `svn-artifacts/` 只读查询使用保存的推送目录与凭证快照；有清单按清单恢复，无清单只在任务目录内浏览并标为“从 SVN 补录”。原始元数据与 SVN 当前元数据分别表达，缺失值保持未知；文件缺失与凭证、授权、网络故障分别反馈。接口细节见 [打包任务 API](docs/api/api-spec.md#910-打包任务列表--详情)。

@@ -14,7 +14,7 @@ export function SvnArtifactsTab({ repoId }: SvnArtifactsTabProps) {
     enabled: !!repoId,
   });
 
-  const configs = (data?.results || []).filter((c) => c.svn_push_enabled && c.svn_url);
+  const configs = (data?.results || []).filter((c) => !c.software && c.svn_push_enabled && c.svn_url);
 
   return <SvnArtifactsPanel configs={configs} isLoading={isLoading} />;
 }

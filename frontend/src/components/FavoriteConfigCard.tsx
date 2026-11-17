@@ -32,6 +32,8 @@ export const FavoriteConfigCard = memo(function FavoriteConfigCard({
     onTrigger({
       id: config.id,
       name: config.name,
+      software: config.software,
+      software_name: config.software_name,
       repository_name: config.repository_name,
       project: config.project_id,
       repository: config.repository_id,
@@ -81,7 +83,7 @@ export const FavoriteConfigCard = memo(function FavoriteConfigCard({
             {config.name}
           </p>
           <p className="mt-1 truncate text-[11px] text-slate-400">
-            {config.project_name || '-'} · {config.repository_name || '-'}
+            {config.software_name || config.project_name || '-'} · {config.repository_name || '-'}
           </p>
         </div>
         <button

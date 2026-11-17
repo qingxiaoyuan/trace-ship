@@ -545,6 +545,7 @@ export type AIScriptStreamEvent =
 /** AI 生成打包脚本请求参数（支持未保存配置，project/repository 必填） */
 export interface AIGenerateScriptPayload {
   project: string;
+  software?: string;
   repository: string;
   executor_type: 'local_docker' | 'remote_node';
   node?: string | null;
@@ -623,6 +624,10 @@ export interface PackageConfig {
   repository_name?: string;
   project_component?: string | null;
   project_component_name?: string;
+  software?: string | null;
+  software_name?: string;
+  software_slug?: string;
+  can_maintain?: boolean;
   name: string;
   executor_type?: 'local_docker' | 'remote_node';
   executor_type_display?: string;
@@ -681,6 +686,8 @@ export interface PackageConfig {
 export interface FavoritePackageConfig {
   id: string;
   name: string;
+  software?: string | null;
+  software_name?: string;
   project_id?: string;
   project_name?: string;
   repository_id?: string;
@@ -723,6 +730,9 @@ export interface PackageTask {
   /** 关联发布（分支直打包任务为空） */
   release: string | null;
   release_version?: string | null;
+  software?: string | null;
+  software_name?: string;
+  software_slug?: string;
   project: string;
   project_name?: string;
   repository: string;

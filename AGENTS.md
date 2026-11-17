@@ -153,7 +153,7 @@ npm run preview
 - `apps.repository`：代码仓库、提交记录、提交同步与提交规范审查。
 - `apps.release`：发布申请、版本号计算、发布说明、发布关联提交 / MR、推 tag。
 - `apps.workflow`：审批流程定义、流程实例、审批任务，支持串行审批、或签、会签、转交、回退、撤销。
-- `apps.package`：打包镜像、项目组件级打包配置、打包任务；支持 Docker 镜像打包、本地脚本打包、产物 SVN 推送、发布后自动触发。
+- `apps.package`：打包镜像、软件共享及旧项目组件打包配置、打包任务。支持本地和远程打包、产物 SVN 推送及旧仓库发布自动触发。
 - `apps.jenkins`：已下线，仅保留迁移 tombstone（空 models + 历史迁移），无 API 与业务逻辑。
 - `apps.credential`：凭证加密存储、脱敏展示、凭证解析。
 - `apps.notification`：站内通知，覆盖审批、构建、发布和系统消息；管理员可在「系统 · 通知发送」页面向全员或指定用户发送系统通知（`POST /api/notifications/broadcast/`，需 `system.notification` 权限，超管放行）。
@@ -205,7 +205,7 @@ npm run preview
 - `ReleaseCommit`、`ReleaseMergeRequest`：发布关联的提交与 MR。
 - `WorkflowDefinition`、`WorkflowInstance`、`WorkflowTask`：仓库级审批流程定义、实例和审批任务；仓库创建时补齐 formal/rc/beta 内置流程，仅仓库创建者可编辑节点。正式发布默认仓库拥有者审批，RC / Beta 默认空审批链（提交后直接推 Tag）。审批人类型为仓库拥有者与指定人员（可搜索选择）；存量配置中的项目负责人/角色/发起人仍可解析展示。
 - `PackageImage`：打包镜像记录（来源为本地 Docker 或 Nexus），按镜像坐标唯一，由选择时自动创建。
-- `PackageConfig`：项目组件级打包配置，归属以 `project_component` 为唯一事实源（`project` / `repository` 冗余字段已删除，API 响应的 project_id / project_name / repository_id / repository_name 字段由组件推导）；包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（所有版本统一跟随总开关，默认目录 formal|rc|beta/版本号；提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
+- `PackageConfig`：新配置直接归软件，待确认的旧配置沿用 `project_component` 和项目权限。软件维护负责人及获授权协作者维护共享配置，项目角色控制具体使用。旧配置通过 `reconcile_package_configs` 盘点及明确确认，保留原配置 ID、任务快照和确认依据；如有引用配置的在途旧发布，先处理发布。配置包含镜像引用、可选自定义脚本、环境变量、发布后自动打包开关、SVN 推送配置（所有版本统一跟随总开关，默认目录 formal|rc|beta/版本号；提交模式：新建版本目录 / 覆盖式提交）、git submodule 拉取与 Git 凭证注入开关。
 - `PackageNode`：远程打包节点，`os_type` 支持 `windows` / `kylin`（麒麟 Linux），`arch` 记录芯片架构（`x86_64` / `x86_32` / `arm64` / `arm32`，默认 `x86_64`，选择节点时随节点名展示），SSH/SFTP 接入；登录凭证 Windows 节点用 `windows_password`、麒麟节点用 `ssh_password`（均为系统共享凭证类型）。
 - `PackageTask`：打包任务记录，可关联仓库级 `ReleaseRecord`；状态为 `queued` / `running` / `success` / `failure` / `canceled`。工作区清理由 `apps/package/services/cleanup.py` 承担：任务结束即删本地源码（产物、日志保留），每天 0:00 清理节点残留目录（跳过运行中任务），每天 8:00 清理超期产物（保留天数取系统配置 `package_artifact_retention_days`，默认 30 天）。
 - 产物依据与文件保留期分离：清理本地文件后保留 `artifact_info`，API 的 `local_available` 逐次核验实际文件，过期文件不能继续下载或补推。任务 `svn-artifacts/` 只读查询使用保存的推送目录与凭证快照；有清单按清单恢复，无清单只在任务目录内浏览并标为“从 SVN 补录”。原始元数据与 SVN 当前元数据分别表达，缺失值保持未知；文件缺失与凭证、授权、网络故障分别反馈。接口细节见 [打包任务 API](docs/api/api-spec.md#910-打包任务列表--详情)。
@@ -248,7 +248,7 @@ RC 来源历史兼容与清理依据 [规格 #5](https://github.com/qingxiaoyuan
 打包统一由 `apps.package` 执行，镜像可来自本地 Docker 或 Nexus（Nexus 连接在「系统配置」页面维护，存 `sys_config` 的 `nexus_*` 键）。执行方式 `executor_type` 支持 `local_docker`（本地 Docker）与 `remote_node`（远程节点，SSH/SFTP 下发执行；`PackageNode.os_type` 支持 `windows` / `kylin` 麒麟 Linux，按节点 OS 语义执行 bat/sh 脚本，资源限制 Windows 用 JobObject、麒麟用 nice/taskset/ulimit；麒麟节点登录凭证为 `ssh_password` 类型）：
 
 1. 「打包镜像」页面实时聚合本地与 Nexus 镜像列表，支持上传 tar 包导入本地（`docker load`）。
-2. 项目管理员在「打包配置」中直接选择镜像（按坐标 get_or_create 镜像记录）、构建目录、产物目录，可选填写自定义脚本。
+2. 软件维护人员在「打包配置」中选择归属软件、镜像或远程节点，填写构建目录、产物目录及自定义脚本。项目按启用选用的软件复用配置。分支直打显式传入软件与实际发起项目，创建时核验仓库凭证并保存完整 HEAD，执行时检出分支与 SHA 一致后才运行脚本。共享配置的 SVN 当前文件从任务详情查看。
 3. 打包任务执行流程：
    - 准备 `workspace/{source,artifacts,tmp}`；
    - `git clone` 源码到 `workspace/source`（配置开启「拉取 Git 子模块」时追加 `--recurse-submodules`，子模块完整克隆；开启「注入 Git 凭证」时以 GIT_ASKPASS 方式把凭证与提交身份注入构建环境，打包脚本可自行在（子）仓库内 git push，远程节点则写入 `.git/config` 的 `http.extraHeader`、构建结束即自动回收）；

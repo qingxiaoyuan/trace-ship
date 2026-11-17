@@ -1536,16 +1536,17 @@
 
 - **GET / POST** `/api/packages/configs/`
 - **GET / PUT / PATCH / DELETE** `/api/packages/configs/{id}/`
-- 查询需项目成员；写操作需项目管理员。
+- 软件配置由软件维护负责人、获授权的协作维护者或超管维护。项目成员可查看本项目启用选用的软件配置概要。仅有项目管理角色时，不能修改共享配置。
+- 查询返回 `software`、`software_name`、`software_slug`、`can_maintain`。共享配置没有归属项目，`project_component` 与 `project_id` 为空。查询指定 `project` 时，共享配置的 `my_role` 表示在该项目的有效角色。脚本、环境变量及 SVN 连接参数只对获授权的配置维护者返回。
+- 待归属旧配置继续使用 `project_component` 和原项目权限。已接入软件的项目应按软件新建配置。共享配置已有任务或归属确认记录时可停用，保留原配置及历史。
 
-**查询参数：** `project`、`repository`、`is_active`、`auto_package_on_release`。
+**查询参数：** `project`、`software`、`repository`、`project_component`、`is_active`、`auto_package_on_release`。
 
 **请求体：**
 
 ```json
 {
-  "project": "uuid",
-  "repository": "uuid",
+  "software": "uuid",
   "name": "web 打包",
   "image_info": {
     "source": "nexus",
@@ -1572,12 +1573,24 @@
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
 - 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
 - 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。不再提供 RC / 测试版独立开关；已有配置无需重新保存，新建任务立即统一跟随 `svn_push_enabled`。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。自动与手动打包的正式版、RC、测试版及分支直打统一遵循总开关；分支默认进入 `formal/{分支名}`。已创建任务保留原快照的最终推送决定，不重新计算类型开关，也不因当前配置启用而获得补推能力；旧版本重新补打属于新任务。
-- 打包配置仅支持 Git 仓库，且仓库必须属于当前项目。
+- 打包配置使用软件的 Git 主仓库。项目使用共享配置前，须启用对该软件及其主仓库的关联，仓库所有者须在项目内。
 
 **配置收藏：**
 
-- **POST** `/api/packages/configs/{id}/favorite/`：切换收藏，返回 `{is_favorite: true|false}`；需要目标项目显式成员身份，维保返回 403，超管放行。服务层锁定当前配置后按实际所属项目再次验权，拒绝请求不创建或删除收藏记录。
-- **GET** `/api/packages/configs/favorites/`：只读返回当前用户的历史收藏及最近任务摘要，仍按项目可见范围过滤。角色变更不删除历史收藏，也不由收藏授予下载、打包或写权限。
+- **POST** `/api/packages/configs/{id}/favorite/`：切换收藏。共享配置请求体须传 `{ "project": "uuid" }`，返回 `{is_favorite: true|false}`；需要目标项目显式成员身份，维保返回 403，超管放行。服务层锁定当前配置后按实际所属项目再次验权，拒绝请求不创建或删除收藏记录。
+- **GET** `/api/packages/configs/favorites/`：只读返回当前用户的历史收藏及最近任务摘要，仍按任务真实项目的可见范围过滤。传入 `project` 时仅查看该项目的收藏配置和最近任务。角色变更不删除历史收藏，也不由收藏授予下载、打包或写权限。
+
+**旧配置归属确认：**
+
+`python manage.py reconcile_package_configs` 盘点原组件、持有配置的任务数、SVN 地址与目录模式，并报告既有确认。可用 `--mapping 路径 --actor 登录名` 预览，映射文件为 JSON 数组。例如
+
+```json
+[
+  {"config": "配置 UUID", "software": "软件 UUID", "projects": ["原项目 UUID", "另一项目 UUID"], "basis": "核对脚本、参数、凭证与交付目录后确认共享"}
+]
+```
+
+映射须覆盖该软件当前可使用的项目，含原项目；确认人须能同时维护原配置和目标软件配置。明确处理阻断报告后追加 `--apply`，批次在同一事务内核验与写入。仍引用配置的旧草稿、审批中申请及可重试申请须先处理，隐式自动打包同样核验。再次提交相同确认时保留原确认时间。配置 ID、任务快照、发起项目和原产物依据保留；同名配置分别确认。
 
 ### 9.7 手动触发打包
 
@@ -1602,12 +1615,12 @@
 
 发布推 Tag 成功后，后端仍为开启 `auto_package_on_release` 的配置自动创建任务，按自动发布策略决定 SVN 推送。
 
-**分支直打：** `POST /api/packages/configs/{id}/trigger-branch/`，请求体为 `{ "branch": "feature/demo" }`。任务的 `trigger_source` 为 `manual_branch`，无关联发布，沿用正式类型与分支名版本；开启 SVN 总开关后打包成功即推送，默认目录为 `formal/feature/demo`，自定义目录模板和提交模式继续按配置生效。
+**分支直打：** `POST /api/packages/configs/{id}/trigger-branch/`。共享配置要求显式传入 `{ "project": "uuid", "software": "uuid", "branch": "feature/demo" }`。可用 `GET /api/packages/configs/{id}/usage-projects/` 查询具备触发权限的项目。服务端以目标项目核验软件选用、配置和操作者权限，使用该项目授权的仓库凭证读取分支 HEAD，然后保存软件身份、配置快照和完整提交哈希。实际检出分支或 SHA 与保存记录不一致时，任务失败并阻止执行脚本。待归属旧配置继续发送 `{ "branch": "feature/demo" }`。任务的 `trigger_source` 为 `manual_branch`，没有关联发布，沿用正式类型与分支名版本及对应 SVN 推送配置。
 
 ### 9.8 测试 SVN 推送配置
 
 - **POST** `/api/packages/configs/test-svn/`
-- 项目管理员（或项目负责人在内）可测；支持未保存的临时配置。
+- 支持未保存的临时配置。对共享配置额外提交 `software`，服务端核验其维护权与 `project_id` 的使用权限，仅返回连通性。旧配置按具备权限的项目测试，保留目录条目。
 
 **请求体：**
 
@@ -1624,16 +1637,18 @@
 
 - **GET** `/api/packages/configs/{id}/svn-entries/?path=sub/dir`
 
-实时浏览该配置 SVN 目录内容（`svn list`，不递归）；`path` 为相对子路径，拒绝 `..` 与绝对路径。
+实时浏览旧配置的 SVN 目录（`svn list`，不递归）；`path` 为相对子路径。共享配置按任务使用 `/api/packages/tasks/{id}/svn-artifacts/` 只读核验当前文件。
 
 ### 9.10 打包任务列表 / 详情
 
 - **GET** `/api/packages/tasks/`
 - **GET** `/api/packages/tasks/{id}/`
 
-**查询参数：** `project`、`repository`、`release`、`config`、`status`、`build_type`、`search`（名称/版本/Tag/项目名/仓库名）。
+**查询参数：** `project`、`software`、`repository`、`release`、`config`、`status`、`build_type`、`search`（名称、版本、Tag、软件、项目名或仓库名）。
 
 任务状态：`queued` / `running` / `success` / `failure` / `canceled`。
+
+任务及其日志、产物和统计按真实发起项目逐次授权。软件任务使用保存的 `software_name` 与 `software_slug` 展示身份，接口返回可查看的快照字段。构建脚本、环境变量和凭证绑定信息留在服务端执行快照内。
 
 **响应（单条）：**
 

@@ -2,6 +2,7 @@
 打包任务生命周期：创建、调度、节点并发闸门与取消
 """
 import logging
+import re
 import threading
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -13,12 +14,16 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from apps.package.models import PackageConfig, PackageNode, PackageTask
+from apps.package.services.configurations import lock_package_config, require_shared_config
 from apps.package.services.svn import (
     TRIGGER_SOURCE_AUTO_RELEASE,
     TRIGGER_SOURCE_MANUAL_BRANCH,
     TRIGGER_SOURCE_MANUAL_RELEASE,
     apply_svn_push_policy,
 )
+from utils.provider.credential_resolver import resolve_credential
+from utils.provider.exceptions import ProviderError
+from utils.provider.factory import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +48,12 @@ class TaskLifecycleMixin:
         """生成配置快照，避免执行时配置变更影响历史任务。"""
         image = config.image
         node = config.node
+        identity = {
+            "software_name": config.software.name,
+            "software_slug": config.software.slug,
+        } if config.software_id else {}
         return {
+            **identity,
             "config_id": str(config.id),
             "name": config.name,
             "executor_type": config.executor_type or "local_docker",
@@ -106,9 +116,10 @@ class TaskLifecycleMixin:
 
         Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
         # 仓库锁先于配置锁；仅锁配置行，避免可空镜像/节点关联产生外连接锁错误。
-        PackageConfig.objects.select_for_update().only("id").get(pk=config.pk)
+        config = lock_package_config(config)
         release.refresh_from_db()
-        config.refresh_from_db()
+        if config.software_id:
+            raise serializers.ValidationError({"config": "请选择与发布匹配的打包配置"})
         # 配置归属与成员角色可能在视图验权后变化，按锁定的当前归属重新核验。
         if not auto_triggered and (
             request_user is None
@@ -163,13 +174,14 @@ class TaskLifecycleMixin:
         detail = {"reason": reason} if reason else {}
         if config is not None:
             detail.update({
-                "project_id": str(config.project_component.project_id),
                 "config_id": str(config.id),
             })
+            if config.project_component_id:
+                detail["project_id"] = str(config.project_component.project_id)
         if release is not None:
             detail.update({"release_id": str(release.id), "version": release.version})
         if task is not None:
-            detail.update({"task_id": str(task.id), "status": task.status})
+            detail.update({"task_id": str(task.id), "project_id": str(task.project_id), "status": task.status})
         OperationLogService.log(
             user=user, module="package", action="trigger_release", resource_type="package_task",
             resource_id=str(task.id) if task is not None else "",
@@ -201,60 +213,79 @@ class TaskLifecycleMixin:
             )
 
     @classmethod
-    def create_task_for_branch(cls, config: PackageConfig, branch_name: str, request_user=None) -> PackageTask:
-        """直接对仓库某条分支的最新代码创建打包任务（不经发布流程）。
+    def create_task_for_branch(cls, config: PackageConfig, branch_name: str, request_user=None, *,
+                               project=None, software_id=None) -> PackageTask:
+        """在显式项目内保存共享分支任务；旧配置沿用原项目组件。"""
+        from apps.project.models import Project
+        from apps.repository.services import RepositoryService
+        from utils.permissions import IsProjectPackager
 
-        任务标题与自动编码（version）均按分支名命名，便于在打包看板中识别来源；
-        克隆源码时以 ``git clone --branch {branch}`` 拉取该分支最新代码。
-
-        Args:
-            config: 打包配置
-            branch_name: 仓库分支名（Git 分支最新代码）
-            request_user: 触发人
-
-        Returns:
-            已投递的打包任务
-        """
-        if not config.is_active:
-            raise serializers.ValidationError({"config": "打包配置已停用"})
         branch_name = (branch_name or "").strip()
         if not branch_name:
             raise serializers.ValidationError({"branch": "必须指定分支名"})
         if len(branch_name) > 100:
             raise serializers.ValidationError({"branch": "分支名过长（不能超过 100 字符）"})
 
-        snapshot = apply_svn_push_policy(
-            cls._snapshot(config),
-            trigger_source=TRIGGER_SOURCE_MANUAL_BRANCH,
-            release_type="formal",
-        )
-        # 分支最新提交哈希仅用于可追溯展示；拉取失败降级为空串，不阻断打包
-        commit_hash = ""
-        try:
-            from apps.repository.services import RepositoryService
+        with transaction.atomic():
+            config = lock_package_config(config)
+            repository = config.source_repository
+            if config.software_id:
+                if project is None or config.software_id != software_id:
+                    raise serializers.ValidationError({"software": "必须显式指定项目和配置所属软件"})
+                project = Project.objects.select_for_update(no_key=True).filter(pk=project.pk).first()
+                link = require_shared_config(
+                    config, project=project, software=config.software,
+                    user=request_user, permission=IsProjectPackager(),
+                )
+                project = link.project
+                commit_hash = cls._shared_branch_head(repository, project, branch_name, request_user)
+            else:
+                if project is not None or software_id is not None:
+                    raise serializers.ValidationError({"config": "此配置尚未归属共享软件"})
+                project = config.project_component.project
+                if request_user is not None and not IsProjectPackager()._check(project, request_user):
+                    raise PermissionDenied("没有在当前项目触发打包的权限")
+                if not config.is_active:
+                    raise serializers.ValidationError({"config": "打包配置已停用"})
+                commit_hash = ""
+                try:
+                    for branch in RepositoryService.list_branches(repository, request_user):
+                        if branch.get("name") == branch_name:
+                            commit_hash = branch.get("last_commit_hash") or ""
+                            break
+                except Exception:
+                    logger.warning("获取旧配置的分支最新提交信息失败，忽略 branch=%s", branch_name)
 
-            for branch in RepositoryService.list_branches(config.project_component.repository, request_user):
-                if branch.get("name") == branch_name:
-                    commit_hash = branch.get("last_commit_hash") or ""
-                    break
-        except Exception:
-            logger.warning("获取分支最新提交信息失败，忽略 branch=%s", branch_name)
-
-        task = PackageTask.objects.create(
-            config=config,
-            release=None,
-            project=config.project_component.project,
-            repository=config.project_component.repository,
-            triggered_by=request_user,
-            name=f"{config.name} / {branch_name}",
-            tag_name=branch_name,
-            version=branch_name,
-            release_type="formal",
-            commit_hash=commit_hash,
-            config_snapshot=snapshot,
-        )
-        cls.dispatch_task(task)
+            snapshot = apply_svn_push_policy(
+                cls._snapshot(config), trigger_source=TRIGGER_SOURCE_MANUAL_BRANCH, release_type="formal",
+            )
+            task = PackageTask.objects.create(
+                config=config, project=project, repository=repository,
+                software_id=config.software_id, triggered_by=request_user,
+                name=f"{config.name} / {branch_name}"[:200],
+                tag_name=branch_name, source_ref=branch_name if config.software_id else "",
+                version=branch_name, release_type="formal", commit_hash=commit_hash,
+                config_snapshot=snapshot,
+            )
+            if config.software_id:
+                transaction.on_commit(lambda: cls._dispatch_release_task(task, auto_triggered=True))
+        if not config.software_id:
+            cls.dispatch_task(task)
         return task
+
+    @staticmethod
+    def _shared_branch_head(repository, project, branch_name, user) -> str:
+        from apps.repository.services import RepositoryService
+
+        try:
+            credential = resolve_credential(repository, user, project=project, operation="read")
+            provider = get_provider(repository.vendor, RepositoryService._resolve_server_url(repository), credential)
+            branch = provider.get_branch(repository.external_identity, branch_name)
+        except ProviderError as exc:
+            raise serializers.ValidationError({"branch": "无法核验分支和仓库凭证，请检查配置后重试"}) from exc
+        if branch.name != branch_name or not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", branch.last_commit_hash or ""):
+            raise serializers.ValidationError({"branch": "分支缺少有效的完整提交"})
+        return branch.last_commit_hash
 
     @classmethod
     def dispatch_task(cls, task: PackageTask) -> None:
@@ -428,9 +459,12 @@ class TaskLifecycleMixin:
         if not 1 <= days <= 365:
             days = 30
 
+        from apps.project.services import visible_project_ids
+
         since = timezone.now() - timedelta(days=days)
         queryset = PackageTask.objects.filter(
             triggered_by=user,
+            project_id__in=visible_project_ids(user),
             status__in=("success", "failure", "canceled"),
             created_at__gte=since,
         )

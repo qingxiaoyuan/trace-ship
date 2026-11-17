@@ -37,6 +37,11 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
         <span className="shrink-0 text-slate-300">/</span>
         <span className="truncate font-mono text-[10px] text-slate-400 max-md:text-xs">{release.repository_name || '-'}</span>
       </div>
+      {release.software_name && (
+        <div className="mt-1 truncate text-[11px] font-medium text-slate-700 max-md:text-xs">
+          {release.software_name}{release.software_slug && <span className="ml-1 font-mono font-normal text-slate-500">{release.software_slug}</span>}
+        </div>
+      )}
       {release.redmine_url ? (
         <a
           href={release.redmine_url}
