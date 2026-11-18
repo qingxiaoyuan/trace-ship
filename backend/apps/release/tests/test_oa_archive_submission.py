@@ -1,13 +1,18 @@
 """公开 REST 与真实隔离 HTTP 验证归档提交；不访问业务 OA。"""
 import json
 import time
+from codecs import BOM_UTF8
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from rest_framework.test import APIClient
 
+from apps.account.models import User
+from apps.project.models import ProjectMember
+from apps.release.oa_http import post_oa_json
 from apps.release.tests.test_oa_archive import archive_case as _archive_case
 from apps.release.tests.test_oa_archive import prepare
 from apps.system.oa_archive import OaArchiveConfig
@@ -19,15 +24,27 @@ archive_case = _archive_case
 @pytest.fixture
 def oa_http():
     requests = []
-    state = SimpleNamespace(requests=requests, mode="success", received=Event(), resume=Event())
+    state = SimpleNamespace(
+        requests=requests, mode="success", received=Event(), resume=Event(),
+        names={"code": 0, "data": [{"soft_name": "项目内软件"}, {"soft_name": "54S_MainControl"}], "msg": ""},
+        name_requests=[], names_prefix=b"",
+    )
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
 
         def do_POST(self):
-            requests.append({"path": self.path, "body": json.loads(self.rfile.read(int(self.headers["Content-Length"]))),
-                             "authorization": self.headers.get("Authorization"), "type": self.headers.get("Content-Type")})
+            request = {"path": self.path, "body": json.loads(self.rfile.read(int(self.headers["Content-Length"]))),
+                       "authorization": self.headers.get("Authorization"), "type": self.headers.get("Content-Type")}
+            if self.path == "/api/v1/ticketscript/get_oa_software_name_list":
+                state.name_requests.append({**request, "method": self.command, "cookie": self.headers.get("Cookie")})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(state.names_prefix + json.dumps(state.names).encode())
+                return
+            requests.append(request)
             state.received.set()
             if state.mode == "blocked":
                 assert state.resume.wait(10), "隔离 OA 未获准返回"
@@ -115,6 +132,141 @@ def submit(client, release, task, form, submission_id=None, **confirmation):
     return client.post(f"/api/releases/{release.id}/oa-archive/submit/", {
         "task_id": str(task.id), "artifact_id": "artifact-1", "submission_id": str(submission_id or uuid4()), "form": form, **confirmation,
     }, format="json")
+
+
+def test_软件名称从同源OA名单读取且名单变更后拒绝新申请但仍可重放(archive_case, oa_http):
+    client, release, task = archive_case
+    OaArchiveConfig.save(OaArchiveConfig.get_url() + "?trace=submit-only")
+    names_url = f"/api/releases/{release.id}/oa-archive/software-names/"
+    oa_http.names["data"] += [{"soft_name": "54S_MainControl"}, {"soft_name": " "}]
+    assert client.get(names_url).data["data"] == ["项目内软件", "54S_MainControl"]
+    assert oa_http.name_requests == [{
+        "method": "POST", "path": "/api/v1/ticketscript/get_oa_software_name_list",
+        "body": {}, "type": "application/json", "authorization": None, "cookie": None,
+    }]
+    form = prepare(client, release, task).data["data"]["form"]
+    invalid = submit(client, release, task, {**form, "soft_name": "自行填写"})
+    assert invalid.status_code == 400
+    assert "不在当前 OA 名单" in invalid.data["message"]
+    assert oa_http.requests == []
+
+    submission_id = uuid4()
+    accepted = submit(client, release, task, {**form, "soft_name": "54S_MainControl"}, submission_id)
+    assert accepted.status_code == 201
+    assert oa_http.requests[0]["body"]["soft_name"] == "54S_MainControl"
+    oa_http.names["data"] = []
+    assert client.get(names_url).data["data"] == []
+    name_request_count = len(oa_http.name_requests)
+    replay = submit(client, release, task, {**form, "soft_name": "54S_MainControl"}, submission_id)
+    assert replay.status_code == 200
+    assert replay.data["data"] == accepted.data["data"]
+    assert len(oa_http.name_requests) == name_request_count
+    assert len(oa_http.requests) == 1
+
+
+@pytest.mark.parametrize(("role", "release_type", "status", "expected"), [
+    ("maintainer", "formal", "released", 403),
+    (None, "formal", "released", 404),
+    ("manager", "rc", "released", 400),
+    ("manager", "formal", "draft", 400),
+])
+def test_无归档权限或发布资格时名单接口拒绝且不请求OA(archive_case, oa_http, role, release_type, status, expected):
+    client, release, _ = archive_case
+    actor = User.objects.create_user(username="archive-options-reader")
+    if role:
+        ProjectMember.objects.create(project=release.project, user=actor, role=role)
+    client.force_authenticate(actor)
+    release.release_type, release.status = release_type, status
+    release.save(update_fields=["release_type", "status"])
+
+    response = client.get(f"/api/releases/{release.id}/oa-archive/software-names/")
+
+    assert response.status_code == expected
+    assert oa_http.name_requests == []
+
+
+def test_OA名单失败时可重读且提交没有派发或保存申请(archive_case, oa_http):
+    client, release, task = archive_case
+    names_url = f"/api/releases/{release.id}/oa-archive/software-names/"
+    oa_http.names = {"code": 1, "data": [], "msg": "读取失败"}
+    assert client.get(names_url).status_code == 502
+    form = prepare(client, release, task).data["data"]["form"]
+    response = submit(client, release, task, form)
+    assert response.status_code == 400
+    assert "软件名称名单核验失败" in response.data["message"]
+    assert oa_http.requests == []
+    assert not release.oa_applications.exists()
+    oa_http.names = {"code": 0, "data": [{"soft_name": "Antireal_Project"}], "msg": ""}
+    assert client.get(names_url).data["data"] == ["Antireal_Project"]
+
+
+@pytest.mark.parametrize(("prefix", "name", "status"), [
+    pytest.param(BOM_UTF8, "54S_MainControl", 200, id="UTF-8-BOM"),
+    pytest.param(b"", "软件\ud800", 502, id="孤立代理字符"),
+    pytest.param(b"", "软件\x00", 502, id="NUL"),
+])
+def test_OA名单兼容BOM并将不可返回的名称报为上游异常(archive_case, oa_http, prefix, name, status):
+    client, release, task = archive_case
+    oa_http.names_prefix = prefix
+    oa_http.names["data"] = [{"soft_name": name}]
+    response = client.get(f"/api/releases/{release.id}/oa-archive/software-names/")
+    assert response.status_code == status
+    form = prepare(client, release, task).data["data"]["form"]
+    if status == 200:
+        assert response.json()["data"] == [name]
+        assert submit(client, release, task, {**form, "soft_name": name}).status_code == 201
+        assert oa_http.requests[0]["body"]["soft_name"] == name
+    else:
+        assert "无效 JSON" in response.json()["message"]
+        assert "名单核验失败" in submit(client, release, task, form).json()["message"]
+        assert oa_http.requests == []
+        assert not release.oa_applications.exists()
+
+
+def test_未配置OA可往返预检其他资料而提交仍要求名称(archive_case):
+    client, release, task = archive_case
+    form = prepare(client, release, task).data["data"]["form"]
+    del form["soft_name"]
+    response = prepare(client, release, task, form=form)
+    assert response.status_code == 200
+    assert not response.json()["data"]["configuration"]["configured"]
+    returned_form = response.json()["data"]["form"]
+    assert returned_form == {**form, "soft_name": ""}
+    repeated = prepare(client, release, task, form=returned_form)
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["form"] == returned_form
+    invalid = prepare(client, release, task, form={**form, "developer": ""})
+    assert invalid.status_code == 400
+    assert "developer" in invalid.json()["data"]["form"]
+    for candidate in (form, returned_form):
+        submission = submit(client, release, task, candidate)
+        assert submission.status_code == 400
+        assert "soft_name" in submission.json()["data"]["form"]
+    assert not release.oa_applications.exists()
+
+
+def test_等待OA名单期间项目成员降级则拒绝提交(archive_case, oa_http, monkeypatch):
+    client, release, task = archive_case
+    administrator = APIClient()
+    administrator.force_authenticate(release.publisher)
+    actor = User.objects.create_user(username="archive-operator")
+    membership = ProjectMember.objects.create(project=release.project, user=actor, role="manager")
+    client.force_authenticate(actor)
+    form = prepare(client, release, task).data["data"]["form"]
+
+    def downgrade_while_reading_names(*args, **kwargs):
+        result = post_oa_json(*args, **kwargs)
+        response = administrator.patch(f"/api/projects/{release.project_id}/members/{membership.id}/", {"role": "maintainer"}, format="json")
+        assert response.status_code == 200, response.data
+        return result
+
+    monkeypatch.setattr("apps.release.oa_archive.post_oa_json", downgrade_while_reading_names)
+    response = submit(client, release, task, form)
+
+    assert response.status_code == 403, response.data
+    assert len(oa_http.name_requests) == 1
+    assert oa_http.requests == []
+    assert not release.oa_applications.exists()
 
 
 def test_实际提交独立资料且重新读取完整结果来源(archive_case, oa_http):

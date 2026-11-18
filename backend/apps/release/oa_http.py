@@ -1,17 +1,21 @@
 """有总时间上限的单次 OA 请求，保留未收完的响应。"""
 import json
+import re
 import subprocess
 from base64 import b64encode
 from dataclasses import dataclass
 from email.message import Message
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 from urllib.parse import urlsplit
 
 from requests import Request
 from requests.exceptions import RequestException
 
 MAX_BODY_BYTES = 2 * 1024 * 1024
+# JSON 中的实际 NUL 编码为 \u0000，字面转义中的反斜杠成对出现。
+_JSON_NUL = re.compile(r"(?<!\\)(?:\\\\)*\\u0000")
 
 
 @dataclass
@@ -43,6 +47,18 @@ class OaHttpResult:
         return snapshot
 
 
+def parse_oa_json(snapshot: dict) -> Any:
+    """解析完整的 OA 正文，确保结果可用于 REST 响应和 JSONB。"""
+    if not snapshot["complete"] or "body_base64" in snapshot:
+        raise ValueError("OA 正文不完整或无法解码为文本")
+    data = json.loads(snapshot["body"].removeprefix("\ufeff"))
+    serialized = json.dumps(data, allow_nan=False, ensure_ascii=False)
+    serialized.encode("utf-8")
+    if _JSON_NUL.search(serialized):
+        raise ValueError("OA JSON 正文含有 NUL 字符")
+    return data
+
+
 def _header_metadata(path: Path) -> tuple[int | None, str]:
     """只读取最终响应的状态和正文类型，不将响应头写入记录。"""
     status, content_type = None, ""
@@ -58,7 +74,7 @@ def _header_metadata(path: Path) -> tuple[int | None, str]:
     return (status if status is not None and status >= 200 else None), content_type
 
 
-def post_archive(endpoint: str, form: dict, *, connect_timeout: float, total_timeout: float) -> OaHttpResult:
+def post_oa_json(endpoint: str, payload: dict, *, connect_timeout: float, total_timeout: float) -> OaHttpResult:
     """使用部署镜像已有的 curl 限制整个请求，包含 DNS、响应头和正文。"""
     with TemporaryDirectory(prefix="oa-archive-") as directory:
         config, headers, body = (Path(directory) / name for name in ("request.conf", "headers", "body"))
@@ -68,15 +84,16 @@ def post_archive(endpoint: str, form: dict, *, connect_timeout: float, total_tim
                 return OaHttpResult(error="OA 接口地址不能包含认证信息")
             # 地址可带查询参数，放进私有配置文件，表单走 stdin，均不进入进程参数。
             config.write_text(f"url = {json.dumps(url, ensure_ascii=False)}\n", encoding="utf-8")
+            arguments = [
+                "curl", "--disable", "--config", str(config), "--silent", "--noproxy", "*",
+                "--proto", "=http,https", "--globoff", "--max-time", f"{total_timeout:.3f}",
+                "--connect-timeout", f"{min(connect_timeout, total_timeout):.3f}",
+                "--max-filesize", str(MAX_BODY_BYTES), "--limit-rate", "512K",
+                "--header", "Accept-Encoding: identity", "--dump-header", str(headers), "--output", str(body),
+                "--header", "Content-Type: application/json", "--data-binary", "@-",
+            ]
             result = subprocess.run(
-                ["curl", "--disable", "--config", str(config), "--silent", "--noproxy", "*",
-                 "--proto", "=http,https", "--globoff", "--max-time", f"{total_timeout:.3f}",
-                 "--connect-timeout", f"{min(connect_timeout, total_timeout):.3f}",
-                 "--max-filesize", str(MAX_BODY_BYTES), "--limit-rate", "512K",
-                 "--header", "Content-Type: application/json", "--header", "Accept-Encoding: identity",
-                 "--dump-header", str(headers),
-                 "--output", str(body), "--data-binary", "@-"],
-                input=json.dumps(form, ensure_ascii=False).encode("utf-8"),
+                arguments, input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, timeout=total_timeout + 2,
             )
             return_code = result.returncode

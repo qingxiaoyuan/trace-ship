@@ -33,13 +33,31 @@
           }
         },
         {
+          "name": "读取 OA 软件名称名单",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "description": "从响应 data 数组选择一个软件名称，将原值填入集合变量 oa_software_name 后再提交。",
+            "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/software-names/"
+          }
+        },
+        {
           "name": "提交完整产物目录归档（实际发送）",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.variables.set('oa_software_name_json', JSON.stringify(pm.variables.get('oa_software_name') || ''));"]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }, { "key": "Content-Type", "value": "application/json" }],
-            "description": "使用 task_id + scope=directory + path=. 选择本次打包整个产物根目录，不传 artifact_id；可传 source_kind=svn。选择和提交实时核验，手填 git_svn 不改变来源目录。",
+            "description": "先读取 OA 软件名称名单，并将选中的名称填入集合变量 oa_software_name。使用 task_id + scope=directory + path=. 选择本次打包的完整产物根目录，可传 source_kind=svn。服务端核验名单、产物目录及当前权限。",
             "url": "{{base_url}}/api/releases/{{release_id}}/oa-archive/submit/",
-            "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"scope\": \"directory\",\n  \"path\": \".\",\n  \"submission_id\": \"{{submission_id}}\",\n  \"form\": {\"docCreator\": \"operator\", \"soft_name\": \"软件\", \"soft_version\": \"V1.0.0\", \"developer\": \"receiver\", \"soft_number\": \"\"}\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"task_id\": \"{{task_id}}\",\n  \"scope\": \"directory\",\n  \"path\": \".\",\n  \"submission_id\": \"{{submission_id}}\",\n  \"form\": {\"docCreator\": \"operator\", \"soft_name\": {{oa_software_name_json}}, \"soft_version\": \"V1.0.0\", \"developer\": \"receiver\", \"soft_number\": \"\"}\n}" }
           }
         },
         {
@@ -1124,6 +1142,7 @@
     {"key": "credential_id", "value": "", "type": "string"},
     {"key": "commit_id", "value": "", "type": "string"},
     {"key": "release_id", "value": "", "type": "string"},
+    {"key": "oa_software_name", "value": "", "type": "string"},
     {"key": "workflow_instance_id", "value": "", "type": "string"},
     {"key": "workflow_task_id", "value": "", "type": "string"},
     {"key": "package_config_id", "value": "", "type": "string"},

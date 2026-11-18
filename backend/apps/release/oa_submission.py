@@ -1,6 +1,4 @@
 """单产物归档派发：先提交不可重放的在途记录，再调用无防重能力的 OA。"""
-import json
-import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from time import monotonic
@@ -11,19 +9,24 @@ from uuid import UUID
 from django.db import IntegrityError, OperationalError, connection, transaction
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
 from apps.account.models import User
 from apps.package.models import PackageTask
 from apps.project.models import Project
 from apps.release.models import OaArchiveApplication, ReleaseRecord
-from apps.release.oa_archive import ArchiveFormInput, ArchiveSelectionInput, OaArchivePreparation
-from apps.release.oa_http import OaHttpResult, post_archive
+from apps.release.oa_archive import (
+    OA_SOFTWARE_NAMES_TIMEOUT,
+    ArchiveFormInput,
+    ArchiveSelectionInput,
+    OaArchivePreparation,
+    OaSoftwareNamesUnavailable,
+    load_oa_software_names,
+)
+from apps.release.oa_http import OaHttpResult, parse_oa_json, post_oa_json
 from apps.repository.models import Repository
 from apps.system.oa_archive import OaArchiveConfig
 
-# JSON 字符串中的实际 NUL 会编码成单个反斜杠开头的 \u0000；字面转义不受影响。
-JSON_NUL = re.compile(r"(?<!\\)(?:\\\\)*\\u0000")
 # 生产工作进程的 120 秒上限内，留出落库与响应的余量。
 SUBMIT_BUDGET = 95
 PREPARATION_BUDGET = 55
@@ -190,6 +193,21 @@ class OaArchiveSubmission:
                         or existing.confirmation != values["confirmation"]):
                     raise ValidationError({"detail": "提交标识已用于其他申请资料，请重新读取归档记录"})
                 return existing, False
+            url = OaArchiveConfig.get_url()
+            if not url:
+                raise ValidationError({"detail": "尚未配置 OA 软件归档接口地址，请联系系统配置维护者"})
+            remaining = prepare_by - monotonic()
+            if remaining < 0.001:
+                raise ValidationError({"detail": "核验归档资料超时，尚未发送 OA，请稍后重试"})
+            try:
+                software_names = load_oa_software_names(url, timeout=min(OA_SOFTWARE_NAMES_TIMEOUT, remaining))
+            except OaSoftwareNamesUnavailable as exc:
+                raise ValidationError({"detail": f"尚未发送 OA，软件名称名单核验失败：{exc.detail}"}) from exc
+            if values["form"]["soft_name"] not in software_names:
+                raise ValidationError({
+                    "detail": "所选软件名称不在当前 OA 名单中，请重新选择",
+                    "state": "oa_software_name_invalid",
+                })
             try:
                 artifact = OaArchivePreparation.selected_artifact(task, values, deadline=prepare_by)
             except APIException as exc:
@@ -207,11 +225,14 @@ class OaArchiveSubmission:
                     raise ValidationError({"detail": "请确认已有申请；结果未确认时须先核对 OA 并确认未建单，再主动重试"})
             elif values["previous_id"] or values["confirmation"]:
                 raise ValidationError({"detail": "此前申请不属于当前产物，请重新读取归档记录"})
-            url = OaArchiveConfig.get_url()
-            if not url:
-                raise ValidationError({"detail": "尚未配置 OA 软件归档接口地址，请联系系统配置维护者"})
+            # 名单查询和 SVN 核验可能等待网络，落库前重读账号、项目负责人及成员角色。
+            user = User.objects.filter(pk=user.pk, is_active=True).first()
+            if user is None:
+                raise PermissionDenied("当前账号已停用或不存在")
+            release.refresh_from_db(fields=["project"])
+            OaArchivePreparation.require_permission(release, user)
             if monotonic() >= prepare_by:
-                raise ValidationError({"detail": "核验打包产物超时，尚未发送 OA，请稍后重试"})
+                raise ValidationError({"detail": "核验归档资料超时，尚未发送 OA，请稍后重试"})
             record = create_application(
                 submission_id=values["submission_id"], release=release, task=task,
                 protected_release=release, protected_task=task, operator=user,
@@ -265,7 +286,7 @@ class OaArchiveSubmission:
         response = OaHttpResult(error="归档提交等待超时")
         if total_timeout >= 0.001:
             try:
-                response = post_archive(record.endpoint, record.form, connect_timeout=cls.timeout[0], total_timeout=total_timeout)
+                response = post_oa_json(record.endpoint, record.form, connect_timeout=cls.timeout[0], total_timeout=total_timeout)
             except OSError:
                 response = OaHttpResult(error="OA 响应暂存失败")
         cls.apply_response(record, response)
@@ -282,14 +303,7 @@ class OaArchiveSubmission:
             record.message = unknown_result_message(reason)
             return
         try:
-            if "body_base64" in snapshot:
-                raise ValueError("OA 正文不能完整表示为文本")
-            body = json.loads(snapshot["body"].removeprefix("\ufeff"))
-            # PostgreSQL JSONB 拒绝非有限数字、NUL 和无效代理字符。
-            serialized = json.dumps(body, allow_nan=False, ensure_ascii=False)
-            serialized.encode("utf-8")
-            if JSON_NUL.search(serialized):
-                raise ValueError("OA JSON 正文含有 NUL 字符")
+            body = parse_oa_json(snapshot)
         except (ValueError, RecursionError):
             body = None
         record.response = body

@@ -55,7 +55,7 @@ function directory(key: string) {
   return sample.tasks[key];
 }
 function archiveField(page: Page, label: string) {
-  return page.getByRole(['申请人', '接收人', '软件来源'].includes(label) ? 'combobox' : 'textbox', { name: label, exact: true });
+  return page.getByRole(['申请人', '接收人', '软件来源', '软件名称'].includes(label) ? 'combobox' : 'textbox', { name: label, exact: true });
 }
 async function openForm(page: Page, selected: Directory) {
   await openArchiveDirectoryPicker(page);
@@ -199,25 +199,36 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   await expect(page.getByLabel('变更内容', { exact: true })).toHaveValue(sample.changes);
   await expect(page.getByLabel('SN', { exact: true })).toHaveValue(sample.git_hash);
   await expect(page.getByLabel('代码 Git 分支', { exact: true })).toHaveValue(sample.branch);
-  await expect(archiveField(page, '软件名称')).toHaveValue(sample.software_name);
-  for (const label of ['申请人', '软件名称', '软件版本', '接收人']) {
+  const softwareRow = table.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '软件名称' }) });
+  const softwareName = archiveField(page, '软件名称');
+  await expect(softwareRow.getByText(sample.software_name, { exact: true })).toBeVisible();
+  await softwareRow.getByRole('button', { name: '清空软件名称', exact: true }).click();
+  for (const label of ['申请人', '软件版本', '接收人']) {
     await archiveField(page, label).fill('');
     await expect(archiveField(page, label)).toHaveValue('');
   }
   const before = (await control()).count;
   await page.getByRole('button', { name: '提交 OA 归档', exact: true }).click();
   await expect(archiveField(page, '申请人')).toBeFocused();
-  for (const label of ['申请人', '软件名称', '软件版本', '接收人']) await expect(page.getByText(`请填写${label}`, { exact: true })).toBeVisible();
+  for (const label of ['申请人', '软件版本', '接收人']) await expect(page.getByText(`请填写${label}`, { exact: true })).toBeVisible();
+  await expect(softwareName).toHaveAttribute('aria-invalid', 'true');
   expect((await control()).count).toBe(before);
   evidence.requiredFocus = '申请人';
   const expected = {
-    docCreator: '人工申请人', applyCount: 1, soft_name: '人工确认软件 | 桌面', soft_version: '手填版本 88.1',
+    docCreator: '人工申请人', applyCount: 1, soft_name: '54S_MainControl', soft_version: '手填版本 88.1',
     developer: 'oa.receiver', soft_source: '内部自制', git_svn: 'release/manual-branch',
     sn_code: '人工补充 SN', edit_content: `${sample.changes}\n\n本次申请独立补充长文结尾。`,
     edit_reason: '修复说明\n保留第二行', other_description: '第一次打包目录独立草稿', soft_number: '',
   };
-  const fields: [string, string][] = [['申请人', 'docCreator'], ['软件名称', 'soft_name'], ['软件版本', 'soft_version'], ['接收人', 'developer'], ['代码 Git 分支', 'git_svn'], ['SN', 'sn_code'], ['变更内容', 'edit_content'], ['变更原因', 'edit_reason'], ['其他说明', 'other_description']];
+  const fields: [string, string][] = [['申请人', 'docCreator'], ['软件版本', 'soft_version'], ['接收人', 'developer'], ['代码 Git 分支', 'git_svn'], ['SN', 'sn_code'], ['变更内容', 'edit_content'], ['变更原因', 'edit_reason'], ['其他说明', 'other_description']];
   for (const [label, field] of fields) await archiveField(page, label).fill(String(expected[field as keyof typeof expected]));
+  await softwareName.click();
+  await softwareName.fill('自行填写的软件');
+  await expect(page.getByRole('option')).toHaveCount(0);
+  await softwareName.press('Enter');
+  await expect(softwareName).toHaveAttribute('aria-invalid', 'true');
+  await softwareName.fill('MainControl');
+  await page.getByRole('option', { name: expected.soft_name, exact: true }).click();
   await page.getByLabel('软件来源', { exact: true }).click();
   await page.getByRole('option', { name: '内部自制', exact: true }).click();
   await archiveField(page, '申请人').scrollIntoViewIfNeeded();
@@ -232,6 +243,7 @@ test('桌面归档完整编辑、字段定位、对象草稿和标签保活，�
   await page.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
   await openForm(page, selected);
   for (const [label, field] of fields) await expect(archiveField(page, label)).toHaveValue(String(expected[field as keyof typeof expected]));
+  await expect(softwareRow.getByText(expected.soft_name, { exact: true })).toBeVisible();
   const result = await send(page);
   expect(result.status).toBe('success');
   const received = await control();
@@ -264,6 +276,8 @@ test('375px 手机缺少randomUUID仍可提交，历史表格和主操作完整�
   await screenshot(page, 'mobile-header');
   const table = await openForm(page, selected);
   await expect(page.getByLabel('变更内容', { exact: true })).toHaveValue(sample.changes);
+  await archiveField(page, '软件名称').click();
+  await page.getByRole('option', { name: 'Antireal_Project', exact: true }).click();
   await screenshot(page, 'mobile-form-top', table);
   await archiveField(page, '接收人').fill('');
   await page.getByRole('button', { name: '提交 OA 归档', exact: true }).click();
@@ -279,7 +293,7 @@ test('375px 手机缺少randomUUID仍可提交，历史表格和主操作完整�
   const before = (await control()).count;
   const result = await send(page);
   expect(result.status).toBe('success');
-  expect(result.form).toMatchObject({ soft_number: '', applyCount: 1 });
+  expect(result.form).toMatchObject({ soft_name: 'Antireal_Project', soft_number: '', applyCount: 1 });
   expect(result.soft_number).toMatch(/^OA-SMOKE-/);
   expect(result.number_apply_id).toBeTruthy();
   expect(result.form.edit_reason).toBe('手机确认\n第二行');
@@ -308,6 +322,7 @@ for (const mode of ['failure', 'timeout'] as const) {
       await expect.poll(async () => (await control()).count).toBe(before + 1);
       await expect(page.getByText('正在提交，等待 OA 返回结果…', { exact: true })).toBeVisible();
       await expect(archiveField(page, '申请人')).toBeDisabled();
+      await expect(archiveField(page, '软件名称')).toBeDisabled();
       await page.getByRole('button', { name: /提交 OA 归档$/ }).click({ force: true });
       expect((await control()).count).toBe(before + 1);
       const observer = await context.newPage();

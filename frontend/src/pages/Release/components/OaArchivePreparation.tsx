@@ -5,6 +5,7 @@ import { Archive, Copy, FolderArchive } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { accountApi } from '@/api/account';
 import { projectApi } from '@/api/project';
+import type { NormalizedError } from '@/api/request';
 import { createArchiveSubmissionId, oaArchiveApi, type ArchiveApplication, type ArchiveConfirmation, type ArchiveSelection, type ArchiveForm, type ArchivePreparation } from '@/api/oaArchive';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAuthStore } from '@/stores/authStore';
@@ -130,12 +131,28 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const users = useQuery({ queryKey: ['oa-archive-users', deferredSearch], queryFn: () => accountApi.getUsers({ keyword: deferredSearch || undefined, is_active: true, page_size: 50 }), enabled: active && formOpen, retry: false });
+  const softwareNames = useQuery({
+    queryKey: ['oa-archive-software-names', release.id],
+    queryFn: ({ signal }) => oaArchiveApi.softwareNames(release.id, signal),
+    enabled: active && formOpen && !!allowed && !!prepared?.configuration.configured,
+    retry: false,
+    staleTime: 0,
+  });
+  const softwareOptions = softwareNames.data ?? [];
+  const isListedSoftwareName = (value: unknown) => typeof value === 'string' && softwareOptions.includes(value);
+  const softwareSelectionDisabled = !prepared?.configuration.configured || softwareNames.isFetching
+    || softwareNames.isError || !softwareOptions.length;
   const prepare = useMutation({
     mutationFn: (selection: ArchiveSelection) => oaArchiveApi.prepare(release.id, selection),
     onSuccess: async data => { await records.refetch(); setSubmissionError(undefined); setPrepared(data); setSelectOpen(false); setFormOpen(true); },
   });
   const validate = useMutation({
-    mutationFn: (values: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, { ...values, applyCount: 1, soft_number: getRequestSoftwareNumber(latest) }),
+    mutationFn: ({ soft_name, ...values }: ArchiveForm) => oaArchiveApi.prepare(release.id, prepared!.selection, {
+      ...values,
+      ...(!softwareSelectionDisabled && isListedSoftwareName(soft_name) ? { soft_name } : {}),
+      applyCount: 1,
+      soft_number: getRequestSoftwareNumber(latest),
+    }),
   });
   const submit = useMutation({
     mutationFn: ({ values, previous, submissionId }: { values: ArchiveForm; previous?: ArchiveApplication; submissionId: string }) => {
@@ -148,12 +165,14 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
       void records.refetch();
     },
     onError: (error, variables) => {
-      const status = (error as { status?: number }).status;
+      const { status, data } = error as Partial<NormalizedError>;
       if (!status || status >= 500) setUncertain(current => ({ ...current, [identity]: variables.submissionId }));
+      if ((data as { state?: string })?.state === 'oa_software_name_invalid') void softwareNames.refetch();
       void records.refetch();
     },
     onSettled: () => { inFlight.current = false; },
   });
+  const formLocked = submit.isPending || checking;
   function dispatch(values: ArchiveForm, previous?: ArchiveApplication) {
     setSubmissionError(undefined);
     try {
@@ -169,7 +188,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
     }
   }
   async function send() {
-    if (inFlight.current) return;
+    if (inFlight.current || softwareSelectionDisabled) return;
     inFlight.current = true;
     setChecking(true);
     setSubmissionError(undefined);
@@ -196,7 +215,8 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
   const currentResult = latest && latest.created_at > (submit.data?.created_at ?? '') ? latest : submit.data ?? latest;
   const unresolvedResult = !submit.isPending && currentResult && ['failure', 'unknown'].includes(currentResult.status)
     ? currentResult : undefined;
-  const action = allowed ? <Button className="shrink-0 max-md:min-h-11" icon={<Archive className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />} disabled={submit.isPending || checking} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>发起 OA 归档</Button> : null;
+  const submitErrorStatus = (submit.error as Partial<NormalizedError> | null)?.status;
+  const action = allowed ? <Button className="shrink-0 max-md:min-h-11" icon={<Archive className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />} disabled={formLocked} onClick={() => { prepare.reset(); validate.reset(); submit.reset(); setSelectOpen(true); }}>发起 OA 归档</Button> : null;
   return <section aria-label="OA 软件归档准备" className="space-y-2 rounded-lg border border-indigo-100 bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-[13px] font-medium">OA 软件归档</h3>
@@ -218,7 +238,7 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
       </div>
     </article>)}</div>
     <OaArchiveDirectoryPicker releaseId={release.id} open={selectOpen && active && !!allowed} onClose={() => setSelectOpen(false)} onSelect={selection => prepare.mutate(selection)} pending={prepare.isPending} error={prepare.error} />
-    <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => { if (!submit.isPending && !checking) setFormOpen(false); }} width={800}
+    <Modal title="软件归档申请资料" open={formOpen && active} onCancel={() => { if (!formLocked) setFormOpen(false); }} width={800}
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 8, paddingTop: 4 } }}
       footer={<>
         {submit.isPending && <p role="status" className="mb-2 text-left text-xs text-slate-500">正在提交，等待 OA 返回结果…</p>}
@@ -227,9 +247,15 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
           <Button size="small" className="shrink-0 max-md:min-h-11" onClick={() => setViewing(unresolvedResult)}>查看 OA 返回</Button>
         </div>}
         {!!submissionError && !confirmation && <div className="mb-3 text-left"><PermissionAlert error={submissionError} errorTitle="尚未提交 OA 归档" /></div>}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4"><Button className="max-md:min-h-11" disabled={submit.isPending || checking} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button><Button className="max-md:min-h-11" loading={validate.isPending} disabled={submit.isPending || checking} onClick={() => form.submit()}>校验资料</Button><Button aria-label="提交 OA 归档" aria-busy={submit.isPending || checking} className="max-md:min-h-11" type="primary" loading={submit.isPending || checking} disabled={!prepared?.configuration.configured || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey} onClick={() => void send()}>提交 OA 归档</Button></div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+          <Button className="max-md:min-h-11" disabled={formLocked} onClick={() => setFormOpen(false)}>关闭并保留草稿</Button>
+          <Button className="max-md:min-h-11" loading={validate.isPending} disabled={formLocked} onClick={() => form.submit()}>校验资料</Button>
+          <Button aria-label="提交 OA 归档" aria-busy={formLocked} className="max-md:min-h-11" type="primary" loading={formLocked}
+            disabled={softwareSelectionDisabled || records.isPending || !!records.error || latest?.status === 'sending' || !!uncertainKey}
+            onClick={() => void send()}>提交 OA 归档</Button>
+        </div>
       </>}>
-      {prepared && <Form form={form} disabled={submit.isPending || checking} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
+      {prepared && <Form form={form} disabled={formLocked} onFinish={values => validate.mutate(values)} onValuesChange={(_, values) => { draft.save({ ...values, applyCount: 1 }); validate.reset(); }}
         onFinishFailed={({ errorFields }) => { if (errorFields[0]) form.scrollToField(errorFields[0].name, { focus: true, block: 'center' }); }}>
         <div className="mb-4 flex flex-col gap-3">
           <div className="flex items-start gap-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
@@ -240,7 +266,13 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
           {!prepared.configuration.configured && <Alert showIcon type="warning" title={prepared.configuration.reason} />}
           {existing.length > 0 && <Alert type="info" title={`该目录已有 ${existing.length} 次申请，最新结果：${statusText[latest.status]}。提交前需确认已有记录。`} />}
           {uncertainKey && <Alert type="warning" title="浏览器未可靠取得提交结果，请重新读取归档记录并核对 OA，系统不会自动重发。" action={<Button onClick={() => void records.refetch()}>重新读取归档记录</Button>} />}
-          {submit.error && <PermissionAlert error={submit.error} errorTitle="提交结果需要核对" />}
+          {submit.error && <PermissionAlert error={submit.error} errorTitle={submitErrorStatus && submitErrorStatus < 500 ? '尚未提交 OA 归档' : '提交结果需要核对'} />}
+          {softwareNames.isError && <div>
+            <PermissionAlert error={softwareNames.error} errorTitle="OA 软件名称加载失败" />
+            <Button className="mt-2" loading={softwareNames.isFetching} onClick={() => void softwareNames.refetch()}>重新加载软件名称</Button>
+          </div>}
+          {softwareNames.isSuccess && !softwareNames.isFetching && !softwareOptions.length && <Alert type="warning" showIcon
+            title="OA 暂无可选的软件名称" action={<Button onClick={() => void softwareNames.refetch()}>重新加载软件名称</Button>} />}
           {prepared.content_source === 'release_doc_original' && <Alert type="warning" title="无法可靠识别更新内容，已保留发布说明原文，请人工核对补填。" />}
           {users.error && <p className="text-[12px] text-amber-700">系统用户暂时无法加载，可直接填写 OA 登录名。</p>}
         </div>
@@ -254,19 +286,32 @@ export function OaArchivePreparationPanel({ release, active = true, actionTarget
               <label htmlFor={`archive-${field.key}`} className="block pt-1.5 leading-5">{field.label}{field.required && <span aria-hidden="true" className="text-rose-500"> *</span>}</label>
             </th>
             <td className="min-w-0 px-3 py-3 align-top sm:px-4">
-              <Form.Item name={field.key} style={{ marginBottom: 0 }} rules={field.required ? [{ required: true, whitespace: true, message: `请填写${field.label}` }] : []}>
+              {field.key === 'soft_name' ? <Form.Item name={field.key} style={{ marginBottom: 0 }}
+                getValueProps={(value: string) => ({ value: isListedSoftwareName(value) ? value : undefined })}
+                rules={softwareSelectionDisabled ? [] : [
+                  { required: true, message: '请选择软件名称' },
+                  { validator: (_, value) => !value || isListedSoftwareName(value) ? Promise.resolve() : Promise.reject(new Error('请选择 OA 名单中的软件名称')) },
+                ]}>
+                <Select id="archive-soft_name" className="w-full" showSearch={{ optionFilterProp: 'label' }}
+                  allowClear={{ label: '清空软件名称' }} virtual={false}
+                  placeholder={softwareNames.isFetching ? '正在加载 OA 软件名称…' : '请选择软件名称'}
+                  loading={softwareNames.isFetching} disabled={softwareSelectionDisabled || formLocked}
+                  options={softwareOptions.map(name => ({ label: name, value: name }))} />
+              </Form.Item> : <Form.Item name={field.key} style={{ marginBottom: 0 }} rules={field.required ? [{ required: true, whitespace: true, message: `请填写${field.label}` }] : []}>
                 {field.key === 'docCreator' || field.key === 'developer' ? <AutoComplete id={`archive-${field.key}`} className="w-full" options={userOptions} onSearch={setSearch} virtual={false} />
                   : field.key === 'soft_source' ? <Select id={`archive-${field.key}`} className="w-full" virtual={false} options={[{ value: '', label: '请选择（可留空）' }, { value: '内部自制', label: '内部自制' }, { value: '外购', label: '外购' }]} />
                     : field.multiline ? <Input.TextArea id={`archive-${field.key}`} autoSize={{ minRows: 3, maxRows: 12 }} />
                       : <Input id={`archive-${field.key}`} />}
-              </Form.Item>
+              </Form.Item>}
               {field.note && <p className="mt-1.5 break-words text-[12px] leading-5 text-slate-500">{field.note}</p>}
             </td>
           </tr></Fragment>)}</tbody>
         </table>
         </div>
         {validate.error && <div className="mt-3"><PermissionAlert error={validate.error} errorTitle="资料校验失败" /></div>}
-        {validate.isSuccess && <div className="mt-3"><Alert type="success" showIcon title="资料校验通过，尚未向 OA 发送。" /></div>}
+        {validate.isSuccess && <div className="mt-3"><Alert type="success" showIcon title={validate.data.form.soft_name
+          ? '资料校验通过，尚未向 OA 发送。'
+          : '其余资料校验通过。提交前请选择 OA 软件名称。'} /></div>}
       </Form>}
     </Modal>
     <Modal title={confirmation?.previous.status === 'success' ? '确认再次申请' : '确认主动重试'} open={!!confirmation && active}

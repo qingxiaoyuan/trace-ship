@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 
 OA_PATH = "/api/v1/ticketscript/create_software_archive_with_number"
+OA_SOFTWARE_NAMES_PATH = "/api/v1/ticketscript/get_oa_software_name_list"
 
 
 def main():
@@ -141,6 +142,15 @@ def main():
                     body = json.loads(self.rfile.read(length))
                 except (ValueError, UnicodeDecodeError):
                     self.reply({"error": "无效样本"}, 400)
+                    return
+                if self.path == OA_SOFTWARE_NAMES_PATH:
+                    if body != {}:
+                        self.reply({"error": "软件名单样本要求空 JSON 对象"}, 400)
+                        return
+                    self.reply({"code": 0, "data": [
+                        {"soft_name": "项目内归档软件名称"}, {"soft_name": "54S_MainControl"},
+                        {"soft_name": "Antireal_Project"},
+                    ], "msg": ""})
                     return
                 if self.path == control_path:
                     with lock:

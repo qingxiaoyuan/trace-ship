@@ -15,6 +15,7 @@ export interface ArchiveForm {
   other_description: string;
   soft_number: string;
 }
+type ArchivePreparationForm = Omit<ArchiveForm, 'soft_name'> & { soft_name?: string };
 export interface ArchiveSelection { task_id: string; scope?: 'file' | 'directory'; artifact_id?: string | null; path?: string; source_kind?: 'local' | 'svn' }
 export interface ArchiveArtifact extends ArchiveSelection { task_name: string; name: string; path: string }
 export interface ArchiveDirectory extends ArchiveSelection { task_name: string; name: string; path: '.'; scope: 'directory'; source_kind: 'local' | 'svn'; artifact_count?: number | null; created_at?: string; svn_url?: string }
@@ -67,7 +68,9 @@ export function createArchiveSubmissionId(): string {
 
 export const oaArchiveApi = {
   options: (releaseId: string) => get<{ directories: ArchiveDirectory[]; artifacts: ArchiveArtifact[]; svn_tasks?: { task_id: string; task_name: string }[] }>(`/releases/${releaseId}/oa-archive/options/`),
-  prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchiveForm) =>
+  softwareNames: (releaseId: string, signal?: AbortSignal) =>
+    get<string[]>(`/releases/${releaseId}/oa-archive/software-names/`, { silent: true, signal }),
+  prepare: (releaseId: string, selection: ArchiveSelection, form?: ArchivePreparationForm) =>
     post<ArchivePreparation>(`/releases/${releaseId}/oa-archive/prepare/`, { ...selection, ...(form ? { form } : {}) }),
   records: (releaseId: string) => get<ArchiveApplication[]>(`/releases/${releaseId}/oa-archive/records/`),
   confirmNoOrder: (releaseId: string, applicationId: string, evidence: string) =>

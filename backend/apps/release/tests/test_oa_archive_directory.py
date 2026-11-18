@@ -2,7 +2,10 @@
 from pathlib import Path
 
 import pytest
+from django.utils import timezone
 
+from apps.package.services.cleanup import cleanup_expired_artifacts
+from apps.release.oa_http import post_oa_json
 from apps.release.tests.test_oa_archive import archive_case as _archive_case
 from apps.release.tests.test_oa_archive_submission import oa_http as _oa_http
 from apps.release.tests.test_oa_archive_svn import (
@@ -78,6 +81,28 @@ def test_准备之后本地目录清空则发送重新拒绝(archive_case, oa_ht
     assert response.status_code == 400, response.data
     assert oa_http.requests == []
     assert client.get(f"/api/releases/{release.id}/oa-archive/options/").data["data"]["directories"] == []
+
+
+def test_等待OA名单期间本地产物到期则拒绝提交(archive_case, oa_http, monkeypatch):
+    client, release, task = archive_case
+    task.finished_at = timezone.now() - timezone.timedelta(days=31)
+    task.save(update_fields=["finished_at"])
+    prepared = prepare_directory(client, release, task).data["data"]
+
+    def clean_while_reading_names(*args, **kwargs):
+        result = post_oa_json(*args, **kwargs)
+        assert cleanup_expired_artifacts()["cleaned"] == 1
+        return result
+
+    monkeypatch.setattr("apps.release.oa_archive.post_oa_json", clean_while_reading_names)
+    response = send_file(client, release, prepared["selection"], prepared["form"])
+
+    assert response.status_code == 400, response.data
+    assert response.data["data"]["state"] == "empty_directory"
+    assert len(oa_http.name_requests) == 1
+    assert not (Path(task.workspace_path) / "artifacts").exists()
+    assert oa_http.requests == []
+    assert not release.oa_applications.exists()
 
 
 def test_旧文件历史不改写且不同任务目录身份独立(archive_case, oa_http):

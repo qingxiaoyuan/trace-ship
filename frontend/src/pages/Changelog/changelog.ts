@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '2026.11.18',
+    date: '2026-11-18',
+    items: [
+      { category: 'improvement', text: 'OA 归档的软件名称可从 OA 名单中搜索选择。名单暂不可用时可先校验其他资料，提交时会锁定表单并核验所选名称。' },
+      { category: 'fix', text: 'OA 归档提交在读取软件名单后复核权限和产物。等待期间若权限或产物已失效，系统会拒绝建单。' },
+    ],
+  },
+  {
     version: '2026.11.16',
     date: '2026-11-16',
     summary: '便于核对 OA 归档结果',

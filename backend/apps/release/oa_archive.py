@@ -1,8 +1,8 @@
-"""已发布正式版的软件归档准备；此模块不向 OA 发送请求。"""
+"""已发布正式版的软件归档准备和 OA 软件名单。"""
 import re
 from pathlib import Path, PurePosixPath
 from typing import NoReturn
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from rest_framework import serializers
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
@@ -20,8 +20,51 @@ from apps.package.services.artifacts import (
 )
 from apps.project.models import ProjectComponent
 from apps.release.models import ReleaseRecord
+from apps.release.oa_http import parse_oa_json, post_oa_json
 from apps.system.oa_archive import OaArchiveConfig
 from utils.permissions import IsProjectManager, ProjectRolePermission
+
+OA_SOFTWARE_NAMES_PATH = "/api/v1/ticketscript/get_oa_software_name_list"
+OA_SOFTWARE_NAMES_TIMEOUT = 5.0
+
+
+class OaSoftwareNamesUnavailable(APIException):
+    status_code = 502
+    default_detail = "OA 软件名称名单暂时无法加载，请重试"
+
+
+def load_oa_software_names(archive_url: str, *, timeout: float = OA_SOFTWARE_NAMES_TIMEOUT) -> list[str]:
+    """从归档接口同源读取名单，不带归档提交地址的查询参数。"""
+    if not archive_url:
+        raise ValidationError({"detail": "尚未配置 OA 软件归档接口地址，请联系系统配置维护者"})
+    endpoint = urlsplit(archive_url)._replace(path=OA_SOFTWARE_NAMES_PATH, query="", fragment="").geturl()
+    try:
+        result = post_oa_json(endpoint, {}, connect_timeout=timeout, total_timeout=timeout)
+    except OSError as exc:
+        raise OaSoftwareNamesUnavailable("OA 响应暂存失败") from exc
+    if result.error:
+        raise OaSoftwareNamesUnavailable(result.error)
+    snapshot = result.snapshot()
+    if snapshot is None:
+        raise OaSoftwareNamesUnavailable("未收到 OA 软件名称名单响应")
+    if not 200 <= snapshot["status_code"] < 300:
+        raise OaSoftwareNamesUnavailable(f"OA 软件名称名单返回 HTTP {snapshot['status_code']}")
+    try:
+        payload = parse_oa_json(snapshot)
+    except (ValueError, RecursionError) as exc:
+        reason = "OA 软件名称名单的正文编码无效" if "body_base64" in snapshot else "OA 软件名称名单返回了无效 JSON"
+        raise OaSoftwareNamesUnavailable(reason) from exc
+    if (not isinstance(payload, dict) or type(payload.get("code")) is not int
+            or payload["code"] != 0 or not isinstance(payload.get("data"), list)):
+        raise OaSoftwareNamesUnavailable("OA 未返回有效的软件名称名单")
+    names = {}
+    for item in payload["data"]:
+        if not isinstance(item, dict) or not isinstance(item.get("soft_name"), str):
+            raise OaSoftwareNamesUnavailable("OA 软件名称名单中存在无效条目")
+        name = item["soft_name"].strip()
+        if name:
+            names[name] = None
+    return list(names)
 
 
 class ArchiveFormInput(serializers.Serializer):
@@ -42,13 +85,18 @@ class ArchiveFormInput(serializers.Serializer):
         return {**attrs, "applyCount": 1}
 
 
+class ArchivePreparationFormInput(ArchiveFormInput):
+    """未选择软件名称时可往返预检其余资料。"""
+    soft_name = serializers.CharField(required=False, allow_blank=True, default="")
+
+
 class ArchiveSelectionInput(serializers.Serializer):
     task_id = serializers.UUIDField()
     artifact_id = serializers.CharField(max_length=200, required=False, allow_null=True)
     path = serializers.CharField(required=False, max_length=4096)
     source_kind = serializers.ChoiceField(choices=["local", "svn"], required=False)
     scope = serializers.ChoiceField(choices=["file", "directory"], required=False)
-    form = ArchiveFormInput(required=False)
+    form = ArchivePreparationFormInput(required=False)
 
     def validate(self, attrs: dict) -> dict:
         if attrs.get("scope") == "directory":
@@ -109,6 +157,12 @@ class OaArchivePreparation:
             raise ValidationError({"detail": "仅打包成功的任务可准备归档"})
         if task.config_snapshot.get("svn_push_enabled") and task.stage_info.get("svn_push", {}).get("status") != "success":
             raise ValidationError({"detail": "该任务快照启用了 SVN 推送，须推送成功后准备归档"})
+
+    @classmethod
+    def software_names(cls, release: ReleaseRecord, user: User) -> list[str]:
+        cls.require_permission(release, user)
+        cls.require_release(release)
+        return load_oa_software_names(OaArchiveConfig.get_url())
 
     @staticmethod
     def local_artifact(task: PackageTask, artifact_id: str) -> dict:

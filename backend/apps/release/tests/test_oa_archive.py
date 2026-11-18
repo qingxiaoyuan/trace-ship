@@ -189,7 +189,7 @@ def test_候选只含现存合格文件且列表之后删除文件也不能继�
     assert client.get(f"/api/releases/{release.id}/oa-archive/options/").data["data"]["artifacts"] == []
 
 
-def test_修改资料仅用于本次校验不回写来源且四项必填其余可留空(archive_case):
+def test_修改资料仅用于本次校验不回写来源且其余必填项不可为空(archive_case):
     client, release, task = archive_case
     form = prepare(client, release, task).data["data"]["form"]
     form.update(docCreator="oa.creator", developer="oa.receiver", soft_name="修改后的软件名", soft_version="自定义版本",
@@ -205,7 +205,7 @@ def test_修改资料仅用于本次校验不回写来源且四项必填其余�
     detail = client.get(f"/api/releases/{release.id}/").data["data"]
     assert detail["release_doc"] == release.release_doc
     assert detail["version"] == "V1.2.3"
-    for field in ("docCreator", "soft_name", "soft_version", "developer"):
+    for field in ("docCreator", "soft_version", "developer"):
         bad = prepare(client, release, task, form={**form, field: "  "})
         assert bad.status_code == 400
         assert field in bad.data["data"]["form"]

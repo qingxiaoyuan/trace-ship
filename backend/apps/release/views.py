@@ -274,6 +274,13 @@ class ReleaseViewSet(StandardModelViewSet):
 
         return success_response(OaArchivePreparation.options(self.get_object(), request.user))
 
+    @action(detail=True, methods=["get"], url_path="oa-archive/software-names")
+    def oa_archive_software_names(self, request: Request, pk: str | None = None) -> Response:
+        """读取可用于当前发布归档的 OA 软件名称。"""
+        from apps.release.oa_archive import OaArchivePreparation
+
+        return success_response(OaArchivePreparation.software_names(self.get_object(), request.user))
+
     @action(detail=True, methods=["post"], url_path="oa-archive/prepare")
     def oa_archive_prepare(self, request: Request, pk: str | None = None) -> Response:
         """准备单产物归档表单，只有本页草稿，不创建 OA 流程。"""

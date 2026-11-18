@@ -14,7 +14,9 @@ const adapter = request.defaults.adapter;
 const user = useAuthStore.getState().user;
 const requests: { url?: string; method?: string; data: unknown }[] = [];
 let role = 'manager';
-let configured = false;
+let configured = true;
+let softwareNames: string[];
+let softwareNamesFailed: boolean;
 let historyMode = false;
 let sameTaskNames = false;
 let savedRecords: unknown[] = [];
@@ -28,7 +30,9 @@ beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   role = 'manager';
-  configured = false;
+  configured = true;
+  softwareNames = [initialForm.soft_name, '54S_MainControl', 'Antireal_Project'];
+  softwareNamesFailed = false;
   historyMode = false;
   sameTaskNames = false;
   savedRecords = [];
@@ -53,6 +57,12 @@ beforeEach(() => {
     else if (config.url?.endsWith('/oa-archive/prepare/')) data = { selection: { task_id: payload.task_id, scope: payload.scope, path: payload.path, source_kind: payload.source_kind }, source: historyMode ? { kind: 'svn', scope: 'directory', supplemented: true, path: '.', original: {}, current: { kind: 'dir', revision: '2' } } : undefined,
       form: payload.form || initialForm, configuration: { configured, reason: '尚未配置 OA 软件归档接口地址，请联系系统配置维护者' }, content_source: 'release_doc_changes' };
     else if (config.url?.endsWith('/oa-archive/records/')) data = savedRecords;
+    else if (config.url?.endsWith('/oa-archive/software-names/')) {
+      if (softwareNamesFailed) {
+        return { config, status: 502, statusText: 'Bad Gateway', headers: {}, data: { code: 50200, message: '等待 OA 返回超时' } };
+      }
+      data = softwareNames;
+    }
     else if (config.url?.endsWith('/oa-archive/confirm-no-order/')) data = savedRecords[0];
     else if (config.url?.endsWith('/oa-archive/submit/')) {
       data = { id: `application-${savedRecords.length + 1}`, previous_id: payload.previous_id || null, confirmation: payload.confirmation || '', submission_id: payload.submission_id, status: 'success', form: payload.form,
@@ -82,7 +92,19 @@ async function selectArtifact(id = 'one') {
   expect(screen.queryByText('软件一.zip')).toBeNull();
   fireEvent.click(screen.getByRole('option', { name: id === 'one' ? /正式安装包/ : /第二次打包/ }));
   fireEvent.click(screen.getByRole('button', { name: '填写申请资料' }));
-  await screen.findByRole('table', { name: '软件归档申请资料' });
+  const form = await screen.findByRole('table', { name: '软件归档申请资料' });
+  if (configured && softwareNames.length && !softwareNamesFailed) {
+    await waitFor(() => expect((within(form).getByRole('combobox', { name: '软件名称' }) as HTMLInputElement).disabled).toBe(false));
+  }
+}
+
+async function chooseSoftwareName(name: string) {
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '软件名称' }));
+  fireEvent.click(await screen.findByRole('option', { name }));
+}
+
+function softwareNameRow() {
+  return screen.getByRole('rowheader', { name: '软件名称' }).closest('tr')!;
 }
 
 it('选择一次打包的完整目录并编辑完整资料，多个文件仅提供一个目录选项', async () => {
@@ -94,18 +116,63 @@ it('选择一次打包的完整目录并编辑完整资料，多个文件仅提�
   const content = within(dialog).getByRole('textbox', { name: '变更内容' }) as HTMLTextAreaElement;
   await waitFor(() => expect(content.value).toBe(initialForm.edit_content));
   expect(within(dialog).getByRole('textbox', { name: 'SN' }).getAttribute('value')).toBe(initialForm.sn_code);
-  fireEvent.change(within(dialog).getByRole('textbox', { name: /软件名称/ }), { target: { value: '修改后的软件' } });
+  await chooseSoftwareName('54S_MainControl');
   fireEvent.change(content, { target: { value: '手填 | 资料\n完整第二行' } });
   fireEvent.click(within(dialog).getByRole('button', { name: '校验资料' }));
   await screen.findByText('资料校验通过，尚未向 OA 发送。');
   const prepared = requests.filter(entry => entry.url?.endsWith('/prepare/'));
-  expect(prepared.at(-1)?.data).toMatchObject({ task_id: 'task', scope: 'directory', path: '.', source_kind: 'local', form: { soft_name: '修改后的软件', edit_content: '手填 | 资料\n完整第二行', applyCount: 1, soft_number: '' } });
-  expect((screen.getByRole('button', { name: '提交 OA 归档' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(prepared.at(-1)?.data).toMatchObject({ task_id: 'task', scope: 'directory', path: '.', source_kind: 'local', form: { soft_name: '54S_MainControl', edit_content: '手填 | 资料\n完整第二行', applyCount: 1, soft_number: '' } });
   expect(screen.queryByLabelText(/项目编号|项目负责人|项目主管|软件编号/)).toBeNull();
   expect(within(dialog).queryByRole('rowheader', { name: '申请数量' })).toBeNull();
   expect(within(dialog).queryByText(/仅影响本次申请/)).toBeNull();
   expect(requests.every(entry => !entry.url?.includes('ticketscript'))).toBe(true);
 });
+
+it('未配置 OA 时可校验其余资料并提示提交前需要选择软件名称', async () => {
+  configured = false;
+  mount();
+  await selectArtifact();
+  fireEvent.change(screen.getByRole('textbox', { name: '变更原因' }), { target: { value: '提前校验资料' } });
+  fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
+  await screen.findByText('其余资料校验通过。提交前请选择 OA 软件名称。');
+  const checked = requests.filter(entry => entry.url?.endsWith('/prepare/')).at(-1)?.data as { form: object };
+  expect(checked.form).toMatchObject({ edit_reason: '提前校验资料' });
+  expect(checked.form).not.toHaveProperty('soft_name');
+  expect(requests.some(entry => entry.url?.endsWith('/software-names/'))).toBe(false);
+  expect((screen.getByRole('button', { name: '提交 OA 归档' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('OA 名单失败或为空时禁止提交并可预检，重试加载后只接受下拉选项', async () => {
+  softwareNamesFailed = true;
+  mount();
+  await selectArtifact();
+  await screen.findByText('OA 软件名称加载失败');
+  const submit = screen.getByRole('button', { name: '提交 OA 归档' }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  softwareNamesFailed = false;
+  softwareNames = [];
+  fireEvent.click(screen.getByRole('button', { name: '重新加载软件名称' }));
+  await screen.findByText('OA 暂无可选的软件名称');
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
+  await screen.findByText('其余资料校验通过。提交前请选择 OA 软件名称。');
+  softwareNames = ['Antireal_Project'];
+  fireEvent.click(screen.getByRole('button', { name: '重新加载软件名称' }));
+  await waitFor(() => expect(submit.disabled).toBe(false));
+  const select = screen.getByRole('combobox', { name: '软件名称' });
+  expect(within(softwareNameRow()).queryByText(initialForm.soft_name)).toBeNull();
+  fireEvent.mouseDown(select);
+  fireEvent.change(select, { target: { value: '自行输入的名称' } });
+  fireEvent.keyDown(select, { key: 'Enter' });
+  fireEvent.click(submit);
+  await screen.findByText('请选择 OA 名单中的软件名称');
+  expect(requests.some(entry => entry.url?.endsWith('/submit/'))).toBe(false);
+  fireEvent.change(select, { target: { value: 'Antireal' } });
+  fireEvent.click(await screen.findByRole('option', { name: 'Antireal_Project' }));
+  fireEvent.click(submit);
+  await screen.findByText('软件编号：SOFT-001');
+  expect(requests.find(entry => entry.url?.endsWith('/submit/'))?.data).toMatchObject({ form: { soft_name: 'Antireal_Project' } });
+}, 15_000);
 
 it('实际发送修改后的资料并重新读取历史，成功后展示完整对象且禁止静默再次发送', async () => {
   configured = true;
@@ -165,37 +232,39 @@ it('提交标识生成异常时展示原因并解除防重锁，恢复后可重�
 it('关闭重开和切换打包目录保留各自草稿，离开页面后丢弃', async () => {
   const view = mount();
   await selectArtifact();
-  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '第一份草稿' } });
+  await chooseSoftwareName('54S_MainControl');
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   await selectArtifact('two');
-  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('项目内软件'));
-  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '第二份草稿' } });
+  await within(softwareNameRow()).findByText(initialForm.soft_name);
+  await chooseSoftwareName('Antireal_Project');
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   await selectArtifact();
-  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('第一份草稿'));
+  await within(softwareNameRow()).findByText('54S_MainControl');
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   await selectArtifact('two');
-  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('第二份草稿'));
+  await within(softwareNameRow()).findByText('Antireal_Project');
   view.unmount();
   mount();
   await selectArtifact('two');
-  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('项目内软件'));
-});
+  await within(softwareNameRow()).findByText(initialForm.soft_name);
+}, 15_000);
 
 it('四项必填有字段提示和焦点定位，可选资料留空仍能校验', async () => {
   mount();
   await selectArtifact();
-  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('项目内软件'));
+  await within(softwareNameRow()).findByText(initialForm.soft_name);
   for (const label of ['申请人', '接收人']) fireEvent.change(screen.getByLabelText(new RegExp(label)), { target: { value: ' ' } });
-  for (const label of ['软件名称', '软件版本']) fireEvent.change(screen.getByLabelText(new RegExp(label)), { target: { value: ' ' } });
+  fireEvent.click(within(softwareNameRow()).getByRole('button', { name: '清空软件名称' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '软件版本' }), { target: { value: ' ' } });
   const count = requests.filter(entry => entry.url?.endsWith('/prepare/')).length;
   fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
-  for (const label of ['申请人', '接收人', '软件名称', '软件版本']) await screen.findByText(`请填写${label}`);
+  for (const label of ['申请人', '接收人', '软件版本']) await screen.findByText(`请填写${label}`);
+  await waitFor(() => expect(screen.getByRole('combobox', { name: '软件名称' }).getAttribute('aria-invalid')).toBe('true'));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(/申请人/)));
   expect(requests.filter(entry => entry.url?.endsWith('/prepare/'))).toHaveLength(count);
   fireEvent.change(screen.getByLabelText(/申请人/), { target: { value: 'creator.manual' } });
   fireEvent.change(screen.getByLabelText(/接收人/), { target: { value: 'receiver.manual' } });
-  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '软件' } });
+  await chooseSoftwareName('54S_MainControl');
   fireEvent.change(screen.getByLabelText(/软件版本/), { target: { value: 'V2' } });
   fireEvent.click(screen.getByRole('button', { name: '校验资料' }));
   await screen.findByText('资料校验通过，尚未向 OA 发送。');
@@ -227,13 +296,13 @@ it('详情切换发布说明标签再返回打包区仍恢复当前目录草稿'
   </App></ConfigProvider></QueryClientProvider>);
   fireEvent.click(await screen.findByRole('button', { name: '打包任务' }));
   await selectArtifact();
-  fireEvent.change(screen.getByLabelText(/软件名称/), { target: { value: '切标签也保留' } });
+  await chooseSoftwareName('Antireal_Project');
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   fireEvent.click(screen.getByRole('button', { name: '发布说明' }));
   fireEvent.click(screen.getByRole('button', { name: '打包任务' }));
   await selectArtifact();
-  await waitFor(() => expect((screen.getByLabelText(/软件名称/) as HTMLInputElement).value).toBe('切标签也保留'));
-});
+  await within(softwareNameRow()).findByText('Antireal_Project');
+}, 15_000);
 
 
 it('成功后再次申请先提醒，取消不派发，确认生成新申请且不继承自动编号', async () => {
@@ -257,7 +326,7 @@ it('成功后再次申请先提醒，取消不派发，确认生成新申请且�
   expect(sends[1]).toMatchObject({ previous_id: 'application-1', confirmation: 'reapply', form: { soft_number: '' } });
   expect(sends[1].submission_id).not.toBe(sends[0].submission_id);
   await waitFor(() => expect(screen.getAllByRole('button', { name: '查看申请资料' })).toHaveLength(2));
-});
+}, 15_000);
 
 
 it.each(['failure', 'unknown'] as const)('%s 重试保留历史指定编号，关闭重开和校验不改写原资料', async status => {
