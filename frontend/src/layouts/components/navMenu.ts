@@ -48,7 +48,6 @@ const fallbackMenus: MenuItem[] = [
   { id: 'changelog', name: '更新日志', path: '/changelog', icon: 'FileTextOutlined' },
   { id: 'projects', name: '项目/产品', path: '/projects', icon: 'FolderOutlined' },
   { id: 'repositories', name: '仓库', path: '/repositories', icon: 'DatabaseOutlined' },
-  { id: 'software', name: '软件', path: '/software', icon: 'AppstoreOutlined' },
   { id: 'credentials', name: '凭证', path: '/credentials', icon: 'KeyOutlined' },
   { id: 'packages', name: '打包看板', path: '/packages', icon: 'PlayCircleOutlined' },
   { id: 'commits', name: '提交审查', path: '/commits', icon: 'FileTextOutlined' },
@@ -80,7 +79,6 @@ const pathIconMap: Record<string, LucideIcon> = {
   '/changelog': History,
   '/projects': FolderKanban,
   '/repositories': GitFork,
-  '/software': Box,
   '/credentials': KeyRound,
   '/packages': Hammer,
   '/commits': ScanSearch,
@@ -96,7 +94,7 @@ const pathIconMap: Record<string, LucideIcon> = {
 
 const groupRules = [
   { title: '概览', paths: ['/dashboard', '/notifications'] },
-  { title: '资源', paths: ['/projects', '/repositories', '/software', '/commits', '/credentials'] },
+  { title: '资源', paths: ['/projects', '/repositories', '/commits', '/credentials'] },
   { title: '发布', paths: ['/releases/create', '/releases', '/workflows', '/packages'] },
   {
     title: '系统',
@@ -119,7 +117,6 @@ const labelMap: Record<string, string> = {
   '/notifications': '通知',
   '/projects': '项目/产品',
   '/repositories': '仓库',
-  '/software': '软件',
   '/commits': '提交审查',
   '/credentials': '凭证',
   '/releases/create': '新建发布',

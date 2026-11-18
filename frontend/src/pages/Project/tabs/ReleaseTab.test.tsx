@@ -87,6 +87,20 @@ describe('发布版本列表', () => {
     expect(screen.queryAllByText('VB.99')).toHaveLength(0);
   });
 
+  it('仓库关联停用后仍按软件显示项目可见的历史发布', async () => {
+    request.defaults.adapter = async config => ({
+      config, status: 200, statusText: 'OK', headers: {},
+      data: { code: 0, data: config.url?.endsWith('/software/') ? [] : {
+        total: 1, page: 1, page_size: 100, results: [releases[0]],
+      } },
+    });
+    renderTab();
+    const groups = await screen.findAllByRole('button', { name: /旧软件/ });
+    expect(groups[0].getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByText('旧Tag').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /未分组/ })).toBeNull();
+  });
+
   it('仓库发布列表按稳定软件身份筛选，并明确显示待归属历史', async () => {
     request.defaults.adapter = async config => ({
       config, status: 200, statusText: 'OK', headers: {},
@@ -120,7 +134,7 @@ describe('发布版本列表', () => {
     };
     renderTab();
     expect(await screen.findByText('第二页发布加载失败')).toBeTruthy();
-    expect(screen.queryByText('暂无选用软件或已发布版本')).toBeNull();
+    expect(screen.queryByText('暂无软件或已发布版本')).toBeNull();
     expect(screen.queryByText('共 2 个版本')).toBeNull();
   });
 

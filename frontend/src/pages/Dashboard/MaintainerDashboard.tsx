@@ -168,7 +168,7 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
           : <>
             <ul className="mnt-release-list">
               {data.results.map((release) => <li key={release.id} className="mnt-release-row">
-                <div className="mnt-release-identity"><Box className="mnt-pc-only" size={14} aria-hidden /><span className="mnt-release-project">{release.project_name}</span><ChevronRight size={12} aria-hidden /><span className="mnt-release-software" title={release.repository_name}>{release.software_name || (release.software === null ? '软件归属未知' : release.component_name)}</span>
+                <div className="mnt-release-identity"><Box className="mnt-pc-only" size={14} aria-hidden /><span className="mnt-release-project">{release.project_name}</span><ChevronRight size={12} aria-hidden /><span className="mnt-release-software" title={release.repository_name}>{release.software_name || (release.software === null ? '未分组' : release.component_name)}</span>
                 </div>
                 <div className="mnt-release-version">
                   <Link onClick={rememberScroll} state={{ maintainerFrom: from }} to={`/releases/${release.id}${release.shared_readonly ? `?project=${release.project}` : ''}`}>{release.version}</Link>
@@ -187,7 +187,7 @@ export function MaintainerDashboard({ projectCount }: { projectCount: number }) 
         <section className="mnt-package-panel">
           <div className="mnt-title-row"><h2>打包近况</h2><Link className="mnt-text-link" to="/packages">查看全部 <ArrowRight size={13} aria-hidden /></Link></div><p className="mnt-panel-description">所属项目的最近任务</p>
           {summary.isPending ? <Skeleton active paragraph={{ rows: 3 }} /> : summary.isError ? <p className="mnt-aside-empty">总览暂不可用，请重试</p> : !summary.data?.recent_tasks.length ? <p className="mnt-aside-empty">暂无打包任务</p> : <ul>{summary.data.recent_tasks.map((task) => <li key={task.id}><Link to={`/packages/${task.id}`} className="mnt-task-item">
-            <div><span className={`mnt-task-dot ${task.status}`} /><strong title={task.repository_name}>{task.software_name || (task.software_name === null ? '软件归属未知' : task.component_name)}</strong><span className={`mnt-task-badge ${task.status}`}>{task.status_display}</span></div>
+            <div><span className={`mnt-task-dot ${task.status}`} /><strong title={task.repository_name}>{task.software_name || (task.software_name === null ? '未分组' : task.component_name)}</strong><span className={`mnt-task-badge ${task.status}`}>{task.status_display}</span></div>
             <div className="mnt-task-meta"><span>{task.version || '未关联版本'} · {task.trigger_source === 'auto_release' ? '自动' : task.trigger_source === 'manual_release' ? '手动' : task.trigger_source === 'manual_branch' ? '分支' : '打包'}{task.artifact_count > 0 ? ` · ${task.artifact_count} 个产物` : ''}</span><span>{taskMeta(task)}</span></div>
           </Link></li>)}</ul>}
           <p className="mnt-package-footer">日志、产物在任务详情中查看</p>

@@ -862,19 +862,16 @@ class ReleaseService:
     """
 
     @classmethod
-    def preview_software_branch(cls, link, user, *, branch, release_type, tag_name=""):
-        """核验分支完整提交，以目标软件的版本和基线生成预览。"""
+    def preview_release_branch(cls, project, repository, software, user, *, branch, release_type, tag_name=""):
+        """核验分支完整提交，以本次发布范围的版本和基线生成预览。"""
         from apps.release.formal_changes import FormalChanges
-        from apps.release.versions import normalize_software_tag, suggest_software_version
 
-        repository = link.software.repository
-        provider = cls._get_provider(repository, user, project=link.project)
+        provider = cls._get_provider(repository, user, project=project)
         head = cls._resolve_branch_head_hash(repository, branch, provider=provider)
         tags = provider.list_tags(repository.external_identity)
-        tag = tag_name or suggest_software_version(link.software, release_type, tags)["next_tag_name"]
-        version, tag = normalize_software_tag(link.software, release_type, tag)
+        version, tag = cls.resolve_release_tag(repository, software, release_type, tag_name, tags)
         draft = ReleaseRecord(
-            project=link.project, software=link.software, repository=repository, release_type=release_type,
+            project=project, software=software, repository=repository, release_type=release_type,
             branch=branch, git_hash=head, version=version, tag_name=tag, status="draft",
         )
         return FormalChanges.preview(FormalChanges.collect(draft, provider, tags=tags))
@@ -995,18 +992,14 @@ class ReleaseService:
     @staticmethod
     def validate_source_context(project: Project, repository: Repository) -> None:
         """来源读取和草稿重选均遵守启用关联与仓库所有者成员规则。"""
-        from apps.project.models import ProjectComponent, ProjectMember
-        from apps.project.services import repository_owner, repository_owner_association_error
+        from apps.project.services import repository_use_error
 
         ReleaseValidator.validate_project_status(project)
-        if not ProjectComponent.objects.filter(project=project, repository=repository, is_active=True).exists():
-            raise serializers.ValidationError({"repository": "该仓库未在当前项目中启用，请先关联仓库"})
-        owner_error = repository_owner_association_error(repository, project)
-        owner = repository_owner(repository)
-        if owner is not None and not ProjectMember.objects.filter(project=project, user=owner).exists():
-            raise serializers.ValidationError({"repository": "仓库所有者已不在当前项目成员中"})
-        if owner_error:
-            raise serializers.ValidationError({"repository": owner_error})
+        if error := repository_use_error(
+            project, repository, inactive_message="项目已停用，禁止发起发布",
+            unlinked_message="该仓库未在当前项目中启用，请先关联仓库",
+        ):
+            raise serializers.ValidationError({"repository": error})
 
     @classmethod
     def resolve_rc_source(
@@ -1075,11 +1068,39 @@ class ReleaseService:
             raise serializers.ValidationError({"tag_name": "请通过所选软件使用该 Tag 前缀"})
 
     @classmethod
+    def resolve_release_tag(cls, repository, software, release_type, supplied_tag, tags):
+        """按仓库或软件范围生成版本号和完整 Tag。"""
+        from apps.release.versions import (
+            guard_software_tag_identity,
+            normalize_repository_tag,
+            normalize_software_tag,
+            suggest_repository_versions,
+            suggest_software_version,
+        )
+
+        if software:
+            if supplied_tag:
+                version, tag = normalize_software_tag(software, release_type, supplied_tag)
+            else:
+                suggestion = suggest_software_version(software, release_type, tags)
+                version, tag = suggestion["next_version"], suggestion["next_tag_name"]
+            guard_software_tag_identity(software, tag)
+        else:
+            if supplied_tag:
+                cls.validate_legacy_tag_namespace(repository, supplied_tag)
+                version, tag = normalize_repository_tag(repository, release_type, supplied_tag)
+            else:
+                suggestion = suggest_repository_versions(repository, release_type, tags)
+                version, tag = suggestion["next_version"], suggestion["next_tag_name"]
+            cls.validate_legacy_tag_namespace(repository, tag)
+        return version, tag
+
+    @classmethod
     @transaction.atomic
     def create_release(
         cls,
         project: Project,
-        software: Software,
+        software: Software | None,
         release_type: str,
         branch: str,
         publisher,
@@ -1099,13 +1120,15 @@ class ReleaseService:
         review_context: str = "",
         review_context_is_requirement: bool = False,
         review_document_paths: list | None = None,
+        repository: Repository | None = None,
     ) -> ReleaseRecord:
         """
         创建发布申请
 
         Args:
             project: 项目实例
-            software: 项目已选用的目标软件
+            software: 关联仓库中的软件，空值表示按仓库发布
+            repository: 按仓库发布时指定的关联仓库
             release_type: 发布类型
             branch: 发布分支
             publisher: 发布人
@@ -1129,36 +1152,36 @@ class ReleaseService:
         branch = (branch or "").strip()
         if not branch and not (release_type == "formal" and source_rc):
             raise serializers.ValidationError({"branch": "请选择分支"})
-        from apps.release.versions import (
-            guard_software_tag_identity,
-            normalize_software_tag,
-            suggest_software_version,
-        )
         from apps.software.services import require_project_software
         from utils.permissions import IsProjectDeveloper
 
-        repository = Repository.objects.select_for_update(no_key=True).get(pk=software.repository_id)
+        if software and repository and software.repository_id != repository.pk:
+            raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
+        if software is None and repository is None:
+            raise serializers.ValidationError({"repository": "请选择关联仓库"})
+        repository = Repository.objects.select_for_update(no_key=True).get(
+            pk=software.repository_id if software else repository.pk,
+        )
         project = Project.objects.select_for_update(no_key=True).filter(pk=project.pk).first()
         if project is None:
             raise NotFound("发起项目已删除")
-        link = require_project_software(project, software, publisher, IsProjectDeveloper())
-        software, project = link.software, link.project
-        cls.validate_source_context(project, repository)
+        if software:
+            software = require_project_software(project, software, publisher, IsProjectDeveloper()).software
+        else:
+            if not IsProjectDeveloper()._check(project, publisher):
+                raise PermissionDenied("没有在当前项目发布的权限。")
+            cls.validate_source_context(project, repository)
         release_rule = ReleaseValidator.get_release_rule(project)
 
         provider = cls._get_provider(repository, publisher, project=project)
         tags: list[TagInfo] | None = None
-        if not (tag_name or version):
+        supplied_tag = tag_name or version
+        if not supplied_tag:
             try:
                 tags = provider.list_tags(repository.external_identity)
             except ProviderError as exc:
                 raise serializers.ValidationError({"repository": f"获取 tag 列表失败: {exc}"})
-            suggestion = suggest_software_version(software, release_type, tags)
-            version, tag_name = suggestion["next_version"], suggestion["next_tag_name"]
-        else:
-            version, tag_name = normalize_software_tag(software, release_type, tag_name or version)
-
-        guard_software_tag_identity(software, tag_name)
+        version, tag_name = cls.resolve_release_tag(repository, software, release_type, supplied_tag, tags)
         ReleaseValidator.validate_release_cycle(project, release_type, release_rule)
         if tags is None:
             cls._validate_tag_not_exists(provider, repository, tag_name)
@@ -1187,19 +1210,20 @@ class ReleaseService:
         from apps.package.models import PackageConfig
 
         requested = {str(config_id) for config_id in (package_config_ids or [])}
-        valid_package_config_ids = [
-            str(config_id) for config_id in PackageConfig.objects.filter(
-                software=software, auto_package_on_release=True, is_active=True, id__in=requested,
-            ).values_list("id", flat=True)
-        ]
+        configs = PackageConfig.objects.filter(software=software, auto_package_on_release=True, is_active=True)
+        if software is None:
+            configs = configs.filter(
+                project_component__project=project, project_component__repository=repository, project_component__is_active=True,
+            )
+        valid_package_config_ids = list(map(str, configs.filter(pk__in=requested).values_list("id", flat=True)))
         if set(valid_package_config_ids) != requested:
-            raise serializers.ValidationError({"package_config_ids": "请选择当前软件启用的自动打包配置"})
+            raise serializers.ValidationError({"package_config_ids": "请选择本次发布范围内的自动打包配置"})
 
         release = ReleaseRecord.objects.create(
             project=project,
             repository=repository,
             software=software,
-            software_name_snapshot=software.name,
+            software_name_snapshot=software.name if software else "",
             source_repository_name_snapshot=repository.name,
             version=version,
             tag_name=tag_name,
@@ -1224,7 +1248,7 @@ class ReleaseService:
             impact_desc=impact_desc or "",
             self_test_passed=self_test_passed,
             retest_passed=retest_passed,
-            package_config_ids=valid_package_config_ids,
+            package_config_ids=None if software is None and package_config_ids is None else valid_package_config_ids,
             doc_source_fixed=True,
         )
         OperationLogService.log_release(
@@ -1506,7 +1530,11 @@ class ReleaseService:
                 return release
             if release.status != "draft":
                 raise serializers.ValidationError({"status": "只有草稿状态才能提交审批"})
-            ReleaseService.require_software_use(release, user)
+            release.project = Project.objects.select_for_update(no_key=True).get(pk=release.project_id)
+            if release.software_id:
+                ReleaseService.require_software_use(release, user)
+            else:
+                ReleaseService.validate_source_context(release.project, release.repository)
             if release.has_revision_history:
                 raise serializers.ValidationError({"workflow": "原申请的审批已结束，请修改代码后新建发布"})
             if release.doc_needs_regeneration or not release.release_doc:

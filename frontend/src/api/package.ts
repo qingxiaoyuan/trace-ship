@@ -31,6 +31,7 @@ export interface PackageConfigListParams {
   software?: string;
   project?: string;
   repository?: string;
+  unassigned?: boolean;
   /** 项目组件过滤（后端 project_component 参数） */
   project_component?: string;
   is_active?: boolean;

@@ -59,6 +59,7 @@ def test_real_svn_same_project_repush_and_other_project_collision(shared, svn_sa
     first, second = sample.tasks
     client = client_for(sample.admin)
     target = svn_sandbox.url + "/formal/3.0.0"
+    svn_sandbox.svn("mkdir", "--parents", target, "-m", "预建用户目录")
     initial = client.post(task_api(first, "push-svn"))
     assert initial.status_code == 200, initial.data
     conflict = client.post(task_api(second, "push-svn"))

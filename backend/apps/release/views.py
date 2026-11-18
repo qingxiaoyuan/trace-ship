@@ -21,12 +21,12 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters as drf_filters
 from rest_framework import serializers
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.project.models import ProjectComponent
+from apps.project.models import Project, ProjectComponent
 from apps.project.services import has_only_maintainer_projects, visible_project_ids
 from apps.release.dashboard import weekly_release_report
 from apps.release.exporters import ReleaseDocExporter
@@ -375,45 +375,57 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         return ReleaseRecordSerializer(release, context={"request": self.request}).data
 
-    def _software_context(self, request: Request, project_id, software_id):
-        from apps.software.models import ProjectSoftware
+    def _release_target(self, request: Request, project_id, software_id=None, repository_id=None):
+        from apps.software.models import Software
         from apps.software.services import require_project_software
 
-        links = ProjectSoftware.objects.select_related("project", "software")
-        link = get_object_or_404(
-            links, project_id=project_id, software_id=software_id,
-            project_id__in=visible_project_ids(request.user),
-        )
-        return require_project_software(link.project, link.software, request.user, IsProjectDeveloper())
+        project = get_object_or_404(Project, pk=project_id, pk__in=visible_project_ids(request.user))
+        if not IsProjectDeveloper()._check(project, request.user):
+            raise PermissionDenied("没有在当前项目发布的权限。")
+        if software_id:
+            software = get_object_or_404(Software.objects.select_related("repository"), pk=software_id)
+            if repository_id and software.repository_id != repository_id:
+                raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
+            software = require_project_software(project, software, request.user, IsProjectDeveloper()).software
+            return project, software.repository, software
+        repository = get_object_or_404(Repository.objects.filter(project_components__project=project).distinct(), pk=repository_id)
+        ReleaseService.validate_source_context(project, repository)
+        return project, repository, None
 
     @action(detail=False, methods=["get"], url_path="next-version")
     def next_version(self, request: Request) -> Response:
-        """只在有权使用的目标项目中计算软件的建议版本。"""
-        from apps.release.versions import suggest_software_versions
+        """在当前项目上下文中按发布范围计算建议版本。"""
+        from apps.release.versions import suggest_repository_versions, suggest_software_versions
 
         params = SoftwareReleaseQuerySerializer(data=request.query_params)
         params.is_valid(raise_exception=True)
-        values = params.validated_data
-        link = self._software_context(request, values["project"], values["software"])
-        repository = link.software.repository
+        values = dict(params.validated_data)
+        release_type = values.pop("release_type")
+        project, repository, software = self._release_target(
+            request, values["project"], values.get("software"), values.get("repository"),
+        )
         try:
-            provider = ReleaseService._get_provider(repository, request.user, project=link.project)
+            provider = ReleaseService._get_provider(repository, request.user, project=project)
             tags = provider.list_tags(repository.external_identity)
-            return success_response(suggest_software_versions(link.software, values["release_type"], tags))
+            suggestion = (suggest_software_versions(software, release_type, tags) if software else
+                          suggest_repository_versions(repository, release_type, tags))
+            return success_response(suggestion)
         except Exception as exc:
             return _handle_service_error(exc, "获取建议版本")
 
     @action(detail=False, methods=["get"], url_path="software-changes-preview")
     def software_changes_preview(self, request: Request) -> Response:
-        """从分支详情取得完整提交，按目标软件和类型预览。"""
+        """从分支详情取得完整提交，按仓库或软件预览。"""
         params = SoftwareChangesQuerySerializer(data=request.query_params)
         params.is_valid(raise_exception=True)
         values = dict(params.validated_data)
-        link = self._software_context(request, values.pop("project"), values.pop("software"))
+        project, repository, software = self._release_target(
+            request, values.pop("project"), values.pop("software", None), values.pop("repository", None),
+        )
         try:
-            return success_response(ReleaseService.preview_software_branch(link, request.user, **values))
+            return success_response(ReleaseService.preview_release_branch(project, repository, software, request.user, **values))
         except Exception as exc:
-            return _handle_service_error(exc, "预览软件变更")
+            return _handle_service_error(exc, "预览发布变更")
 
     @action(detail=False, methods=["get"], url_path="software-branches")
     def software_branches(self, request: Request) -> Response:
@@ -421,10 +433,12 @@ class ReleaseViewSet(StandardModelViewSet):
 
         params = SoftwareReleaseQuerySerializer(data=request.query_params)
         params.is_valid(raise_exception=True)
-        link = self._software_context(request, params.validated_data["project"], params.validated_data["software"])
-        repository = link.software.repository
+        values = params.validated_data
+        project, repository, _ = self._release_target(
+            request, values["project"], values.get("software"), values.get("repository"),
+        )
         try:
-            provider = ReleaseService._get_provider(repository, request.user, project=link.project)
+            provider = ReleaseService._get_provider(repository, request.user, project=project)
             branches = provider.list_branches(repository.external_identity)
             return success_response([asdict(branch) for branch in branches])
         except Exception as exc:
@@ -449,11 +463,10 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             queryset = ReleaseRecord.objects.filter(release_type="rc", status="released")
             if software_id:
-                link = self._software_context(request, project.pk, software_id)
-                repository = link.software.repository
-                if params.validated_data.get("repository", repository.pk) != repository.pk:
-                    raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
-                queryset = queryset.filter(software=link.software)
+                _, repository, software = self._release_target(
+                    request, project.pk, software_id, params.validated_data.get("repository"),
+                )
+                queryset = queryset.filter(software=software)
             else:
                 repository = Repository.objects.filter(
                     id=params.validated_data.get("repository"),
@@ -503,7 +516,8 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             release = ReleaseService.create_release(
                 project=data["project"],
-                software=data["software"],
+                software=data.get("software"),
+                repository=data.get("repository"),
                 release_type=data["release_type"],
                 branch=data.get("branch", ""),
                 source_rc=data.get("source_rc"),

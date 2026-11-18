@@ -241,7 +241,7 @@ export default function ReleaseDetail() {
                   <span>{release.project_name || '-'}</span>
                 )}
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
-                <span className="break-all font-medium text-slate-800">{release.software_name || '软件归属未知'}</span>
+                <span className="break-all font-medium text-slate-800">{release.software_name || '未分组'}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 {release.repository ? (
                   <Link
@@ -265,7 +265,7 @@ export default function ReleaseDetail() {
           {status === 'pending' ? <WorkflowTerminateButton instance={workflowInstance} /> : null}
           {status === 'released' && <div aria-label="发布版本操作" className="flex flex-wrap items-center gap-2">
             <span ref={setArchiveActionTarget} />
-            {canManage && !release.shared_readonly && !release.software ? (
+            {canManage && !release.shared_readonly ? (
               <Button
                 danger
                 icon={<Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />}

@@ -15,8 +15,8 @@ from apps.account.models import User
 from apps.package.models import PackageConfig, PackageConfigAssignment, PackageTask
 from apps.package.services.configurations import CONFIG_RELATIONS, can_maintain_config, lock_package_config
 from apps.release.models import ReleaseRecord
-from apps.software.models import ProjectSoftware, Software
-from apps.software.services import usable_project_repositories
+from apps.software.models import Software
+from apps.software.services import usable_software_components
 
 
 class Command(BaseCommand):
@@ -118,11 +118,10 @@ class Command(BaseCommand):
         if not (can_maintain_config(actor, component=component) and can_maintain_config(actor, software=software)):
             return "blocked", "操作者须同时有权维护原项目配置和目标软件配置"
 
-        active_projects = sorted(
-            str(link.project_id)
-            for link in ProjectSoftware.objects.filter(software=software, is_active=True).select_related("project")
-            if usable_project_repositories(link.project).filter(pk=software.repository_id).exists()
-        )
+        active_projects = sorted({
+            str(pk) for pk in usable_software_components().filter(repository_id=software.repository_id)
+            .values_list("project_id", flat=True)
+        })
         if str(component.project_id) not in active_projects or projects != active_projects:
             return "blocked", "确认范围须包括原项目并与当前可使用该软件的项目一致"
 

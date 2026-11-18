@@ -40,6 +40,7 @@ test('同仓库软件分别选择自动打包配置，按选用项目复用固�
   await page.goto('/releases/create?project_id=' + sample.project_id);
   await expect(page.getByTitle(sample.project_name, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /^RC / }).click();
+  await choose(page, '关联仓库', sample.repository_name);
   await choose(page, '目标软件', server.name);
   await choose(page, '分支', /^main$/);
   const tag = page.getByLabel('Tag 名', { exact: true });
@@ -196,4 +197,31 @@ test('同仓库软件分别选择自动打包配置，按选用项目复用固�
   } finally {
     await sharedContext.close();
   }
+
+  const historyPath = `/projects/${sample.project_id}/releases`;
+  const stopped = await page.evaluate(async ({ project, repositoryName }) => {
+    const headers = { Authorization: 'Bearer ' + localStorage.getItem('accessToken'), 'Content-Type': 'application/json' };
+    const url = `/api/projects/${project}/components/`;
+    const response = await fetch(url, { headers });
+    const links = (await response.json()).data as { id: string; repository_detail: { name: string } }[];
+    const component = links.find(link => link.repository_detail.name === repositoryName);
+    if (!component) throw new Error('缺少待停用的关联仓库');
+    return (await fetch(url + component.id + '/', { method: 'PATCH', headers, body: JSON.stringify({ is_active: false }) })).status;
+  }, { project: sample.project_id, repositoryName: sample.repository_name });
+  expect(stopped).toBe(200);
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(historyPath);
+    const group = page.getByRole('button', { name: new RegExp(client.name) });
+    await expect(group).toBeVisible();
+    if (await group.getAttribute('aria-expanded') === 'false') await group.click();
+    await expect(group).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByText(draft.tag_name, { exact: true }).filter({ visible: true })).toBeVisible();
+    const observed = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
+    expect(observed).toMatchObject(viewport);
+    expect(observed.documentWidth).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: path.join(reportDir, `software-release-history-${viewport.width}.png`), fullPage: true });
+  }
+  await page.goto(draftPath);
+  await expect(page.getByRole('button', { name: '删除版本', exact: true })).toBeVisible();
 });

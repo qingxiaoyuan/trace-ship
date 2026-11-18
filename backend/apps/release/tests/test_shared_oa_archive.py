@@ -94,7 +94,7 @@ def test_共享归档按任务项目办理并保留已删除任务的申请副�
     assert result.status_code == 200
     grant_delete_task_permission(task.triggered_by)
     assert client.delete(f"/api/packages/tasks/{task.pk}/").status_code == 200
-    ProjectSoftware.objects.filter(project=consumer, software=release.software).update(is_active=False)
+    consumer.project_components.filter(repository=release.repository).update(is_active=False)
     assert client.get(archive_url(release, "records", consumer)).data["data"] == [result.data["data"]]
     detail = client.get(f"/api/releases/{release.pk}/", {"project": str(consumer.pk)})
     assert detail.status_code == 200 and detail.data["data"]["project"] == str(consumer.pk)
@@ -138,7 +138,7 @@ def test_工作台和搜索共享版本且不泄漏原项目任务(shared_archiv
     summary = client.get("/api/releases/dashboard/maintainer-summary/").data["data"]
     assert summary["software_count"] == summary["stats"]["released_count"] == 1
     assert all(row["release_count"] == 1 for row in summary["projects"])
-    ProjectSoftware.objects.filter(project=consumer, software=release.software).update(is_active=False)
+    consumer.project_components.filter(repository=release.repository).update(is_active=False)
     summary = client.get("/api/releases/dashboard/maintainer-summary/").data["data"]
     assert next(row for row in summary["projects"] if row["id"] == str(consumer.pk))["release_count"] == 0
     assert summary["stats"]["package_total"] == 2
@@ -182,4 +182,4 @@ def test_维保待归属范围与旧仓库书签各自匹配列表和摘要(shar
     summary = origin_client.get("/api/releases/dashboard/maintainer-summary/").data["data"]
     [project] = [item for item in summary["projects"] if item["id"] == str(release.project_id)]
     legacy = next(item for item in project["software"] if item["software_id"] is None)
-    assert "软件归属未知" in legacy["name"] and legacy["release_count"] == old_scope["total"]
+    assert "未分组" in legacy["name"] and legacy["release_count"] == old_scope["total"]

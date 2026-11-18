@@ -8,7 +8,7 @@ from apps.package.models import PackageConfig, PackageImage
 from apps.project.models import Project, ProjectMember
 from apps.project.services import ensure_repository_component
 from apps.repository.models import Repository
-from apps.software.models import ProjectSoftware, Software, SoftwareMaintainer
+from apps.software.models import Software, SoftwareMaintainer
 
 
 def client_for(user):
@@ -38,8 +38,6 @@ def shared():
         ProjectMember.objects.create(project=project, user=admin, role="software_admin")
         ensure_repository_component(repository, project)
     ProjectMember.objects.create(project=projects[1], user=reader, role="maintainer")
-    for project in projects[:2]:
-        ProjectSoftware.objects.create(project=project, software=software)
     image = PackageImage.objects.create(name="共享镜像", image="trace-ship/shared:latest")
     return owner, admin, collaborator, reader, software, projects, image
 
@@ -56,7 +54,7 @@ def create_shared_config(user, software, image, **extra):
 
 
 @pytest.mark.django_db
-def test_explicit_software_maintenance_and_project_config_use(shared):
+def test_repository_owner_maintains_configs_available_through_repository(shared):
     owner, admin, collaborator, reader, software, (a, b, c), image = shared
     denied = create_shared_config(admin, software, image)
     assert denied.status_code == 403
@@ -67,7 +65,8 @@ def test_explicit_software_maintenance_and_project_config_use(shared):
         }, format="json")
         assert legacy.status_code == 400, legacy.data
 
-    created = create_shared_config(collaborator, software, image)
+    assert create_shared_config(collaborator, software, image).status_code in (403, 404)
+    created = create_shared_config(owner, software, image)
     assert created.status_code == 200, created.data
     data = created.data["data"]
     assert str(data["software"]) == str(software.pk)
@@ -81,7 +80,7 @@ def test_explicit_software_maintenance_and_project_config_use(shared):
         })
         assert listed.status_code == 200
         results = listed.data["data"]["results"]
-        assert [str(item["id"]) for item in results] == ([str(data["id"])] if project != c else [])
+        assert [str(item["id"]) for item in results] == [str(data["id"])]
         if results:
             assert results[0]["can_maintain"] is False
             assert "env_vars" not in results[0]
@@ -94,8 +93,7 @@ def test_explicit_software_maintenance_and_project_config_use(shared):
     ).data["data"]["is_favorite"]
     assert client_for(admin).get(f"{config_url}svn-entries/").status_code == 403
 
-    software.maintainer_grants.filter(user=collaborator).delete()
-    assert client_for(collaborator).patch(config_url, {"name": "已撤销"}, format="json").status_code in (403, 404)
+    assert client_for(collaborator).patch(config_url, {"name": "旧授权"}, format="json").status_code in (403, 404)
     assert client_for(owner).patch(config_url, {"name": "负责人修改"}, format="json").status_code == 200
 
 
@@ -136,9 +134,10 @@ def test_shared_branch_task_keeps_its_project_and_software_snapshot(shared, monk
     dispatched = []
     monkeypatch.setattr(PackageService, "dispatch_task", classmethod(lambda cls, task: dispatched.append(task.pk)))
 
-    config = create_shared_config(collaborator, software, image).data["data"]
+    config = create_shared_config(owner, software, image).data["data"]
     base = f"/api/packages/configs/{config['id']}/"
     payload = {"project": str(b.pk), "software": str(software.pk), "branch": "feature/demo"}
+    c.project_components.filter(repository=software.repository).update(is_active=False)
     for invalid in ({**payload, "project": str(c.pk)}, {**payload, "software": None}, {"branch": "main"}):
         assert client_for(admin).post(f"{base}trigger-branch/", invalid, format="json").status_code == 400
     assert client_for(reader).post(f"{base}trigger-branch/", payload, format="json").status_code == 403
@@ -155,7 +154,7 @@ def test_shared_branch_task_keeps_its_project_and_software_snapshot(shared, monk
     assert task["source_ref"] == "feature/demo"
     assert task["commit_hash"] == "a" * 40
 
-    assert client_for(collaborator).patch(base, {"name": "新配置名称"}, format="json").status_code == 200
+    assert client_for(owner).patch(base, {"name": "新配置名称"}, format="json").status_code == 200
     software.name = "新软件名称"
     software.save(update_fields=["name"])
     task_url = f"/api/packages/tasks/{task['id']}/"
@@ -198,7 +197,7 @@ def test_config_confirmation_is_explicit_idempotent_and_preserves_history(shared
     from apps.package.models import PackageConfig, PackageTask
     from apps.release.models import ReleaseRecord
 
-    owner, admin, _, _, software, (a, b, _), image = shared
+    owner, admin, _, _, software, (a, b, c), image = shared
     root = User.objects.create_superuser(username="config-auditor")
     component = a.project_components.get(repository=software.repository)
     first = PackageConfig.objects.create(
@@ -217,7 +216,7 @@ def test_config_confirmation_is_explicit_idempotent_and_preserves_history(shared
     mapping = tmp_path / "mapping.json"
     valid = {
         "config": str(first.pk), "software": str(software.pk),
-        "projects": [str(a.pk), str(b.pk)], "basis": "已核对两项目共享范围及脚本用途",
+        "projects": [str(a.pk), str(b.pk), str(c.pk)], "basis": "已核对共享项目范围及脚本用途",
     }
     mapping.write_text(json.dumps([valid]), encoding="utf-8")
 
@@ -294,7 +293,7 @@ def test_shared_svn_test_needs_software_maintenance_and_usable_project(shared, m
     }
     assert client_for(admin).post(url, inputs, format="json").status_code == 403
     assert client_for(reader).post(url, inputs, format="json").status_code == 403
-    assert client_for(collaborator).post(url, inputs, format="json").status_code == 404
+    assert client_for(collaborator).post(url, inputs, format="json").status_code == 403
     assert client_for(owner).post(url, {**inputs, "project_id": None}, format="json").status_code == 400
     assert paths == []
     result = client_for(owner).post(url, inputs, format="json")

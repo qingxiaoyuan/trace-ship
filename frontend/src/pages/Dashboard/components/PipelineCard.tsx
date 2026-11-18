@@ -33,7 +33,7 @@ export function PipelineCard({
         <SmallTag className={releaseTypeClass[release.release_type]}>{releaseTypeText[release.release_type]}</SmallTag>
       </div>
       <div className="mt-1.5 truncate text-[11px] text-slate-500">
-        {[release.project_name, release.software_name || '软件归属未知', release.repository_name].filter(Boolean).join(' / ')}
+        {[release.project_name, release.software_name || '未分组', release.repository_name].filter(Boolean).join(' / ')}
       </div>
       <div className="mt-2 flex items-center gap-1.5">
         {status === 'released' ? (

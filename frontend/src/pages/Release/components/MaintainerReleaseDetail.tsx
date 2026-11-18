@@ -109,7 +109,7 @@ function VersionInformation({ release, open, onClose }: { release: Release; open
         <X className="h-[18px] w-[18px]" strokeWidth={1.65} />
       </button>
     </div>
-    <p className="mb-[18px] mt-2 break-words text-[12px] leading-[26px] text-[#76869f]">{release.project_name} / {release.software_name || '软件归属未知'} · {release.version}</p>
+    <p className="mb-[18px] mt-2 break-words text-[12px] leading-[26px] text-[#76869f]">{release.project_name} / {release.software_name || '未分组'} · {release.version}</p>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-[max(32px,env(safe-area-inset-bottom))] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <dl className="rounded-xl bg-[#f7f8fc] px-[14px] py-[6px] text-[12px] text-[#24324b]">
@@ -157,7 +157,7 @@ export function MaintainerReleaseDetail({ release }: { release: Release }) {
       <div className="flex min-h-[22px] items-center gap-3 text-[12px]">
         <Link to={`/projects/${release.project}`} className="min-w-0 truncate text-[#76869f]">{release.project_name || '-'}</Link>
         <ChevronRight className="h-[9px] w-[9px] shrink-0 text-[#afb9cc]" strokeWidth={1.65} />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#24324b]">{release.software_name || '软件归属未知'}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#24324b]">{release.software_name || '未分组'}</span>
         <Link to={`/repositories/${release.repository}`} className="min-w-0 truncate text-[#76869f]">{release.repository_name}</Link>
         <span className="flex shrink-0 items-center gap-[7px] text-[11px] text-[#238264]">
           <span className="h-[5px] w-[5px] rounded-full bg-[#29a67c]" />{releaseStatusText[release.status]}
@@ -179,7 +179,7 @@ export function MaintainerReleaseDetail({ release }: { release: Release }) {
     </section>
     <div className="sticky top-0 z-20 -mt-10">
       <div data-release-compact-summary aria-hidden={!compact} className={`flex h-10 items-start justify-between gap-3 bg-white px-6 pt-[5px] leading-[25px] ${compact ? '' : 'invisible pointer-events-none'}`}>
-        <span className="min-w-0 truncate text-[12px] text-[#76869f]">{release.project_name} / {release.software_name || '软件归属未知'}</span>
+        <span className="min-w-0 truncate text-[12px] text-[#76869f]">{release.project_name} / {release.software_name || '未分组'}</span>
         <span className="shrink-0 text-[11px] text-[#238264]">{releaseStatusText[release.status]}</span>
       </div>
       <div role="tablist" aria-label="发布详情内容" className="flex border-b border-[#e9edf5] bg-white px-4">

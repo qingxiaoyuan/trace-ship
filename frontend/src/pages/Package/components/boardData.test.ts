@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PackageConfig, PackageTask } from '@/types';
 import {
   fetchAllPages,
-  groupConfigsByRepository,
+  groupConfigsBySoftware,
   groupTasksByRepository,
   mergePackageTasks,
 } from './boardData';
@@ -70,24 +70,24 @@ describe('仓库分组', () => {
     expect(groups.map((group) => group.repositoryId)).toEqual(['repo-a', 'repo-b']);
   });
 
-  it('含收藏的仓库优先，且收藏配置在组内优先', () => {
-    const groups = groupConfigsByRepository([
-      config({ id: 'plain-a', repository_id: 'repo-a', repository_name: 'A' }),
-      config({ id: 'plain-b', repository_id: 'repo-b', repository_name: 'B' }),
-      config({ id: 'favorite-b', repository_id: 'repo-b', repository_name: 'B', is_favorite: true }),
+  it('同一仓库的两个软件分别展示，且收藏优先', () => {
+    const groups = groupConfigsBySoftware([
+      config({ id: 'plain-a', software: 'software-a', software_name: 'A' }),
+      config({ id: 'plain-b', software: 'software-b', software_name: 'B' }),
+      config({ id: 'favorite-b', software: 'software-b', software_name: 'B', is_favorite: true }),
     ]);
 
-    expect(groups.map((group) => group.repositoryId)).toEqual(['repo-b', 'repo-a']);
+    expect(groups.map((group) => group.id)).toEqual(['software-b', 'software-a']);
     expect(groups[0].configs.map((item) => item.id)).toEqual(['favorite-b', 'plain-b']);
   });
 
-  it('缺少 repository_id 的配置被静默丢弃，不参与分组', () => {
-    const groups = groupConfigsByRepository([
-      config({ id: 'normal', repository_id: 'repo-a', repository_name: 'A' }),
-      config({ id: 'orphan', repository_id: undefined }),
+  it('不同仓库的旧组件配置统一归到未分组', () => {
+    const groups = groupConfigsBySoftware([
+      config({ id: 'legacy-a', repository_id: 'repo-a' }),
+      config({ id: 'legacy-b', repository_id: 'repo-b' }),
     ]);
 
-    expect(groups.map((group) => group.repositoryId)).toEqual(['repo-a']);
-    expect(groups[0].configs.map((item) => item.id)).toEqual(['normal']);
+    expect(groups.map((group) => group.name)).toEqual(['未分组']);
+    expect(groups[0].configs.map((item) => item.id)).toEqual(['legacy-a', 'legacy-b']);
   });
 });

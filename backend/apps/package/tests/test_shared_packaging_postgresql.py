@@ -21,13 +21,13 @@ def test_shared_branch_snapshot_and_edit_serialize(shared, monkeypatch):
     if connection.vendor != "postgresql":
         pytest.skip("共享配置修改与快照竞争需要 PostgreSQL 行锁")
 
-    owner, admin, collaborator, _, software, (_, project, _), image = shared
+    owner, admin, _, _, software, (_, project, _), image = shared
     credential = Credential.objects.create(name="并发分支凭证", cred_type="gitlab_token", owner=owner)
     credential.set_data({"token": "isolated-token"})
     credential.save()
     software.repository.credential = credential
     software.repository.save(update_fields=["credential"])
-    response = create_shared_config(collaborator, software, image, custom_script="echo before")
+    response = create_shared_config(owner, software, image, custom_script="echo before")
     assert response.status_code == 200, response.data
     url = f"/api/packages/configs/{response.data['data']['id']}/"
     locked, resume = Event(), Event()
@@ -58,7 +58,7 @@ def test_shared_branch_snapshot_and_edit_serialize(shared, monkeypatch):
         close_old_connections()
         try:
             writer_started.set()
-            return client_for(collaborator).patch(url, {
+            return client_for(owner).patch(url, {
                 "custom_script": "echo after", "env_vars": {"BUILD_OPTION": "updated"},
             }, format="json")
         finally:

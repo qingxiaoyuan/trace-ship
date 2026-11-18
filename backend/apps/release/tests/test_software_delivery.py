@@ -1,5 +1,7 @@
 """软件身份和真实发起项目在对外交付中的公开行为。"""
 import io
+import shutil
+import subprocess
 from zipfile import ZipFile
 
 import pytest
@@ -25,7 +27,9 @@ def software_version(user, project, repository):
         git_hash="7" * 40, branch="main", status="released",
         release_doc=("保存正文开头\n\n表外甲<br>表外乙与 `表示<br>原文`\n\n"
                      "```html\n  code<br>line\n\n| code starts a table-like line\n  code ends |\n```\n\n| 项目 | 内容 |\n| --- | --- |\n"
-                     "| 变更内容 | 原来保存的说明\n内含 A\\|B 分隔符<br />末行与 `单元格<br>原文` |\n\n保存正文末尾"),
+                     "| 变更内容 | 原来保存的说明\n内含 A\\|B 分隔符<br />末行与 `单元格<br>原文` |\n\n"
+                     "| 旧字段 | 原值 |\n| --- | --- |\n| 附件 | 原文 | Extra-attachment |\n"
+                     "| 未闭合 | 保留原样  \n\n  保存正文末尾"),
     )
 
 
@@ -56,12 +60,18 @@ def test_release_download_files_keep_the_published_software_identity(software_ve
     body = next(paragraph for paragraph in paragraphs if paragraph.startswith("保存正文开头"))
     assert "表外甲\n表外乙与 `表示<br>原文`" in body
     assert "  code<br>line\n\n| code starts a table-like line\n  code ends |" in body
-    assert paragraphs.index(body) < paragraphs.index("保存正文末尾")
+    historical = [[cell.text for cell in row.cells] for row in document.tables[2].rows]
+    assert historical == [["旧字段", "原值", ""], ["附件", "原文", "Extra-attachment"]]
+    assert paragraphs.index(body) < paragraphs.index("| 未闭合 | 保留原样  \n\n  保存正文末尾")
 
     pdf = client.get(prefix + "export-pdf/", REMOTE_ADDR="127.0.0.1")
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF-") and pdf.content.rstrip().endswith(b"%%EOF")
     assert "client-a" in pdf["Content-Disposition"]
+    if converter := shutil.which("pdftotext"):
+        rendered = subprocess.run([converter, "-layout", "-", "-"], input=pdf.content, capture_output=True, check=True)
+        content = rendered.stdout.decode()
+        assert "Extra-attachment" in content and "code<br>line" in content
     assert client.get(prefix).data["data"]["release_doc"].endswith("保存正文末尾")
 
 

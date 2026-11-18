@@ -24,7 +24,13 @@ const selectedSoftware = {
   id: 'selection', is_usable: true,
   software: { id: 's1', name: '软件一', slug: 'release-app', repository: 'r1', repository_name: '主仓库' },
 };
-const softwareLabel = '软件一 · release-app · 主仓库';
+const softwareLabel = '软件一 · release-app';
+const component = { is_active: true, owner_in_project: true, repository: 'r1', repository_detail: { name: '主仓库' } };
+
+async function chooseRepository() {
+  fireEvent.keyDown(screen.getByLabelText('关联仓库'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
+  fireEvent.click(await screen.findByText('主仓库', { selector: '.ant-select-item-option-content' }));
+}
 
 it('正式版、RC 和测试版均按分支创建，不显示来源 RC 选择', async () => {
   render(<App><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -42,6 +48,8 @@ it('选择分支后切换项目清空分支和版本，不能提交旧来源', a
     let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p1', name: '项目一' }, { id: 'p2', name: '项目二' }] };
     if (config.url === '/projects/p1/software/') data = [selectedSoftware];
+    if (config.url === '/projects/p1/components/') data = [component];
+    if (config.url === '/projects/p2/components/') data = [];
     if (config.url === '/releases/software-branches/') data = [{ name: 'develop' }];
     if (config.url?.endsWith('changes-preview/')) data = { commits: [], merge_requests: [], parsed_updates: [] };
     if (config.url?.includes('next-version')) data = { next_tag_name: 'release-app/VA.1.0.0' };
@@ -52,6 +60,7 @@ it('选择分支后切换项目清空分支和版本，不能提交旧来源', a
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目一'));
+  await chooseRepository();
   await waitFor(() => expect((screen.getByLabelText('目标软件') as HTMLInputElement).disabled).toBe(false));
   fireEvent.keyDown(screen.getByLabelText('目标软件'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText(softwareLabel, { selector: '.ant-select-item-option-content' }));
@@ -62,7 +71,7 @@ it('选择分支后切换项目清空分支和版本，不能提交旧来源', a
   fireEvent.click(await screen.findByText('项目二'));
   await waitFor(() => expect(screen.queryByText('develop', { selector: '.ant-select-selection-item' })).toBeNull());
   expect(screen.queryByDisplayValue('release-app/VA.1.0.0')).toBeNull();
-  expect(await screen.findByText('当前项目没有可发布的软件')).toBeTruthy();
+  expect(await screen.findByText('当前项目没有可发布的关联仓库')).toBeTruthy();
   expect((screen.getByRole('button', { name: '创建发布' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
@@ -72,13 +81,14 @@ it('正式版提交所选分支，创建期间锁定来源，避免旧响应覆�
     let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
     if (config.url === '/projects/p/software/') data = [selectedSoftware];
+    if (config.url === '/projects/p/components/') data = [component];
     if (config.url === '/releases/software-branches/') data = [{ name: 'develop' }];
     if (config.url?.endsWith('changes-preview/')) data = { commits: [], merge_requests: [], parsed_updates: [] };
     if (config.url?.includes('next-version')) data = { next_tag_name: 'release-app/VA.1.0.0' };
     if (config.url === '/releases/' && config.method === 'post') {
       const payload = JSON.parse(config.data);
       expect(payload.software).toBe(selectedSoftware.software.id);
-      expect(payload.repository).toBeUndefined();
+      expect(payload.repository).toBe('r1');
       expect(payload.branch).toBe('develop');
       expect(payload.release_type).toBe('formal');
       expect(payload.source_rc).toBeUndefined();
@@ -94,6 +104,7 @@ it('正式版提交所选分支，创建期间锁定来源，避免旧响应覆�
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目', { selector: '.ant-select-item-option-content' }));
+  await chooseRepository();
   await waitFor(() => expect((screen.getByLabelText('目标软件') as HTMLInputElement).disabled).toBe(false));
   fireEvent.keyDown(screen.getByLabelText('目标软件'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText(softwareLabel, { selector: '.ant-select-item-option-content' }));
@@ -121,6 +132,7 @@ it('正式分支发布说明保留第十二条更新，允许补充说明并反�
     let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
     if (config.url === '/projects/p/software/') data = [selectedSoftware];
+    if (config.url === '/projects/p/components/') data = [component];
     if (config.url === '/releases/software-branches/') data = [{ name: 'develop' }];
     if (config.url?.includes('next-version')) data = { next_tag_name: 'release-app/VA.1.0.0' };
     if (config.url === '/releases/' || config.url === '/releases/formal/') data = release;
@@ -138,6 +150,7 @@ it('正式分支发布说明保留第十二条更新，允许补充说明并反�
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目', { selector: '.ant-select-item-option-content' }));
+  await chooseRepository();
   await waitFor(() => expect((screen.getByLabelText('目标软件') as HTMLInputElement).disabled).toBe(false));
   fireEvent.keyDown(screen.getByLabelText('目标软件'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText(softwareLabel, { selector: '.ant-select-item-option-content' }));

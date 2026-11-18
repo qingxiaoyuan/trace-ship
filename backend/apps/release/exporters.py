@@ -11,45 +11,60 @@ from typing import Any
 from xml.sax.saxutils import escape
 
 from markdown_it import MarkdownIt
+from markdown_it.rules_block.table import escapedSplit
 from markdown_it.rules_inline import html_inline
 
 from apps.release.delivery_identity import release_repository_name, release_software_name
 from apps.release.models import ReleaseRecord
-from utils.markdown_table import markdown_code_lines, table_newlines_to_br
+from utils.markdown_table import has_closing_pipe, markdown_code_lines, table_newlines_to_br
 
 
 def _release_body(md: str) -> list[str | list[list[str]]]:
     """按原顺序保留普通正文和表格；多行表格沿用发布说明的存储规则。"""
     source = table_newlines_to_br(md)
-    lines = source.splitlines()
-    tokens = iter(MarkdownIt().enable("table").parse(source))
+    lines = source.split("\n")
     blocks: list[str | list[list[str]]] = []
     cursor = 0
-    for token in tokens:
-        if token.type != "table_open" or token.map is None:
+    for token in MarkdownIt().enable("table").parse(source):
+        if token.type != "table_open" or token.map is None or token.level != 0:
             continue
         start, end = token.map
         # 先保留表格之前的正文；不把用户正文当成可执行的 HTML。
         surrounding = "\n".join(lines[cursor:start]).strip("\n")
         if surrounding:
             blocks.append(surrounding)
-        rows: list[list[str]] = []
-        for item in tokens:
-            if item.type == "table_close":
+        header = lines[start].strip()
+        outer_pipes = header.startswith("|") and has_closing_pipe(header)
+        rows = [_table_cells(header)]
+        cursor = start + 2
+        for line in lines[cursor:end]:
+            row = line.strip()
+            cells = _table_cells(row)
+            # 解析器会把紧跟表格的普通文字补成单列。保留这类原文以及未闭合的续行。
+            if (outer_pipes and row.startswith("|") and not has_closing_pipe(row)) or (
+                len(cells) == 1 and not row.startswith("|") and not has_closing_pipe(row)
+            ):
                 break
-            if item.type == "tr_open":
-                rows.append([])
-            elif item.type == "inline":
-                rows[-1].append(item.content)
-        if rows:
-            if rows[0] == ["项目", "内容"] and len(rows) > 1:
-                rows.pop(0)
-            blocks.append(rows)
-        cursor = end
+            rows.append(cells)
+            cursor += 1
+        # 使用原文的实际列宽，避免按表头列数截断历史字段。
+        width = max(map(len, rows))
+        if width == 2 and rows[0] == ["项目", "内容"] and len(rows) > 1:
+            rows.pop(0)
+        blocks.append([row + [""] * (width - len(row)) for row in rows])
     tail = "\n".join(lines[cursor:]).strip("\n")
     if tail:
         blocks.append(tail)
     return blocks
+
+
+def _table_cells(line: str) -> list[str]:
+    cells = escapedSplit(line)
+    if line.startswith("|"):
+        cells = cells[1:]
+    if has_closing_pipe(line):
+        cells = cells[:-1]
+    return [cell.strip() for cell in cells]
 
 
 _BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)

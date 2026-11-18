@@ -40,25 +40,61 @@ def software_tag(software, part: str, *, release_type: str) -> str:
     return full_tag
 
 
-def normalize_software_tag(software, release_type: str, tag: str) -> tuple[str, str]:
-    """保留仓库已有的后缀、日期和保存往返规则。"""
+def normalize_repository_tag(repository, release_type: str, tag: str) -> tuple[str, str]:
+    """规范仓库版本格式的后缀和日期。"""
     from apps.release.services import ReleaseValidator
 
-    part = software_tag_part(software, tag) or tag
-    rule = software.repository.get_version_rule()
+    part = tag
+    rule = repository.get_version_rule()
     suffixes = rule.get("suffixes") or ReleaseValidator.get_default_suffixes()
     suffix = (suffixes.get(release_type, "") or "").strip("-") if release_type in ("rc", "beta") else ""
     if suffix and not re.search(rf"-{re.escape(suffix)}(?:_\d{{8}})?$", part):
         offset = -9 if re.search(r"_\d{8}$", part) else len(part)
         part = f"{part[:offset]}-{suffix}{part[offset:]}"
     part = ReleaseValidator.ensure_tag_date(part, rule)
+    version_key(repository, release_type, part)
+    return ReleaseValidator.strip_suffix(part, rule), part
+
+
+def normalize_software_tag(software, release_type: str, tag: str) -> tuple[str, str]:
+    """保留仓库版本格式，并为 Tag 加软件标识。"""
     try:
+        version, part = normalize_repository_tag(software.repository, release_type, software_tag_part(software, tag) or tag)
         full_tag = software_tag(software, part, release_type=release_type)
     except serializers.ValidationError:
         if "/" in tag and software_tag_part(software, tag) is None:
             raise serializers.ValidationError({"tag_name": "Tag 前缀必须对应所选软件"})
         raise
-    return ReleaseValidator.strip_suffix(part, rule), full_tag
+    return version, full_tag
+
+
+def suggest_repository_versions(repository, release_type: str, tags: list[TagInfo]) -> dict:
+    """仓库发布使用原 Tag 和仓库占用，软件版本不参与建议。"""
+    from apps.release.services import VersionCalculator
+
+    calculator = VersionCalculator(repository.get_version_rule())
+    candidates = version_tags(repository, tags)
+    claims = ReleaseVersionClaim.objects.filter(
+        repository=repository, software__isnull=True, release__isnull=False,
+    ).filter(Q(consumed=True) | Q(release__status__in=("pending", "rejected")))
+    occupied = {}
+    for kind, key in claims.values_list("release_type", "base_version"):
+        occupied[kind] = max(occupied.get(kind, (0, 0, 0)), tuple(map(int, key.split("."))))
+    all_types = {}
+    for kind in ("formal", "rc", "beta"):
+        version, tag = calculator.calculate(candidates, kind, previous_version=occupied.get(kind))
+        try:
+            version_key(repository, kind, tag)
+        except serializers.ValidationError:
+            if kind == release_type:
+                raise
+            continue
+        all_types[kind] = {
+            "latest_tag": calculator.find_latest_tag_by_type(candidates, kind),
+            "next_version": version,
+            "next_tag_name": tag,
+        }
+    return {**all_types[release_type], "all_types": all_types, "has_existing_tags": bool(candidates)}
 
 
 def version_key(repository, release_type: str, tag: str) -> str:

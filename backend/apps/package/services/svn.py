@@ -201,7 +201,7 @@ class SvnPushMixin:
         message = f"Release {task.version} artifacts ({task.tag_name})"
         if release_doc:
             message += f"\n\n{release_doc}"
-        reserve_svn_target(task, remote_url, existing=remote_exists)
+        reserve_svn_target(task, remote_url)
         if not remote_exists:
             # svn import 不会自动创建多级版本目录的父目录。
             cls._ensure_svn_parent_dirs(provider, svn_url, remote_url.removeprefix(svn_url + "/"))

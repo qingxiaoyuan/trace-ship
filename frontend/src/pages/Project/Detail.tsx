@@ -14,7 +14,6 @@ import dayjs from 'dayjs';
 import { TsCard } from '@/components/TsCard';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { OverviewTab } from './tabs/OverviewTab';
-import { ProjectSoftwareTab } from './tabs/ProjectSoftwareTab';
 import { ProjectComponentTab } from './tabs/ProjectComponentTab';
 import { MemberTab } from './tabs/MemberTab';
 import { ReleaseTab } from './tabs/ReleaseTab';
@@ -31,8 +30,7 @@ import { isMaintainerRestrictedPath } from '@/layouts/components/navMenu';
 /** 项目详情页标签 */
 const tabItems = [
   { key: 'overview', label: '基本信息' },
-  { key: 'repos', label: '软件仓库' },
-  { key: 'software', label: '选用软件' },
+  { key: 'repos', label: '关联仓库' },
   { key: 'members', label: '成员' },
   { key: 'packages', label: '打包配置' },
   { key: 'svn', label: 'SVN 制品' },
@@ -41,7 +39,7 @@ const tabItems = [
 
 /** 详情头统计项 */
 const headerStats = [
-  { key: 'software_count', label: '选用软件', icon: GitFork, color: 'text-indigo-400' },
+  { key: 'software_count', label: '可用软件', icon: GitFork, color: 'text-indigo-400' },
   { key: 'package_count', label: '打包配置', icon: Hammer, color: 'text-cyan-500' },
   { key: 'member_count', label: '成员', icon: Users, color: 'text-violet-500' },
   { key: 'published_version_count', label: '已发布版本', icon: Rocket, color: 'text-emerald-500' },
@@ -220,7 +218,6 @@ export default function ProjectDetail() {
         <div className="p-5">
           {activeTab === 'overview' && <OverviewTab project={project} />}
           {mountedTabs.has('repos') && <div hidden={activeTab !== 'repos'}><ProjectComponentTab projectId={id || ''} active={activeTab === 'repos'} /></div>}
-          {activeTab === 'software' && <ProjectSoftwareTab key={project.id} project={project} />}
           {mountedTabs.has('members') && <div hidden={activeTab !== 'members'}><MemberTab projectId={id || ''} active={activeTab === 'members'} /></div>}
           {mountedTabs.has('packages') && <div hidden={activeTab !== 'packages'}><PackageTab projectId={id || ''} active={activeTab === 'packages'} /></div>}
           {activeTab === 'svn' && <SvnArtifactsTab projectId={id || ''} />}

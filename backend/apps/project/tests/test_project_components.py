@@ -277,7 +277,7 @@ def test_cannot_remove_owner_while_repository_is_linked(manager, projects, repos
 
 
 def test_inactive_component_cannot_create_release(manager, projects, repository):
-    """已选用的软件仍要求主仓库在发起项目中启用。"""
+    """旧项目软件记录无法替代已启用的仓库关联。"""
     from apps.release.models import ReleaseRecord
     from apps.software.models import ProjectSoftware, Software
 
@@ -296,5 +296,5 @@ def test_inactive_component_cannot_create_release(manager, projects, repository)
         "project": str(source.pk), "software": str(software.pk), "release_type": "formal", "branch": "main",
     }, format="json")
     assert response.status_code == 400, response.data
-    assert "主仓库未在当前项目下启用" in response.data["message"]
+    assert "主仓库未在当前项目下启用" in str(response.data)
     assert not ReleaseRecord.objects.filter(project=source, repository=repository).exists()

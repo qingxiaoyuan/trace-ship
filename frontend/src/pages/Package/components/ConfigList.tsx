@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { SvnBrowserDrawer } from '@/components/SvnBrowserDrawer';
-import { groupConfigsByRepository } from './boardData';
+import { groupConfigsBySoftware } from './boardData';
 import { useLatestTaskByConfig } from './useLatestTaskByConfig';
 import { formatRelativeTime, iconColors } from './utils';
 import { StatusBadge } from './Shared';
@@ -41,7 +41,7 @@ interface ConfigListProps {
   onToggleFavorite: (config: PackageConfig) => void;
 }
 
-/** 打包配置：按仓库分组展示，同仓库的配置收敛在同一个分组下；打包看板与项目详情共用 */
+/** 打包配置：按软件分组，旧组件配置归入「未分组」。打包看板与项目详情共用 */
 export const ConfigList = memo(function ConfigList({
   configs,
   tasks,
@@ -59,7 +59,7 @@ export const ConfigList = memo(function ConfigList({
 }: ConfigListProps) {
   const [keyword, setKeyword] = useState('');
   const [browsing, setBrowsing] = useState<PackageConfig | null>(null);
-  const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const latestTaskByConfig = useLatestTaskByConfig(tasks);
 
@@ -74,13 +74,13 @@ export const ConfigList = memo(function ConfigList({
     });
   }, [configs, keyword]);
 
-  const groups = useMemo(() => groupConfigsByRepository(filtered), [filtered]);
+  const groups = useMemo(() => groupConfigsBySoftware(filtered), [filtered]);
 
-  const toggleRepo = useCallback((repo: string) => {
-    setCollapsedRepos((prev) => {
+  const toggleGroup = useCallback((id: string) => {
+    setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(repo)) next.delete(repo);
-      else next.add(repo);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }, []);
@@ -123,19 +123,19 @@ export const ConfigList = memo(function ConfigList({
       ) : (
         <div className="space-y-4">
           {groups.map((group) => {
-            const collapsed = collapsedRepos.has(group.repositoryId);
+            const collapsed = collapsedGroups.has(group.id);
             return (
-              <section key={group.repositoryId} className="overflow-hidden rounded-xl border border-[#E0E7FF] bg-white shadow-[0_10px_28px_-18px_rgba(15,23,42,0.25)]">
+              <section key={group.id} className="overflow-hidden rounded-xl border border-[#E0E7FF] bg-white shadow-[0_10px_28px_-18px_rgba(15,23,42,0.25)]">
                 <header
                   className="flex cursor-pointer flex-wrap items-center gap-3 border-b border-indigo-50 bg-[#FAFBFE] px-5 py-3"
-                  onClick={() => toggleRepo(group.repositoryId)}
+                  onClick={() => toggleGroup(group.id)}
                 >
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600">
-                    <GitBranch className="h-4 w-4" strokeWidth={1.5} />
+                    <PackageIcon className="h-4 w-4" strokeWidth={1.5} />
                   </div>
                   <div className="min-w-0">
-                    <h2 className="truncate font-mono text-[13px] font-semibold text-slate-800">{group.repositoryName}</h2>
-                    <div className="mt-0.5 text-[11px] text-slate-400">{group.configs.length} 个打包配置 · 仓库集合</div>
+                    <h2 className="truncate font-mono text-[13px] font-semibold text-slate-800">{group.name}</h2>
+                    <div className="mt-0.5 text-[11px] text-slate-400">{group.configs.length} 个打包配置{group.repositoryName ? ` · ${group.repositoryName}` : ''}</div>
                   </div>
                   <div className="ml-auto">
                     {collapsed ? (
@@ -301,6 +301,7 @@ const ConfigRow = memo(function ConfigRow({
           </div>
           <div className="min-w-0">
             <div className="truncate text-[13px] font-medium text-slate-900">{config.name}</div>
+            {!config.software && <span className="text-[11px] text-slate-500">组件配置</span>}
             <div className="truncate font-mono text-[10px] text-slate-400">{[config.software_name, executorSummary(config)].filter(Boolean).join(' · ')}</div>
           </div>
         </div>
@@ -399,6 +400,7 @@ const ConfigRow = memo(function ConfigRow({
         </div>
         <div className="mt-2 flex items-center gap-2">
           <span className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{config.name}</span>
+          {!config.software && <span className="shrink-0 text-[11px] text-slate-500">组件配置</span>}
           <span className="max-w-[55%] truncate text-[12px] text-slate-400">{config.software_name || config.project_name || '-'}</span>
         </div>
         <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">

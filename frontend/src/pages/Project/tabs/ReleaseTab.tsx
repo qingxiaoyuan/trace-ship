@@ -46,7 +46,7 @@ interface ReleaseTabProps {
 }
 
 const getReleaseSearchText = (item: Release) =>
-  `${item.software_name || '软件归属未知'} ${item.software_slug || ''} ${item.repository_name} ${item.version || ''} ${item.tag_name || ''} ${item.redmine_url || ''} ${item.publisher_name || ''} ${item.release_type_display || ''}`;
+  `${item.software_name || '未分组'} ${item.software_slug || ''} ${item.repository_name} ${item.version || ''} ${item.tag_name || ''} ${item.redmine_url || ''} ${item.publisher_name || ''} ${item.release_type_display || ''}`;
 
 /** 历史记录缺少发布时间时排在已知发布时间之后。 */
 function getReleasedTimestamp(value?: string) {
@@ -195,22 +195,25 @@ function buildReleaseGroups(
     else bySubject.set(key, [release]);
   }
 
+  const listedSoftware = new Set(links.map(({ software }) => software.id));
   const groups: RepositoryTreeGroup<Release, ReleaseGroupMeta>[] = links.map(({ software, is_active }) => {
     const items = bySubject.get(software.id) || [];
     return {
       id: software.id, name: software.name,
-      description: `${software.repository_name} · ${software.slug}${is_active ? '' : ' · 已停止选用'}`,
+      description: `${software.repository_name} · ${software.slug}${is_active ? '' : ' · 已停用'}`,
       searchText: `${software.slug} ${software.repository_name}`,
       items, meta: { currentVersion: items[0]?.version || '尚未发布', latestReleasedAt: items[0]?.released_at },
     };
   });
 
   for (const [key, items] of bySubject) {
-    if (!key.startsWith('legacy:')) continue;
+    if (listedSoftware.has(key)) continue;
+    const latest = items[0];
+    const name = latest.software ? latest.software_name || latest.software_slug || '历史软件' : '未分组';
+    const description = [latest.repository_name, latest.software_slug].filter(Boolean).join(' · ');
     groups.push({
-      id: key, name: '软件归属未知', description: items[0].repository_name,
-      searchText: items[0].repository_name,
-      items, meta: { currentVersion: items[0].version || '尚未发布', latestReleasedAt: items[0].released_at },
+      id: key, name, description, searchText: description,
+      items, meta: { currentVersion: latest.version || '尚未发布', latestReleasedAt: latest.released_at },
     });
   }
   return groups;
@@ -221,7 +224,7 @@ function RepositoryReleaseList({ releases, loading }: { releases: Release[]; loa
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState('');
   const [software, setSoftware] = useState('');
-  const softwareOptions = new Map(releases.map(item => [item.software || 'unassigned', item.software_name || '软件归属未知']));
+  const softwareOptions = new Map(releases.map(item => [item.software || 'unassigned', item.software_name || '未分组']));
   const filteredList = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     return releases.filter((item) => (!software || software === (item.software || 'unassigned'))
@@ -265,7 +268,7 @@ function RepositoryReleaseList({ releases, loading }: { releases: Release[]; loa
             <button key={item.id} type="button" onClick={() => navigate(`/releases/${item.id}${item.shared_readonly ? `?project=${item.project}` : ''}`)} className="block w-full text-left transition-colors hover:bg-indigo-50/30 max-md:rounded-xl max-md:border max-md:border-indigo-100/70 max-md:bg-white max-md:p-4">
               <div className="hidden grid-cols-12 items-center gap-3 px-5 py-3 md:grid">
                 <div className="col-span-3 min-w-0">
-                  <div className="truncate text-sm">{item.software_name || '软件归属未知'}</div>
+                  <div className="truncate text-sm">{item.software_name || '未分组'}</div>
                   <div className="flex items-center gap-2">{renderReleasePrimary(item)}</div>
                 </div>
                 <div className="col-span-2 truncate font-mono text-[12px] text-slate-600">{item.tag_name || '-'}</div>
@@ -275,7 +278,7 @@ function RepositoryReleaseList({ releases, loading }: { releases: Release[]; loa
                 <div className="col-span-1 flex justify-end"><ChevronRight className="h-4 w-4 text-slate-300" strokeWidth={1.5} /></div>
               </div>
               <div className="md:hidden">
-                <p className="mb-2 break-words text-[12px] text-slate-500">{item.software_name || '软件归属未知'}</p>
+                <p className="mb-2 break-words text-[12px] text-slate-500">{item.software_name || '未分组'}</p>
                 {renderMobileRelease(item)}
               </div>
             </button>
@@ -353,7 +356,7 @@ export function ReleaseTab({ projectId, repositoryId }: ReleaseTabProps) {
       onItemClick={(item) => navigate(`/releases/${item.id}?project=${projectId}`)}
       loading={releasesLoading || softwareLoading}
       searchPlaceholder="搜索软件、主仓库、版本号或 Tag"
-      emptyText="暂无选用软件或已发布版本"
+      emptyText="暂无软件或已发布版本"
       primaryTitle="软件 / 版本号"
       showGroupCount={false}
       itemLabel="个版本"

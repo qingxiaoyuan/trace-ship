@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
   operator: { username: string }; password: string;
-  release_flow: { project_id: string; software_id: string; software_label: string; software_slug: string; branch: string; git_hash: string };
+  release_flow: { project_id: string; repository_id: string; software_id: string; software_label: string; repository_name: string; software_slug: string; branch: string; git_hash: string };
 };
 const sample = fixture.release_flow;
 const reportDir = process.env.SMOKE_REPORT_DIR!;
@@ -19,6 +19,8 @@ test('正式版按分支创建、生成说明并进入后续审批节点后，�
   await page.getByRole('button', { name: '登 录', exact: true }).click();
   await expect(page).not.toHaveURL(/\/login/);
   await page.goto(`/releases/create?project_id=${sample.project_id}`);
+  await page.getByLabel('关联仓库', { exact: true }).click();
+  await page.locator('.ant-select-item-option-content').filter({ hasText: sample.repository_name }).click();
   await page.getByLabel('目标软件', { exact: true }).click();
   await page.locator('.ant-select-item-option-content').filter({ hasText: sample.software_label }).click();
   await page.getByLabel('分支', { exact: true }).click();
@@ -39,7 +41,7 @@ test('正式版按分支创建、生成说明并进入后续审批节点后，�
   const created = await createdResponse;
   expect(created.status()).toBe(201);
   expect(created.request().postDataJSON()).toMatchObject({ project: sample.project_id, software: sample.software_id, release_type: 'formal', branch: sample.branch });
-  expect(created.request().postDataJSON().repository).toBeUndefined();
+  expect(created.request().postDataJSON().repository).toBe(sample.repository_id);
   expect(created.request().postDataJSON().source_rc).toBeUndefined();
   const release = (await created.json()).data as { id: string; source_rc: string | null; git_hash: string };
   expect(release).toMatchObject({ source_rc: null, git_hash: sample.git_hash });

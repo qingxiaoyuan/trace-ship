@@ -96,7 +96,7 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
     <div className="space-y-4">
       <div>
         <div className="text-[15px] font-semibold text-slate-900">打包配置</div>
-        <div className="mt-1 text-[12px] text-slate-500">查看项目选用的软件及打包配置</div>
+        <div className="mt-1 text-[12px] text-slate-500">查看当前项目的打包配置</div>
       </div>
 
       <PermissionAlert error={error} className="rounded-xl" />

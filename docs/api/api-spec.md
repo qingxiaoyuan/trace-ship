@@ -409,7 +409,7 @@
 
 ### 4.3 项目详情
 
-详情的 `software_count` 统计项目当前选用的软件，`published_version_count` 统计项目版本目录内的已发布版本，包含当前选用软件的共享版本及项目内待归属历史。旧 `release_count` 保留原项目发起的申请数量。
+详情的 `software_count` 统计项目已启用关联仓库中可用的软件，`published_version_count` 统计项目版本目录内的已发布版本，包含当前可用软件的共享版本及项目内的仓库级版本。旧 `release_count` 保留原项目发起的申请数量。
 
 - **GET** `/api/projects/{id}/`
 
@@ -501,19 +501,14 @@
 
 ---
 
-### 4.10 项目选用软件
+### 4.10 项目可用软件
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
-| GET | `/api/projects/{project_id}/software/` | 项目成员查看显式选用记录。每条包含关联 `id`、`is_active` 和嵌套的软件身份 `software`。包含已停止选用的记录。 |
-| GET | `/api/projects/{project_id}/software/?active=true` | 仅返回当前启用、软件启用且主仓库仍符合目标项目使用条件的选用。 |
-| GET | `/api/projects/{project_id}/software/available/` | 项目管理员或项目软件管理员查看可首次选用的软件。候选来自已启用的主仓库组件，且仓库所有者符合入项规则。 |
-| POST | `/api/projects/{project_id}/software/` | 提交 `{"software":"软件 UUID"}` 选用软件，首次返回 201；已存在的关联复用原身份并启用，返回 200。 |
-| PATCH | `/api/projects/{project_id}/software/{id}/` | 提交 `{"is_active":false}` 停止选用，或传 `true` 恢复；这里的 `id` 为关联 UUID。 |
+| GET | `/api/projects/{project_id}/software/` | 项目成员查看已启用关联仓库内的软件。每条包含软件 `id`、`is_active` 和嵌套的 `software`。 |
+| GET | `/api/projects/{project_id}/software/?active=true` | 仅返回已启用且当前项目可以使用的软件。 |
 
-`can_view_repository` 按当前账号的仓库可见范围决定是否提供主仓库链接。历史选用保留主仓库名称。`is_usable` 表示软件当前在此项目满足启用、选用和仓库使用条件。
-
-写操作按目标项目管理角色授权。选用及恢复须满足项目和软件启用、主仓库组件启用、仓库所有者入项。维保角色可查看其所属项目的选用记录。所有者或协作维护者访问该软件时仍需具备本项目管理权限，才能变更选用。关联其他仓库或软件不会自动创建本项目的选用记录。
+`is_usable` 根据软件状态、项目状态、仓库关联与仓库所有者入项规则计算。旧选用记录保留，项目的可用软件从仓库关联实时取得。
 
 ## 五、凭证管理接口
 
@@ -951,20 +946,18 @@
 
 ---
 
-### 软件目录和维护
+### 仓库内软件维护
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
-| GET | `/api/software/` | 分页查看有权的软件，可按 `repository`、`is_active` 过滤，或用 `search` 搜索名称、标识和主仓库名。 |
-| POST | `/api/software/` | 主仓库所有者或超管提交 `repository`、`slug`、`name` 和可选 `description`，返回 201。负责人自动取主仓库所有者。 |
+| GET | `/api/software/` | 分页查看可见仓库的软件，支持 `repository`、`is_active` 和 `search`。 |
+| POST | `/api/software/` | 主仓库所有者或超管提交 `repository`、`slug`、`name` 和可选 `description`，返回 201。 |
 | GET | `/api/software/{id}/` | 查看单个软件。 |
-| PATCH | `/api/software/{id}/` | 负责人、协作维护者或超管更新 `name` 与 `description`；负责人或超管可传 `owner_username` 移交负责人，或传 `is_active` 启停软件。 |
-| POST | `/api/software/{id}/maintainers/` | 负责人或超管传 `{"username":"登录名"}` 授权有效账号协作维护。 |
-| DELETE | `/api/software/{id}/maintainers/{user_id}/` | 负责人或超管撤销账号的协作授权。 |
+| PATCH | `/api/software/{id}/` | 仓库所有者或超管更新 `name`、`description` 和 `is_active`。 |
 
-软件响应包含 `id`、`repository`、`repository_name`、`slug`、`name`、`description`、`is_active` 和 `owner`。目录和详情还返回当前账号的 `can_maintain` 与 `can_manage`；协作维护者名单 `maintainers` 仅负责人和超管可见。仓库所有者、软件负责人、协作维护者及显式选用项目的成员可查看相应软件。共享目录不包含任一项目的任务、凭证或成员资料。
+软件响应包含 `id`、`repository`、`repository_name`、`slug`、`name`、`description`、`is_active`、仓库所有者 `owner` 和 `can_maintain`。列表另外返回当前用户可读的最近正式版 `latest_release_version`、`latest_release_tag` 和 `package_config_count`。
 
-`slug` 最长 80 个字符，仅允许小写英文字母、数字及分隔用短横线，主仓库内唯一。登记后修改标识或主仓库返回 400。软件和选用关联仅提供启停，软件本身无删除接口。有软件身份或选用依据的父项删除返回 409。既有仓库发布和历史查询沿用原 ID 和授权。
+`slug` 最长 80 个字符，采用小写英文字母、数字及分隔用短横线，主仓库内唯一。登记后修改标识或主仓库返回 400。软件停用后保留历史记录。
 
 ## 七、提交审查接口
 
@@ -1060,7 +1053,7 @@
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| project | string | 查看项目 ID，包含该项目发起的申请及选用软件的已发布版本 |
+| project | string | 查看项目 ID，包含该项目发起的申请及可用软件的已发布版本 |
 | software | string | 软件 ID |
 | repository | string | 主仓库 ID |
 | release_type | string | formal/rc/beta |
@@ -1078,23 +1071,23 @@
 
 ### 软件发布与共享版本
 
-创建发布必须传入 `project` 和 `software`，以及目标发布类型、分支等信息。服务端从该软件取得主仓库，核验实际项目选用、角色与仓库使用资格。`repository` 可省略；如传入，必须和软件主仓库一致。省略软件的新建请求返回 400。Tag 使用稳定软件标识和原版本格式，例如 `client-a/VA.2.1.0`。可传原格式部分或当前软件的完整 Tag，人工填写的 Tag 优先于 `version`。既有仓库草稿、在途审批和待归属历史使用原记录和授权。
+创建发布传入 `project`、发布类型、分支，以及 `repository` 或 `software`。软件发布可从软件解析主仓库，同时提交两者时须匹配。选「按仓库发布」时提交 `repository`，省略 `software` 或传空值。仓库版沿用仓库规则生成 Tag，如 `VB.1.0.0`。软件版在版本格式前追加标识，如 `client-a/VB.1.1.1`。人工填写的 `tag_name` 优先于 `version`。服务端核验关联仓库、权限及固定分支来源。
 
 | 入口 | 参数与行为 |
 | --- | --- |
-| **GET** `/api/releases/software-branches/` | `project`、`software`。返回主仓库中的真实分支，校验目标项目发布角色、启用选用和个人仓库凭证。 |
-| **GET** `/api/releases/next-version/` | `project`、`software`、可选 `release_type`。返回 `latest_tag`、`next_version`、`next_tag_name`、`has_existing_tags` 和 `all_types`。建议使用可识别的远端 Tag、已确认历史和有效占用，草稿不占用编号。在途占用影响建议号，最近发布仍按已发布证据返回。 |
+| **GET** `/api/releases/software-branches/` | `project` 和 `software` 或 `repository`。返回仓库中的真实分支，校验目标项目发布角色、仓库关联和个人仓库凭证。 |
+| **GET** `/api/releases/next-version/` | 目标参数与分支接口相同，`release_type` 可选。返回 `latest_tag`、`next_version`、`next_tag_name`、`has_existing_tags` 和 `all_types`。建议使用可识别的远端 Tag、已确认历史和有效占用，草稿不占用编号。在途占用影响建议号，最近发布仍按已发布证据返回。 |
 | **GET** `/api/releases/software-changes-preview/` | 同建议参数，另需 `branch`，可传 `tag_name`。与草稿变更预览使用相同的固定 SHA 区间，返回 `base_tag`、`base_git_hash`、`head_hash`、提交、合并请求、更新条目和核验提示。 |
 | **GET** `/api/releases/rc-candidates/` | 软件发布传入 `project` 和 `software`，按该软件查询已发布 RC 和可用源码。仓库兼容路径继续接受 `project` 与 `repository`。 |
 
-列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。待归属历史的软件字段为空。列表和目录可按 `project`、`software` 查询；列表可用 `project=<项目 UUID>&repository=<仓库 UUID>&unassigned=true` 精确筛选该项目的待归属历史，仅使用 `repository` 则查看该仓库全部有权版本。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；审批、整改、原项目元信息和任务按各自项目授权读取。停止选用后，只有本项目留有对应打包任务或归档的版本可从详情深链回看，此时响应包含 `shared_history_only=true`。该版本不会因此重新进入项目版本列表，也不能在该项目发起补打或新归档。
+列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。仓库版的软件字段为空，在界面显示为「未分组」。列表和目录可按 `project`、`software` 查询；列表可用 `project=<项目 UUID>&repository=<仓库 UUID>&unassigned=true` 精确筛选该项目的待归属历史，仅使用 `repository` 则查看该仓库全部有权版本。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；审批、整改、原项目元信息和任务按各自项目授权读取。停用仓库关联或软件后，原发起项目仍可从「发布版本」查看历史。对其他项目的共享版本，只有本项目留有对应打包任务或归档时才可从详情深链回看，此时响应包含 `shared_history_only=true`。该版本不会因此重新进入项目版本列表，也不能在该项目发起补打或新归档。
 
 软件草稿说明保存软件显示名称、稳定标识、主仓库名称、完整 Tag 与固定 SHA。正式、RC 和 Beta 的说明与审查采用同软件、同类型的有效基线。软件按类型及规范化版本占用，项目和日期不拆分同一编号。主仓库模板逐次创建独立审批实例。推 Tag 成功后只触发本次选中的有效软件配置，既有版本可以被其他选用项目复用；删除和清理仍受源码、任务与 OA 引用保护。
 
 ### 8.2 创建发布申请
 
 - **POST** `/api/releases/`
-- 有项目发布权限且项目已启用选用该软件时，可以创建草稿。
+- 有项目发布权限且仓库关联启用时，可以创建草稿。指定软件时需启用该软件。
 
 **请求体：**
 
@@ -1117,7 +1110,7 @@
 }
 ```
 
-> `version` / `tag_name` 可选。省略时按本软件的可识别远端 Tag、成功历史和有效占用建议版本；格式、类型后缀和日期规则来自主仓库。传入 `tag_name` 时以该值为准，不采用同时提交的旧建议号。
+> `version` / `tag_name` 可选。省略时按发布范围内可识别的远端 Tag、成功历史和有效占用建议版本；格式、类型后缀和日期规则来自主仓库。传入 `tag_name` 时以该值为准，不采用同时提交的旧建议号。
 
 #### 分支创建与 RC 来源兼容
 
@@ -1131,7 +1124,7 @@
 
 #### 版本占用、正式审批与 Tag 清理
 
-正式、RC、Beta 编号独立计算，成功历史保留编号依据。软件发布提审按软件 + 类型 + 主次修订号占用，待归属旧申请按原仓库范围占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。不强制草稿补选 RC 来源，按保存的提交完成正式审批和推 Tag；历史迁移兼容标记仍不可经 API 写入。
+正式、RC、Beta 编号独立计算，成功历史保留编号依据。软件发布提审按软件 + 类型 + 主次修订号占用，「按仓库发布」按原仓库范围占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。不强制草稿补选 RC 来源，按保存的提交完成正式审批和推 Tag；历史迁移兼容标记仍不可经 API 写入。
 
 成功调用 `POST /api/releases/{id}/delete-released/` 删除发布记录和 Tag 后释放该申请的版本占用，可重新创建同版本并重新审批。仅清理 Tag、保留发布记录时仍保留占用。旧版删除遗留的已消费孤立占用不再抬高自动编号；再次提审会实时核验远端和同仓库全部有效发布，确认均无同版本冲突后才允许复用，不因日期、数字前导零或项目不同放行。版本规则改变后仍保留原占用 Tag 身份，在提审、推送及重试时持续核验旧远端 Tag 和有效发布记录，旧规则下已发布、在审或审批完成但推送失败的记录继续阻止同版本重发。历史记录优先使用该发布关联且同仓库同类型的规范化版本占用，规则变化与显示 version 不改变已占编号。没有占用的旧记录从完整 Tag 保留全部候选编号；唯一编号正常比较，多个候选涉及本次目标编号时返回 400 并提示核对该条历史记录，无关编号不受影响。显示 version 可能残留旧前缀或部分后缀，现行规则也不代表历史规则，因此不能据此排除候选。创建、编辑时按当前完整规则从最终 Tag 提取显示版本，重叠后缀与日期形态后缀不会截断；终止复用申请会恢复旧孤立占用，供后续申请核验。远端查询或删除失败不释放占用，现存 Tag 不被覆盖；引用保护与删除权限保持不变。
 
@@ -1301,8 +1294,8 @@
 ### 8.10 提交审批
 
 - **POST** `/api/releases/{id}/submit-audit/`
-- 需项目开发人员权限。仅 `draft` 可提交；要求发布说明非空。正式版、RC 和 Beta 均不因纳入提交的规范审查状态为 `illegal` 而拒绝提审，保留原审查状态及原因供查看；来源、版本占用、流程及整改等其他校验继续生效。
-- 按发布类型匹配项目内置审批流程：流程无审批节点时直接推 tag 发布；否则创建 `WorkflowInstance` 并置为 `pending`。
+- 需项目开发人员权限。仅 `draft` 可首次提交；要求项目、仓库关联及所选软件仍可用，且发布说明非空。已在 `pending` 的申请重复提交时返回原审批实例。正式版、RC 和 Beta 均不因纳入提交的规范审查状态为 `illegal` 而拒绝提审，保留原审查状态及原因供查看；来源、版本占用、流程及整改等其他校验继续生效。
+- 按仓库和发布类型匹配审批流程：「按仓库发布」的旧流程兼容项目级定义。流程无审批节点时直接推 Tag；否则创建 `WorkflowInstance` 并置为 `pending`。停用后，已有在途审批可继续。
 
 **响应：**
 
@@ -1537,11 +1530,11 @@
 
 - **GET / POST** `/api/packages/configs/`
 - **GET / PUT / PATCH / DELETE** `/api/packages/configs/{id}/`
-- 软件配置由软件维护负责人、获授权的协作维护者或超管维护。项目成员可查看本项目启用选用的软件配置概要。仅有项目管理角色时，不能修改共享配置。
+- 软件配置由仓库所有者或超管维护。项目成员可查看本项目可用软件的配置概要。仅有项目管理角色时，不能修改共享配置。
 - 查询返回 `software`、`software_name`、`software_slug`、`can_maintain`。共享配置没有归属项目，`project_component` 与 `project_id` 为空。查询指定 `project` 时，共享配置的 `my_role` 表示在该项目的有效角色。脚本、环境变量及 SVN 连接参数只对获授权的配置维护者返回。
 - `POST` 必须提供 `software`。待归属旧配置继续使用原配置 ID、`project_component` 和原项目权限；组件仅用于旧记录读取和已有操作。配置归属确认通过独立命令完成，不通过普通编辑更换。共享配置已有任务或归属确认记录时可停用，保留原配置及历史。
 
-**查询参数：** `project`、`software`、`repository`、`project_component`、`is_active`、`auto_package_on_release`。
+**查询参数：** `project`、`software`、`repository`、`project_component`、`unassigned`、`is_active`、`auto_package_on_release`。传 `unassigned=true` 筛选旧组件配置。
 
 **请求体：**
 
@@ -1574,8 +1567,8 @@
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
 - 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
 - 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。不再提供 RC / 测试版独立开关；已有配置无需重新保存，新建任务立即统一跟随 `svn_push_enabled`。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。自动与手动打包的正式版、RC、测试版及分支直打统一遵循总开关；分支默认进入 `formal/{分支名}`。已创建任务保留原快照的最终推送决定，不重新计算类型开关，也不因当前配置启用而获得补推能力；旧版本重新补打属于新任务。
-- 推送前按真实发起项目固定 SVN 目标。相同目录或父子范围已经由其他项目使用时，推送（含补推）、查看当前 SVN 文件、OA 归档和同步发布说明返回冲突；保留同一项目的既有覆盖模式。共享配置可用 `{project_code}` 给各项目划分目录。结果未知继续保留占用，旧任务保存的真实目录也纳入核对。URL、模板和覆盖模式沿用原设置。同一 SVN 仓库请统一配置服务地址。
-- 打包配置使用软件的 Git 主仓库。项目使用共享配置前，须启用对该软件及其主仓库的关联，仓库所有者须在项目内。
+- 推送前按真实发起项目固定 SVN 目标。相同目录或父子范围已经由其他项目使用时，推送（含补推）、查看当前 SVN 文件、OA 归档和同步发布说明返回冲突；覆盖模式可首次推送到用户预建、未被其他项目占用的目录。共享配置可用 `{project_code}` 给各项目划分目录。结果未知继续保留占用，旧任务保存的真实目录也纳入核对。URL、模板和覆盖模式沿用原设置。同一 SVN 仓库请统一配置服务地址。
+- 打包配置使用软件的 Git 主仓库。项目使用共享配置前，须启用主仓库关联和软件，仓库所有者须在项目内。
 
 **配置收藏：**
 

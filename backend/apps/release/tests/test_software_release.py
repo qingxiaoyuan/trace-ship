@@ -3,7 +3,8 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.software.models import ProjectSoftware, Software
+from apps.project.models import Project
+from apps.software.models import Software
 
 pytestmark = pytest.mark.django_db
 
@@ -16,14 +17,11 @@ def api(user):
 
 
 @pytest.fixture
-def software_pair(repository, project, user):
-    items = [
+def software_pair(repository, user):
+    return [
         Software.objects.create(repository=repository, slug=slug, name=name, owner=user)
         for slug, name in (("client-a", "客户端"), ("server-b", "服务端"))
     ]
-    for software in items:
-        ProjectSoftware.objects.create(project=project, software=software)
-    return items
 
 
 @pytest.fixture
@@ -41,11 +39,13 @@ def create_draft(api, project, software, **overrides):
 
 def test_software_draft_uses_verified_repository_and_tag_namespace(api, project, software_pair, remote):
     client, server = software_pair
-    bypass = api.post("/api/releases/", {
+    repository_release = api.post("/api/releases/", {
         "project": str(project.pk), "repository": str(client.repository_id), "release_type": "rc",
         "branch": "develop", "version": "VA.1.0.1",
     }, format="json")
-    assert bypass.status_code == 400, bypass.data
+    assert repository_release.status_code == 201, repository_release.data
+    assert repository_release.data["data"]["software"] is None
+    assert repository_release.data["data"]["tag_name"].startswith("VA.1.0.1-rc")
     wrong = create_draft(api, project, client, tag_name="server-b/VA.1.0.1-rc")
     assert wrong.status_code == 400
     result = create_draft(api, project, client, repository=str(client.repository_id))
@@ -75,7 +75,7 @@ def test_matching_software_is_required_for_optional_repository(api, project, sof
 
 
 @pytest.mark.parametrize("software_input", [{}, {"software": None}])
-def test_release_creation_requires_software_even_before_a_project_selects_any(
+def test_repository_release_can_omit_software(
     api, project, repository, remote, software_input,
 ):
     payload = {
@@ -83,9 +83,63 @@ def test_release_creation_requires_software_even_before_a_project_selects_any(
         "branch": "develop", "version": "VA.1.0.1", **software_input,
     }
     response = api.post("/api/releases/", payload, format="json")
-    assert response.status_code == 400, response.data
+    assert response.status_code == 201, response.data
     history = api.get("/api/releases/", {"project": str(project.pk)}).data["data"]
-    assert history["total"] == 0
+    assert history["total"] == 1 and history["results"][0]["software"] is None
+
+
+@pytest.mark.parametrize("stop_project", [True, False], ids=["项目停用", "关联停用"])
+def test_repository_draft_cannot_submit_after_disabling_scope(api, project, repository, remote, stop_project):
+    response = api.post("/api/releases/", {
+        "project": str(project.pk), "repository": str(repository.pk), "release_type": "rc",
+        "branch": "develop", "version": "VA.1.0.1",
+    }, format="json")
+    assert response.status_code == 201, response.data
+    detail = f"/api/releases/{response.data['data']['id']}/"
+    assert api.post(detail + "generate-doc/").status_code == 200
+    if stop_project:
+        Project.objects.filter(pk=project.pk).update(status=0)
+    else:
+        project.project_components.filter(repository=repository).update(is_active=False)
+
+    tags = list(remote.tags)
+    submitted = api.post(detail + "submit-audit/")
+    assert submitted.status_code == 400, submitted.data
+    assert ("项目已停用" if stop_project else "仓库未在当前项目中启用") in submitted.data["message"]
+    assert api.get(detail).data["data"]["status"] == "draft"
+    assert remote.tags == tags
+
+
+def test_existing_repository_approval_can_finish_after_disabling_scope(api, project, repository, user, remote):
+    from apps.workflow.models import WorkflowDefinition, WorkflowTask
+
+    WorkflowDefinition.objects.create(
+        project=project, repository=repository, biz_type="release", release_type="rc", name="候选审批",
+        node_config=[{"node_id": "review", "node_name": "核对", "mode": "any",
+                      "approvers": [{"type": "user", "user_id": str(user.pk)}]}],
+    )
+    created = api.post("/api/releases/", {
+        "project": str(project.pk), "repository": str(repository.pk), "release_type": "rc",
+        "branch": "develop", "version": "VA.1.0.1",
+    }, format="json")
+    assert created.status_code == 201, created.data
+    draft = created.data["data"]
+    detail = f"/api/releases/{draft['id']}/"
+    assert api.post(detail + "generate-doc/").status_code == 200
+    submitted = api.post(detail + "submit-audit/")
+    assert submitted.status_code == 200, submitted.data
+    instance_id = submitted.data["data"]["workflow_instance_id"]
+    assert instance_id
+    project.project_components.filter(repository=repository).update(is_active=False)
+    Project.objects.filter(pk=project.pk).update(status=0)
+
+    repeated = api.post(detail + "submit-audit/")
+    assert repeated.status_code == 200 and repeated.data["data"]["workflow_instance_id"] == instance_id
+    task = WorkflowTask.objects.get(instance_id=instance_id, status="pending")
+    approved = api.post(f"/api/workflow/tasks/{task.pk}/approve/")
+    assert approved.status_code == 200, approved.data
+    assert api.get(detail).data["data"]["status"] == "released"
+    assert any(tag.name == draft["tag_name"] for tag in remote.tags)
 
 
 def test_version_suggestion_uses_target_namespace(api, project, software_pair, remote):
@@ -106,6 +160,11 @@ def test_version_suggestion_uses_target_namespace(api, project, software_pair, r
         assert result.status_code == 200, result.data
         assert result.data["data"]["next_version"] == expected
         assert result.data["data"]["next_tag_name"].startswith(f"{software.slug}/{expected}-rc")
+    legacy = api.get("/api/releases/next-version/", {
+        "project": str(project.pk), "repository": str(client.repository_id), "release_type": "rc",
+    })
+    assert legacy.status_code == 200, legacy.data
+    assert legacy.data["data"]["next_tag_name"].startswith("VA.1.0.92-rc")
 
 
 
@@ -172,7 +231,6 @@ def other_project(project, software_pair, user):
     ProjectMember.objects.create(project=other, user=operator, role="manager")
     ProjectMember.objects.create(project=other, user=user, role="developer")
     ensure_repository_component(software_pair[0].repository, other)
-    ProjectSoftware.objects.create(project=other, software=software_pair[0])
     return other, operator
 
 
@@ -513,7 +571,7 @@ def test_other_project_packages_the_published_version_with_its_own_permissions(
     url = f"/api/packages/configs/{config.pk}/trigger/"
     assert viewer.post(url, {"release_id": version["id"]}, format="json").status_code == 400
     assert viewer.post(url, {**payload, "project": str(project.pk)}, format="json").status_code == 404
-    assert viewer.post(f"/api/packages/configs/{wrong.pk}/trigger/", payload, format="json").status_code == 404
+    assert viewer.post(f"/api/packages/configs/{wrong.pk}/trigger/", payload, format="json").status_code == 400
     dispatched = []
     monkeypatch.setattr("apps.package.tasks.run_package_task.delay", dispatched.append)
     before = [tag.name for tag in remote.tags]
@@ -589,6 +647,47 @@ def test_release_dispatches_only_the_selected_software_config_in_the_origin_proj
         str(selected.pk), str(project.pk), str(software.pk), release["tag_name"],
     )
     assert task["config_snapshot"]["trigger_source"] == "auto_release"
+
+
+def test_repository_release_keeps_original_tag_and_component_packaging(
+    api, project, software_pair, remote, django_capture_on_commit_callbacks, monkeypatch,
+):
+    from apps.package.models import PackageConfig
+    from apps.workflow.models import WorkflowDefinition
+
+    software = software_pair[0]
+    repository = software.repository
+    component = project.project_components.get(repository=repository)
+    legacy = PackageConfig.objects.create(project_component=component, name="旧组件配置", auto_package_on_release=True)
+    shared = PackageConfig.objects.create(software=software, name="软件配置", auto_package_on_release=True)
+    WorkflowDefinition.objects.create(
+        project=project, repository=repository, biz_type="release", release_type="rc",
+        name="候选版发布", node_config=[],
+    )
+    data = {
+        "project": str(project.pk), "repository": str(repository.pk), "branch": "develop",
+        "release_type": "rc", "tag_name": "VA.1.0.1-rc",
+    }
+    config_list = api.get("/api/packages/configs/", {
+        "project": str(project.pk), "repository": str(repository.pk), "unassigned": "true",
+    }).data["data"]["results"]
+    assert {str(item["id"]) for item in config_list} == {str(legacy.pk)}
+    invalid = api.post("/api/releases/", {**data, "package_config_ids": [str(shared.pk)]}, format="json")
+    assert invalid.status_code == 400, invalid.data
+    response = api.post("/api/releases/", {**data, "package_config_ids": [str(legacy.pk)]}, format="json")
+    assert response.status_code == 201, response.data
+    url = f"/api/releases/{response.data['data']['id']}/"
+    dispatched = []
+    monkeypatch.setattr("apps.package.tasks.run_package_task.delay", dispatched.append)
+    assert api.post(url + "generate-doc/").status_code == 200
+    with django_capture_on_commit_callbacks(execute=True):
+        assert api.post(url + "submit-audit/").status_code == 200
+    release = api.get(url).data["data"]
+    assert release["status"] == "released" and release["software"] is None
+    assert release["tag_name"].startswith("VA.1.0.1-rc") and remote.tags[-1].name == release["tag_name"]
+    tasks = api.get("/api/packages/tasks/", {"release": release["id"]}).data["data"]["results"]
+    assert len(tasks) == 1 and dispatched == [tasks[0]["id"]]
+    assert str(tasks[0]["config"]) == str(legacy.pk) and tasks[0]["tag_name"] == release["tag_name"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -806,8 +905,8 @@ def test_retry_uses_original_protected_snapshot_and_rechecks_project(
     blocked = admin.delete(task_url)
     assert blocked.status_code == 400 and "保留原打包记录" in str(blocked.data)
     assert workspace_file.read_text() == "首次尝试结果"
-    link = ProjectSoftware.objects.get(project=target, software=software)
-    stopped = viewer.patch(f"/api/projects/{target.pk}/software/{link.pk}/", {"is_active": False}, format="json")
+    link = target.project_components.get(repository=software.repository)
+    stopped = viewer.patch(f"/api/projects/{target.pk}/components/{link.pk}/", {"is_active": False}, format="json")
     assert stopped.status_code == 200, stopped.data
     assert viewer.post(task_url + "retry/").status_code == 400
     assert viewer.get(task_url).status_code == 200

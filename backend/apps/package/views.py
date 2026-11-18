@@ -57,9 +57,9 @@ from apps.package.serializers import (
 )
 from apps.package.services import PackageService
 from apps.package.services.configurations import (
+    available_project_software,
     lock_package_config,
     require_config_maintenance,
-    selected_project_software,
     visible_configs,
 )
 from apps.package.services.svn_scope import SvnTargetConflict, verify_svn_target
@@ -342,10 +342,11 @@ class PackageConfigFilter(django_filters.FilterSet):
 
     project = django_filters.UUIDFilter(method="filter_project")
     repository = django_filters.UUIDFilter(method="filter_repository")
+    unassigned = django_filters.BooleanFilter(field_name="software", lookup_expr="isnull")
 
     class Meta:
         model = PackageConfig
-        fields = ["project", "repository", "project_component", "software", "is_active", "auto_package_on_release"]
+        fields = ["project", "repository", "project_component", "software", "unassigned", "is_active", "auto_package_on_release"]
 
     def filter_project(self, queryset, _name, value):
         user = self.request.user
@@ -354,7 +355,7 @@ class PackageConfigFilter(django_filters.FilterSet):
             return queryset.none()
         return queryset.filter(
             Q(project_component__project=project)
-            | Q(software_id__in=selected_project_software(user, project).values("software_id"))
+            | Q(software_id__in=available_project_software(user, project).values("id"))
         )
 
     def filter_repository(self, queryset, _name, value):
@@ -471,14 +472,17 @@ class PackageConfigViewSet(StandardModelViewSet):
     def usage_projects(self, request, pk=None):
         """仅列出当前用户有权触发此软件分支任务的项目。"""
         config = self.get_object()
-        if not config.software_id or not config.is_active:
+        if not config.software_id or not config.is_active or not config.software.is_active:
             return success_response([])
-        links = selected_project_software(request.user).filter(software=config.software).select_related("project")
+        from apps.software.services import usable_software_components
+
+        candidates = usable_software_components().filter(
+            repository_id=config.software.repository_id, project_id__in=visible_project_ids(request.user),
+        ).values("project_id")
         projects = [
-            {"id": str(link.project_id), "name": link.project.name}
-            for link in links.order_by("project__name", "project_id")
-            if IsProjectPackager()._check(link.project, request.user)
-            and selected_project_software(request.user, link.project).filter(pk=link.pk).exists()
+            {"id": str(project.pk), "name": project.name}
+            for project in Project.objects.filter(pk__in=candidates).order_by("name", "pk")
+            if IsProjectPackager()._check(project, request.user)
         ]
         return success_response(projects)
 

@@ -23,7 +23,7 @@ from apps.project.models import Project
 from apps.project.services import visible_project_ids
 from apps.release.delivery_identity import release_software_name
 from apps.release.models import ReleaseRecord
-from apps.software.models import ProjectSoftware
+from apps.release.visibility import releases_for_read
 from apps.system.oa_archive import OaArchiveConfig
 from utils.permissions import IsProjectManager, ProjectRolePermission
 
@@ -95,10 +95,9 @@ class OaArchivePreparation:
         if project is not None:
             if project.pk == release.project_id:
                 return project
-            links = ProjectSoftware.objects.filter(project=project, software_id=release.software_id)
-            if not history:
-                links = links.filter(is_active=True)
-            if release.status == "released" and links.exists():
+            if releases_for_read(
+                ReleaseRecord.objects.filter(pk=release.pk), user, project.pk, include_consumed_links=history,
+            ).exists():
                 return project
         raise NotFound("当前项目下找不到可归档的发布记录")
 

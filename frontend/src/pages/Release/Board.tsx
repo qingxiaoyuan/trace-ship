@@ -41,7 +41,7 @@ function ReleaseCard({ release, onClick }: { release: Release; onClick: () => vo
         <span className="truncate font-mono text-[10px] text-slate-400 max-md:text-xs">{release.repository_name || '-'}</span>
       </div>
       <div className="mt-1 truncate text-[11px] font-medium text-slate-700 max-md:text-xs">
-        {release.software_name || '软件归属未知'}{release.software_slug && <span className="ml-1 font-mono font-normal text-slate-500">{release.software_slug}</span>}
+        {release.software_name || '未分组'}{release.software_slug && <span className="ml-1 font-mono font-normal text-slate-500">{release.software_slug}</span>}
       </div>
       {release.redmine_url ? (
         <a
@@ -197,7 +197,7 @@ export function ReleaseList({ software, search }: { software?: string; search?: 
                   <div className="col-span-3 flex items-center gap-1 text-[12px] text-slate-600">
                     <span className="truncate">{release.project_name || '-'}</span>
                     <span className="shrink-0 text-slate-300">/</span>
-                    <span className="shrink-0 max-w-[8rem] truncate">{release.software_name || '软件归属未知'}</span>
+                    <span className="shrink-0 max-w-[8rem] truncate">{release.software_name || '未分组'}</span>
                     <span className="shrink-0 text-slate-300">/</span>
                     <span className="truncate font-mono text-[11px] text-slate-400">{release.repository_name || '-'}</span>
                   </div>
@@ -246,7 +246,7 @@ export function ReleaseList({ software, search }: { software?: string; search?: 
                     <span className="font-mono text-[16px] font-semibold tracking-tight text-slate-900">
                       {release.version}
                     </span>
-                    <span className="truncate text-[12px] text-slate-400">{[release.project_name, release.software_name || '软件归属未知'].filter(Boolean).join(' / ') || '-'}</span>
+                    <span className="truncate text-[12px] text-slate-400">{[release.project_name, release.software_name || '未分组'].filter(Boolean).join(' / ') || '-'}</span>
                   </div>
                   <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                     <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />

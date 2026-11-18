@@ -20,10 +20,8 @@ urlpatterns = [
     path("<uuid:project_pk>/components/<uuid:pk>/", ProjectComponentViewSet.as_view({
         "get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"
     }), name="project-component-detail"),
-    # 显式项目软件选用
-    path("<uuid:project_pk>/software/", ProjectSoftwareViewSet.as_view({"get": "list", "post": "create"}), name="project-software-list"),
-    path("<uuid:project_pk>/software/available/", ProjectSoftwareViewSet.as_view({"get": "available"}), name="project-software-available"),
-    path("<uuid:project_pk>/software/<uuid:pk>/", ProjectSoftwareViewSet.as_view({"patch": "partial_update"}), name="project-software-detail"),
+    # 项目可用软件查询
+    path("<uuid:project_pk>/software/", ProjectSoftwareViewSet.as_view({"get": "list"}), name="project-software-list"),
     # 项目成员嵌套路由
     path("<uuid:project_pk>/members/", ProjectMemberViewSet.as_view({"get": "list", "post": "create"}), name="project-member-list"),
     path("<uuid:project_pk>/members/<uuid:pk>/", ProjectMemberViewSet.as_view({

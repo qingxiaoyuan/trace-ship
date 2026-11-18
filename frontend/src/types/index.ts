@@ -927,6 +927,7 @@ export interface ProjectComponent {
   project_count: number;
   current_version?: string;
   current_tag?: string;
+  current_software_name?: string;
   package_configs?: Array<{ id: string; name: string; is_active: boolean }>;
   credential_status?: 'available' | 'expiring' | 'unavailable';
   owner_name?: string;

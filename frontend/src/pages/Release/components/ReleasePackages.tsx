@@ -102,7 +102,7 @@ function ReleaseRepackage({ release, enabled }: { release: Release; enabled: boo
         </Button>
       </div>
       {!configs.isPending && !configs.data?.length && <p className="text-[12px] text-slate-500">{release.software
-        ? '当前项目没有可用的配置。请核对软件选用、软件启停和打包配置。'
+        ? '当前项目没有可用的配置。请核对仓库关联、软件状态和打包配置。'
         : '当前项目的软件暂无启用的打包配置，请联系项目管理员。'}</p>}
     </>}
     {trigger.error && <PermissionAlert error={trigger.error} errorTitle="补打失败" />}

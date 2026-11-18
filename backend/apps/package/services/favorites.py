@@ -8,7 +8,7 @@ from django.db.models import OuterRef, Q, Subquery
 from rest_framework.exceptions import PermissionDenied
 
 from apps.package.models import PackageConfig, PackageConfigFavorite, PackageTask
-from apps.package.services.configurations import lock_package_config, require_shared_config, selected_project_software
+from apps.package.services.configurations import available_project_software, lock_package_config, require_shared_config
 from apps.project.services import visible_project_ids
 
 if TYPE_CHECKING:
@@ -55,12 +55,12 @@ class FavoriteMixin:
         project_ids = visible_project_ids(user) if project is None else [project.pk]
         tasks = PackageTask.objects.filter(config_id=OuterRef("config_id"), project_id__in=project_ids)
         last_task_id_sq = Subquery(tasks.order_by("-created_at", "-id").values("id")[:1])
-        selections = selected_project_software(user, project)
+        selections = available_project_software(user, project)
         favorites = (
             PackageConfigFavorite.objects.filter(user=user)
             .filter(
                 Q(config__project_component__project_id__in=project_ids)
-                | Q(config__software_id__in=selections.values("software_id"))
+                | Q(config__software_id__in=selections.values("id"))
             )
             .select_related(
                 "config__project_component__project", "config__project_component__repository",

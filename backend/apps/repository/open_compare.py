@@ -8,7 +8,8 @@ from apps.release.models import ReleaseRecord
 from apps.release.services import list_tags_cached
 from apps.repository.models import Repository
 from apps.repository.services import RepositoryService
-from apps.software.models import ProjectSoftware, Software
+from apps.software.models import Software
+from apps.software.services import usable_software_components
 from utils.provider.credential_resolver import resolve_credential
 from utils.provider.factory import get_provider
 
@@ -56,7 +57,9 @@ def compare_published_tags(params):
     project = None
     # project_id 为准；product_id 为旧参数名，保留兼容
     project_id = params.get("project_id") or params.get("product_id")
-    selections = ProjectSoftware.objects.filter(software=software, is_active=True)
+    selections = usable_software_components().filter(repository=repo)
+    if software and not software.is_active:
+        selections = selections.none()
     if project_id:
         project = Project.objects.filter(pk=project_id).first()
         if project is None:

@@ -165,6 +165,8 @@ class TaskLifecycleMixin:
             project = Project.objects.select_for_update(no_key=True).filter(pk=config.project_component.project_id).first()
             if project is None:
                 raise NotFound("发起项目已删除")
+            if not auto_triggered and (project.status != 1 or not config.project_component.is_active):
+                raise serializers.ValidationError({"config": "配置所属项目或仓库关联已停用"})
             if not auto_triggered and not IsProjectReleasePackager()._check(project, request_user):
                 raise PermissionDenied("没有在当前项目补打已发布版本的权限")
             if not config.is_active:
@@ -346,6 +348,8 @@ class TaskLifecycleMixin:
                 project = Project.objects.select_for_update(no_key=True).filter(pk=config.project_component.project_id).first()
                 if project is None:
                     raise NotFound("发起项目已删除")
+                if project.status != 1 or not config.project_component.is_active:
+                    raise serializers.ValidationError({"config": "配置所属项目或仓库关联已停用"})
                 if request_user is not None and not IsProjectPackager()._check(project, request_user):
                     raise PermissionDenied("没有在当前项目触发打包的权限")
                 if not config.is_active:

@@ -7,8 +7,14 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from apps.package.models import PackageConfig
 from apps.project.services import visible_project_ids
 from apps.repository.models import Repository
-from apps.software.models import ProjectSoftware
-from apps.software.services import can_maintain_software, require_project_software, usable_project_repositories
+from apps.software.models import Software
+from apps.software.services import (
+    ProjectSoftwareContext,
+    can_maintain_software,
+    owned_repositories,
+    require_project_software,
+    usable_software_components,
+)
 from utils.permissions import IsProjectPackageAdmin
 
 CONFIG_RELATIONS = (
@@ -28,10 +34,10 @@ def lock_package_config(config: PackageConfig) -> PackageConfig:
     return current
 
 
-def require_shared_config(config: PackageConfig, *, project, software, user, permission) -> ProjectSoftware:
+def require_shared_config(config: PackageConfig, *, project, software, user, permission) -> ProjectSoftwareContext:
     """在显式项目上下文中核验启用的软件与同软件配置。"""
     link = require_project_software(project, software, user, permission)
-    if config.software_id != link.software_id:
+    if config.software_id != link.software.pk:
         raise ValidationError({"config": "请选择当前软件的打包配置。"})
     if not config.is_active:
         raise ValidationError({"config": "打包配置已停用。"})
@@ -49,21 +55,19 @@ def require_config_maintenance(user, *, software=None, component=None) -> None:
         raise PermissionDenied("没有维护此打包配置的权限。")
 
 
-def selected_project_software(user, project=None):
-    """按当前显式可见项目和启用选用筛选共享配置。"""
-    links = ProjectSoftware.objects.filter(
-        project_id__in=visible_project_ids(user), project__status=1, software__is_active=True, is_active=True,
-    )
+def available_project_software(user, project=None):
+    """按可见项目中启用的仓库关联筛选软件。"""
+    components = usable_software_components().filter(project_id__in=visible_project_ids(user))
     if project is not None:
-        links = links.filter(project=project, software__repository_id__in=usable_project_repositories(project))
-    return links
+        components = components.filter(project=project)
+    return Software.objects.filter(is_active=True, repository_id__in=components.order_by().values("repository_id"))
 
 
 def visible_configs(user):
     queryset = PackageConfig.objects.select_related(*CONFIG_RELATIONS)
     if user.is_superuser:
         return queryset
-    maintained = Q(software__owner=user) | Q(software__maintainer_grants__user=user)
-    selected = Q(software_id__in=selected_project_software(user).values("software_id"))
+    maintained = Q(software__repository_id__in=Repository.objects.filter(owned_repositories(user)).values("id"))
+    available = Q(software_id__in=available_project_software(user).values("id"))
     legacy = Q(project_component__project_id__in=visible_project_ids(user))
-    return queryset.filter(maintained | selected | legacy).distinct()
+    return queryset.filter(maintained | available | legacy).distinct()

@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Empty, Form, Input, Modal, Pagination, Popconfirm, Spin, Tag } from 'antd';
+import { Button, Form, Input, Modal, Pagination, Popconfirm } from 'antd';
+import { CirclePause, CirclePlay, Package, Pencil, Plus, Search } from 'lucide-react';
 import { softwareApi, type Software } from '@/api/software';
 import { PermissionAlert } from '@/components/PermissionAlert';
 import { useAuthStore } from '@/stores/authStore';
 import type { Repository } from '@/types';
-import { SoftwarePermissions } from './SoftwarePermissions';
 
 interface SoftwareForm {
   name: string;
@@ -13,14 +13,23 @@ interface SoftwareForm {
   description: string;
 }
 
-type Dialog = { kind: 'register' } | { kind: 'edit' | 'permissions'; id: string };
+type Dialog = { kind: 'register' } | { kind: 'edit'; software: Software };
 
-export function SoftwareDirectory({ repository }: { repository?: Repository }) {
+function SoftwareStatus({ active }: { active: boolean }) {
+  return (
+    <span className={`shrink-0 whitespace-nowrap text-[12px] ${active ? 'text-emerald-700' : 'text-slate-500'}`}>
+      {active ? '启用' : '已停用'}
+    </span>
+  );
+}
+
+export function SoftwareDirectory({ repository }: { repository: Repository }) {
   const userId = useAuthStore((state) => state.user?.id);
   const [dialog, setDialog] = useState<Dialog>();
+  const [keyword, setKeyword] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const repositoryId = repository?.id;
+  const repositoryId = repository.id;
   const queryClient = useQueryClient();
   const listingKey = ['software-directory', userId, repositoryId, search, page] as const;
   const listing = useQuery({
@@ -28,18 +37,32 @@ export function SoftwareDirectory({ repository }: { repository?: Repository }) {
     queryFn: () => softwareApi.list({ repository: repositoryId, search, page }),
   });
   const items = listing.data?.results ?? [];
-  const current = dialog && 'id' in dialog ? items.find(({ id }) => id === dialog.id) : undefined;
+  const current = dialog?.kind === 'edit' ? dialog.software : undefined;
+
+  useEffect(() => {
+    const value = keyword.trim();
+    if (value === search) return;
+    const timer = window.setTimeout(() => {
+      setSearch(value);
+      setPage(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [keyword, search]);
+
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['software-directory'] }),
       queryClient.invalidateQueries({ queryKey: ['project-software'] }),
+      queryClient.invalidateQueries({ queryKey: ['project-software-release'] }),
+      queryClient.invalidateQueries({ queryKey: ['package-configs-auto'] }),
+      queryClient.invalidateQueries({ queryKey: ['project'] }),
     ]);
   };
   const writing = useMutation({
     mutationFn: ({ values, editing }: { values: SoftwareForm; editing?: Software }) =>
       editing
         ? softwareApi.update(editing.id, { name: values.name, description: values.description })
-        : softwareApi.register({ ...values, repository: repositoryId! }),
+        : softwareApi.register({ ...values, repository: repositoryId }),
     onSuccess: async () => {
       setDialog(undefined);
       await refresh();
@@ -56,72 +79,157 @@ export function SoftwareDirectory({ repository }: { repository?: Repository }) {
     setDialog(next);
   }
 
+  const renderActions = (software: Software) => {
+    if (!software.can_maintain) return null;
+    const stateAction = software.is_active ? '停用' : '启用';
+    const StateIcon = software.is_active ? CirclePause : CirclePlay;
+    return (
+      <div className="flex justify-end gap-1">
+        <button
+          type="button"
+          title="编辑软件"
+          aria-label="编辑"
+          onClick={() => open({ kind: 'edit', software })}
+          className="rounded-md p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 max-md:min-h-9 max-md:px-3 max-md:text-[12px] max-md:text-slate-600"
+        >
+          <Pencil className="hidden h-3.5 w-3.5 md:block" aria-hidden />
+          <span className="md:hidden">编辑</span>
+        </button>
+        <Popconfirm
+          title={`${stateAction}软件`}
+          description={software.is_active ? '停用后，项目不能发起该软件的新发布或打包。' : undefined}
+          okText="确认"
+          cancelText="取消"
+          onConfirm={() => toggle.mutateAsync(software)}
+        >
+          <button
+            type="button"
+            title={`${stateAction}软件`}
+            aria-label={stateAction}
+            disabled={toggle.isPending}
+            className={`rounded-md p-2 text-slate-400 disabled:opacity-50 max-md:min-h-9 max-md:px-3 max-md:text-[12px] ${software.is_active ? 'hover:bg-rose-50 hover:text-rose-600 max-md:text-rose-600' : 'hover:bg-indigo-50 hover:text-indigo-600 max-md:text-indigo-600'}`}
+          >
+            <StateIcon className="hidden h-3.5 w-3.5 md:block" aria-hidden />
+            <span className="md:hidden">{stateAction}</span>
+          </button>
+        </Popconfirm>
+      </div>
+    );
+  };
+
+  const listStatus = listing.isPending ? (
+    <div className="px-5 py-12 text-center text-[13px] text-slate-400">加载中…</div>
+  ) : listing.isSuccess && items.length === 0 ? (
+    <div className="flex flex-col items-center px-5 py-12 text-[13px] text-slate-400">
+      <Package className="mb-2 h-8 w-8 text-slate-300" aria-hidden />
+      {search ? '没有匹配的软件' : '暂无软件'}
+    </div>
+  ) : null;
+
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="min-w-0 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Input.Search
-          aria-label="搜索软件"
-          placeholder="搜索名称、标识或主仓库"
-          allowClear
-          className="w-full sm:w-72"
-          onSearch={(value) => { setSearch(value.trim()); setPage(1); }}
-        />
-        {repository?.can_register_software && (
-          <Button type="primary" className="min-h-9" onClick={() => open({ kind: 'register' })}>登记软件</Button>
+        <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">软件</h2>
+        {repository.can_register_software && (
+          <button
+            type="button"
+            className="btn-glow inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+            onClick={() => open({ kind: 'register' })}
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            登记软件
+          </button>
         )}
       </div>
-      <PermissionAlert error={listing.error} />
-      <Spin spinning={listing.isPending}>
-        {listing.isSuccess && items.length === 0 && <Empty description="暂无可见软件" />}
-        {items.length > 0 && (
-          <ul className="divide-y divide-slate-100">
-            {items.map((software) => (
-              <li key={software.id} className="flex flex-col gap-3 py-4 md:flex-row md:items-start md:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="m-0 break-all text-sm font-semibold text-slate-900">{software.name}</h2>
-                    <Tag color={software.is_active ? 'green' : 'default'}>{software.is_active ? '启用' : '已停用'}</Tag>
-                  </div>
-                  <div className="break-all text-xs text-slate-600">
-                    <code>{software.slug}</code> · {software.repository_name} · 负责人 {software.owner.nickname || software.owner.username}
-                  </div>
-                  {software.description && <p className="m-0 whitespace-pre-wrap break-all text-sm text-slate-600">{software.description}</p>}
+      <PermissionAlert error={listing.error || toggle.error} />
+      <section className="tech-card overflow-hidden rounded-xl">
+        <div className="flex flex-wrap items-center gap-2 border-b border-indigo-50 px-5 py-3">
+          <div className="relative w-full sm:w-auto">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
+            <input
+              type="search"
+              aria-label="搜索软件"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="搜索软件名称 / 标识"
+              className="w-full rounded-lg border border-indigo-100 bg-white py-1.5 pl-8 pr-3 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 sm:w-[240px]"
+            />
+          </div>
+          <span className="ml-auto text-[12px] text-slate-400">共 {listing.data?.total ?? 0} 个软件</span>
+        </div>
+        <div className="hidden overflow-x-auto md:block">
+          <table aria-label="仓库软件列表" className="w-full min-w-[560px] table-fixed text-left">
+            <colgroup>
+              <col className="w-[26%]" />
+              <col className="w-[20%]" />
+              <col className="w-[13%]" />
+              <col />
+              <col className="w-[100px]" />
+              <col className="w-[100px]" />
+            </colgroup>
+            <thead className="border-b border-indigo-50 text-[11px] font-semibold tracking-wider text-slate-400">
+              <tr className="[&>th]:px-1.5 [&>th]:py-2.5 [&>th:first-child]:pl-5 [&>th:last-child]:pr-5">
+                <th scope="col">软件名称</th>
+                <th scope="col">最近正式版</th>
+                <th scope="col">打包配置</th>
+                <th scope="col">仓库所有者</th>
+                <th scope="col">状态</th>
+                <th scope="col" className="text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-indigo-50/50">
+              {listStatus && <tr><td colSpan={6}>{listStatus}</td></tr>}
+              {items.map(software => (
+                <tr key={software.id} className="hover:bg-indigo-50/30 [&>td]:px-1.5 [&>td]:py-3 [&>td:first-child]:pl-5 [&>td:last-child]:pr-5">
+                  <td>
+                    <div className="truncate text-[13px] font-semibold text-slate-900" title={software.name}>{software.name}</div>
+                    <div className="mt-0.5 truncate font-mono text-[11px] text-slate-400" title={software.slug}>{software.slug}</div>
+                    {software.description && <div className="mt-0.5 truncate text-[11px] text-slate-500" title={software.description}>{software.description}</div>}
+                  </td>
+                  <td>
+                    <div className="truncate text-[12px] text-slate-700">{software.latest_release_version || '尚未发布'}</div>
+                    {software.latest_release_tag && <div className="truncate font-mono text-[10px] text-slate-400" title={software.latest_release_tag}>{software.latest_release_tag}</div>}
+                  </td>
+                  <td className="text-[12px] text-slate-500">{software.package_config_count ?? 0} 项</td>
+                  <td><div className="truncate text-[12px] text-slate-500" title={software.owner?.nickname || software.owner?.username}>{software.owner?.nickname || software.owner?.username || '—'}</div></td>
+                  <td><SoftwareStatus active={software.is_active} /></td>
+                  <td>{renderActions(software)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="space-y-3 p-3 md:hidden">
+          {listStatus}
+          {items.map(software => (
+            <article key={software.id} className="rounded-xl border border-indigo-100 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-[15px] font-semibold text-slate-900" title={software.name}>{software.name}</h3>
+                  <div className="mt-0.5 truncate font-mono text-[11px] text-indigo-500" title={software.slug}>{software.slug}</div>
                 </div>
-                {software.can_maintain && (
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <Button className="min-h-9" onClick={() => open({ kind: 'edit', id: software.id })}>编辑</Button>
-                    {software.can_manage && (
-                      <>
-                        <Button className="min-h-9" onClick={() => open({ kind: 'permissions', id: software.id })}>维护授权</Button>
-                        <Popconfirm
-                          title={software.is_active ? '停用软件' : '启用软件'}
-                          description={software.is_active ? '将停止所有项目对该软件的新使用。' : undefined}
-                          okText="确认"
-                          cancelText="取消"
-                          onConfirm={() => { toggle.mutate(software); }}
-                        >
-                          <Button className="min-h-9" danger={software.is_active} disabled={toggle.isPending}>
-                            {software.is_active ? '停用' : '启用'}
-                          </Button>
-                        </Popconfirm>
-                      </>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+                <SoftwareStatus active={software.is_active} />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                <span>{software.latest_release_version || '尚未发布'}</span>
+                <span>打包配置 {software.package_config_count ?? 0} 项</span>
+              </div>
+              {software.description && <p className="mt-2 break-words text-[12px] text-slate-500">{software.description}</p>}
+              {software.can_maintain && <div className="mt-3 border-t border-indigo-50 pt-2">{renderActions(software)}</div>}
+            </article>
+          ))}
+        </div>
+        {listing.data && listing.data.total > listing.data.page_size && (
+          <Pagination
+            className="border-t border-indigo-50 px-4 py-3"
+            current={page}
+            total={listing.data.total}
+            pageSize={listing.data.page_size}
+            showSizeChanger={false}
+            onChange={setPage}
+          />
         )}
-      </Spin>
-      {listing.data && listing.data.total > listing.data.page_size && (
-        <Pagination
-          current={page}
-          total={listing.data.total}
-          pageSize={listing.data.page_size}
-          showSizeChanger={false}
-          onChange={setPage}
-        />
-      )}
+      </section>
       {saving && (
         <Modal
           title={current ? '编辑软件' : '登记软件'}
@@ -161,9 +269,6 @@ export function SoftwareDirectory({ repository }: { repository?: Repository }) {
             </div>
           </Form>
         </Modal>
-      )}
-      {dialog?.kind === 'permissions' && current?.can_manage && (
-        <SoftwarePermissions software={current} onClose={() => setDialog(undefined)} refresh={refresh} />
       )}
     </div>
   );

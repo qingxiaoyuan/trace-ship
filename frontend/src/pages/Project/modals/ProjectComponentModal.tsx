@@ -129,7 +129,7 @@ export function ProjectComponentModal({
         <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
           <Form.Item
             name="repository"
-            label="软件仓库"
+            label="仓库"
             className="mb-0"
             rules={[{ required: true, message: '请选择仓库' }]}
           >

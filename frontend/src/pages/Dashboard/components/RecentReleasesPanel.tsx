@@ -77,7 +77,7 @@ export function RecentReleasesPanel({
                   <div className="col-span-3 text-[13px] text-slate-600">
                     <div className="truncate">{release.project_name || '-'}</div>
                     <div className="truncate text-[11px] text-slate-400">
-                      {[release.software_name || '软件归属未知', release.repository_name].filter(Boolean).join(' / ')}
+                      {[release.software_name || '未分组', release.repository_name].filter(Boolean).join(' / ')}
                     </div>
                   </div>
                   <div className="col-span-2">
@@ -113,7 +113,7 @@ export function RecentReleasesPanel({
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium text-slate-800">
-                      {release.software_name || '软件归属未知'}{' '}
+                      {release.software_name || '未分组'}{' '}
                       <span className="font-mono text-[12px] text-indigo-600">{release.version}</span>
                     </div>
                     <div className="mt-0.5 text-[11px] text-slate-400">

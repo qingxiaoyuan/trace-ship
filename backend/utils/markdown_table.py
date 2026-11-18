@@ -7,6 +7,7 @@
 
 
 from markdown_it import MarkdownIt
+from markdown_it.rules_block.table import escapedSplit
 
 
 def markdown_code_lines(md: str) -> set[int]:
@@ -16,6 +17,11 @@ def markdown_code_lines(md: str) -> set[int]:
         if token.type in ("fence", "code_block") and token.map
         for line in range(*token.map)
     }
+
+
+def has_closing_pipe(line: str) -> bool:
+    """识别表格边界，转义的管道不算闭合。"""
+    return line.endswith("|") and not line.endswith(r"\|")
 
 
 def table_newlines_to_br(md: str) -> str:
@@ -47,26 +53,29 @@ def table_newlines_to_br(md: str) -> str:
         line = lines[i]
         stripped = line.strip()
         # 多行单元格起始行：以 | 开头但不以 | 结尾
-        if i not in code_lines and stripped.startswith("|") and not stripped.endswith("|"):
+        if (i not in code_lines and stripped.startswith("|") and not has_closing_pipe(stripped)
+                and len(escapedSplit(stripped)) > 2):
+            start = i
             parts = [line.rstrip()]
             i += 1
             closed = False
             while i < len(lines):
                 cont = lines[i].rstrip()
-                if i in code_lines or cont.lstrip().startswith("|"):
+                closing = has_closing_pipe(cont)
+                # 中间再出现分隔符时属于另一行，不能作为当前值的续行。
+                if i in code_lines or cont.lstrip().startswith("|") or len(escapedSplit(cont)) > (2 if closing else 1):
                     break
                 i += 1
-                if cont.endswith("|"):
+                if closing:
                     cont = cont[:-1].rstrip()
                     closed = True
                 parts.append(cont)
                 if closed:
                     break
-            if closed or len(parts) > 1:
-                merged = "<br>".join(parts)
-                out.append(merged + (" |" if closed else ""))
+            if closed:
+                out.append("<br>".join(parts) + " |")
             else:
-                out.append(line)
+                out.extend(lines[start:i])
         else:
             out.append(line)
             i += 1

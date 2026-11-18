@@ -19,7 +19,8 @@ from apps.project.services import effective_maintainer_memberships, visible_proj
 from apps.release.delivery_identity import release_software_name
 from apps.release.models import ReleaseRecord
 from apps.release.visibility import releases_for_read
-from apps.software.models import ProjectSoftware
+from apps.software.models import Software
+from apps.software.services import usable_software_components
 from utils.markdown_table import table_newlines_to_br
 
 
@@ -120,18 +121,22 @@ class MaintainerDashboardService:
         software = {project.id: [] for project in projects}
         extra_counts = Counter()
         identities = set()
-        links = ProjectSoftware.objects.filter(project_id__in=project_ids, is_active=True).select_related(
-            "software__repository",
-        ).order_by("software__name", "software__slug")
-        for link in links:
-            item = link.software
+        links = set(usable_software_components().filter(project_id__in=project_ids)
+                    .values_list("repository_id", "project_id"))
+        projects_by_repo = {}
+        for repository_id, project_id in links:
+            projects_by_repo.setdefault(repository_id, []).append(project_id)
+        for item in Software.objects.filter(
+            repository_id__in=projects_by_repo, is_active=True,
+        ).select_related("repository"):
             identities.add(item.pk)
-            extra_counts[link.project_id] += software_counts[item.pk] - software_counts[link.project_id, item.pk]
-            software[link.project_id].append({
-                "id": str(item.pk), "name": item.name, "software_id": str(item.pk),
-                "repository_id": str(item.repository_id), "repository_name": item.repository.name,
-                "release_count": software_counts[item.pk],
-            })
+            for project_id in projects_by_repo[item.repository_id]:
+                extra_counts[project_id] += software_counts[item.pk] - software_counts[project_id, item.pk]
+                software[project_id].append({
+                    "id": str(item.pk), "name": item.name, "software_id": str(item.pk),
+                    "repository_id": str(item.repository_id), "repository_name": item.repository.name,
+                    "release_count": software_counts[item.pk],
+                })
         names = {}
         for component in ProjectComponent.objects.filter(project_id__in=project_ids).select_related("repository").order_by(
             "sort_order", "created_at", "id",
@@ -143,7 +148,7 @@ class MaintainerDashboardService:
             if not legacy_counts[key]:
                 continue
             software[component.project_id].append({
-                "id": str(component.repository_id), "name": f"软件归属未知 · {names[key]}", "software_id": None,
+                "id": str(component.repository_id), "name": f"未分组 · {names[key]}", "software_id": None,
                 "repository_id": str(component.repository_id), "repository_name": component.repository.name,
                 "release_count": legacy_counts[key],
             })

@@ -4,9 +4,9 @@ import path from 'node:path';
 
 const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
   password: string;
-  software_identity: { repository_id: string; project_id: string; owner: string; reader: string; delegate: string };
+  software_identity: { repository_id: string; project_id: string; owner: string; reader: string };
 };
-const { repository_id, project_id, owner, reader, delegate } = fixture.software_identity;
+const { repository_id, project_id, owner, reader } = fixture.software_identity;
 const softwareName = '身份验收客户端';
 const renamed = '移动端验收客户端';
 
@@ -19,85 +19,66 @@ async function login(page: Page, username: string) {
   await expect(page).not.toHaveURL(/\/login/);
 }
 
-test('仓库登记、协作撤销与手机端项目选用均通过生产接口', async ({ page, browser }) => {
+test('从仓库维护软件，关联项目自动可用，手机端可编辑和停用', async ({ page, browser }) => {
   await login(page, owner);
   await page.goto(`/repositories/${repository_id}/software`);
+  await expect(page.getByRole('link', { name: '软件', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '登记软件' }).click();
   const registration = page.getByRole('dialog', { name: '登记软件' });
   await registration.getByLabel('软件名称').fill(softwareName);
   await registration.getByLabel('软件标识').fill('smoke-client');
   await registration.getByRole('button', { name: /^登\s*记$/ }).click();
-  const row = page.getByRole('listitem').filter({ hasText: softwareName });
+  const row = page.getByRole('row').filter({ hasText: softwareName });
   await expect(row).toContainText('smoke-client');
+  await expect(page.getByRole('columnheader', { name: '最近正式版' })).toBeVisible();
+  const search = page.getByRole('searchbox', { name: '搜索软件' });
+  await search.fill('missing-software');
+  await expect(page.getByRole('table', { name: '仓库软件列表' }).getByText('没有匹配的软件')).toBeVisible();
+  await search.fill('smoke-client');
+  await expect(row).toBeVisible();
+  await expect(page.getByText('共 1 个软件')).toBeVisible();
   await page.reload();
   await expect(row).toContainText('smoke-client');
-  await row.getByRole('button', { name: '维护授权' }).click();
-  const grants = page.getByRole('dialog', { name: '维护授权' });
-  await grants.getByLabel('协作维护者登录名').fill(delegate);
-  await grants.getByRole('button', { name: /^授\s*权$/ }).click();
-  await expect(grants.getByText(delegate, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => [innerWidth, innerHeight])).toEqual([1440, 1000]);
   await page.screenshot({ path: path.join(process.env.SMOKE_REPORT_DIR!, 'software-identity-desktop.png') });
 
-  const mobile = await browser.newPage({ viewport: { width: 375, height: 812 } });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByRole('article').filter({ hasText: softwareName }).getByRole('button', { name: /^编\s*辑$/ }).click();
+  const editor = page.getByRole('dialog', { name: '编辑软件' });
+  await editor.getByLabel('软件名称').fill(renamed);
+  await editor.getByRole('button', { name: /^保\s*存$/ }).click();
+  const renamedRow = page.getByRole('article').filter({ hasText: renamed });
+  await expect(renamedRow.getByText('smoke-client')).toBeVisible();
+  expect(await page.evaluate(() => [innerWidth, innerHeight])).toEqual([375, 812]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: path.join(process.env.SMOKE_REPORT_DIR!, 'software-identity-mobile.png') });
+
+  await page.goto(`/projects/${project_id}/repos`);
+  await expect(page.getByRole('heading', { name: '关联仓库', exact: true })).toBeVisible();
+  await expect(page.getByText('选用软件', { exact: true })).toHaveCount(0);
+  await page.goto(`/releases/create?project=${project_id}&repository=${repository_id}`);
+  const target = page.getByLabel('目标软件', { exact: true });
+  await target.click();
+  await expect(page.locator('.ant-select-item-option-content').filter({ hasText: renamed })).toBeVisible();
+
+  await page.goto(`/repositories/${repository_id}/software`);
+  await renamedRow.getByRole('button', { name: '停用', exact: true }).click();
+  await page.getByRole('button', { name: /^确\s*认$/ }).click();
+  await expect(renamedRow.getByText('已停用', { exact: true })).toBeVisible();
+  await page.goto(`/releases/create?project=${project_id}&repository=${repository_id}`);
+  await target.click();
+  await expect(page.locator('.ant-select-item-option-content').getByText('按仓库发布', { exact: true })).toBeVisible();
+  await expect(page.locator('.ant-select-item-option-content').filter({ hasText: renamed })).toHaveCount(0);
+
+  const readerPage = await browser.newPage();
   try {
-    await login(mobile, delegate);
-    await mobile.goto('/software');
-    const delegateRow = mobile.getByRole('listitem').filter({ hasText: softwareName });
-    await delegateRow.getByRole('button', { name: /^编\s*辑$/ }).click();
-    const editor = mobile.getByRole('dialog', { name: '编辑软件' });
-    await editor.getByLabel('软件名称').fill(renamed);
-    await editor.getByRole('button', { name: /^保\s*存$/ }).click();
-    await expect(mobile.getByText(renamed, { exact: true })).toBeVisible();
-    await expect(mobile.getByRole('button', { name: '维护授权' })).toHaveCount(0);
-    await expect.poll(() => mobile.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-    const softwareId = await mobile.evaluate(async (name) => {
-      const response = await fetch('/api/software/', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
-      });
-      const { data } = await response.json();
-      return data.results.find((item: { name: string }) => item.name === name).id as string;
-    }, renamed);
-    await grants.getByRole('button', { name: `撤销 ${delegate}` }).click();
-    await expect(grants.getByText(delegate, { exact: true })).toHaveCount(0);
-    expect(await mobile.evaluate(async (id) => {
-      const response = await fetch(`/api/software/${id}/`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: '越权修改' }),
-      });
-      return response.status;
-    }, softwareId)).toBe(404);
-
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto(`/projects/${project_id}/software`);
-    await expect(page.getByText('当前项目尚未选用软件')).toBeVisible();
-    await page.getByRole('button', { name: '选用已有软件', exact: true }).click();
-    const selection = page.getByRole('dialog', { name: '选用软件' });
-    await selection.getByRole('combobox', { name: '候选软件' }).click();
-    await page.locator('.ant-select-item-option-content').filter({ hasText: renamed }).click();
-    await selection.getByRole('button', { name: /^选\s*用$/ }).click();
-    const selected = page.getByRole('listitem').filter({ hasText: renamed });
-    await expect(selected.getByText('使用中', { exact: true })).toBeVisible();
-    await selected.getByRole('button', { name: '停止选用' }).click();
-    await page.getByRole('button', { name: '确认停止' }).click();
-    await expect(selected).toContainText('已停止选用');
-    await page.reload();
-    await expect(selected).toContainText('已停止选用');
-    expect(await page.evaluate(() => [window.innerWidth, window.innerHeight])).toEqual([375, 812]);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-    await page.screenshot({ path: path.join(process.env.SMOKE_REPORT_DIR!, 'software-selection-mobile.png') });
-
-    const readerPage = await browser.newPage({ viewport: { width: 375, height: 812 } });
-    try {
-      await login(readerPage, reader);
-      await readerPage.goto(`/projects/${project_id}/software`);
-      await expect(readerPage.getByText(renamed, { exact: true })).toBeVisible();
-      await expect(readerPage.getByRole('button', { name: '选用已有软件', exact: true })).toHaveCount(0);
-      await expect(readerPage.getByRole('button', { name: '恢复选用' })).toHaveCount(0);
-    } finally {
-      await readerPage.close();
-    }
+    await login(readerPage, reader);
+    await readerPage.goto(`/repositories/${repository_id}/software`);
+    const readRow = readerPage.getByRole('row').filter({ hasText: renamed });
+    await expect(readRow).toContainText('已停用');
+    await expect(readRow.getByRole('button', { name: /^编\s*辑$/ })).toHaveCount(0);
+    await expect(readerPage.getByRole('button', { name: '登记软件' })).toHaveCount(0);
   } finally {
-    await mobile.close();
+    await readerPage.close();
   }
 });

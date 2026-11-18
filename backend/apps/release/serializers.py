@@ -49,8 +49,14 @@ def _release_task_project(release: ReleaseRecord):
 
 class SoftwareReleaseQuerySerializer(serializers.Serializer):
     project = serializers.UUIDField()
-    software = serializers.UUIDField()
+    software = serializers.UUIDField(required=False)
+    repository = serializers.UUIDField(required=False)
     release_type = serializers.ChoiceField(choices=["formal", "rc", "beta"], default="formal")
+
+    def validate(self, attrs):
+        if not (attrs.get("software") or attrs.get("repository")):
+            raise serializers.ValidationError({"repository": "请选择关联仓库"})
+        return attrs
 
 
 class SoftwareChangesQuerySerializer(SoftwareReleaseQuerySerializer):
@@ -309,21 +315,25 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
 
 
 class ReleaseCreateSerializer(ReleaseRecordSerializer):
-    """新申请必须从发起项目显式选用的软件创建。"""
-
-    software = serializers.UUIDField(error_messages={"required": "请选择发布软件", "null": "请选择发布软件"})
+    """项目可按关联仓库或仓库中的软件创建发布。"""
 
     def validate(self, attrs: dict) -> dict:
         from apps.software.models import Software
 
         attrs = super().validate(attrs)
-        software = Software.objects.filter(pk=attrs["software"], project_links__project=attrs["project"]).first()
-        if software is None:
-            raise serializers.ValidationError({"software": "当前项目尚未选用此软件"})
-        repository = attrs.pop("repository", None)
-        if repository is not None and repository.pk != software.repository_id:
-            raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
-        attrs["software"] = software
+        repository = attrs.get("repository")
+        software_id = attrs.get("software")
+        if software_id:
+            software = Software.objects.select_related("repository").filter(
+                pk=software_id, repository__project_components__project=attrs["project"],
+            ).first()
+            if software is None:
+                raise serializers.ValidationError({"software": "当前项目的关联仓库中找不到该软件"})
+            if repository is not None and repository.pk != software.repository_id:
+                raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
+            attrs["software"] = software
+        elif repository is None:
+            raise serializers.ValidationError({"repository": "请选择关联仓库"})
         return attrs
 
 

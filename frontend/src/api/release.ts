@@ -31,16 +31,18 @@ interface SoftwareVersion {
   next_tag_name: string;
 }
 
+type ReleaseTarget = { project: string; repository: string; software?: string };
+
 export const releaseApi = {
-  getSoftwareBranches: (project: string, software: string) =>
-    get<RepositoryBranch[]>('/releases/software-branches/', { params: { project, software } }),
-  getSoftwareNextVersion: (project: string, software: string, release_type: ReleaseType) =>
+  getReleaseBranches: (params: ReleaseTarget) =>
+    get<RepositoryBranch[]>('/releases/software-branches/', { params }),
+  getNextVersion: (target: ReleaseTarget, release_type: ReleaseType) =>
     get<SoftwareVersion & { has_existing_tags: boolean; all_types: Partial<Record<ReleaseType, SoftwareVersion>> }>(
-      '/releases/next-version/', { params: { project, software, release_type } },
+      '/releases/next-version/', { params: { ...target, release_type } },
     ),
-  previewSoftwareChanges: (project: string, software: string, branch: string, release_type: ReleaseType, tag_name?: string) =>
+  previewReleaseChanges: (target: ReleaseTarget, branch: string, release_type: ReleaseType, tag_name?: string) =>
     get<FormalChangesPreviewData>('/releases/software-changes-preview/', {
-      params: { project, software, branch, release_type, tag_name }, timeout: 300_000,
+      params: { ...target, branch, release_type, tag_name }, timeout: 300_000,
     }),
   previewBranchUpdate: (id: string) => get<BranchUpdatePreview>(`/releases/${id}/branch-update/`),
   confirmBranchUpdate: (id: string, oldHash: string, newHash: string) =>
@@ -59,7 +61,7 @@ export const releaseApi = {
   getReleases: (params?: Record<string, unknown>) =>
     get<PaginatedData<Release>>('/releases/', { params }),
   getRelease: (id: string, project?: string) => get<Release>(`/releases/${id}/`, { params: { project } }),
-  createRelease: (data: Record<string, unknown> & { project: string; software: string }) =>
+  createRelease: (data: Record<string, unknown> & ReleaseTarget) =>
     post<Release>('/releases/', data),
   /** 删除草稿 / 已驳回发布（仅草稿、已驳回状态可删） */
   deleteRelease: (id: string) => del<null>(`/releases/${id}/`),

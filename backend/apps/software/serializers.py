@@ -3,7 +3,8 @@
 from rest_framework import serializers
 
 from apps.account.models import User
-from apps.software.models import ProjectSoftware, Software, software_slug
+from apps.project.services import repository_owner
+from apps.software.models import Software, software_slug
 from apps.software.services import can_manage_software
 
 
@@ -26,27 +27,24 @@ class SoftwareSummarySerializer(serializers.ModelSerializer):
 
 
 class SoftwareSerializer(SoftwareSummarySerializer):
-    owner = SoftwareUserSerializer(read_only=True)
+    owner = serializers.SerializerMethodField()
     can_maintain = serializers.SerializerMethodField()
-    can_manage = serializers.SerializerMethodField()
-    maintainers = serializers.SerializerMethodField()
+    latest_release_version = serializers.CharField(read_only=True, default=None)
+    latest_release_tag = serializers.CharField(read_only=True, default=None)
+    package_config_count = serializers.IntegerField(read_only=True, default=None)
+
+    def get_owner(self, software: Software) -> dict | None:
+        owner = repository_owner(software.repository)
+        return SoftwareUserSerializer(owner).data if owner else None
 
     def get_can_maintain(self, software: Software) -> bool:
-        return self.get_can_manage(software) or any(
-            grant.user_id == self.context["request"].user.pk for grant in software.maintainer_grants.all()
-        )
-
-    def get_can_manage(self, software: Software) -> bool:
         return can_manage_software(software, self.context["request"].user)
 
-    def get_maintainers(self, software: Software) -> list[dict]:
-        if not self.get_can_manage(software):
-            return []
-        users = (grant.user for grant in software.maintainer_grants.all())
-        return SoftwareUserSerializer(users, many=True).data
-
     class Meta(SoftwareSummarySerializer.Meta):
-        fields = [*SoftwareSummarySerializer.Meta.fields, "owner", "can_maintain", "can_manage", "maintainers"]
+        fields = [
+            *SoftwareSummarySerializer.Meta.fields, "owner", "can_maintain", "latest_release_version",
+            "latest_release_tag", "package_config_count",
+        ]
 
 
 class SoftwareRegistrationSerializer(serializers.Serializer):
@@ -60,7 +58,6 @@ class SoftwareUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField(required=False)
-    owner_username = serializers.CharField(max_length=150, required=False)
 
     def validate(self, attrs: dict) -> dict:
         immutable = {"repository", "slug"}.intersection(self.initial_data)
@@ -69,33 +66,14 @@ class SoftwareUpdateSerializer(serializers.Serializer):
         return attrs
 
 
-class SoftwareGrantSerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=150)
+class ProjectSoftwareSerializer(serializers.Serializer):
+    """保持项目软件查询的响应结构，按实时的仓库关联计算。"""
 
-
-class ProjectSoftwareSerializer(serializers.ModelSerializer):
-    software = SoftwareSummarySerializer(read_only=True)
-    can_view_repository = serializers.SerializerMethodField()
+    id = serializers.UUIDField()
+    software = SoftwareSummarySerializer(source="*")
+    can_view_repository = serializers.BooleanField(default=True)
+    is_active = serializers.BooleanField()
     is_usable = serializers.SerializerMethodField()
 
-    def get_can_view_repository(self, selection: ProjectSoftware) -> bool:
-        return selection.software.repository_id in self.context["visible_repository_ids"]
-
-    def get_is_usable(self, selection: ProjectSoftware) -> bool:
-        return (
-            selection.is_active
-            and selection.software.is_active
-            and selection.software.repository_id in self.context["usable_repository_ids"]
-        )
-
-    class Meta:
-        model = ProjectSoftware
-        fields = ["id", "software", "is_active", "can_view_repository", "is_usable"]
-
-
-class ProjectSoftwareSelectionSerializer(serializers.Serializer):
-    software = serializers.UUIDField()
-
-
-class ProjectSoftwareStateSerializer(serializers.Serializer):
-    is_active = serializers.BooleanField()
+    def get_is_usable(self, software: Software) -> bool:
+        return software.is_active and software.repository_id in self.context["usable_repository_ids"]
