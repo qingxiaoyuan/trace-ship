@@ -74,6 +74,8 @@ export interface Project {
   member_count?: number;
   package_count?: number;
   release_count?: number;
+  software_count?: number;
+  published_version_count?: number;
   created_at: string;
   version_rule?: unknown;
   release_rule?: unknown;
@@ -109,6 +111,13 @@ export interface RcCandidate {
 }
 
 export interface Release {
+  software?: string | null;
+  software_name?: string | null;
+  software_slug?: string | null;
+  /** 共享详情的项目字段对应查看上下文，原申请操作仍在原项目。 */
+  shared_readonly?: boolean;
+  /** 项目已停止选用，仅可从原任务或归档追溯该版本。 */
+  shared_history_only?: boolean;
   /** 已保存发布说明的列表摘要，完整说明通过详情读取。 */
   update_summary?: string;
   /** 各关联配置最近任务的汇总，失败优先，避免单个成功掩盖其他配置失败。 */
@@ -540,6 +549,7 @@ export type AIScriptStreamEvent =
 /** AI 生成打包脚本请求参数（支持未保存配置，project/repository 必填） */
 export interface AIGenerateScriptPayload {
   project: string;
+  software?: string;
   repository: string;
   executor_type: 'local_docker' | 'remote_node';
   node?: string | null;
@@ -618,6 +628,10 @@ export interface PackageConfig {
   repository_name?: string;
   project_component?: string | null;
   project_component_name?: string;
+  software?: string | null;
+  software_name?: string;
+  software_slug?: string;
+  can_maintain?: boolean;
   name: string;
   executor_type?: 'local_docker' | 'remote_node';
   executor_type_display?: string;
@@ -676,6 +690,8 @@ export interface PackageConfig {
 export interface FavoritePackageConfig {
   id: string;
   name: string;
+  software?: string | null;
+  software_name?: string;
   project_id?: string;
   project_name?: string;
   repository_id?: string;
@@ -712,12 +728,17 @@ export interface PackageTask {
   my_role?: string | null;
   can_cancel?: boolean;
   can_delete?: boolean;
+  can_retry?: boolean;
   id: string;
   config?: string | null;
   config_name?: string;
   /** 关联发布（分支直打包任务为空） */
   release: string | null;
   release_version?: string | null;
+  retry_of?: string | null;
+  software?: string | null;
+  software_name?: string;
+  software_slug?: string;
   project: string;
   project_name?: string;
   repository: string;
@@ -879,6 +900,7 @@ export interface Repository {
     component_name: string;
   }>;
   credential_loans?: ProjectComponent['credential_loans'];
+  can_register_software?: boolean;
   created_by?: string | null;
   created_by_name?: string;
   owner_name?: string;
@@ -905,6 +927,7 @@ export interface ProjectComponent {
   project_count: number;
   current_version?: string;
   current_tag?: string;
+  current_software_name?: string;
   package_configs?: Array<{ id: string; name: string; is_active: boolean }>;
   credential_status?: 'available' | 'expiring' | 'unavailable';
   owner_name?: string;
@@ -991,8 +1014,8 @@ export interface WorkflowTask {
   title: string;
   applicant: string;
   project_name: string;
-  /** 软件名：发布目标仓库名 */
   repository_name?: string;
+  software_name?: string;
   current_node: string;
   submit_time: string;
   remaining_time?: string;
@@ -1086,8 +1109,8 @@ export interface WorkflowInstance {
   title?: string;
   applicant?: string;
   project_name?: string;
-  /** 软件名：发布目标仓库名 */
   repository_name?: string;
+  software_name?: string;
   current_node?: string;
   submit_time?: string;
   version?: string;
@@ -1118,8 +1141,8 @@ export interface WorkflowInstanceListItem {
   title: string;
   applicant: string;
   project_name: string;
-  /** 软件名：发布目标仓库名 */
   repository_name?: string;
+  software_name?: string;
   current_node: string;
   submit_time: string;
   version?: string;
@@ -1146,6 +1169,8 @@ export interface Notification {
 /** 强提醒：待我审批的任务摘要 */
 export interface RemindTodoTask {
   id: string;
+  instance_id?: string;
+  software_name?: string;
   title: string;
   version: string;
   project_name: string;
@@ -1155,6 +1180,7 @@ export interface RemindTodoTask {
 /** 强提醒：待我整改的意见摘要 */
 export interface RemindOpenIssue {
   id: string;
+  software_name?: string;
   release_id: string;
   version: string;
   content: string;

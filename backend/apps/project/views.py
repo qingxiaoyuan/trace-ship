@@ -5,7 +5,6 @@
 """
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Prefetch, Q, Sum
-from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status
@@ -23,9 +22,12 @@ from apps.project.serializers import (
 )
 from apps.project.services import (
     ProjectService,
+    RepositoryAssociationConflict,
     annotate_project_detail_counts,
     annotate_project_list_counts,
-    next_component_code,
+    create_project_component,
+    remove_project_component,
+    update_project_component,
     visible_project_ids,
     visible_repository_ids,
 )
@@ -209,7 +211,13 @@ class ProjectViewSet(StandardModelViewSet):
         instance = self.get_object()
         from apps.release.oa_submission import locked_archive_parent
 
-        with locked_archive_parent(instance):
+        with locked_archive_parent(instance, user=request.user):
+            instance = get_object_or_404(Project.objects.all(), pk=instance.pk)
+            if instance.project_software.exists() or instance.releases.filter(software__isnull=False).exists():
+                return error_response(
+                    40901, "项目已有历史软件关联或发布记录，请改为停用项目。",
+                    status_code=status.HTTP_409_CONFLICT,
+                )
             self.perform_destroy(instance)
         return success_response(None, "删除成功")
 
@@ -265,7 +273,7 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
         return [IsAuthenticated(), IsProjectMember()]
 
     def get_serializer_context(self):
-        """向序列化器注入父项目，供项目内唯一性校验使用。"""
+        """向序列化器注入父项目上下文。"""
         context = super().get_serializer_context()
         context["project"] = self.get_parent_project()
         return context
@@ -300,7 +308,7 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
                         project_id=project_id,
                         status="released",
                     ).only(
-                        "id", "version", "tag_name", "repository_id",
+                        "id", "version", "tag_name", "repository_id", "software_name_snapshot",
                         "released_at", "created_at",
                     ).order_by("-released_at", "-created_at"),
                     to_attr="_latest_project_releases",
@@ -332,63 +340,36 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
         return success_response(self.get_serializer(self.get_object()).data)
 
     def create(self, request: Request, *args, **kwargs) -> Response:
-        """将已有物理仓库关联为当前项目的组件。"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        repository = serializer.validated_data["repository"]
-        project = self.get_parent_project()
-        component_code = serializer.validated_data.get("component_code") or next_component_code(
-            project, repository.name
-        )
-        display_name = serializer.validated_data.get("display_name") or repository.name
-        default_branch = serializer.validated_data.get("default_branch") or repository.default_branch
-        component = serializer.save(
-            project=project,
-            component_code=component_code,
-            display_name=display_name,
-            default_branch=default_branch,
-        )
+        try:
+            component = create_project_component(self.get_parent_project(), request.user, serializer.validated_data)
+        except RepositoryAssociationConflict as exc:
+            return self._association_conflict(exc)
         return success_response(
-            self.get_serializer(component).data,
-            "关联成功",
-            status=status.HTTP_201_CREATED,
+            self.get_serializer(component).data, "关联成功", status=status.HTTP_201_CREATED,
         )
 
     def update(self, request: Request, *args, **kwargs) -> Response:
-        """更新项目内组件配置；不修改物理仓库。"""
-        partial = kwargs.pop("partial", False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        component = self.get_object()
+        serializer = self.get_serializer(component, data=request.data, partial=kwargs.pop("partial", False))
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return success_response(serializer.data, "更新成功")
+        try:
+            component = update_project_component(component, request.user, serializer.validated_data)
+        except RepositoryAssociationConflict as exc:
+            return self._association_conflict(exc)
+        component = get_object_or_404(self.get_queryset(), pk=component.pk)
+        return success_response(self.get_serializer(component).data, "更新成功")
 
-    def partial_update(self, request: Request, *args, **kwargs) -> Response:
-        """部分更新项目内组件配置。"""
-        kwargs["partial"] = True
-        return self.update(request, *args, **kwargs)
+    @staticmethod
+    def _association_conflict(exc: RepositoryAssociationConflict) -> Response:
+        return error_response(40901, str(exc), status_code=status.HTTP_409_CONFLICT)
 
     def destroy(self, request: Request, *args, **kwargs) -> Response:
-        """仅解除项目关系，绝不删除物理仓库。有发布或打包历史时只能停用。"""
-        instance = self.get_object()
-        from apps.release.models import ReleaseRecord
-
-        if ReleaseRecord.objects.filter(
-            project_id=instance.project_id, repository_id=instance.repository_id
-        ).exists():
-            return error_response(
-                40901,
-                "该仓库在当前项目下已有发布记录，不能移除；请改为停用",
-                status_code=status.HTTP_409_CONFLICT,
-            )
         try:
-            self.perform_destroy(instance)
-        except ProtectedError:
-            return error_response(
-                40901,
-                "仓库已有关联的打包配置，不能移除；请改为停用",
-                status_code=status.HTTP_409_CONFLICT,
-            )
+            remove_project_component(self.get_object(), request.user)
+        except RepositoryAssociationConflict as exc:
+            return self._association_conflict(exc)
         return success_response(None, "已从项目中移除，物理仓库未删除")
 
     @action(detail=False, methods=["get"], url_path="available")
@@ -477,20 +458,15 @@ class ProjectComponentViewSet(NestedProjectPermissionMixin, StandardModelViewSet
     @action(detail=True, methods=["post"], url_path="delete-tag")
     def delete_tag(self, request: Request, *args, **kwargs) -> Response:
         """项目管理员凭 delete_tag 借用权限幂等删除组件 Tag。"""
-        from apps.repository.models import RepositoryTag
-        from utils.provider.exceptions import NotFoundError
-
         tag_name = (request.data.get("tag_name") or "").strip()
         if not tag_name:
             return error_response(40001, "tag_name 不能为空")
-        component, provider = self._provider(request, operation="delete_tag")
-        remote_deleted = True
-        try:
-            provider.delete_tag(component.repository.external_identity, tag_name)
-        except NotFoundError:
-            remote_deleted = False
-        RepositoryTag.objects.filter(repository=component.repository, name=tag_name).delete()
-        return success_response({"tag_name": tag_name, "remote_deleted": remote_deleted})
+        component = self.get_object()
+        loan = request.query_params.get("credential_loan") or request.data.get("credential_loan")
+        return success_response(RepositoryService.delete_tag(
+            component.repository, tag_name, request.user, component=component, loan=loan,
+        ))
+
 
 
 class ProjectMemberViewSet(NestedProjectPermissionMixin, StandardModelViewSet):

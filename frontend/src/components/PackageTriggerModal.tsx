@@ -20,18 +20,27 @@ interface PackageTriggerModalProps {
  * 「新建打包」共享弹窗：按已发布 Tag / 按分支最新代码两种触发方式。
  * 供打包看板、常用配置面板、工作台打包速览复用。
  */
-type PackageTriggerFormValues = { release_id?: string; branch?: string; mode?: 'release' | 'branch' };
+type PackageTriggerFormValues = { project?: string; release_id?: string; branch?: string; mode?: 'release' | 'branch' };
 
 export function PackageTriggerModal({ open, config, onClose }: PackageTriggerModalProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
   const [form] = Form.useForm<PackageTriggerFormValues>();
-  const mode = Form.useWatch('mode', form) || 'release';
+  const shared = Boolean(config?.software);
+  const mode = Form.useWatch('mode', form) || (shared ? 'branch' : 'release');
+  const chosenProject = Form.useWatch('project', form);
+  const { projectId: legacyProject, repositoryId } = resolvePackageTriggerScope(config);
+  const projectId = shared ? chosenProject : legacyProject;
+  const usageProjects = useQuery({
+    queryKey: ['package-usage-projects', config?.id, config?.software],
+    queryFn: () => packageApi.getUsageProjects(config!.id),
+    enabled: open && shared,
+  });
   const draft = useModalDraft<{ values: PackageTriggerFormValues }>(
     open,
-    config ? `package-trigger:${config.id}` : 'package-trigger:none',
-    () => ({ values: { mode: 'release' } }),
+    config ? `package-trigger:${config.id}:${legacyProject || ''}` : 'package-trigger:none',
+    () => ({ values: { mode: shared ? 'branch' : 'release', project: shared ? legacyProject : undefined } }),
   );
 
   useEffect(() => {
@@ -39,8 +48,6 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
     form.resetFields();
     form.setFieldsValue(draft.value.values);
   }, [draft.value, form, open]);
-
-  const { projectId, repositoryId } = resolvePackageTriggerScope(config);
 
   const { data: releasedData, isLoading: releasesLoading } = useQuery({
     queryKey: ['package-trigger-releases', projectId, repositoryId],
@@ -51,7 +58,7 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
         status: 'released',
         page_size: 1000,
       }),
-    enabled: open && !!projectId && !!repositoryId,
+    enabled: open && !shared && !!projectId && !!repositoryId,
   });
 
   const releaseOptions = useMemo(
@@ -64,9 +71,10 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
 
   // 分支直打包：按配置关联仓库加载分支列表（含最新提交哈希）
   const { data: branchesData, isLoading: branchesLoading } = useQuery({
-    queryKey: ['package-trigger-branches', repositoryId],
+    queryKey: ['package-trigger-branches', repositoryId, projectId, config?.software],
     queryFn: () => repositoryApi.getBranches(repositoryId!),
-    enabled: open && mode === 'branch' && !!repositoryId,
+    enabled: open && mode === 'branch' && !!repositoryId
+      && (!shared || Boolean(usageProjects.data?.some((project) => project.id === projectId))),
   });
 
   const branchOptions = useMemo(
@@ -82,7 +90,9 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
       if (!config) throw new Error('未选择打包配置');
       if (mode === 'branch') {
         if (!branch) throw new Error('请选择要打包的分支');
-        return packageApi.triggerConfigBranch(config.id, branch);
+        if (config.software && !projectId) throw new Error('请选择发起项目');
+        return packageApi.triggerConfigBranch(config.id, branch,
+          config.software && projectId ? { software: config.software, project: projectId } : undefined);
       }
       if (!releaseId) throw new Error('请选择已发布 Tag');
       return packageApi.triggerConfig(config.id, releaseId);
@@ -136,16 +146,30 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
       open={open}
       onCancel={handleClose}
       onOk={() => form.submit()}
+      okText="开始打包"
+      cancelText="取消"
       confirmLoading={triggerMutation.isPending}
       destroyOnHidden
     >
       <div className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 text-[12px] text-slate-600">
         <div>打包配置：{config?.name || '-'}</div>
+        {shared && <div>软件：{config?.software_name}</div>}
         <div>关联仓库：{config?.repository_name || '-'}</div>
       </div>
-      <Form form={form} layout="vertical" initialValues={{ mode: 'release' }} onFinish={handleFinish}>
+      <Form form={form} layout="vertical" onFinish={handleFinish}>
         <Form.Item name="mode" hidden><Input /></Form.Item>
-        <div className="mb-3">
+        {shared && (
+          <Form.Item name="project" label="发起项目" rules={[{ required: true, message: '请选择发起项目' }]}>
+            <Select
+              loading={usageProjects.isLoading}
+              placeholder="选择发起项目"
+              options={usageProjects.data?.map((project) => ({ value: project.id, label: project.name }))}
+              onChange={() => form.setFieldValue('branch', undefined)}
+              notFoundContent="暂无具备打包权限的项目"
+            />
+          </Form.Item>
+        )}
+        {!shared && <div className="mb-3">
           <div className="mb-1.5 text-[13px] font-medium text-slate-700">打包方式</div>
           <div className="seg inline-flex items-center gap-0.5 rounded-lg p-0.5">
             <button
@@ -167,7 +191,7 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
               按分支最新代码
             </button>
           </div>
-        </div>
+        </div>}
 
         {mode === 'release' ? (
           <Form.Item name="release_id" label="选择已发布 Tag" rules={[{ required: true, message: '请选择已发布 Tag' }]}>
@@ -186,14 +210,17 @@ export function PackageTriggerModal({ open, config, onClose }: PackageTriggerMod
               <Select
                 showSearch
                 loading={branchesLoading}
+                disabled={shared && !projectId}
                 options={branchOptions}
-                placeholder="选择要打包的分支（取该分支最新代码）"
+                placeholder={shared ? '选择分支' : '选择要打包的分支（取该分支最新代码）'}
                 optionFilterProp="label"
                 notFoundContent={branchesLoading ? '加载中...' : '暂无可选分支'}
               />
             </Form.Item>
             <div className="-mt-1 mb-1 rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5 text-[12px] leading-relaxed text-emerald-700">
-              将对所选分支的最新代码直接打包（无需发布流程），打包任务标题与自动编码均按分支名命名。
+              {shared
+                ? '系统固定创建任务时的分支提交。执行时若检出结果已变化，任务会结束。'
+                : '将对所选分支的最新代码直接打包（无需发布流程），打包任务标题与自动编码均按分支名命名。'}
             </div>
           </>
         )}

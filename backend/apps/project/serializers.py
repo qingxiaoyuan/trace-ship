@@ -100,6 +100,8 @@ class ProjectSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
     package_count = serializers.SerializerMethodField()
     release_count = serializers.SerializerMethodField()
+    software_count = serializers.IntegerField(read_only=True, default=0)
+    published_version_count = serializers.IntegerField(read_only=True, default=0)
     my_role = serializers.SerializerMethodField()
 
     class Meta:
@@ -108,7 +110,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "id", "code", "name", "leader_id", "leader_name", "description",
             "version_rule", "release_rule", "status",
             "created_at", "updated_at",
-            "repo_count", "member_count", "package_count", "release_count",
+            "repo_count", "member_count", "package_count", "release_count", "software_count", "published_version_count",
             "my_role",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
@@ -219,6 +221,7 @@ class ProjectComponentSerializer(serializers.ModelSerializer):
     project_count = serializers.IntegerField(read_only=True, default=1)
     current_version = serializers.SerializerMethodField()
     current_tag = serializers.SerializerMethodField()
+    current_software_name = serializers.SerializerMethodField()
     package_configs = serializers.SerializerMethodField()
     credential_loans = serializers.SerializerMethodField()
     credential_status = serializers.SerializerMethodField()
@@ -232,7 +235,7 @@ class ProjectComponentSerializer(serializers.ModelSerializer):
             "display_name", "default_branch", "source_subdir", "required",
             "version_scope", "version_scope_display", "tag_namespace",
             "project_config", "sort_order", "is_active", "project_count",
-            "current_version", "current_tag", "package_configs",
+            "current_version", "current_tag", "current_software_name", "package_configs",
             "credential_loans", "credential_status",
             "owner_name", "owner_in_project",
             "created_at", "updated_at",
@@ -255,6 +258,10 @@ class ProjectComponentSerializer(serializers.ModelSerializer):
     def get_current_tag(self, obj: ProjectComponent) -> str:
         release = self._latest_release(obj)
         return release.tag_name if release else ""
+
+    def get_current_software_name(self, obj: ProjectComponent) -> str:
+        release = self._latest_release(obj)
+        return release.software_name_snapshot if release else ""
 
     def get_package_configs(self, obj: ProjectComponent) -> list[dict]:
         configs = getattr(obj, "_component_package_configs", [])
@@ -332,6 +339,8 @@ class ProjectComponentSerializer(serializers.ModelSerializer):
         """组件编码作为配置键，仅允许小写字母、数字及常见分隔符。"""
         value = (value or "").strip().lower()
         if not value:
+            if self.instance:
+                raise serializers.ValidationError("组件编码不能为空")
             return value
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", value):
             raise serializers.ValidationError("组件编码仅支持小写字母、数字、点、下划线和短横线")
@@ -343,27 +352,6 @@ class ProjectComponentSerializer(serializers.ModelSerializer):
         if any(part == ".." for part in value.split("/")):
             raise serializers.ValidationError("源码子目录不能包含 ..")
         return value
-
-    def validate(self, attrs: dict) -> dict:
-        """校验项目内唯一性，以及仓库所有者必须已在项目成员中。"""
-        project = self.context.get("project") or getattr(self.instance, "project", None)
-        component_code = attrs.get("component_code", getattr(self.instance, "component_code", ""))
-        if self.instance and "component_code" in attrs and not component_code:
-            raise serializers.ValidationError({"component_code": "组件编码不能为空"})
-        if project and component_code:
-            duplicates = ProjectComponent.objects.filter(project=project, component_code=component_code)
-            if self.instance:
-                duplicates = duplicates.exclude(id=self.instance.id)
-            if duplicates.exists():
-                raise serializers.ValidationError({"component_code": "当前项目内组件编码已存在"})
-        repository = attrs.get("repository", getattr(self.instance, "repository", None))
-        if project and repository and self.instance is None:
-            from apps.project.services import repository_owner_association_error
-
-            error = repository_owner_association_error(repository, project)
-            if error:
-                raise serializers.ValidationError({"repository": error})
-        return attrs
 
 
 class ProjectMemberSerializer(serializers.ModelSerializer):

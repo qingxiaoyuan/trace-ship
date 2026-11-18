@@ -20,6 +20,18 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+const selectedSoftware = {
+  id: 'selection', is_usable: true,
+  software: { id: 's1', name: '软件一', slug: 'release-app', repository: 'r1', repository_name: '主仓库' },
+};
+const softwareLabel = '软件一 · release-app';
+const component = { is_active: true, owner_in_project: true, repository: 'r1', repository_detail: { name: '主仓库' } };
+
+async function chooseRepository() {
+  fireEvent.keyDown(screen.getByLabelText('关联仓库'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
+  fireEvent.click(await screen.findByText('主仓库', { selector: '.ant-select-item-option-content' }));
+}
+
 it('正式版、RC 和测试版均按分支创建，不显示来源 RC 选择', async () => {
   render(<App><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter><ReleaseCreate /></MemoryRouter>
@@ -33,12 +45,14 @@ it('正式版、RC 和测试版均按分支创建，不显示来源 RC 选择', 
 
 it('选择分支后切换项目清空分支和版本，不能提交旧来源', async () => {
   request.defaults.adapter = async (config) => {
-    let data: unknown = { results: [], total: 0 };
+    let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p1', name: '项目一' }, { id: 'p2', name: '项目二' }] };
-    if (config.url?.includes('/components/')) data = [{ repository: 'r1', is_active: true, repository_detail: { name: '仓库一' } }];
-    if (config.url?.endsWith('/branches/')) data = [{ name: 'develop' }];
-    if (config.url?.endsWith('/changes-preview/')) data = { commits: [], merge_requests: [], parsed_updates: [] };
-    if (config.url?.includes('next-version')) data = { next_tag_name: 'VA.1.0.0' };
+    if (config.url === '/projects/p1/software/') data = [selectedSoftware];
+    if (config.url === '/projects/p1/components/') data = [component];
+    if (config.url === '/projects/p2/components/') data = [];
+    if (config.url === '/releases/software-branches/') data = [{ name: 'develop' }];
+    if (config.url?.endsWith('changes-preview/')) data = { commits: [], merge_requests: [], parsed_updates: [] };
+    if (config.url?.includes('next-version')) data = { next_tag_name: 'release-app/VA.1.0.0' };
     return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, data } };
   };
   render(<App><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -46,30 +60,35 @@ it('选择分支后切换项目清空分支和版本，不能提交旧来源', a
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目一'));
-  fireEvent.mouseDown(screen.getByLabelText('目标仓库'));
-  fireEvent.click(await screen.findByText('仓库一'));
-  fireEvent.mouseDown(screen.getByLabelText('分支'));
+  await chooseRepository();
+  await waitFor(() => expect((screen.getByLabelText('目标软件') as HTMLInputElement).disabled).toBe(false));
+  fireEvent.keyDown(screen.getByLabelText('目标软件'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
+  fireEvent.click(await screen.findByText(softwareLabel, { selector: '.ant-select-item-option-content' }));
+  fireEvent.keyDown(screen.getByLabelText('分支'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('develop', { selector: '.ant-select-item-option-content' }));
-  expect(await screen.findByDisplayValue('VA.1.0.0')).toBeTruthy();
+  expect(await screen.findByDisplayValue('release-app/VA.1.0.0')).toBeTruthy();
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目二'));
   await waitFor(() => expect(screen.queryByText('develop', { selector: '.ant-select-selection-item' })).toBeNull());
-  expect(screen.queryByDisplayValue('VA.1.0.0')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '创建发布' }));
-  expect(await screen.findByText('请选择分支')).toBeTruthy();
+  expect(screen.queryByDisplayValue('release-app/VA.1.0.0')).toBeNull();
+  expect(await screen.findByText('当前项目没有可发布的关联仓库')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '创建发布' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it('正式版提交所选分支，创建期间锁定来源，避免旧响应覆盖', async () => {
   let finish: (() => void) | undefined;
   request.defaults.adapter = async (config) => {
-    let data: unknown = { results: [], total: 0 };
+    let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
-    if (config.url?.includes('/components/')) data = [{ repository: 'r', is_active: true, repository_detail: { name: '仓库' } }];
-    if (config.url?.endsWith('/branches/')) data = [{ name: 'develop' }];
-    if (config.url?.endsWith('/changes-preview/')) data = { commits: [], merge_requests: [], parsed_updates: [] };
-    if (config.url?.includes('next-version')) data = { next_tag_name: 'VA.1.0.0' };
+    if (config.url === '/projects/p/software/') data = [selectedSoftware];
+    if (config.url === '/projects/p/components/') data = [component];
+    if (config.url === '/releases/software-branches/') data = [{ name: 'develop' }];
+    if (config.url?.endsWith('changes-preview/')) data = { commits: [], merge_requests: [], parsed_updates: [] };
+    if (config.url?.includes('next-version')) data = { next_tag_name: 'release-app/VA.1.0.0' };
     if (config.url === '/releases/' && config.method === 'post') {
       const payload = JSON.parse(config.data);
+      expect(payload.software).toBe(selectedSoftware.software.id);
+      expect(payload.repository).toBe('r1');
       expect(payload.branch).toBe('develop');
       expect(payload.release_type).toBe('formal');
       expect(payload.source_rc).toBeUndefined();
@@ -85,14 +104,19 @@ it('正式版提交所选分支，创建期间锁定来源，避免旧响应覆�
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('目标仓库'));
-  fireEvent.click(await screen.findByText('仓库', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('分支'));
+  await chooseRepository();
+  await waitFor(() => expect((screen.getByLabelText('目标软件') as HTMLInputElement).disabled).toBe(false));
+  fireEvent.keyDown(screen.getByLabelText('目标软件'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
+  fireEvent.click(await screen.findByText(softwareLabel, { selector: '.ant-select-item-option-content' }));
+  fireEvent.keyDown(screen.getByLabelText('分支'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('develop', { selector: '.ant-select-item-option-content' }));
-  fireEvent.click(screen.getByRole('button', { name: '创建发布' }));
+  await screen.findByDisplayValue('release-app/VA.1.0.0');
+  const create = screen.getByRole('button', { name: '创建发布' }) as HTMLButtonElement;
+  await waitFor(() => expect(create.disabled).toBe(false));
+  fireEvent.click(create);
   await waitFor(() => expect(finish).toBeTypeOf('function'));
   await waitFor(() => expect((screen.getByRole('combobox', { name: '项目' }) as HTMLInputElement).disabled).toBe(true));
-  expect((screen.getByLabelText('目标仓库') as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText('目标软件') as HTMLInputElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: /^RC / }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByLabelText('分支') as HTMLInputElement).disabled).toBe(true);
   await act(async () => finish?.());
@@ -100,19 +124,20 @@ it('正式版提交所选分支，创建期间锁定来源，避免旧响应覆�
 });
 
 it('正式分支发布说明保留第十二条更新，允许补充说明并反馈审批失败', async () => {
-  const release = { id: 'formal', release_type: 'formal', branch: 'develop', version: 'VA.1.0.0' };
+  const release = { id: 'formal', release_type: 'formal', software: 's1', branch: 'develop', version: 'VA.1.0.0' };
   const doc = '| 字段 | 内容 |\n|---|---|\n| 当前发布版本号 | VA.1.0.0 |\n| Git提交hash | 固定来源SHA |\n| 变更内容 | ' + Array.from({ length: 12 }, (_, i) => `A 累计功能${i + 1}`).join('\n') + ' |';
   let saved = '';
   let submissions = 0;
   request.defaults.adapter = async (config) => {
-    let data: unknown = { results: [], total: 0 };
+    let data: unknown = config.url?.endsWith('/software/') ? [] : { results: [], total: 0 };
     if (config.url === '/projects/') data = { results: [{ id: 'p', name: '项目' }] };
-    if (config.url?.includes('/components/')) data = [{ repository: 'r', is_active: true, repository_detail: { name: '仓库' } }];
-    if (config.url?.endsWith('/branches/')) data = [{ name: 'develop' }];
-    if (config.url?.includes('next-version')) data = { next_tag_name: 'VA.1.0.0' };
+    if (config.url === '/projects/p/software/') data = [selectedSoftware];
+    if (config.url === '/projects/p/components/') data = [component];
+    if (config.url === '/releases/software-branches/') data = [{ name: 'develop' }];
+    if (config.url?.includes('next-version')) data = { next_tag_name: 'release-app/VA.1.0.0' };
     if (config.url === '/releases/' || config.url === '/releases/formal/') data = release;
     if (config.url?.endsWith('generate-doc/')) data = doc;
-    if (config.url?.endsWith('changes-preview/')) data = { base_tag: 'VA.0.9.0', commits: [], merge_requests: [], warnings: [] };
+    if (config.url?.endsWith('changes-preview/')) data = { base_tag: 'VA.0.9.0', commits: [], merge_requests: [], parsed_updates: [], warnings: [] };
     if (config.url?.endsWith('submit-audit/')) {
       submissions += 1;
       return {config, status: 200, statusText: 'OK', headers: {}, data: {code: 40002, message: submissions === 1 ? '已有同版本在发布' : '正式流程没有有效审批人'}};
@@ -125,11 +150,16 @@ it('正式分支发布说明保留第十二条更新，允许补充说明并反�
   </QueryClientProvider></App>);
   fireEvent.mouseDown(screen.getByLabelText('项目'));
   fireEvent.click(await screen.findByText('项目', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('目标仓库'));
-  fireEvent.click(await screen.findByText('仓库', { selector: '.ant-select-item-option-content' }));
-  fireEvent.mouseDown(screen.getByLabelText('分支'));
+  await chooseRepository();
+  await waitFor(() => expect((screen.getByLabelText('目标软件') as HTMLInputElement).disabled).toBe(false));
+  fireEvent.keyDown(screen.getByLabelText('目标软件'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
+  fireEvent.click(await screen.findByText(softwareLabel, { selector: '.ant-select-item-option-content' }));
+  fireEvent.keyDown(screen.getByLabelText('分支'), { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 });
   fireEvent.click(await screen.findByText('develop', { selector: '.ant-select-item-option-content' }));
-  fireEvent.click(screen.getByRole('button', { name: '创建发布' }));
+  await screen.findByDisplayValue('release-app/VA.1.0.0');
+  const create = screen.getByRole('button', { name: '创建发布' }) as HTMLButtonElement;
+  await waitFor(() => expect(create.disabled).toBe(false));
+  fireEvent.click(create);
   const notes = await screen.findByDisplayValue(/累计功能12/) as HTMLTextAreaElement;
   expect(notes.value).toContain('累计功能12');
   expect(screen.queryByDisplayValue('固定来源SHA')).toBeNull();

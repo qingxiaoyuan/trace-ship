@@ -39,7 +39,9 @@ export const DetailView = memo(function DetailView({
 }: DetailViewProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const { canManage, canTriggerPackage } = useProjectRole(config);
+  const { canManage: canManageLegacy } = useProjectRole(config);
+  const { canTriggerPackage } = useProjectRole(task);
+  const canManage = config?.can_maintain ?? canManageLegacy;
   const [activeTab, setActiveTab] = useState<'log' | 'artifacts'>('log');
   const [activeBuild, setActiveBuild] = useState<PackageTask>(task);
   const [activeLogText, setActiveLogText] = useState<string>(logText);
@@ -126,7 +128,7 @@ export const DetailView = memo(function DetailView({
                     <>
                       <span>·</span>
                       <Link
-                        to={`/releases/${task.release}`}
+                        to={`/releases/${task.release}${task.software ? `?project=${task.project}` : ''}`}
                         className="text-indigo-500 transition-colors hover:text-indigo-600"
                       >
                         发布 {task.release_version || ''}

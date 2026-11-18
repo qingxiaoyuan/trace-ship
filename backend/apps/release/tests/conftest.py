@@ -11,6 +11,7 @@ from apps.account.models import User
 from apps.credential.models import Credential
 from apps.project.models import Project, ProjectMember
 from apps.repository.models import CommitRecord, Repository
+from apps.software.models import ProjectSoftware, Software
 
 
 @pytest.fixture
@@ -71,6 +72,14 @@ def repository(project, credential):
     )
     ensure_repository_component(repo, project)
     return repo
+
+
+@pytest.fixture
+def software(project, repository, user):
+    """新建发布使用真实登记且已在当前项目选用的软件。"""
+    software = Software.objects.create(repository=repository, slug="release-app", name="发布软件", owner=user)
+    ProjectSoftware.objects.create(project=project, software=software)
+    return software
 
 
 @pytest.fixture

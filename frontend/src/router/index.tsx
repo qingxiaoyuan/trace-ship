@@ -88,6 +88,7 @@ const routes: AppRouteObject[] = [
           // 仓库详情 tab 已 URL 化，旧路径重定向到默认 tab 保证外链兼容
           { path: 'repositories/:id', element: <RedirectRepositoryDefaultTab />, handle: { title: '仓库' } },
           { path: 'repositories/:id/:tab', element: <PageLoader><RepositoryDetail /></PageLoader>, handle: { title: '仓库' } },
+          { path: 'software', element: <Navigate to="/repositories" replace /> },
           { path: 'credentials', element: <PageLoader><CredentialList /></PageLoader>, handle: { title: '凭证' } },
           { path: 'credentials/:id', element: <PageLoader><CredentialDetail /></PageLoader>, handle: { title: '凭证详情' } },
           {

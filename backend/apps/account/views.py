@@ -618,6 +618,15 @@ class UserViewSet(StandardModelViewSet):
             return [IsAuthenticated(), HasPermission("system.user")]
         return super().get_permissions()
 
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        instance = self.get_object()
+        if instance.owned_software.exists():
+            return error_response(
+                40901, "该账号仍是软件维护负责人，请先移交维护责任。",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         """
         执行用户创建

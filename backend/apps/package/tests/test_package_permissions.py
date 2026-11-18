@@ -4,7 +4,7 @@
 覆盖项目成员角色对打包操作的权限控制：
 - 触发打包：manager / developer / tester
 - 取消任务 / 手动推 SVN：manager / developer
-- 打包配置增删改：仅 software_admin（软件管理员）
+- 新配置由软件维护人员管理；已有待归属配置沿用原项目权限。
 """
 import pytest
 from rest_framework.test import APIClient
@@ -15,6 +15,7 @@ from apps.package.services import PackageService
 from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
+from apps.software.models import ProjectSoftware, Software
 
 
 def auth_client(user):
@@ -80,6 +81,13 @@ def release(project, repository, users):
 def image():
     """打包镜像 fixture，被 package_config 与新建配置测试共用"""
     return PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
+
+
+@pytest.fixture
+def software(project, repository):
+    software = Software.objects.create(repository=repository, owner=project.leader, slug="web", name="Web 软件")
+    ProjectSoftware.objects.create(project=project, software=software)
+    return software
 
 
 @pytest.fixture
@@ -254,13 +262,13 @@ def test_user_with_dedicated_permission_can_delete_visible_finished_task(project
 
 
 # ---------------------------------------------------------------------------
-# 打包配置写权限：项目管理员 / 软件管理员
+# 共享配置的新增授权与旧配置的项目权限
 # ---------------------------------------------------------------------------
 
-def _config_payload(project, repository, image, name="权限测试配置"):
+def _config_payload(software, image):
     return {
-        "project_component": str(project.project_components.get(repository=repository).id),
-        "name": name,
+        "software": str(software.pk),
+        "name": "权限测试配置",
         "executor_type": "local_docker",
         "image": str(image.id),
         "build_path": ".",
@@ -269,38 +277,42 @@ def _config_payload(project, repository, image, name="权限测试配置"):
 
 
 @pytest.mark.django_db
-def test_software_admin_can_create_config(project, repository, image, users):
-    """软件管理员可创建打包配置"""
+def test_project_software_admin_without_software_grant_cannot_create_config(software, image, users):
+    """项目软件管理员不会因此获得共享配置维护权。"""
     response = auth_client(users["software_admin"]).post(
-        "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+        "/api/packages/configs/", _config_payload(software, image), format="json",
     )
-    assert response.status_code == 200, response.data
+    assert response.status_code == 403
+    assert not PackageConfig.objects.filter(software=software).exists()
 
 
 @pytest.mark.django_db
-def test_manager_can_create_config(project, repository, image, users):
-    """项目管理员可创建打包配置"""
+def test_software_owner_can_create_config(software, image, users):
+    """维护负责人可以为软件创建不绑定项目的共享配置。"""
     response = auth_client(users["manager"]).post(
-        "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+        "/api/packages/configs/", _config_payload(software, image), format="json",
     )
     assert response.status_code == 200, response.data
+    data = response.json()["data"]
+    assert data["software"] == str(software.pk)
+    assert data["project_component"] is None
 
 
 @pytest.mark.django_db
-def test_developer_cannot_create_config(project, repository, image, users):
-    """开发角色不能创建打包配置"""
+def test_developer_without_software_grant_cannot_create_config(software, image, users):
+    """开发角色可以打包，但不自动维护共享配置。"""
     response = auth_client(users["developer"]).post(
-        "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+        "/api/packages/configs/", _config_payload(software, image), format="json",
     )
     assert response.status_code == 403
 
 
 @pytest.mark.django_db
-def test_tester_viewer_cannot_create_config(project, repository, image, users):
+def test_tester_viewer_cannot_create_config(software, image, users):
     """测试 / 只读角色不能创建打包配置"""
     for role in ("tester", "viewer"):
         response = auth_client(users[role]).post(
-            "/api/packages/configs/", _config_payload(project, repository, image), format="json",
+            "/api/packages/configs/", _config_payload(software, image), format="json",
         )
         assert response.status_code == 403
 

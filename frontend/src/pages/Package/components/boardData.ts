@@ -1,9 +1,10 @@
 import type { PackageConfig, PackageTask, PaginatedData } from '@/types';
 import { isRunning } from './utils';
 
-export interface ConfigRepositoryGroup {
-  repositoryId: string;
-  repositoryName: string;
+export interface ConfigSoftwareGroup {
+  id: string;
+  name: string;
+  repositoryName?: string;
   configs: PackageConfig[];
 }
 
@@ -47,25 +48,25 @@ export function mergePackageTasks(activeTasks: PackageTask[], historyTasks: Pack
   );
 }
 
-/** 配置按物理仓库 ID 分组；含收藏的仓库优先，组内收藏配置优先。 */
-export function groupConfigsByRepository(configs: PackageConfig[]): ConfigRepositoryGroup[] {
+/** 配置按软件分组，旧组件配置统一列在「未分组」。 */
+export function groupConfigsBySoftware(configs: PackageConfig[]): ConfigSoftwareGroup[] {
   const map = new Map<
     string,
-    ConfigRepositoryGroup & { firstIndex: number; hasFavorite: boolean }
+    ConfigSoftwareGroup & { firstIndex: number; hasFavorite: boolean }
   >();
 
   configs.forEach((config, index) => {
-    const repositoryId = config.repository_id;
-    if (!repositoryId) return;
-    const existing = map.get(repositoryId);
+    const id = config.software || 'unassigned';
+    const existing = map.get(id);
     if (existing) {
       existing.configs.push(config);
       existing.hasFavorite ||= Boolean(config.is_favorite);
       return;
     }
-    map.set(repositoryId, {
-      repositoryId,
-      repositoryName: config.repository_name || '-',
+    map.set(id, {
+      id,
+      name: config.software_name || '未分组',
+      repositoryName: config.software ? config.repository_name : undefined,
       configs: [config],
       firstIndex: index,
       hasFavorite: Boolean(config.is_favorite),
@@ -75,7 +76,8 @@ export function groupConfigsByRepository(configs: PackageConfig[]): ConfigReposi
   return [...map.values()]
     .sort((a, b) => Number(b.hasFavorite) - Number(a.hasFavorite) || a.firstIndex - b.firstIndex)
     .map((group) => ({
-      repositoryId: group.repositoryId,
+      id: group.id,
+      name: group.name,
       repositoryName: group.repositoryName,
       configs: group.configs
         .map((config, index) => ({ config, index }))

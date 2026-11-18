@@ -4,7 +4,7 @@ import pytest
 
 from apps.release.models import ReleaseRecord, ReleaseVersionClaim
 from apps.release.tests import test_formal_maintenance as maintenance
-from apps.release.tests.test_formal_maintenance import generate_and_submit
+from apps.release.tests.test_formal_maintenance import generate_and_submit, legacy_draft
 from apps.workflow.models import WorkflowDefinition
 
 pytestmark = pytest.mark.django_db
@@ -22,9 +22,9 @@ def release_type(request, api, repository, project):
     return request.param
 
 
-def create(api, project, repository, release_type, **identity):
+def create(api, project, software, release_type, **identity):
     result = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
+        "project": str(project.id), "software": str(software.id), "release_type": release_type,
         "branch": "develop", "package_config_ids": [], **identity,
     }, format="json")
     assert result.status_code == 201, result.data
@@ -44,7 +44,7 @@ def approve(api, release):
 @pytest.mark.parametrize("suffix_kind", ["overlap", "date"])
 @pytest.mark.parametrize("with_date", [False, True])
 def test_saved_version_roundtrip_keeps_complete_suffix_boundary(
-    api, project, repository, remote, release_type, entry, suffix_kind, with_date,
+    api, project, repository, software, remote, release_type, entry, suffix_kind, with_date,
 ):
     suffix = f"{release_type}.5.9.3-tail" if suffix_kind == "overlap" else "_20261028"
     other_type = "beta" if release_type == "rc" else "rc"
@@ -55,19 +55,19 @@ def test_saved_version_roundtrip_keeps_complete_suffix_boundary(
     tag = f"VA.1.2.3-{suffix}"
     identity = {"tag_name": tag + ("_20261029" if with_date else "")} if entry.endswith("tag") else {"version": tag}
     if entry.startswith("edit"):
-        release_id = create(api, project, repository, release_type, version="VA.1.2.2")
+        release_id = create(api, project, software, release_type, version="VA.1.2.2")
         changed = api.patch(f"/api/releases/{release_id}/", identity, format="json")
         assert changed.status_code == 200, changed.data
     else:
-        release_id = create(api, project, repository, release_type, **identity)
+        release_id = create(api, project, software, release_type, **identity)
     detail = api.get(f"/api/releases/{release_id}/").data["data"]
     assert detail["version"] == "VA.1.2.3"
     if entry.endswith("tag"):
-        assert detail["tag_name"] == identity["tag_name"]
+        assert detail["tag_name"] == f"{software.slug}/{identity['tag_name']}"
     previous = generate_and_submit(api, release_id)
     assert approve(api, previous)["status"] == "released"
     # 后缀中的 5.9.3 不占号：通过完整流程证明另一个编号仍可发布。
-    next_id = create(api, project, repository, release_type, version="VA.5.9.3")
+    next_id = create(api, project, software, release_type, version="VA.5.9.3")
     current = generate_and_submit(api, next_id)
     assert approve(api, current)["status"] == "released"
     assert api.get(f"/api/releases/{release_id}/").data["data"]["version"] == "VA.1.2.3"
@@ -92,7 +92,8 @@ def test_historical_identity_uses_own_claim_or_reports_ambiguity(
             tag_name="ORIGINAL.1.2.3-previous" if claim_state == "reused" else old_tag,
             consumed=True, reused=claim_state == "reused",
         )
-    release_id = create(api, project, repository, release_type, version=f"VA.{target}")
+    suffix = "rc" if release_type == "rc" else "alpha"
+    release_id = legacy_draft(project, repository, f"VA.{target}", f"VA.{target}-{suffix}", release_type)
     assert api.post(f"/api/releases/{release_id}/generate-doc/").status_code == 200
     submitted = api.post(f"/api/releases/{release_id}/submit-audit/")
     expected = ("版本身份存在歧义" if claim_state == "missing" and target in ("1.2.3", "5.9.3")
@@ -116,7 +117,8 @@ def test_ambiguous_history_restored_during_approval_blocks_push_and_retry(
         repository=repository, release_type=release_type, base_version="1.2.3",
         tag_name=f"ORIGINAL.1.2.3-{release_type}", consumed=True,
     )
-    release_id = create(api, project, repository, release_type, version="VA.1.2.3")
+    suffix = "rc" if release_type == "rc" else "alpha"
+    release_id = legacy_draft(project, repository, "VA.1.2.3", f"VA.1.2.3-{suffix}", release_type)
     release = generate_and_submit(api, release_id)
     previous = ReleaseRecord.objects.create(
         project=project, repository=repository, publisher=user, release_type=release_type,

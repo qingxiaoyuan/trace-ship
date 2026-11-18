@@ -15,6 +15,10 @@ with patch.dict(sys.modules, {"backend": runner}):
 
 # 与共享检查入口实际收集的参数化测试一致，每项对应一次行锁行为。
 TEST_CASES = (
+    "test_postgresql_same_software_across_projects_claims_once",
+    "test_postgresql_shared_package_serializes_cleanup_and_consumer_delete[cleanup]",
+    "test_postgresql_shared_package_serializes_cleanup_and_consumer_delete[consumer]",
+    "test_postgresql_consumer_deletion_waits_for_archive_protection",
     "test_postgresql_task_creation_waits_for_cleanup",
     "test_reselection_and_submission_serialize_on_postgresql",
     "test_postgresql_serializes_same_version_submissions[False]",
@@ -30,6 +34,8 @@ TEST_CASES = (
     "test_repackage_waits_for_config_change_and_revalidates[disabled-400]",
     "test_repackage_waits_for_config_change_and_revalidates[moved-project-403]",
     "test_config_writer_waits_for_repackage_snapshot",
+    "test_shared_branch_snapshot_and_edit_serialize",
+    "test_postgresql_first_svn_push_reserves_directory_before_remote_write",
     "test_归档并发重放及不同请求均仅发送一次[file-True]",
     "test_归档并发重放及不同请求均仅发送一次[file-False]",
     "test_发送已提交时删除竞争不能绕过来源保护[file-task]",
@@ -51,12 +57,16 @@ TEST_CASES = (
     "test_同一前次确认的并发新申请仅发送一次且保留全部历史[directory-missing-checked_no_order]",
     "test_失败核对与删除或重复核对竞争原子且保留首次依据[directory-delete]",
     "test_失败核对与删除或重复核对竞争原子且保留首次依据[directory-confirm]",
+    "test_共享归档并发派发按任务项目隔离并保护来源",
 )
 
 
 def test_postgresql_scope_includes_all_required_cases() -> None:
     """明确固定检查入口和参数化用例数量，范围调整时须同步验收门禁。"""
     assert postgresql.TEST_NODES == (
+        "apps/release/tests/test_software_release.py::test_postgresql_same_software_across_projects_claims_once",
+        "apps/release/tests/test_software_release.py::test_postgresql_shared_package_serializes_cleanup_and_consumer_delete",
+        "apps/release/tests/test_software_release.py::test_postgresql_consumer_deletion_waits_for_archive_protection",
         "apps/release/tests/test_tag_cleanup.py::test_postgresql_task_creation_waits_for_cleanup",
         "apps/release/tests/test_rc_source.py::test_reselection_and_submission_serialize_on_postgresql",
         "apps/release/tests/test_version_reservation.py::test_postgresql_serializes_same_version_submissions",
@@ -66,6 +76,8 @@ def test_postgresql_scope_includes_all_required_cases() -> None:
         "apps/release/tests/test_ai_remediation.py::test_postgresql_adoption_and_approval_are_serialized",
         "apps/system/tests/test_ai_settings.py::test_postgresql_review_snapshot_waits_for_complete_model_save",
         "apps/package/tests/test_release_repackage_postgresql.py",
+        "apps/package/tests/test_shared_packaging_postgresql.py",
+        "apps/package/tests/test_svn_delivery_scope.py::test_postgresql_first_svn_push_reserves_directory_before_remote_write",
         "apps/release/tests/test_oa_archive_postgresql.py",
     )
     assert len(TEST_CASES) == postgresql.EXPECTED_TESTS
@@ -98,7 +110,7 @@ def test_postgresql_rejects_any_unfinished_or_failing_test(tmp_path: Path, outco
         postgresql.validate_junit(report)
 
 
-@pytest.mark.parametrize("count", [0, 1, 7, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 24, 25, 26, len(TEST_CASES) - 1, len(TEST_CASES) + 1])
+@pytest.mark.parametrize("count", [0, 1, 7, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 24, 25, 26, 36, len(TEST_CASES) - 1, len(TEST_CASES) + 1])
 def test_postgresql_rejects_missing_or_unexpected_execution_count(tmp_path: Path, count: int) -> None:
     """空报告、漏执行和意外范围都必须失败，不能只相信 JUnit 的 tests 汇总值。"""
     report = tmp_path / "junit.xml"

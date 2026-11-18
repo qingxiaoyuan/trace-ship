@@ -16,7 +16,11 @@ from apps.account.models import User
 from apps.package.models import PackageTask
 from apps.project.models import Project, ProjectComponent
 from apps.project.services import effective_maintainer_memberships, visible_project_ids
+from apps.release.delivery_identity import release_software_name
 from apps.release.models import ReleaseRecord
+from apps.release.visibility import releases_for_read
+from apps.software.models import Software
+from apps.software.services import usable_software_components
 from utils.markdown_table import table_newlines_to_br
 
 
@@ -26,7 +30,7 @@ def weekly_release_report(user: User, now: datetime) -> str:
         project_id__in=visible_project_ids(user), created_at__range=(now - timedelta(days=7), now),
     )
     releases = releases.exclude(project_id__in=effective_maintainer_memberships(user).values("project_id"))
-    rows = list(releases.select_related("project", "repository", "publisher").order_by("-created_at", "-id")[:100])
+    rows = list(releases.select_related("project", "repository", "publisher", "software").order_by("-created_at", "-id")[:100])
     if not rows:
         return ""
 
@@ -38,7 +42,7 @@ def weekly_release_report(user: User, now: datetime) -> str:
 
     output = StringIO(newline="")
     writer = csv.writer(output, quoting=csv.QUOTE_ALL)
-    writer.writerow(["版本", "项目", "仓库", "类型", "状态", "发布人", "创建时间"])
+    writer.writerow(["版本", "项目", "仓库", "类型", "状态", "发布人", "创建时间", "软件", "软件标识", "发布 Tag", "来源分支", "源码 SHA"])
     for release in rows:
         publisher = release.publisher
         writer.writerow(map(safe_cell, (
@@ -46,11 +50,13 @@ def weekly_release_report(user: User, now: datetime) -> str:
             release.get_release_type_display(), release.get_status_display(),
             (publisher.nickname or publisher.username) if publisher else "",
             timezone.localtime(release.created_at).strftime("%Y-%m-%d %H:%M"),
+            release_software_name(release), release.software.slug if release.software_id else "",
+            release.tag_name, release.branch, release.git_hash,
         )))
     return "\ufeff" + output.getvalue()
 
 
-def release_update_summary(release: ReleaseRecord) -> str:
+def release_update_summary(release: ReleaseRecord, *, include_request_updates: bool = True) -> str:
     """从保存的说明提取更新段落；仅压缩列表预览，完整文档保持原样。"""
     doc = release.release_doc or ""
     lines = []
@@ -64,7 +70,7 @@ def release_update_summary(release: ReleaseRecord) -> str:
         elif collecting:
             # 人工编辑可能把更新值首行留空，仍按已有表格的续行语义读取。
             lines.append(re.sub(r"(?<!\\)\|\s*$", "", line))
-    if not lines:
+    if not lines and include_request_updates:
         lines = [str(item.get("content", "")) for item in release.updates or [] if isinstance(item, dict)]
     if not any(lines):
         lines = [line for line in doc.splitlines() if line.strip() and not line.lstrip().startswith(("#", "|"))]
@@ -74,12 +80,13 @@ def release_update_summary(release: ReleaseRecord) -> str:
     return re.sub(r"\s+", " ", text.replace("**", "").replace("`", "").replace("\\|", "|")).strip("； ")[:300]
 
 
-def release_package_summary(release: ReleaseRecord) -> dict[str, Any]:
+def release_package_summary(release: ReleaseRecord, *, project_id=None) -> dict[str, Any]:
     """分别取每份配置的最近任务，失败配置不能被其他配置的成功掩盖。"""
     latest = {}
+    project_id = project_id if project_id is not None else release.project_id
     tasks = sorted(release.package_tasks.all(), key=lambda item: (item.created_at, str(item.id)), reverse=True)
     for task in tasks:
-        if task.project_id != release.project_id or task.repository_id != release.repository_id:
+        if task.project_id != project_id or task.repository_id != release.repository_id:
             continue
         latest.setdefault(str(task.config_id or (task.config_snapshot or {}).get("config_id") or task.id), task)
     counts = dict(Counter(task.status for task in latest.values()))
@@ -95,27 +102,64 @@ class MaintainerDashboardService:
     def summary(user: User) -> dict[str, Any]:
         projects = list(Project.objects.filter(id__in=visible_project_ids(user)).order_by("name", "id"))
         project_ids = [project.id for project in projects]
-        releases = ReleaseRecord.objects.filter(project_id__in=project_ids, status="released")
+        releases = releases_for_read(ReleaseRecord.objects.filter(status="released"), user)
         tasks = PackageTask.objects.filter(project_id__in=project_ids)
         now = timezone.now()
         since = now - timedelta(days=30)
         samples = tasks.filter(created_at__gte=since, created_at__lte=now, status__in=("success", "failure", "canceled"))
         counts = samples.aggregate(total=Count("id"), success=Count("id", filter=Q(status="success")))
-        release_counts = {(row["project_id"], row["repository_id"]): row["count"] for row in releases.order_by()
-                          .values("project_id", "repository_id").annotate(count=Count("id"))}
-        names = {}
+        origin_counts = Counter()
+        software_counts = Counter()
+        legacy_counts = Counter()
+        for row in releases.order_by().values("project_id", "repository_id", "software_id").annotate(count=Count("id")):
+            origin_counts[row["project_id"]] += row["count"]
+            if row["software_id"]:
+                software_counts[row["software_id"]] += row["count"]
+                software_counts[row["project_id"], row["software_id"]] += row["count"]
+            else:
+                legacy_counts[row["project_id"], row["repository_id"]] += row["count"]
         software = {project.id: [] for project in projects}
-        for component in ProjectComponent.objects.filter(project_id__in=project_ids).select_related("repository").order_by("sort_order", "created_at", "id"):
+        extra_counts = Counter()
+        identities = set()
+        links = set(usable_software_components().filter(project_id__in=project_ids)
+                    .values_list("repository_id", "project_id"))
+        projects_by_repo = {}
+        for repository_id, project_id in links:
+            projects_by_repo.setdefault(repository_id, []).append(project_id)
+        for item in Software.objects.filter(
+            repository_id__in=projects_by_repo, is_active=True,
+        ).select_related("repository"):
+            identities.add(item.pk)
+            for project_id in projects_by_repo[item.repository_id]:
+                extra_counts[project_id] += software_counts[item.pk] - software_counts[project_id, item.pk]
+                software[project_id].append({
+                    "id": str(item.pk), "name": item.name, "software_id": str(item.pk),
+                    "repository_id": str(item.repository_id), "repository_name": item.repository.name,
+                    "release_count": software_counts[item.pk],
+                })
+        names = {}
+        for component in ProjectComponent.objects.filter(project_id__in=project_ids).select_related("repository").order_by(
+            "sort_order", "created_at", "id",
+        ):
             key = (component.project_id, component.repository_id)
             if key in names:
                 continue
             names[key] = component.display_name or component.repository.name
-            software[component.project_id].append({"id": str(component.repository_id), "name": names[key],
-                                                   "release_count": release_counts.get(key, 0)})
+            if not legacy_counts[key]:
+                continue
+            software[component.project_id].append({
+                "id": str(component.repository_id), "name": f"未分组 · {names[key]}", "software_id": None,
+                "repository_id": str(component.repository_id), "repository_name": component.repository.name,
+                "release_count": legacy_counts[key],
+            })
 
         def task_data(task: PackageTask) -> dict[str, Any]:
             return {"id": str(task.id), "name": task.name, "project": str(task.project_id),
-                    "project_name": task.project.name, "component_name": names.get((task.project_id, task.repository_id), task.repository.name),
+                    "project_name": task.project.name,
+                    "component_name": names.get((task.project_id, task.repository_id), task.repository.name),
+                    "software": str(task.software_id) if task.software_id else None,
+                    "software_name": (task.config_snapshot or {}).get("software_name") or (task.software.name if task.software_id else None),
+                    "repository_name": task.repository.name, "tag_name": task.tag_name,
                     "version": task.version, "status": task.status, "status_display": task.get_status_display(),
                     "created_at": task.created_at, "started_at": task.started_at, "finished_at": task.finished_at,
                     "duration": task.duration, "error_message": task.error_message,
@@ -123,7 +167,7 @@ class MaintainerDashboardService:
                     "trigger_source": (task.config_snapshot or {}).get("trigger_source", ""),
                     }
 
-        ordered_tasks = tasks.select_related("project", "repository").order_by("-created_at", "-id")
+        ordered_tasks = tasks.select_related("project", "repository", "software").order_by("-created_at", "-id")
         return {
             "stats": {"days": 30, "since": since, "until": now,
                       "released_count": releases.filter(released_at__gte=since, released_at__lte=now).count(),
@@ -131,8 +175,8 @@ class MaintainerDashboardService:
                       "package_total": counts["total"], "package_success": counts["success"],
                       "package_success_rate": round(counts["success"] / counts["total"] * 100, 1) if counts["total"] else None},
             "projects": [{"id": str(project.id), "name": project.name, "software": software[project.id],
-                          "release_count": sum(value for (project_id, _), value in release_counts.items() if project_id == project.id)}
+                          "release_count": origin_counts[project.id] + extra_counts[project.id]}
                          for project in projects],
-            "software_count": len(names),
+            "software_count": len(identities),
             "recent_tasks": [task_data(task) for task in ordered_tasks[:3]],
         }

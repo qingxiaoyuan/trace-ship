@@ -21,7 +21,7 @@ function taskToDetail(task: WorkflowTask): DetailSource {
     packageStatus: task.package_status,
     applicant: task.applicant,
     projectName: task.project_name,
-    softwareName: task.repository_name || '',
+    softwareName: task.software_name || '',
     submitTime: task.submit_time,
     currentNode: task.current_node,
     mode: task.mode,

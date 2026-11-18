@@ -18,6 +18,7 @@ import { CredentialTab } from './tabs/CredentialTab';
 import { SvnArtifactsTab } from './tabs/SvnArtifactsTab';
 import { VersionRuleTab } from './tabs/VersionRuleTab';
 import { WorkflowTab } from './tabs/WorkflowTab';
+import { SoftwareDirectory } from '@/pages/Software/SoftwareDirectory';
 import { ReleaseTab } from '@/pages/Project/tabs/ReleaseTab';
 import type { Repository } from '@/types';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
@@ -28,6 +29,7 @@ const tabs = [
   { key: 'commits', label: '最近提交' },
   { key: 'branches', label: '分支' },
   { key: 'tags', label: '标签' },
+  { key: 'software', label: '软件' },
   { key: 'releases', label: '发布版本' },
   { key: 'svn', label: 'SVN 制品' },
   { key: 'credential', label: '凭证配置' },
@@ -175,13 +177,13 @@ export default function RepositoryDetail() {
       {/* 详情头 */}
       <div className="tech-card rounded-xl p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl icon-indigo">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl icon-indigo">
               <GitBranch className="h-6 w-6" strokeWidth={1.5} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">{repo.name}</h1>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="break-words text-[22px] font-semibold tracking-tight text-slate-900">{repo.name}</h1>
                 <span className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${health.cls}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${health.dot}`} />
                   {health.text}
@@ -198,7 +200,7 @@ export default function RepositoryDetail() {
                   href={repo.clone_url || repo.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="font-mono text-indigo-500 hover:text-indigo-600"
+                  className="min-w-0 break-all font-mono text-indigo-500 hover:text-indigo-600"
                 >
                   {repo.clone_url || repo.url}
                 </a>
@@ -260,6 +262,7 @@ export default function RepositoryDetail() {
           {activeTab === 'commits' && <CommitsTab repoId={repo.id} />}
           {activeTab === 'branches' && <BranchesTab repoId={repo.id} repoType={repo.repo_type} />}
           {activeTab === 'tags' && <TagsTab repoId={repo.id} repoType={repo.repo_type} />}
+          {activeTab === 'software' && <SoftwareDirectory key={repo.id} repository={repo} />}
           {activeTab === 'releases' && <ReleaseTab repositoryId={repo.id} />}
           {activeTab === 'svn' && <SvnArtifactsTab repoId={repo.id} />}
           {activeTab === 'credential' && <CredentialTab repo={repo} />}

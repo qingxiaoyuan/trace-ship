@@ -8,25 +8,31 @@ import shutil
 import tempfile
 import threading
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 from queue import Queue
 
 import django_filters
 from django.core.cache import cache
-from django.db.models import Exists, OuterRef, Prefetch
+from django.db import transaction
+from django.db.models import CharField, Exists, OuterRef, Q
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Coalesce
 from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied
 from rest_framework.mixins import DestroyModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.credential.models import Credential
+from apps.credential.services import CredentialService
 from apps.package.ai import PackageScriptAIError, PackageScriptAIService
 from apps.package.docker_local import LocalDockerError, LocalDockerService
 from apps.package.models import (
@@ -40,6 +46,8 @@ from apps.package.models import (
 from apps.package.nexus import NexusError, NexusService
 from apps.package.remote_base import RemoteNodeError, test_node_connection
 from apps.package.serializers import (
+    BranchPackageTriggerSerializer,
+    PackageConfigCreateSerializer,
     PackageConfigSerializer,
     PackageImageSerializer,
     PackageKnowledgeSerializer,
@@ -48,10 +56,19 @@ from apps.package.serializers import (
     ReleasePackageTriggerSerializer,
 )
 from apps.package.services import PackageService
+from apps.package.services.configurations import (
+    available_project_software,
+    lock_package_config,
+    require_config_maintenance,
+    visible_configs,
+)
+from apps.package.services.svn_scope import SvnTargetConflict, verify_svn_target
 from apps.package.services.tasks import PackageTaskDispatchError
-from apps.project.models import Project, ProjectMember
+from apps.project.models import Project, ProjectComponent
 from apps.project.services import visible_project_ids
 from apps.release.models import ReleaseRecord
+from apps.software.models import Software
+from apps.software.services import require_project_software
 from apps.system.services import OperationLogService
 from utils.permissions import (
     HasPermission,
@@ -63,6 +80,7 @@ from utils.permissions import (
     IsProjectPackageAdmin,
     IsProjectPackager,
     IsProjectReleasePackager,
+    ProjectRolePermission,
 )
 from utils.provider.exceptions import AuthenticationError, ConnectionError, NotFoundError, ProviderError
 from utils.provider.factory import get_provider
@@ -320,86 +338,188 @@ class PackageKnowledgeViewSet(StandardModelViewSet):
 
 
 class PackageConfigFilter(django_filters.FilterSet):
-    """打包配置过滤器；project/repository 过滤统一走 project_component 关联。"""
+    """根据显式项目上下文或软件身份筛选配置。"""
 
-    project = django_filters.UUIDFilter(field_name="project_component__project_id")
-    repository = django_filters.UUIDFilter(field_name="project_component__repository_id")
+    project = django_filters.UUIDFilter(method="filter_project")
+    repository = django_filters.UUIDFilter(method="filter_repository")
+    unassigned = django_filters.BooleanFilter(field_name="software", lookup_expr="isnull")
 
     class Meta:
         model = PackageConfig
-        fields = ["project", "repository", "project_component", "is_active", "auto_package_on_release"]
+        fields = ["project", "repository", "project_component", "software", "unassigned", "is_active", "auto_package_on_release"]
+
+    def filter_project(self, queryset, _name, value):
+        user = self.request.user
+        project = Project.objects.filter(id=value, id__in=visible_project_ids(user)).first()
+        if project is None:
+            return queryset.none()
+        return queryset.filter(
+            Q(project_component__project=project)
+            | Q(software_id__in=available_project_software(user, project).values("id"))
+        )
+
+    def filter_repository(self, queryset, _name, value):
+        return queryset.filter(Q(project_component__repository_id=value) | Q(software__repository_id=value))
 
 
 class PackageConfigViewSet(StandardModelViewSet):
-    """项目组件级打包配置视图集。"""
+    """共享打包配置及尚未迁移的组件配置。"""
 
     queryset = PackageConfig.objects.all()
     serializer_class = PackageConfigSerializer
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = PackageConfigFilter
-    search_fields = ["name", "project_component__repository__name"]
+    search_fields = ["name", "software__name", "software__repository__name", "project_component__repository__name"]
     ordering_fields = ["created_at", "updated_at"]
-    # 默认收藏优先（注解字段，见 get_queryset），其次创建时间倒序；显式 ?ordering= 时覆盖
     ordering = ["-annotated_is_favorite", "-created_at"]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return PackageConfigCreateSerializer
+        return super().get_serializer_class()
+
+    def get_permissions(self):
+        permissions = super().get_permissions()
+        if self.action == "favorite":
+            permissions.append(IsNotProjectMaintainer())
+        return permissions
 
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
             return PackageConfig.objects.none()
-        queryset = PackageConfig.objects.select_related(
-            "project_component__project",
-            "project_component__repository",
-            "image", "node", "svn_credential",
-        )
-        # 注解当前用户收藏状态，序列化器 is_favorite 直接读注解值，避免列表场景 N+1
-        queryset = queryset.annotate(
+        return visible_configs(user).annotate(
             annotated_is_favorite=Exists(
                 PackageConfigFavorite.objects.filter(config=OuterRef("pk"), user=user)
             )
         )
-        if user.is_superuser:
-            return queryset
-        # 预取当前用户在每个项目中的成员记录，避免序列化器 get_my_role 在列表场景触发 N+1
-        queryset = queryset.prefetch_related(
-            Prefetch(
-                "project_component__project__members",
-                queryset=ProjectMember.objects.filter(user=user),
-                to_attr="_my_member",
-            )
-        )
-        project_ids = visible_project_ids(user)
-        return queryset.filter(project_component__project_id__in=project_ids)
 
-    def get_permissions(self):
-        if self.action in (
-            "create", "update", "partial_update", "destroy",
-            "ai_generate_script", "ai_generate_script_stream",
-        ):
-            # 打包配置参数仅项目管理员 / 软件管理员可维护
-            return [IsAuthenticated(), IsProjectPackageAdmin()]
-        if self.action == "trigger":
-            return [IsAuthenticated(), IsProjectReleasePackager()]
-        if self.action == "trigger_branch":
-            # 分支直打保持原角色范围，不包含维保人员。
-            return [IsAuthenticated(), IsProjectPackager()]
-        if self.action == "favorite":
-            return [IsAuthenticated(), IsProjectMember(), IsNotProjectMaintainer()]
-        return [IsAuthenticated(), IsProjectMember()]
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        raw = self.request.query_params.get("project")
+        if raw:
+            project_id = self._validate_uuid(raw, "project")
+            context["package_project"] = Project.objects.filter(
+                id=project_id, id__in=visible_project_ids(self.request.user),
+            ).first()
+        return context
+
+    def get_object(self):
+        config = super().get_object()
+        if self.action in ("update", "partial_update", "destroy"):
+            config = lock_package_config(config)
+            require_config_maintenance(
+                self.request.user, software=config.software, component=config.project_component,
+            )
+        if config.project_component_id:
+            if self.action == "trigger":
+                self._require_project_role(config.project_component.project, IsProjectReleasePackager())
+            elif self.action == "trigger_branch":
+                self._require_project_role(config.project_component.project, IsProjectPackager())
+        return config
+
+    def _require_project_role(self, project, permission):
+        if not permission._check(project, self.request.user):
+            self.permission_denied(self.request)
+
+    @staticmethod
+    def _declared_uuid(data, field):
+        if isinstance(data, Mapping) and data.get(field):
+            try:
+                return serializers.UUIDField().run_validation(data[field])
+            except serializers.ValidationError:
+                # 归属无法识别时由请求序列化器处理格式错误。
+                return None
+        return None
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        component_id = self._declared_uuid(request.data, "project_component")
+        component = (
+            ProjectComponent.objects.select_related("project").filter(pk=component_id).first()
+            if component_id else None
+        )
+        if component is not None:
+            self._require_project_role(component.project, IsProjectPackageAdmin())
+        elif isinstance(request.data, Mapping) and not request.data.get("software"):
+            project_id = self._declared_uuid(request.data, "project")
+            if project_id:
+                project = Project.objects.filter(pk=project_id).first()
+                self._require_project_role(project, IsProjectPackageAdmin())
+        return super().create(request, *args, **kwargs)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        if instance.software_id:
+            selections = ReleaseRecord.objects.filter(software_id=instance.software_id).values_list(
+                "package_config_ids", flat=True,
+            ).iterator()
+            if instance.tasks.exists() or hasattr(instance, "assignment") or any(
+                str(instance.pk) in (ids or []) for ids in selections
+            ):
+                raise serializers.ValidationError({"config": "已有发布或打包记录引用此配置，请停用配置。"})
+        super().perform_destroy(instance)
+
+    @action(detail=True, methods=["get"], url_path="usage-projects")
+    def usage_projects(self, request, pk=None):
+        """仅列出当前用户有权触发此软件分支任务的项目。"""
+        config = self.get_object()
+        if not config.software_id or not config.is_active or not config.software.is_active:
+            return success_response([])
+        from apps.software.services import usable_software_components
+
+        candidates = usable_software_components().filter(
+            repository_id=config.software.repository_id, project_id__in=visible_project_ids(request.user),
+        ).values("project_id")
+        projects = [
+            {"id": str(project.pk), "name": project.name}
+            for project in Project.objects.filter(pk__in=candidates).order_by("name", "pk")
+            if IsProjectPackager()._check(project, request.user)
+        ]
+        return success_response(projects)
 
     @action(detail=True, methods=["post"], url_path="favorite")
     def favorite(self, request, pk=None):
         """切换收藏该配置（已收藏则取消，未收藏则收藏）。"""
         config = self.get_object()
-        is_favorite = PackageService.toggle_favorite(config, request.user)
+        if config.software_id:
+            project_id = request.data.get("project") if isinstance(request.data, Mapping) else None
+            project = self._explicit_project(project_id)
+            is_favorite = PackageService.toggle_favorite(config, request.user, project=project)
+        else:
+            is_favorite = PackageService.toggle_favorite(config, request.user)
         return success_response(
             {"is_favorite": is_favorite},
             "已收藏" if is_favorite else "已取消收藏",
         )
 
+    @staticmethod
+    def _validate_uuid(value, field):
+        try:
+            return serializers.UUIDField().run_validation(value)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({field: exc.detail}) from exc
+
+    def _explicit_project(self, value):
+        project_id = self._validate_uuid(value, "project")
+        return get_object_or_404(
+            Project.objects.filter(id__in=visible_project_ids(self.request.user)), pk=project_id,
+        )
+
     @action(detail=False, methods=["get"], url_path="favorites")
     def favorites(self, request):
         """当前用户收藏的打包配置列表（收藏即授权入口，不分页，按收藏时间倒序）。"""
-        return success_response(PackageService.list_favorite_configs(request.user))
+        raw_project = request.query_params.get("project")
+        project = self._explicit_project(raw_project) if raw_project else None
+        return success_response(PackageService.list_favorite_configs(request.user, project=project))
 
     @action(detail=True, methods=["post"], url_path="trigger")
     def trigger(self, request, pk=None):
@@ -410,13 +530,28 @@ class PackageConfigViewSet(StandardModelViewSet):
             config = self.get_object()
             params = ReleasePackageTriggerSerializer(data=request.data)
             params.is_valid(raise_exception=True)
+            inputs = params.validated_data
             releases = ReleaseRecord.objects.select_related("project", "repository")
-            if not request.user.is_superuser:
+            options = {}
+            if config.software_id:
+                from apps.release.visibility import releases_for_read
+
+                if not inputs.get("project") or inputs.get("software") != config.software_id:
+                    raise serializers.ValidationError({"software": "必须显式指定项目和配置所属软件。"})
+                project = self._explicit_project(inputs["project"])
+                self._require_project_role(project, IsProjectReleasePackager())
+                releases = releases_for_read(releases, request.user, project.pk).filter(
+                    status="released", software_id=inputs["software"],
+                )
+                options = {"project": project}
+            else:
+                if "project" in inputs or "software" in inputs:
+                    raise serializers.ValidationError({"config": "此配置尚未归属共享软件。"})
                 releases = releases.filter(project_id__in=visible_project_ids(request.user))
-            release = releases.filter(id=params.validated_data["release_id"]).first()
+            release = releases.filter(id=inputs["release_id"]).first()
             if release is None:
                 raise NotFound("发布记录不存在或无权查看")
-            task = PackageService.create_task_for_release(config, release, request_user=request.user)
+            task = PackageService.create_task_for_release(config, release, request_user=request.user, **options)
         except PackageTaskDispatchError as exc:
             return error_response(
                 50300, str(exc), {"task_id": str(exc.task.id), "status": exc.task.status},
@@ -432,21 +567,27 @@ class PackageConfigViewSet(StandardModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="trigger-branch")
     def trigger_branch(self, request, pk=None):
-        """直接对仓库某条分支的最新代码创建打包任务（不经发布流程）。
-
-        任务标题与自动编码（version）均按分支名命名；打包时克隆该分支最新代码。
-
-        Args:
-            request: DRF Request，body 携带 branch（分支名）
-
-        Returns:
-            已创建的打包任务
-        """
+        """按显式项目和软件触发分支最新代码打包。"""
         config = self.get_object()
-        branch = (request.data.get("branch") or request.data.get("branch_name") or "").strip()
-        if not branch:
-            return error_response(40000, "必须指定 branch 分支名", status_code=status.HTTP_400_BAD_REQUEST)
-        task = PackageService.create_task_for_branch(config, branch, request_user=request.user)
+        project = None
+        if config.software_id and (project_id := self._declared_uuid(request.data, "project")):
+            project = self._explicit_project(project_id)
+            self._require_project_role(project, IsProjectPackager())
+        arguments = BranchPackageTriggerSerializer(data=request.data)
+        arguments.is_valid(raise_exception=True)
+        inputs = arguments.validated_data
+        if project is None and "project" in inputs:
+            project = self._explicit_project(inputs["project"])
+        try:
+            task = PackageService.create_task_for_branch(
+                config, inputs["branch"], request_user=request.user, project=project,
+                software_id=inputs.get("software"),
+            )
+        except PackageTaskDispatchError as exc:
+            return error_response(
+                50300, str(exc), {"task_id": str(exc.task.id), "status": exc.task.status},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         data = PackageTaskSerializer(task, context={"request": request}).data
         return success_response(data, "已创建分支打包任务", status=status.HTTP_201_CREATED)
 
@@ -454,6 +595,8 @@ class PackageConfigViewSet(StandardModelViewSet):
     def svn_entries(self, request, pk=None):
         """实时浏览该配置 SVN 制品目录下的内容（svn list，不递归）。"""
         config = self.get_object()
+        if config.software_id:
+            raise PermissionDenied("请通过对应项目的打包任务查看 SVN 产物。")
         if not config.svn_push_enabled or not config.svn_url:
             return error_response(40000, "该配置未启用 SVN 推送", status_code=status.HTTP_400_BAD_REQUEST)
         if not config.svn_credential or not config.svn_credential.is_active:
@@ -468,7 +611,11 @@ class PackageConfigViewSet(StandardModelViewSet):
         target_url = f"{base_url}/{sub_path}" if sub_path else base_url
         provider = get_provider("svn", base_url, config.svn_credential.get_data())
         try:
+            verify_svn_target(config.project_component.project_id, target_url)
             entries = provider.list_dir(target_url)
+            verify_svn_target(config.project_component.project_id, target_url)
+        except SvnTargetConflict as exc:
+            return error_response(40900, str(exc), status_code=status.HTTP_409_CONFLICT)
         except ProviderError as exc:
             return error_response(50200, str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
         return success_response({"base_url": base_url, "path": sub_path, "entries": entries})
@@ -482,12 +629,22 @@ class PackageConfigViewSet(StandardModelViewSet):
         """
         data = request.data or {}
         project_id = data.get("project_id")
+        software_id = data.get("software")
         svn_url = (data.get("svn_url") or "").strip()
         svn_credential_id = data.get("svn_credential_id")
         svn_path_template = (data.get("svn_path_template") or "").strip()
 
-        if not project_id:
-            return error_response(40000, "必须指定项目", status_code=status.HTTP_400_BAD_REQUEST)
+        if software_id:
+            software = self._require_software_maintenance(software_id)
+            project = self._explicit_project(project_id)
+            require_project_software(project, software, request.user, IsProjectPackager())
+        else:
+            legacy_id = self._validate_uuid(project_id, "project_id")
+            project = get_object_or_404(Project, pk=legacy_id)
+            # 旧配置测试仍按项目成员授权，维保只读。
+            permission = ProjectRolePermission()
+            if not permission._check(project, request.user) or permission._effective_role(project, request.user) == "maintainer":
+                raise PermissionDenied("没有在当前项目测试 SVN 配置的权限。")
         if not svn_url:
             return error_response(40000, "请输入 SVN 仓库地址", status_code=status.HTTP_400_BAD_REQUEST)
         if not svn_credential_id:
@@ -500,24 +657,8 @@ class PackageConfigViewSet(StandardModelViewSet):
             return error_response(40000, "SVN 仓库地址必须以 svn://、http:// 或 https:// 开头", status_code=status.HTTP_400_BAD_REQUEST)
 
         try:
-            project = Project.objects.get(id=project_id)
-        except Project.DoesNotExist:
-            return error_response(40400, "项目不存在", status_code=status.HTTP_404_NOT_FOUND)
-
-        # 连通性测试不设管理员限制，但至少要求是项目成员（SVN 凭证全系统共享，
-        # 且响应包含目录条目，不能完全放开给非成员）
-        user = request.user
-        if not user.is_superuser:
-            is_member = ProjectMember.objects.filter(project=project, user=user).exists()
-            is_leader = str(project.leader_id) == str(user.id)
-            if not is_member and not is_leader:
-                return error_response(
-                    40300, "只有项目成员才能测试 SVN 配置", status_code=status.HTTP_403_FORBIDDEN
-                )
-
-        try:
-            credential = Credential.objects.get(
-                id=svn_credential_id, is_active=True, cred_type="svn_password"
+            credential = CredentialService.queryset_for_user(request.user).get(
+                id=self._validate_uuid(svn_credential_id, "svn_credential_id"), is_active=True, cred_type="svn_password"
             )
         except Credential.DoesNotExist:
             return error_response(40000, "SVN 凭证不存在或已停用", status_code=status.HTTP_400_BAD_REQUEST)
@@ -528,7 +669,13 @@ class PackageConfigViewSet(StandardModelViewSet):
 
         provider = get_provider("svn", target_url, credential.get_data())
         try:
+            if not software_id:
+                verify_svn_target(project.pk, target_url)
             entries = provider.list_dir(target_url)
+            if not software_id:
+                verify_svn_target(project.pk, target_url)
+        except SvnTargetConflict as exc:
+            return error_response(40900, str(exc), status_code=status.HTTP_409_CONFLICT)
         except AuthenticationError as exc:
             return error_response(40100, f"SVN 账号或密码错误: {exc}", status_code=status.HTTP_401_UNAUTHORIZED)
         except NotFoundError as exc:
@@ -539,9 +686,26 @@ class PackageConfigViewSet(StandardModelViewSet):
             return error_response(50000, f"SVN 测试失败: {exc}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return success_response(
-            {"ok": True, "entries": entries, "message": "连接成功"},
+            {"ok": True, "entries": [] if software_id else entries, "message": "连接成功"},
             message="SVN 连接测试成功",
         )
+
+    def _require_software_maintenance(self, value):
+        software_id = self._validate_uuid(value, "software")
+        software = get_object_or_404(Software.objects.select_related("repository"), pk=software_id)
+        require_config_maintenance(self.request.user, software=software)
+        return software
+
+    def _authorize_ai_script(self, payload):
+        project = self._explicit_project(payload.get("project"))
+        if not payload.get("software"):
+            if not IsProjectPackageAdmin()._check(project, self.request.user):
+                raise PermissionDenied("没有在当前项目生成打包脚本的权限。")
+            return
+        software = self._require_software_maintenance(payload["software"])
+        require_project_software(project, software, self.request.user, IsProjectPackager())
+        if str(software.repository_id) != str(payload.get("repository")):
+            raise serializers.ValidationError({"repository": "关联仓库与软件的主仓库不一致。"})
 
     @action(detail=False, methods=["post"], url_path="ai-generate-script")
     def ai_generate_script(self, request):
@@ -551,6 +715,7 @@ class PackageConfigViewSet(StandardModelViewSet):
         请求体需包含 project（UUID，用于项目管理员权限预检）与 repository 等
         当前表单值；返回脚本 + 逐行解释，仅作为草稿，由用户确认后写回配置。
         """
+        self._authorize_ai_script(request.data)
         project_id = str((request.data or {}).get("project") or "")
         throttle_key = f"ai_script_gen:{request.user.id}:{project_id}"
         if not cache.add(throttle_key, "1", AI_GENERATE_THROTTLE_SECONDS):
@@ -601,6 +766,7 @@ class PackageConfigViewSet(StandardModelViewSet):
         - {"type": "error", "code": ..., "message": "..."} 失败
         """
         payload = request.data or {}
+        self._authorize_ai_script(payload)
         project_id = str(payload.get("project") or "")
         throttle_key = f"ai_script_gen:{request.user.id}:{project_id}"
         if not cache.add(throttle_key, "1", AI_GENERATE_THROTTLE_SECONDS):
@@ -663,7 +829,7 @@ class PackageTaskFilter(django_filters.FilterSet):
 
     class Meta:
         model = PackageTask
-        fields = ["project", "repository", "release", "config", "status", "build_type", "release_type", "triggered_by"]
+        fields = ["project", "repository", "software", "release", "config", "status", "build_type", "release_type", "triggered_by"]
 
 
 class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
@@ -676,7 +842,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
     search_fields = [
         "name", "version", "tag_name",
         "project__name", "repository__name",
-        "config__name", "triggered_by__nickname",
+        "search_config_name", "config_snapshot__software_name", "config_snapshot__software_slug",
+        "triggered_by__nickname",
     ]
     ordering_fields = ["created_at", "started_at", "finished_at"]
     ordering = ["-created_at"]
@@ -687,7 +854,9 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             return PackageTask.objects.none()
         queryset = PackageTask.objects.select_related(
             "config", "release", "project", "repository", "triggered_by"
-        )
+        ).annotate(search_config_name=Coalesce(
+            KeyTextTransform("name", "config_snapshot"), "config__name", output_field=CharField(),
+        ))
         if user.is_superuser:
             return queryset
         project_ids = visible_project_ids(user)
@@ -701,6 +870,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             raise Http404("任务不存在或无权查看") from exc
 
     def get_permissions(self):
+        if self.action == "retry":
+            return [IsAuthenticated(), IsProjectReleasePackager()]
         if self.action in ("cancel", "push_svn"):
             # 取消任务 / 手动推 SVN：管理员/开发可操作
             return [IsAuthenticated(), IsProjectDeveloper()]
@@ -718,9 +889,14 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """删除已结束的打包任务，同时清理工作区文件。"""
-        from apps.release.oa_submission import locked_archive_task
+        from apps.release.oa_submission import guard_archive_delete, locked_archive_task
 
         with locked_archive_task(self.get_object()) as task:
+            if not ProjectRolePermission()._check(task.project, request.user):
+                raise NotFound("任务不存在或无权查看")
+            self.check_permissions(request)
+            self.check_object_permissions(request, task)
+            guard_archive_delete(task=task)
             return self._delete_finished_task(task)
 
     @staticmethod
@@ -730,6 +906,8 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
             return error_response(
                 40000, "仅可删除已结束的任务（成功/失败/已取消）", status_code=status.HTTP_400_BAD_REQUEST
             )
+        if PackageTask.objects.filter(retry_of=task).exists():
+            raise serializers.ValidationError({"task": "已有任务使用此记录重试，请保留原打包记录"})
         # 清理工作区目录（容错，日志文件随目录一并删除）
         if task.workspace_path:
             try:
@@ -746,6 +924,23 @@ class PackageTaskViewSet(DestroyModelMixin, StandardReadOnlyModelViewSet):
         """当前用户发起的打包任务统计（?days=30，口径为本人已结束任务）。"""
         data = PackageService.my_task_stats(request.user, request.query_params.get("days"))
         return success_response(data)
+
+    @action(detail=True, methods=["post"], url_path="retry")
+    def retry(self, request, pk=None):
+        """从有权的失败任务新建一次重试，保留原任务结果。"""
+        if request.data:
+            raise serializers.ValidationError({"detail": "重试使用原任务的源码与配置快照"})
+        try:
+            task, created = PackageService.retry_shared_task(self.get_object(), request.user)
+        except PackageTaskDispatchError as exc:
+            return error_response(
+                50300, str(exc), {"task_id": str(exc.task.id), "status": exc.task.status},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return success_response(
+            self.get_serializer(task).data, "已创建重试任务" if created else "已返回本次重试任务",
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):

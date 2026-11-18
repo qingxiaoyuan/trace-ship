@@ -79,11 +79,11 @@ function VersionInformation({ release, open, onClose }: { release: Release; open
   const reference = useQuery({
     queryKey: ['release-reference', release.id, release.tag_cleanup_status, release.source_rc],
     queryFn: () => releaseApi.getSourceReference(release.id),
-    enabled: open && (release.status === 'released' || !!release.source_rc),
+    enabled: open && !release.shared_readonly && (release.status === 'released' || !!release.source_rc),
     retry: false,
   });
   const fields: { label: string; value: string; mono?: boolean; href?: string }[] = [
-    { label: '发布人', value: release.publisher_name || release.publisher || '-' },
+    ...(!release.shared_readonly ? [{ label: '发布人', value: release.publisher_name || release.publisher || '-' }] : []),
     { label: '创建时间', value: dayjs(release.created_at).format('YYYY-MM-DD HH:mm') },
     { label: '分支', value: release.branch || '-', mono: true },
     { label: 'Tag', value: release.tag_name || '-', mono: true },
@@ -109,7 +109,7 @@ function VersionInformation({ release, open, onClose }: { release: Release; open
         <X className="h-[18px] w-[18px]" strokeWidth={1.65} />
       </button>
     </div>
-    <p className="mb-[18px] mt-2 break-words text-[12px] leading-[26px] text-[#76869f]">{release.project_name} / {release.component_name || release.repository_name} · {release.version}</p>
+    <p className="mb-[18px] mt-2 break-words text-[12px] leading-[26px] text-[#76869f]">{release.project_name} / {release.software_name || '未分组'} · {release.version}</p>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-[max(32px,env(safe-area-inset-bottom))] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <dl className="rounded-xl bg-[#f7f8fc] px-[14px] py-[6px] text-[12px] text-[#24324b]">
@@ -124,7 +124,7 @@ function VersionInformation({ release, open, onClose }: { release: Release; open
       </div>}
     </dl>
     {reference.error && <p role="alert" className="mt-3 break-words text-[12px] text-rose-600">源码引用核验失败：{reference.error.message}</p>}
-    <div className="mt-[26px]"><ReleaseTimeline release={release} compact /></div>
+    {!release.shared_readonly && <div className="mt-[26px]"><ReleaseTimeline release={release} compact /></div>}
     {open && release.source_rc && <div className="mt-5"><FormalChangesPreview release={release} /></div>}
     </div>
   </Drawer>;
@@ -139,6 +139,7 @@ export function MaintainerReleaseDetail({ release }: { release: Release }) {
   const tabPositions = useRef<Partial<Record<(typeof tabs)[number]['key'], number>>>({});
   const pendingPosition = useRef<number | null>(null);
   const panelId = `maintainer-release-${release.id}`;
+  const visibleTabs = release.shared_readonly ? tabs.filter(tab => tab.key !== 'commits') : tabs;
   useLayoutEffect(() => {
     if (pendingPosition.current === null) return;
     scrollTo(pendingPosition.current);
@@ -156,7 +157,8 @@ export function MaintainerReleaseDetail({ release }: { release: Release }) {
       <div className="flex min-h-[22px] items-center gap-3 text-[12px]">
         <Link to={`/projects/${release.project}`} className="min-w-0 truncate text-[#76869f]">{release.project_name || '-'}</Link>
         <ChevronRight className="h-[9px] w-[9px] shrink-0 text-[#afb9cc]" strokeWidth={1.65} />
-        <Link to={`/repositories/${release.repository}`} className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#24324b]">{release.component_name || release.repository_name || '-'}</Link>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#24324b]">{release.software_name || '未分组'}</span>
+        <Link to={`/repositories/${release.repository}`} className="min-w-0 truncate text-[#76869f]">{release.repository_name}</Link>
         <span className="flex shrink-0 items-center gap-[7px] text-[11px] text-[#238264]">
           <span className="h-[5px] w-[5px] rounded-full bg-[#29a67c]" />{releaseStatusText[release.status]}
         </span>
@@ -166,7 +168,7 @@ export function MaintainerReleaseDetail({ release }: { release: Release }) {
         <span className="shrink-0 rounded-md bg-[#eeedff] px-[11px] py-1 text-[11px] font-medium leading-[14px] text-[#4f46e5]">{releaseTypeText[release.release_type]}</span>
       </div>
       <div className="flex h-[41px] items-center justify-between gap-2">
-        <p className="min-w-0 break-words text-[12px] leading-[23px] text-[#76869f]">{release.publisher_name || release.publisher || '-'}发布 · {dayjs(release.created_at).format('MM-DD HH:mm')}</p>
+        <p className="min-w-0 break-words text-[12px] leading-[23px] text-[#76869f]">{!release.shared_readonly && `${release.publisher_name || release.publisher || '-'}发布 · `}{dayjs(release.created_at).format('MM-DD HH:mm')}</p>
         <button type="button" onClick={() => setInfoOpen(true)} className="-mr-2 flex min-h-11 shrink-0 items-center gap-[9px] px-2 text-[12px] font-medium text-[#4f46e5]">
           版本信息<ChevronRight className="h-[13px] w-[13px]" strokeWidth={1.65} />
         </button>
@@ -177,11 +179,11 @@ export function MaintainerReleaseDetail({ release }: { release: Release }) {
     </section>
     <div className="sticky top-0 z-20 -mt-10">
       <div data-release-compact-summary aria-hidden={!compact} className={`flex h-10 items-start justify-between gap-3 bg-white px-6 pt-[5px] leading-[25px] ${compact ? '' : 'invisible pointer-events-none'}`}>
-        <span className="min-w-0 truncate text-[12px] text-[#76869f]">{release.project_name} / {release.component_name || release.repository_name}</span>
+        <span className="min-w-0 truncate text-[12px] text-[#76869f]">{release.project_name} / {release.software_name || '未分组'}</span>
         <span className="shrink-0 text-[11px] text-[#238264]">{releaseStatusText[release.status]}</span>
       </div>
       <div role="tablist" aria-label="发布详情内容" className="flex border-b border-[#e9edf5] bg-white px-4">
-      {tabs.map((tab) => <button key={tab.key} type="button" role="tab" id={`${panelId}-${tab.key}-tab`} aria-selected={activeTab === tab.key}
+      {visibleTabs.map((tab) => <button key={tab.key} type="button" role="tab" id={`${panelId}-${tab.key}-tab`} aria-selected={activeTab === tab.key}
         aria-controls={`${panelId}-${tab.key}`} tabIndex={activeTab === tab.key ? 0 : -1} onClick={() => changeTab(tab.key)}
         onKeyDown={(event) => {
           const index = tabs.findIndex((item) => item.key === tab.key);

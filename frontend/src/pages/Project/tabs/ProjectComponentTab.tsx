@@ -17,7 +17,7 @@ interface ProjectComponentTabProps {
   active?: boolean;
 }
 
-/** 项目仓库页：维护项目与软件仓库的关联及当前项目下的发布设置。 */
+/** 项目仓库页：维护项目与关联仓库的关联及当前项目下的发布设置。 */
 export function ProjectComponentTab({ projectId, active = true }: ProjectComponentTabProps) {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
@@ -102,9 +102,9 @@ export function ProjectComponentTab({ projectId, active = true }: ProjectCompone
     <div className="space-y-5 page-fade-in">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">软件仓库</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight text-slate-900">关联仓库</h1>
           <p className="mt-1 text-[13px] text-slate-500">
-            维护当前项目使用的代码仓库。版本属于仓库，多个项目可以发布同一仓库；关联仓库前请先把仓库所有者加入项目成员。
+            将仓库所有者加入项目后即可关联仓库，项目可使用其中所有已启用的软件。
           </p>
         </div>
         {canManage && (
@@ -148,7 +148,7 @@ export function ProjectComponentTab({ projectId, active = true }: ProjectCompone
         <div className="hidden grid-cols-[1.7fr_.9fr_1fr_1.3fr_1.3fr_.8fr_100px] gap-3 border-b border-indigo-50 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:grid">
           <div>仓库名称</div>
           <div>默认分支</div>
-          <div>当前版本</div>
+          <div>最近发布</div>
           <div>打包配置</div>
           <div>凭证状态</div>
           <div>复用情况</div>
@@ -177,7 +177,9 @@ export function ProjectComponentTab({ projectId, active = true }: ProjectCompone
                     <span className="truncate">{component.default_branch}</span>
                   </div>
                   <div>
-                    <div className="font-mono text-[12px] text-slate-700">{component.current_version || '尚未发布'}</div>
+                    <div className="text-[12px] text-slate-700">
+                      {component.current_version ? `${component.current_software_name || '未分组'} · ${component.current_version}` : '尚未发布'}
+                    </div>
                     <div className="truncate font-mono text-[10px] text-slate-400">{component.current_tag || '-'}</div>
                   </div>
                   <div className="truncate text-[12px] text-slate-500" title={(component.package_configs || []).map((item) => item.name).join('、')}>
@@ -226,7 +228,7 @@ export function ProjectComponentTab({ projectId, active = true }: ProjectCompone
                     <span>{component.project_count} 个项目使用</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                    <span>版本 {component.current_version || '尚未发布'}</span>
+                    <span>{component.current_version ? `${component.current_software_name || '未分组'} · ${component.current_version}` : '尚未发布'}</span>
                     <span>打包配置 {component.package_configs?.length || 0} 项</span>
                     <span className={component.credential_status === 'available' ? 'text-emerald-600' : 'text-amber-600'}>
                       凭证{component.credential_status === 'available' ? '可用' : component.credential_status === 'expiring' ? '即将过期' : '不可用'}

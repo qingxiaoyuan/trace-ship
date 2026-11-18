@@ -13,6 +13,19 @@ from utils.provider.credential_resolver import resolve_credential
 class SourceCheckoutMixin:
     """本地源码克隆与构建环境变量组装。"""
 
+    @staticmethod
+    def exact_tag_checkout(source_dir, clone_url: str, source_ref: str) -> list[list[str]]:
+        """按完整 Tag 引用拉取浅工作副本，避免同名分支优先于 Tag。"""
+        directory = str(source_dir)
+        git = ["-C", directory]
+        tag = f"refs/tags/{source_ref}"
+        return [
+            ["init", directory],
+            [*git, "remote", "add", "origin", clone_url],
+            [*git, "fetch", "--depth", "1", "--no-tags", "origin", f"{tag}:{tag}"],
+            [*git, "checkout", "--detach", tag],
+        ]
+
     @classmethod
     def _checkout_source(cls, task, workspace: Path) -> None:
         """克隆仓库并 checkout 到发布 tag。
@@ -28,14 +41,29 @@ class SourceCheckoutMixin:
         clone_url = cls._clone_url(task.repository)
         env = cls._build_auth_env(task.repository, task.triggered_by, project=task.project)
         source_ref = cls.resolve_task_source(task)
-        clone_cmd = ["git", "clone", "--depth", "1", "--branch", source_ref]
-        if snapshot.get("clone_submodules"):
-            clone_cmd.append("--recurse-submodules")
-        clone_cmd.extend([clone_url, str(source_dir)])
-        cls._run_command(task, clone_cmd, workspace, env)
-        if task.release_id:
-            actual = subprocess.check_output(["git", "-C", str(source_dir), "rev-parse", "HEAD"], text=True).strip()
-            cls.verify_source_hash(task, actual)
+        exact_tag = task.release_id and task.software_id
+        if exact_tag:
+            for args in cls.exact_tag_checkout(source_dir, clone_url, source_ref):
+                cls._run_command(task, ["git", *args], workspace, env)
+        else:
+            clone_cmd = ["git", "clone", "--depth", "1", "--branch", source_ref]
+            if snapshot.get("clone_submodules"):
+                clone_cmd.append("--recurse-submodules")
+            clone_cmd.extend([clone_url, str(source_dir)])
+            cls._run_command(task, clone_cmd, workspace, env)
+        if task.release_id or task.software_id:
+            prefix = ["git", "-C", str(source_dir)]
+            actual = subprocess.check_output([*prefix, "rev-parse", "HEAD"], text=True).strip()
+            if task.release_id:
+                cls.verify_source_hash(task, actual)
+            else:
+                branch = subprocess.run(
+                    [*prefix, "symbolic-ref", "--quiet", "HEAD"],
+                    capture_output=True, text=True, check=False,
+                )
+                cls.verify_branch_source(task, branch.stdout.strip(), actual)
+        if exact_tag and snapshot.get("clone_submodules"):
+            cls._run_command(task, [*prefix, "submodule", "update", "--init", "--recursive"], workspace, env)
         # 写入本次发布说明到源码根目录，供构建脚本读取（分支直打包无发布说明，跳过）
         if task.release_id:
             doc_path = source_dir / f"release-{cls._doc_filename(task.version)}.md"
@@ -58,6 +86,8 @@ class SourceCheckoutMixin:
         with transaction.atomic():
             Repository.objects.select_for_update(no_key=True).get(pk=task.repository_id)
             provider = ReleaseService._get_provider(task.repository, task.triggered_by, project=task.project)
+            if task.software_id and task.software_id != task.release.software_id:
+                raise ValueError("打包任务与发布记录的软件不一致")
             reference = ReleaseReferences.resolve(task.release, provider.list_tags(task.repository.external_identity))
             if task.commit_hash != task.release.git_hash:
                 raise ValueError("任务源码快照与发布记录不一致")
@@ -68,7 +98,16 @@ class SourceCheckoutMixin:
     @staticmethod
     def verify_source_hash(task, actual: str) -> None:
         if actual.strip() != task.commit_hash:
-            raise ValueError("实际检出的提交与发布快照不一致，已阻止执行构建脚本")
+            snapshot_kind = "发布" if task.release_id else "分支"
+            raise ValueError(f"实际检出的提交与{snapshot_kind}快照不一致，已阻止执行构建脚本")
+
+    @classmethod
+    def verify_branch_source(cls, task, reference: str, commit_hash: str) -> None:
+        """共享分支任务校验实际分支和创建时固定的源码。"""
+        if reference != f"refs/heads/{task.tag_name}":
+            raise ValueError("实际检出内容不属于所选分支，已阻止执行构建脚本")
+        cls.verify_source_hash(task, commit_hash)
+
 
     @staticmethod
     def _auth_clone_args(repo, request_user=None, project=None) -> list[str]:

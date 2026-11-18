@@ -277,11 +277,9 @@ def test_cannot_remove_owner_while_repository_is_linked(manager, projects, repos
 
 
 def test_inactive_component_cannot_create_release(manager, projects, repository):
-    """停用项目关联后，不能再从该项目对仓库发版本。"""
-    from rest_framework import serializers as drf_serializers
-
+    """旧项目软件记录无法替代已启用的仓库关联。"""
     from apps.release.models import ReleaseRecord
-    from apps.release.services import ReleaseService
+    from apps.software.models import ProjectSoftware, Software
 
     source, _target = projects
     ProjectComponent.objects.create(
@@ -292,14 +290,11 @@ def test_inactive_component_cannot_create_release(manager, projects, repository)
         is_active=False,
     )
 
-    with pytest.raises(drf_serializers.ValidationError) as exc:
-        ReleaseService.create_release(
-            project=source,
-            repository=repository,
-            release_type="formal",
-            branch="main",
-            publisher=manager,
-            version="VA.1.0.0",
-        )
-    assert "未在当前项目中启用" in str(exc.value)
+    software = Software.objects.create(repository=repository, owner=manager, slug="core", name="中台软件")
+    ProjectSoftware.objects.create(project=source, software=software)
+    response = auth_client(manager).post("/api/releases/", {
+        "project": str(source.pk), "software": str(software.pk), "release_type": "formal", "branch": "main",
+    }, format="json")
+    assert response.status_code == 400, response.data
+    assert "主仓库未在当前项目下启用" in str(response.data)
     assert not ReleaseRecord.objects.filter(project=source, repository=repository).exists()

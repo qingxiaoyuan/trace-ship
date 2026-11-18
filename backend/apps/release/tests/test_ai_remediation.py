@@ -221,7 +221,7 @@ def test_ai_approval_rejects_tampered_workflow_identity(case):
     assert task.status == "pending"
 
 
-def test_rejection_requires_new_application_and_keeps_old_remediation_history(user, project, repository, monkeypatch, mock_git_provider, django_capture_on_commit_callbacks):
+def test_rejection_requires_new_application_and_keeps_old_remediation_history(user, project, repository, software, monkeypatch, mock_git_provider, django_capture_on_commit_callbacks):
     """驳回后新建申请重新审查，旧报告和整改保留且不混入新申请。"""
     from types import SimpleNamespace
 
@@ -258,7 +258,7 @@ def test_rejection_requires_new_application_and_keeps_old_remediation_history(us
     assert client.post(old_url, {"action":"fix", "id":item_id, "comment":"已添加校验"}, format="json").status_code == 403
     assert client.post(f"/api/releases/{release.id}/submit-audit/").status_code == 400
     monkeypatch.setattr(provider, "get_branch", lambda *args: SimpleNamespace(name="develop", last_commit_hash="c" * 40))
-    created = client.post("/api/releases/", {"project": str(project.id), "repository": str(repository.id),
+    created = client.post("/api/releases/", {"project": str(project.id), "software": str(software.id),
         "release_type": "rc", "version": release.version, "branch": "develop", "package_config_ids": []}, format="json")
     assert created.status_code == 201, created.data
     new_id = created.data["data"]["id"]
@@ -277,7 +277,7 @@ def test_rejection_requires_new_application_and_keeps_old_remediation_history(us
     assert client.get(old_url).data["data"]["items"][0]["status"] == "pending_fix"
 
 
-def test_creating_same_version_does_not_clean_returned_remediation(case, monkeypatch, mock_git_provider):
+def test_creating_same_version_does_not_clean_returned_remediation(case, software, monkeypatch, mock_git_provider):
     from apps.release.services import ReleaseService
 
     client, release, instance, task, finding = case
@@ -288,7 +288,7 @@ def test_creating_same_version_does_not_clean_returned_remediation(case, monkeyp
     release.release_doc = ""
     release.save(update_fields=["release_doc"])
     monkeypatch.setattr(ReleaseService, "_get_provider", lambda *args, **kwargs: mock_git_provider)
-    response = client.post("/api/releases/", {"project":str(release.project_id), "repository":str(release.repository_id),
+    response = client.post("/api/releases/", {"project":str(release.project_id), "software":str(software.id),
         "release_type":"rc", "version":release.version, "branch":"develop", "package_config_ids":[]}, format="json")
     assert response.status_code == 201, response.data
     assert ReleaseRecord.objects.filter(pk=release.id).exists()

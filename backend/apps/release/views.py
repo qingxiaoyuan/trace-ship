@@ -11,29 +11,34 @@ from django.db import transaction
 from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery, Value
 from django.db.models.functions import Coalesce, NullIf
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.http import content_disposition_header
 from django.views.decorators.cache import never_cache
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters as drf_filters
 from rest_framework import serializers
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.project.models import ProjectComponent
+from apps.project.models import Project, ProjectComponent
 from apps.project.services import has_only_maintainer_projects, visible_project_ids
 from apps.release.dashboard import weekly_release_report
 from apps.release.exporters import ReleaseDocExporter
 from apps.release.models import ReleaseRecord, ReleaseReviewIssue
 from apps.release.serializers import (
     ReleaseCommitSerializer,
+    ReleaseCreateSerializer,
     ReleaseListSerializer,
     ReleaseRecordSerializer,
     ReleaseReviewIssueSerializer,
+    SoftwareChangesQuerySerializer,
+    SoftwareReleaseQuerySerializer,
 )
 from apps.release.services import (
     ReleaseReviewError,
@@ -97,6 +102,8 @@ def _handle_service_error(exc: Exception, action_desc: str) -> Response:
         return error_response(40003, str(exc))
     if isinstance(exc, serializers.ValidationError):
         return error_response(40002, _extract_validation_message(exc))
+    if isinstance(exc, APIException):
+        raise exc
     if isinstance(exc, ProviderError):
         logger.warning("%s失败（Git 平台错误）: %s", action_desc, exc, exc_info=True)
         return error_response(50200, f"{action_desc}失败: {exc}", status_code=502)
@@ -113,12 +120,26 @@ class ReleaseFilter(filters.FilterSet):
     created_at__lte = filters.DateTimeFilter(field_name="created_at", lookup_expr="lte")
     version__icontains = filters.CharFilter(field_name="version", lookup_expr="icontains")
     review_status = filters.CharFilter(method="filter_review_status")
+    project = filters.UUIDFilter(method="filter_project")
+    software = filters.UUIDFilter(field_name="software_id")
+    unassigned = filters.BooleanFilter(field_name="software_id", lookup_expr="isnull")
+    publisher = filters.UUIDFilter(method="filter_publisher")
 
     class Meta:
         model = ReleaseRecord
         fields = [
-            "project", "repository", "release_type", "status", "publisher",
+            "project", "software", "repository", "release_type", "status", "publisher",
         ]
+
+    def filter_project(self, queryset, name, value):
+        if "origin_read" in queryset.query.annotations:
+            return queryset
+        return queryset.filter(project_id=value)
+
+    def filter_publisher(self, queryset, name, value):
+        if "origin_read" in queryset.query.annotations:
+            queryset = queryset.filter(origin_read=True)
+        return queryset.filter(publisher_id=value)
 
     def filter_review_status(self, queryset, name, value):
         """
@@ -127,6 +148,8 @@ class ReleaseFilter(filters.FilterSet):
         open=待整改（存在待整改意见），replied=待复核（存在待复核意见），其他值不过滤。
         """
         if value in (ReleaseReviewIssue.STATUS_OPEN, ReleaseReviewIssue.STATUS_REPLIED):
+            if "origin_read" in queryset.query.annotations:
+                queryset = queryset.filter(origin_read=True)
             return queryset.filter(review_issues__status=value).distinct()
         return queryset
 
@@ -149,7 +172,7 @@ class ReleaseSearchFilter(drf_filters.SearchFilter):
 
     def get_search_fields(self, view: Any, request: Request) -> list[str]:
         fields = super().get_search_fields(view, request)
-        return [*fields, "component_name", "release_doc"] if view.action == "list" else fields
+        return [*fields, "component_name", "software__slug", "release_doc"] if view.action == "list" else fields
 
 
 class ReleaseViewSet(StandardModelViewSet):
@@ -208,6 +231,8 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         if self.action == "list":
             return ReleaseListSerializer
+        if self.action == "create":
+            return ReleaseCreateSerializer
         return ReleaseRecordSerializer
 
     def get_queryset(self):
@@ -221,7 +246,7 @@ class ReleaseViewSet(StandardModelViewSet):
             return ReleaseRecord.objects.none()
         user = self.request.user
         queryset = (
-            ReleaseRecord.objects.select_related("project", "repository", "publisher")
+            ReleaseRecord.objects.select_related("project", "repository", "publisher", "software")
             .prefetch_related("package_tasks")
             # 列表页「待整改 / 待复核」徽标：注记待整改（open）与待复核（replied）整改意见数，避免逐条查询
             .annotate(
@@ -233,18 +258,37 @@ class ReleaseViewSet(StandardModelViewSet):
                 ),
             )
         )
-        if self.action == "list":
+        if self.action in ("list", "catalog"):
             # 同一物理仓库在不同项目中可使用不同软件名称，停用组件的历史仍可阅读。
             component_name = ProjectComponent.objects.filter(
                 project_id=OuterRef("project_id"), repository_id=OuterRef("repository_id"),
             ).values("display_name")[:1]
             queryset = queryset.annotate(component_name=Coalesce(
-                NullIf(Subquery(component_name), Value("")), F("repository__name"),
+                F("software__name"), NullIf(Subquery(component_name), Value("")), F("repository__name"),
             ))
-        if user.is_superuser:
-            return queryset.all()
-        project_ids = visible_project_ids(user)
-        return queryset.filter(project_id__in=project_ids)
+        reading = self.action in ("list", "retrieve", "catalog", "dashboard_overview", "dashboard_trend")
+        archive = self.action in (
+            "oa_archive_options", "oa_archive_prepare", "oa_archive_submit",
+            "oa_archive_confirm_no_order", "oa_archive_records",
+        )
+        project_id = self._requested_project_id() if reading or archive else None
+        if reading or (archive and project_id is not None):
+            from apps.release.visibility import releases_for_read
+
+            return releases_for_read(
+                queryset, user, project_id,
+                include_consumed_links=self.action in ("retrieve", "oa_archive_records", "oa_archive_confirm_no_order"),
+            )
+        return queryset.filter(project_id__in=visible_project_ids(user))
+
+    def _requested_project_id(self):
+        project = self.request.query_params.get("project")
+        if not project:
+            return None
+        try:
+            return serializers.UUIDField().run_validation(project)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({"project": exc.detail}) from exc
 
     def get_permissions(self):
         """
@@ -272,7 +316,7 @@ class ReleaseViewSet(StandardModelViewSet):
         """列出当前发布可准备归档的现存产物。"""
         from apps.release.oa_archive import OaArchivePreparation
 
-        return success_response(OaArchivePreparation.options(self.get_object(), request.user))
+        return success_response(OaArchivePreparation.options(self.get_object(), request.user, self._requested_project_id()))
 
     @action(detail=True, methods=["post"], url_path="oa-archive/prepare")
     def oa_archive_prepare(self, request: Request, pk: str | None = None) -> Response:
@@ -282,7 +326,7 @@ class ReleaseViewSet(StandardModelViewSet):
         release = self.get_object()
         serializer = ArchiveSelectionInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        return success_response(OaArchivePreparation.prepare(release, request.user, serializer.validated_data))
+        return success_response(OaArchivePreparation.prepare(release, request.user, serializer.validated_data, self._requested_project_id()))
 
     @action(detail=True, methods=["post"], url_path="oa-archive/submit")
     def oa_archive_submit(self, request: Request, pk: str | None = None) -> Response:
@@ -291,7 +335,9 @@ class ReleaseViewSet(StandardModelViewSet):
 
         serializer = ArchiveSubmitInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        record, created = OaArchiveSubmission.submit(self.get_object(), request.user, serializer.validated_data)
+        record, created = OaArchiveSubmission.submit(
+            self.get_object(), request.user, serializer.validated_data, self._requested_project_id(),
+        )
         return success_response(application_data(record), message=record.message or "OA 归档申请正在发送", status=201 if created else 200)
 
     @action(detail=True, methods=["post"], url_path="oa-archive/confirm-no-order")
@@ -301,15 +347,21 @@ class ReleaseViewSet(StandardModelViewSet):
 
         serializer = ArchiveNoOrderInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        record = OaArchiveSubmission.confirm_no_order(self.get_object(), request.user, serializer.validated_data)
+        record = OaArchiveSubmission.confirm_no_order(
+            self.get_object(), request.user, serializer.validated_data, self._requested_project_id(),
+        )
         return success_response(application_data(record))
 
     @action(detail=True, methods=["get"], url_path="oa-archive/records")
     def oa_archive_records(self, request: Request, pk: str | None = None) -> Response:
         """当前项目可见成员可回读完整资料、操作者与 OA 原始返回对象。"""
-        from apps.release.oa_submission import application_data
+        from apps.release.oa_archive import OaArchivePreparation
+        from apps.release.oa_submission import application_data, archive_records
 
-        return success_response([application_data(item) for item in self.get_object().oa_applications.all()])
+        release = self.get_object()
+        project = OaArchivePreparation.project(release, request.user, self._requested_project_id(), history=True)
+        records = archive_records(release, project)
+        return success_response([application_data(item) for item in records])
 
     def _serialize_release(self, release: ReleaseRecord) -> dict[str, Any]:
         """
@@ -323,6 +375,75 @@ class ReleaseViewSet(StandardModelViewSet):
         """
         return ReleaseRecordSerializer(release, context={"request": self.request}).data
 
+    def _release_target(self, request: Request, project_id, software_id=None, repository_id=None):
+        from apps.software.models import Software
+        from apps.software.services import require_project_software
+
+        project = get_object_or_404(Project, pk=project_id, pk__in=visible_project_ids(request.user))
+        if not IsProjectDeveloper()._check(project, request.user):
+            raise PermissionDenied("没有在当前项目发布的权限。")
+        if software_id:
+            software = get_object_or_404(Software.objects.select_related("repository"), pk=software_id)
+            if repository_id and software.repository_id != repository_id:
+                raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
+            software = require_project_software(project, software, request.user, IsProjectDeveloper()).software
+            return project, software.repository, software
+        repository = get_object_or_404(Repository.objects.filter(project_components__project=project).distinct(), pk=repository_id)
+        ReleaseService.validate_source_context(project, repository)
+        return project, repository, None
+
+    @action(detail=False, methods=["get"], url_path="next-version")
+    def next_version(self, request: Request) -> Response:
+        """在当前项目上下文中按发布范围计算建议版本。"""
+        from apps.release.versions import suggest_repository_versions, suggest_software_versions
+
+        params = SoftwareReleaseQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        values = dict(params.validated_data)
+        release_type = values.pop("release_type")
+        project, repository, software = self._release_target(
+            request, values["project"], values.get("software"), values.get("repository"),
+        )
+        try:
+            provider = ReleaseService._get_provider(repository, request.user, project=project)
+            tags = provider.list_tags(repository.external_identity)
+            suggestion = (suggest_software_versions(software, release_type, tags) if software else
+                          suggest_repository_versions(repository, release_type, tags))
+            return success_response(suggestion)
+        except Exception as exc:
+            return _handle_service_error(exc, "获取建议版本")
+
+    @action(detail=False, methods=["get"], url_path="software-changes-preview")
+    def software_changes_preview(self, request: Request) -> Response:
+        """从分支详情取得完整提交，按仓库或软件预览。"""
+        params = SoftwareChangesQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        values = dict(params.validated_data)
+        project, repository, software = self._release_target(
+            request, values.pop("project"), values.pop("software", None), values.pop("repository", None),
+        )
+        try:
+            return success_response(ReleaseService.preview_release_branch(project, repository, software, request.user, **values))
+        except Exception as exc:
+            return _handle_service_error(exc, "预览发布变更")
+
+    @action(detail=False, methods=["get"], url_path="software-branches")
+    def software_branches(self, request: Request) -> Response:
+        from dataclasses import asdict
+
+        params = SoftwareReleaseQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        values = params.validated_data
+        project, repository, _ = self._release_target(
+            request, values["project"], values.get("software"), values.get("repository"),
+        )
+        try:
+            provider = ReleaseService._get_provider(repository, request.user, project=project)
+            branches = provider.list_branches(repository.external_identity)
+            return success_response([asdict(branch) for branch in branches])
+        except Exception as exc:
+            return _handle_service_error(exc, "获取分支")
+
     @action(detail=False, methods=["get"], url_path="rc-candidates")
     def rc_candidates(self, request: Request) -> Response:
         """仅返回当前可见项目、启用仓库下的 RC 及实时引用可用性。"""
@@ -330,24 +451,34 @@ class ReleaseViewSet(StandardModelViewSet):
 
         params = serializers.Serializer(data=request.query_params)
         params.fields["project"] = serializers.UUIDField(required=True)
-        params.fields["repository"] = serializers.UUIDField(required=True)
+        params.fields["repository"] = serializers.UUIDField(required=False)
+        params.fields["software"] = serializers.UUIDField(required=False)
         params.is_valid(raise_exception=True)
         project = Project.objects.filter(
             id=params.validated_data["project"], id__in=visible_project_ids(request.user),
         ).first()
         if project is None:
             return error_response(40400, "项目不存在或不可见", status_code=404)
-        repository = Repository.objects.filter(
-            id=params.validated_data["repository"],
-            project_components__project=project, project_components__is_active=True,
-        ).first()
-        if repository is None:
-            return error_response(40400, "仓库未在当前项目中启用", status_code=404)
+        software_id = params.validated_data.get("software")
         try:
+            queryset = ReleaseRecord.objects.filter(release_type="rc", status="released")
+            if software_id:
+                _, repository, software = self._release_target(
+                    request, project.pk, software_id, params.validated_data.get("repository"),
+                )
+                queryset = queryset.filter(software=software)
+            else:
+                repository = Repository.objects.filter(
+                    id=params.validated_data.get("repository"),
+                    project_components__project=project, project_components__is_active=True,
+                ).first()
+                if repository is None:
+                    return error_response(40400, "仓库未在当前项目中启用", status_code=404)
+                queryset = queryset.filter(project=project, repository=repository).filter(
+                    Q(software__isnull=True) | Q(software_confirmed_at__isnull=False)
+                )
             ReleaseService.validate_source_context(project, repository)
-            queryset = self.get_queryset().filter(
-                project=project, repository=repository, release_type="rc", status="released",
-            ).order_by("-released_at", "-created_at", "id")
+            queryset = queryset.order_by("-released_at", "-created_at", "id")
             search = request.query_params.get("search", "").strip()
             if search:
                 queryset = queryset.filter(Q(version__icontains=search) | Q(tag_name__icontains=search))
@@ -385,7 +516,8 @@ class ReleaseViewSet(StandardModelViewSet):
         try:
             release = ReleaseService.create_release(
                 project=data["project"],
-                repository=data["repository"],
+                software=data.get("software"),
+                repository=data.get("repository"),
                 release_type=data["release_type"],
                 branch=data.get("branch", ""),
                 source_rc=data.get("source_rc"),
@@ -406,6 +538,10 @@ class ReleaseViewSet(StandardModelViewSet):
                 review_context_is_requirement=data.get("review_context_is_requirement", False),
                 review_document_paths=data.get("review_document_paths", []),
             )
+        except APIException as exc:
+            if not isinstance(exc, serializers.ValidationError):
+                raise
+            return _handle_service_error(exc, "创建发布")
         except Exception as exc:
             return _handle_service_error(exc, "创建发布")
         return success_response(self._serialize_release(release), message="创建成功", status=201)
@@ -436,7 +572,9 @@ class ReleaseViewSet(StandardModelViewSet):
 
         source_changed = False
         old_version = instance.version
+        old_tag = instance.tag_name
         try:
+            ReleaseService.require_software_use(instance, request.user)
             if instance.release_type == "formal" and (instance.source_rc_id or data.get("source_rc")):
                 if "source_rc" in data:
                     if (str(data["source_rc"]) != str(instance.source_rc_id)
@@ -464,7 +602,15 @@ class ReleaseViewSet(StandardModelViewSet):
 
         # tag_name 与 version 统一为单一值：优先 tag_name，未传则按 version 推导
         version_rule = instance.repository.get_version_rule()
-        if "tag_name" in data and data.get("tag_name"):
+        if instance.software_id and (new_tag := data.get("tag_name") or data.get("version")):
+            from apps.release.versions import guard_software_tag_identity, normalize_software_tag
+
+            try:
+                instance.version, instance.tag_name = normalize_software_tag(instance.software, instance.release_type, new_tag)
+                guard_software_tag_identity(instance.software, instance.tag_name)
+            except serializers.ValidationError as exc:
+                return error_response(40002, _extract_validation_message(exc))
+        elif "tag_name" in data and data.get("tag_name"):
             instance.tag_name = data["tag_name"]
             # rc/beta 类型自动补后缀（后缀位于日期段之前）
             if instance.release_type in ("rc", "beta"):
@@ -494,11 +640,19 @@ class ReleaseViewSet(StandardModelViewSet):
                 instance.release_type, instance.tag_name, version_rule
             )
             if "tag_name" in data or "version" in data:
-                ReleaseService.validate_tag_not_exists(instance.repository, instance.tag_name, request.user)
+                if not instance.software_id:
+                    ReleaseService.validate_legacy_tag_namespace(instance.repository, instance.tag_name)
+                ReleaseService.validate_tag_not_exists(
+                    instance.repository, instance.tag_name, request.user, project=instance.project,
+                )
         except serializers.ValidationError as exc:
             return error_response(40002, _extract_validation_message(exc))
 
-        changes_invalidated = source_changed or (instance.release_type == "formal" and instance.version != old_version)
+        changes_invalidated = (
+            source_changed
+            or ((instance.software_id or instance.release_type == "formal") and instance.version != old_version)
+            or (instance.software_id and instance.tag_name != old_tag)
+        )
         if changes_invalidated:
             from apps.release.formal_changes import FormalChanges
 
@@ -532,6 +686,7 @@ class ReleaseViewSet(StandardModelViewSet):
         if release.source_rc_id:
             return error_response(40002, "来源 RC 发布请使用重选来源功能")
         try:
+            ReleaseService.require_software_use(release, request.user)
             ReleaseService.validate_source_context(release.project, release.repository)
             provider = ReleaseService._get_provider(release.repository, request.user, project=release.project)
             head = ReleaseService._resolve_branch_head_hash(
@@ -607,6 +762,8 @@ class ReleaseViewSet(StandardModelViewSet):
 
         release = self.get_object()
         try:
+            if release.status == "draft":
+                ReleaseService.require_software_use(release, request.user)
             provider = ReleaseService._get_provider(release.repository, request.user, project=release.project)
             data = FormalChanges.preview(FormalChanges.collect(release, provider))
         except Exception as exc:
@@ -672,7 +829,7 @@ class ReleaseViewSet(StandardModelViewSet):
 
         class ItemSerializer(serializers.Serializer):
             id = serializers.UUIDField()
-            tag_name = serializers.CharField(max_length=100)
+            tag_name = serializers.CharField(max_length=181)
 
         params = serializers.Serializer(data=request.data)
         params.fields["items"] = serializers.ListField(child=ItemSerializer(), min_length=1, max_length=50)
@@ -731,7 +888,7 @@ class ReleaseViewSet(StandardModelViewSet):
         release = self.get_object()
         md_content = request.data.get("release_doc", "")
         try:
-            release = ReleaseService.update_doc(release, md_content)
+            release = ReleaseService.update_doc(release, md_content, request.user)
             # 保存成功后同步替换已推送 SVN 的发布文档；失败不阻塞保存
             from apps.package.services import PackageService
 
@@ -773,13 +930,11 @@ class ReleaseViewSet(StandardModelViewSet):
         Returns:
             Markdown 文件响应（纯文本，不经 DRF 渲染器）
         """
-        from utils.markdown_table import table_newlines_to_br
-
         release = self.get_object()
         # 导出文件转为标准 Markdown 表格语法（单元格内换行用 <br>）
-        md_content = table_newlines_to_br(release.release_doc or "")
+        md_content = ReleaseDocExporter.export_markdown(release)
         response = HttpResponse(md_content, content_type="text/markdown; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="release-{release.version}.md"'
+        response["Content-Disposition"] = content_disposition_header(True, ReleaseDocExporter.filename(release, "md"))
         return response
 
     @action(detail=True, methods=["post"], url_path="submit-audit")
@@ -901,7 +1056,7 @@ class ReleaseViewSet(StandardModelViewSet):
         except Exception as exc:
             return _handle_service_error(exc, "导出 PDF")
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="release-{release.version}.pdf"'
+        response["Content-Disposition"] = content_disposition_header(True, ReleaseDocExporter.filename(release, "pdf"))
         return response
 
     @action(detail=True, methods=["get"], url_path="export-word")
@@ -926,7 +1081,7 @@ class ReleaseViewSet(StandardModelViewSet):
             word_bytes,
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
-        response["Content-Disposition"] = f'attachment; filename="release-{release.version}.docx"'
+        response["Content-Disposition"] = content_disposition_header(True, ReleaseDocExporter.filename(release, "docx"))
         return response
 
     @action(detail=True, methods=["get"], url_path="commits")
@@ -1135,7 +1290,7 @@ class ReleaseViewSet(StandardModelViewSet):
         Returns:
             {formal: Release[], rc: Release[], beta: Release[]}
         """
-        queryset = self.get_queryset().filter(status="released").order_by("-version")
+        queryset = self.filter_queryset(self.get_queryset()).filter(status="released").order_by("-version")
         formal = queryset.filter(release_type="formal")
         rc = queryset.filter(release_type="rc")
         beta = queryset.filter(release_type="beta")

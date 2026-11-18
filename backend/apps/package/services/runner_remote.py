@@ -54,10 +54,6 @@ class RemoteRunnerMixin:
         cls._append_log(task, f"[{node_label}] 远程工作目录: {remote_workspace}")
         clone_submodules = bool(snapshot.get("clone_submodules"))
         submodule_arg = " --recurse-submodules" if clone_submodules else ""
-        cls._append_log(
-            task,
-            f'$ git clone --depth 1{submodule_arg} --branch {source_ref} {clone_url} "{source_dir}"',
-        )
 
         def log_line(line: str) -> None:
             cls._append_log(task, cls._sanitize_log_line(line))
@@ -65,23 +61,49 @@ class RemoteRunnerMixin:
         # -c 参数逐个转义（extraHeader 值含空格）；credential.helper= 置空，
         # 避免 git 调用系统凭据管理器持久化凭据（SSH 会话下报错）
         git_args = ["-c", "credential.helper=", *auth_args]
-        arg_parts = " ".join(quote(arg) for arg in git_args)
         client.mkdirs(remote_workspace, remote_workspace / "artifacts", remote_workspace / "tmp")
         # 清理历史残留，保证全新克隆
         client.remove_dir(source_dir)
-        client.run_checked(
-            f"git {arg_parts} clone --depth 1{submodule_arg} "
-            f"--branch {quote(source_ref)} "
-            f"{quote(clone_url)} {quote(str(source_dir))}",
-            on_line=log_line,
-            should_stop=lambda: cls._ensure_task_not_canceled(task),
-            error_hint="节点需安装 git 且能访问代码仓库",
-        )
-        if task.release_id:
-            output = []
-            client.run_checked(f"git -C {quote(str(source_dir))} rev-parse HEAD", on_line=output.append,
-                error_hint="无法核验来源提交")
-            cls.verify_source_hash(task, "\n".join(output).strip())
+        def run_checkout(args: list[str]) -> None:
+            cls._append_log(task, "$ git " + " ".join(quote(arg) for arg in args))
+            command = " ".join(quote(arg) for arg in [*git_args, *args])
+            client.run_checked(
+                f"git {command}", on_line=log_line,
+                should_stop=lambda: cls._ensure_task_not_canceled(task),
+                error_hint="节点需安装 git 且能访问代码仓库",
+            )
+
+        exact_tag = task.release_id and task.software_id
+        if exact_tag:
+            for args in cls.exact_tag_checkout(source_dir, clone_url, source_ref):
+                run_checkout(args)
+        else:
+            cls._append_log(task, f'$ git clone --depth 1{submodule_arg} --branch {source_ref} {clone_url} "{source_dir}"')
+            arg_parts = " ".join(quote(arg) for arg in git_args)
+            client.run_checked(
+                f"git {arg_parts} clone --depth 1{submodule_arg} "
+                f"--branch {quote(source_ref)} "
+                f"{quote(clone_url)} {quote(str(source_dir))}",
+                on_line=log_line,
+                should_stop=lambda: cls._ensure_task_not_canceled(task),
+                error_hint="节点需安装 git 且能访问代码仓库",
+            )
+        if task.release_id or task.software_id:
+            output: list[str] = []
+            git = f"git -C {quote(str(source_dir))}"
+            client.run_checked(f"{git} rev-parse HEAD", on_line=output.append, error_hint="无法核验来源提交")
+            actual = "\n".join(output).strip()
+            if task.release_id:
+                cls.verify_source_hash(task, actual)
+            else:
+                output.clear()
+                client.run_checked(
+                    f"{git} symbolic-ref --quiet HEAD", on_line=output.append,
+                    error_hint="无法核验所选分支，请检查分支是否存在",
+                )
+                cls.verify_branch_source(task, "\n".join(output).strip(), actual)
+        if exact_tag and clone_submodules:
+            run_checkout(["-C", str(source_dir), "submodule", "update", "--init", "--recursive"])
         # 需要脚本内 push 时，把认证头持久化到节点工作副本的 .git/config（含子模块），
         # 打包脚本内 git push 可直接复用；凭证随 cleanup_workspace 清理工作区时一并删除
         if snapshot.get("inject_git_credential") and auth_args:
@@ -199,9 +221,10 @@ class RemoteRunnerMixin:
             "@echo off",
             f"cd /d {cmd_quote(str(work_dir))} || exit /b 1",
             *[f'set "{key}={value}"' for key, value in env.items()],
-            # 隐藏平台注入的敏感环境变量，但保留用户脚本的命令回显，便于排查。
-            "@echo on",
         ]
+        # 旧配置保留命令回显；共享自定义脚本只输出脚本显式写出的内容。
+        if not (task.software_id and custom_script):
+            bat_lines.append("@echo on")
         if custom_script:
             script_path = remote_workspace / "tmp" / "pack-custom.bat"
             client.upload_text(script_path, custom_script)

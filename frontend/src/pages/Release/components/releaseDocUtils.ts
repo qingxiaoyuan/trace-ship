@@ -5,7 +5,7 @@ export interface MdTableRow {
 
 /** 正式版的身份信息由系统维护，不能通过编辑说明改写。 */
 export function isFormalIdentityField(key: string): boolean {
-  return ['当前发布版本号', 'Git提交hash', '来源 RC', '正式基线', '基线提交', '变更范围'].includes(key);
+  return ['当前发布版本号', 'Git提交hash', '软件', '软件标识', '主仓库', '发布 Tag', '来源 RC', '正式基线', '基线提交', '变更范围'].includes(key);
 }
 
 type CheckboxConfig = {

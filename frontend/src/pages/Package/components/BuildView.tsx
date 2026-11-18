@@ -2,10 +2,11 @@ import { memo, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { App, Button } from 'antd';
-import { ChevronRight, Loader, Package as PackageIcon, Square, Terminal } from 'lucide-react';
+import { ChevronRight, Loader, Package as PackageIcon, RotateCcw, Square, Terminal } from 'lucide-react';
 import dayjs from 'dayjs';
 import type { PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
+import { TaskSvnArtifacts } from '@/pages/Release/components/TaskSvnArtifacts';
 import { ArtifactPanel, ArtifactActions } from './Artifacts';
 import { TerminalLog } from './TerminalLog';
 import { formatDuration, getSvnPushWarning, isRunning, stageLabels, downloadTaskLog, releaseTypeBadge, releaseTypeText, isBranchTask } from './utils';
@@ -20,9 +21,13 @@ interface BuildViewProps {
   onRetryLog?: () => void;
   onBack: () => void;
   onCancel: (task: PackageTask) => void;
+  onRetryTask?: (task: PackageTask) => void;
+  retrying?: boolean;
 }
 
-export const BuildView = memo(function BuildView({ task, logText, logPartial, logError, onRetryLog, onBack, onCancel }: BuildViewProps) {
+export const BuildView = memo(function BuildView({
+  task, logText, logPartial, logError, onRetryLog, onBack, onCancel, onRetryTask, retrying,
+}: BuildViewProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const artifacts = task.artifact_info || [];
@@ -90,7 +95,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
                       to={`/repositories/${task.repository}`}
                       className="text-indigo-500 transition-colors hover:text-indigo-600"
                     >
-                      {task.repository_name || '仓库'}
+                      {[task.software_name, task.repository_name].filter(Boolean).join(' · ') || '仓库'}
                     </Link>
                   </>
                 ) : null}
@@ -98,7 +103,7 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
                   <>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
                     <Link
-                      to={`/releases/${task.release}`}
+                      to={`/releases/${task.release}${task.software ? `?project=${task.project}` : ''}`}
                       className="text-indigo-500 transition-colors hover:text-indigo-600"
                     >
                       发布 {task.release_version || ''}
@@ -119,6 +124,12 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
           {running && task.can_cancel === true && (
             <Button danger icon={<Square className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={() => onCancel(task)}>
               停止构建
+            </Button>
+          )}
+          {task.can_retry && onRetryTask && (
+            <Button className="max-md:min-h-9" loading={retrying} icon={<RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />}
+              onClick={() => onRetryTask(task)}>
+              重试构建
             </Button>
           )}
         </div>
@@ -162,7 +173,12 @@ export const BuildView = memo(function BuildView({ task, logText, logPartial, lo
               <PackageIcon className="h-4 w-4 text-indigo-400" strokeWidth={1.5} />
               <h3 className="text-[13px] font-semibold tracking-tight text-slate-900">打包产物</h3>
             </div>
-            <ArtifactActions task={task} pushing={pushing} onPushSvn={handlePushSvn} />
+            <div className="flex flex-wrap items-center gap-2">
+              {task.software && !task.release && task.stage_info?.svn_push?.status === 'success' && (
+                <TaskSvnArtifacts key={task.id} taskId={task.id} taskName={task.name} />
+              )}
+              <ArtifactActions task={task} pushing={pushing} onPushSvn={handlePushSvn} />
+            </div>
           </div>
           <ArtifactPanel artifacts={artifacts} taskId={task.id} projectRole={task.my_role} />
         </div>

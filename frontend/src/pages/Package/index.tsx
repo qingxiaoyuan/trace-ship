@@ -5,8 +5,10 @@ import { Alert, App, Button } from 'antd';
 import { ChevronRight, History, List, Package as PackageIcon, Plus, RefreshCw, Settings2, SlidersHorizontal } from 'lucide-react';
 import type { PackageConfig, PackageTask } from '@/types';
 import { packageApi } from '@/api/package';
+import type { NormalizedError } from '@/api/request';
 import { projectApi } from '@/api/project';
 import { useAuthStore } from '@/stores/authStore';
+import { useMaintainedSoftware } from '@/hooks/useMaintainedSoftware';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { ConfigList } from './components/ConfigList';
@@ -84,15 +86,16 @@ export default function PackageTaskPage() {
     queryKey: ['package-board-projects'],
     queryFn: () => fetchAllPages((page, pageSize) => projectApi.getProjects({ page, page_size: pageSize }), API_PAGE_SIZE),
   });
-  const canCreateConfig = !!user?.is_superuser || (projectsData?.results ?? []).some(
-    (project) => (!filterProject || project.id === filterProject)
-      && (project.my_role === 'manager' || project.my_role === 'software_admin'),
-  );
-
-  // 打包配置全量加载：同时服务侧栏项目统计与配置面板（按项目在客户端过滤）
+  const canCreateConfig = useMaintainedSoftware(!maintainer).length > 0;
   const { data: configsData, isLoading: configsLoading, error: configsError } = useQuery({
     queryKey: ['package-configs', 'board', 'all'],
     queryFn: () => fetchAllPages((page, pageSize) => packageApi.getConfigs({ page, page_size: pageSize }), API_PAGE_SIZE),
+  });
+  const projectConfigs = useQuery({
+    queryKey: ['package-configs', 'board', filterProject],
+    queryFn: () => fetchAllPages((page, pageSize) =>
+      packageApi.getConfigs({ project: filterProject, page, page_size: pageSize }), API_PAGE_SIZE),
+    enabled: !!filterProject,
   });
 
   // 侧栏「正在打包」：跨项目实时任务，5 秒轮询
@@ -177,11 +180,7 @@ export default function PackageTaskPage() {
   const configs = useMemo(() => configsData?.results || [], [configsData]);
   const sidebarTasks = useMemo(() => sidebarTasksData?.results || [], [sidebarTasksData]);
 
-  // 看板当前项目范围下的配置（侧栏选择项目后客户端过滤）
-  const boardConfigs = useMemo(() => {
-    if (!filterProject) return configs;
-    return configs.filter((c) => (c.project_id || c.project) === filterProject);
-  }, [configs, filterProject]);
+  const boardConfigs = filterProject ? projectConfigs.data?.results ?? [] : configs;
 
   const historyTasks = useMemo(
     () => historyTasksData?.pages.flatMap((page) => page.results) || [],
@@ -200,8 +199,8 @@ export default function PackageTaskPage() {
 
   // 配置历史视图：按配置单独拉取完整任务列表（看板分页窗口不能复用当前页数据）
   const { data: configTasksData } = useQuery({
-    queryKey: ['package-tasks-by-config', selectedConfig?.id],
-    queryFn: () => packageApi.getTasks({ config: selectedConfig!.id, page_size: 50 }),
+    queryKey: ['package-tasks-by-config', selectedConfig?.id, filterProject],
+    queryFn: () => packageApi.getTasks({ config: selectedConfig!.id, project: filterProject || undefined, page_size: 50 }),
     enabled: view === 'detail' && !!selectedConfig,
   });
 
@@ -320,9 +319,9 @@ export default function PackageTaskPage() {
   }, [selectedTaskId, shouldPoll, loadTaskDetail]);
 
   const toggleFavoriteMutation = useMutation({
-    mutationFn: (configId: string) => packageApi.toggleFavorite(configId),
+    mutationFn: (config: PackageConfig) => packageApi.toggleFavorite(config.id, config.software ? filterProject : undefined),
     // 乐观更新配置列表中的星标状态；失败时按快照回滚并提示
-    onMutate: async (configId) => {
+    onMutate: async (config) => {
       await queryClient.cancelQueries({ queryKey: ['package-configs'] });
       const snapshots = queryClient.getQueriesData<{ results: PackageConfig[]; total: number }>({
         queryKey: ['package-configs'],
@@ -334,7 +333,7 @@ export default function PackageTaskPage() {
             ? {
                 ...old,
                 results: old.results.map((c) =>
-                  c.id === configId ? { ...c, is_favorite: !c.is_favorite } : c,
+                  c.id === config.id ? { ...c, is_favorite: !c.is_favorite } : c,
                 ),
               }
             : old,
@@ -352,7 +351,7 @@ export default function PackageTaskPage() {
   });
 
   const handleToggleFavorite = useCallback(
-    (config: PackageConfig) => toggleFavoriteMutation.mutate(config.id),
+    (config: PackageConfig) => toggleFavoriteMutation.mutate(config),
     [toggleFavoriteMutation]
   );
 
@@ -370,6 +369,21 @@ export default function PackageTaskPage() {
     onSuccess: () => {
       message.success('已删除任务');
       queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+    },
+  });
+
+  const retryTaskMutation = useMutation<PackageTask, NormalizedError, PackageTask>({
+    mutationFn: (task: PackageTask) => packageApi.retryTask(task.id),
+    onSuccess: (task) => {
+      message.success('已进入重试任务');
+      void queryClient.invalidateQueries({ queryKey: ['package-tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['release', task.release] });
+      navigate(`/packages/${task.id}`);
+    },
+    onError: (error) => {
+      const failed = error.data as { task_id?: string } | undefined;
+      if (failed?.task_id) navigate(`/packages/${failed.task_id}`);
+      message.error(readErrorMessage(error, '重试构建失败'));
     },
   });
 
@@ -489,10 +503,12 @@ export default function PackageTaskPage() {
         message.warning('未找到打包配置');
         return;
       }
-      setTriggerConfig(resolved);
+      setTriggerConfig(resolved.software ? {
+        ...resolved, project: filterProject || selectedTask?.project || undefined,
+      } : resolved);
       setTriggerOpen(true);
     },
-    [configs, message, selectedTask]
+    [configs, filterProject, message, selectedTask]
   );
 
   const openConfigHistory = useCallback(
@@ -566,7 +582,7 @@ export default function PackageTaskPage() {
               <Button icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={refreshAll}>
                 刷新
               </Button>
-              {!maintainer && <button
+              {!maintainer && canCreateConfig && <button
                 className="btn-glow inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white"
                 onClick={openNewConfig}
               >
@@ -608,7 +624,7 @@ export default function PackageTaskPage() {
               </div>
 
               <div className="min-h-0 flex-1 py-4">
-                <PermissionAlert error={configsError || tasksError} className="rounded-xl" />
+                <PermissionAlert error={configsError || projectConfigs.error || tasksError} className="rounded-xl" />
 
                 {activeTab === 'builds' && (
                   <BuildBoard
@@ -632,7 +648,7 @@ export default function PackageTaskPage() {
                   <ConfigList
                     configs={boardConfigs}
                     tasks={configLatestTasks}
-                    loading={configsLoading}
+                    loading={filterProject ? projectConfigs.isLoading : configsLoading}
                     switching={configLatestPlaceholder}
                     onEdit={openEditConfig}
                     onDelete={handleDeleteConfig}
@@ -640,6 +656,7 @@ export default function PackageTaskPage() {
                     onOpenHistory={openConfigHistory}
                     onNew={openNewConfig}
                     canCreate={canCreateConfig}
+                    canUseShared={!!filterProject}
                     onToggleFavorite={handleToggleFavorite}
                   />
                 )}
@@ -664,7 +681,7 @@ export default function PackageTaskPage() {
               </div>
               <div>
                 <div className="text-[15px] font-semibold tracking-tight text-slate-900">{selectedConfig.name}</div>
-                <div className="font-mono text-[10px] text-slate-400 max-md:text-xs">{selectedConfig.repository_name || '-'} · {selectedConfig.project_name || '-'}</div>
+                <div className="font-mono text-[10px] text-slate-400 max-md:text-xs">{selectedConfig.repository_name || '-'} · {selectedConfig.software_name || selectedConfig.project_name || '-'}</div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -675,7 +692,7 @@ export default function PackageTaskPage() {
                 <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
                 新建打包
               </button>}
-              {selectedPermissions.canManage && <Button icon={<Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={() => openEditConfig(selectedConfig)}>打包配置</Button>}
+              {(selectedConfig.can_maintain ?? selectedPermissions.canManage) && <Button icon={<Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />} onClick={() => openEditConfig(selectedConfig)}>打包配置</Button>}
             </div>
           </div>
 
@@ -718,7 +735,8 @@ export default function PackageTaskPage() {
 
       {view === 'build' && selectedTask && (!routeTaskId || selectedTask.id === routeTaskId) && (
         <BuildView task={selectedTask} logText={logText} logPartial={logPartial} logError={logError}
-          onRetryLog={() => { void loadTaskDetail(selectedTask.id).catch(() => {}); }} onBack={backToList} onCancel={handleCancel} />
+          onRetryLog={() => { void loadTaskDetail(selectedTask.id).catch(() => {}); }} onBack={backToList} onCancel={handleCancel}
+          onRetryTask={retryTaskMutation.mutate} retrying={retryTaskMutation.isPending} />
       )}
 
       {view === 'build' && taskError && (
@@ -734,8 +752,7 @@ export default function PackageTaskPage() {
         editing={editingConfig}
         readOnly={
           !!editingConfig &&
-          editingConfig.my_role !== 'manager' &&
-          editingConfig.my_role !== 'software_admin'
+          !(editingConfig.can_maintain ?? ['manager', 'software_admin'].includes(editingConfig.my_role || ''))
         }
         onClose={closeConfigDrawer}
       />

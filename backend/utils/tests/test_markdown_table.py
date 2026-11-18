@@ -37,3 +37,7 @@ class TestTableNewlinesToBr:
         assert lines[0] == "说明前缀"
         assert "| 变更内容 | A 行1<br>行2 |" in lines
         assert lines[-1] == "结尾文本"
+
+    def test_unclosed_row_preserves_surrounding_text_and_whitespace(self):
+        md = "| 项目 | 内容 |\n|---|---|\n| 变更 | 尚未闭合  \n\n    保留缩进  \n\n正文末行"
+        assert table_newlines_to_br(md) == md

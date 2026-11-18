@@ -15,6 +15,8 @@ let releaseDoc = '发布说明正文';
 let formalRelease = false;
 let formalRcSource = true;
 let revisionHistory = false;
+let softwareRelease = false;
+let sharedReadonly = false;
 let sourceReferenceRequests = 0;
 let submitRequests = 0;
 
@@ -25,6 +27,8 @@ beforeEach(() => {
   formalRelease = false;
   formalRcSource = true;
   revisionHistory = false;
+  softwareRelease = false;
+  sharedReadonly = false;
   sourceReferenceRequests = 0;
   submitRequests = 0;
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
@@ -45,6 +49,7 @@ beforeEach(() => {
       no_changes: false, warnings: [], commits: [], merge_requests: [], parsed_updates: [],
     } : config.url?.endsWith('/review-issues/') || config.url?.endsWith('/oa-archive/records/') ? [] : {
       id: 'release', project: 'project', version: 'V1.0.0', status: releaseStatus,
+      software: softwareRelease ? 'software' : undefined, shared_readonly: sharedReadonly,
       release_type: formalRelease ? 'formal' : 'rc', source_rc: formalRelease && formalRcSource ? 'source-rc' : undefined,
       rejected_reason: '推 tag 失败',
       release_doc: releaseDoc, has_revision_history: revisionHistory, can_review: false, can_reply: false, package_tasks: [],
@@ -390,12 +395,20 @@ describe('维保发布详情', () => {
     expect(screen.queryByRole('button', { name: /删除|重试推/ })).toBeNull();
   });
 
-  it('在管理项目中保留已发布版本的删除操作', async () => {
+  it.each([false, true])('已发布软件版本的删除入口遵守共享只读状态 %s', async (readonly) => {
     projectRole = 'manager';
+    softwareRelease = true;
+    sharedReadonly = readonly;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><App><MemoryRouter initialEntries={['/releases/release']}>
       <Routes><Route path="/releases/:id" element={<ReleaseDetail />} /></Routes>
     </MemoryRouter></App></QueryClientProvider>);
-    expect(await screen.findByRole('button', { name: /删除版本/ })).toBeTruthy();
+    if (readonly) {
+      await screen.findByText('发布说明正文');
+      await waitFor(() => expect(client.getQueryState(['project', 'project'])?.status).toBe('success'));
+      expect(screen.queryByRole('button', { name: /删除版本/ })).toBeNull();
+    } else {
+      expect(await screen.findByRole('button', { name: /删除版本/ })).toBeTruthy();
+    }
   });
 });

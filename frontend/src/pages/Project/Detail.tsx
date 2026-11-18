@@ -27,10 +27,10 @@ import type { ProjectStatus } from '@/types';
 import { useDashboardContext } from '@/hooks/useDashboardContext';
 import { isMaintainerRestrictedPath } from '@/layouts/components/navMenu';
 
-/** Tab 配置：基本信息 / 软件仓库 / 成员 / 打包配置 / SVN 制品 / 发布版本 */
+/** 项目详情页标签 */
 const tabItems = [
   { key: 'overview', label: '基本信息' },
-  { key: 'repos', label: '软件仓库' },
+  { key: 'repos', label: '关联仓库' },
   { key: 'members', label: '成员' },
   { key: 'packages', label: '打包配置' },
   { key: 'svn', label: 'SVN 制品' },
@@ -39,10 +39,10 @@ const tabItems = [
 
 /** 详情头统计项 */
 const headerStats = [
-  { key: 'repo_count', label: '软件仓库', icon: GitFork, color: 'text-indigo-400' },
+  { key: 'software_count', label: '可用软件', icon: GitFork, color: 'text-indigo-400' },
   { key: 'package_count', label: '打包配置', icon: Hammer, color: 'text-cyan-500' },
   { key: 'member_count', label: '成员', icon: Users, color: 'text-violet-500' },
-  { key: 'release_count', label: '累计发布', icon: Rocket, color: 'text-emerald-500' },
+  { key: 'published_version_count', label: '已发布版本', icon: Rocket, color: 'text-emerald-500' },
 ] as const;
 
 /** 项目状态徽标 */
@@ -169,7 +169,7 @@ export default function ProjectDetail() {
           {canDevelop && (project.status === 'active' || project.status === 1) && <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate(`/releases/create?project_id=${project.id}`)}
+              onClick={() => navigate(`/releases/create?project=${project.id}`)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
             >
               <Rocket className="h-3.5 w-3.5" strokeWidth={1.5} />

@@ -7,17 +7,21 @@ import pytest
 from django.db import close_old_connections, connection, transaction
 from rest_framework.test import APIClient
 
+from apps.package.tests.test_package_permissions import grant_delete_task_permission
 from apps.release.tests.test_oa_archive import archive_case as _archive_case
 from apps.release.tests.test_oa_archive import prepare as prepare_file
 from apps.release.tests.test_oa_archive_directory import prepare_directory
 from apps.release.tests.test_oa_archive_submission import oa_http as _oa_http
 from apps.release.tests.test_oa_archive_submission import submit as submit_file
 from apps.release.tests.test_oa_archive_svn import send_file
+from apps.release.tests.test_shared_oa_archive import archive_url, directory
+from apps.release.tests.test_shared_oa_archive import shared_archive as _shared_archive
 from apps.repository.models import Repository
 
 pytestmark = pytest.mark.django_db(transaction=True)
 archive_case = _archive_case
 oa_http = _oa_http
+shared_archive = _shared_archive
 
 
 @pytest.fixture(autouse=True)
@@ -252,3 +256,36 @@ def test_失败核对与删除或重复核对竞争原子且保留首次依据(a
     assert client.get(f"/api/releases/{release.id}/oa-archive/records/").data["data"] == [saved]
     assert saved["no_order_confirmation"]["evidence"] == body["evidence"]
     assert len(oa_http.requests) == 1
+
+
+def test_共享归档并发派发按任务项目隔离并保护来源(shared_archive, oa_http):
+    client, consumer, task, origin_client, release, origin_task = shared_archive
+    grant_delete_task_permission(task.triggered_by)
+    prepare_url = archive_url(release, "prepare", consumer)
+    submit_url = archive_url(release, "submit", consumer)
+    selection = directory(task)
+    ready = client.post(prepare_url, selection, format="json")
+    assert ready.status_code == 200, ready.data
+    body = {**selection, "form": ready.data["data"]["form"], "submission_id": str(uuid4())}
+    oa_http.mode = "blocked"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(request_as, task.triggered_by, lambda api: api.post(submit_url, body, format="json"))
+        try:
+            assert oa_http.received.wait(10)
+            replay = client.post(submit_url, body, format="json")
+            assert replay.status_code == 200
+            assert replay.data["data"]["status"] == "sending"
+            assert origin_client.get(archive_url(release, "records")).data["data"] == []
+            assert origin_client.post(archive_url(release, "submit"), {
+                **body, "submission_id": str(uuid4()),
+            }, format="json").status_code == 404
+            assert client.delete(f"/api/packages/tasks/{task.pk}/").status_code == 400
+        finally:
+            oa_http.resume.set()
+        result = first.result(timeout=10)
+    assert result.status_code == 201, result.data
+    assert len(oa_http.requests) == 1
+    assert client.get(archive_url(release, "records", consumer)).data["data"] == [result.data["data"]]
+    assert [item["task_id"] for item in origin_client.get(
+        archive_url(release, "options"),
+    ).data["data"]["directories"]] == [str(origin_task.pk)]

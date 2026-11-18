@@ -1,0 +1,227 @@
+import { test, expect, type Page } from '@playwright/test';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+const fixture = JSON.parse(readFileSync(process.env.SMOKE_MANIFEST!, 'utf8')) as {
+  operator: { username: string };
+  password: string;
+  software_release: {
+    project_id: string;
+    project_name: string;
+    shared_project_id: string;
+    shared_reader: string;
+    shared_builder: string;
+    shared_project_name: string;
+    repository_name: string;
+    software: { id: string; name: string; slug: string; config: string; config_name: string }[];
+  };
+};
+const sample = fixture.software_release;
+const reportDir = process.env.SMOKE_REPORT_DIR!;
+
+async function signIn(page: Page, username: string) {
+  await page.goto('/login');
+  await page.getByRole('button', { name: '本地账号', exact: true }).click();
+  await page.getByPlaceholder('请输入本地账号').fill(username);
+  await page.getByPlaceholder('请输入密码', { exact: true }).fill(fixture.password);
+  await page.getByRole('button', { name: '登 录', exact: true }).click();
+  await expect(page).not.toHaveURL(/\/login/);
+}
+
+async function choose(page: Page, name: string, option: string | RegExp) {
+  await page.getByLabel(name, { exact: true }).click();
+  await page.locator('.ant-select-item-option-content').filter({ hasText: option }).click();
+}
+
+test('同仓库软件分别选择自动打包配置，按选用项目复用固定版本', async ({ browser, page }) => {
+  test.setTimeout(90_000);
+  const [client, server] = sample.software;
+  await signIn(page, fixture.operator.username);
+  await page.goto('/releases/create?project_id=' + sample.project_id);
+  await expect(page.getByTitle(sample.project_name, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^RC / }).click();
+  await choose(page, '关联仓库', sample.repository_name);
+  await choose(page, '目标软件', server.name);
+  await choose(page, '分支', /^main$/);
+  const tag = page.getByLabel('Tag 名', { exact: true });
+  await expect(tag).toHaveValue(/^server-b\/V\.8\.0\.4-rc/);
+  await expect(page.getByTitle('server-b/V.8.0.3-rc', { exact: true })).toBeVisible();
+  const serverConfig = page.locator('label').filter({ hasText: server.config_name }).getByRole('checkbox');
+  await expect(serverConfig).toBeChecked();
+  await page.getByRole('button', { name: '全不选', exact: true }).click();
+  await expect(serverConfig).not.toBeChecked();
+  await page.screenshot({ path: path.join(reportDir, 'software-release-selection-desktop.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await choose(page, '目标软件', client.name);
+  await expect(tag).toHaveValue('');
+  await choose(page, '分支', /^main$/);
+  await expect(tag).toHaveValue(/^client-a\/V\.5\.2\.13-rc/);
+  await expect(page.getByTitle('client-a/V.5.2.12-rc', { exact: true })).toBeVisible();
+  await expect(page.getByText(server.config_name, { exact: true })).toHaveCount(0);
+  await expect(page.locator('label').filter({ hasText: client.config_name }).getByRole('checkbox')).toBeChecked();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: path.join(reportDir, 'software-release-selection-mobile.png'), fullPage: true });
+
+  const creating = page.waitForResponse(response => new URL(response.url()).pathname === '/api/releases/' && response.request().method() === 'POST');
+  const generating = page.waitForResponse(response => response.url().endsWith('/generate-doc/'));
+  await page.getByRole('button', { name: '创建发布', exact: true }).click();
+  const created = await creating;
+  expect(created.status()).toBe(201);
+  const draft = (await created.json()).data as { id: string; tag_name: string; git_hash: string };
+  expect(created.request().postDataJSON()).toMatchObject({ software: client.id, package_config_ids: [client.config] });
+  expect(draft.git_hash).toBe('a'.repeat(40));
+  const generated = await generating;
+  expect(generated.status()).toBe(200);
+  const notes = (await generated.json()).data as string;
+  expect(notes).toContain('| 软件 | ' + client.name + ' |');
+  expect(notes).toContain('| 发布 Tag | ' + draft.tag_name + ' |');
+  const draftPath = '/releases/' + draft.id;
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(draftPath);
+  await expect(page.getByRole('heading', { name: 'V.5.2.13', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '修改文档', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '修改发布说明', exact: true });
+  for (const [label, value] of [
+    ['软件', client.name], ['软件标识', client.slug], ['发布 Tag', draft.tag_name],
+    ['主仓库', sample.repository_name], ['Git提交hash', draft.git_hash],
+  ]) {
+    const row = editor.getByRole('row').filter({ has: page.getByRole('cell', { name: label, exact: true }) });
+    await expect(row.getByRole('cell', { name: value, exact: true })).toBeVisible();
+    await expect(row.getByRole('textbox')).toHaveCount(0);
+  }
+  const body = editor.getByRole('row').filter({ has: page.getByRole('cell', { name: '变更内容', exact: true }) }).getByRole('textbox');
+  const edited = '交付 A | B<br>**软件确认** [版本说明](https://example.invalid/software)\n最后一行';
+  await body.fill(edited);
+  const saving = page.waitForResponse(response => response.url().endsWith('/update-doc/'));
+  await editor.getByRole('button', { name: 'OK', exact: true }).click();
+  const saved = await saving;
+  expect(saved.status()).toBe(200);
+  const savedDoc = (await saved.json()).data.release_doc as string;
+  expect(savedDoc).toContain('交付 A \\| B');
+  await page.reload();
+  const rendered = page.getByRole('cell', { name: /交付 A \| B/ });
+  await expect(rendered.locator('strong', { hasText: '软件确认' })).toBeVisible();
+  await expect(rendered.getByRole('link', { name: '版本说明' })).toHaveAttribute('href', 'https://example.invalid/software');
+  expect(await rendered.locator('br').count()).toBeGreaterThan(0);
+  await expect(rendered).toContainText('最后一行');
+  const desktop = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
+  expect(desktop).toMatchObject({ width: 1440, height: 1000 });
+  expect(desktop.documentWidth).toBeLessThanOrEqual(desktop.width);
+  await page.screenshot({ path: path.join(reportDir, 'software-release-saved-desktop.png'), fullPage: true });
+  await page.getByRole('button', { name: '修改文档', exact: true }).click();
+  await expect(body).toHaveValue(edited);
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const submitting = page.waitForResponse(response => response.url().endsWith('/submit-audit/'));
+  await page.getByRole('button', { name: '提交审批', exact: true }).click();
+  expect((await submitting).status()).toBe(200);
+  const origin = await page.evaluate(async (id) => {
+    const response = await fetch('/api/releases/' + id + '/', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('accessToken') },
+    });
+    return (await response.json()).data as { package_tasks: { id: string; name: string }[] };
+  }, draft.id);
+  expect(origin.package_tasks).toHaveLength(1);
+  const originTask = origin.package_tasks[0];
+
+  const builderContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  try {
+    const builder = await builderContext.newPage();
+    await signIn(builder, sample.shared_builder);
+    const url = '/releases/' + draft.id + '?project=' + sample.shared_project_id;
+    await builder.goto(url);
+    await builder.getByRole('main').getByRole('button', { name: '打包任务', exact: true }).click();
+    const section = builder.getByRole('region', { name: '补打已发布版本', exact: true });
+    await expect(section.getByText('任务归属项目：' + sample.shared_project_name)).toBeVisible();
+    await expect(builder.getByText(originTask.name, { exact: true })).toHaveCount(0);
+    await builder.setViewportSize({ width: 375, height: 812 });
+    await section.getByRole('combobox', { name: '打包配置' }).click();
+    await builder.getByRole('option', { name: client.config_name }).click();
+    const posted = builder.waitForResponse(response => response.url().endsWith('/api/packages/configs/' + client.config + '/trigger/'));
+    await section.getByRole('button', { name: '补打当前版本' }).click();
+    const trigger = await posted;
+    expect(trigger.status()).toBe(201);
+    expect(trigger.request().postDataJSON()).toEqual({
+      release_id: draft.id, project: sample.shared_project_id, software: client.id,
+    });
+    const reuseTask = (await trigger.json()).data as { id: string; project: string; software: string; tag_name: string };
+    expect(reuseTask).toMatchObject({ project: sample.shared_project_id, software: client.id, tag_name: draft.tag_name });
+    expect(await builder.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+    await builder.screenshot({ path: path.join(reportDir, 'software-repackage-mobile.png'), fullPage: true });
+    await section.getByRole('button', { name: '查看新任务' }).click();
+    await expect(builder).toHaveURL(new RegExp('/packages/' + reuseTask.id + '$'));
+    await builder.reload();
+    await expect(builder.getByRole('link', { name: /发布/ }).filter({ hasText: 'V.5.2.13' }))
+      .toHaveAttribute('href', url);
+    expect(await builder.evaluate(async (id) => (await fetch('/api/packages/tasks/' + id + '/', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('accessToken') },
+    })).status, originTask.id)).toBe(404);
+    writeFileSync(path.join(reportDir, 'software-repackage-evidence.json'), JSON.stringify(reuseTask, null, 2));
+  } finally {
+    await builderContext.close();
+  }
+
+  const sharedContext = await browser.newContext({ viewport: { width: 375, height: 812 } });
+  try {
+    const shared = await sharedContext.newPage();
+    await signIn(shared, sample.shared_reader);
+    await expect(shared.getByRole('button', { name: /^选择项目与软件：/ })).toBeVisible();
+    await shared.getByRole('button', { name: /^选择项目与软件：/ }).click();
+    const scope = shared.getByRole('dialog', { name: '选择项目与软件', exact: true });
+    await scope.getByRole('radio', { name: sample.shared_project_name + ' / ' + client.name, exact: true }).check();
+    expect(new URL(shared.url()).searchParams.has('software')).toBe(false);
+    await scope.getByRole('button', { name: '应用筛选', exact: true }).click();
+    await expect(shared).toHaveURL(new RegExp('software=' + client.id));
+    await shared.getByRole('link', { name: /^查看 V\.5\.2\.13 的发布说明$/ }).click();
+    await expect(shared).toHaveURL('/releases/' + draft.id + '?project=' + sample.shared_project_id);
+    await shared.reload();
+    const notesTable = shared.getByRole('table');
+    await expect(notesTable.getByRole('rowheader', { name: '软件', exact: true })).toBeVisible();
+    await expect(notesTable.getByRole('cell', { name: client.name, exact: true })).toBeVisible();
+    await expect(notesTable.getByRole('cell', { name: draft.tag_name, exact: true })).toBeVisible();
+    const readOnlyBody = notesTable.getByRole('cell', { name: /交付 A \| B/ });
+    await expect(readOnlyBody.locator('strong', { hasText: '软件确认' })).toBeVisible();
+    await expect(readOnlyBody.getByRole('link', { name: '版本说明' })).toHaveAttribute('href', 'https://example.invalid/software');
+    await expect(readOnlyBody).toContainText('最后一行');
+    expect(await readOnlyBody.locator('br').count()).toBeGreaterThan(0);
+    const mobile = await shared.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
+    expect(mobile).toMatchObject({ width: 375, height: 812 });
+    expect(mobile.documentWidth).toBeLessThanOrEqual(mobile.width);
+    await expect(shared.getByRole('tab', { name: '提交记录' })).toHaveCount(0);
+    await expect(shared.getByRole('button', { name: /编辑说明|下载|导出|发起 OA 归档|删除版本/ })).toHaveCount(0);
+    await shared.getByRole('tab', { name: '打包任务' }).click();
+    await expect(shared.getByRole('region', { name: '补打已发布版本' })).toHaveCount(0);
+    expect(await shared.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+    await shared.screenshot({ path: path.join(reportDir, 'software-release-shared-mobile.png'), fullPage: true });
+    writeFileSync(path.join(reportDir, 'software-release-evidence.json'), JSON.stringify({ tag: draft.tag_name, git_hash: draft.git_hash, notes, savedDoc, desktop, mobile }, null, 2));
+  } finally {
+    await sharedContext.close();
+  }
+
+  const historyPath = `/projects/${sample.project_id}/releases`;
+  const stopped = await page.evaluate(async ({ project, repositoryName }) => {
+    const headers = { Authorization: 'Bearer ' + localStorage.getItem('accessToken'), 'Content-Type': 'application/json' };
+    const url = `/api/projects/${project}/components/`;
+    const response = await fetch(url, { headers });
+    const links = (await response.json()).data as { id: string; repository_detail: { name: string } }[];
+    const component = links.find(link => link.repository_detail.name === repositoryName);
+    if (!component) throw new Error('缺少待停用的关联仓库');
+    return (await fetch(url + component.id + '/', { method: 'PATCH', headers, body: JSON.stringify({ is_active: false }) })).status;
+  }, { project: sample.project_id, repositoryName: sample.repository_name });
+  expect(stopped).toBe(200);
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(historyPath);
+    const group = page.getByRole('button', { name: new RegExp(client.name) });
+    await expect(group).toBeVisible();
+    if (await group.getAttribute('aria-expanded') === 'false') await group.click();
+    await expect(group).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByText(draft.tag_name, { exact: true }).filter({ visible: true })).toBeVisible();
+    const observed = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth }));
+    expect(observed).toMatchObject(viewport);
+    expect(observed.documentWidth).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: path.join(reportDir, `software-release-history-${viewport.width}.png`), fullPage: true });
+  }
+  await page.goto(draftPath);
+  await expect(page.getByRole('button', { name: '删除版本', exact: true })).toBeVisible();
+});

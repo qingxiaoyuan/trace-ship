@@ -29,13 +29,21 @@ def remote(monkeypatch, mock_git_provider):
     return mock_git_provider
 
 
-def create_formal(api, project, repository, version):
+def create_formal(api, project, software, version):
     result = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": "formal",
+        "project": str(project.id), "software": str(software.id), "release_type": "formal",
         "branch": "develop", "version": version, "package_config_ids": [],
     }, format="json")
     assert result.status_code == 201, result.data
     return result.data["data"]["id"]
+
+
+def legacy_draft(project, repository, version, tag_name, release_type="formal"):
+    """存量待归属草稿，从既有版本、Tag 与固定提交开始验证后续接口。"""
+    return str(ReleaseRecord.objects.create(
+        project=project, repository=repository, publisher=project.leader, release_type=release_type,
+        version=version, tag_name=tag_name, branch="develop", git_hash=HEAD, package_config_ids=[],
+    ).pk)
 
 
 def generate_and_submit(api, identity):
@@ -48,54 +56,55 @@ def generate_and_submit(api, identity):
 
 @pytest.mark.parametrize("release_type,suffix", [("formal", ""), ("rc", "-rc"), ("beta", "-alpha")])
 @pytest.mark.parametrize("with_date", [False, True])
-def test_manual_tag_defines_version_even_with_stale_suggestion(api, repository, project, remote, release_type, suffix, with_date):
+def test_manual_tag_defines_version_even_with_stale_suggestion(api, project, software, remote, release_type, suffix, with_date):
     tag = f"VA.5.2.40{suffix}" + ("_20261102" if with_date else "")
     created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
+        "project": str(project.id), "software": str(software.id), "release_type": release_type,
         "branch": "develop", "version": "VA.5.9.5", "tag_name": tag, "package_config_ids": [],
     }, format="json")
     assert created.status_code == 201, created.data
     assert created.data["data"]["version"] == "VA.5.2.40"
-    assert created.data["data"]["tag_name"].startswith(f"VA.5.2.40{suffix}_")
+    assert created.data["data"]["tag_name"].startswith(f"{software.slug}/VA.5.2.40{suffix}_")
 
 
 @pytest.mark.parametrize("entry", ["version", "tag", "edit"])
 def test_old_branch_patch_uses_5239_instead_of_594(
-    api, repository, project, user, remote, monkeypatch, entry,
+    api, repository, project, user, software, remote, monkeypatch, entry,
 ):
     for version, sha in [("VA.5.2.39", BASE), ("VA.5.9.4", OTHER)]:
+        tag = f"{software.slug}/{version}"
         ReleaseRecord.objects.create(
-            repository=repository, project=project, publisher=user, release_type="formal",
-            version=version, tag_name=version, git_hash=sha, status="released",
+            repository=repository, project=project, publisher=user, software=software, release_type="formal",
+            version=version, tag_name=tag, git_hash=sha, status="released",
         )
-        remote.tags.append(TagInfo(name=version, commit_hash=sha))
+        remote.tags.append(TagInfo(name=tag, commit_hash=sha))
     monkeypatch.setattr(remote, "get_merge_base", lambda identity, refs: BASE)
     if entry == "tag":
         # 创建页面只提交手工填写的完整 Tag，由服务端反推正式版本号。
         created = api.post("/api/releases/", {
-            "project": str(project.id), "repository": str(repository.id), "release_type": "formal",
+            "project": str(project.id), "software": str(software.id), "release_type": "formal",
             "branch": "develop", "tag_name": "VA.5.2.40_20261102", "package_config_ids": [],
         }, format="json")
         assert created.status_code == 201, created.data
         assert created.data["data"]["version"] == "VA.5.2.40"
         identity = created.data["data"]["id"]
     else:
-        identity = create_formal(api, project, repository, "VA.5.9.5" if entry == "edit" else "VA.5.2.40")
+        identity = create_formal(api, project, software, "VA.5.9.5" if entry == "edit" else "VA.5.2.40")
     if entry == "edit":
         changed = api.patch(f"/api/releases/{identity}/", {"version": "VA.5.2.40"}, format="json")
         assert changed.status_code == 200, changed.data
     preview = api.get(f"/api/releases/{identity}/changes-preview/")
     assert preview.status_code == 200, preview.data
-    assert preview.data["data"]["base_tag"] == "VA.5.2.39"
+    assert preview.data["data"]["base_tag"] == f"{software.slug}/VA.5.2.39"
     release = generate_and_submit(api, identity)
-    assert release.base_tag == "VA.5.2.39" and release.base_git_hash == BASE
+    assert release.base_tag == f"{software.slug}/VA.5.2.39" and release.base_git_hash == BASE
 
 
 @pytest.mark.parametrize("legacy_orphan", [False, True])
 def test_deleted_formal_record_and_tag_allow_same_version_again(
     api, repository, project, remote, legacy_orphan,
 ):
-    identity = create_formal(api, project, repository, "VA.5.9.3")
+    identity = legacy_draft(project, repository, "VA.5.9.3", "VA.5.9.3")
     release = generate_and_submit(api, identity)
     task = release.workflow_instance.tasks.get(status="pending")
     approved = api.post(f"/api/workflow/tasks/{task.id}/approve/")
@@ -116,7 +125,7 @@ def test_deleted_formal_record_and_tag_allow_same_version_again(
     next_version = api.get(f"/api/repositories/{repository.id}/next-version/?release_type=formal")
     assert next_version.status_code == 200, next_version.data
     assert next_version.data["data"]["next_version"] == "VA.1.0.0"
-    new_id = create_formal(api, project, repository, "VA.5.9.3")
+    new_id = legacy_draft(project, repository, "VA.5.9.3", "VA.5.9.3")
     replacement = generate_and_submit(api, new_id)
     task = replacement.workflow_instance.tasks.get(status="pending")
     approved = api.post(f"/api/workflow/tasks/{task.id}/approve/")
@@ -136,7 +145,7 @@ def test_legacy_orphan_reuse_still_checks_remote_and_existing_records(
         repository=repository, release_type="formal", base_version="5.9.3",
         tag_name="VA.5.9.3_20261029", consumed=True,
     )
-    identity = create_formal(api, project, repository, "VA.5.9.3")
+    identity = legacy_draft(project, repository, "VA.5.9.3", "VA.5.9.3")
     generated = api.post(f"/api/releases/{identity}/generate-doc/")
     assert generated.status_code == 200, generated.data
     if conflict == "remote":
@@ -217,12 +226,8 @@ def test_legacy_claim_checks_old_tag_after_rule_change(
             node_config=[{"node_id": "check", "node_name": "确认", "mode": "any",
                           "approvers": [{"type": "user", "user_id": str(user.id)}]}],
         )
-    created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
-        "branch": "develop", "version": "VB.5.9.3", "package_config_ids": [],
-    }, format="json")
-    assert created.status_code == 201, created.data
-    identity = created.data["data"]["id"]
+    suffix = {"formal": "", "rc": "-candidate", "beta": "-preview"}[release_type]
+    identity = legacy_draft(project, repository, "VB.5.9.3", f"VB.5.9.3{suffix}_20261117", release_type)
     generated = api.post(f"/api/releases/{identity}/generate-doc/")
     assert generated.status_code == 200, generated.data
     submitted = api.post(f"/api/releases/{identity}/submit-audit/")
@@ -256,7 +261,8 @@ def test_reused_claim_keeps_old_identity_until_explicit_deletion(api, repository
         "version_rule": {**repository.version_rule, "prefix": "VA" if same_tag else "VB", "with_date": False},
     }, format="json")
     assert changed.status_code == 200, changed.data
-    identity = create_formal(api, project, repository, "VA.5.9.3" if same_tag else "VB.5.9.3")
+    version = "VA.5.9.3" if same_tag else "VB.5.9.3"
+    identity = legacy_draft(project, repository, version, version)
     release = generate_and_submit(api, identity)
     claim.refresh_from_db()
     assert claim.reused
@@ -289,7 +295,7 @@ def test_reused_claim_keeps_old_identity_until_explicit_deletion(api, repository
                 "version_rule": {**repository.version_rule, "prefix": "VB", "with_date": False},
             }, format="json")
             assert changed.status_code == 200, changed.data
-        next_id = create_formal(api, project, repository, "VB.5.9.3")
+        next_id = legacy_draft(project, repository, "VB.5.9.3", "VB.5.9.3")
         generated = api.post(f"/api/releases/{next_id}/generate-doc/")
         assert generated.status_code == 200, generated.data
         submitted = api.post(f"/api/releases/{next_id}/submit-audit/")
@@ -343,12 +349,8 @@ def test_old_rule_release_history_controls_orphan_reuse(
                          "suffixes": {"rc": "candidate", "beta": "preview"}},
     }, format="json")
     assert updated.status_code == 200, updated.data
-    created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
-        "branch": "develop", "version": "VB.5.9.3", "package_config_ids": [],
-    }, format="json")
-    assert created.status_code == 201, created.data
-    identity = created.data["data"]["id"]
+    suffix = {"formal": "", "rc": "-candidate", "beta": "-preview"}[release_type]
+    identity = legacy_draft(project, repository, "VB.5.9.3", f"VB.5.9.3{suffix}_20261117", release_type)
     assert api.post(f"/api/releases/{identity}/generate-doc/").status_code == 200
     submitted = api.post(f"/api/releases/{identity}/submit-audit/")
     release = ReleaseRecord.objects.get(pk=identity)
@@ -390,12 +392,8 @@ def test_old_rule_history_is_rechecked_at_approval_and_retry(
                          "suffixes": {"rc": "candidate", "beta": "preview"}},
     }, format="json")
     assert changed.status_code == 200, changed.data
-    created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
-        "branch": "develop", "version": "VB.5.9.3", "package_config_ids": [],
-    }, format="json")
-    assert created.status_code == 201, created.data
-    identity = created.data["data"]["id"]
+    suffix = {"formal": "", "rc": "-candidate", "beta": "-preview"}[release_type]
+    identity = legacy_draft(project, repository, "VB.5.9.3", f"VB.5.9.3{suffix}_20261117", release_type)
     release = generate_and_submit(api, identity)
     # 提审后恢复的旧记录也参与推送和重试核验，不能只在首次复用时检查。
     previous = ReleaseRecord.objects.create(
@@ -445,12 +443,8 @@ def test_history_identity_without_claim_keeps_all_tag_candidates(
             repository=repository, project=project, name="确认", release_type=release_type,
             node_config=workflow.node_config,
         )
-    created = api.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
-        "branch": "develop", "version": "VA.5.9.3", "package_config_ids": [],
-    }, format="json")
-    assert created.status_code == 201, created.data
-    identity = created.data["data"]["id"]
+    suffix = {"formal": "", "rc": "-rc", "beta": "-alpha"}[release_type]
+    identity = legacy_draft(project, repository, "VA.5.9.3", f"VA.5.9.3{suffix}_20261117", release_type)
     assert api.post(f"/api/releases/{identity}/generate-doc/").status_code == 200
     submitted = api.post(f"/api/releases/{identity}/submit-audit/")
     release = ReleaseRecord.objects.get(pk=identity)
@@ -483,15 +477,8 @@ def test_date_shaped_suffix_keeps_history_occupied(api, repository, project, rem
     assert changed.status_code == 200, changed.data
     repository.refresh_from_db()
 
-    def create(version):
-        created = api.post("/api/releases/", {
-            "project": str(project.id), "repository": str(repository.id), "release_type": release_type,
-            "branch": "develop", "version": version, "package_config_ids": [],
-        }, format="json")
-        assert created.status_code == 201, created.data
-        return created.data["data"]["id"]
-
-    previous = generate_and_submit(api, create("VA.5.9.3"))
+    previous_id = legacy_draft(project, repository, "VA.5.9.3", "VA.5.9.3-_20261028", release_type)
+    previous = generate_and_submit(api, previous_id)
     task = previous.workflow_instance.tasks.get(status="pending")
     assert api.post(f"/api/workflow/tasks/{task.id}/approve/").status_code == 200
     previous.refresh_from_db()
@@ -505,7 +492,11 @@ def test_date_shaped_suffix_keeps_history_occupied(api, repository, project, rem
                              "suffixes": {"rc": "candidate", "beta": "preview"}},
         }, format="json")
         assert changed.status_code == 200, changed.data
-    identity = create("VB.5.9.3" if rule_changed else "VA.5.9.3")
+    if rule_changed:
+        suffix = "candidate" if release_type == "rc" else "preview"
+        identity = legacy_draft(project, repository, "VB.5.9.3", f"VB.5.9.3-{suffix}", release_type)
+    else:
+        identity = legacy_draft(project, repository, "VA.5.9.3", "VA.5.9.3-_20261028", release_type)
     assert api.post(f"/api/releases/{identity}/generate-doc/").status_code == 200
     submitted = api.post(f"/api/releases/{identity}/submit-audit/")
     assert submitted.status_code == 400 and "不能覆盖" in submitted.data["message"], submitted.data

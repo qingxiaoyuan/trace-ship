@@ -26,9 +26,10 @@ def remote(monkeypatch, mock_git_provider):
 
 
 @pytest.fixture
-def rc(project, repository, user, remote):
+def rc(project, repository, user, remote, software):
     release = ReleaseRecord.objects.create(
-        project=project, repository=repository, publisher=user,
+        project=project, repository=repository, publisher=user, software=software,
+        software_confirmed_at=timezone.now(), historical_base_version="9.0.0",
         release_type="rc", status="released", branch="develop",
         version="VA.9.0.0", tag_name="VA.9.0.0-rc", git_hash=SHA,
         released_at=timezone.now(),
@@ -39,7 +40,7 @@ def rc(project, repository, user, remote):
 
 def test_formal_draft_uses_rc_snapshot_instead_of_branch_head(client, rc):
     response = client.post("/api/releases/", {
-        "project": str(rc.project_id), "repository": str(rc.repository_id),
+        "project": str(rc.project_id), "software": str(rc.software_id),
         "release_type": "formal", "source_rc": str(rc.id),
         "branch": "forged", "git_hash": "b" * 40,
     }, format="json")
@@ -54,9 +55,9 @@ def test_formal_draft_uses_rc_snapshot_instead_of_branch_head(client, rc):
     assert release["version"] == "VA.1.0.0"
 
 
-def test_formal_draft_without_rc_uses_selected_branch(client, project, repository, remote):
+def test_formal_draft_without_rc_uses_selected_branch(client, project, software, remote):
     """没有已发布 RC 也能创建正式草稿，客户端不能覆盖分支提交快照。"""
-    payload = {"project": str(project.id), "repository": str(repository.id), "release_type": "formal"}
+    payload = {"project": str(project.id), "software": str(software.id), "release_type": "formal"}
     missing = client.post("/api/releases/", payload, format="json")
     assert missing.status_code == 400
     assert "分支" in str(missing.data)
@@ -69,10 +70,10 @@ def test_formal_draft_without_rc_uses_selected_branch(client, project, repositor
     assert client.post(f"/api/releases/{created.data['data']['id']}/generate-doc/").status_code == 200
 
 
-def test_formal_branch_draft_can_change_branch(client, project, repository, remote, monkeypatch):
+def test_formal_branch_draft_can_change_branch(client, project, repository, software, remote, monkeypatch):
     """按分支创建的正式草稿可切换分支并重新解析 SHA。"""
     created = client.post("/api/releases/", {
-        "project": str(project.id), "repository": str(repository.id), "release_type": "formal", "branch": "develop",
+        "project": str(project.id), "software": str(software.id), "release_type": "formal", "branch": "develop",
     }, format="json")
     assert created.status_code == 201, created.data
     url = f"/api/releases/{created.data['data']['id']}/"
@@ -92,7 +93,7 @@ def test_formal_branch_draft_can_change_branch(client, project, repository, remo
 
 def test_draft_reselection_clears_old_changes_and_plain_edit_keeps_sha(client, rc, remote):
     draft = client.post("/api/releases/", {
-        "project": str(rc.project_id), "repository": str(rc.repository_id),
+        "project": str(rc.project_id), "software": str(rc.software_id),
         "release_type": "formal", "source_rc": str(rc.id),
         "updates": [{"type": "A", "content": "旧来源内容"}],
     }, format="json").data["data"]
@@ -100,7 +101,8 @@ def test_draft_reselection_clears_old_changes_and_plain_edit_keeps_sha(client, r
     assert client.patch(url, {"branch": "moved"}, format="json").status_code == 200
     assert client.get(url).data["data"]["git_hash"] == SHA
     replacement = ReleaseRecord.objects.create(
-        project=rc.project, repository=rc.repository, publisher=rc.publisher,
+        project=rc.project, repository=rc.repository, publisher=rc.publisher, software=rc.software,
+        software_confirmed_at=timezone.now(), historical_base_version="9.0.1",
         release_type="rc", status="released", version="VA.9.0.1",
         tag_name="VA.9.0.1-rc", branch="test", git_hash="b" * 40,
     )
@@ -131,7 +133,7 @@ def test_candidates_show_remote_availability_and_support_paging(client, rc, remo
 
 def test_referenced_rc_cannot_be_deleted(client, rc, remote):
     draft = client.post("/api/releases/", {
-        "project": str(rc.project_id), "repository": str(rc.repository_id),
+        "project": str(rc.project_id), "software": str(rc.software_id),
         "release_type": "formal", "source_rc": str(rc.id),
     }, format="json")
     assert draft.status_code == 201
@@ -142,10 +144,10 @@ def test_referenced_rc_cannot_be_deleted(client, rc, remote):
     assert remote.tags[0].name == rc.tag_name
 
 
-@pytest.mark.parametrize("invalid", ["missing", "beta", "draft", "other_project", "other_repository", "tag_missing", "tag_changed", "short_hash"])
+@pytest.mark.parametrize("invalid", ["missing", "beta", "draft", "other_software", "other_repository", "tag_missing", "tag_changed", "short_hash"])
 def test_invalid_source_is_rejected(client, rc, remote, invalid):
-    from apps.project.models import Project
     from apps.repository.models import Repository
+    from apps.software.models import Software
 
     source_id = str(rc.id)
     if invalid == "missing":
@@ -154,8 +156,10 @@ def test_invalid_source_is_rejected(client, rc, remote, invalid):
         rc.release_type = "beta"
     elif invalid == "draft":
         rc.status = "draft"
-    elif invalid == "other_project":
-        rc.project = Project.objects.create(code="OTHER", name="不可见项目", leader=rc.publisher)
+    elif invalid == "other_software":
+        rc.software = Software.objects.create(
+            repository=rc.repository, slug="other", name="同仓库其他软件", owner=rc.publisher,
+        )
     elif invalid == "other_repository":
         rc.repository = Repository.objects.create(name="其他仓库", url="https://gitlab.example.com/other.git", external_identity="other", vendor="gitlab")
     elif invalid == "tag_missing":
@@ -167,10 +171,29 @@ def test_invalid_source_is_rejected(client, rc, remote, invalid):
     original = ReleaseRecord.objects.get(pk=rc.pk)
     rc.save()
     response = client.post("/api/releases/", {
-        "project": str(original.project_id), "repository": str(original.repository_id),
+        "project": str(original.project_id), "software": str(original.software_id),
         "release_type": "formal", "source_rc": source_id,
     }, format="json")
     assert response.status_code == 400, response.data
+
+
+def test_legacy_draft_reselection_cannot_use_another_projects_unassigned_rc(client, project, repository, user, remote):
+    from apps.project.models import Project
+
+    other_project = Project.objects.create(code="OTHER", name="其他项目", leader=user)
+    old_source = ReleaseRecord.objects.create(
+        project=other_project, repository=repository, publisher=user, release_type="rc", status="released",
+        version="VA.9.0.0", tag_name="VA.9.0.0-rc", branch="develop", git_hash=SHA,
+    )
+    remote.tags = [TagInfo(name=old_source.tag_name, commit_hash=SHA)]
+    draft = ReleaseRecord.objects.create(
+        project=project, repository=repository, publisher=user, release_type="formal", status="draft",
+        version="VA.1.0.0", tag_name="VA.1.0.0", branch="develop", git_hash=SHA,
+    )
+    url = f"/api/releases/{draft.pk}/"
+    assert client.patch(url, {"source_rc": str(old_source.pk)}, format="json").status_code == 400
+    detail = client.get(url).data["data"]
+    assert detail["software"] is None and detail["source_rc"] is None
 
 
 def test_pending_source_is_immutable_and_rc_creation_stays_branch_based(client, rc):
@@ -182,7 +205,7 @@ def test_pending_source_is_immutable_and_rc_creation_stays_branch_based(client, 
     result = client.patch(f"/api/releases/{formal.id}/", {"source_rc": None}, format="json")
     assert result.status_code == 400
     assert client.get(f"/api/releases/{formal.id}/").data["data"]["source_rc"] == str(rc.id)
-    payload = {"project": str(rc.project_id), "repository": str(rc.repository_id), "release_type": "rc", "branch": "develop"}
+    payload = {"project": str(rc.project_id), "software": str(rc.software_id), "release_type": "rc", "branch": "develop"}
     denied = client.post("/api/releases/", {**payload, "source_rc": str(rc.id)}, format="json")
     assert denied.status_code == 400
     created = client.post("/api/releases/", payload, format="json")
@@ -210,7 +233,9 @@ def test_source_context_checks_are_applied_to_candidates_and_create(client, rc, 
         client.force_authenticate(User.objects.create_user(username="outsider"))
     params = {"project": str(rc.project_id), "repository": str(rc.repository_id)}
     assert client.get("/api/releases/rc-candidates/", params).status_code in (400, 403, 404)
-    result = client.post("/api/releases/", {**params, "release_type": "formal", "source_rc": str(rc.id)}, format="json")
+    result = client.post("/api/releases/", {
+        "project": str(rc.project_id), "software": str(rc.software_id), "release_type": "formal", "source_rc": str(rc.id),
+    }, format="json")
     assert result.status_code in (400, 403, 404)
 
 

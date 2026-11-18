@@ -16,6 +16,54 @@ from apps.release.models import (
 from apps.repository.models import Repository
 
 
+def _shared_release_fields(release: ReleaseRecord) -> dict:
+    """共享详情只投影版本字段，审批、整改及发起项目身份留在原申请权限范围。"""
+    return {
+        "id": str(release.pk),
+        "project": str(release.shared_project_id),
+        "project_name": release.shared_project_name,
+        "software": str(release.software_id),
+        "software_name": release.software.name,
+        "software_slug": release.software.slug,
+        "component_name": release.software.name,
+        "repository": str(release.repository_id),
+        "repository_name": release.repository.name,
+        "version": release.version,
+        "tag_name": release.tag_name,
+        "branch": release.branch,
+        "git_hash": release.git_hash,
+        "release_type": release.release_type,
+        "release_type_display": release.get_release_type_display(),
+        "status": release.status,
+        "status_display": release.get_status_display(),
+        "created_at": release.created_at,
+        "released_at": release.released_at,
+        "shared_readonly": True,
+        "shared_history_only": not release.shared_project_active,
+    }
+
+
+def _release_task_project(release: ReleaseRecord):
+    return release.project_id if getattr(release, "origin_read", True) else release.shared_project_id
+
+
+class SoftwareReleaseQuerySerializer(serializers.Serializer):
+    project = serializers.UUIDField()
+    software = serializers.UUIDField(required=False)
+    repository = serializers.UUIDField(required=False)
+    release_type = serializers.ChoiceField(choices=["formal", "rc", "beta"], default="formal")
+
+    def validate(self, attrs):
+        if not (attrs.get("software") or attrs.get("repository")):
+            raise serializers.ValidationError({"repository": "请选择关联仓库"})
+        return attrs
+
+
+class SoftwareChangesQuerySerializer(SoftwareReleaseQuerySerializer):
+    branch = serializers.CharField(max_length=200)
+    tag_name = serializers.CharField(required=False, allow_blank=True, max_length=181)
+
+
 class ReleaseRecordSerializer(serializers.ModelSerializer):
     """
     发布记录序列化器
@@ -29,8 +77,12 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     publisher_name = serializers.CharField(source="publisher.nickname", read_only=True, default="")
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     release_type_display = serializers.CharField(source="get_release_type_display", read_only=True)
-    version = serializers.CharField(required=False, allow_blank=True)
-    tag_name = serializers.CharField(required=False, allow_blank=True)
+    repository = serializers.PrimaryKeyRelatedField(queryset=Repository.objects.all(), required=False)
+    software = serializers.UUIDField(required=False, allow_null=True)
+    software_name = serializers.CharField(source="software.name", read_only=True, default=None)
+    software_slug = serializers.CharField(source="software.slug", read_only=True, default=None)
+    version = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    tag_name = serializers.CharField(required=False, allow_blank=True, max_length=181)
     release_doc = serializers.CharField(required=False, allow_blank=True)
     review_context = serializers.CharField(required=False, allow_blank=True, max_length=20000, trim_whitespace=False)
     review_document_paths = serializers.ListField(
@@ -50,10 +102,10 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
     cleanup_history = serializers.SerializerMethodField()
     revision_update_required = serializers.SerializerMethodField()
 
-    def get_revision_update_required(self, obj):
+    def get_revision_update_required(self, obj) -> bool:
         return bool(obj.status == "draft" and obj.revision_source_hash and obj.git_hash.lower() == obj.revision_source_hash.lower())
 
-    def get_cleanup_history(self, obj):
+    def get_cleanup_history(self, obj) -> list[dict]:
         return [{"status": item.status, "message": item.message, "protected_by": item.protected_by,
                  "created_at": item.created_at, "actor_id": item.actor_id, "actor_name": str(item.actor) if item.actor else "已删除账号"}
                 for item in obj.cleanup_attempts.select_related("actor").order_by("created_at")]
@@ -62,6 +114,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         model = ReleaseRecord
         fields = [
             "id", "project", "project_name", "repository", "repository_name",
+            "software", "software_name", "software_slug",
             "version", "tag_name", "redmine_url", "base_tag", "branch", "git_hash",
             "source_rc", "source_rc_version", "source_rc_tag", "source_rc_git_hash",
             "base_git_hash", "changes_initialized", "changes_warnings",
@@ -87,7 +140,17 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         ]
 
     def to_representation(self, instance):
+        if not getattr(instance, "origin_read", True):
+            return {
+                **_shared_release_fields(instance),
+                "release_doc": instance.release_doc,
+                "package_tasks": self.get_package_tasks(instance),
+                "can_review": False,
+                "can_reply": False,
+            }
         data = super().to_representation(instance)
+        data["shared_readonly"] = False
+        data["software"] = str(instance.software_id) if instance.software_id else None
         data["source_rc"] = str(instance.source_rc_id) if instance.source_rc_id else None
         request = self.context.get("request")
         if request and not request.user.is_superuser:
@@ -110,7 +173,8 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
 
     def get_package_tasks(self, obj: ReleaseRecord) -> list[dict]:
         """返回该发布关联的打包任务概要。"""
-        tasks = obj.package_tasks.all().order_by("-created_at") if hasattr(obj, "package_tasks") else []
+        tasks = sorted(obj.package_tasks.all(), key=lambda task: (task.created_at, str(task.pk)), reverse=True)
+        project_id = _release_task_project(obj)
         return [
             {
                 "id": str(task.id),
@@ -124,6 +188,7 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
                 "created_at": task.created_at,
             }
             for task in tasks
+            if task.project_id == project_id and task.repository_id == obj.repository_id
         ]
 
     def get_review_issue_counts(self, obj: ReleaseRecord) -> dict:
@@ -229,6 +294,8 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
             校验通过的字典
         """
         if self.instance:
+            if "software" in attrs and attrs["software"] != self.instance.software_id:
+                raise serializers.ValidationError({"software": "草稿不能更换软件，请重新创建"})
             for field in ("project", "repository", "release_type"):
                 if field in attrs and attrs[field] != getattr(self.instance, field):
                     raise serializers.ValidationError({field: "草稿不能更换项目、仓库或发布类型，请重新创建"})
@@ -247,6 +314,29 @@ class ReleaseRecordSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class ReleaseCreateSerializer(ReleaseRecordSerializer):
+    """项目可按关联仓库或仓库中的软件创建发布。"""
+
+    def validate(self, attrs: dict) -> dict:
+        from apps.software.models import Software
+
+        attrs = super().validate(attrs)
+        repository = attrs.get("repository")
+        software_id = attrs.get("software")
+        if software_id:
+            software = Software.objects.select_related("repository").filter(
+                pk=software_id, repository__project_components__project=attrs["project"],
+            ).first()
+            if software is None:
+                raise serializers.ValidationError({"software": "当前项目的关联仓库中找不到该软件"})
+            if repository is not None and repository.pk != software.repository_id:
+                raise serializers.ValidationError({"repository": "仓库必须是所选软件的主仓库"})
+            attrs["software"] = software
+        elif repository is None:
+            raise serializers.ValidationError({"repository": "请选择关联仓库"})
+        return attrs
+
+
 class ReleaseListSerializer(serializers.ModelSerializer):
     """
     发布列表序列化器
@@ -256,6 +346,8 @@ class ReleaseListSerializer(serializers.ModelSerializer):
 
     project_name = serializers.CharField(source="project.name", read_only=True)
     component_name = serializers.CharField(read_only=True)
+    software_name = serializers.CharField(source="software.name", read_only=True, default=None)
+    software_slug = serializers.CharField(source="software.slug", read_only=True, default=None)
     repository_name = serializers.CharField(source="repository.name", read_only=True)
     publisher_name = serializers.CharField(source="publisher.nickname", read_only=True, default="")
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -275,21 +367,34 @@ class ReleaseListSerializer(serializers.ModelSerializer):
         model = ReleaseRecord
         fields = [
             "id", "project", "project_name", "repository", "repository_name", "component_name",
+            "software", "software_name", "software_slug",
             "version", "tag_name", "redmine_url", "release_type", "release_type_display",
             "status", "status_display", "branch", "publisher_name", "released_at", "created_at",
             "commit_total", "pass_count", "warning_count", "illegal_count", "has_doc",
             "open_review_count", "replied_review_count", "update_summary", "package_summary",
         ]
 
+    def to_representation(self, instance):
+        if not getattr(instance, "origin_read", True):
+            return {
+                **_shared_release_fields(instance),
+                "has_doc": self.get_has_doc(instance),
+                "update_summary": self.get_update_summary(instance),
+                "package_summary": self.get_package_summary(instance),
+            }
+        data = super().to_representation(instance)
+        data["shared_readonly"] = False
+        return data
+
     def get_update_summary(self, obj: ReleaseRecord) -> str:
         from apps.release.dashboard import release_update_summary
 
-        return release_update_summary(obj)
+        return release_update_summary(obj, include_request_updates=getattr(obj, "origin_read", True))
 
     def get_package_summary(self, obj: ReleaseRecord) -> dict:
         from apps.release.dashboard import release_package_summary
 
-        return release_package_summary(obj)
+        return release_package_summary(obj, project_id=_release_task_project(obj))
 
     def _review_counts(self, obj: ReleaseRecord) -> dict:
         """聚合该发布关联提交的审查结果计数（单次查询，结果缓存到实例上）"""

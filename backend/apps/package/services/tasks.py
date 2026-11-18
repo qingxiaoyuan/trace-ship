@@ -2,6 +2,7 @@
 打包任务生命周期：创建、调度、节点并发闸门与取消
 """
 import logging
+import re
 import threading
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -10,15 +11,19 @@ from django.db import close_old_connections, transaction
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied
 
 from apps.package.models import PackageConfig, PackageNode, PackageTask
+from apps.package.services.configurations import lock_package_config, require_shared_config
 from apps.package.services.svn import (
     TRIGGER_SOURCE_AUTO_RELEASE,
     TRIGGER_SOURCE_MANUAL_BRANCH,
     TRIGGER_SOURCE_MANUAL_RELEASE,
     apply_svn_push_policy,
 )
+from utils.provider.credential_resolver import resolve_credential
+from utils.provider.exceptions import ProviderError
+from utils.provider.factory import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +48,12 @@ class TaskLifecycleMixin:
         """生成配置快照，避免执行时配置变更影响历史任务。"""
         image = config.image
         node = config.node
+        identity = {
+            "software_name": config.software.name,
+            "software_slug": config.software.slug,
+        } if config.software_id else {}
         return {
+            **identity,
             "config_id": str(config.id),
             "name": config.name,
             "executor_type": config.executor_type or "local_docker",
@@ -95,36 +105,74 @@ class TaskLifecycleMixin:
         request_user: "User | None" = None,
         *,
         auto_triggered: bool = False,
+        project=None,
     ) -> PackageTask:
         """为已发布版本创建打包任务。
 
         auto_triggered=True 表示发布推 tag 后的自动打包。自动与手动打包的
         正式版、RC / 测试版均按 SVN 总开关决定是否推送，并固定在本次任务快照中。
         """
+        from apps.project.models import Project
+        from apps.release.models import ReleaseRecord
         from apps.repository.models import Repository
         from utils.permissions import IsProjectReleasePackager
 
-        Repository.objects.select_for_update(no_key=True).get(pk=release.repository_id)
-        # 仓库锁先于配置锁；仅锁配置行，避免可空镜像/节点关联产生外连接锁错误。
-        PackageConfig.objects.select_for_update().only("id").get(pk=config.pk)
-        release.refresh_from_db()
-        config.refresh_from_db()
-        # 配置归属与成员角色可能在视图验权后变化，按锁定的当前归属重新核验。
-        if not auto_triggered and (
-            request_user is None
-            or not request_user.is_authenticated
-            or not IsProjectReleasePackager()._check(config.project_component.project, request_user)
-        ):
-            raise PermissionDenied("没有在当前项目补打已发布版本的权限")
+        repository = Repository.objects.select_for_update(no_key=True).filter(pk=release.repository_id).first()
+        if repository is None:
+            raise NotFound("来源仓库已删除")
+        if config.source_repository_id != repository.pk:
+            raise serializers.ValidationError({"repository": "打包配置与发布仓库不一致"})
+        release = ReleaseRecord.objects.select_for_update().filter(pk=release.pk, repository=repository).first()
+        if release is None:
+            raise NotFound("发布记录不存在或已删除")
+        # 仓库、发布及配置按同一顺序锁定后，读取当前归属。
+        config = lock_package_config(config)
         if release.status != "released":
             raise serializers.ValidationError({"release": "只有已发布版本才能触发打包"})
-        if not config.is_active:
-            raise serializers.ValidationError({"config": "打包配置已停用"})
-        if config.project_component.repository_id != release.repository_id:
-            raise serializers.ValidationError({"repository": "打包配置与发布仓库不一致"})
-
-        if config.project_component.project_id != release.project_id:
-            raise serializers.ValidationError({"project": "打包配置与发布项目不一致"})
+        if not auto_triggered and (request_user is None or not request_user.is_authenticated):
+            raise PermissionDenied("没有在当前项目补打已发布版本的权限")
+        if release.software_id:
+            if not request_user or not request_user.is_active:
+                raise PermissionDenied("缺少有效的软件打包操作人")
+            user = release.publisher if auto_triggered else request_user
+            if not user or not user.is_active:
+                raise PermissionDenied("缺少可使用当前项目软件的发布申请人")
+            if not config.software_id:
+                raise serializers.ValidationError({"config": "共享软件版本必须使用该软件的打包配置"})
+            if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", release.git_hash or ""):
+                raise serializers.ValidationError({"release": "发布记录缺少完整源码快照"})
+            if project is None:
+                raise serializers.ValidationError({"project": "必须指定使用该软件版本的项目"})
+            project = Project.objects.select_for_update(no_key=True).filter(pk=project.pk).first()
+            if project is None:
+                raise NotFound("发起项目已删除")
+            if auto_triggered and (
+                project.pk != release.project_id
+                or not config.auto_package_on_release
+                or str(config.pk) not in (release.package_config_ids or [])
+            ):
+                raise serializers.ValidationError({"config": "该配置不在本次发布的有效自动打包选项内"})
+            link = require_shared_config(
+                config, project=project, software=release.software,
+                user=user, permission=IsProjectReleasePackager(),
+            )
+            project = link.project
+            cls._check_release_credential(repository, project, request_user)
+        else:
+            if config.software_id or project is not None:
+                raise serializers.ValidationError({"config": "请选择与发布匹配的打包配置"})
+            # 旧配置继续使用原项目组件，并在锁内重新核验当前角色。
+            project = Project.objects.select_for_update(no_key=True).filter(pk=config.project_component.project_id).first()
+            if project is None:
+                raise NotFound("发起项目已删除")
+            if not auto_triggered and (project.status != 1 or not config.project_component.is_active):
+                raise serializers.ValidationError({"config": "配置所属项目或仓库关联已停用"})
+            if not auto_triggered and not IsProjectReleasePackager()._check(project, request_user):
+                raise PermissionDenied("没有在当前项目补打已发布版本的权限")
+            if not config.is_active:
+                raise serializers.ValidationError({"config": "打包配置已停用"})
+            if project.pk != release.project_id:
+                raise serializers.ValidationError({"project": "打包配置与发布项目不一致"})
         snapshot = apply_svn_push_policy(
             cls._snapshot(config),
             trigger_source=(
@@ -135,10 +183,11 @@ class TaskLifecycleMixin:
         task = PackageTask.objects.create(
             config=config,
             release=release,
-            project=release.project,
-            repository=release.repository,
+            project=project,
+            repository=repository,
+            software_id=release.software_id,
             triggered_by=request_user,
-            name=f"{config.name} / {release.version}",
+            name=f"{config.name} / {release.version}"[:200],
             tag_name=release.tag_name,
             source_ref=release.tag_name,
             version=release.version,
@@ -146,8 +195,72 @@ class TaskLifecycleMixin:
             commit_hash=release.git_hash,
             config_snapshot=snapshot,
         )
-        transaction.on_commit(lambda: cls._dispatch_release_task(task, auto_triggered=auto_triggered))
+        transaction.on_commit(
+            lambda: cls._dispatch_release_task(task, auto_triggered=auto_triggered),
+            robust=auto_triggered and bool(release.software_id),
+        )
         return task
+
+    @classmethod
+    @transaction.atomic
+    def retry_shared_task(cls, task: PackageTask, user: "User") -> tuple[PackageTask, bool]:
+        """在原任务所属项目新建一次重试，沿用固定源码和原配置快照。"""
+        from apps.project.models import Project
+        from apps.release.models import ReleaseRecord
+        from apps.repository.models import Repository
+        from utils.permissions import IsProjectReleasePackager
+
+        repository = Repository.objects.select_for_update(no_key=True).filter(pk=task.repository_id).first()
+        if repository is None:
+            raise NotFound("来源仓库已删除")
+        release = None
+        if task.release_id:
+            release = ReleaseRecord.objects.select_for_update().filter(pk=task.release_id).first()
+            if release is None:
+                raise NotFound("来源发布已删除")
+        task = PackageTask.objects.select_for_update().filter(pk=task.pk).first()
+        if task is None:
+            raise NotFound("打包任务已删除")
+        project = Project.objects.select_for_update(no_key=True).filter(pk=task.project_id).first()
+        permission = IsProjectReleasePackager()
+        if not permission._check(project, user):
+            raise PermissionDenied("没有在当前项目重试打包的权限")
+        if not task.software_id or task.status != "failure":
+            raise serializers.ValidationError({"task": "仅可重试有明确软件归属的失败任务"})
+        if not task.config_id:
+            raise serializers.ValidationError({"config": "原打包配置已移除，不能重试"})
+        config = task.config
+        if config.source_repository_id != repository.pk or task.software.repository_id != repository.pk:
+            raise serializers.ValidationError({"config": "打包配置与任务的源码仓库不一致"})
+        require_shared_config(config, project=project, software=task.software, user=user, permission=permission)
+        if release and (
+            release.status != "released" or release.software_id != task.software_id
+            or release.repository_id != repository.pk or release.git_hash != task.commit_hash
+            or release.tag_name != task.tag_name or release.version != task.version
+        ):
+            raise serializers.ValidationError({"release": "原任务的固定源码或版本与发布记录不一致"})
+        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", task.commit_hash or ""):
+            raise serializers.ValidationError({"task": "原任务缺少完整源码快照，不能重试"})
+        cls._check_release_credential(repository, project, user)
+        successor = PackageTask.objects.filter(retry_of=task).first()
+        if successor:
+            return successor, False
+        successor = PackageTask.objects.create(
+            config=config, release=release, project=project, repository=repository,
+            software_id=task.software_id, triggered_by=user, retry_of=task,
+            name=task.name, tag_name=task.tag_name, source_ref=task.source_ref,
+            version=task.version, release_type=task.release_type, commit_hash=task.commit_hash,
+            config_snapshot=task.config_snapshot,
+        )
+        transaction.on_commit(lambda: cls._dispatch_release_task(successor, auto_triggered=False))
+        return successor, True
+
+    @staticmethod
+    def _check_release_credential(repository, project, user) -> None:
+        try:
+            resolve_credential(repository, user, project=project, operation="read")
+        except ProviderError as exc:
+            raise serializers.ValidationError({"repository": "无法使用当前项目的仓库凭证，请检查配置后重试"}) from exc
 
     @staticmethod
     def log_release_trigger(
@@ -161,17 +274,21 @@ class TaskLifecycleMixin:
         detail = {"reason": reason} if reason else {}
         if config is not None:
             detail.update({
-                "project_id": str(config.project_component.project_id),
                 "config_id": str(config.id),
             })
+            if config.project_component_id:
+                detail["project_id"] = str(config.project_component.project_id)
         if release is not None:
             detail.update({"release_id": str(release.id), "version": release.version})
         if task is not None:
-            detail.update({"task_id": str(task.id), "status": task.status})
+            detail.update({"task_id": str(task.id), "project_id": str(task.project_id), "status": task.status})
+        if task is not None and task.retry_of_id:
+            detail["retry_of"] = str(task.retry_of_id)
+        retry = "retry_of" in detail
         OperationLogService.log(
-            user=user, module="package", action="trigger_release", resource_type="package_task",
+            user=user, module="package", action="retry_task" if retry else "trigger_release", resource_type="package_task",
             resource_id=str(task.id) if task is not None else "",
-            description="补打已发布版本" if result == "success" else "补打已发布版本失败",
+            description=("重试打包任务" if retry else "补打已发布版本") + ("" if result == "success" else "失败"),
             result=result, detail=detail,
         )
 
@@ -199,60 +316,83 @@ class TaskLifecycleMixin:
             )
 
     @classmethod
-    def create_task_for_branch(cls, config: PackageConfig, branch_name: str, request_user=None) -> PackageTask:
-        """直接对仓库某条分支的最新代码创建打包任务（不经发布流程）。
+    def create_task_for_branch(cls, config: PackageConfig, branch_name: str, request_user=None, *,
+                               project=None, software_id=None) -> PackageTask:
+        """在显式项目内保存共享分支任务；旧配置沿用原项目组件。"""
+        from apps.project.models import Project
+        from apps.repository.services import RepositoryService
+        from utils.permissions import IsProjectPackager
 
-        任务标题与自动编码（version）均按分支名命名，便于在打包看板中识别来源；
-        克隆源码时以 ``git clone --branch {branch}`` 拉取该分支最新代码。
-
-        Args:
-            config: 打包配置
-            branch_name: 仓库分支名（Git 分支最新代码）
-            request_user: 触发人
-
-        Returns:
-            已投递的打包任务
-        """
-        if not config.is_active:
-            raise serializers.ValidationError({"config": "打包配置已停用"})
         branch_name = (branch_name or "").strip()
         if not branch_name:
             raise serializers.ValidationError({"branch": "必须指定分支名"})
         if len(branch_name) > 100:
             raise serializers.ValidationError({"branch": "分支名过长（不能超过 100 字符）"})
 
-        snapshot = apply_svn_push_policy(
-            cls._snapshot(config),
-            trigger_source=TRIGGER_SOURCE_MANUAL_BRANCH,
-            release_type="formal",
-        )
-        # 分支最新提交哈希仅用于可追溯展示；拉取失败降级为空串，不阻断打包
-        commit_hash = ""
-        try:
-            from apps.repository.services import RepositoryService
+        with transaction.atomic():
+            config = lock_package_config(config)
+            repository = config.source_repository
+            if config.software_id:
+                if project is None or config.software_id != software_id:
+                    raise serializers.ValidationError({"software": "必须显式指定项目和配置所属软件"})
+                project = Project.objects.select_for_update(no_key=True).filter(pk=project.pk).first()
+                link = require_shared_config(
+                    config, project=project, software=config.software,
+                    user=request_user, permission=IsProjectPackager(),
+                )
+                project = link.project
+                commit_hash = cls._shared_branch_head(repository, project, branch_name, request_user)
+            else:
+                if project is not None or software_id is not None:
+                    raise serializers.ValidationError({"config": "此配置尚未归属共享软件"})
+                project = Project.objects.select_for_update(no_key=True).filter(pk=config.project_component.project_id).first()
+                if project is None:
+                    raise NotFound("发起项目已删除")
+                if project.status != 1 or not config.project_component.is_active:
+                    raise serializers.ValidationError({"config": "配置所属项目或仓库关联已停用"})
+                if request_user is not None and not IsProjectPackager()._check(project, request_user):
+                    raise PermissionDenied("没有在当前项目触发打包的权限")
+                if not config.is_active:
+                    raise serializers.ValidationError({"config": "打包配置已停用"})
+                commit_hash = ""
+                try:
+                    for branch in RepositoryService.list_branches(repository, request_user):
+                        if branch.get("name") == branch_name:
+                            commit_hash = branch.get("last_commit_hash") or ""
+                            break
+                except Exception:
+                    logger.warning("获取旧配置的分支最新提交信息失败，忽略 branch=%s", branch_name)
 
-            for branch in RepositoryService.list_branches(config.project_component.repository, request_user):
-                if branch.get("name") == branch_name:
-                    commit_hash = branch.get("last_commit_hash") or ""
-                    break
-        except Exception:
-            logger.warning("获取分支最新提交信息失败，忽略 branch=%s", branch_name)
-
-        task = PackageTask.objects.create(
-            config=config,
-            release=None,
-            project=config.project_component.project,
-            repository=config.project_component.repository,
-            triggered_by=request_user,
-            name=f"{config.name} / {branch_name}",
-            tag_name=branch_name,
-            version=branch_name,
-            release_type="formal",
-            commit_hash=commit_hash,
-            config_snapshot=snapshot,
-        )
-        cls.dispatch_task(task)
+            snapshot = apply_svn_push_policy(
+                cls._snapshot(config), trigger_source=TRIGGER_SOURCE_MANUAL_BRANCH, release_type="formal",
+            )
+            task = PackageTask.objects.create(
+                config=config, project=project, repository=repository,
+                software_id=config.software_id, triggered_by=request_user,
+                name=f"{config.name} / {branch_name}"[:200],
+                tag_name=branch_name, source_ref=branch_name if config.software_id else "",
+                version=branch_name, release_type="formal", commit_hash=commit_hash,
+                config_snapshot=snapshot,
+            )
+            if config.software_id:
+                transaction.on_commit(lambda: cls._dispatch_release_task(task, auto_triggered=True))
+        if not config.software_id:
+            cls.dispatch_task(task)
         return task
+
+    @staticmethod
+    def _shared_branch_head(repository, project, branch_name, user) -> str:
+        from apps.repository.services import RepositoryService
+
+        try:
+            credential = resolve_credential(repository, user, project=project, operation="read")
+            provider = get_provider(repository.vendor, RepositoryService._resolve_server_url(repository), credential)
+            branch = provider.get_branch(repository.external_identity, branch_name)
+        except ProviderError as exc:
+            raise serializers.ValidationError({"branch": "无法核验分支和仓库凭证，请检查配置后重试"}) from exc
+        if branch.name != branch_name or not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", branch.last_commit_hash or ""):
+            raise serializers.ValidationError({"branch": "分支缺少有效的完整提交"})
+        return branch.last_commit_hash
 
     @classmethod
     def dispatch_task(cls, task: PackageTask) -> None:
@@ -362,15 +502,17 @@ class TaskLifecycleMixin:
         优先按创建发布时勾选的配置（快照）触发；未显式选择（None）时兼容历史逻辑，
         触发该仓库全部启用的自动打包配置。
         """
-        configs = PackageConfig.objects.filter(
-            project_component__project=release.project,
-            project_component__repository=release.repository,
-            auto_package_on_release=True,
-            is_active=True,
-        ).select_related(
-            "project_component__project", "project_component__repository", "image", "node"
-        )
+        from apps.system.services import OperationLogService
+
+        configs = PackageConfig.objects.filter(auto_package_on_release=True, is_active=True)
         selected = release.package_config_ids
+        if release.software_id:
+            configs = configs.filter(software_id=release.software_id)
+            selected = selected or []
+        else:
+            configs = configs.filter(
+                project_component__project=release.project, project_component__repository=release.repository,
+            )
         if selected is not None:
             from uuid import UUID
 
@@ -385,12 +527,19 @@ class TaskLifecycleMixin:
                 valid_ids.append(str(value))
             configs = configs.filter(id__in=valid_ids)
         tasks = []
-        for config in configs:
-            tasks.append(
-                cls.create_task_for_release(
-                    config, release, request_user=request_user, auto_triggered=True
+        for config in configs.select_related("software__repository", "project_component__repository"):
+            try:
+                tasks.append(cls.create_task_for_release(
+                    config, release, request_user=request_user, auto_triggered=True,
+                    project=release.project if release.software_id else None,
+                ))
+            except APIException as exc:
+                if not release.software_id:
+                    raise
+                OperationLogService.log_release(
+                    user=request_user, release=release, action="auto_package_trigger", result="failure",
+                    detail={"config_id": str(config.pk), "reason": exc.detail},
                 )
-            )
         return tasks
 
     @classmethod
@@ -426,9 +575,12 @@ class TaskLifecycleMixin:
         if not 1 <= days <= 365:
             days = 30
 
+        from apps.project.services import visible_project_ids
+
         since = timezone.now() - timedelta(days=days)
         queryset = PackageTask.objects.filter(
             triggered_by=user,
+            project_id__in=visible_project_ids(user),
             status__in=("success", "failure", "canceled"),
             created_at__gte=since,
         )

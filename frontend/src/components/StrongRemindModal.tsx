@@ -143,7 +143,7 @@ export function StrongRemindModal() {
               {data.todo_tasks.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => go('/workflows')}
+                  onClick={() => go(t.instance_id ? `/workflows/${t.instance_id}` : '/workflows')}
                   className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-indigo-50/40"
                 >
                   <span className="min-w-0">
@@ -151,8 +151,7 @@ export function StrongRemindModal() {
                       {t.title}
                     </span>
                     <span className="mt-0.5 block truncate text-[11px] text-slate-400">
-                      {t.project_name}
-                      {t.version ? ` · ${t.version}` : ''}
+                      {[t.project_name, t.software_name, t.version].filter(Boolean).join(' · ')}
                     </span>
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" strokeWidth={1.5} />
@@ -182,7 +181,7 @@ export function StrongRemindModal() {
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-medium text-slate-800">
-                      {issue.version || '发布整改'}
+                      {[issue.software_name, issue.version].filter(Boolean).join(' · ') || '发布整改'}
                     </span>
                     <span className="mt-0.5 block truncate text-[11px] text-slate-400">
                       {issue.content}

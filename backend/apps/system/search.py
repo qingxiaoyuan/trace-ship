@@ -10,6 +10,7 @@ import uuid
 
 from django.db.models import Count, Q
 
+from apps.release.visibility import releases_for_read
 from apps.workflow.services import visible_workflow_instances
 
 
@@ -57,7 +58,7 @@ class GlobalSearchService:
         return {
             "projects": cls._search_projects(q, project_ids),
             "repositories": cls._search_repositories(q, repo_ids),
-            "releases": cls._search_releases(q, project_ids),
+            "releases": cls._search_releases(user, q),
             "workflows": cls._search_workflows(user, q),
             "packages": cls._search_packages(q, project_ids),
         }
@@ -106,26 +107,26 @@ class GlobalSearchService:
         ]
 
     @classmethod
-    def _search_releases(cls, q: str, project_ids) -> list[dict]:
-        """发布：版本号 / Tag 模糊匹配，副标题为「项目 / 仓库 · 状态」"""
+    def _search_releases(cls, user, q: str) -> list[dict]:
+        """按软件名称、标识、版本和完整 Tag 搜索可打开的版本。"""
         from apps.release.models import ReleaseRecord
 
-        queryset = (
-            ReleaseRecord.objects.select_related("project", "repository")
-            .filter(Q(version__icontains=q) | Q(tag_name__icontains=q))
-            .order_by("-created_at")
-        )
-        if project_ids is not None:
-            queryset = queryset.filter(project_id__in=project_ids)
-        return [
-            {
-                "id": str(release.id),
+        queryset = ReleaseRecord.objects.select_related("project", "repository", "software").filter(
+            Q(version__icontains=q) | Q(tag_name__icontains=q)
+            | Q(software__name__icontains=q) | Q(software__slug__icontains=q),
+        ).order_by("-created_at", "-id")
+        results = []
+        for release in releases_for_read(queryset, user)[: cls.PER_GROUP_LIMIT]:
+            project = release.project.name if release.origin_read else release.shared_project_name
+            target = "" if release.origin_read else f"?project={release.shared_project_id}"
+            software = release.software.name if release.software_id else "软件归属未知"
+            results.append({
+                "id": str(release.pk),
                 "name": f"{release.version}（{release.get_release_type_display()}）",
-                "subtitle": f"{release.project.name} / {release.repository.name} · {release.get_status_display()}",
-                "path": f"/releases/{release.id}",
-            }
-            for release in queryset[: cls.PER_GROUP_LIMIT]
-        ]
+                "subtitle": f"{project} / {software} / {release.repository.name} · {release.get_status_display()}",
+                "path": f"/releases/{release.pk}{target}",
+            })
+        return results
 
     @classmethod
     def _search_workflows(cls, user, q: str) -> list[dict]:
@@ -133,7 +134,9 @@ class GlobalSearchService:
         from apps.release.models import ReleaseRecord
 
         release_rows = list(
-            ReleaseRecord.objects.filter(Q(version__icontains=q) | Q(tag_name__icontains=q))
+            ReleaseRecord.objects.filter(Q(version__icontains=q) | Q(tag_name__icontains=q)
+                | Q(software__name__icontains=q) | Q(software__slug__icontains=q),
+            )
             .values_list("id", "version")[:500]
         )
         if not release_rows:
@@ -170,14 +173,21 @@ class GlobalSearchService:
         """打包任务：任务名 / 配置名 / 任务 ID 匹配，副标题为「仓库 · 状态」"""
         from apps.package.models import PackageTask
 
-        condition = Q(name__icontains=q) | Q(config__name__icontains=q)
+        condition = (
+            Q(name__icontains=q) | Q(version__icontains=q) | Q(tag_name__icontains=q)
+            | Q(software__name__icontains=q) | Q(software__slug__icontains=q)
+            | Q(config_snapshot__name__icontains=q)
+            | Q(config_snapshot__software_name__icontains=q)
+            | Q(config_snapshot__software_slug__icontains=q)
+            | (Q(software__isnull=True) & Q(config__name__icontains=q))
+        )
         try:
             condition |= Q(id=uuid.UUID(q))
         except (ValueError, AttributeError):
             pass
 
         queryset = (
-            PackageTask.objects.select_related("config", "repository")
+            PackageTask.objects.select_related("config", "project", "repository", "software")
             .filter(condition)
             .order_by("-created_at")
         )
@@ -187,8 +197,14 @@ class GlobalSearchService:
             {
                 "id": str(task.id),
                 "name": task.name,
-                "subtitle": f"{task.repository.name if task.repository else '-'} · {task.get_status_display()}",
+                "subtitle": f"{task.project.name} / {cls._task_software(task)} / {task.repository.name} · {task.get_status_display()}",
                 "path": f"/packages/{task.id}",
             }
             for task in queryset[: cls.PER_GROUP_LIMIT]
         ]
+
+    @staticmethod
+    def _task_software(task) -> str:
+        return (task.config_snapshot or {}).get("software_name") or (
+            task.software.name if task.software_id else "软件归属未知"
+        )

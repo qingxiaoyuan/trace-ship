@@ -8,53 +8,113 @@ release_doc 为 Markdown 字符串（2 列表格），导出器解析表格行�
 import io
 import re
 from typing import Any
+from xml.sax.saxutils import escape
 
+from markdown_it import MarkdownIt
+from markdown_it.rules_block.table import escapedSplit
+from markdown_it.rules_inline import html_inline
+
+from apps.release.delivery_identity import release_repository_name, release_software_name
 from apps.release.models import ReleaseRecord
+from utils.markdown_table import has_closing_pipe, markdown_code_lines, table_newlines_to_br
 
 
-def _parse_md_table(md: str) -> list[tuple[str, str]]:
-    """
-    解析 Markdown 2 列表格为行列表
-
-    Args:
-        md: Markdown 字符串
-
-    Returns:
-        (项目, 内容) 元组列表
-    """
-    if not md:
-        return []
-    rows: list[tuple[str, str]] = []
-    for line in md.strip().splitlines():
-        line = line.strip()
-        if not line or not line.startswith("|"):
+def _release_body(md: str) -> list[str | list[list[str]]]:
+    """按原顺序保留普通正文和表格；多行表格沿用发布说明的存储规则。"""
+    source = table_newlines_to_br(md)
+    lines = source.split("\n")
+    blocks: list[str | list[list[str]]] = []
+    cursor = 0
+    for token in MarkdownIt().enable("table").parse(source):
+        if token.type != "table_open" or token.map is None or token.level != 0:
             continue
-        # 按管道符分割
-        parts = line.split("|")
-        # 去掉首尾空串（首尾管道符产生的）
-        cells = [c.strip() for c in parts[1:-1]] if len(parts) >= 3 else [c.strip() for c in parts]
-        if len(cells) < 2:
-            continue
-        # 跳过分隔行 |------|------|
-        if re.match(r"^[-:\s]+$", cells[0]):
-            continue
-        # 跳过表头
-        if cells[0] == "项目" and cells[1] == "内容":
-            continue
-        rows.append((cells[0], cells[1]))
-    return rows
+        start, end = token.map
+        # 先保留表格之前的正文；不把用户正文当成可执行的 HTML。
+        surrounding = "\n".join(lines[cursor:start]).strip("\n")
+        if surrounding:
+            blocks.append(surrounding)
+        header = lines[start].strip()
+        outer_pipes = header.startswith("|") and has_closing_pipe(header)
+        rows = [_table_cells(header)]
+        cursor = start + 2
+        for line in lines[cursor:end]:
+            row = line.strip()
+            cells = _table_cells(row)
+            # 解析器会把紧跟表格的普通文字补成单列。保留这类原文以及未闭合的续行。
+            if (outer_pipes and row.startswith("|") and not has_closing_pipe(row)) or (
+                len(cells) == 1 and not row.startswith("|") and not has_closing_pipe(row)
+            ):
+                break
+            rows.append(cells)
+            cursor += 1
+        # 使用原文的实际列宽，避免按表头列数截断历史字段。
+        width = max(map(len, rows))
+        if width == 2 and rows[0] == ["项目", "内容"] and len(rows) > 1:
+            rows.pop(0)
+        blocks.append([row + [""] * (width - len(row)) for row in rows])
+    tail = "\n".join(lines[cursor:]).strip("\n")
+    if tail:
+        blocks.append(tail)
+    return blocks
 
 
-def _xml_escape(text: str) -> str:
-    """转义 XML 特殊字符，保留 <br/> 标签"""
-    # 先把 <br> 统一为占位符
-    placeholder = "\x00BR\x00"
-    text = re.sub(r"<br\s*/?>", placeholder, text, flags=re.IGNORECASE)
-    # 转义特殊字符
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    # 恢复占位符为 <br/>
-    text = text.replace(placeholder, "<br/>")
+def _table_cells(line: str) -> list[str]:
+    cells = escapedSplit(line)
+    if line.startswith("|"):
+        cells = cells[1:]
+    if has_closing_pipe(line):
+        cells = cells[:-1]
+    return [cell.strip() for cell in cells]
+
+
+_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def _inline_breaks(text: str) -> str:
+    """用 Markdown 解析位置替换真实的断行标记，保留代码及原始标点。"""
+    parser = MarkdownIt()
+    breaks = []
+
+    def record_html(state, silent):
+        start = state.pos
+        if not html_inline(state, silent):
+            return False
+        if not silent and _BREAK.fullmatch(state.src[start:state.pos]):
+            breaks.append((start, state.pos))
+        return True
+
+    parser.inline.ruler.at("html_inline", record_html)
+    parser.parseInline(text)
+    for start, end in reversed(breaks):
+        text = text[:start] + "\n" + text[end:]
     return text
+
+
+def _word_text(text: str, *, cell: bool = False) -> str:
+    if cell:
+        return _inline_breaks(text)
+    parts = []
+    prose = []
+    code_lines = markdown_code_lines(text)
+    for index, line in enumerate(text.splitlines(keepends=True)):
+        if index in code_lines:
+            if prose:
+                parts.append(_inline_breaks("".join(prose)))
+                prose.clear()
+            parts.append(line)
+        else:
+            prose.append(line)
+    parts.append(_inline_breaks("".join(prose)))
+    return "".join(parts)
+
+
+def _pdf_text(text: str) -> str:
+    """用实际断行渲染排版；转义包括代码中的字面标签。"""
+    lines = []
+    for line in text.expandtabs(4).split("\n"):
+        indentation = len(line) - len(line.lstrip(" "))
+        lines.append("&#160;" * indentation + escape(line[indentation:]))
+    return "<br/>".join(lines)
 
 
 class ReleaseDocExporter:
@@ -63,6 +123,33 @@ class ReleaseDocExporter:
 
     根据 ReleaseRecord 的 release_doc（Markdown）生成 PDF/Word 发布单。
     """
+
+    @staticmethod
+    def filename(release: ReleaseRecord, extension: str) -> str:
+        version = re.sub(r"[^\w.-]+", "-", release.version).strip(".-") or "latest"
+        software = f"{release.software.slug}-" if release.software_id else ""
+        return f"release-{software}{version}.{extension}"
+
+    @staticmethod
+    def _identity_rows(release: ReleaseRecord) -> list[tuple[str, str]]:
+        return [
+            ("软件", release_software_name(release)),
+            ("软件标识", release.software.slug if release.software_id else "—"),
+            ("主仓库", release_repository_name(release)),
+            ("软件版本", release.version),
+            ("发布 Tag", release.tag_name),
+            ("来源分支", release.branch),
+            ("源码 SHA", release.git_hash),
+        ]
+
+    @classmethod
+    def export_markdown(cls, release: ReleaseRecord) -> str:
+        # 导出头使用已保存的发布身份，已有说明仍按原正文规则下载。
+        header = ["## 发布来源", "", "| 项目 | 内容 |", "| --- | --- |"]
+        for label, value in cls._identity_rows(release):
+            escaped = escape(value or "—").replace("\\", "\\\\").replace("|", "\\|")
+            header.append(f"| {label} | {escaped.replace(chr(10), '<br>')} |")
+        return "\n".join(header) + "\n\n" + table_newlines_to_br(release.release_doc or "")
 
     @staticmethod
     def _get_context(release: ReleaseRecord) -> dict[str, Any]:
@@ -76,10 +163,12 @@ class ReleaseDocExporter:
             上下文字典
         """
         md = release.release_doc or ""
-        table_rows = _parse_md_table(md)
         commits = release.release_commits.filter(is_included=True).select_related("commit")
         return {
             "project_name": release.project.name,
+            "software_name": release_software_name(release),
+            "software_slug": release.software.slug if release.software_id else "—",
+            "repository_name": release_repository_name(release),
             "version": release.version,
             "tag_name": release.tag_name,
             "release_type": release.get_release_type_display(),
@@ -89,7 +178,7 @@ class ReleaseDocExporter:
             "publisher": release.publisher.nickname or release.publisher.username if release.publisher else "",
             "created_at": release.created_at.strftime("%Y-%m-%d %H:%M") if release.created_at else "",
             "released_at": release.released_at.strftime("%Y-%m-%d %H:%M") if release.released_at else "",
-            "table_rows": table_rows,
+            "body": _release_body(md),
             "commits": [
                 {
                     "hash": c.commit.commit_hash[:12],
@@ -99,6 +188,18 @@ class ReleaseDocExporter:
                 for c in commits
             ],
         }
+
+    @staticmethod
+    def _base_rows(ctx: dict[str, Any]) -> list[tuple[str, str, str, str]]:
+        return [
+            ("软件", ctx["software_name"], "软件标识", ctx["software_slug"]),
+            ("主仓库", ctx["repository_name"], "版本号", ctx["version"]),
+            ("Tag", ctx["tag_name"], "发布类型", ctx["release_type"]),
+            ("分支", ctx["branch"], "源码 SHA", ctx["git_hash"]),
+            ("项目", ctx["project_name"], "状态", ctx["status"]),
+            ("发布人", ctx["publisher"], "创建时间", ctx["created_at"]),
+            ("发布时间", ctx["released_at"], "", ""),
+        ]
 
     @classmethod
     def export_pdf(cls, release: ReleaseRecord) -> bytes:
@@ -115,6 +216,7 @@ class ReleaseDocExporter:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
         from reportlab.pdfbase.ttfonts import TTFont
         from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -123,7 +225,8 @@ class ReleaseDocExporter:
             pdfmetrics.registerFont(TTFont("SimSun", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"))
             font_name = "SimSun"
         except Exception:
-            font_name = "Helvetica"
+            font_name = "STSong-Light"
+            pdfmetrics.registerFont(UnicodeCIDFont(font_name))
 
         ctx = cls._get_context(release)
         buffer = io.BytesIO()
@@ -154,18 +257,12 @@ class ReleaseDocExporter:
 
         # 基本信息表格
         base_data = [
-            [Paragraph("项目", label_style), Paragraph(ctx["project_name"], cell_style),
-             Paragraph("版本号", label_style), Paragraph(ctx["version"], cell_style)],
-            [Paragraph("Tag", label_style), Paragraph(ctx["tag_name"], cell_style),
-             Paragraph("发布类型", label_style), Paragraph(ctx["release_type"], cell_style)],
-            [Paragraph("分支", label_style), Paragraph(ctx["branch"], cell_style),
-             Paragraph("Git Hash", label_style), Paragraph(ctx["git_hash"], cell_style)],
-            [Paragraph("发布人", label_style), Paragraph(ctx["publisher"], cell_style),
-             Paragraph("状态", label_style), Paragraph(ctx["status"], cell_style)],
-            [Paragraph("创建时间", label_style), Paragraph(ctx["created_at"], cell_style),
-             Paragraph("发布时间", label_style), Paragraph(ctx["released_at"], cell_style)],
+            [Paragraph(escape(value), label_style if index % 2 == 0 else cell_style)
+             for index, value in enumerate(row)]
+            for row in cls._base_rows(ctx)
         ]
-        base_table = Table(base_data, colWidths=[60, 180, 60, 180])
+        value_width = (doc.width - 120) / 2
+        base_table = Table(base_data, colWidths=[60, value_width, 60, value_width])
         base_table.setStyle(TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -177,40 +274,41 @@ class ReleaseDocExporter:
         story.append(base_table)
         story.append(Spacer(1, 20))
 
-        # 发布说明表格（2 列，无表头）
-        if ctx["table_rows"]:
+        if ctx["body"]:
             story.append(Paragraph("发布说明", heading_style))
             story.append(Spacer(1, 8))
-            table_data = []
-            for label, content in ctx["table_rows"]:
-                # 将 <br> 标签转义为合法的 <br/> 并转义其他 XML 特殊字符
-                safe_content = _xml_escape(content)
-                table_data.append([
-                    Paragraph(_xml_escape(label), label_style),
-                    Paragraph(safe_content, cell_style),
-                ])
-            release_table = Table(table_data, colWidths=[120, 360])
-            release_table.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F8FAFC")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]))
-            story.append(release_table)
-            story.append(Spacer(1, 20))
+            for block in ctx["body"]:
+                if isinstance(block, str):
+                    story.append(Paragraph(_pdf_text(_word_text(block)), cell_style))
+                else:
+                    table_data = [
+                        [Paragraph(_pdf_text(_word_text(value, cell=True)), label_style if index == 0 else cell_style)
+                         for index, value in enumerate(row)]
+                        for row in block
+                    ]
+                    widths = [120, doc.width - 120] if len(block[0]) == 2 else [doc.width / len(block[0])] * len(block[0])
+                    release_table = Table(table_data, colWidths=widths, splitInRow=1)
+                    release_table.setStyle(TableStyle([
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F8FAFC")),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]))
+                    story.append(release_table)
+                story.append(Spacer(1, 8))
 
         # 关联提交
         story.append(Paragraph("关联提交", heading_style))
         if ctx["commits"]:
             for c in ctx["commits"]:
                 story.append(Paragraph(
-                    f"<b>{c['hash']} - {c['author']}</b>",
+                    f"<b>{c['hash']} - {escape(c['author'])}</b>",
                     cell_style,
                 ))
-                story.append(Paragraph(_xml_escape(c["message"]), cell_style))
+                story.append(Paragraph(_pdf_text(c["message"]), cell_style))
                 story.append(Spacer(1, 4))
         else:
             story.append(Paragraph("无", cell_style))
@@ -239,13 +337,7 @@ class ReleaseDocExporter:
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # 基本信息表格
-        base_rows = [
-            ("项目", ctx["project_name"], "版本号", ctx["version"]),
-            ("Tag", ctx["tag_name"], "发布类型", ctx["release_type"]),
-            ("分支", ctx["branch"], "Git Hash", ctx["git_hash"]),
-            ("发布人", ctx["publisher"], "状态", ctx["status"]),
-            ("创建时间", ctx["created_at"], "发布时间", ctx["released_at"]),
-        ]
+        base_rows = cls._base_rows(ctx)
         table = document.add_table(rows=len(base_rows), cols=4)
         table.style = "Table Grid"
         for i, row_data in enumerate(base_rows):
@@ -257,16 +349,17 @@ class ReleaseDocExporter:
 
         document.add_paragraph()
 
-        # 发布说明表格（2 列，无表头）
-        if ctx["table_rows"]:
+        if ctx["body"]:
             document.add_heading("发布说明", level=2)
-            doc_table = document.add_table(rows=len(ctx["table_rows"]), cols=2)
-            doc_table.style = "Table Grid"
-            for idx, (label, content) in enumerate(ctx["table_rows"]):
-                row = doc_table.rows[idx]
-                row.cells[0].text = label
-                # 将 <br> 转换为换行
-                row.cells[1].text = content.replace("<br>", "\n")
+            for block in ctx["body"]:
+                if isinstance(block, str):
+                    document.add_paragraph(_word_text(block))
+                    continue
+                doc_table = document.add_table(rows=len(block), cols=len(block[0]))
+                doc_table.style = "Table Grid"
+                for index, row in enumerate(block):
+                    for column, value in enumerate(row):
+                        doc_table.rows[index].cells[column].text = _word_text(value, cell=True)
             document.add_paragraph()
 
         # 关联提交

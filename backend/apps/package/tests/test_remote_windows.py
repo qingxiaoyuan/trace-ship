@@ -10,11 +10,12 @@ from apps.account.models import User
 from apps.credential.models import Credential
 from apps.package.models import PackageConfig, PackageImage, PackageNode, PackageTask
 from apps.package.remote_windows import RemoteNodeError, build_set_env_prefix, decode_remote_line
-from apps.package.serializers import PackageConfigSerializer, PackageNodeSerializer
+from apps.package.serializers import PackageConfigCreateSerializer, PackageNodeSerializer
 from apps.package.services import PackageService
 from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord
 from apps.repository.models import Repository
+from apps.software.models import ProjectSoftware, Software
 from utils.markdown_table import table_newlines_to_br
 
 
@@ -71,6 +72,13 @@ def repository(project, user):
     )
     ensure_repository_component(repo, project)
     return repo
+
+
+@pytest.fixture
+def software(project, repository):
+    software = Software.objects.create(repository=repository, owner=project.leader, slug="web", name="Web 软件")
+    ProjectSoftware.objects.create(project=project, software=software)
+    return software
 
 
 @pytest.fixture
@@ -153,10 +161,10 @@ class TestPackageNodeSerializer:
 
 @pytest.mark.django_db
 class TestPackageConfigRemoteValidation:
-    def test_remote_windows_requires_node(self, project, repository, user):
-        serializer = PackageConfigSerializer(
+    def test_remote_windows_requires_node(self, software, user):
+        serializer = PackageConfigCreateSerializer(
             data={
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "远程打包",
                 "executor_type": "remote_node",
             },
@@ -165,10 +173,10 @@ class TestPackageConfigRemoteValidation:
         assert not serializer.is_valid()
         assert "node" in serializer.errors
 
-    def test_remote_windows_allows_empty_image(self, project, repository, node, user):
-        serializer = PackageConfigSerializer(
+    def test_remote_windows_allows_empty_image(self, software, node, user):
+        serializer = PackageConfigCreateSerializer(
             data={
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "远程打包",
                 "executor_type": "remote_node",
                 "node": str(node.id),
@@ -177,11 +185,11 @@ class TestPackageConfigRemoteValidation:
         )
         assert serializer.is_valid(), serializer.errors
 
-    def test_local_docker_rejects_node(self, project, repository, node, user):
+    def test_local_docker_rejects_node(self, software, node, user):
         image = PackageImage.objects.create(name="Web 镜像", image="trace-ship/web:latest")
-        serializer = PackageConfigSerializer(
+        serializer = PackageConfigCreateSerializer(
             data={
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "本地打包",
                 "executor_type": "local_docker",
                 "node": str(node.id),
@@ -192,10 +200,10 @@ class TestPackageConfigRemoteValidation:
         assert not serializer.is_valid()
         assert "node" in serializer.errors
 
-    def test_local_docker_requires_image(self, project, repository, user):
-        serializer = PackageConfigSerializer(
+    def test_local_docker_requires_image(self, software, user):
+        serializer = PackageConfigCreateSerializer(
             data={
-                "project_component": str(project.project_components.get(repository=repository).id),
+                "software": str(software.pk),
                 "name": "本地打包",
                 "executor_type": "local_docker",
             },
@@ -413,22 +421,22 @@ class TestConfigLevelResourceLimits:
         cores, priority, mem = PackageService._resource_limits({})
         assert (cores, priority, mem) == (0, "normal", 0)
 
-    def test_serializer_rejects_invalid_limits(self, project, repository, node, user):
+    def test_serializer_rejects_invalid_limits(self, software, node, user):
         """配置级资源字段范围校验。"""
         request = MagicMock()
         request.user = user
         base = {
-            "project_component": str(project.project_components.get(repository=repository).id),
+            "software": str(software.pk),
             "name": "限制校验",
             "executor_type": "remote_node",
             "node": str(node.id),
         }
-        serializer = PackageConfigSerializer(
+        serializer = PackageConfigCreateSerializer(
             data={**base, "cpu_cores": 100}, context={"request": request},
         )
         assert not serializer.is_valid()
         assert "cpu_cores" in serializer.errors
-        serializer = PackageConfigSerializer(
+        serializer = PackageConfigCreateSerializer(
             data={**base, "mem_limit_mb": -1}, context={"request": request},
         )
         assert not serializer.is_valid()

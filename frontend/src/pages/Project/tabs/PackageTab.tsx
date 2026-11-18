@@ -8,6 +8,7 @@ import { PackageConfigModal } from '@/components/PackageConfigModal';
 import { PackageTriggerModal } from '@/components/PackageTriggerModal';
 import { ConfigList } from '@/pages/Package/components/ConfigList';
 import { fetchAllPages } from '@/pages/Package/components/boardData';
+import { useMaintainedSoftware } from '@/hooks/useMaintainedSoftware';
 import { useProjectRole } from '@/hooks/useProjectRole';
 import type { PackageConfig } from '@/types';
 
@@ -40,13 +41,14 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
     enabled: active && !!projectId,
   });
 
-  // 项目内操作权限：配置增删改需 manager，触发打包需 tester/developer/manager
+  // 项目角色控制打包触发，共享配置的维护权来自软件。
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
     enabled: active && !!projectId,
   });
-  const { canManage, canTriggerPackage } = useProjectRole(project);
+  const { canTriggerPackage } = useProjectRole(project);
+  const canCreate = useMaintainedSoftware(active, projectId).length > 0;
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => packageApi.deleteConfig(id),
@@ -57,7 +59,7 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
   });
 
   const favoriteMutation = useMutation({
-    mutationFn: (id: string) => packageApi.toggleFavorite(id),
+    mutationFn: (config: PackageConfig) => packageApi.toggleFavorite(config.id, config.software ? projectId : undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['package-configs'] });
       queryClient.invalidateQueries({ queryKey: ['package-favorites'] });
@@ -68,7 +70,7 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
   });
 
   const openTrigger = (record: PackageConfig) => {
-    setTriggerConfig(record);
+    setTriggerConfig(record.software ? { ...record, project: projectId } : record);
     setTriggerOpen(true);
   };
 
@@ -94,7 +96,7 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
     <div className="space-y-4">
       <div>
         <div className="text-[15px] font-semibold text-slate-900">打包配置</div>
-        <div className="mt-1 text-[12px] text-slate-500">按仓库分组管理发布成功后的打包流程</div>
+        <div className="mt-1 text-[12px] text-slate-500">查看当前项目的打包配置</div>
       </div>
 
       <PermissionAlert error={error} className="rounded-xl" />
@@ -104,13 +106,14 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
         configs={data?.results || []}
         tasks={tasksData?.results || []}
         loading={isLoading}
-        canCreate={canManage}
+        canCreate={canCreate}
+        canUseShared
         canTrigger={canTriggerPackage}
         onNew={() => { setEditing(null); setOpen(true); }}
         onEdit={openEdit}
         onDelete={confirmDelete}
         onTrigger={openTrigger}
-        onToggleFavorite={(config) => favoriteMutation.mutate(config.id)}
+        onToggleFavorite={(config) => favoriteMutation.mutate(config)}
       />
 
       <PackageConfigModal
@@ -119,8 +122,7 @@ export function PackageTab({ projectId, active = true }: PackageTabProps) {
         fixedProjectId={projectId}
         readOnly={
           !!editing &&
-          editing.my_role !== 'manager' &&
-          editing.my_role !== 'software_admin'
+          !(editing.can_maintain ?? ['manager', 'software_admin'].includes(editing.my_role || ''))
         }
         onClose={() => {
           setOpen(false);

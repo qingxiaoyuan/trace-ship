@@ -7,9 +7,12 @@ import re
 
 from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
-from django.db.models import Count, IntegerField, OuterRef, Q, QuerySet, Subquery
+from django.db.models import Count, Exists, IntegerField, OuterRef, Q, QuerySet, Subquery, Value
+from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.account.models import User
 from apps.project.models import Project, ProjectComponent, ProjectMember
@@ -101,10 +104,10 @@ def repository_owner(repository):
     return None
 
 
-def _related_count_subquery(model, project_field: str = "project_id"):
+def _related_count_subquery(model, project_field: str = "project_id", *, filters: dict | None = None):
     """独立子查询计数，避免多个 Count(distinct) 在主查询里交叉 JOIN。"""
     inner = (
-        model.objects.filter(**{project_field: OuterRef("pk")})
+        model.objects.filter(**{project_field: OuterRef("pk")}, **(filters or {}))
         .order_by()
         .values(project_field)
         .annotate(_c=Count("*"))
@@ -122,12 +125,30 @@ def annotate_project_list_counts(queryset):
 
 
 def annotate_project_detail_counts(queryset):
-    """详情额外统计打包配置与发布单，同样各自子查询，互不 JOIN。"""
+    """分别统计可用软件、配置与该项目版本目录。"""
     from apps.package.models import PackageConfig
     from apps.release.models import ReleaseRecord
+    from apps.software.models import Software
+
+    repos = usable_project_components().filter(project_id=OuterRef(OuterRef("pk"))).order_by().values("repository_id")
+    releases = ReleaseRecord.objects.filter(status="released").filter(
+        Q(project_id=OuterRef("pk"))
+        | Q(software__is_active=True, repository_id__in=repos)
+    )
+    configs = PackageConfig.objects.filter(
+        Q(project_component__project_id=OuterRef("pk"))
+        | Q(software__is_active=True, software__repository_id__in=repos)
+    )
+    software = Software.objects.filter(is_active=True, repository_id__in=repos)
+
+    def counted(items):
+        totals = items.order_by().values(group=Value(1)).annotate(total=Count("pk")).values("total")
+        return Coalesce(Subquery(totals[:1], output_field=IntegerField()), 0)
 
     return annotate_project_list_counts(queryset).annotate(
-        package_count=_related_count_subquery(PackageConfig, "project_component__project_id"),
+        software_count=counted(software),
+        package_count=counted(configs),
+        published_version_count=counted(releases),
         release_count=_related_count_subquery(ReleaseRecord),
     )
 
@@ -163,6 +184,27 @@ def repository_owner_association_error(repository, project) -> str | None:
     return None
 
 
+def usable_project_components() -> QuerySet:
+    """项目使用仓库的统一范围：项目、关联均启用，且所有者已显式入项。"""
+    return ProjectComponent.objects.filter(is_active=True, project__status=1).alias(
+        repository_owner_id=Coalesce("repository__created_by_id", "repository__credential__owner_id"),
+    ).filter(Exists(ProjectMember.objects.filter(
+        project_id=OuterRef("project_id"), user_id=OuterRef("repository_owner_id"),
+    )))
+
+
+def repository_use_error(project, repository, *, inactive_message, unlinked_message) -> str | None:
+    """正常路径复用候选查询，失败时区分启停与所有者入项问题。"""
+    scope = {"project_id": project.pk, "repository_id": repository.pk}
+    if usable_project_components().filter(**scope).exists():
+        return None
+    if not Project.objects.filter(pk=project.pk, status=1).exists():
+        return inactive_message
+    if not ProjectComponent.objects.filter(**scope, is_active=True).exists():
+        return unlinked_message
+    return repository_owner_association_error(repository, project) or "仓库所有者已不在当前项目成员中"
+
+
 def user_can_use_repository_credential(repository, user) -> bool:
     """当前用户是否可使用该仓库绑定凭证。
 
@@ -186,21 +228,113 @@ def user_can_use_repository_credential(repository, user) -> bool:
     return False
 
 
+class RepositoryAssociationConflict(Exception):
+    """关联已变化或仍受历史引用保护。"""
+
+
+_ASSOCIATION_CHANGED = "组件或仓库已变化，请刷新后重试。"
+
+
+def _lock_association_scope(project_id, repository_ids, *, user=None):
+    """所有入口统一按仓库主键顺序加锁，再锁定项目。"""
+    from apps.repository.models import Repository
+    from utils.permissions import IsProjectManager
+
+    repositories = {repo.pk: repo for repo in Repository.objects.filter(pk__in=repository_ids)
+                    .order_by("pk").select_for_update(no_key=True)}
+    if repositories.keys() != repository_ids:
+        raise RepositoryAssociationConflict(_ASSOCIATION_CHANGED)
+    project = get_object_or_404(Project.objects.select_for_update(no_key=True), pk=project_id)
+    if user is not None and not IsProjectManager()._check(project, user):
+        raise PermissionDenied()
+    return project, repositories
+
+
+def _check_component_code(project, code, *, exclude_id=None):
+    if ProjectComponent.objects.filter(project=project, component_code=code).exclude(pk=exclude_id).exists():
+        raise ValidationError({"component_code": "当前项目内组件编码已存在"})
+
+
+def _create_project_component(project, repository, values):
+    attrs = dict(values, repository=repository)
+    attrs["component_code"] = attrs.get("component_code") or next_component_code(project, repository.name)
+    attrs["display_name"] = attrs.get("display_name") or repository.name
+    attrs["default_branch"] = attrs.get("default_branch") or repository.default_branch
+    _check_component_code(project, attrs["component_code"])
+    return ProjectComponent.objects.create(project=project, **attrs)
+
+
+@transaction.atomic
+def create_project_component(project, user, values) -> ProjectComponent:
+    repository_id = values["repository"].pk
+    project, repositories = _lock_association_scope(project.pk, {repository_id}, user=user)
+    repository = repositories[repository_id]
+    if error := repository_owner_association_error(repository, project):
+        raise ValidationError({"repository": error})
+    return _create_project_component(project, repository, values)
+
+
+def _unchanged_project_component(component):
+    current = get_object_or_404(ProjectComponent, pk=component.pk, project_id=component.project_id)
+    if current.repository_id != component.repository_id:
+        raise RepositoryAssociationConflict(_ASSOCIATION_CHANGED)
+    return current
+
+
+def _check_repository_history(component):
+    from apps.package.models import PackageTask
+    from apps.release.models import ReleaseRecord
+
+    scope = {"project_id": component.project_id, "repository_id": component.repository_id}
+    if ReleaseRecord.objects.filter(**scope).exists() or PackageTask.objects.filter(**scope).exists():
+        raise RepositoryAssociationConflict("该仓库在当前项目下已有发布或打包历史，请改为停用关联。")
+
+
+@transaction.atomic
+def update_project_component(component, user, values) -> ProjectComponent:
+    target_id = values["repository"].pk if "repository" in values else component.repository_id
+    project, repositories = _lock_association_scope(
+        component.project_id, {component.repository_id, target_id}, user=user,
+    )
+    current = _unchanged_project_component(component)
+    attrs = dict(values)
+    if target_id != current.repository_id:
+        _check_repository_history(current)
+        if error := repository_owner_association_error(repositories[target_id], project):
+            raise ValidationError({"repository": error})
+    if "repository" in attrs:
+        attrs["repository"] = repositories[target_id]
+    if "component_code" in attrs:
+        _check_component_code(project, attrs["component_code"], exclude_id=current.pk)
+    for field, value in attrs.items():
+        setattr(current, field, value)
+    current.save(update_fields=[*attrs, "updated_at"])
+    return current
+
+
+@transaction.atomic
+def remove_project_component(component, user) -> None:
+    _lock_association_scope(component.project_id, {component.repository_id}, user=user)
+    current = _unchanged_project_component(component)
+    _check_repository_history(current)
+    try:
+        current.delete()
+    except ProtectedError as exc:
+        raise RepositoryAssociationConflict("仓库已有关联的打包配置，不能移除；请改为停用") from exc
+
+
+@transaction.atomic
 def ensure_repository_component(repository, project) -> ProjectComponent:
-    """为项目 + 仓库调用补齐默认项目组件（项目上下文登记仓库时使用）。"""
+    """项目上下文登记仓库时补齐默认组件。"""
+    project, repositories = _lock_association_scope(project.pk, {repository.pk})
+    repository = repositories[repository.pk]
     existing = ProjectComponent.objects.filter(
         project=project,
         repository=repository,
     ).first()
     if existing:
         return existing
-    return ProjectComponent.objects.create(
-        project=project,
-        repository=repository,
-        component_code=next_component_code(project, repository.name),
-        display_name=repository.name,
-        default_branch=repository.default_branch or "main",
-    )
+    return _create_project_component(project, repository, {"default_branch": repository.default_branch or "main"})
 
 
 def visible_repository_ids(user):

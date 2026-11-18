@@ -8,7 +8,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.account.models import User
-from apps.project.models import Project
+from apps.project.models import Project, ProjectMember
 from apps.release.models import ReleaseRecord, ReleaseReviewIssue
 from apps.repository.models import Repository
 from apps.workflow.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
@@ -37,7 +37,7 @@ def api_client(user):
 @pytest.fixture
 def project(user):
     """测试项目"""
-    return Project.objects.create(
+    item = Project.objects.create(
         code="REMIND",
         name="强提醒测试项目",
         leader=user,
@@ -45,6 +45,8 @@ def project(user):
         version_rule={"prefix": "V", "major": 1, "minor": 0, "patch": 0},
         release_rule={"release_cycle_days": 3},
     )
+    ProjectMember.objects.create(project=item, user=user, role="developer")
+    return item
 
 
 @pytest.fixture
@@ -182,6 +184,9 @@ class TestRemindSummary:
         assert item["release_id"] == str(release.id)
         assert item["version"] == release.version
         assert "回滚方案" in item["content"]
+        ProjectMember.objects.filter(project=release.project, user=user).delete()
+        after_removal = api_client.get(REMIND_URL).data["data"]
+        assert after_removal["open_issue_count"] == 0 and after_removal["open_issues"] == []
 
     def test_excludes_non_open_and_others_issues(
         self, api_client, user, other_user, project, repository, release
@@ -228,3 +233,22 @@ class TestRemindSummary:
         assert item["title"] == task.node_name
         assert item["version"] == ""
         assert item["project_name"] == project.name
+
+
+    @pytest.mark.parametrize("has_definition_project", [True, False])
+    def test_旧审批任务提醒使用与详情相同的源码可见范围(self, api_client, user, definition, release, has_definition_project):
+        if not has_definition_project:
+            definition.project = None
+            definition.repository = release.repository
+            definition.save(update_fields=["project", "repository"])
+        release.git_hash = "a" * 40
+        release.save(update_fields=["git_hash"])
+        old = _make_instance(definition, user, release.id)
+        _make_task(old, user)
+        ProjectMember.objects.filter(project=release.project, user=user).delete()
+        payload = api_client.get(REMIND_URL).data["data"]
+        assert payload["todo_task_count"] == 1
+        item = payload["todo_tasks"][0]
+        assert item["instance_id"] == str(old.pk) and item["title"] == "负责人审批"
+        assert item["git_hash"] == item["tag_name"] == item["software_name"] == item["version"] == ""
+        assert item["project_name"] == ""

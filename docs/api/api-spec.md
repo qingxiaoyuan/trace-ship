@@ -409,6 +409,8 @@
 
 ### 4.3 项目详情
 
+详情的 `software_count` 统计项目已启用关联仓库中可用的软件，`published_version_count` 统计项目版本目录内的已发布版本，包含当前可用软件的共享版本及项目内的仓库级版本。旧 `release_count` 保留原项目发起的申请数量。
+
 - **GET** `/api/projects/{id}/`
 
 详情附带 `repo_count` / `member_count` / `package_count` / `release_count`。
@@ -498,6 +500,15 @@
 > 说明：旧版「项目外站绑定」（`/api/projects/{id}/integrations/`）已废弃。当前仓库直接归属项目并各自绑定凭证，见第六章。
 
 ---
+
+### 4.10 项目可用软件
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | `/api/projects/{project_id}/software/` | 项目成员查看已启用关联仓库内的软件。每条包含软件 `id`、`is_active` 和嵌套的 `software`。 |
+| GET | `/api/projects/{project_id}/software/?active=true` | 仅返回已启用且当前项目可以使用的软件。 |
+
+`is_usable` 根据软件状态、项目状态、仓库关联与仓库所有者入项规则计算。旧选用记录保留，项目的可用软件从仓库关联实时取得。
 
 ## 五、凭证管理接口
 
@@ -935,6 +946,19 @@
 
 ---
 
+### 仓库内软件维护
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | `/api/software/` | 分页查看可见仓库的软件，支持 `repository`、`is_active` 和 `search`。 |
+| POST | `/api/software/` | 主仓库所有者或超管提交 `repository`、`slug`、`name` 和可选 `description`，返回 201。 |
+| GET | `/api/software/{id}/` | 查看单个软件。 |
+| PATCH | `/api/software/{id}/` | 仓库所有者或超管更新 `name`、`description` 和 `is_active`。 |
+
+软件响应包含 `id`、`repository`、`repository_name`、`slug`、`name`、`description`、`is_active`、仓库所有者 `owner` 和 `can_maintain`。列表另外返回当前用户可读的最近正式版 `latest_release_version`、`latest_release_tag` 和 `package_config_count`。
+
+`slug` 最长 80 个字符，采用小写英文字母、数字及分隔用短横线，主仓库内唯一。登记后修改标识或主仓库返回 400。软件停用后保留历史记录。
+
 ## 七、提交审查接口
 
 ### 7.1 Commit 列表（全局）
@@ -1029,8 +1053,9 @@
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| project | string | 项目 ID |
-| repository | string | 仓库 ID |
+| project | string | 查看项目 ID，包含该项目发起的申请及可用软件的已发布版本 |
+| software | string | 软件 ID |
+| repository | string | 主仓库 ID |
 | release_type | string | formal/rc/beta |
 | status | string | draft/pending/released/rejected |
 | publisher | string | 发布人 ID |
@@ -1044,21 +1069,36 @@
 
 `search` 同时检索版本号、Tag、所属项目内的软件名和已保存的 `release_doc` 正文，可与 `project`、`repository`、`release_type` 组合，查询和总数在服务端完整可见范围内计算。列表附带 `update_summary`（最多 300 字符，保留多行变更内容的文本摘要）及 `package_summary`：`status`、`counts`、`config_count`、`task_id`。后者分别取各关联配置的最新任务，配置删除后以快照中的配置 ID 保持分组，失败配置不会被其他配置成功掩盖。原完整说明及字段保持不变。
 
+### 软件发布与共享版本
+
+创建发布传入 `project`、发布类型、分支，以及 `repository` 或 `software`。软件发布可从软件解析主仓库，同时提交两者时须匹配。选「按仓库发布」时提交 `repository`，省略 `software` 或传空值。仓库版沿用仓库规则生成 Tag，如 `VB.1.0.0`。软件版在版本格式前追加标识，如 `client-a/VB.1.1.1`。人工填写的 `tag_name` 优先于 `version`。服务端核验关联仓库、权限及固定分支来源。
+
+| 入口 | 参数与行为 |
+| --- | --- |
+| **GET** `/api/releases/software-branches/` | `project` 和 `software` 或 `repository`。返回仓库中的真实分支，校验目标项目发布角色、仓库关联和个人仓库凭证。 |
+| **GET** `/api/releases/next-version/` | 目标参数与分支接口相同，`release_type` 可选。返回 `latest_tag`、`next_version`、`next_tag_name`、`has_existing_tags` 和 `all_types`。建议使用可识别的远端 Tag、已确认历史和有效占用，草稿不占用编号。在途占用影响建议号，最近发布仍按已发布证据返回。 |
+| **GET** `/api/releases/software-changes-preview/` | 同建议参数，另需 `branch`，可传 `tag_name`。与草稿变更预览使用相同的固定 SHA 区间，返回 `base_tag`、`base_git_hash`、`head_hash`、提交、合并请求、更新条目和核验提示。 |
+| **GET** `/api/releases/rc-candidates/` | 软件发布传入 `project` 和 `software`，按该软件查询已发布 RC 和可用源码。仓库兼容路径继续接受 `project` 与 `repository`。 |
+
+列表、详情和版本目录返回 `software`、`software_name`、`software_slug`。仓库版的软件字段为空，在界面显示为「未分组」。列表和目录可按 `project`、`software` 查询；列表可用 `project=<项目 UUID>&repository=<仓库 UUID>&unassigned=true` 精确筛选该项目的待归属历史，仅使用 `repository` 则查看该仓库全部有权版本。详情深链可带 `?project=<查看项目>`。通过软件共享访问时 `shared_readonly=true`，`project` 和 `project_name` 指查看项目；审批、整改、原项目元信息和任务按各自项目授权读取。停用仓库关联或软件后，原发起项目仍可从「发布版本」查看历史。对其他项目的共享版本，只有本项目留有对应打包任务或归档时才可从详情深链回看，此时响应包含 `shared_history_only=true`。该版本不会因此重新进入项目版本列表，也不能在该项目发起补打或新归档。
+
+软件草稿说明保存软件显示名称、稳定标识、主仓库名称、完整 Tag 与固定 SHA。正式、RC 和 Beta 的说明与审查采用同软件、同类型的有效基线。软件按类型及规范化版本占用，项目和日期不拆分同一编号。主仓库模板逐次创建独立审批实例。推 Tag 成功后只触发本次选中的有效软件配置，既有版本可以被其他选用项目复用；删除和清理仍受源码、任务与 OA 引用保护。
+
 ### 8.2 创建发布申请
 
 - **POST** `/api/releases/`
-- 项目成员可创建（草稿）。
+- 有项目发布权限且仓库关联启用时，可以创建草稿。指定软件时需启用该软件。
 
 **请求体：**
 
 ```json
 {
   "project": "uuid",
-  "repository": "uuid",
+  "software": "uuid",
   "release_type": "formal",
   "branch": "main",
   "version": "VA.4.1.155",
-  "tag_name": "VA.4.1.155_20260731",
+  "tag_name": "client-a/VA.4.1.155_20260731",
   "related_changes": [],
   "updates": [{"type": "A", "content": "...", "source": "commit", "source_ref": "abc123"}],
   "has_config_changes": false,
@@ -1070,12 +1110,11 @@
 }
 ```
 
-> `version` / `tag_name` 可选，为空时后端基于仓库 tag 和仓库 `version_rule` 自动计算；rc/beta 类型自动补类型后缀与日期段。传入 `tag_name` 时，以其去掉类型后缀及日期后的值作为 `version`，覆盖同时传入的旧自动建议版本，与草稿编辑语义一致。
-> `repository` 必须属于所选项目。
+> `version` / `tag_name` 可选。省略时按发布范围内可识别的远端 Tag、成功历史和有效占用建议版本；格式、类型后缀和日期规则来自主仓库。传入 `tag_name` 时以该值为准，不采用同时提交的旧建议号。
 
 #### 分支创建与 RC 来源兼容
 
-`POST /api/releases/` 当前的正式版、RC/Beta 均按 `branch` 创建，服务端通过分支专用接口确认真实分支并保存其完整 HEAD 为 `git_hash`，客户端提交的哈希不能覆盖。Tag、SHA、提交范围和不存在的分支均不可替代分支。正式版强制从 RC 晋升暂缓（#52），新建页面不要求 RC。为保留现存来源链处理，正式接口继续兼容显式传入 `source_rc`（UUID）：须为同项目、同仓库的已发布 RC，并核验启用关联、仓库所有者成员资格、凭证及远端完整提交；该兼容路径的分支与哈希由 RC 确定。RC/Beta 不能传非空 `source_rc`。
+`POST /api/releases/` 的正式版、RC/Beta 可以按 `branch` 创建，服务端确认真实分支并保存其完整 HEAD 为 `git_hash`。正式版强制从 RC 晋升暂缓（#52）。正式接口仍可显式传入 `source_rc`（UUID），新申请的来源 RC 必须是同一软件的已发布版本，发起项目须有权使用该软件和源码；分支和哈希由 RC 确定。旧草稿保留原 RC 来源与更新入口。RC/Beta 不接受非空 `source_rc`。
 
 `GET /api/releases/rc-candidates/?project=<UUID>&repository=<UUID>` 返回标准分页数据，支持 `search`（版本或 Tag）、`page`、`page_size`，按发布时间倒序。每项包含 `id`、`version`、`tag_name`、`branch`、`git_hash`、`released_at`、`available` 和 `unavailable_reason`。查询受项目可见范围限制；引用缺失、缺少完整 SHA 或 Tag 改写时返回不可用原因，Provider 故障返回错误而非空候选。原 RC Tag 缺失时，接受同来源 RC 链中已发布且远端 SHA 一致的正式 Tag；原 Tag 被改写、无等价引用或外部访问失败仍拒绝。
 
@@ -1085,7 +1124,7 @@
 
 #### 版本占用、正式审批与 Tag 清理
 
-正式、RC、Beta 编号独立计算，成功历史保留编号依据。提交审批按物理仓库 + 类型 + 主次修订号占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。不强制草稿补选 RC 来源，按保存的提交完成正式审批和推 Tag；历史迁移兼容标记仍不可经 API 写入。
+正式、RC、Beta 编号独立计算，成功历史保留编号依据。软件发布提审按软件 + 类型 + 主次修订号占用，「按仓库发布」按原仓库范围占用，重复提交不创建第二个流程；冲突返回 400「已有同版本在发布」。正式版要求有效非空流程，所有节点有有效审批人；直接推 Tag、完成回调和重试均校验已完成正式审批。不强制草稿补选 RC 来源，按保存的提交完成正式审批和推 Tag；历史迁移兼容标记仍不可经 API 写入。
 
 成功调用 `POST /api/releases/{id}/delete-released/` 删除发布记录和 Tag 后释放该申请的版本占用，可重新创建同版本并重新审批。仅清理 Tag、保留发布记录时仍保留占用。旧版删除遗留的已消费孤立占用不再抬高自动编号；再次提审会实时核验远端和同仓库全部有效发布，确认均无同版本冲突后才允许复用，不因日期、数字前导零或项目不同放行。版本规则改变后仍保留原占用 Tag 身份，在提审、推送及重试时持续核验旧远端 Tag 和有效发布记录，旧规则下已发布、在审或审批完成但推送失败的记录继续阻止同版本重发。历史记录优先使用该发布关联且同仓库同类型的规范化版本占用，规则变化与显示 version 不改变已占编号。没有占用的旧记录从完整 Tag 保留全部候选编号；唯一编号正常比较，多个候选涉及本次目标编号时返回 400 并提示核对该条历史记录，无关编号不受影响。显示 version 可能残留旧前缀或部分后缀，现行规则也不代表历史规则，因此不能据此排除候选。创建、编辑时按当前完整规则从最终 Tag 提取显示版本，重叠后缀与日期形态后缀不会截断；终止复用申请会恢复旧孤立占用，供后续申请核验。远端查询或删除失败不释放占用，现存 Tag 不被覆盖；引用保护与删除权限保持不变。
 
@@ -1095,7 +1134,7 @@
 
 `POST /api/releases/{id}/cleanup-tag/` 请求 `{tag_name: 完整Tag名}`。`POST /api/releases/cleanup-tags/` 请求 `{items: [{id, tag_name}, ...]}`，每批 1–50 项。批量逐项返回结果，不以整体 HTTP 200 代表全部成功；重试仅提交待重试项。结果 `status` 为 `success`、`already_cleaned`、`external_missing`、`reconciled_missing`、`blocked`、`failure`，附 `id`、可用时的 `tag_name` 与 `reason`。后两种缺失结果不能宣称由平台完成删除。
 
-清理沿用项目管理员/超管权限，保留所有平台历史。排队/执行中的打包任务阻止相关引用删除，仓库标签删除与发布版本删除也保护最后有效引用。详情提供 `tag_cleanup_status`、`tag_cleaned_at`（最近核验时间）、`tag_cleaned_by`、`tag_cleanup_reference` 和 `cleanup_history`（状态、原因、保护引用、时间、操作者）。
+清理沿用原发起项目管理员/超管权限，保留平台历史。清理和删除均查验同名 Tag 的发布证据、实际远端提交、跨项目在途打包、最后有效引用及 OA 保护。共享版本的 Tag 从发布入口操作；发布仍有历史清理或关联打包记录时保留发布和 Tag。拒绝原因不包含无权项目的执行细节。详情提供 `tag_cleanup_status`、`tag_cleaned_at`（最近核验时间）、`tag_cleaned_by`、`tag_cleanup_reference` 和 `cleanup_history`（状态、原因、保护引用、时间、操作者）。
 
 ### 8.3 发布详情
 
@@ -1221,7 +1260,7 @@
 - **GET** `/api/releases/{id}/changes-preview/`
 - 按现有项目可见范围读取；只用于有来源 RC 的正式记录。
 - 首次生成前返回当前候选基线，不写入快照；首次生成后按冻结的完整 SHA 返回同一区间。
-- 基线为同物理仓库中低于目标版本且在来源祖先链上的最高正式版本，平台已发布历史快照优先于同名远端 Tag。
+- 软件发布基线为同软件中低于目标版本且在来源祖先链上的最高正式版本，旧仓库发布沿用原仓库范围，平台已发布历史快照优先于同名远端 Tag。
 - 正式草稿按最终 Tag 对应版本选择基线。旧草稿的 `version` 与 Tag 不一致时，预览不写库；生成说明在同一事务中修正版本号，重建旧说明、基线及关联变更，失败整体回滚。正常固定基线和已提审/已发布身份保持不变。
 - `data` 包含 `base_tag`、`base_git_hash`、`head_hash`、`commits`、`merge_requests`、`parsed_updates`、`warnings`、`first_release`、`no_changes`。完整分页后的提交和 MR 在单次响应中返回；MR 只有合并或 squash SHA 位于提交区间内才自动纳入，缺少证据时列入 `warnings`。
 - 非祖先候选按版本递减继续查找可达正式 Tag；无可用基线取截至来源 SHA 的全部可达历史；同 SHA 返回空提交并标记 `no_changes`。`warnings` 及生成说明的「核验提示」记录跳过 Tag 和实际区间，并随基线冻结。旧草稿的非祖先基线允许重新选择，已进入流程/已发布记录不自动改写；GitLab 故障返回 502，生成失败不保存部分结果。
@@ -1246,17 +1285,17 @@
 - **GET** `/api/releases/{id}/export-pdf/`：导出 PDF 文件（`application/pdf`）。
 - **GET** `/api/releases/{id}/export-word/`：导出 Word 文件（`.docx`）。
 
-均为文件流下载，非统一 JSON 响应。
+均为文件流下载。三个格式的来源区使用发布时软件名、稳定标识、软件版本、完整 Tag、主仓库、分支与固定 SHA，保留已保存的发布说明正文。待归属历史标记「软件归属未知」。下载文件名含有软件标识时使用安全片段。
 
-沿发布所属项目授权。下载白名单外或目标项目有效角色为 `maintainer` 时，三个接口均返回 `403`。在线说明仍可从发布详情读取。其他项目的开发/管理角色、共享仓库关系或历史全局权限不授予维保项目的导出能力。
+沿发布所属项目授权。下载白名单外或目标项目有效角色为 `maintainer` 时，三个接口均返回 `403`。共享查看其他项目的版本可在线阅读；文件走原发布项目的下载授权。在线说明仍可从发布详情读取。其他项目的开发/管理角色、共享仓库关系或历史全局权限不授予维保项目的导出能力。
 
-**工作台周报**使用 `GET /api/releases/dashboard/weekly-report/`。返回近 7 天内最新的最多 100 条可导出发布记录（`text/csv`，UTF-8 BOM）。记录范围为用户可见且有文件导出权限的项目。白名单外或仅有维保项目时返回 `403`。没有符合条件的记录时，返回空响应体且不附带文件名。
+**工作台周报**使用 `GET /api/releases/dashboard/weekly-report/`。返回近 7 天内最新的最多 100 条可导出发布记录（`text/csv`，UTF-8 BOM）。记录范围为用户可见且有文件导出权限的原发起项目。CSV 保留已有列，追加软件、软件标识、完整 Tag、来源分支与源码 SHA。白名单外或仅有维保项目时返回 `403`。没有符合条件的记录时，返回空响应体且不附带文件名。
 
 ### 8.10 提交审批
 
 - **POST** `/api/releases/{id}/submit-audit/`
-- 需项目开发人员权限。仅 `draft` 可提交；要求发布说明非空。正式版、RC 和 Beta 均不因纳入提交的规范审查状态为 `illegal` 而拒绝提审，保留原审查状态及原因供查看；来源、版本占用、流程及整改等其他校验继续生效。
-- 按发布类型匹配项目内置审批流程：流程无审批节点时直接推 tag 发布；否则创建 `WorkflowInstance` 并置为 `pending`。
+- 需项目开发人员权限。仅 `draft` 可首次提交；要求项目、仓库关联及所选软件仍可用，且发布说明非空。已在 `pending` 的申请重复提交时返回原审批实例。正式版、RC 和 Beta 均不因纳入提交的规范审查状态为 `illegal` 而拒绝提审，保留原审查状态及原因供查看；来源、版本占用、流程及整改等其他校验继续生效。
+- 按仓库和发布类型匹配审批流程：「按仓库发布」的旧流程兼容项目级定义。流程无审批节点时直接推 Tag；否则创建 `WorkflowInstance` 并置为 `pending`。停用后，已有在途审批可继续。
 
 **响应：**
 
@@ -1317,11 +1356,11 @@
 
 登录后按完整可见项目集合返回只读首页摘要，不接受 `project`、`search`、类型或页码改变总览范围：
 
-- `projects`：项目 `id/name/release_count` 和该项目 `software` 数组（仓库 `id`、项目内软件 `name`、已发布 `release_count`），不受分页限制。
-- `software_count`：可见范围内项目→软件引用数，共享仓库按项目分别计数。
-- `stats`：`days=30`、服务端 `since/until`、`released_count`（窗口内实际发布时间，缺失时间排除）、`failed_task_count`（所属项目全部现存失败记录，不限时间）。
+- `projects`：每个项目返回 `id/name/release_count` 和范围数组 `software`。已选用的软件使用稳定的软件 UUID（`id/software_id`），主仓库由 `repository_id/repository_name` 表示。项目内待归属历史的 `software_id` 为 null。点击范围节点时列表同时传 `repository=<UUID>&unassigned=true`，仅统计并显示该仓库尚未确认软件的历史；单传 `repository` 继续查询整个仓库。范围树不受分页限制。
+- `software_count`：可见项目当前选用的不同软件数量。多个项目选用同一软件只计一次，待归属历史不计作软件。
+- `stats`：`days=30`、服务端 `since/until`、`released_count`（窗口内实际发布时间，缺失时间排除，同一共享版本全局计一次）、`failed_task_count`（所属项目全部现存失败记录，不限时间）。
 - `stats.package_total/package_success/package_success_rate`：窗口内创建且当前为 success/failure/canceled 的任务，包含他人触发，成功率保留一位小数，分母包含取消任务；无样本时计数 0、成功率为 `null`。
-- `recent_tasks`：所属项目最近 3 个任务。每项包含任务 ID、项目/软件/版本、状态、创建/开始/完成时间、耗时、错误原因、产物数量与触发来源，不包含凭证、脚本、环境变量或配置快照明文。「需要关注」与问题单列显示待接入状态，不以打包失败或发布整改意见替代。
+- `recent_tasks`：所属项目最近 3 个任务。每项包含任务 ID、真实项目、软件、主仓库、版本、Tag、状态、创建/开始/完成时间、耗时、错误原因、产物数量与触发来源，不包含凭证、脚本、环境变量或配置快照明文。「需要关注」与问题单列显示待接入状态，不以打包失败或发布整改意见替代。
 
 接口失败与零样本分别处理；主版本列表的项目、软件、关键词和类型筛选不改变上述指标与打包近况。原本人发起统计接口及默认工作台调用保持原语义。
 
@@ -1389,18 +1428,18 @@
 
 ### 8.14 OA 软件归档资料准备与提交
 
-仅已发布正式版适用；操作者须为现行项目成员中的发布人（开发或测试等业务写入身份）、项目管理员、软件管理员，超管放行。维保、只读、已移除成员和其他项目身份均不扩权。
+仅已发布正式版适用。归档各入口接收查询参数 `project=<UUID>`，共享版本通过它指定办理项目，省略时使用原发布项目。候选、校验、发送与历史只使用该项目实际发起的任务。发起归档和核对失败须为目标项目管理员、软件管理员、拥有目标项目业务写入权限的原发布人或超管。维保可在有权项目读取历史。
 
 - `GET /api/releases/{id}/oa-archive/options/`：`directories` 每个合格任务最多一项 `{task_id, task_name, name, path:".", scope:"directory", source_kind, created_at, artifact_count, svn_url}`，数量为历史清单数量，未知为 null；不在候选列表逐项联网。旧 `artifacts` / `svn_tasks` 返回保持兼容。任务快照启用 SVN 时须推送成功。
 - `POST /api/releases/{id}/oa-archive/prepare/`：新界面请求 `{task_id, scope:"directory", path:".", source_kind:"local"|"svn"}`，仅表示整次打包根目录；不能带 artifact_id 或其他路径。成功推送过 SVN 时须实时核验保存的根目录，不能用本地文件或人工地址绕过。无 SVN 时须有实际本地产物。返回 `selection`、目录依据 `source`、`configuration: {configured, reason}`、`content_source` 与 `form`。可追加 `form` 校验独立申请副本，不回写来源。旧 `{task_id, artifact_id}` 或 `{task_id, path, source_kind:"svn"}` 单文件请求保持兼容，不把旧历史改为目录。
 
-`form` 的四个必填字段为 `docCreator`、`soft_name`、`soft_version`、`developer`；分别预填操作者登录名、项目内软件名（回退仓库名）、发布版本号、发布人登录名。`soft_source` 可为空、内部自制或外购；`git_svn` 取发布记录保存的代码 Git 分支名（如 `main`、`release/v1.0`，目录及旧单文件准备接口一致），无则留空可补填；不取产物 SVN 地址，已提交历史资料保持原值；`sn_code` 只预填发布保存的完整 SHA，旧数据不完整则留空。`edit_content` 来自已保存说明的完整更新内容，保留换行、缩进与管道符；无法可靠识别时返回完整原文且 `content_source=release_doc_original`（正常为 `release_doc_changes`）。原因 `edit_reason`、其他说明 `other_description`、软件编号 `soft_number` 初始为空。所有预填可修改，`applyCount` 始终为 1；三个项目字段不进入资料副本。
+`form` 的四个必填字段为 `docCreator`、`soft_name`、`soft_version`、`developer`；分别预填操作者登录名、发布时保存的软件名称（待归属时预填「软件归属未知」，可手工填写）、发布版本号、发布人登录名。`soft_source` 可为空、内部自制或外购；`git_svn` 取发布记录保存的代码 Git 分支名（如 `main`、`release/v1.0`，目录及旧单文件准备接口一致），无则留空可补填；不取产物 SVN 地址，已提交历史资料保持原值；`sn_code` 只预填发布保存的完整 SHA，旧数据不完整则留空。`edit_content` 来自已保存说明的完整更新内容，保留换行、缩进与管道符；无法可靠识别时返回完整原文且 `content_source=release_doc_original`（正常为 `release_doc_changes`）。原因 `edit_reason`、其他说明 `other_description`、软件编号 `soft_number` 初始为空。所有预填可修改，`applyCount` 始终为 1；三个项目字段不进入资料副本。
 
-未配置地址时 `configuration.configured=false` 并返回原因；仍允许准备与校验。非法发布或任务资格返回 400，不可见资源返回 404，无操作权限返回 403。表单错误按 `data.form.<字段>` 返回。页内草稿由前端按发布/任务/产物区分保留，刷新或离开页面后消失。
+未配置地址时 `configuration.configured=false` 并返回原因；仍允许准备与校验。非法发布或任务资格返回 400，不可见资源返回 404，无操作权限返回 403。表单错误按 `data.form.<字段>` 返回。页内草稿由前端按发布、查看项目、任务及产物区分保留，刷新或离开页面后消失。
 
 - `POST /api/releases/{id}/oa-archive/submit/`：请求 `{task_id, scope:"directory", path:".", source_kind?, submission_id, form}`，选择参数与 prepare 一致，`submission_id` 为客户端本次操作生成并保留的 UUID。服务器在仓库→发布→任务锁内重新授权、检查任务与目录，再持久化独立 `sending` 申请并提交事务，最后仅发送一次 POST JSON。返回 201 和申请记录；同一操作者同一标识及相同资料重放返回 200 和原记录，不重新发送。标识被用于不同资料返回 400；已有该任务及根路径 `.` 的目录申请时（旧文件仍用规范相对路径），须额外提交 `previous_id`（最新申请 ID）及 `confirmation`：最新 success 用 `reapply`、failure 用 `retry`、unknown 用 `checked_no_order`（用户已人工核对 OA 未建单）。服务器在锁内核验最新记录；旧窗口、换人或前次记录不匹配均返回 400，sending 始终拒绝新派发。同一标识重放也须保持前次关联与确认方式不变。合法新操作使用新 UUID，每次重新授权及核验来源并新增记录。
-- `POST /api/releases/{id}/oa-archive/confirm-no-order/`：请求 `{application_id, confirmation:"checked_no_order", evidence}`，`evidence` 为必填核对依据，最多 2000 字。当前具有归档权限的操作者可单独确认本发布内的明确失败申请，文件过期不妨碍核对；不调用 OA、不重试。仓库→发布→任务→申请锁内仅解除该失败申请的保护，保存 `no_order_confirmation: {operator, confirmed_at, evidence}`；重复操作返回首次结果，不覆盖依据。成功、发送中、未知结果返回 400，其他发布申请返回 404，未授权返回 403。原状态、资料、响应保持不变。
-- `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/oa_response/oa_endpoint/created_at/finished_at/previous_id/confirmation/no_order_confirmation`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source` 保留发布/项目/仓库/任务 ID、原版本、Tag、源码 SHA、任务内规范相对路径、原产物及 SVN 阶段快照，手改 `git_svn` 不改变来源。
+- `POST /api/releases/{id}/oa-archive/confirm-no-order/`：请求 `{application_id, confirmation:"checked_no_order", evidence}`，`evidence` 为必填核对依据，最多 2000 字。当前具有归档权限的操作者可单独确认本项目明确失败的申请，文件过期不妨碍核对；不调用 OA、不重试。仓库→发布→任务→申请锁内仅解除该失败申请的保护，保存 `no_order_confirmation: {operator, confirmed_at, evidence}`；重复操作返回首次结果，不覆盖依据。成功、发送中、未知结果返回 400，其他发布申请返回 404，未授权返回 403。原状态、资料、响应保持不变。
+- `GET /api/releases/{id}/oa-archive/records/`：所属项目可见成员读取申请数组，按发送时间倒序。包含 `id/submission_id/status/operator/source/form/message/soft_number/software_archive_id/number_apply_id/response/oa_response/oa_endpoint/created_at/finished_at/previous_id/confirmation/no_order_confirmation`；`operator` 是实际操作者快照，`form.docCreator` 是可编辑申请人。`source.project_id` 是任务真实项目，`source.release_project_id` 是原发布项目。来源快照还保存发布、软件、主仓库和任务身份、原版本、分支、Tag、源码 SHA、相对路径、产物和 SVN 阶段依据。旧申请沿用保存内容，源任务删除后按当时保存的项目识别可见范围。
 
 提交等待 OA 响应或后端超时后返回。响应外层 `message` 与 `data.message` 均为本次结果说明，`data.status` 区分成功、明确拒绝和结果未确认。`data.response` 是解析后的 OA JSON。收到 OA 最终响应状态时，`data.oa_response` 包含 `status_code`、解码后的 `body` 和正文是否完整的 `complete`。收到状态后超时、断连或正文超出 2 MiB 时，保留状态码和已收到的正文（最多 2 MiB），标为 `complete=false`，申请结果为 `unknown`。未收到最终响应或历史无原始响应时，此字段为 null。无 `charset` 以 UTF-8 解码。无法无损显示文本（包括空字符）时，以可读文本展示，并在 `body_base64` 保存所收正文的原始字节。旧记录缺少 `complete` 时按原记录视为已完整接收；仅有 `response` 的旧记录标注为「历史保存的解析结果」。HTTP 201 表示已创建本系统的申请记录，OA 结果以申请状态为准。`data.oa_endpoint` 取本次发送保存的地址，返回协议、主机、端口及路径，省略查询参数。`created_at` 和 `finished_at` 用于计算申请保存到本次取得结果的耗时。
 
@@ -1491,16 +1530,17 @@
 
 - **GET / POST** `/api/packages/configs/`
 - **GET / PUT / PATCH / DELETE** `/api/packages/configs/{id}/`
-- 查询需项目成员；写操作需项目管理员。
+- 软件配置由仓库所有者或超管维护。项目成员可查看本项目可用软件的配置概要。仅有项目管理角色时，不能修改共享配置。
+- 查询返回 `software`、`software_name`、`software_slug`、`can_maintain`。共享配置没有归属项目，`project_component` 与 `project_id` 为空。查询指定 `project` 时，共享配置的 `my_role` 表示在该项目的有效角色。脚本、环境变量及 SVN 连接参数只对获授权的配置维护者返回。
+- `POST` 必须提供 `software`。待归属旧配置继续使用原配置 ID、`project_component` 和原项目权限；组件仅用于旧记录读取和已有操作。配置归属确认通过独立命令完成，不通过普通编辑更换。共享配置已有任务或归属确认记录时可停用，保留原配置及历史。
 
-**查询参数：** `project`、`repository`、`is_active`、`auto_package_on_release`。
+**查询参数：** `project`、`software`、`repository`、`project_component`、`unassigned`、`is_active`、`auto_package_on_release`。传 `unassigned=true` 筛选旧组件配置。
 
 **请求体：**
 
 ```json
 {
-  "project": "uuid",
-  "repository": "uuid",
+  "software": "uuid",
   "name": "web 打包",
   "image_info": {
     "source": "nexus",
@@ -1527,12 +1567,25 @@
 - `image_info` 为只写字段，后端按镜像坐标 `get_or_create` 镜像记录；读取时返回 `image_id` / `image_name` / `image_ref` / `image_source`。
 - 配置了 `custom_script` 时容器内以 `sh -ec`（遇错即停）执行该脚本，否则执行镜像内置 `script_entry`（默认 `/workspace/scripts/pack.sh`，同样以 `sh -e` 遇错即停执行）。
 - 启用 SVN 推送时 `svn_url`（须以 `svn://` / `http://` / `https://` 开头）与 `svn_credential`（必须为 `svn_password` 类型且启用）必填。不再提供 RC / 测试版独立开关；已有配置无需重新保存，新建任务立即统一跟随 `svn_push_enabled`。默认目录模板 `{version}` 渲染为 `formal|rc|beta/{version}`；其他模板按原文渲染。`svn_commit_mode` 为 `new_dir`（目录已存在报错）或 `overwrite`（镜像覆盖）。自动与手动打包的正式版、RC、测试版及分支直打统一遵循总开关；分支默认进入 `formal/{分支名}`。已创建任务保留原快照的最终推送决定，不重新计算类型开关，也不因当前配置启用而获得补推能力；旧版本重新补打属于新任务。
-- 打包配置仅支持 Git 仓库，且仓库必须属于当前项目。
+- 推送前按真实发起项目固定 SVN 目标。相同目录或父子范围已经由其他项目使用时，推送（含补推）、查看当前 SVN 文件、OA 归档和同步发布说明返回冲突；覆盖模式可首次推送到用户预建、未被其他项目占用的目录。共享配置可用 `{project_code}` 给各项目划分目录。结果未知继续保留占用，旧任务保存的真实目录也纳入核对。URL、模板和覆盖模式沿用原设置。同一 SVN 仓库请统一配置服务地址。
+- 打包配置使用软件的 Git 主仓库。项目使用共享配置前，须启用主仓库关联和软件，仓库所有者须在项目内。
 
 **配置收藏：**
 
-- **POST** `/api/packages/configs/{id}/favorite/`：切换收藏，返回 `{is_favorite: true|false}`；需要目标项目显式成员身份，维保返回 403，超管放行。服务层锁定当前配置后按实际所属项目再次验权，拒绝请求不创建或删除收藏记录。
-- **GET** `/api/packages/configs/favorites/`：只读返回当前用户的历史收藏及最近任务摘要，仍按项目可见范围过滤。角色变更不删除历史收藏，也不由收藏授予下载、打包或写权限。
+- **POST** `/api/packages/configs/{id}/favorite/`：切换收藏。共享配置请求体须传 `{ "project": "uuid" }`，返回 `{is_favorite: true|false}`；需要目标项目显式成员身份，维保返回 403，超管放行。服务层锁定当前配置后按实际所属项目再次验权，拒绝请求不创建或删除收藏记录。
+- **GET** `/api/packages/configs/favorites/`：只读返回当前用户的历史收藏及最近任务摘要，仍按任务真实项目的可见范围过滤。传入 `project` 时仅查看该项目的收藏配置和最近任务。角色变更不删除历史收藏，也不由收藏授予下载、打包或写权限。
+
+**旧配置归属确认：**
+
+`python manage.py reconcile_package_configs` 盘点原组件、持有配置的任务数、SVN 地址与目录模式，并报告既有确认。可用 `--mapping 路径 --actor 登录名` 预览，映射文件为 JSON 数组。例如
+
+```json
+[
+  {"config": "配置 UUID", "software": "软件 UUID", "projects": ["原项目 UUID", "另一项目 UUID"], "basis": "核对脚本、参数、凭证与交付目录后确认共享"}
+]
+```
+
+映射须覆盖该软件当前可使用的项目，含原项目；确认人须能同时维护原配置和目标软件配置。明确处理阻断报告后追加 `--apply`，批次在同一事务内核验与写入。仍引用配置的旧草稿、审批中申请及可重试申请须先处理，隐式自动打包同样核验。再次提交相同确认时保留原确认时间。配置 ID、任务快照、发起项目和原产物依据保留；同名配置分别确认。
 
 ### 9.7 手动触发打包
 
@@ -1546,23 +1599,22 @@
 }
 ```
 
-为指定已发布版本按现有配置创建打包任务，返回任务详情（HTTP 201）。桌面发布详情的「打包任务」提供配置选择和新任务链接，手机隐藏补打入口。
+上例用于未归属的软件仓库历史。共享软件配置同时要求 `project` 和 `software` 为目标项目与软件的 UUID，例如 `{ "release_id": "uuid", "project": "uuid", "software": "uuid" }`。成功返回打包任务详情（HTTP 201）。桌面与手机的软件发布详情可从「打包任务」选择配置。旧仓库版本沿用桌面入口及原项目配置。
 
-- 授权按配置所属项目的有效角色判断：`developer`、`tester`、`manager`、`software_admin` 可补打，超管放行；必须显式属于目标项目。维保请求返回 403，不创建或投递任务。分支直打 `trigger-branch` 也不授予维保；另一项目的开发角色不能用于目标维保项目。
-- 配置须启用，发布状态须为 `released`，且项目、物理仓库均与配置一致。不可见发布与不存在的发布统一返回 404；共享仓库不会扩大项目权限。
-- 请求仅接受 `release_id`，兼容旧别名 `release`；两者同时传入须为同一 UUID。缺失、无效 UUID、冲突别名或任何额外字段均返回 400，不接受临时分支、脚本、环境变量、镜像、节点及操作者覆盖。
-- 新任务关联当前发布，使用服务端版本、Tag、完整提交快照和当前已保存配置，`triggered_by` 为实际操作人。任务的 `trigger_source` 为 `manual_release`，所有版本的 SVN 推送统一遵循创建任务时的总开关，与发布后自动打包一致。执行前仍解析有效等价引用并核验实际检出 SHA；无有效引用或提交漂移时真实失败，不退回移动分支。
-- 任务依次取得仓库锁、配置行锁，刷新配置后按当前项目重新校验实际操作人，再创建任务；配置迁移或成员降权不能沿用请求开始时的授权。事务提交后沿既有 Celery / 本地线程回退策略投递。全部投递方式失败时，保留状态为 `failure` 的任务并返回 HTTP 503：`{code: 50300, message: "打包任务投递失败，请稍后重试", data: {task_id: "uuid", status: "failure"}}`；客户端可据此查看失败任务，不应视为创建成功。
-- 业务操作日志使用 `module=package`、`action=trigger_release`，记录实际操作人、已授权的项目/配置/发布/版本、新任务及投递结果；校验失败也记录失败，不记录未授权资源详情或客户端执行参数。
+- `developer`、`tester`、`manager`、`software_admin` 可在所属项目内复用已发布版本，超管放行。维保不能补打、重试或分支直打；角色以实际发起项目为准。不可见项目、版本及配置的反馈不公开其他项目详情。
+- 软件版本和启用配置必须属于同一软件，项目须保持启用选用且能使用主仓库与个人凭证。任务归目标项目，发布及 Tag 记录继续沿用原身份；配置、日志、产物和审计按任务发起项目授权。
+- 请求兼容旧发布 ID 别名 `release`，同时传入两个别名时必须相同。拒绝分支、脚本、镜像、节点、环境变量或操作者覆盖。任务保存原版本、Tag、完整提交、实际操作者及已保存配置快照，`trigger_source` 为 `manual_release`。
+- 持仓库锁后读取发布、配置和发起项目，再核验当前权限，事务提交后投递。全部投递方式失败时保留失败任务并返回 HTTP 503，响应 `data` 包含 `task_id` 及 `status=failure`。操作审计使用 `module=package`、`action=trigger_release`，记录真实发起项目及授权资源身份。
+- 已有软件版本的构建从完整 Tag 引用拉取，执行前再次核对有效引用、固定 SHA 和实际检出的提交。原 Tag、实际 `source_ref` 及显示版本独立保存。SVN 推送依照任务创建时的配置快照。
 
-发布推 Tag 成功后，后端仍为开启 `auto_package_on_release` 的配置自动创建任务，按自动发布策略决定 SVN 推送。
+新建软件发布可在 `package_config_ids` 传入本软件启用自动打包的配置 ID 数组。省略或传入空数组表示本次不自动打包。配置不属于当前软件或在创建时不可用则返回 400。发布推 Tag 成功后仅为发起项目创建本次选取且仍有效的任务；打包失败不回滚发布。旧仓库记录保留原来空值触发所有可用自动配置的语义。
 
-**分支直打：** `POST /api/packages/configs/{id}/trigger-branch/`，请求体为 `{ "branch": "feature/demo" }`。任务的 `trigger_source` 为 `manual_branch`，无关联发布，沿用正式类型与分支名版本；开启 SVN 总开关后打包成功即推送，默认目录为 `formal/feature/demo`，自定义目录模板和提交模式继续按配置生效。
+**分支直打：** `POST /api/packages/configs/{id}/trigger-branch/`。共享配置要求显式传入 `{ "project": "uuid", "software": "uuid", "branch": "feature/demo" }`。可用 `GET /api/packages/configs/{id}/usage-projects/` 查询具备触发权限的项目。服务端以目标项目核验软件选用、配置和操作者权限，使用该项目授权的仓库凭证读取分支 HEAD，然后保存软件身份、配置快照和完整提交哈希。实际检出分支或 SHA 与保存记录不一致时，任务失败并阻止执行脚本。待归属旧配置继续发送 `{ "branch": "feature/demo" }`。任务的 `trigger_source` 为 `manual_branch`，没有关联发布，沿用正式类型与分支名版本及对应 SVN 推送配置。
 
 ### 9.8 测试 SVN 推送配置
 
 - **POST** `/api/packages/configs/test-svn/`
-- 项目管理员（或项目负责人在内）可测；支持未保存的临时配置。
+- 支持未保存的临时配置。对共享配置额外提交 `software`，服务端核验其维护权与 `project_id` 的使用权限，仅返回连通性。旧配置按具备权限的项目测试，保留目录条目。
 
 **请求体：**
 
@@ -1579,16 +1631,18 @@
 
 - **GET** `/api/packages/configs/{id}/svn-entries/?path=sub/dir`
 
-实时浏览该配置 SVN 目录内容（`svn list`，不递归）；`path` 为相对子路径，拒绝 `..` 与绝对路径。
+实时浏览旧配置的 SVN 目录（`svn list`，不递归）；`path` 为相对子路径。共享配置按任务使用 `/api/packages/tasks/{id}/svn-artifacts/` 只读核验当前文件。
 
 ### 9.10 打包任务列表 / 详情
 
 - **GET** `/api/packages/tasks/`
 - **GET** `/api/packages/tasks/{id}/`
 
-**查询参数：** `project`、`repository`、`release`、`config`、`status`、`build_type`、`search`（名称/版本/Tag/项目名/仓库名）。
+**查询参数：** `project`、`software`、`repository`、`release`、`config`、`status`、`build_type`、`search`（名称、版本、Tag、软件、项目名或仓库名）。
 
 任务状态：`queued` / `running` / `success` / `failure` / `canceled`。
+
+任务及其日志、产物和统计按真实发起项目逐次授权。软件任务使用保存的 `software_name` 与 `software_slug` 展示身份，接口返回可查看的快照字段。构建脚本、环境变量和凭证绑定信息留在服务端执行快照内。
 
 **响应（单条）：**
 
@@ -1646,6 +1700,12 @@
 
 - **POST** `/api/packages/tasks/{id}/cancel/`
 - 目标项目的 manager / developer / software_admin 可操作，超管放行；仅 queued / running 任务可取消。详情 `can_cancel` 同时反映角色与任务状态，维保为 false。
+
+#### 重试失败的软件任务
+
+- **POST** `/api/packages/tasks/{id}/retry/`，请求体为空。
+- 原任务须已失败且有明确软件、启用配置和完整提交。按原任务所属项目重新核验补打角色、软件选用及仓库凭证。已发布版本的重试继续绑定同一发布；分支任务继续使用原分支与完整提交。
+- 首次返回 HTTP 201 和新任务，`retry_of` 为原任务 ID；重复请求返回 HTTP 200 和同一个重试任务。重试沿用原配置、源码、版本和 Tag 快照，审计记录实际操作者。有关联重试时保留原任务，禁止删除其日志与工作区。维保的 `can_retry` 为 `false`。
 
 ### 9.12 手动推送产物到 SVN
 

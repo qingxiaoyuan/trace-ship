@@ -9,18 +9,21 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from django.db import IntegrityError, OperationalError, connection, transaction
+from django.db.models import F, Q
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
 from apps.account.models import User
 from apps.package.models import PackageTask
 from apps.project.models import Project
+from apps.release.delivery_identity import release_repository_name, release_software_name
 from apps.release.models import OaArchiveApplication, ReleaseRecord
 from apps.release.oa_archive import ArchiveFormInput, ArchiveSelectionInput, OaArchivePreparation
 from apps.release.oa_http import OaHttpResult, post_archive
 from apps.repository.models import Repository
 from apps.system.oa_archive import OaArchiveConfig
+from utils.permissions import IsProjectManager
 
 # JSON 字符串中的实际 NUL 会编码成单个反斜杠开头的 \u0000；字面转义不受影响。
 JSON_NUL = re.compile(r"(?<!\\)(?:\\\\)*\\u0000")
@@ -118,11 +121,18 @@ def application_data(record: OaArchiveApplication) -> dict:
     }
 
 
+def archive_records(release: ReleaseRecord, project: Project):
+    """无任务外键的历史按原始来源快照授权。"""
+    return release.oa_applications.filter(
+        Q(task__project=project) | Q(task__isnull=True, source__project_id=str(project.pk))
+    )
+
+
 def guard_archive_delete(*, release: ReleaseRecord | None = None, task: PackageTask | None = None) -> None:
     """调用方先持来源仓库锁，确保检查在任何文件或远端 Tag 副作用之前。"""
     query = OaArchiveApplication.objects.all()
     if release is not None:
-        query = query.filter(protected_release=release)
+        query = query.filter(Q(protected_release=release) | Q(protected_task__release=release))
     elif task is not None:
         query = query.filter(protected_task=task)
     else:
@@ -141,24 +151,49 @@ def locked_archive_task(task: PackageTask) -> Iterator[PackageTask]:
         task = PackageTask.objects.select_for_update().filter(pk=task.pk).first()
         if task is None:
             raise NotFound("打包任务已删除")
-        guard_archive_delete(task=task)
         yield task
 
 
 @contextmanager
-def locked_archive_parent(instance: Repository | Project) -> Iterator[None]:
+def locked_archive_parent(instance: Repository | Project, *, user: User | None = None) -> Iterator[None]:
     """父级删除同样先锁仓库，不能通过级联绕过归档来源保护。"""
     with transaction.atomic():
         if isinstance(instance, Repository):
             repositories = Repository.objects.filter(pk=instance.pk)
-            protected = OaArchiveApplication.objects.filter(protected_release__repository=instance)
+            protected = OaArchiveApplication.objects.filter(
+                Q(protected_release__repository=instance) | Q(protected_task__repository=instance)
+                | Q(protected_task__release__repository=instance)
+            )
+            tasks = PackageTask.objects.filter(Q(repository=instance) | Q(release__repository=instance))
         else:
-            repositories = Repository.objects.filter(releases__project=instance).distinct()
-            protected = OaArchiveApplication.objects.filter(protected_release__project=instance)
-        ids = list(repositories.values_list("pk", flat=True))
+            tasks = PackageTask.objects.filter(Q(project=instance) | Q(release__project=instance))
+            repositories = Repository.objects.filter(
+                Q(releases__project=instance) | Q(package_tasks__in=tasks)
+                | Q(software__project_links__project=instance) | Q(project_components__project=instance)
+            ).distinct()
+            protected = OaArchiveApplication.objects.filter(
+                Q(protected_release__project=instance) | Q(protected_task__project=instance)
+                | Q(protected_task__release__project=instance)
+            )
+        ids = set(repositories.values_list("pk", flat=True))
         list(Repository.objects.filter(pk__in=ids).order_by("pk").select_for_update(no_key=True))
+        if isinstance(instance, Project):
+            project = Project.objects.select_for_update(no_key=True).filter(pk=instance.pk).first()
+            if project is None:
+                raise NotFound("项目已删除")
+            if user is not None and not IsProjectManager()._check(project, user):
+                raise PermissionDenied("没有在当前项目删除记录的权限")
+            if set(repositories.values_list("pk", flat=True)) - ids:
+                raise ValidationError({"detail": "项目仓库关联在删除期间已变更，请刷新后重试"})
         if protected.exists():
             raise ValidationError({"detail": "已有 OA 归档申请正在发送、已发起、结果未确认或失败尚未核对，不能级联删除来源记录"})
+        if tasks.filter(status__in=["queued", "running"]).exists():
+            raise ValidationError({"detail": "仍有关联打包任务排队或运行，当前记录不能删除"})
+        if tasks.filter(
+            Q(software__isnull=False) | Q(release__software__isnull=False)
+            | (Q(release__isnull=False) & ~Q(project_id=F("release__project_id")))
+        ).exists():
+            raise ValidationError({"detail": "仍有关联软件打包历史，请保留来源记录并停用当前对象"})
         yield
 
 
@@ -166,7 +201,7 @@ class OaArchiveSubmission:
     timeout = (5, 30)
 
     @classmethod
-    def submit(cls, release: ReleaseRecord, user: User, values: dict) -> tuple[OaArchiveApplication, bool]:
+    def submit(cls, release: ReleaseRecord, user: User, values: dict, project_id=None) -> tuple[OaArchiveApplication, bool]:
         started = monotonic()
         prepare_by = started + PREPARATION_BUDGET
         with archive_submit_transaction():
@@ -174,12 +209,13 @@ class OaArchiveSubmission:
             release = ReleaseRecord.objects.select_for_update().filter(pk=release.pk).first()
             if release is None:
                 raise NotFound("发布记录已删除")
-            OaArchivePreparation.require_permission(release, user)
+            project = OaArchivePreparation.project(release, user, project_id)
+            OaArchivePreparation.require_permission(release, project, user)
             OaArchivePreparation.require_release(release)
-            task = PackageTask.objects.select_for_update().filter(pk=values["task_id"]).first()
+            task = PackageTask.objects.select_for_update().filter(pk=values["task_id"], project=project).first()
             if task is None:
-                raise NotFound("打包任务已删除")
-            OaArchivePreparation.require_task(release, task)
+                raise NotFound("打包任务不存在或无权查看")
+            OaArchivePreparation.require_task(release, project, task)
             # 重放只读取原结果；资料变更必须是新的显式操作，不能换标识重发。
             existing = OaArchiveApplication.objects.filter(submission_id=values["submission_id"]).first()
             if existing:
@@ -218,8 +254,13 @@ class OaArchiveSubmission:
                 operator_snapshot={"id": str(user.id), "username": user.username, "nickname": user.nickname},
                 artifact_path=artifact["path"], form=values["form"], endpoint=url,
                 previous=previous, confirmation=values["confirmation"],
-                source={"release_id": str(release.id), "project_id": str(release.project_id),
-                        "repository_id": str(release.repository_id), "version": release.version,
+                source={"release_id": str(release.id), "project_id": str(task.project_id),
+                        "release_project_id": str(release.project_id),
+                        "software_id": str(release.software_id) if release.software_id else None,
+                        "software_name": release_software_name(release) if release.software_id else None,
+                        "software_slug": release.software.slug if release.software_id else None,
+                        "repository_id": str(release.repository_id), "repository_name": release_repository_name(release),
+                        "version": release.version, "branch": release.branch,
                         "tag_name": release.tag_name, "git_hash": release.git_hash,
                         "task_id": str(task.id), "task_name": task.name, "artifact_id": artifact.get("artifact_id"),
                         "path": artifact["path"], "scope": artifact.get("scope", "file"),
@@ -231,15 +272,16 @@ class OaArchiveSubmission:
         return record, True
 
     @classmethod
-    def confirm_no_order(cls, release: ReleaseRecord, user: User, values: dict) -> OaArchiveApplication:
+    def confirm_no_order(cls, release: ReleaseRecord, user: User, values: dict, project_id=None) -> OaArchiveApplication:
         """只解除本条失败申请的保护；不发送、不查单，保留核对依据。"""
         with transaction.atomic():
             lock_repository(release.repository_id)
             release = ReleaseRecord.objects.select_for_update().filter(pk=release.pk).first()
             if release is None:
                 raise NotFound("发布记录已删除")
-            OaArchivePreparation.require_permission(release, user)
-            record = OaArchiveApplication.objects.filter(pk=values["application_id"], release=release).first()
+            project = OaArchivePreparation.project(release, user, project_id, history=True)
+            OaArchivePreparation.require_permission(release, project, user)
+            record = archive_records(release, project).filter(pk=values["application_id"]).first()
             if record is None:
                 raise NotFound("归档申请不属于当前发布")
             if record.task_id:

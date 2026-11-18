@@ -4,17 +4,27 @@
 供外部系统通过 Access Token 调用，只读。
 挂 /api/open/ 前缀（见 config/urls_open.py）。
 """
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import serializers
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.repository.models import Repository
+from apps.repository.open_compare import OpenTagCompareError, compare_published_tags
 from utils.authentication import AccessTokenAuthentication
 from utils.permissions import HasAccessTokenScope
-from utils.provider.credential_resolver import resolve_credential
 from utils.provider.exceptions import ProviderError
-from utils.provider.factory import get_provider
 from utils.response import error_response, success_response
+
+
+class TagCompareQuery(serializers.Serializer):
+    repository_id = serializers.UUIDField(required=False)
+    software_id = serializers.UUIDField(required=False)
+    project_id = serializers.UUIDField(required=False)
+    product_id = serializers.UUIDField(required=False)
+    from_tag = serializers.CharField()
+    to_tag = serializers.CharField()
+    branch = serializers.CharField(required=False, allow_blank=True)
 
 
 class OpenTagCompareView(APIView):
@@ -31,99 +41,24 @@ class OpenTagCompareView(APIView):
     permission_classes = [HasAccessTokenScope]
     open_scope = "repo.compare"
 
+    @extend_schema(parameters=[
+        OpenApiParameter("repository_id", str, description="来源仓库 UUID，与 software_id 至少填写一项"),
+        OpenApiParameter("software_id", str, description="软件 UUID，两端须为该软件的已发布 Tag"),
+        OpenApiParameter("from_tag", str, required=True),
+        OpenApiParameter("to_tag", str, required=True),
+        OpenApiParameter("branch", str),
+        OpenApiParameter("project_id", str, description="用于解析仓库凭证的项目 UUID"),
+        OpenApiParameter("product_id", str, description="project_id 的历史参数名"),
+    ], responses={200: dict})
     def get(self, request: Request) -> Response:
         """比较指定仓库两个 tag 之间的提交与 MR"""
-        params = request.query_params
-        repository_id = params.get("repository_id", "").strip()
-        from_tag = params.get("from_tag", "").strip()
-        to_tag = params.get("to_tag", "").strip()
-        if not repository_id or not from_tag or not to_tag:
-            return error_response(40001, "缺少必填参数 repository_id、from_tag 或 to_tag")
-
-        repo = Repository.objects.filter(id=repository_id).first()
-        if repo is None:
-            return error_response(40404, "仓库不存在", status_code=404)
-        branch = params.get("branch", "").strip() or repo.default_branch
-
-        from apps.project.models import Project, ProjectComponent
-        from apps.project.services import is_repository_owner_in_project
-
-        project = None
-        # project_id 为准；product_id 为旧参数名，保留兼容
-        project_id = (params.get("project_id", "") or params.get("product_id", "")).strip()
-        if project_id:
-            project = Project.objects.filter(id=project_id).first()
-            if project is None:
-                return error_response(40404, "项目不存在", status_code=404)
-        else:
-            component = ProjectComponent.objects.filter(
-                repository=repo, is_active=True,
-            ).select_related("project").first()
-            project = component.project if component else None
-        if project is None or not is_repository_owner_in_project(repo, project):
-            return error_response(
-                40301,
-                "仓库所有者不在关联项目成员中，无法使用该仓库凭证",
-                status_code=403,
-            )
-
+        raw = request.query_params
+        query = TagCompareQuery(data={key: value.strip() for key, value in raw.items() if value.strip()})
+        query.is_valid(raise_exception=True)
+        params = query.validated_data
         try:
-            from apps.repository.services import RepositoryService
-
-            server_url = RepositoryService._resolve_server_url(repo)
-            cred_data = resolve_credential(repo, project=project, operation="read")
-            provider = get_provider(repo.vendor, server_url, cred_data)
-
-            # 取两个 tag 的提交时间，用于 MR 区间过滤；tag 列表走短 TTL 缓存，
-            # 避免外部系统高频调用时反复全量翻页拉取
-            from apps.release.services import list_tags_cached
-
-            tag_map = {t.name: t for t in list_tags_cached(provider, repo.external_identity)}
-            from_info = tag_map.get(from_tag)
-            to_info = tag_map.get(to_tag)
-            if from_info is None or to_info is None:
-                missing = from_tag if from_info is None else to_tag
-                return error_response(40404, f"tag 不存在: {missing}", status_code=404)
-
-            commits = provider.compare_commits(repo.external_identity, from_tag, to_tag)
-            mrs = provider.list_merge_requests(
-                repo.external_identity,
-                branch,
-                since=from_info.created_at,
-            )
-            if to_info.created_at is not None:
-                mrs = [
-                    mr for mr in mrs
-                    if mr.merged_at is not None and mr.merged_at <= to_info.created_at
-                ]
+            return success_response(compare_published_tags(params))
+        except OpenTagCompareError as exc:
+            return error_response(exc.code, str(exc), status_code=exc.status)
         except ProviderError as exc:
             return error_response(50201, f"GitLab 调用失败: {exc}", status_code=502)
-
-        return success_response({
-            "repository_name": repo.name,
-            "project_name": project.name if project else "",
-            "from_tag": from_tag,
-            "to_tag": to_tag,
-            "branch": branch,
-            "commits": [
-                {
-                    "hash": c.hash,
-                    "author": c.author,
-                    "message": c.message,
-                    "committed_at": c.committed_at,
-                }
-                for c in commits
-            ],
-            "mrs": [
-                {
-                    "number": mr.number,
-                    "title": mr.title,
-                    "author": mr.author,
-                    "source_branch": mr.source_branch,
-                    "target_branch": mr.target_branch,
-                    "merged_at": mr.merged_at,
-                    "web_url": mr.web_url,
-                }
-                for mr in mrs
-            ],
-        })

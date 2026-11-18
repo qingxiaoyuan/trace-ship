@@ -12,6 +12,7 @@ import { ImagePickerField } from '@/components/ImagePickerField';
 import { ScriptEditorField } from '@/components/ScriptEditorField';
 import { AIScriptModal } from '@/components/AIScriptModal';
 import { toImageInfo, useAvailableImages } from '@/components/useAvailableImages';
+import { useMaintainedSoftware } from '@/hooks/useMaintainedSoftware';
 import { useModalDraft } from '@/hooks/useModalDraft';
 
 interface PackageConfigModalProps {
@@ -127,9 +128,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
+  const legacy = Boolean(editing && !editing.software);
+  const maintainable = useMaintainedSoftware(open && !legacy, fixedProjectId);
   const [form] = Form.useForm<Partial<PackageConfig>>();
   const draft = useModalDraft<Partial<PackageConfig>>(open, editing ? `package-config:${editing.id}` : `package-config:new:${fixedProjectId || ''}`, () => editing
-    ? { ...editing, project: fixedProjectId ?? editing.project_id, repository: editing.repository_id, image_ref: editing.image_ref || undefined }
+    ? { ...editing, image_ref: editing.image_ref || undefined }
     : {
         project: fixedProjectId, executor_type: 'local_docker', build_path: '.', output_path: 'dist',
         auto_collect_output: false, auto_compress: false, env_vars: {}, cpu_cores: 0, cpu_priority: '', mem_limit_mb: 0,
@@ -144,7 +147,15 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     setAiModalOpen(true);
   };
 
-  const projectId = Form.useWatch('project', form) ?? fixedProjectId;
+  const scanProject = Form.useWatch('project', form);
+  const projectId = legacy ? editing?.project_id : fixedProjectId ?? scanProject;
+  const softwareId = Form.useWatch('software', form) ?? editing?.software;
+  const softwareOptions = maintainable.map((software) => ({
+    value: software.id, label: `${software.name} · ${software.slug} · ${software.repository_name}`,
+  }));
+  if (editing?.software && !softwareOptions.some((option) => option.value === editing.software)) {
+    softwareOptions.push({ value: editing.software, label: editing.software_name || editing.software });
+  }
   const executorType = Form.useWatch('executor_type', form) ?? 'local_docker';
   const isRemote = executorType === 'remote_node';
   const nodeId = Form.useWatch('node', form);
@@ -157,22 +168,16 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
   const { data: projectsData } = useQuery({
     queryKey: ['package-modal-projects'],
     queryFn: () => projectApi.getProjects({ page: 1, page_size: 1000 }),
-    enabled: open && !fixedProjectId,
+    enabled: open && !legacy && !fixedProjectId,
   });
 
   // 项目内录入时：所属项目只读展示，需要项目名称
   const { data: fixedProject } = useQuery({
     queryKey: ['package-modal-project', fixedProjectId],
     queryFn: () => projectApi.getProject(fixedProjectId as string),
-    enabled: open && !!fixedProjectId,
+    enabled: open && !legacy && !!fixedProjectId,
   });
   const fixedProjectName = editing?.project_name || fixedProject?.name || '';
-
-  const { data: componentsData } = useQuery({
-    queryKey: ['package-modal-components', projectId],
-    queryFn: () => projectApi.getComponents(projectId as string),
-    enabled: open && !!projectId,
-  });
 
   const { items: imageItems } = useAvailableImages();
 
@@ -204,15 +209,15 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
       : 'Windows 批处理：BAT 无 set -e，平台按脚本最终退出码判定，失败须逐级返回非零——调用内部脚本后加 "if errorlevel 1 exit /b 1"，内部脚本内关键命令失败也请 "|| exit /b 1"';
 
   const { data: svnCredsData } = useQuery({
-    queryKey: ['package-modal-svn-creds', projectId],
+    queryKey: ['package-modal-svn-creds', legacy ? projectId : 'shared', currentUser?.id],
     queryFn: () =>
       credentialApi.getCredentials({
         cred_type: 'svn_password',
-        project: projectId,
+        project: legacy ? projectId : undefined,
         is_active: true,
         page_size: 1000,
       }),
-    enabled: open && !!projectId && svnPushEnabled,
+    enabled: open && (legacy ? !!projectId : !!softwareId) && svnPushEnabled,
   });
 
   useEffect(() => {
@@ -221,18 +226,13 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     form.setFieldsValue(draft.value);
   }, [draft.value, form, open]);
 
-  useEffect(() => {
-    if (!open || !editing || editing.project_component || !componentsData?.length) return;
-    const matches = componentsData.filter((item) => item.repository === editing.repository_id);
-    if (matches.length === 1) form.setFieldValue('project_component', matches[0].id);
-  }, [componentsData, editing, form, open]);
-
   const saveMutation = useMutation({
     mutationFn: (values: Partial<PackageConfig>) => {
-      const payload: Partial<PackageConfig> = { ...values };
-      // 后端打包配置写字段仅接受 project_component，project/repository 只作表单联动，不下发
+      const { software, ...payload } = values;
+      // 项目选择只用于 AI 扫描。配置的归属在创建后固定。
       delete payload.project;
       delete payload.repository;
+      delete payload.project_component;
       if (payload.executor_type === 'remote_node') {
         // 远程节点不使用镜像；清理本地镜像字段避免后端校验冲突
         payload.image = null;
@@ -250,7 +250,8 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
         payload.auto_compress = false;
       }
       if (editing) return packageApi.updateConfig(editing.id, payload);
-      return packageApi.createConfig(payload);
+      if (!software) throw new Error('请选择归属软件');
+      return packageApi.createConfig({ ...payload, software });
     },
     onSuccess: () => {
       message.success('保存成功');
@@ -264,7 +265,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     },
   });
 
-  // 打包配置仅项目管理员 / 软件管理员可维护：项目下拉只列出可管理的项目（超管放行）
+  // AI 扫描仍需在有权使用软件的项目上下文中执行。
   const projectOptions = useMemo(
     () =>
       (projectsData?.results || [])
@@ -272,18 +273,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
           (p) =>
             currentUser?.is_superuser ||
             p.my_role === 'software_admin' ||
-            p.my_role === 'manager',
+            p.my_role === 'manager' ||
+            p.my_role === 'developer' || p.my_role === 'tester',
         )
         .map((p) => ({ label: p.name, value: p.id })),
     [projectsData, currentUser],
-  );
-  const componentOptions = useMemo(
-    () => (componentsData || []).filter((item) => item.is_active).map((item) => ({
-      label: item.repository_detail.name,
-      value: item.id,
-      repository: item.repository,
-    })),
-    [componentsData],
   );
   const nodeOptions = useMemo(
     () =>
@@ -304,10 +298,10 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     referenceExemplars: boolean,
   ): AIGenerateScriptPayload => {
     const values = form.getFieldsValue() as Partial<PackageConfig>;
-    const project = fixedProjectId ?? values.project;
-    const repository = values.repository;
+    const project = legacy ? editing?.project_id : fixedProjectId ?? values.project;
+    const repository = editing?.repository_id ?? maintainable.find((item) => item.id === values.software)?.repository;
     if (!project || !repository) {
-      throw new Error('请先选择项目与关联仓库');
+      throw new Error('请先确认 AI 扫描项目与软件的主仓库');
     }
     const ref = values.image_ref;
     const item = ref ? imageItems.find((i) => i.image === ref) : undefined;
@@ -316,6 +310,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
     const payload: AIGenerateScriptPayload = {
       project,
       repository,
+      software: values.software || undefined,
       executor_type: remoteNode ? 'remote_node' : 'local_docker',
       node: remoteNode ? values.node : undefined,
       // 节点 OS 决定生成 sh 还是 bat；后端在 node 已落库时也会自行补齐
@@ -382,9 +377,9 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             </div>
             <div className="text-[11px] font-normal text-slate-400">
               {readOnly
-                ? '仅项目管理员或软件管理员可修改，当前为只读查看'
+                ? '当前权限仅可查看配置摘要'
                 : editing
-                  ? `${editing.name} / ${editing.project_name || '-'}`
+                  ? `${editing.name} / ${editing.software_name || editing.project_name || '-'}`
                   : '配置发布成功后的打包流程'}
             </div>
           </div>
@@ -396,6 +391,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             {svnPushEnabled && (
               <SvnTestButton
                 projectId={projectId}
+                softwareId={softwareId || undefined}
                 svnUrl={svnUrl}
                 svnCredentialId={svnCredentialId}
                 svnPathTemplate={svnPathTemplate}
@@ -454,25 +450,40 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             >
               <Input placeholder="输入配置名称" className={inputCls} />
             </Form.Item>
-            {!fixedProjectId ? (
+            {!legacy && (
+              <Form.Item
+                name="software"
+                label={<FieldLabel text="归属软件" required />}
+                rules={[{ required: true, message: '请选择归属软件' }]}
+                className="mb-0"
+              >
+                <Select
+                  disabled={!!editing}
+                  options={softwareOptions}
+                  placeholder="选择你维护的软件"
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+            )}
+            {legacy || fixedProjectId ? (
+              <Form.Item label={<FieldLabel text={legacy ? '原所属项目' : '当前项目'} />} className="mb-0">
+                <Input value={fixedProjectName} disabled className={inputCls} />
+              </Form.Item>
+            ) : (
               <Form.Item
                 name="project"
-                label={<FieldLabel text="所属项目" required />}
-                rules={[{ required: true, message: '请选择项目' }]}
+                label={<FieldLabel text="AI 扫描项目" />}
                 className="mb-0"
-                extra={<p className="mb-0 mt-1 text-[11px] text-slate-400">仅列出你是项目管理员或软件管理员的项目</p>}
               >
                 <Select
                   options={projectOptions}
-                  placeholder="选择项目"
+                  placeholder="使用 AI 生成脚本时选择"
+                  allowClear
                   showSearch
                   optionFilterProp="label"
                   suffixIcon={<ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
                 />
-              </Form.Item>
-            ) : (
-              <Form.Item label={<FieldLabel text="所属项目" />} className="mb-0">
-                <Input value={fixedProjectName} disabled className={inputCls} />
               </Form.Item>
             )}
           </div>
@@ -483,26 +494,11 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
           </Form.Item>
 
           <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
-            <Form.Item
-              name="project_component"
-              label={<FieldLabel text="软件仓库" required />}
-              rules={[{ required: true, message: '请选择软件仓库' }]}
-              className="mb-0"
-            >
-              <Select
-                options={componentOptions}
-                placeholder={projectId ? '选择软件仓库' : '请先选择项目'}
-                disabled={!projectId}
-                showSearch
-                optionFilterProp="label"
-                onChange={(value) => {
-                  const selected = componentOptions.find((item) => item.value === value);
-                  form.setFieldValue('repository', selected?.repository);
-                }}
-                suffixIcon={<ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}
-              />
-            </Form.Item>
-            <Form.Item name="repository" hidden><Input /></Form.Item>
+            {legacy && (
+              <Form.Item label={<FieldLabel text="原仓库（软件待归属）" />} className="mb-0">
+                <Input value={editing?.repository_name || editing?.project_component_name} disabled className={inputCls} />
+              </Form.Item>
+            )}
             {isRemote ? (
               <Form.Item
                 name="node"
@@ -578,7 +574,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
             lang={scriptLang}
             filename={scriptFilename}
             readOnly={readOnly}
-            onAiGenerate={readOnly ? undefined : openAiModal}
+            onAiGenerate={readOnly || !projectId ? undefined : openAiModal}
             hint={scriptHint}
           />
         </Form.Item>
@@ -690,8 +686,7 @@ export function PackageConfigModal({ open, editing, fixedProjectId, readOnly, on
                 >
                   <Select
                     options={svnCredentialOptions}
-                    placeholder={projectId ? '选择 SVN 凭证' : '请先选择项目'}
-                    disabled={!projectId}
+                    placeholder="选择 SVN 凭证"
                     showSearch
                     optionFilterProp="label"
                     suffixIcon={<ChevronDown className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.5} />}

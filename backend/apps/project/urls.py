@@ -7,6 +7,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.project.views import ProjectComponentViewSet, ProjectMemberViewSet, ProjectViewSet
+from apps.software.views import ProjectSoftwareViewSet
 
 router = DefaultRouter()
 router.register(r"", ProjectViewSet, basename="project")
@@ -19,6 +20,8 @@ urlpatterns = [
     path("<uuid:project_pk>/components/<uuid:pk>/", ProjectComponentViewSet.as_view({
         "get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"
     }), name="project-component-detail"),
+    # 项目可用软件查询
+    path("<uuid:project_pk>/software/", ProjectSoftwareViewSet.as_view({"get": "list"}), name="project-software-list"),
     # 项目成员嵌套路由
     path("<uuid:project_pk>/members/", ProjectMemberViewSet.as_view({"get": "list", "post": "create"}), name="project-member-list"),
     path("<uuid:project_pk>/members/<uuid:pk>/", ProjectMemberViewSet.as_view({

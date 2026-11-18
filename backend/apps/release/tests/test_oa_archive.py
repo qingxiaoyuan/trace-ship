@@ -50,7 +50,7 @@ def test_发布人选择现存单产物并取得真实发布资料(archive_case)
     data = response.data["data"]
     assert data["selection"] == {"task_id": str(task.id), "artifact_id": "artifact-1", "path": "软件.zip", "source_kind": "local"}
     assert data["form"] == {
-        "docCreator": "releaseuser", "applyCount": 1, "soft_name": "项目内软件", "soft_version": "V1.2.3",
+        "docCreator": "releaseuser", "applyCount": 1, "soft_name": "软件归属未知", "soft_version": "V1.2.3",
         "developer": "releaseuser", "soft_source": "", "git_svn": "main",
         "sn_code": "0123456789abcdef0123456789abcdef01234567",
         "edit_content": "A 人工编辑后的内容 | 第二项\n第二行",

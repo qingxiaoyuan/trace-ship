@@ -80,7 +80,7 @@ class TestOpenTagCompare:
     def test_compare_success(self, repository):
         """合法请求返回区间 commits 与过滤后的 MRs"""
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=_mock_provider()):
+        with patch("apps.repository.open_compare.get_provider", return_value=_mock_provider()):
             response = client.get(URL, {
                 "repository_id": str(repository.id),
                 "from_tag": "v1.0.0",
@@ -98,7 +98,7 @@ class TestOpenTagCompare:
     def test_tag_not_found(self, repository):
         """tag 不存在返回 404"""
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=_mock_provider()):
+        with patch("apps.repository.open_compare.get_provider", return_value=_mock_provider()):
             response = client.get(URL, {
                 "repository_id": str(repository.id),
                 "from_tag": "v9.9.9",
@@ -121,7 +121,7 @@ class TestOpenTagCompare:
         provider = _mock_provider()
         provider.list_tags.side_effect = ProviderError("连接超时")
         client = _auth_client(["repo.compare"])
-        with patch("apps.repository.views_open.get_provider", return_value=provider):
+        with patch("apps.repository.open_compare.get_provider", return_value=provider):
             response = client.get(URL, {
                 "repository_id": str(repository.id),
                 "from_tag": "v1.0.0",
@@ -133,3 +133,62 @@ class TestOpenTagCompare:
         """缺少必填参数返回 400"""
         client = _auth_client(["repo.compare"])
         assert client.get(URL, {"repository_id": str(repository.id)}).status_code == 400
+
+    def test_指定软件比较时仅接受明确归属的软件Tag(self, project, repository, user):
+        from apps.release.models import ReleaseRecord
+        from apps.software.models import ProjectSoftware, Software
+
+        a = Software.objects.create(repository=repository, owner=user, name="软件 A", slug="app-a")
+        b = Software.objects.create(repository=repository, owner=user, name="软件 B", slug="app-b")
+        for software in (a, b):
+            ProjectSoftware.objects.create(project=project, software=software)
+        from_sha, to_sha = "a" * 40, "b" * 40
+        for software, tag, git_hash in [(a, "v1.0.0", from_sha), (a, "app-a/v1.1.0", to_sha), (b, "app-b/v1.1.0", to_sha)]:
+            ReleaseRecord.objects.create(project=project, repository=repository, software=software,
+                                         status="released", tag_name=tag, git_hash=git_hash)
+        provider = _mock_provider()
+        from_tag, to_tag = provider.list_tags.return_value
+        from_tag.commit_hash = from_sha
+        to_tag.name = "app-a/v1.1.0"
+        to_tag.commit_hash = to_sha
+        arguments = {"project_id": str(project.pk), "software_id": str(a.pk),
+                     "from_tag": "v1.0.0", "to_tag": "app-a/v1.1.0"}
+        client = _auth_client(["repo.compare"])
+        with patch("apps.repository.open_compare.get_provider", return_value=provider):
+            result = client.get(URL, arguments)
+        assert result.status_code == 200, result.data
+        assert result.data["data"]["software_id"] == str(a.pk)
+        assert result.data["data"]["to_tag"] == "app-a/v1.1.0"
+        assert result.data["data"]["from_git_hash"] == from_sha
+        assert result.data["data"]["to_git_hash"] == to_sha
+        provider.compare_commits.assert_called_once_with(repository.external_identity, from_sha, to_sha)
+        assert client.get(URL, {**arguments, "to_tag": "app-b/v1.1.0"}).status_code == 404
+        assert _auth_client(["release.doc"]).get(URL, arguments).status_code == 403
+
+    def test_软件比较拒绝Tag移动而原仓库比较仍可查询(self, project, repository, user):
+        from django.core.cache import cache
+
+        from apps.release.models import ReleaseRecord
+        from apps.software.models import ProjectSoftware, Software
+
+        software = Software.objects.create(repository=repository, owner=user, name="已归属软件", slug="app")
+        ProjectSoftware.objects.create(project=project, software=software)
+        from_sha, saved_sha, moved_sha = "a" * 40, "b" * 40, "c" * 40
+        for tag, git_hash in [("v1.0.0", from_sha), ("v1.1.0", saved_sha)]:
+            ReleaseRecord.objects.create(project=project, repository=repository, software=software,
+                                         status="released", tag_name=tag, git_hash=git_hash)
+        provider = _mock_provider()
+        provider.list_tags.return_value[0].commit_hash = from_sha
+        provider.list_tags.return_value[1].commit_hash = moved_sha
+        arguments = {"repository_id": str(repository.pk), "from_tag": "v1.0.0", "to_tag": "v1.1.0"}
+        client = _auth_client(["repo.compare"])
+        with patch("apps.repository.open_compare.get_provider", return_value=provider):
+            software_result = client.get(URL, {**arguments, "software_id": str(software.pk)})
+            assert software_result.status_code == 409
+            provider.compare_commits.assert_not_called()
+
+            cache.clear()
+            legacy_result = client.get(URL, arguments)
+            assert legacy_result.status_code == 200
+            assert legacy_result.data["data"]["to_git_hash"] == moved_sha
+            provider.compare_commits.assert_called_once_with(repository.external_identity, "v1.0.0", "v1.1.0")

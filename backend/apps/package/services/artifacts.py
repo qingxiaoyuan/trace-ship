@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from apps.package.models import PackageTask
+from apps.package.services.svn_scope import SvnTargetConflict, verify_svn_target
 from utils.provider.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -10,6 +11,7 @@ from utils.provider.exceptions import (
     ProviderError,
 )
 from utils.provider.svn import SVNProvider
+from utils.provider.svn_path import canonical_svn_url
 
 
 def local_artifact_available(task: PackageTask, artifact: dict) -> bool:
@@ -63,8 +65,6 @@ def validate_artifact_path(path: str, *, allow_empty: bool = False) -> str:
 
 
 def _svn_context(task: PackageTask) -> tuple[str, SVNProvider]:
-    from urllib.parse import quote, unquote, urlsplit, urlunsplit
-
     from django.core.exceptions import ValidationError
 
     from apps.credential.models import Credential
@@ -73,26 +73,17 @@ def _svn_context(task: PackageTask) -> tuple[str, SVNProvider]:
     stage = (task.stage_info or {}).get("svn_push") or {}
     snapshot = task.config_snapshot or {}
 
-    def canonical_url(value: str) -> str:
-        try:
-            if not isinstance(value, str):
-                raise ValueError("目录不是字符串")
-            parts = urlsplit(value)
-        except (ValueError, TypeError) as exc:
-            raise ArtifactQueryError("unverifiable", "任务保存的 SVN 目录依据无效，无法核验") from exc
-        if (
-            parts.scheme not in ("svn", "http", "https") or not parts.netloc
-            or parts.username or parts.password or parts.query or parts.fragment
-        ):
-            raise ArtifactQueryError("unverifiable", "任务保存的 SVN 目录依据无效，无法核验")
-        path = unquote(parts.path).rstrip("/")
-        validate_artifact_path(path.lstrip("/"), allow_empty=True)
-        return urlunsplit((parts.scheme, parts.netloc, quote(path, safe="/"), "", ""))
-
     if not stage.get("remote_url") or not snapshot.get("svn_url"):
         raise ArtifactQueryError("unverifiable", "任务未保存 SVN 推送目录，无法恢复文件；不会使用当前配置猜测目录")
-    root = canonical_url(stage["remote_url"])
-    base = canonical_url(snapshot["svn_url"])
+    try:
+        root = canonical_svn_url(stage["remote_url"])
+        base = canonical_svn_url(snapshot["svn_url"])
+    except (TypeError, ValueError) as exc:
+        raise ArtifactQueryError("unverifiable", "任务保存的 SVN 目录依据无效，无法核验") from exc
+    try:
+        verify_svn_target(task.project_id, root)
+    except SvnTargetConflict as exc:
+        raise ArtifactQueryError("target_conflict", str(exc), 409) from exc
     if root != base and not root.startswith(base + "/"):
         raise ArtifactQueryError("unverifiable", "任务保存的 SVN 目录与凭证授权范围不匹配，无法核验")
     try:

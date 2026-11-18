@@ -7,6 +7,8 @@
 from django.utils import timezone
 
 from apps.notification.models import Notification
+from apps.project.services import visible_project_ids
+from apps.release.delivery_identity import release_delivery_label, release_software_name
 
 
 class NotificationService:
@@ -98,7 +100,7 @@ class NotificationService:
         return count
 
     @staticmethod
-    def remind_summary(user) -> dict:
+    def remind_summary(request) -> dict:
         """
         强提醒聚合
 
@@ -117,8 +119,9 @@ class NotificationService:
         """
         from apps.release.models import ReleaseReviewIssue
         from apps.workflow.models import WorkflowTask
-        from apps.workflow.serializers import resolve_release
+        from apps.workflow.serializers import release_for_display
 
+        user = request.user
         todo_qs = (
             WorkflowTask.objects.filter(approver=user, status="pending")
             .select_related("instance", "instance__definition", "instance__definition__project")
@@ -126,22 +129,32 @@ class NotificationService:
         )
         todo_tasks = []
         for task in todo_qs[:5]:
-            release = resolve_release(task.instance)
+            release = release_for_display(task.instance, request)
+            project = task.instance.definition.project
+            project_name = ""
+            if release:
+                project_name = release.project.name
+            elif project and visible_project_ids(user).filter(pk=project.pk).exists():
+                project_name = project.name
             todo_tasks.append(
                 {
                     "id": str(task.id),
                     "title": f"审批发布 {release.version}" if release else task.node_name,
+                    "instance_id": str(task.instance_id),
                     "version": release.version if release else "",
-                    "project_name": release.project.name
-                    if release
-                    else task.instance.definition.project.name,
+                    "software_name": release_software_name(release) if release else "",
+                    "tag_name": release.tag_name if release else "",
+                    "git_hash": release.git_hash if release else "",
+                    "project_name": project_name,
                     "created_at": task.created_at,
                 }
             )
 
         issue_qs = (
-            ReleaseReviewIssue.objects.filter(release__publisher=user, status="open")
-            .select_related("release")
+            ReleaseReviewIssue.objects.filter(
+                release__publisher=user, status="open", release__project_id__in=visible_project_ids(user),
+            )
+            .select_related("release", "release__software")
             .order_by("-created_at")
         )
         open_issues = [
@@ -149,6 +162,9 @@ class NotificationService:
                 "id": str(issue.id),
                 "release_id": str(issue.release_id),
                 "version": issue.release.version,
+                "software_name": release_software_name(issue.release),
+                "tag_name": issue.release.tag_name,
+                "git_hash": issue.release.git_hash,
                 "content": issue.content,
                 "created_at": issue.created_at,
             }
@@ -206,11 +222,12 @@ class NotificationService:
         if not task.approver:
             return
         instance = task.instance
+        subject = NotificationService._workflow_subject(instance)
         NotificationService.create(
             user=task.approver,
             notification_type="audit",
             title="新的审批待办",
-            content=f"您有一个新的审批任务：{task.node_name}，业务单号 {instance.biz_id}。",
+            content=f"您有一个新的审批任务：{task.node_name}，{subject}。",
             related_type="workflow_instance",
             related_id=str(instance.id),
         )
@@ -227,11 +244,12 @@ class NotificationService:
         instance = task.instance
         if not instance.created_by:
             return
+        subject = NotificationService._workflow_subject(instance)
         NotificationService.create(
             user=instance.created_by,
             notification_type="audit",
             title="审批已通过",
-            content=f"您的 {instance.biz_type} 申请（{instance.biz_id}）已被 {task.approver.nickname or task.approver.username} 审批通过。{comment}",
+            content=f"您的{subject}已被 {task.approver.nickname or task.approver.username} 审批通过。{comment}",
             related_type="workflow_instance",
             related_id=str(instance.id),
         )
@@ -252,50 +270,65 @@ class NotificationService:
         if instance.ai_reviews.exists():
             comment = "审批意见请在有权限时进入详情查看。"
         operator = actor or task.approver
+        subject = NotificationService._workflow_subject(instance)
         NotificationService.create(
             user=instance.created_by,
             notification_type="audit",
             title="审批被驳回",
-            content=f"您的 {instance.biz_type} 申请（{instance.biz_id}）已被 {operator.nickname or operator.username} 驳回。{comment}",
+            content=f"您的{subject}已被 {operator.nickname or operator.username} 驳回。{comment}",
             related_type="workflow_instance",
             related_id=str(instance.id),
         )
 
     @staticmethod
+    def _workflow_subject(instance) -> str:
+        from apps.workflow.services import resolve_release
+
+        release = resolve_release(instance)
+        if release is not None and (
+            release.workflow_instance_id == instance.pk
+            or (
+                release.workflow_instance_id is None and release.status == "draft"
+                and instance.source_project_id == release.project_id and instance.source_biz_id == str(release.pk)
+            )
+        ):
+            return f"发布申请 {release_delivery_label(release)}"
+        return f"{instance.biz_type} 申请（{instance.biz_id}）"
+
+    @staticmethod
+    def _can_receive_project_notification(user, project_id) -> bool:
+        return bool(user and user.is_active and visible_project_ids(user).filter(pk=project_id).exists())
+
+    @staticmethod
     def notify_package_result(task, release=None) -> None:
-        """
-        打包任务结束时通知发起人
-
-        发布触发的打包任务通知发布人；分支直打包任务（无关联发布）通知触发人。
-
-        Args:
-            task: PackageTask 实例
-            release: ReleaseRecord 实例（可选）
-        """
-        if not release:
-            release = task.release
-        user = release.publisher if release else None
-        if not user and task.triggered_by_id:
-            user = task.triggered_by
-        if not user:
+        """共享打包结果只发给实际任务项目中仍有访问权限的触发人。"""
+        release = release or task.release
+        user = task.triggered_by
+        if release and not release.software_id and release.project_id == task.project_id:
+            # 兼容旧的仓库发布通知；绝不跨项目回退到原发布人。
+            publisher = release.publisher
+            if NotificationService._can_receive_project_notification(publisher, task.project_id):
+                user = publisher
+        if not NotificationService._can_receive_project_notification(user, task.project_id):
             return
 
-        if task.status == "success":
-            title = "打包成功"
-            content = (
-                f"版本 {release.version} 的打包任务已成功完成。"
-                if release
-                else f"分支 {task.version} 的打包任务已成功完成。"
-            )
-        elif task.status in ("failure", "canceled"):
-            title = "打包失败" if task.status == "failure" else "打包已取消"
-            content = (
-                f"版本 {release.version} 的打包任务{task.get_status_display()}，发布状态保持已发布。"
-                if release
-                else f"分支 {task.version} 的打包任务{task.get_status_display()}。"
-            )
-        else:
+        title = {"success": "打包成功", "failure": "打包失败", "canceled": "打包已取消"}.get(task.status)
+        if not title:
             return
+
+        software_name = task.config_snapshot.get("software_name")
+        if not software_name and release:
+            software_name = release_software_name(release)
+        if not software_name:
+            software_name = "软件归属未知"
+        subject = f"「{software_name}」版本 {task.version}" if release else f"「{software_name}」分支 {task.version}"
+        status = "已成功完成" if task.status == "success" else task.get_status_display()
+        identity = f"；Tag：{task.tag_name}" if release else ""
+        if task.commit_hash:
+            identity += f"；源码 SHA：{task.commit_hash}"
+        content = f"{subject} 的打包任务{status}{identity}。"
+        if release and task.status != "success":
+            content += "发布状态保持已发布。"
 
         NotificationService.create(
             user=user,
@@ -308,19 +341,17 @@ class NotificationService:
 
     @staticmethod
     def notify_release_released(release) -> None:
-        """
-        发布成功后通知发起人
-
-        Args:
-            release: ReleaseRecord 实例
-        """
-        if not release.publisher:
+        """按已保存的软件版本及固定源码通知有权读取的发起人。"""
+        publisher = release.publisher
+        if not NotificationService._can_receive_project_notification(publisher, release.project_id):
             return
+        software_name = release_software_name(release)
+        identity = f"；源码 SHA：{release.git_hash}" if release.git_hash else ""
         NotificationService.create(
-            user=release.publisher,
+            user=publisher,
             notification_type="release",
             title="发布成功",
-            content=f"版本 {release.version} 已成功发布，tag {release.tag_name} 已推送。",
+            content=f"「{software_name}」版本 {release.version} 已成功发布；Tag：{release.tag_name}{identity}。",
             related_type="release_record",
             related_id=str(release.id),
         )
@@ -357,13 +388,13 @@ class NotificationService:
     def notify_review_issue_created(issue) -> None:
         """发起整改意见时通知发布人"""
         publisher = issue.release.publisher
-        if not publisher or str(publisher.id) == str(issue.author_id):
+        if not NotificationService._can_receive_project_notification(publisher, issue.release.project_id) or publisher.pk == issue.author_id:
             return
         NotificationService.create(
             user=publisher,
             notification_type="review",
             title="发布文档收到整改意见",
-            content=f"版本 {issue.release.version}（{issue.release.tag_name}）收到审查整改意见：{issue.content[:80]}",
+            content=f"{release_delivery_label(issue.release)} 收到审查整改意见：{issue.content[:80]}",
             related_type="release",
             related_id=str(issue.release_id),
         )
@@ -372,14 +403,14 @@ class NotificationService:
     def notify_review_issue_replied(issue) -> None:
         """发布人回复后通知意见发起人（审查员）"""
         author = issue.author
-        if not author or str(author.id) == str(issue.release.publisher_id):
+        if not NotificationService._can_receive_project_notification(author, issue.release.project_id) or author.pk == issue.release.publisher_id:
             return
         content = NotificationService._latest_reply_content(issue)
         NotificationService.create(
             user=author,
             notification_type="review",
             title="整改意见已回复",
-            content=f"版本 {issue.release.version} 的整改意见已有发布人回复：{content[:80]}",
+            content=f"{release_delivery_label(issue.release)} 的整改意见已有发布人回复：{content[:80]}",
             related_type="release",
             related_id=str(issue.release_id),
         )
@@ -388,13 +419,13 @@ class NotificationService:
     def notify_review_issue_resolved(issue) -> None:
         """审查员通过整改意见后通知发布人"""
         publisher = issue.release.publisher
-        if not publisher or str(publisher.id) == str(issue.author_id):
+        if not NotificationService._can_receive_project_notification(publisher, issue.release.project_id) or publisher.pk == issue.author_id:
             return
         NotificationService.create(
             user=publisher,
             notification_type="review",
             title="整改意见已通过",
-            content=f"版本 {issue.release.version} 的整改意见已通过：{issue.content[:80]}",
+            content=f"{release_delivery_label(issue.release)} 的整改意见已通过：{issue.content[:80]}",
             related_type="release",
             related_id=str(issue.release_id),
         )
@@ -403,14 +434,14 @@ class NotificationService:
     def notify_review_issue_rejected(issue, comment: str = "") -> None:
         """审查员驳回整改意见后通知发布人"""
         publisher = issue.release.publisher
-        if not publisher or str(publisher.id) == str(issue.author_id):
+        if not NotificationService._can_receive_project_notification(publisher, issue.release.project_id) or publisher.pk == issue.author_id:
             return
         note = f"驳回备注：{comment[:80]}" if comment else "请修改后再次回复"
         NotificationService.create(
             user=publisher,
             notification_type="review",
             title="整改意见被驳回",
-            content=f"版本 {issue.release.version} 的整改意见被驳回，需继续整改。{note}",
+            content=f"{release_delivery_label(issue.release)} 的整改意见被驳回，需继续整改。{note}",
             related_type="release",
             related_id=str(issue.release_id),
         )
